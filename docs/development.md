@@ -48,7 +48,9 @@ npm accepts the publish only from a trusted publisher: this repository,
 `publish.yml`, and the `npm` environment. npm adds a trusted publisher only to
 a package that exists, so the first version is published by hand:
 
-1. From `packages/cli`, run `bun publish` while signed in to npm.
+1. On an up-to-date `main`, run `mise run standards:check`, then from
+   `packages/cli` run `bun publish` while signed in to npm. Releases start
+   from the next version, since npm already has this one.
 2. On npmjs.com, add the trusted publisher to the `repotted` package, then in
    its publishing access settings require two-factor authentication and
    disallow tokens.
