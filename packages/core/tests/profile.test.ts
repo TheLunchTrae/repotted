@@ -69,13 +69,7 @@ rulesets:
       'Add',
     ]);
     // A ruleset in the override replaces the base one whole; its rules do not carry over.
-    expect(profile.rulesets?.[1]).toEqual({
-      name: 'Replace',
-      target: 'branch',
-      enforcement: 'evaluate',
-      bypass_actors: [],
-      rules: [],
-    });
+    expect(profile.rulesets?.[1]).toEqual({ name: 'Replace', enforcement: 'evaluate' });
   });
 
   test('rejects a profile that extends itself', async () => {
@@ -99,6 +93,15 @@ rulesets:
     const file = await write('twice.yaml', 'rulesets: [{ name: Same }, { name: Same }]\n');
 
     expect(String(await rejection(loadProfile(file)))).toContain('Ruleset "Same" appears more than once');
+  });
+
+  test('rejects a profile that turns off every merge method', async () => {
+    const file = await write(
+      'no-merge.yaml',
+      'merge: { allow_merge_commit: false, allow_squash_merge: false, allow_rebase_merge: false }\n',
+    );
+
+    expect(String(await rejection(loadProfile(file)))).toContain('turns off every merge method');
   });
 
   test('loads the example profiles', async () => {

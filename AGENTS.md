@@ -155,8 +155,9 @@ version-numbered names.
 `package.json`, `bun.lock`, and the mise tasks own the tested versions and
 commands. Bun runs the workspace, the tests, and the build. The published
 package runs under Node through `npx`, so shipped code uses only `node:` APIs:
-`.oxlintrc.json` rejects the `Bun` global and `bun:` imports in
-`packages/*/src/`, and `ts:node:check` runs the built CLI under real Node.
+`tsconfig.node.json` type-checks `packages/*/src/` with Node's types alone,
+`.oxlintrc.json` rejects the `Bun` global and `bun:` imports there, and
+`ts:node:check` runs the built CLI under the oldest supported Node.
 
 Select checks for the change:
 

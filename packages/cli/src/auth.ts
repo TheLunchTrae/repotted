@@ -12,7 +12,7 @@ export class AuthError extends Error {
 
 /**
  * Finds a GitHub token: GITHUB_TOKEN, then GH_TOKEN, then the GitHub CLI's
- * own sign-in. The token is only ever held in memory.
+ * own sign-in for github.com, since requests go to api.github.com. The token is only ever held in memory.
  */
 export async function resolveToken(env: NodeJS.ProcessEnv = process.env): Promise<string> {
   for (const name of ['GITHUB_TOKEN', 'GH_TOKEN'] as const) {
@@ -22,7 +22,7 @@ export async function resolveToken(env: NodeJS.ProcessEnv = process.env): Promis
     }
   }
   try {
-    const { stdout } = await run('gh', ['auth', 'token'], { env, timeout: 10_000 });
+    const { stdout } = await run('gh', ['auth', 'token', '--hostname', 'github.com'], { env, timeout: 10_000 });
     const token = stdout.trim();
     if (token !== '') {
       return token;

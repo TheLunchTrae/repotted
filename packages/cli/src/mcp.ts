@@ -135,19 +135,18 @@ export function createServer(options: ServerOptions): McpServer {
           if (plan === undefined) {
             return text('No plan has that plan_id. Call plan first.', true);
           }
+          // Taken before any await, so two calls with one id cannot both apply it.
+          plans.delete(id);
           try {
             const applied = await applyPlan(await client(), plan);
-            plans.delete(id);
             return text(
               `Applied ${applied.length} ${applied.length === 1 ? 'change' : 'changes'} to ${plan.repository}.`,
             );
           } catch (error) {
             if (error instanceof StalePlanError) {
-              plans.delete(id);
               return text(`${error.message}\n\nCurrent plan:\n${formatPlan(error.current)}`, true);
             }
             if (error instanceof ApplyError) {
-              plans.delete(id);
               return text(describeFailure(error), true);
             }
             throw error;

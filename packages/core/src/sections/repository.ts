@@ -19,6 +19,11 @@ export async function readRepository(github: GitHub, repo: RepoRef): Promise<Liv
   return { repository: liveRepository.parse(data), merge: liveMerge.parse(data) };
 }
 
+const commitSettingPairs = [
+  ['merge_commit_title', 'merge_commit_message'],
+  ['squash_merge_commit_title', 'squash_merge_commit_message'],
+] as const;
+
 function settingsChange(
   section: 'repository' | 'merge',
   target: string,
@@ -30,6 +35,19 @@ function settingsChange(
   if (fields.length === 0) {
     return [];
   }
+  const body: Record<string, unknown> = Object.fromEntries(fields.map((field) => [field.field, field.to]));
+  // GitHub takes a commit message setting only with its title setting, so a
+  // write of either carries both, using the live value for the other.
+  for (const pair of commitSettingPairs) {
+    if (pair.some((key) => key in body)) {
+      for (const key of pair) {
+        const value = body[key] ?? desired[key] ?? live[key];
+        if (value !== undefined) {
+          body[key] = value;
+        }
+      }
+    }
+  }
   return [
     {
       section,
@@ -39,7 +57,7 @@ function settingsChange(
       request: {
         method: 'PATCH',
         path: repoPath(repo),
-        body: Object.fromEntries(fields.map((field) => [field.field, field.to])),
+        body,
       },
     },
   ];

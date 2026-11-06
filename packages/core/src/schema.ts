@@ -44,6 +44,7 @@ export const actionsSettings = z
     enabled: z.boolean(),
     allowed_actions: z.enum(['all', 'local_only', 'selected']),
     selected_actions: selectedActions,
+    sha_pinning_required: z.boolean(),
     default_workflow_permissions: z.enum(['read', 'write']),
     can_approve_pull_request_reviews: z.boolean(),
   })
@@ -68,11 +69,11 @@ export const rule = z
 export const ruleset = z
   .object({
     name: z.string().min(1),
-    target: z.enum(['branch', 'tag', 'push']).default('branch'),
-    enforcement: z.enum(['active', 'evaluate', 'disabled']).default('active'),
-    bypass_actors: z.array(bypassActor).default([]),
+    target: z.enum(['branch', 'tag', 'push']).optional(),
+    enforcement: z.enum(['active', 'evaluate', 'disabled']).optional(),
+    bypass_actors: z.array(bypassActor).optional(),
     conditions: z.record(z.string(), z.unknown()).optional(),
-    rules: z.array(rule).default([]),
+    rules: z.array(rule).optional(),
   })
   .strict();
 
@@ -96,6 +97,18 @@ export const profile = z
   .partial()
   .strict()
   .superRefine((value, context) => {
+    const merge = value.merge;
+    if (
+      merge?.allow_merge_commit === false &&
+      merge.allow_squash_merge === false &&
+      merge.allow_rebase_merge === false
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'The profile turns off every merge method; GitHub needs at least one',
+        path: ['merge'],
+      });
+    }
     const names = new Set<string>();
     for (const [index, entry] of (value.rulesets ?? []).entries()) {
       if (names.has(entry.name)) {

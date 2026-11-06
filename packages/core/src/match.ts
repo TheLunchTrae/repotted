@@ -57,3 +57,19 @@ export function fieldChanges(
     .filter(([field, to]) => !matches(to, live?.[field]))
     .map(([field, to]) => ({ field, from: live?.[field], to }));
 }
+
+/**
+ * Lays `desired` over `live` for a write that replaces the whole value:
+ * objects merge key by key, so keys the profile leaves out keep their live
+ * values; anything else the profile names replaces the live value.
+ */
+export function overlay(desired: unknown, live: unknown): unknown {
+  if (!isRecord(desired) || !isRecord(live)) {
+    return desired;
+  }
+  const merged: Record<string, unknown> = { ...live };
+  for (const [key, value] of Object.entries(desired)) {
+    merged[key] = overlay(value, live[key]);
+  }
+  return merged;
+}

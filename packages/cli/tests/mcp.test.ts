@@ -76,6 +76,17 @@ describe('MCP server', () => {
     expect((await call(client, 'apply', { plan_id: id })).isError).toBe(true);
   });
 
+  test('applies a plan once even when two calls race', async () => {
+    const github = new FakeGitHub();
+    const client = await connect(github);
+    const planned = await call(client, 'plan', { repository: 'lunch/app', profile: 'rulesets: [{ name: Main }]' });
+    const id = /plan_id: (\S+)/u.exec(planned.text)?.[1];
+
+    const results = await Promise.all([call(client, 'apply', { plan_id: id }), call(client, 'apply', { plan_id: id })]);
+    expect(results.map((result) => result.isError).toSorted()).toEqual([false, true]);
+    expect(github.state.rulesets).toHaveLength(1);
+  });
+
   test('refuses a plan the repository has drifted from', async () => {
     const github = new FakeGitHub();
     const client = await connect(github);

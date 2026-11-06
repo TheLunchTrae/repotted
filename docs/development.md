@@ -22,7 +22,7 @@ mise run standards:check
 ```
 
 `ts:node:check` needs Node 22 or later on `PATH`, because it runs the built
-CLI the way `npx` does. CI installs Node 24.
+CLI the way `npx` does. CI installs Node 22, the oldest version `engines` allows.
 
 ## Build and run
 
