@@ -274,9 +274,15 @@ export function tokenOrSignIn(sources: TokenSources = {}): () => Promise<string>
   let pending: Promise<SignIn> | undefined;
   let failure: string | undefined;
   let keychainFailure: KeychainError | undefined;
+  let resolving: Promise<string> | undefined;
   return async () => {
     try {
-      return await resolveToken(sources);
+      // Concurrent calls share one lookup, so they refresh an expiring token
+      // once: GitHub takes each refresh token only once.
+      resolving ??= resolveToken(sources).finally(() => {
+        resolving = undefined;
+      });
+      return await resolving;
     } catch (error) {
       if (!(error instanceof NotSignedInError)) {
         throw error;
@@ -295,6 +301,8 @@ export function tokenOrSignIn(sources: TokenSources = {}): () => Promise<string>
         },
         (error: unknown) => {
           pending = undefined;
+          // The user entered a code and the token was lost; another code
+          // would end the same way.
           if (error instanceof KeychainError) {
             keychainFailure = error;
           } else {
@@ -308,10 +316,9 @@ export function tokenOrSignIn(sources: TokenSources = {}): () => Promise<string>
     try {
       signIn = await pending;
     } catch (error) {
+      // Not remembered: the keychain is checked again on the next call, so a
+      // passing problem, such as a dismissed unlock prompt, clears itself.
       pending = undefined;
-      if (error instanceof KeychainError) {
-        keychainFailure = error;
-      }
       throw error;
     }
     throw new AuthError(

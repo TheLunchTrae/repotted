@@ -86,6 +86,24 @@ describe('MCP server', () => {
     expect(github.writes).toEqual([]);
   });
 
+  test('keeps the plan when the sign-in fails at apply', async () => {
+    let calls = 0;
+    const client = await connect(new FakeGitHub(), false, () => {
+      calls += 1;
+      if (calls === 2) {
+        throw new Error('The Repotted sign-in expired.');
+      }
+    });
+    const planned = await call(client, 'plan', { repository: 'lunch/app', profile: 'repository: { has_wiki: false }' });
+    const id = /plan_id: (\S+)/u.exec(planned.text)?.[1];
+
+    expect(await call(client, 'apply', { plan_id: id })).toEqual({
+      text: 'The Repotted sign-in expired.',
+      isError: true,
+    });
+    expect((await call(client, 'apply', { plan_id: id })).isError).toBe(false);
+  });
+
   test('applies a plan only once', async () => {
     const client = await connect(new FakeGitHub());
     const planned = await call(client, 'plan', { repository: 'lunch/app', profile: 'repository: { has_wiki: false }' });

@@ -128,14 +128,16 @@ export function createServer(options: ServerOptions): McpServer {
       },
       ({ plan_id: id }) =>
         attempt(async () => {
+          // The client comes first, so a failed sign-in keeps the plan.
+          const github = await client();
           const plan = plans.get(id);
           if (plan === undefined) {
             return text('No plan has that plan_id. Call plan first.', true);
           }
-          // Taken before any await, so two calls with one id cannot both apply it.
+          // Taken before the next await, so two calls with one id cannot both apply it.
           plans.delete(id);
           try {
-            const applied = await applyPlan(await client(), plan);
+            const applied = await applyPlan(github, plan);
             return text(
               `Applied ${applied.length} ${applied.length === 1 ? 'change' : 'changes'} to ${plan.repository}.`,
             );

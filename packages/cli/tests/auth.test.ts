@@ -259,6 +259,38 @@ describe('device flow', () => {
     expect(login.requests.filter((request) => request.url.endsWith('/device/code'))).toHaveLength(2);
   });
 
+  test('refreshes once when the MCP server makes two calls at the same time', async () => {
+    const login = new FakeGitHubLogin([issued, { error: 'bad_refresh_token' }]);
+    const store = new MemoryStore({ access_token: 'ghu_old', expires_at: 0, refresh_token: 'ghr_old' });
+    const write = store.write.bind(store);
+    // A slow keychain, so the second call would read before the first writes.
+    store.write = async (stored) => {
+      await Bun.sleep(5);
+      await write(stored);
+    };
+    const token = tokenOrSignIn(sources(store, login));
+
+    expect(await Promise.all([token(), token()])).toEqual(['ghu_new', 'ghu_new']);
+    expect(login.requests).toHaveLength(1);
+  });
+
+  test('stops asking for codes once the keychain has lost a sign-in', async () => {
+    const login = new FakeGitHubLogin([issued]);
+    const store = new MemoryStore();
+    store.write = () => Promise.reject(new Error('the keychain is locked'));
+    const entered = Promise.withResolvers<undefined>();
+    const environment: FlowEnvironment = { fetch: login.fetch, now: login.now, sleep: () => entered.promise };
+    const token = tokenOrSignIn(sources(store, environment));
+
+    await rejection(token());
+    entered.resolve(undefined);
+    await Bun.sleep(0);
+
+    expect(String(await rejection(token()))).toContain('Signed in, but the OS keychain could not store the token');
+    expect(String(await rejection(token()))).toContain('Signed in, but the OS keychain could not store the token');
+    expect(login.requests.filter((request) => request.url.endsWith('/device/code'))).toHaveLength(1);
+  });
+
   test('gives the MCP server the refreshed token once the old one expires', async () => {
     const login = new FakeGitHubLogin([issued]);
     const store = new MemoryStore({
