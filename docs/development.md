@@ -38,15 +38,23 @@ bun packages/cli/src/main.ts --help
 
 Publishing a GitHub release runs `.github/workflows/publish.yml`. The release
 tag must be `v` followed by the version in `packages/cli/package.json`, such as
-`v0.2.0`, and must point at a commit on `main`. The workflow runs the gate on
-that commit, packs `packages/cli` with `bun pm pack`, which builds the bundle
-and replaces the `workspace:` range, then publishes the tarball to npm with
-trusted publishing and provenance. Prereleases do not publish.
+`v0.2.0`, and must point at a commit on `main`. Create it as a full release:
+prereleases do not publish, and promoting one later does not start the
+workflow. The workflow runs the gate on that commit, packs `packages/cli` with
+`bun pm pack`, which builds the bundle and replaces the `workspace:` range, and
+publishes the tarball to npm with trusted publishing and provenance.
 
-The publish job runs in the `npm` environment, and npm accepts it only when
-the package has a trusted publisher for this repository, `publish.yml`, and
-that environment. Publishing needs the owner's yes, so the owner publishes the
-release.
+npm accepts the publish only from a trusted publisher: this repository,
+`publish.yml`, and the `npm` environment. npm adds a trusted publisher only to
+a package that exists, so the first version is published by hand:
 
-To bump the version, change `version` in `packages/cli/package.json` in the
-same pull request as the change it releases.
+1. From `packages/cli`, run `bun publish` while signed in to npm.
+2. On npmjs.com, add the trusted publisher to the `repotted` package, then in
+   its publishing access settings require two-factor authentication and
+   disallow tokens.
+3. In the repository settings, give the `npm` environment the owner as a
+   required reviewer and a `v*` tag rule, so only an approved release
+   publishes.
+
+Publishing needs the owner's yes. To release a change, bump `version` in
+`packages/cli/package.json` in the same pull request.

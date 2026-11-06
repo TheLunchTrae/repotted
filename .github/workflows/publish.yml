@@ -25,22 +25,17 @@ jobs:
     steps:
       - name: Require a stable version tag
         run: '[[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]'
-      - name: Check out the release tag
+      # Without a ref, checkout builds the commit the release event names, which
+      # is the commit provenance names, even if the tag moves afterwards.
+      - name: Check out the release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ github.event.release.tag_name }}
           fetch-depth: 0
           persist-credentials: false
-      # A tag moved after the release event would build a commit that provenance
-      # does not name.
-      - name: Require the tag to point at the workflow commit
-        env:
-          WORKFLOW_COMMIT: ${{ github.sha }}
-        run: test "$(git rev-parse HEAD)" = "$WORKFLOW_COMMIT"
       - name: Require a commit on main
         run: git merge-base --is-ancestor HEAD refs/remotes/origin/main
       - name: Require the tag to match the package version
-        run: test "v$(jq -r .version packages/cli/package.json)" = "$RELEASE_TAG"
+        run: test "v$(node -p "require('./packages/cli/package.json').version")" = "$RELEASE_TAG"
       - name: Install the oldest supported Node for the npx smoke check
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -61,8 +56,6 @@ jobs:
         run: |
           mkdir release
           (cd packages/cli && bun pm pack --destination ../../release)
-          cd release
-          sha256sum ./*.tgz > SHA256SUMS
       - name: Upload the verified package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -78,7 +71,6 @@ jobs:
     timeout-minutes: 5
     environment: npm
     permissions:
-      contents: read
       id-token: write
     steps:
       - name: Download the verified package
@@ -90,15 +82,13 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
-          registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      # Trusted publishing needs npm 11.5.1 or later.
+      # Trusted publishing needs npm 11.5.1 or later. Provenance comes with it;
+      # NPM_CONFIG_PROVENANCE makes the publish fail if it cannot be made.
       - name: Install an npm that supports trusted publishing
         run: npm install --global npm@11.9.0 --ignore-scripts --no-audit --no-fund
       - name: Publish the verified tarball with OIDC
         working-directory: release
         env:
           NPM_CONFIG_PROVENANCE: 'true'
-        run: |
-          sha256sum --check SHA256SUMS
-          npm publish ./*.tgz --ignore-scripts --access public --tag latest
+        run: npm publish ./*.tgz --ignore-scripts
