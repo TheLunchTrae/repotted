@@ -6,6 +6,7 @@ merge methods, Actions policy, and rulesets, from the command line or from an
 agent over MCP.
 
 ```sh
+npx repotted login
 npx repotted capture octo-org/app --output app.yaml
 npx repotted plan octo-org/app --profile app.yaml --out plan.json
 npx repotted apply plan.json

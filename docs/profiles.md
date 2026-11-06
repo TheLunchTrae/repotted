@@ -71,10 +71,29 @@ other sections still plan.
 
 ## Authentication
 
-Repotted uses `GITHUB_TOKEN`, then `GH_TOKEN`, then the GitHub CLI's sign-in
-for github.com (`gh auth token --hostname github.com`). A fine-grained token
-needs the Administration permission, read for capture and plan and write for
-apply; a classic token needs the `repo` scope.
+`repotted login` signs in with the Repotted GitHub App through the device
+flow: it prints a code to enter at github.com/login/device and keeps the token
+in the OS keychain (Keychain on macOS, Credential Manager on Windows, the
+Secret Service on Linux). The token expires after eight hours and refreshes
+itself for six months. `repotted logout` removes it from the keychain; revoke
+the App's access in your GitHub settings under Applications.
+
+The App reaches only repositories it is installed on, so install it on the
+ones Repotted manages. It asks for the Administration permission: capture and
+plan read with it, and apply writes with it, within what your own account may
+do.
+
+Repotted takes the first token it finds:
+
+1. `GITHUB_TOKEN`, then `GH_TOKEN`, for CI and scripts. A fine-grained token
+   needs the Administration permission, read for capture and plan and write
+   for apply; a classic token needs the `repo` scope.
+2. The `repotted login` token.
+3. The GitHub CLI's sign-in for github.com (`gh auth token --hostname
+   github.com`).
+
+`REPOTTED_GITHUB_CLIENT_ID` signs in with another GitHub App, given its client
+ID.
 
 ## MCP server
 
@@ -88,7 +107,9 @@ apply; a classic token needs the `repo` scope.
   changes it has already shown as a plan. Each plan applies once.
 
 `--read-only` leaves out `apply`. Paths and `extends` resolve from the
-directory the server starts in. To add it to an MCP client:
+directory the server starts in. With no token, the first tool call starts the
+device flow and returns the code for the user to enter; once they have, the
+next call finds the token. To add it to an MCP client:
 
 ```json
 {
