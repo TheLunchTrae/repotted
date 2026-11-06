@@ -1,0 +1,14 @@
+{
+  "name": "@repotted/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@octokit/core": "7.0.8",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  }
+}

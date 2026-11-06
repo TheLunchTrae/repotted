@@ -1,0 +1,19 @@
+# Context
+
+- **Profile**: YAML that describes the setup a repository should have. It
+  names only what it manages; anything it leaves out is unmanaged.
+- **Base profile**: a profile that others build on with `extends`. A profile
+  that extends it is an **override**.
+- **Section**: one area of a repository's setup that a profile can manage:
+  repository settings, merge methods, Actions policy, or rulesets. Each section
+  has one adapter that reads it and plans its writes.
+- **Capture**: reading a repository into a profile that describes it as it is.
+- **Plan**: the changes, in order, that bring a repository in line with a
+  profile, with the writes each one makes. Planning only reads.
+- **Change**: one create, update, or delete of one target, such as the merge
+  methods or a ruleset, with the fields it changes.
+- **Apply**: making a reviewed plan's changes. Apply plans again first and
+  writes only when that yields the same changes.
+- **Stale plan**: a plan the repository has drifted from since it was made.
+  Apply refuses it.
+- **Drift**: a difference between a repository and its profile.

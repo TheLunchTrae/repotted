@@ -1,0 +1,15 @@
+# The profile for this repository: the base setup plus its required check.
+extends: base.yaml
+
+rulesets:
+  - name: 'Main: Require Status Checks'
+    bypass_actors:
+      - { actor_id: 5, actor_type: RepositoryRole, bypass_mode: exempt }
+    conditions:
+      ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] }
+    rules:
+      - type: required_status_checks
+        parameters:
+          strict_required_status_checks_policy: false
+          required_status_checks:
+            - context: quality
