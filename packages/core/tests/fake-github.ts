@@ -12,7 +12,7 @@ interface StoredRuleset {
 
 export interface FakeState {
   repository: Record<string, unknown>;
-  actions: { enabled: boolean; allowed_actions?: string };
+  actions: { enabled: boolean; allowed_actions?: string; sha_pinning_required?: boolean };
   selected: Record<string, unknown>;
   workflow: Record<string, unknown>;
   rulesets: StoredRuleset[];
@@ -25,14 +25,14 @@ export interface Call {
   readonly body?: unknown;
 }
 
-const pullRequestDefaults = {
-  allowed_merge_methods: ['merge', 'squash', 'rebase'],
-  dismiss_stale_reviews_on_push: false,
-  require_code_owner_review: false,
-  require_last_push_approval: false,
-  required_approving_review_count: 0,
-  required_review_thread_resolution: false,
-};
+// GitHub requires these pull_request parameters and fills in the merge methods.
+const requiredPullRequestParameters = [
+  'dismiss_stale_reviews_on_push',
+  'require_code_owner_review',
+  'require_last_push_approval',
+  'required_approving_review_count',
+  'required_review_thread_resolution',
+];
 
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -41,7 +41,10 @@ function record(value: unknown): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value));
 }
 
-/** Fills rule parameters the way GitHub does, so plans must ignore server defaults. */
+/**
+ * Checks and fills rule parameters the way GitHub does: required parameters
+ * must be sent, and the defaults it adds must not read as drift.
+ */
 function storedRules(value: unknown): StoredRuleset['rules'] {
   if (!Array.isArray(value)) {
     return [];
@@ -51,7 +54,11 @@ function storedRules(value: unknown): StoredRuleset['rules'] {
     const type = String(rule['type']);
     const parameters = rule['parameters'] === undefined ? undefined : record(rule['parameters']);
     if (type === 'pull_request') {
-      return { type, parameters: { ...pullRequestDefaults, ...parameters } };
+      const missing = requiredPullRequestParameters.filter((key) => parameters?.[key] === undefined);
+      if (missing.length > 0) {
+        throw new GitHubError(422, `Invalid request: pull_request is missing ${missing.join(', ')}`);
+      }
+      return { type, parameters: { allowed_merge_methods: ['merge', 'squash', 'rebase'], ...parameters } };
     }
     return parameters === undefined ? { type } : { type, parameters };
   });
@@ -85,7 +92,7 @@ export class FakeGitHub implements GitHub {
         squash_merge_commit_title: 'COMMIT_OR_PR_TITLE',
         squash_merge_commit_message: 'COMMIT_MESSAGES',
       },
-      actions: { enabled: true, allowed_actions: 'all' },
+      actions: { enabled: true, allowed_actions: 'all', sha_pinning_required: false },
       selected: {},
       workflow: { default_workflow_permissions: 'write', can_approve_pull_request_reviews: false },
       rulesets: [],
@@ -113,18 +120,30 @@ export class FakeGitHub implements GitHub {
     switch (key) {
       case `GET ${base}`:
         return { id: 1, full_name: 'lunch/app', visibility: 'public', ...this.state.repository };
-      case `PATCH ${base}`:
-        Object.assign(this.state.repository, record(body));
+      case `PATCH ${base}`: {
+        const patch = record(body);
+        for (const [title, message] of [
+          ['merge_commit_title', 'merge_commit_message'],
+          ['squash_merge_commit_title', 'squash_merge_commit_message'],
+        ] as const) {
+          if (message in patch && !(title in patch)) {
+            throw new GitHubError(422, `Invalid request: ${message} needs ${title}`);
+          }
+        }
+        Object.assign(this.state.repository, patch);
         return this.handle('GET', base, undefined);
+      }
       case `GET ${permissions}`:
         return { ...this.state.actions, selected_actions_url: `https://api.github.com${permissions}/selected-actions` };
       case `PUT ${permissions}`: {
         const next = record(body);
+        // A PUT replaces the policy: keys it leaves out go back to their defaults.
         this.state.actions = {
           enabled: next['enabled'] === true,
           ...(next['enabled'] === true && typeof next['allowed_actions'] === 'string'
             ? { allowed_actions: next['allowed_actions'] }
             : {}),
+          sha_pinning_required: next['sha_pinning_required'] === true,
         };
         return undefined;
       }

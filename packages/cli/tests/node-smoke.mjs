@@ -1,5 +1,7 @@
-// Runs the built CLI under Node, the way npx would, and checks that it starts
-// and answers an MCP handshake. Run it with Node after `bun run build`.
+// Runs the built CLI under Node, the way npx would: it starts, answers an MCP
+// handshake, and loads and validates profiles from disk. It never reaches
+// GitHub, because the profile it plans with is invalid. Run it with Node after
+// `bun run build`.
 import { spawn, spawnSync } from 'node:child_process';
 import { log } from 'node:console';
 import { execPath, version as nodeVersion } from 'node:process';
@@ -7,6 +9,7 @@ import { clearTimeout, setTimeout } from 'node:timers';
 import { fileURLToPath, URL } from 'node:url';
 
 const cli = fileURLToPath(new URL('../dist/repotted.js', import.meta.url));
+const examples = fileURLToPath(new URL('../../../examples/', import.meta.url));
 
 if (typeof globalThis.Bun !== 'undefined') {
   throw new Error('node-smoke.mjs must run under Node, not Bun');
@@ -17,7 +20,7 @@ if (version.status !== 0 || !/^\d+\.\d+\.\d+/u.test(version.stdout)) {
   throw new Error(`repotted --version failed: ${version.stderr}`);
 }
 
-const server = spawn(execPath, [cli, 'mcp', '--read-only'], { stdio: ['pipe', 'pipe', 'inherit'] });
+const server = spawn(execPath, [cli, 'mcp', '--read-only'], { cwd: examples, stdio: ['pipe', 'pipe', 'inherit'] });
 const replies = new Map();
 let buffer = '';
 server.stdout.setEncoding('utf8');
@@ -62,7 +65,20 @@ try {
   if (names.join(',') !== 'capture,plan') {
     throw new Error(`Unexpected tools: ${names.join(', ')}`);
   }
-  log(`node ${nodeVersion}: repotted ${version.stdout.trim()} starts and serves ${names.join(', ')}`);
+  const planned = await request(3, 'tools/call', {
+    name: 'plan',
+    arguments: {
+      repository: 'octo-org/app',
+      profile: 'extends: repotted.yaml\nmerge: { allow_rebase_merge: false }\n',
+    },
+  });
+  const text = planned.result?.content?.[0]?.text ?? '';
+  if (planned.result?.isError !== true || !text.includes('turns off every merge method')) {
+    throw new Error(`Unexpected plan reply: ${JSON.stringify(planned)}`);
+  }
+  log(
+    `node ${nodeVersion}: repotted ${version.stdout.trim()} starts, serves ${names.join(', ')} and validates profiles`,
+  );
 } finally {
   server.kill();
 }

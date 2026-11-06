@@ -11,16 +11,23 @@ silently.
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `repository` | `has_issues`, `has_projects`, `has_wiki`, `has_discussions`, `allow_auto_merge`, `allow_update_branch`, `delete_branch_on_merge`, `web_commit_signoff_required` |
 | `merge`      | `allow_merge_commit`, `allow_squash_merge`, `allow_rebase_merge`, and the merge and squash commit title and message settings                                    |
-| `actions`    | `enabled`, `allowed_actions`, `selected_actions`, `default_workflow_permissions`, `can_approve_pull_request_reviews`                                            |
+| `actions`    | `enabled`, `allowed_actions`, `selected_actions`, `sha_pinning_required`, `default_workflow_permissions`, `can_approve_pull_request_reviews`                    |
 | `rulesets`   | A list of repository rulesets, as the rulesets API describes them                                                                                               |
 
 A profile manages only what it names. A setting it leaves out keeps its
 current value, and a ruleset it does not name is left alone. To delete a
 ruleset, list it as `{ name: <name>, absent: true }`.
 
-Rulesets match by name. Within a ruleset, a profile's values only need to be
-present: defaults that GitHub fills in, such as rule parameters the profile
-leaves out, are not drift. Lists match as a whole, in any order.
+Rulesets match by name, and the same rule holds inside one: a key the profile
+leaves out, such as `bypass_actors` or `enforcement`, keeps its live value.
+When a profile lists `rules`, it manages the list: live rules it does not list
+are removed, and each listed rule keeps the live parameters the profile leaves
+out. A new ruleset gets `target: branch`, `enforcement: active`, no bypass
+actors, and the documented defaults for parameters the API requires; the plan
+shows each of them.
+
+A profile's values only need to be present in the repository: defaults that
+GitHub fills in are not drift. Lists match as a whole, in any order.
 
 `extends` names a base profile, relative to the file. Settings merge key by
 key, and `selected_actions` merges the same way. A ruleset in the override
@@ -31,7 +38,7 @@ after the base ones. `examples/base.yaml` is a base profile, and
 ## Plans and apply
 
 `repotted plan` reads only the sections the profile names and lists the
-changes, in the order they apply:
+changes, with every value each one writes, in the order they apply:
 
 1. Repository settings and merge methods.
 2. The Actions policy, then its selected-actions list, then workflow
@@ -54,8 +61,9 @@ other sections still plan.
 ## Authentication
 
 Repotted uses `GITHUB_TOKEN`, then `GH_TOKEN`, then the GitHub CLI's sign-in
-(`gh auth token`). The token needs read access for capture and plan, and
-administration write access to apply.
+for github.com (`gh auth token --hostname github.com`). A fine-grained token
+needs the Administration permission, read for capture and plan and write for
+apply; a classic token needs the `repo` scope.
 
 ## MCP server
 

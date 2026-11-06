@@ -8,6 +8,7 @@ import type { ActionsSettings } from '../schema.js';
 const livePermissions = z.object({
   enabled: z.boolean(),
   allowed_actions: z.enum(['all', 'local_only', 'selected']).optional(),
+  sha_pinning_required: z.boolean().optional(),
 });
 
 const liveSelected = z.object({
@@ -59,10 +60,13 @@ export function planActions(desired: ActionsSettings, live: ActionsSettings, rep
 
   const enabled = desired.enabled ?? live.enabled ?? true;
   const allowed = desired.allowed_actions ?? live.allowed_actions;
-  if (!enabled && desired.allowed_actions !== undefined) {
-    warnings.push('Skipped allowed_actions: it only applies while Actions is enabled');
+  for (const key of ['allowed_actions', 'sha_pinning_required'] as const) {
+    if (!enabled && desired[key] !== undefined) {
+      warnings.push(`Skipped ${key}: it only applies while Actions is enabled`);
+    }
   }
-  const policy = only(desired, enabled ? ['enabled', 'allowed_actions'] : ['enabled']);
+  const shaPinning = desired.sha_pinning_required ?? live.sha_pinning_required;
+  const policy = only(desired, enabled ? ['enabled', 'allowed_actions', 'sha_pinning_required'] : ['enabled']);
   const policyFields = fieldChanges(policy, live);
   if (policyFields.length > 0) {
     changes.push({
@@ -73,7 +77,11 @@ export function planActions(desired: ActionsSettings, live: ActionsSettings, rep
       request: {
         method: 'PUT',
         path: base,
-        body: { enabled, ...(enabled && allowed !== undefined ? { allowed_actions: allowed } : {}) },
+        body: {
+          enabled,
+          ...(enabled && allowed !== undefined ? { allowed_actions: allowed } : {}),
+          ...(enabled && shaPinning !== undefined ? { sha_pinning_required: shaPinning } : {}),
+        },
       },
     });
   }

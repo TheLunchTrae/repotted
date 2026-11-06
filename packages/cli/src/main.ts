@@ -102,7 +102,8 @@ async function plan(args: string[]): Promise<number> {
   if (values.profile === undefined) {
     throw new UsageError('plan needs --profile.');
   }
-  const result = await createPlan(await github(), repo, await loadProfile(values.profile));
+  const desired = await loadProfile(values.profile);
+  const result = await createPlan(await github(), repo, desired);
   process.stdout.write(`${formatPlan(result)}\n`);
   if (values.out !== undefined) {
     await writeFile(values.out, `${JSON.stringify(result, null, 2)}\n`);

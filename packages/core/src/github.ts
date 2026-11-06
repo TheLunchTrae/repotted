@@ -29,14 +29,15 @@ export function parseRepo(value: string): RepoRef {
   const match = repoPattern.exec(value);
   const owner = match?.[1];
   const name = match?.[2];
-  if (owner === undefined || name === undefined) {
+  // GitHub names never consist of dots alone, and `..` would leave /repos.
+  if (owner === undefined || name === undefined || /^\.+$/u.test(owner) || /^\.+$/u.test(name)) {
     throw new Error(`Expected a repository as owner/name, got "${value}"`);
   }
   return { owner, name };
 }
 
 export function repoPath(repo: RepoRef): string {
-  return `/repos/${repo.owner}/${repo.name}`;
+  return `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`;
 }
 
 function errorStatus(error: unknown): number | undefined {

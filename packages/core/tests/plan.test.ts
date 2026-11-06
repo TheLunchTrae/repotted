@@ -1,9 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
 
-import { parseRepo } from '../src/github.js';
+import { parseRepo, repoPath } from '../src/github.js';
 import { matches } from '../src/match.js';
-import { ApplyError, applyPlan, captureProfile, createPlan, parsePlan, StalePlanError } from '../src/plan.js';
+import {
+  ApplyError,
+  applyPlan,
+  captureProfile,
+  createPlan,
+  formatPlan,
+  parsePlan,
+  StalePlanError,
+} from '../src/plan.js';
 import { loadProfile } from '../src/profile.js';
 import type { Profile } from '../src/schema.js';
 import { FakeGitHub } from './fake-github.js';
@@ -29,6 +37,14 @@ describe('matches', () => {
   test('ignores live keys the profile does not set but not missing items', () => {
     expect(matches({ rules: [{ type: 'a' }] }, { rules: [{ type: 'a', extra: 1 }], id: 3 })).toBe(true);
     expect(matches({ rules: [{ type: 'a' }] }, { rules: [{ type: 'a' }, { type: 'b' }] })).toBe(false);
+  });
+});
+
+describe('parseRepo', () => {
+  test('rejects names that would leave the repository path', () => {
+    expect(() => parseRepo('../user')).toThrow();
+    expect(() => parseRepo('octo/..')).toThrow();
+    expect(repoPath(parseRepo('octo.org/app.js'))).toBe('/repos/octo.org/app.js');
   });
 });
 
@@ -139,6 +155,89 @@ describe('plan and apply', () => {
     expect(plan.changes[0]?.fields.map((field) => field.field)).toEqual(['rules']);
   });
 
+  test('keeps what a named ruleset leaves out when it updates the ruleset', async () => {
+    const github = new FakeGitHub({
+      rulesets: [
+        {
+          id: 4,
+          name: 'Main: Require Approval',
+          target: 'branch',
+          enforcement: 'active',
+          bypass_actors: [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'exempt' }],
+          conditions: mainBranch,
+          rules: [
+            {
+              type: 'pull_request',
+              parameters: {
+                allowed_merge_methods: ['rebase'],
+                dismiss_stale_reviews_on_push: true,
+                require_code_owner_review: false,
+                require_last_push_approval: true,
+                required_approving_review_count: 1,
+                required_review_thread_resolution: false,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const desired: Profile = {
+      rulesets: [
+        {
+          name: 'Main: Require Approval',
+          enforcement: 'evaluate',
+          rules: [{ type: 'pull_request', parameters: { required_approving_review_count: 2 } }],
+        },
+      ],
+    };
+
+    const plan = await createPlan(github, repo, desired);
+    expect(plan.changes[0]?.fields.map((field) => field.field)).toEqual(['enforcement', 'rules']);
+    await applyPlan(github, plan);
+
+    const [stored] = github.state.rulesets;
+    expect(stored?.enforcement).toBe('evaluate');
+    expect(stored?.bypass_actors).toHaveLength(1);
+    expect(stored?.rules[0]?.parameters).toMatchObject({
+      dismiss_stale_reviews_on_push: true,
+      require_last_push_approval: true,
+      required_approving_review_count: 2,
+      allowed_merge_methods: ['rebase'],
+    });
+  });
+
+  test('shows every value a new ruleset gets, the API defaults included', async () => {
+    const plan = await createPlan(new FakeGitHub(), repo, {
+      rulesets: [{ name: 'Main', rules: [{ type: 'pull_request' }] }],
+    });
+
+    expect(plan.changes[0]?.fields.map((field) => field.field)).toEqual([
+      'name',
+      'target',
+      'enforcement',
+      'bypass_actors',
+      'rules',
+    ]);
+    expect(formatPlan(plan)).toContain('"required_approving_review_count":0');
+  });
+
+  test('sends a commit message setting with its title setting', async () => {
+    const github = new FakeGitHub();
+    await applyPlan(github, await createPlan(github, repo, { merge: { squash_merge_commit_message: 'PR_BODY' } }));
+
+    expect(github.writes[0]?.body).toEqual({
+      squash_merge_commit_message: 'PR_BODY',
+      squash_merge_commit_title: 'COMMIT_OR_PR_TITLE',
+    });
+  });
+
+  test('keeps SHA pinning when it changes the Actions policy', async () => {
+    const github = new FakeGitHub({ actions: { enabled: true, allowed_actions: 'all', sha_pinning_required: true } });
+    await applyPlan(github, await createPlan(github, repo, { actions: { allowed_actions: 'local_only' } }));
+
+    expect(github.state.actions).toEqual({ enabled: true, allowed_actions: 'local_only', sha_pinning_required: true });
+  });
+
   test('refuses a plan the repository has drifted from, without writing', async () => {
     const github = new FakeGitHub();
     const plan = await createPlan(github, repo, { repository: { has_wiki: false, has_issues: true } });
@@ -213,6 +312,28 @@ describe('plan and apply', () => {
 });
 
 describe('capture', () => {
+  test('reads bypass actors that GitHub returns without an id or mode', async () => {
+    const github = new FakeGitHub({
+      rulesets: [
+        {
+          id: 3,
+          name: 'Org admins',
+          target: 'branch',
+          enforcement: 'active',
+          bypass_actors: [{ actor_type: 'OrganizationAdmin' }],
+          rules: [],
+        },
+      ],
+    });
+
+    const { profile } = await captureProfile(github, repo);
+    expect(profile.rulesets).toEqual([
+      expect.objectContaining({
+        bypass_actors: [{ actor_id: null, actor_type: 'OrganizationAdmin', bypass_mode: 'always' }],
+      }),
+    ]);
+  });
+
   test('captures a profile that the same repository already matches', async () => {
     const github = new FakeGitHub();
     await applyPlan(github, await createPlan(github, repo, await loadProfile(path.join(examples, 'repotted.yaml'))));
