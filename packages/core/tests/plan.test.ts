@@ -1,0 +1,228 @@
+import { describe, expect, test } from 'bun:test';
+import path from 'node:path';
+
+import { parseRepo } from '../src/github.js';
+import { matches } from '../src/match.js';
+import { ApplyError, applyPlan, captureProfile, createPlan, parsePlan, StalePlanError } from '../src/plan.js';
+import { loadProfile } from '../src/profile.js';
+import type { Profile } from '../src/schema.js';
+import { FakeGitHub } from './fake-github.js';
+
+const repo = parseRepo('lunch/app');
+const examples = path.join(import.meta.dir, '../../../examples');
+const mainBranch = { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } };
+
+function rejection(promise: Promise<unknown>): Promise<unknown> {
+  return promise.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+}
+
+describe('matches', () => {
+  test('pairs array items even when a greedy pass would pair them wrongly', () => {
+    expect(matches([{ type: 'a' }, { type: 'a', strict: true }], [{ type: 'a', strict: true }, { type: 'a' }])).toBe(
+      true,
+    );
+  });
+
+  test('ignores live keys the profile does not set but not missing items', () => {
+    expect(matches({ rules: [{ type: 'a' }] }, { rules: [{ type: 'a', extra: 1 }], id: 3 })).toBe(true);
+    expect(matches({ rules: [{ type: 'a' }] }, { rules: [{ type: 'a' }, { type: 'b' }] })).toBe(false);
+  });
+});
+
+describe('plan and apply', () => {
+  test("brings a fresh repository to Trae's profile, after which the plan is empty", async () => {
+    const github = new FakeGitHub();
+    const desired = await loadProfile(path.join(examples, 'repotted.yaml'));
+
+    const plan = await createPlan(github, repo, desired);
+    expect(plan.changes.map((change) => `${change.action} ${change.target}`)).toEqual([
+      'update repository settings',
+      'update merge methods',
+      'update workflow permissions',
+      'create Main: Block Creation and Deletion',
+      'create Main: Block Force Pushes',
+      'create Main: Require PR',
+      'create Main: Require Approval',
+      'create Main: Require Code Owner Review',
+      'create Main: Require Status Checks',
+    ]);
+
+    await applyPlan(github, plan);
+    // GitHub fills in default rule parameters; they must not read as drift.
+    expect((await createPlan(github, repo, desired)).changes).toEqual([]);
+  });
+
+  test('writes only the settings the profile names and leaves other rulesets alone', async () => {
+    const github = new FakeGitHub({
+      rulesets: [{ id: 7, name: 'Tags: Protect', target: 'tag', enforcement: 'active', bypass_actors: [], rules: [] }],
+    });
+    const plan = await createPlan(github, repo, { repository: { delete_branch_on_merge: true }, rulesets: [] });
+    await applyPlan(github, plan);
+
+    expect(github.writes).toEqual([
+      { method: 'PATCH', path: '/repos/lunch/app', body: { delete_branch_on_merge: true } },
+    ]);
+    expect(github.state.rulesets.map((item) => item.name)).toEqual(['Tags: Protect']);
+  });
+
+  test('creates a replacement ruleset before deleting the ones it replaces', async () => {
+    const github = new FakeGitHub({
+      rulesets: [
+        {
+          id: 1,
+          name: 'Main: Block Creation',
+          target: 'branch',
+          enforcement: 'active',
+          bypass_actors: [],
+          conditions: mainBranch,
+          rules: [{ type: 'creation' }],
+        },
+        {
+          id: 2,
+          name: 'Main: Block Deletion',
+          target: 'branch',
+          enforcement: 'active',
+          bypass_actors: [],
+          conditions: mainBranch,
+          rules: [{ type: 'deletion' }],
+        },
+      ],
+    });
+    const desired: Profile = {
+      rulesets: [
+        { name: 'Main: Block Deletion', absent: true },
+        { name: 'Main: Block Creation', absent: true },
+        {
+          name: 'Main: Block Creation and Deletion',
+          target: 'branch',
+          enforcement: 'active',
+          bypass_actors: [],
+          conditions: mainBranch,
+          rules: [{ type: 'creation' }, { type: 'deletion' }],
+        },
+      ],
+    };
+
+    await applyPlan(github, await createPlan(github, repo, desired));
+
+    expect(github.writes.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'POST /repos/lunch/app/rulesets',
+      'DELETE /repos/lunch/app/rulesets/2',
+      'DELETE /repos/lunch/app/rulesets/1',
+    ]);
+  });
+
+  test('updates a ruleset whose rules differ, keeping its id', async () => {
+    const github = new FakeGitHub({
+      rulesets: [
+        {
+          id: 4,
+          name: 'Main: Require PR',
+          target: 'branch',
+          enforcement: 'active',
+          bypass_actors: [],
+          conditions: mainBranch,
+          rules: [{ type: 'pull_request', parameters: { allowed_merge_methods: ['squash'] } }],
+        },
+      ],
+    });
+    const desired = await loadProfile(path.join(examples, 'base.yaml'));
+    const plan = await createPlan(github, repo, {
+      rulesets: (desired.rulesets ?? []).filter((item) => item.name === 'Main: Require PR'),
+    });
+
+    expect(plan.changes).toHaveLength(1);
+    expect(plan.changes[0]?.request).toMatchObject({ method: 'PUT', path: '/repos/lunch/app/rulesets/4' });
+    expect(plan.changes[0]?.fields.map((field) => field.field)).toEqual(['rules']);
+  });
+
+  test('refuses a plan the repository has drifted from, without writing', async () => {
+    const github = new FakeGitHub();
+    const plan = await createPlan(github, repo, { repository: { has_wiki: false, has_issues: true } });
+    github.state.repository['has_wiki'] = false;
+
+    expect(await rejection(applyPlan(github, plan))).toBeInstanceOf(StalePlanError);
+    expect(github.writes).toEqual([]);
+  });
+
+  test('never runs requests edited into a saved plan', async () => {
+    const github = new FakeGitHub();
+    const plan = await createPlan(github, repo, { repository: { has_wiki: false } });
+    const tampered = {
+      ...plan,
+      changes: plan.changes.map((change) => ({ ...change, request: { method: 'DELETE', path: '/repos/lunch/app' } })),
+    };
+    const saved = parsePlan(JSON.parse(JSON.stringify(tampered)));
+
+    expect(await rejection(applyPlan(github, saved))).toBeInstanceOf(StalePlanError);
+    expect(github.writes).toEqual([]);
+  });
+
+  test('reports which changes were applied when a write fails', async () => {
+    const github = new FakeGitHub();
+    const plan = await createPlan(github, repo, {
+      repository: { has_wiki: false },
+      rulesets: [{ name: 'Broken', target: 'branch', enforcement: 'active', bypass_actors: [], rules: [] }],
+    });
+    const request = github.request.bind(github);
+    github.request = (method, requestPath, body) =>
+      method === 'POST' ? Promise.reject(new Error('boom')) : request(method, requestPath, body);
+
+    const failure = await rejection(applyPlan(github, plan));
+    expect(failure).toBeInstanceOf(ApplyError);
+    expect(failure instanceof ApplyError ? failure.applied.map((change) => change.target) : []).toEqual([
+      'repository settings',
+    ]);
+  });
+
+  test('skips rulesets on a plan that does not support them and still plans the rest', async () => {
+    const github = new FakeGitHub({ rulesetsUnavailable: true });
+    const plan = await createPlan(github, repo, await loadProfile(path.join(examples, 'base.yaml')));
+
+    expect(plan.changes.some((change) => change.section === 'rulesets')).toBe(false);
+    expect(plan.changes.length).toBeGreaterThan(0);
+    expect(plan.warnings).toEqual(['Skipped rulesets: this repository’s plan does not support rulesets']);
+  });
+
+  test('sets the Actions policy before its selected-actions list', async () => {
+    const github = new FakeGitHub();
+    const desired: Profile = {
+      actions: {
+        allowed_actions: 'selected',
+        selected_actions: { github_owned_allowed: true, patterns_allowed: ['oven-sh/*'] },
+      },
+    };
+    const plan = await createPlan(github, repo, desired);
+    expect(plan.changes.map((change) => change.target)).toEqual(['Actions policy', 'selected actions']);
+
+    await applyPlan(github, plan);
+    expect((await createPlan(github, repo, desired)).changes).toEqual([]);
+  });
+
+  test('warns instead of writing a selected-actions list the policy would ignore', async () => {
+    const plan = await createPlan(new FakeGitHub(), repo, {
+      actions: { selected_actions: { verified_allowed: true } },
+    });
+
+    expect(plan.changes).toEqual([]);
+    expect(plan.warnings).toHaveLength(1);
+  });
+});
+
+describe('capture', () => {
+  test('captures a profile that the same repository already matches', async () => {
+    const github = new FakeGitHub();
+    await applyPlan(github, await createPlan(github, repo, await loadProfile(path.join(examples, 'repotted.yaml'))));
+    github.state.actions = { enabled: true, allowed_actions: 'selected' };
+    github.state.selected = { github_owned_allowed: true, verified_allowed: false, patterns_allowed: [] };
+
+    const { profile, warnings } = await captureProfile(github, repo);
+
+    expect(warnings).toEqual([]);
+    expect(profile.rulesets).toHaveLength(6);
+    expect((await createPlan(github, repo, profile)).changes).toEqual([]);
+  });
+});

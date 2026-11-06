@@ -1,0 +1,35 @@
+{
+  "name": "repotted-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.4",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "audit": "bun audit --audit-level=low",
+    "build": "bun run --filter repotted build",
+    "directives:check": "bun run scripts/check-directives.mjs",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "knip": "knip",
+    "lint": "bun run directives:check && oxlint .",
+    "lint:fix": "bun run directives:check && oxlint --fix .",
+    "standards": "bun run lint:fix && bun run format",
+    "test": "bun test",
+    "typecheck": "tsc --pretty -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "eslint-plugin-regexp": "3.3.1",
+    "knip": "6.43.0",
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0",
+    "oxlint-tsgolint": "7.0.2005",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.0"
+  },
+  "overrides": {
+    "minimatch": "11.0.3"
+  }
+}

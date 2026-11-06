@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreExportsUsedInFile": true,
+  "includeEntryExports": true,
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs"],
+      "project": ["scripts/**/*.mjs"],
+    },
+    "packages/core": {
+      "entry": ["tests/**/*.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"],
+    },
+    "packages/cli": {
+      "entry": ["src/main.ts", "build.ts", "tests/**/*.test.ts", "tests/node-smoke.mjs"],
+      "project": ["src/**/*.ts", "tests/**/*.{ts,mjs}"],
+      // The build bundles @repotted/core and leaves these to npm, so the
+      // published package needs them although no file in cli imports them.
+      "ignoreDependencies": ["@octokit/core", "yaml"],
+    },
+  },
+}
