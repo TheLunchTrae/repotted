@@ -3,7 +3,14 @@ import { z } from 'zod';
 import type { Change } from '../change.js';
 import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
-import { mergeFields, type MergeSettings, type Profile, repositoryFields, type RepositorySettings } from '../schema.js';
+import {
+  mergeFields,
+  type MergeSettings,
+  mergeSettingsProblems,
+  type Profile,
+  repositoryFields,
+  type RepositorySettings,
+} from '../schema.js';
 
 // Each schema drops the response keys it does not manage.
 const liveRepository = z.object(repositoryFields).partial();
@@ -63,11 +70,25 @@ function settingsChange(
   ];
 }
 
+/** Merge settings that GitHub would reject once the profile is laid over the live ones. */
+export class MergeSettingsError extends Error {
+  constructor(problems: readonly string[]) {
+    super(`The merge settings would be invalid on the repository:\n${problems.map((line) => `  ${line}`).join('\n')}`);
+    this.name = 'MergeSettingsError';
+  }
+}
+
 export function planRepository(
   desired: Pick<Profile, 'repository' | 'merge'>,
   live: LiveRepository,
   repo: RepoRef,
 ): Change[] {
+  if (desired.merge !== undefined) {
+    const problems = mergeSettingsProblems({ ...live.merge, ...desired.merge });
+    if (problems.length > 0) {
+      throw new MergeSettingsError(problems);
+    }
+  }
   return [
     ...(desired.repository === undefined
       ? []

@@ -29,6 +29,16 @@ and no bypass actors, and new `pull_request`, `required_status_checks` and
 the plan shows each of them. Other rule types need their required parameters
 in the profile.
 
+Merge settings are checked against what GitHub accepts, first in the profile
+alone and again at plan time with the profile laid over the live settings:
+at least one merge method stays on, and each commit title and message pair is
+one that the repository settings page offers. `merge_commit_title:
+MERGE_MESSAGE` goes only with `merge_commit_message: PR_TITLE`, and
+`squash_merge_commit_title: COMMIT_OR_PR_TITLE` only with
+`squash_merge_commit_message: COMMIT_MESSAGES`; a `PR_TITLE` title takes any
+other message. A plan that fails the check makes no plan, so the error arrives
+before apply writes anything.
+
 A profile's values only need to be present in the repository: defaults that
 GitHub fills in are not drift. Lists match as a whole, in any order.
 

@@ -101,7 +101,18 @@ rulesets:
       'merge: { allow_merge_commit: false, allow_squash_merge: false, allow_rebase_merge: false }\n',
     );
 
-    expect(String(await rejection(loadProfile(file)))).toContain('turns off every merge method');
+    expect(String(await rejection(loadProfile(file)))).toContain('Every merge method is off');
+  });
+
+  test('rejects a merge commit title and message pair that GitHub does not offer', async () => {
+    const file = await write(
+      'pair.yaml',
+      'merge: { merge_commit_title: MERGE_MESSAGE, merge_commit_message: PR_BODY }\n',
+    );
+
+    expect(String(await rejection(loadProfile(file)))).toContain(
+      'GitHub does not allow merge_commit_title: MERGE_MESSAGE with merge_commit_message: PR_BODY',
+    );
   });
 
   test('loads the example profiles', async () => {
