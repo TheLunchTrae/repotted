@@ -28,7 +28,7 @@ export const mergeFields = {
 
 // GitHub takes only the title and message pairs that its settings page
 // offers, and rejects any other pair with a 422.
-const commitPairs = [
+export const commitPairs = [
   {
     title: 'merge_commit_title',
     message: 'merge_commit_message',

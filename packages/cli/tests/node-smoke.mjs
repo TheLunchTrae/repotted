@@ -73,7 +73,7 @@ try {
     },
   });
   const text = planned.result?.content?.[0]?.text ?? '';
-  if (planned.result?.isError !== true || !text.includes('turns off every merge method')) {
+  if (planned.result?.isError !== true || !text.includes('Every merge method is off')) {
     throw new Error(`Unexpected plan reply: ${JSON.stringify(planned)}`);
   }
   log(
