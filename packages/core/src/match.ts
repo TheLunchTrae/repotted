@@ -61,9 +61,18 @@ export function fieldChanges(
 /**
  * Lays `desired` over `live` for a write that replaces the whole value:
  * objects merge key by key, so keys the profile leaves out keep their live
- * values; anything else the profile names replaces the live value.
+ * values. In a list, each object takes the first unused live item it
+ * `matches`, so an item keeps live keys the profile leaves out, as matching
+ * ignores them. Anything else the profile names replaces the live value.
  */
 export function overlay(desired: unknown, live: unknown): unknown {
+  if (Array.isArray(desired) && Array.isArray(live)) {
+    const unused: unknown[] = live.map((item: unknown) => item);
+    return desired.map((item: unknown) => {
+      const index = isRecord(item) ? unused.findIndex((candidate) => matches(item, candidate)) : -1;
+      return index === -1 ? item : overlay(item, unused.splice(index, 1)[0]);
+    });
+  }
   if (!isRecord(desired) || !isRecord(live)) {
     return desired;
   }

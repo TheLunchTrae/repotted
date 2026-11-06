@@ -22,9 +22,12 @@ Rulesets match by name, and the same rule holds inside one: a key the profile
 leaves out, such as `bypass_actors` or `enforcement`, keeps its live value.
 When a profile lists `rules`, it manages the list: live rules it does not list
 are removed, and each listed rule keeps the live parameters the profile leaves
-out. A new ruleset gets `target: branch`, `enforcement: active`, no bypass
-actors, and the documented defaults for parameters the API requires; the plan
-shows each of them.
+out, including keys inside list items such as a status check's
+`integration_id`. A new ruleset gets `target: branch`, `enforcement: active`
+and no bypass actors, and new `pull_request`, `required_status_checks` and
+`update` rules get the documented defaults for parameters the API requires;
+the plan shows each of them. Other rule types need their required parameters
+in the profile.
 
 A profile's values only need to be present in the repository: defaults that
 GitHub fills in are not drift. Lists match as a whole, in any order.
