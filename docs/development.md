@@ -42,16 +42,17 @@ GitHub under Settings, Developer settings, GitHub Apps, New GitHub App:
 
 - Name: Repotted, so its slug matches `app.slug`. Homepage:
   the repository's URL.
-- Callback URL: none. Turn on **Enable Device Flow**, and leave **Expire user
+- Callback URL: none. Leave **Request user authorization (OAuth) during
+  installation** off, turn on **Enable Device Flow**, and leave **Expire user
   authorization tokens** on.
-- Webhook: off.
+- Webhook: clear **Active**.
 - Repository permissions: Administration, read and write. Metadata, read, is
   required. No other permissions and no events.
 - Where it can be installed: any account.
 
 Then copy the client ID, not the App ID, into `app.clientId`. The client ID
 is public; the App needs no client secret or private key for the device
-flow.
+flow. A release fails its gate while `app.clientId` is empty.
 
 ## Publishing
 

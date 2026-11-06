@@ -21,9 +21,23 @@ const run = promisify(execFile);
  * The Repotted GitHub App. A client ID is public, so it ships in the package;
  * REPOTTED_GITHUB_CLIENT_ID signs in with another App instead.
  */
-const app: { readonly clientId: string; readonly slug: string } = { clientId: '', slug: 'repotted' };
+export const app: { readonly clientId: string; readonly slug: string } = { clientId: '', slug: 'repotted' };
 
 export const installUrl = `https://github.com/apps/${app.slug}/installations/new`;
+
+function clientIdOverride(env: NodeJS.ProcessEnv): string {
+  return env['REPOTTED_GITHUB_CLIENT_ID']?.trim() ?? '';
+}
+
+/** Whether a sign-in uses the Repotted App, whose install page `installUrl` is. */
+export function usesRepottedApp(env: NodeJS.ProcessEnv = process.env): boolean {
+  return clientIdOverride(env) === '';
+}
+
+/** The token variables that are set, which take precedence over the sign-in. */
+export function tokenVariables(env: NodeJS.ProcessEnv = process.env): string[] {
+  return ['GITHUB_TOKEN', 'GH_TOKEN'].filter((name) => (env[name]?.trim() ?? '') !== '');
+}
 
 /** Thrown when no token source is set up, so the caller can offer the device flow. */
 export class NotSignedInError extends AuthError {
@@ -34,7 +48,7 @@ export class NotSignedInError extends AuthError {
 }
 
 function appClientId(env: NodeJS.ProcessEnv): string {
-  const override = env['REPOTTED_GITHUB_CLIENT_ID']?.trim() ?? '';
+  const override = clientIdOverride(env);
   const clientId = override === '' ? app.clientId : override;
   if (clientId === '') {
     throw new AuthError(
@@ -54,7 +68,10 @@ export interface TokenStore {
 
 async function entry(): Promise<AsyncEntry> {
   const { AsyncEntry } = await import('@napi-rs/keyring');
-  return new AsyncEntry('repotted', 'github.com');
+  // Without a Secret Service, the library would fall back to the kernel
+  // keyring, which forgets the token at reboot and is not shared between
+  // sessions. Failing instead sends the user to GITHUB_TOKEN or gh.
+  return new AsyncEntry('repotted', 'github.com', { linux: { store: 'secret-service' } });
 }
 
 function parseJson(text: string): unknown {
@@ -68,7 +85,7 @@ function parseJson(text: string): unknown {
 
 /**
  * The OS keychain: Keychain on macOS, Credential Manager on Windows, and the
- * Secret Service on Linux. The native module loads on first use, so commands
+ * Secret Service (GNOME Keyring or KWallet) on Linux. The native module loads on first use, so commands
  * that take GITHUB_TOKEN still run where it has no build or no keychain.
  */
 export const keychain: TokenStore = {
@@ -90,6 +107,11 @@ export const keychain: TokenStore = {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Ends text with a full stop, so problems read as sentences when joined. */
+function sentence(text: string): string {
+  return /[.!?]$/u.test(text) ? text : `${text}.`;
 }
 
 export interface TokenSources {
@@ -147,7 +169,7 @@ async function signedInToken(
     if (latest !== undefined && latest.access_token !== stored.access_token && usable(latest, environment.now())) {
       return { token: latest.access_token };
     }
-    return { problem: `The Repotted sign-in could not be refreshed: ${describe(error)}` };
+    return { problem: sentence(`The Repotted sign-in could not be refreshed: ${describe(error)}`) };
   }
 }
 
@@ -176,7 +198,7 @@ export async function resolveToken(sources: TokenSources = {}): Promise<string> 
       problems.push(signedIn.problem);
     }
   } catch (error) {
-    problems.push(`Could not read the OS keychain: ${describe(error)}.`);
+    problems.push(sentence(`Could not read the OS keychain: ${describe(error)}`));
   }
   try {
     const token = await (sources.ghToken ?? ghCliToken)();
@@ -191,6 +213,14 @@ export async function resolveToken(sources: TokenSources = {}): Promise<string> 
   );
 }
 
+/** The keychain cannot hold a sign-in, so starting another one would not help. */
+export class KeychainError extends AuthError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'KeychainError';
+  }
+}
+
 /** A device-flow sign-in that waits for the user to enter its code. */
 export interface SignIn {
   readonly code: DeviceCode;
@@ -203,14 +233,26 @@ export async function startSignIn(sources: Pick<TokenSources, 'env' | 'store' | 
   const clientId = appClientId(sources.env ?? process.env);
   const environment = sources.environment ?? defaultEnvironment;
   const store = sources.store ?? keychain;
+  // Check the keychain first, so the user does not enter a code for a
+  // token that cannot be kept.
+  try {
+    await store.read();
+  } catch (error) {
+    throw new KeychainError(
+      sentence(`The OS keychain is not available, so a sign-in could not be kept: ${describe(error)}`) +
+        ' Set GITHUB_TOKEN, or sign in to the GitHub CLI.',
+      { cause: error },
+    );
+  }
   const code = await requestDeviceCode(clientId, environment);
   const finished = (async () => {
     const token = await waitForToken(clientId, code, environment);
     try {
       await store.write(token);
     } catch (error) {
-      throw new AuthError(
-        `Signed in, but the OS keychain could not store the token: ${describe(error)}. Set GITHUB_TOKEN instead.`,
+      throw new KeychainError(
+        sentence(`Signed in, but the OS keychain could not store the token: ${describe(error)}`) +
+          ' Set GITHUB_TOKEN, or sign in to the GitHub CLI.',
         { cause: error },
       );
     }
@@ -229,8 +271,9 @@ export function enterCode(code: DeviceCode): string {
  * stored token.
  */
 export function tokenOrSignIn(sources: TokenSources = {}): () => Promise<string> {
-  let pending: SignIn | undefined;
+  let pending: Promise<SignIn> | undefined;
   let failure: string | undefined;
+  let keychainFailure: KeychainError | undefined;
   return async () => {
     try {
       return await resolveToken(sources);
@@ -239,23 +282,40 @@ export function tokenOrSignIn(sources: TokenSources = {}): () => Promise<string>
         throw error;
       }
     }
-    const previous = failure === undefined ? '' : `${failure} `;
+    if (keychainFailure !== undefined) {
+      throw keychainFailure;
+    }
+    const previous = failure === undefined ? '' : `${sentence(failure)} `;
     failure = undefined;
-    if (pending === undefined) {
-      const started = await startSignIn(sources);
-      pending = started;
+    // Concurrent calls share one sign-in, and so one code.
+    pending ??= startSignIn(sources).then((started) => {
       started.finished.then(
         () => {
           pending = undefined;
         },
         (error: unknown) => {
           pending = undefined;
-          failure = describe(error);
+          if (error instanceof KeychainError) {
+            keychainFailure = error;
+          } else {
+            failure = describe(error);
+          }
         },
       );
+      return started;
+    });
+    let signIn: SignIn;
+    try {
+      signIn = await pending;
+    } catch (error) {
+      pending = undefined;
+      if (error instanceof KeychainError) {
+        keychainFailure = error;
+      }
+      throw error;
     }
     throw new AuthError(
-      `${previous}Not signed in to GitHub. Ask the user to ${enterCode(pending.code)}, then call this tool again.`,
+      `${previous}Not signed in to GitHub. Ask the user to ${enterCode(signIn.code)}, then call this tool again.`,
     );
   };
 }

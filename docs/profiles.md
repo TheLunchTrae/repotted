@@ -74,14 +74,17 @@ other sections still plan.
 `repotted login` signs in with the Repotted GitHub App through the device
 flow: it prints a code to enter at github.com/login/device and keeps the token
 in the OS keychain (Keychain on macOS, Credential Manager on Windows, the
-Secret Service on Linux). The token expires after eight hours and refreshes
-itself for six months. `repotted logout` removes it from the keychain; revoke
-the App's access in your GitHub settings under Applications.
+Secret Service, such as GNOME Keyring or KWallet, on Linux). Without a Secret
+Service, use `GITHUB_TOKEN` or the GitHub CLI instead. The token expires after
+eight hours and Repotted refreshes it as needed; each refresh lasts six months,
+so the sign-in holds as long as Repotted runs at least that often. `repotted
+logout` removes it from the keychain; revoke the App's access in your GitHub
+settings under Applications.
 
 The App reaches only repositories it is installed on, so install it on the
-ones Repotted manages. It asks for the Administration permission: capture and
-plan read with it, and apply writes with it, within what your own account may
-do.
+ones Repotted manages; on an organization, an owner installs it or approves
+the request. It asks for the Administration permission: capture and plan read
+with it, and apply writes with it, within what your own account may do.
 
 Repotted takes the first token it finds:
 

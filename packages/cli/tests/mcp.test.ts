@@ -9,8 +9,16 @@ import { createServer } from '../src/mcp.js';
 
 const examples = path.join(import.meta.dir, '../../../examples');
 
-async function connect(github: FakeGitHub, readOnly = false): Promise<Client> {
-  const server = createServer({ version: '0.0.0', github: () => Promise.resolve(github), cwd: examples, readOnly });
+async function connect(github: FakeGitHub, readOnly = false, onClient: () => void = () => undefined): Promise<Client> {
+  const server = createServer({
+    version: '0.0.0',
+    github: () => {
+      onClient();
+      return Promise.resolve(github);
+    },
+    cwd: examples,
+    readOnly,
+  });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   const client = new Client({ name: 'test', version: '0.0.0' });
@@ -47,6 +55,17 @@ describe('MCP server', () => {
 
     const again = await call(client, 'plan', { repository: 'lunch/app', profile_path: 'repotted.yaml' });
     expect(again.text).toBe('lunch/app matches the profile.');
+  });
+
+  test('asks for a client on every call, so a refreshed token takes over', async () => {
+    let clients = 0;
+    const client = await connect(new FakeGitHub(), false, () => {
+      clients += 1;
+    });
+
+    await call(client, 'capture', { repository: 'lunch/app' });
+    await call(client, 'capture', { repository: 'lunch/app' });
+    expect(clients).toBe(2);
   });
 
   test('accepts a profile as YAML text', async () => {

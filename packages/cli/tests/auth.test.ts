@@ -1,9 +1,23 @@
 import { describe, expect, test } from 'bun:test';
 
-import { resolveToken, startSignIn, type TokenSources, type TokenStore, tokenOrSignIn } from '../src/auth.js';
+import { app, resolveToken, startSignIn, type TokenSources, type TokenStore, tokenOrSignIn } from '../src/auth.js';
 import type { FlowEnvironment, StoredToken } from '../src/device-flow.js';
 
 const hour = 60 * 60 * 1000;
+
+class BrokenKeychain implements TokenStore {
+  read(): Promise<StoredToken | undefined> {
+    return Promise.reject(new Error('no Secret Service'));
+  }
+
+  write(): Promise<void> {
+    return Promise.reject(new Error('no Secret Service'));
+  }
+
+  clear(): Promise<boolean> {
+    return Promise.reject(new Error('no Secret Service'));
+  }
+}
 
 class MemoryStore implements TokenStore {
   token: StoredToken | undefined;
@@ -174,6 +188,35 @@ describe('device flow', () => {
     expect(store.token).toBeUndefined();
   });
 
+  test("passes on GitHub's reason when it refuses the request", async () => {
+    const login = new FakeGitHubLogin([]);
+    const refusing: FlowEnvironment = {
+      now: login.now,
+      sleep: login.sleep,
+      fetch: () =>
+        Promise.resolve(
+          Response.json(
+            { error: 'device_flow_disabled', error_description: 'Device Flow must be explicitly enabled' },
+            { status: 400 },
+          ),
+        ),
+    };
+
+    expect(String(await rejection(startSignIn(sources(new MemoryStore(), refusing))))).toContain(
+      'GitHub sign-in failed: Device Flow must be explicitly enabled',
+    );
+  });
+
+  test('asks for no code when the keychain could not keep the token', async () => {
+    const login = new FakeGitHubLogin([]);
+    const token = tokenOrSignIn(sources(new BrokenKeychain(), login));
+
+    const first = String(await rejection(token()));
+    expect(first).toContain('The OS keychain is not available');
+    expect(String(await rejection(token()))).toBe(first);
+    expect(login.requests).toEqual([]);
+  });
+
   test('gives the MCP server the code on first use and the token once the user enters it', async () => {
     const login = new FakeGitHubLogin([issued]);
     const store = new MemoryStore();
@@ -190,5 +233,51 @@ describe('device flow', () => {
     entered.resolve(undefined);
     await Bun.sleep(0);
     expect(await token()).toBe('ghu_new');
+  });
+
+  test('tells the MCP server why a sign-in failed, with a new code', async () => {
+    const login = new FakeGitHubLogin([{ error: 'access_denied', error_description: 'The user denied the request' }]);
+    const answered = Promise.withResolvers<undefined>();
+    // Polls wait until the user has answered, and then move the clock, so the
+    // second sign-in's code runs out instead of polling forever.
+    const environment: FlowEnvironment = {
+      fetch: login.fetch,
+      now: login.now,
+      sleep: async (milliseconds) => {
+        await answered.promise;
+        await login.sleep(milliseconds);
+      },
+    };
+    const token = tokenOrSignIn(sources(new MemoryStore(), environment));
+
+    await rejection(token());
+    answered.resolve(undefined);
+    await Bun.sleep(0);
+
+    const next = String(await rejection(token()));
+    expect(next).toContain('GitHub sign-in failed: The user denied the request. Not signed in to GitHub. Ask the user');
+    expect(login.requests.filter((request) => request.url.endsWith('/device/code'))).toHaveLength(2);
+  });
+
+  test('gives the MCP server the refreshed token once the old one expires', async () => {
+    const login = new FakeGitHubLogin([issued]);
+    const store = new MemoryStore({
+      access_token: 'ghu_old',
+      expires_at: login.clock + hour,
+      refresh_token: 'ghr_old',
+      refresh_expires_at: login.clock + 2 * hour,
+    });
+    const token = tokenOrSignIn(sources(store, login));
+
+    expect(await token()).toBe('ghu_old');
+    login.clock += hour;
+    expect(await token()).toBe('ghu_new');
+  });
+});
+
+describe('release', () => {
+  // The publish workflow sets RELEASE_TAG, so a release cannot ship without the App.
+  test.if(process.env['RELEASE_TAG'] !== undefined)('ships with the Repotted GitHub App client ID', () => {
+    expect(app.clientId).not.toBe('');
   });
 });

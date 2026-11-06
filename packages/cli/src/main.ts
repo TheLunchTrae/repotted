@@ -22,7 +22,16 @@ import {
 } from '@repotted/core';
 import { z } from 'zod';
 
-import { enterCode, installUrl, keychain, resolveToken, startSignIn, tokenOrSignIn } from './auth.js';
+import {
+  enterCode,
+  installUrl,
+  keychain,
+  resolveToken,
+  startSignIn,
+  tokenOrSignIn,
+  tokenVariables,
+  usesRepottedApp,
+} from './auth.js';
 import { createServer } from './mcp.js';
 
 // Both src/main.ts and the built dist/repotted.js sit one level below package.json.
@@ -159,8 +168,16 @@ async function login(args: string[]): Promise<number> {
   process.stderr.write(`To sign in to GitHub, ${enterCode(signIn.code)}.\n`);
   await signIn.finished;
   process.stdout.write(
-    `Signed in. Install the Repotted GitHub App on the repositories it should manage: ${installUrl}\n`,
+    usesRepottedApp()
+      ? `Signed in. Install the Repotted GitHub App on the repositories it should manage: ${installUrl}\n`
+      : 'Signed in. Install your GitHub App on the repositories it should manage.\n',
   );
+  const overrides = tokenVariables();
+  if (overrides.length > 0) {
+    process.stderr.write(
+      `${overrides.join(' and ')} ${overrides.length === 1 ? 'is' : 'are'} set and used before this sign-in.\n`,
+    );
+  }
   return 0;
 }
 

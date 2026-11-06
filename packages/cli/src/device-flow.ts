@@ -51,6 +51,8 @@ const deviceCodeResponse = z.object({
   expires_in: z.number(),
 });
 
+const errorResponse = z.object({ error: z.string(), error_description: z.string().optional() });
+
 // GitHub answers token requests with 200 and either a token or an error code.
 const tokenResponse = z.union([
   z.object({
@@ -59,7 +61,7 @@ const tokenResponse = z.union([
     refresh_token: z.string().min(1).optional(),
     refresh_token_expires_in: z.number().optional(),
   }),
-  z.object({ error: z.string(), error_description: z.string().optional() }),
+  errorResponse,
 ]);
 
 async function post(environment: FlowEnvironment, url: string, fields: Record<string, string>): Promise<unknown> {
@@ -68,11 +70,21 @@ async function post(environment: FlowEnvironment, url: string, fields: Record<st
     headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(fields).toString(),
   });
+  const data: unknown = await response.json().catch(() => undefined);
   if (!response.ok) {
-    throw new AuthError(`GitHub sign-in failed: ${url} answered ${response.status}`);
+    const parsed = errorResponse.safeParse(data);
+    const detail = parsed.success ? (parsed.data.error_description ?? parsed.data.error) : `HTTP ${response.status}`;
+    throw new AuthError(`GitHub sign-in failed: ${detail}`);
   }
-  const data: unknown = await response.json();
   return data;
+}
+
+function parse<T>(schema: z.ZodType<T>, data: unknown): T {
+  const parsed = schema.safeParse(data);
+  if (!parsed.success) {
+    throw new AuthError('GitHub sign-in failed: GitHub answered in a form Repotted does not recognise');
+  }
+  return parsed.data;
 }
 
 function toStored(environment: FlowEnvironment, token: z.infer<typeof tokenResponse>): StoredToken {
@@ -95,7 +107,8 @@ export async function requestDeviceCode(
   clientId: string,
   environment: FlowEnvironment = defaultEnvironment,
 ): Promise<DeviceCode> {
-  const code = deviceCodeResponse.parse(
+  const code = parse(
+    deviceCodeResponse,
     await post(environment, 'https://github.com/login/device/code', { client_id: clientId }),
   );
   return {
@@ -116,7 +129,8 @@ export async function waitForToken(
   let interval = code.interval;
   while (environment.now() < code.expiresAt) {
     await environment.sleep(interval * 1000);
-    const token = tokenResponse.parse(
+    const token = parse(
+      tokenResponse,
       await post(environment, 'https://github.com/login/oauth/access_token', {
         client_id: clientId,
         device_code: code.deviceCode,
@@ -144,7 +158,8 @@ export async function refreshToken(
 ): Promise<StoredToken> {
   return toStored(
     environment,
-    tokenResponse.parse(
+    parse(
+      tokenResponse,
       await post(environment, 'https://github.com/login/oauth/access_token', {
         client_id: clientId,
         grant_type: 'refresh_token',
