@@ -128,6 +128,9 @@ export function createServer(options: ServerOptions): McpServer {
       },
       ({ plan_id: id }) =>
         attempt(async () => {
+          if (!plans.has(id)) {
+            return text('No plan has that plan_id. Call plan first.', true);
+          }
           // The client comes first, so a failed sign-in keeps the plan.
           const github = await client();
           const plan = plans.get(id);

@@ -279,7 +279,15 @@ describe('device flow', () => {
     const store = new MemoryStore();
     store.write = () => Promise.reject(new Error('the keychain is locked'));
     const entered = Promise.withResolvers<undefined>();
-    const environment: FlowEnvironment = { fetch: login.fetch, now: login.now, sleep: () => entered.promise };
+    // Polls move the clock, so a second sign-in runs out rather than polling forever.
+    const environment: FlowEnvironment = {
+      fetch: login.fetch,
+      now: login.now,
+      sleep: async (milliseconds) => {
+        await entered.promise;
+        await login.sleep(milliseconds);
+      },
+    };
     const token = tokenOrSignIn(sources(store, environment));
 
     await rejection(token());
