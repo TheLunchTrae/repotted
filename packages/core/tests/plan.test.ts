@@ -206,6 +206,51 @@ describe('plan and apply', () => {
     });
   });
 
+  test('keeps live keys inside listed items, such as a status check app id', async () => {
+    const github = new FakeGitHub({
+      rulesets: [
+        {
+          id: 6,
+          name: 'Checks',
+          target: 'branch',
+          enforcement: 'active',
+          bypass_actors: [],
+          rules: [
+            {
+              type: 'required_status_checks',
+              parameters: {
+                strict_required_status_checks_policy: false,
+                required_status_checks: [{ context: 'quality', integration_id: 15368 }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const desired: Profile = {
+      rulesets: [
+        {
+          name: 'Checks',
+          rules: [
+            {
+              type: 'required_status_checks',
+              parameters: {
+                strict_required_status_checks_policy: true,
+                required_status_checks: [{ context: 'quality' }],
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    await applyPlan(github, await createPlan(github, repo, desired));
+    expect(github.state.rulesets[0]?.rules[0]?.parameters).toEqual({
+      strict_required_status_checks_policy: true,
+      required_status_checks: [{ context: 'quality', integration_id: 15368 }],
+    });
+  });
+
   test('shows every value a new ruleset gets, the API defaults included', async () => {
     const plan = await createPlan(new FakeGitHub(), repo, {
       rulesets: [{ name: 'Main', rules: [{ type: 'pull_request' }] }],
