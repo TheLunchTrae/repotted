@@ -2,8 +2,8 @@
 
 `--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `repos` and
 `status` prints exactly one JSON document on stdout, for scripts and programs
-such as the desktop app. Repotted writes nothing to stderr in this mode; anything that
-appears there, such as a deprecation notice from the GitHub client, is
+such as the desktop app. Repotted writes nothing to stderr in this mode;
+anything that appears there, such as a deprecation notice from the GitHub client, is
 diagnostic and not a failure. `--help` and `--version` still print text.
 
 - `capture` prints `{ repository, profile, warnings }`, where `profile` is the
@@ -13,7 +13,7 @@ diagnostic and not a failure. `--help` and `--version` still print text.
 - `apply` needs `--yes`, since a program has no terminal to confirm in, and
   prints `{ repository, applied }` with the changes it made.
 - `profile` prints `{ chain, profile, sources }`. `chain` is the profile
-  file, then each one it extends, as absolute paths. `profile` is the
+  file, then each one it extends, as real paths, with links resolved. `profile` is the
   resolved profile, and `sources` names the file that sets each value:
   `repository`, `merge` and `actions` by key, with `selected_actions` keys as
   `selected_actions.<key>` under `actions`, and `rulesets` and `environments`

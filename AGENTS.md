@@ -12,8 +12,7 @@ two sets for two readers:
 
 - `docs/user/`: how to install and use the desktop app, the CLI, and the MCP
   server, the profile format, and the JSON output scripts read. No
-  implementation detail: no source paths,
-  internal names, or design rationale.
+  implementation detail: no source paths, internal names, or design rationale.
 - `docs/developer/`: how Repotted works and why: the architecture and design
   decisions, local setup, the GitHub App, and releasing.
 

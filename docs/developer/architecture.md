@@ -141,7 +141,7 @@ null.
 prints for the commands that need no GitHub: signed-out `status`, `profiles`,
 `profile`, and profile saves through `--set`, `--ruleset`, and
 `--environment`. A change to those documents that the app doesn't expect
-fails the gate. The `capture`, `plan`, `repos`, `apply`, and `login` documents
+fails the gate. The `capture`, `plan`, `repos`, and `login` documents
 need GitHub, so the app's tests read hand-written examples of them, and only the
 strict parsing guards them against the real CLI.
 
