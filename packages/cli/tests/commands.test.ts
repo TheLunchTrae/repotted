@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -379,5 +379,72 @@ describe('account commands', () => {
     expect(result.code).toBe(0);
     expect(result.err).toContain('open https://github.com/login/device and enter the code ABCD-1234');
     expect(result.out).toContain('Signed in.');
+  });
+});
+
+describe('profile commands', () => {
+  test('profile resolves a profile as JSON and saves edits to its file', async () => {
+    const base = path.join(directory, 'base.yaml');
+    const file = path.join(directory, 'repotted.yaml');
+    await copyFile(path.join(examples, 'base.yaml'), base);
+    await copyFile(path.join(examples, 'repotted.yaml'), file);
+
+    const shown = await cli(new FakeGitHub(), 'profile', file, '--json');
+    expect(shown).toMatchObject({ code: 0, err: '' });
+    expect(document(shown)).toMatchObject({ chain: [file, base], sources: { repository: { has_projects: base } } });
+
+    const edited = await cli(
+      new FakeGitHub(),
+      'profile',
+      file,
+      '--set',
+      'repository.has_wiki=true',
+      '--set',
+      'merge.squash_merge_commit_title=PR_TITLE',
+      '--set',
+      'merge.squash_merge_commit_message=PR_BODY',
+      '--json',
+    );
+    expect(edited).toMatchObject({ code: 0, err: '' });
+    expect(document(edited)).toMatchObject({
+      profile: { repository: { has_wiki: true }, merge: { squash_merge_commit_title: 'PR_TITLE' } },
+      sources: { repository: { has_wiki: file } },
+    });
+    expect(await readFile(file, 'utf8')).toContain('has_wiki: true');
+
+    const removed = await cli(new FakeGitHub(), 'profile', file, '--unset', 'repository.has_wiki', '--json');
+    expect(document(removed)).not.toHaveProperty('profile.repository.has_wiki');
+    expect(await readFile(file, 'utf8')).not.toContain('has_wiki');
+  });
+
+  test('profile refuses an edit without a value, as misuse', async () => {
+    const result = await cli(
+      new FakeGitHub(),
+      'profile',
+      path.join(examples, 'base.yaml'),
+      '--set',
+      'repository.has_wiki',
+      '--json',
+    );
+
+    expect(result.code).toBe(2);
+    expect(document(result)).toMatchObject({ error: { kind: 'usage' } });
+  });
+
+  test('profiles lists a folder as JSON', async () => {
+    const result = await cli(new FakeGitHub(), 'profiles', examples, '--json');
+
+    expect(result).toMatchObject({ code: 0, err: '' });
+    expect(document(result)).toEqual({
+      profiles: [
+        { name: 'base', file: path.join(examples, 'base.yaml'), extends: null, problem: null },
+        {
+          name: 'repotted',
+          file: path.join(examples, 'repotted.yaml'),
+          extends: path.join(examples, 'base.yaml'),
+          problem: null,
+        },
+      ],
+    });
   });
 });
