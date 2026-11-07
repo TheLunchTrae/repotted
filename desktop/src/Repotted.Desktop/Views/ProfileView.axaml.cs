@@ -13,7 +13,9 @@ internal sealed partial class ProfileView : UserControl
     /// <summary>Puts focus in an entry's editor once it opens, so the keyboard follows the open.</summary>
     private void OnEntryNameAttached(object? sender, VisualTreeAttachmentEventArgs e)
     {
-        if (sender is TextBox box)
+        var tab = (sender as Visual)?.GetVisualAncestors().OfType<Control>()
+            .Select(control => control.DataContext).OfType<ProfileTabViewModel>().FirstOrDefault();
+        if (sender is TextBox box && tab?.TakeOpened() == true)
         {
             Dispatcher.UIThread.Post(() => box.Focus(), DispatcherPriority.Loaded);
         }

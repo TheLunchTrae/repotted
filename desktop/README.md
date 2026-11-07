@@ -26,7 +26,8 @@ entry that this profile alone names can be renamed. GitHub knows rulesets and
 environments by name, so the editor warns that applying a renamed entry
 creates a new one and leaves the old one as it is. Renaming an entry, or
 taking it out of the profile, frees its old name only once the profile is
-saved. While a capture runs, the profiles list leaves out the file
+saved. Saving writes each edited entry whole, so a change made to that entry
+in the file outside the app since it was opened is lost. While a capture runs, the profiles list leaves out the file
 it holds.
 
 A new profile starts empty, extends another profile in the folder, or is

@@ -126,6 +126,9 @@ internal sealed partial class ProfilesViewModel(
         Selected = Items.FirstOrDefault(item => item.Listing.File == Current?.File);
     }
 
+    /// <summary>A folder's path in one form, with no separator at its end, as a picker may give one.</summary>
+    private static string SameFolder(string folder) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
+
     /// <summary>A closed form gave up the name it held, so the open one may now take it.</summary>
     private void Released() => Creating?.Recheck();
 
@@ -205,7 +208,7 @@ internal sealed partial class ProfilesViewModel(
             var held = forms
                 .Select(form => form.Holding)
                 .OfType<string>()
-                .Where(file => string.Equals(Path.GetDirectoryName(file), folder, StringComparison.Ordinal))
+                .Where(file => string.Equals(SameFolder(Path.GetDirectoryName(file)!), SameFolder(folder), StringComparison.Ordinal))
                 .Select(Path.GetFileNameWithoutExtension)
                 .ToHashSet(StringComparer.Ordinal);
             var listings = listed.Where(listing => !held.Contains(listing.Name)).ToList();

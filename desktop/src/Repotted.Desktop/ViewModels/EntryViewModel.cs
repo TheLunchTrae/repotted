@@ -232,12 +232,27 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
     /// <summary>The entry last closed, so the list can put focus back on it.</summary>
     public EntryViewModel? Left { get; private set; }
 
+    /// <summary>Whether an entry has just opened, so its editor takes focus once.</summary>
+    private bool opened;
+
     partial void OnEditingChanged(EntryViewModel? oldValue, EntryViewModel? newValue)
     {
+        opened = newValue is not null;
         if (newValue is null)
         {
             Left = oldValue;
         }
+    }
+
+    /// <summary>
+    /// Whether the editor should take focus: once, when an entry opens, and not
+    /// when its view is only built again, such as on going back to the tab.
+    /// </summary>
+    public bool TakeOpened()
+    {
+        var was = opened;
+        opened = false;
+        return was;
     }
 
     public bool ShowList => Editing is null;

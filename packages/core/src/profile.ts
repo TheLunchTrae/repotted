@@ -366,9 +366,20 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** What a list item is known by: a rule's type, an entry's name, or a status check's context. */
-function identity(value: unknown): unknown {
-  return isRecord(value) ? (value['type'] ?? value['name'] ?? value['context']) : undefined;
+/**
+ * What a list item is known by: a pattern's name and type, a status check's
+ * context, a reviewer's id and type, or a rule's type.
+ */
+function identity(value: unknown): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  for (const key of ['name', 'context', 'id']) {
+    if (value[key] !== undefined) {
+      return JSON.stringify([key, value[key], value['type'] ?? null]);
+    }
+  }
+  return value['type'] === undefined ? undefined : JSON.stringify(['type', value['type']]);
 }
 
 /**
@@ -377,21 +388,22 @@ function identity(value: unknown): unknown {
  * its value changes, and a list keeps the items it still holds.
  */
 function updateMap(document: Document, map: YAMLMap, value: Readonly<Record<string, unknown>>): void {
-  // A list reuses each item that is the same or known by the same name, so
-  // those keep their comments wherever they move.
+  // A list reuses each item that is the same, then each known by the same
+  // name, so those keep their comments wherever they move.
   const updateSeq = (seq: YAMLSeq, items: readonly unknown[]): void => {
     const unused = [...seq.items];
-    seq.items = items.map((next) => {
-      const at = unused.findIndex((item) => {
-        const current: unknown = isNode(item) ? item.toJSON() : item;
-        return (
-          isDeepStrictEqual(current, next) || (identity(next) !== undefined && identity(current) === identity(next))
-        );
-      });
-      if (at === -1) {
+    const take = (matches: (current: unknown, next: unknown) => boolean, next: unknown): unknown => {
+      const at = unused.findIndex((item) => matches(isNode(item) ? item.toJSON() : item, next));
+      return at === -1 ? undefined : unused.splice(at, 1)[0];
+    };
+    const same = items.map((next) => take(isDeepStrictEqual, next));
+    seq.items = items.map((next, index) => {
+      const item =
+        same[index] ??
+        take((current, wanted) => identity(wanted) !== undefined && identity(current) === identity(wanted), next);
+      if (item === undefined) {
         return document.createNode(next);
       }
-      const [item] = unused.splice(at, 1);
       if (isMap(item) && isRecord(next)) {
         updateMap(document, item, next);
       }

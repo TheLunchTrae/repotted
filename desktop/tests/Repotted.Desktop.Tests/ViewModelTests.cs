@@ -983,28 +983,37 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaFact]
     public async Task A_capture_still_running_in_the_folder_left_behind_hides_nothing_in_the_new_one()
     {
-        var other = Path.Combine(folders.Profiles, "other");
+        // A picker may give the folder with a separator at its end.
+        var other = Path.Combine(folders.Profiles, "other") + Path.DirectorySeparatorChar;
         Directory.CreateDirectory(other);
         var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var held = Path.Combine(other, "held.yaml");
         var finish = new TaskCompletionSource();
         var cli = new FakeCli()
             .On(folders.List(), Documents.NoProfiles)
-            .On(folders.List(other), Listing(("repotted", Path.Combine(other, "repotted.yaml"), null)))
-            .On($"capture TheLunchTrae/repotted --output {made} --json", async _ =>
+            .On(folders.List(other), Listing(("held", held, null), ("repotted", Path.Combine(other, "repotted.yaml"), null)));
+        foreach (var (repository, file) in new[] { ("TheLunchTrae/repotted", made), ("TheLunchTrae/held", held) })
+        {
+            cli.On($"capture {repository} --output {file} --json", async _ =>
             {
                 await finish.Task;
                 return """{"error":{"kind":"error","message":"Not Found"}}""";
             });
-        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop { Folder = other }, folders.Settings, () => ["TheLunchTrae/repotted"]);
+        }
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop { Folder = other }, folders.Settings, () => ["TheLunchTrae/repotted", "TheLunchTrae/held"]);
         await profiles.RefreshCommand.ExecuteAsync(null);
         profiles.StartNew("TheLunchTrae/repotted");
         var capturing = profiles.Creating!.CreateCommand.ExecuteAsync(null);
 
         await profiles.ChangeFolderCommand.ExecuteAsync(null);
+        profiles.StartNew("TheLunchTrae/held");
+        var holding = profiles.Creating!.CreateCommand.ExecuteAsync(null);
+        await profiles.RefreshCommand.ExecuteAsync(null);
 
+        // The new folder hides only the file its own capture holds.
         Assert.Equal(["repotted"], profiles.Items.Select(item => item.Name));
         finish.SetResult();
-        await capturing;
+        await Task.WhenAll(capturing, holding);
     }
 
     [AvaloniaFact]

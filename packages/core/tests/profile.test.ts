@@ -399,6 +399,12 @@ describe('editProfile', () => {
         '  - name: C',
         'environments:',
         '  - name: staging # shared',
+        '    deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }',
+        '    branch_policies:',
+        '      - name: v* # releases',
+        '        type: tag',
+        '      - name: nightly-* # nightly builds',
+        '        type: tag',
         '',
       ].join('\n'),
     );
@@ -415,7 +421,15 @@ describe('editProfile', () => {
           ],
         },
       },
-      { list: 'environments', name: 'staging', entry: { name: 'Staging' } },
+      {
+        list: 'environments',
+        name: 'staging',
+        entry: {
+          name: 'Staging',
+          deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+          branch_policies: [{ name: 'nightly-*', type: 'tag' }],
+        },
+      },
     ]);
 
     expect(await readFile(file, 'utf8')).toBe(
@@ -431,6 +445,10 @@ describe('editProfile', () => {
         '  - name: C',
         'environments:',
         '  - name: Staging # shared',
+        '    deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }',
+        '    branch_policies:',
+        '      - name: nightly-* # nightly builds',
+        '        type: tag',
         '',
       ].join('\n'),
     );

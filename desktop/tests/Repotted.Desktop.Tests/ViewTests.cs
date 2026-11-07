@@ -261,9 +261,17 @@ public sealed class ViewTests : IDisposable
         window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
         Dispatcher.UIThread.RunJobs();
         var main = (RulesetEditorViewModel)editor.Tabs[3].Editing!.Editor;
-        Assert.Same(
-            window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "ruleset name"),
-            window.FocusManager?.GetFocusedElement());
+        var nameBox = window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "ruleset name");
+        Assert.Same(nameBox, window.FocusManager?.GetFocusedElement());
+
+        // Moving between tabs shows the open editor again, and leaves focus on the tabs.
+        window.GetVisualDescendants().OfType<ListBoxItem>().Single(item => item.DataContext == editor.Tabs[3]).Focus();
+        window.KeyPressQwerty(PhysicalKey.ArrowLeft, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(editor.Tabs[3], editor.SelectedTab);
+        Assert.IsType<ListBoxItem>(window.FocusManager?.GetFocusedElement());
         main.Enforcement.Options[1].ChooseCommand.Execute(null);
         text = Texts(window);
         Assert.Contains("Back to rulesets", text);
