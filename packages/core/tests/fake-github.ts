@@ -28,6 +28,7 @@ export interface FakeState {
   rulesetsUnavailable: boolean;
   environments: StoredEnvironment[];
   environmentsUnreadable: boolean;
+  branchPoliciesUnreadable: boolean;
 }
 
 export interface Call {
@@ -114,6 +115,7 @@ export class FakeGitHub implements GitHub {
       rulesetsUnavailable: false,
       environments: [],
       environmentsUnreadable: false,
+      branchPoliciesUnreadable: false,
       ...state,
     };
   }
@@ -283,6 +285,9 @@ export class FakeGitHub implements GitHub {
     }
     const policyId = match[3];
     if (method === 'GET' && policyId === undefined) {
+      if (this.state.branchPoliciesUnreadable) {
+        throw new GitHubError(403, 'Resource not accessible by integration');
+      }
       const { perPage, page } = paging(new URLSearchParams(query));
       return {
         total_count: found.branch_policies.length,

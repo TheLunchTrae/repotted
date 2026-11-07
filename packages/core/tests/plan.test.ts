@@ -463,6 +463,26 @@ describe('plan and apply', () => {
     expect(plan.warnings).toEqual([expect.stringContaining('Skipped environments')]);
   });
 
+  test('skips environments when it cannot read their deployment patterns', async () => {
+    const github = new FakeGitHub({
+      branchPoliciesUnreadable: true,
+      environments: [
+        {
+          name: 'npm',
+          wait_timer: 0,
+          prevent_self_review: false,
+          reviewers: [],
+          deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+          branch_policies: [],
+        },
+      ],
+    });
+    const plan = await createPlan(github, repo, { environments: [{ name: 'npm', wait_timer: 5 }] });
+
+    expect(plan.changes).toEqual([]);
+    expect(plan.warnings).toEqual([expect.stringContaining('Skipped environments')]);
+  });
+
   test('updates an environment named in another case, keeping what the profile leaves out', async () => {
     const github = new FakeGitHub({
       environments: [

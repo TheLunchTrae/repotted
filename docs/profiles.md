@@ -31,9 +31,9 @@ the plan shows each of them. Other rule types need their required parameters
 in the profile.
 
 Environments also match by name, without case, as GitHub does, and
-`{ name: <name>, absent: true }` deletes one, with its secrets and variables. A setting the profile leaves out keeps its
-live value; a new environment gets no wait timer, no reviewers, and lets every
-branch deploy. `reviewers` lists users and teams by id, as
+`{ name: <name>, absent: true }` deletes one, with its secrets and variables.
+A setting the profile leaves out keeps its live value; a new environment gets
+no wait timer, no reviewers, and lets every branch deploy. `reviewers` lists users and teams by id, as
 `{ type: User, id: 123 }`, and replaces the live list whole.
 `branch_policies` lists the branch and tag name patterns that may deploy, as
 `{ name: 'v*', type: tag }`, where `type` defaults to `branch`. It needs
