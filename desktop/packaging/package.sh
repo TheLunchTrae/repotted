@@ -47,7 +47,7 @@ mkdir -p "$out"
 echo "Publishing Repotted $version for $rid"
 dotnet publish "$project" --configuration Release --runtime "$rid" --self-contained \
   -p:PublishReadyToRun=true -p:RestoreLockedMode=true -p:ContinuousIntegrationBuild=true \
-  -p:DebugType=none -p:GenerateDocumentationFile=false --output "$publish"
+  -p:DebugType=none -p:PublishDocumentationFile=false --output "$publish"
 
 # The app finds the CLI beside itself as repotted-cli; see RepottedCli.Locate.
 cli="$publish/repotted-cli$exe"
