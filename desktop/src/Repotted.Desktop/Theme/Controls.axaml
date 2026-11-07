@@ -87,8 +87,9 @@
     <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
   </Style>
   <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource RailBrush}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource RailBrush}" />
+    <Setter Property="Background" Value="{DynamicResource PrimaryPressedBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryPressedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource OnPrimaryPressedBrush}" />
   </Style>
   <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />

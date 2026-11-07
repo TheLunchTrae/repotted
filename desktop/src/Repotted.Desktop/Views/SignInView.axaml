@@ -21,8 +21,6 @@
       <StackPanel Spacing="12" IsVisible="{Binding ShowStart}">
         <Button Classes="primary" HorizontalAlignment="Stretch" Content="Sign in with GitHub"
                 IsVisible="{Binding CanSignIn}" Command="{Binding SignInCommand}" />
-        <Button Classes="primary" HorizontalAlignment="Stretch" Content="Check again"
-                IsVisible="{Binding !CanSignIn}" Command="{Binding CheckAgainCommand}" />
         <Border IsVisible="{Binding HasNotice}" Background="{DynamicResource DriftBgBrush}" CornerRadius="8"
                 Padding="12,8">
           <TextBlock Classes="small" TextWrapping="Wrap" Text="{Binding Notice}"

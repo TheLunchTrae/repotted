@@ -5,8 +5,7 @@ namespace Repotted.Desktop.Tests;
 /// <summary>
 /// Reads the real CLI's output, so a change to its JSON that the app cannot
 /// read fails here. Runs only with REPOTTED_CLI set, such as to
-/// packages/cli/src/main.ts; <c>mise run csharp:contract</c> sets it, and runs
-/// signed out.
+/// packages/cli/src/main.ts; <c>mise run csharp:test</c> sets it.
 /// </summary>
 public sealed class ContractTests
 {

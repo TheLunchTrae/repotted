@@ -129,7 +129,7 @@ public sealed class ViewTests
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
-    public async Task A_rejected_token_variable_offers_to_check_again(string theme)
+    public async Task A_rejected_token_variable_offers_no_sign_in(string theme)
     {
         var window = await Show(theme, new FakeCli().On(
             "status --json",
@@ -137,7 +137,7 @@ public sealed class ViewTests
             exitCode: 1));
 
         var text = Texts(window);
-        Assert.Contains("Check again", text);
+        Assert.Contains(text, line => line.EndsWith("then reopen Repotted.", StringComparison.Ordinal));
         Assert.DoesNotContain("Sign in with GitHub", text);
         Save(window, $"sign-in-variable-{theme}");
     }

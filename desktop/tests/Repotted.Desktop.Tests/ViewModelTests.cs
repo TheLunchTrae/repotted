@@ -64,7 +64,7 @@ public sealed class ViewModelTests
     }
 
     [AvaloniaFact]
-    public async Task A_rejected_token_variable_says_to_fix_it_and_check_again()
+    public async Task A_rejected_token_variable_says_to_replace_it_and_reopen()
     {
         var cli = new FakeCli().On(
             "status --json",
@@ -76,12 +76,9 @@ public sealed class ViewModelTests
 
         var signIn = Assert.IsType<SignInViewModel>(main.Page);
         Assert.StartsWith("GitHub rejected the token in GH_TOKEN.", signIn.Notice, StringComparison.Ordinal);
+        Assert.EndsWith("replace or remove GH_TOKEN, then reopen Repotted.", signIn.Notice, StringComparison.Ordinal);
         // Signing in would change nothing while the variable comes first.
         Assert.False(signIn.CanSignIn);
-
-        cli.On("status --json", Documents.SignedIn).On("repos --json", Documents.Repositories);
-        await signIn.CheckAgainCommand.ExecuteAsync(null);
-        Assert.IsType<ShellViewModel>(main.Page);
     }
 
     [AvaloniaFact]

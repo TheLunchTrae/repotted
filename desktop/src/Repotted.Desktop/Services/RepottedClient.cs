@@ -84,7 +84,7 @@ internal sealed class RepottedClient(ICli cli)
                 if (parsed is { Event: "code", VerificationUri: { } uri, UserCode: { } code, ExpiresAt: { } expires })
                 {
                     onCode(new DeviceCode(
-                        Link(uri) ?? throw new CliException($"The sign-in gave a link that is not a GitHub address: {uri}"),
+                        Link(uri) ?? throw new CliException($"The sign-in gave a link that is not an https address: {uri}"),
                         code,
                         expires));
                 }
@@ -95,8 +95,6 @@ internal sealed class RepottedClient(ICli cli)
         {
             case { Event: "signed_in" }:
                 return;
-            case { Error: { } error }:
-                throw new CliException(error.Message);
             case null:
                 throw new CliException(FailureMessage(run.Output) ?? Crash(run) ?? "The sign-in did not start.");
             default:

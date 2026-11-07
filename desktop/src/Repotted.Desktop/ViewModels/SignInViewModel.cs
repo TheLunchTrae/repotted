@@ -24,7 +24,7 @@ internal sealed partial class SignInViewModel(
         { Rejected: false, Problems.Count: 0 } => null,
         { Rejected: false } => string.Join(' ', account.Problems),
         { TokenVariable: { } variable } =>
-            $"GitHub rejected the token in {variable}. Repotted uses that variable before any sign-in: fix the token on GitHub and check again, or remove the variable and reopen Repotted.",
+            $"GitHub rejected the token in {variable}. Repotted uses that variable before any sign-in, and reads it only at launch: replace or remove {variable}, then reopen Repotted.",
         _ => "GitHub no longer accepts your last sign-in. Sign in again.",
     };
 
@@ -95,9 +95,6 @@ internal sealed partial class SignInViewModel(
         }
         await checkAgain().ConfigureAwait(true);
     }
-
-    [RelayCommand]
-    private Task CheckAgainAsync() => checkAgain();
 
     [RelayCommand]
     private Task OpenGitHubAsync() => Code is { } code ? desktop.OpenUrlAsync(code.VerificationUri) : Task.CompletedTask;
