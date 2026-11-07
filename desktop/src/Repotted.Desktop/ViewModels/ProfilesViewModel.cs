@@ -32,6 +32,8 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
 
     private IReadOnlyList<ProfileItemViewModel> all = [];
 
+    private int refreshes;
+
     public ObservableCollection<ProfileItemViewModel> Items { get; } = [];
 
     [ObservableProperty]
@@ -73,16 +75,28 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
 
     partial void OnFilterChanged(string value) => ApplyFilter();
 
+    /// <summary>Why the app could not remember the folder; the folder is still used until the app closes.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNotice))]
+    public partial string? Notice { get; set; }
+
+    public bool HasNotice => Notice is not null;
+
     partial void OnSelectedChanged(ProfileItemViewModel? value)
     {
-        if (value is null)
+        if (value is not null)
         {
-            return;
+            Open(value.Listing);
         }
-        if (!editors.TryGetValue(value.Listing.File, out var editor))
+    }
+
+    /// <summary>Shows a profile's editor, made and loaded the first time the profile opens.</summary>
+    private void Open(ProfileListingDocument listing)
+    {
+        if (!editors.TryGetValue(listing.File, out var editor))
         {
-            editor = new ProfileViewModel(client, value.Listing);
-            editors[value.Listing.File] = editor;
+            editor = new ProfileViewModel(client, listing);
+            editors[listing.File] = editor;
             _ = editor.LoadCommand.ExecuteAsync(null);
         }
         Current = editor;
@@ -91,6 +105,9 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
     [RelayCommand]
     public async Task RefreshAsync()
     {
+        // A refresh started later, such as for a newly chosen folder, wins over one still running.
+        var refresh = ++refreshes;
+        var folder = Folder;
         Loading = true;
         Error = null;
         try
@@ -98,10 +115,19 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
             // The default folder is the app's to make; a folder the user picked already exists.
             if (settings.Load().ProfilesFolder is null)
             {
-                Directory.CreateDirectory(Folder);
+                Directory.CreateDirectory(folder);
             }
-            var listings = await client.ProfilesAsync(Folder, CancellationToken.None).ConfigureAwait(true);
-            var names = listings.ToDictionary(listing => listing.File, listing => listing.Name, StringComparer.Ordinal);
+            var listings = await client.ProfilesAsync(folder, CancellationToken.None).ConfigureAwait(true);
+            if (refresh != refreshes)
+            {
+                return;
+            }
+            // A linked file is listed under its real path, so two names can share one file.
+            var names = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var listing in listings)
+            {
+                names.TryAdd(listing.File, listing.Name);
+            }
             all =
             [
                 .. listings.Select(listing => new ProfileItemViewModel(
@@ -118,21 +144,41 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
                     editors.Remove(file);
                 }
             }
-            var keep = Selected?.Name;
+            var keep = Current?.File;
+            Current = null;
             ApplyFilter();
-            Selected = Items.FirstOrDefault(item => item.Name == keep) ?? Items.FirstOrDefault();
-            if (Selected is null)
+            if (Items.FirstOrDefault(item => item.Listing.File == keep) is { } shown)
             {
-                Current = null;
+                Selected = shown;
+                Open(shown.Listing);
+            }
+            else if (all.FirstOrDefault(item => item.Listing.File == keep) is { } hidden)
+            {
+                // The search hides it, but it stays open.
+                Open(hidden.Listing);
+            }
+            else
+            {
+                Selected = Items.FirstOrDefault();
+                if (Selected is not null)
+                {
+                    Open(Selected.Listing);
+                }
             }
         }
         catch (Exception error) when (error is CliException or CliNotFoundException or IOException or UnauthorizedAccessException)
         {
-            Error = error.Message;
+            if (refresh == refreshes)
+            {
+                Error = error.Message;
+            }
         }
         finally
         {
-            Loading = false;
+            if (refresh == refreshes)
+            {
+                Loading = false;
+            }
         }
     }
 
@@ -143,7 +189,15 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
         {
             return;
         }
-        settings.Save(settings.Load() with { ProfilesFolder = folder });
+        Notice = null;
+        try
+        {
+            settings.Save(settings.Load() with { ProfilesFolder = folder });
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            Notice = $"Repotted could not remember this folder for next time: {error.Message}";
+        }
         Folder = folder;
         OnPropertyChanged(nameof(EmptyMessage));
         Selected = null;

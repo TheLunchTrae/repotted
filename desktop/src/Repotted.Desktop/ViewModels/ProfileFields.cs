@@ -75,11 +75,11 @@ internal static class ProfileFields
         ]),
         new("Actions", "actions",
         [
-            new("Policy", "Whether workflows run, and which actions they may use.",
+            new("Policy", "Whether workflows run, and which actions they may use. Allowed action patterns are edited in the YAML.",
             [
                 Switch("actions", "enabled", "Actions"),
                 Choice("actions", "allowed_actions", "Allowed actions",
-                    ("All", "all"), ("This repository's", "local_only"), ("Selected", "selected")),
+                    ("All", "all"), ("This owner's", "local_only"), ("Selected", "selected")),
                 Switch("actions", "selected_actions.github_owned_allowed", "Actions by GitHub"),
                 Switch("actions", "selected_actions.verified_allowed", "Actions by verified creators"),
                 Switch("actions", "sha_pinning_required", "Require pinning to a full commit SHA"),

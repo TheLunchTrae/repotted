@@ -31,7 +31,7 @@
   </Style>
 
   <!-- Keyboard focus: a 2px ring, set 2px outside the control. -->
-  <Style Selector="Button, ListBoxItem">
+  <Style Selector="Button, ToggleButton, ListBoxItem">
     <Setter Property="FocusAdorner">
       <FocusAdornerTemplate>
         <Border BorderThickness="2" BorderBrush="{DynamicResource FocusBrush}" Margin="-4" CornerRadius="10" />
@@ -359,7 +359,9 @@
     <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
-  <Style Selector="Button.seg">
+  <Style Selector="ToggleButton.seg">
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="MinHeight" Value="28" />
     <Setter Property="Padding" Value="12,0" />
     <Setter Property="CornerRadius" Value="0" />
@@ -369,16 +371,20 @@
     <Setter Property="FontSize" Value="13.5" />
     <Setter Property="FontWeight" Value="Normal" />
   </Style>
-  <Style Selector="Button.seg:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector="ToggleButton.seg /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
+  </Style>
+  <Style Selector="ToggleButton.seg:pointerover /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
     <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
   </Style>
-  <Style Selector="Button.seg.on /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector="ToggleButton.seg.on /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource FgBrush}" />
     <Setter Property="Foreground" Value="{DynamicResource BgBrush}" />
     <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
-  <Style Selector="Button.seg.on.dim /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector="ToggleButton.seg.on.dim /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
     <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
   </Style>

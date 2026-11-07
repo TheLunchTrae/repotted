@@ -54,11 +54,20 @@ internal sealed class AppSettings(string folder)
         }
     }
 
+    /// <summary>Replaces the settings file whole; throws an IO or access error when it cannot.</summary>
     public void Save(SettingsDocument settings)
     {
         Directory.CreateDirectory(folder);
         var temporary = $"{File}.tmp";
-        System.IO.File.WriteAllText(temporary, JsonSerializer.Serialize(settings, SettingsJson.Default.SettingsDocument));
-        System.IO.File.Move(temporary, File, overwrite: true);
+        try
+        {
+            System.IO.File.WriteAllText(temporary, JsonSerializer.Serialize(settings, SettingsJson.Default.SettingsDocument));
+            System.IO.File.Move(temporary, File, overwrite: true);
+        }
+        catch
+        {
+            System.IO.File.Delete(temporary);
+            throw;
+        }
     }
 }

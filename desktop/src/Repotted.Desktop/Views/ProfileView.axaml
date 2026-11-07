@@ -21,9 +21,12 @@
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:OptionViewModel">
-                  <Button Classes="seg" Classes.on="{Binding Selected}" Classes.dim="{Binding Dim}"
-                          Content="{Binding Label}" Command="{Binding ChooseCommand}"
-                          AutomationProperties.Name="{Binding AccessibleName}" />
+                  <!-- A toggle, so screen readers hear which option is chosen. -->
+                  <ToggleButton Classes="seg" Classes.on="{Binding Selected}" Classes.dim="{Binding Dim}"
+                                IsChecked="{Binding Selected, Mode=OneWay}"
+                                Content="{Binding Label}" Command="{Binding ChooseCommand}"
+                                AutomationProperties.Name="{Binding AccessibleName}"
+                                AutomationProperties.HelpText="{Binding Note}" />
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
@@ -66,7 +69,8 @@
         <Button Classes="quiet" Content="Try again" HorizontalAlignment="Left" Command="{Binding LoadCommand}" />
       </StackPanel>
 
-      <Grid ColumnDefinitions="*,Auto" Margin="32,16,32,24" IsVisible="{Binding ShowEditor}">
+      <Grid ColumnDefinitions="*,Auto" Margin="32,16,32,24" IsVisible="{Binding ShowEditor}"
+            IsEnabled="{Binding !Saving}">
         <DockPanel>
           <!-- Tabs, each with how many values the profile manages there -->
           <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">

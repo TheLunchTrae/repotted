@@ -64,8 +64,12 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowEditor))]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     public partial bool Loading { get; set; }
+
+    /// <summary>Whether a save is running; the editor stays on screen, and nothing else can change it.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(DiscardCommand))]
+    public partial bool Saving { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError), nameof(ShowEditor))]
@@ -123,9 +127,11 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
         Error = null;
         try
         {
-            Show(await client.ProfileAsync(File, CancellationToken.None).ConfigureAwait(true));
+            var profile = await client.ProfileAsync(File, CancellationToken.None).ConfigureAwait(true);
+            Show(profile, await BaseAsync(profile).ConfigureAwait(true));
         }
-        catch (Exception error) when (error is CliException or CliNotFoundException)
+        // A load runs unawaited when a profile opens, so every failure shows here.
+        catch (Exception error)
         {
             Error = error.Message;
         }
@@ -139,25 +145,26 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
     private async Task SaveAsync()
     {
         var changes = Settings.Select(setting => setting.Change).OfType<ProfileChange>().ToList();
-        Loading = true;
+        Saving = true;
         SaveError = null;
         try
         {
-            Show(await client.SaveProfileAsync(File, changes, CancellationToken.None).ConfigureAwait(true));
+            var profile = await client.SaveProfileAsync(File, changes, CancellationToken.None).ConfigureAwait(true);
+            Show(profile, await BaseAsync(profile).ConfigureAwait(true));
         }
-        catch (Exception error) when (error is CliException or CliNotFoundException)
+        catch (Exception error)
         {
             SaveError = error.Message;
         }
         finally
         {
-            Loading = false;
+            Saving = false;
         }
     }
 
-    private bool CanSave() => HasChanges && !Loading;
+    private bool CanSave() => HasChanges && !Saving;
 
-    [RelayCommand(CanExecute = nameof(HasChanges))]
+    [RelayCommand(CanExecute = nameof(CanSave))]
     private void Discard()
     {
         foreach (var setting in Settings.Where(setting => setting.Changed))
@@ -167,10 +174,31 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
         SaveError = null;
     }
 
+    /// <summary>
+    /// The profile this one extends, resolved alone, which gives each value a
+    /// setting falls back to when this profile stops setting it. A base that
+    /// is not a valid profile by itself gives none.
+    /// </summary>
+    private async Task<ResolvedProfile?> BaseAsync(ResolvedProfile profile)
+    {
+        if (profile.Chain.Count < 2)
+        {
+            return null;
+        }
+        try
+        {
+            return await client.ProfileAsync(profile.Chain[1], CancellationToken.None).ConfigureAwait(true);
+        }
+        catch (CliException)
+        {
+            return null;
+        }
+    }
+
     [RelayCommand]
     private void ToggleYaml() => ShowYaml = !ShowYaml;
 
-    private void Show(ResolvedProfile profile)
+    private void Show(ResolvedProfile profile, ResolvedProfile? @base)
     {
         var selected = SelectedTab?.Name;
         string? Base(string file) =>
@@ -194,13 +222,12 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
                         [
                             .. group.Fields.Select(field =>
                             {
-                                var file = sources.GetValueOrDefault(field.Key);
-                                return new SettingViewModel(
-                                    field,
-                                    SettingViewModel.Find(values, field.Key),
-                                    Origin(file),
-                                    file is null ? null : Base(file),
-                                    OnSettingChanged);
+                                var saved = SettingViewModel.Find(values, field.Key);
+                                var origin = Origin(sources.GetValueOrDefault(field.Key));
+                                var inherited = origin == SettingOrigin.Inherited
+                                    ? new InheritedValue(saved!, Base(sources[field.Key])!)
+                                    : Inherit(@base, section.Section, field.Key);
+                                return new SettingViewModel(field, saved, origin, inherited, OnSettingChanged);
                             }),
                         ])),
                 ],
@@ -233,6 +260,19 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
                 : [];
             return new ProfileTabViewModel(name) { Entries = entries };
         }
+    }
+
+    /// <summary>The value a base profile gives a setting, and the file that sets it there.</summary>
+    private static InheritedValue? Inherit(ResolvedProfile? @base, string section, string key)
+    {
+        if (@base is null
+            || !@base.Sources[section].TryGetValue(key, out var file)
+            || !@base.Values.TryGetProperty(section, out var values)
+            || SettingViewModel.Find(values, key) is not { } value)
+        {
+            return null;
+        }
+        return new InheritedValue(value, Path.GetFileNameWithoutExtension(file));
     }
 
     private void OnSettingChanged()

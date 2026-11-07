@@ -41,6 +41,17 @@ internal sealed class FakeCli : ICli
         return this;
     }
 
+    /// <summary>Answers <paramref name="command"/> once <paramref name="ready"/> completes, like a slow command line.</summary>
+    public FakeCli OnceReady(string command, string output, Task ready)
+    {
+        answers[command] = async (_, cancellationToken) =>
+        {
+            await ready.WaitAsync(cancellationToken).ConfigureAwait(true);
+            return new CliRun(0, output, "");
+        };
+        return this;
+    }
+
     public bool Answers(string command) => answers.ContainsKey(command);
 
     public FakeCli Missing(string command)
@@ -96,9 +107,11 @@ internal sealed class Folders : IDisposable
     {
         Profiles = Path.Combine(root, "profiles");
         Directory.CreateDirectory(Profiles);
-        Settings = new AppSettings(Path.Combine(root, "settings"));
+        Settings = new AppSettings(SettingsFolder);
         Settings.Save(new SettingsDocument(Profiles));
     }
+
+    public string SettingsFolder => Path.Combine(root, "settings");
 
     public string Profiles { get; }
 
@@ -133,7 +146,8 @@ internal static class Documents
 
     /// <summary>
     /// orgs over base: the wiki and squash merges set in orgs, issues and
-    /// rebase merges from base, and nothing else managed.
+    /// rebase merges from base, and nothing else managed. Base allows squash
+    /// merges, which orgs turns off.
     /// </summary>
     public static string Resolved(string own, string @base, bool wiki = false) =>
         $$$"""
@@ -151,11 +165,14 @@ internal static class Documents
            "environments":{"npm":{{{Json(own)}}} } } }
         """;
 
-    /// <summary>base alone: issues on, set in base itself.</summary>
+    /// <summary>base alone: issues on, and rebase and squash merges allowed.</summary>
     public static string ResolvedBase(string @base) =>
         $$$"""
-        {"chain":[{{{Json(@base)}}}],"profile":{"repository":{"has_issues":true}},
-         "sources":{"repository":{"has_issues":{{{Json(@base)}}} },"merge":{},"actions":{},"rulesets":{},"environments":{} } }
+        {"chain":[{{{Json(@base)}}}],
+         "profile":{"repository":{"has_issues":true},"merge":{"allow_rebase_merge":true,"allow_squash_merge":true}},
+         "sources":{"repository":{"has_issues":{{{Json(@base)}}} },
+           "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(@base)}}} },
+           "actions":{},"rulesets":{},"environments":{} } }
         """;
 
     private static string Json(string text) => $"\"{System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(text)}\"";

@@ -372,10 +372,13 @@ public sealed class ViewModelTests : IDisposable
         Find(editor, "allow_squash_merge").ResetCommand.Execute(null);
 
         Assert.Equal("3 unsaved changes", editor.ChangesLabel);
-        Assert.Equal("Removed when saved", Find(editor, "allow_squash_merge").Note);
+        // Without orgs' value, base's applies, so removing it turns squash merges on.
+        Assert.Equal("From base when saved", Find(editor, "allow_squash_merge").Note);
+        Assert.Equal("On", Find(editor, "allow_squash_merge").Options.Single(option => option.Selected).Label);
         await editor.SaveCommand.ExecuteAsync(null);
 
-        Assert.Equal(save, cli.Calls[^1]);
+        Assert.Single(cli.Calls, call => call.Contains("--set", StringComparison.Ordinal) || call.Contains("--unset", StringComparison.Ordinal));
+        Assert.Contains(save, cli.Calls);
         Assert.False(editor.HasChanges);
         Assert.Equal("On", Find(editor, "has_wiki").Options.Single(option => option.Selected).Label);
     }
@@ -436,6 +439,83 @@ public sealed class ViewModelTests : IDisposable
         Assert.True(profiles.ShowEmpty);
         Assert.Equal($"No profiles in {other} yet.", profiles.EmptyMessage);
     }
+
+    [AvaloniaFact]
+    public async Task Choosing_after_a_removal_shows_the_new_value()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        var wiki = Find(profiles.Current!, "has_wiki");
+        wiki.ResetCommand.Execute(null);
+        // Base leaves the wiki out, so removing it leaves it unmanaged.
+        Assert.Equal("Removed when saved", wiki.Note);
+        Assert.False(wiki.Managed);
+        var raised = new List<string?>();
+        wiki.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        wiki.Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
+
+        Assert.Contains(nameof(SettingViewModel.Note), raised);
+        Assert.Contains(nameof(SettingViewModel.OwnAfterSave), raised);
+        Assert.Equal("Changed", wiki.Note);
+    }
+
+    [AvaloniaFact]
+    public async Task A_file_listed_under_two_names_opens_once()
+    {
+        var file = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var listing = $$"""{"profiles":[{"name":"alias","file":{{Quote(file)}},"extends":null,"problem":null},{"name":"base","file":{{Quote(file)}},"extends":null,"problem":null}]}""";
+        var cli = new FakeCli().On(folders.List(), listing).On($"profile {file} --json", Documents.ResolvedBase(file));
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings);
+
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Null(profiles.Error);
+        Assert.Equal(["alias", "base"], profiles.Items.Select(item => item.Name));
+        Assert.Equal(file, profiles.Current?.File);
+    }
+
+    [AvaloniaFact]
+    public async Task A_folder_the_app_cannot_remember_is_still_used()
+    {
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        var cli = new FakeCli().On(folders.List(), Documents.NoProfiles).On(folders.List(other), Documents.NoProfiles);
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop { Folder = other }, folders.Settings);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        // A directory where the settings file goes makes every save fail.
+        File.Delete(Path.Combine(folders.SettingsFolder, "settings.json"));
+        Directory.CreateDirectory(Path.Combine(folders.SettingsFolder, "settings.json"));
+
+        await profiles.ChangeFolderCommand.ExecuteAsync(null);
+
+        Assert.Equal(other, profiles.Folder);
+        Assert.StartsWith("Repotted could not remember this folder", profiles.Notice, StringComparison.Ordinal);
+        Assert.Empty(Directory.GetFiles(folders.SettingsFolder));
+    }
+
+    [AvaloniaFact]
+    public async Task A_slow_listing_of_the_old_folder_does_not_replace_the_new_one()
+    {
+        var own = folders.Write("orgs.yaml", "repository: { has_wiki: false }\n");
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        var slow = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .OnceReady(folders.List(), $$"""{"profiles":[{"name":"orgs","file":{{Quote(own)}},"extends":null,"problem":null}]}""", slow.Task)
+            .On(folders.List(other), Documents.NoProfiles);
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop { Folder = other }, folders.Settings);
+
+        var first = profiles.RefreshAsync();
+        await profiles.ChangeFolderCommand.ExecuteAsync(null);
+        slow.SetResult();
+        await first;
+
+        Assert.Equal(other, profiles.Folder);
+        Assert.Empty(profiles.Items);
+        Assert.False(profiles.Loading);
+    }
+
+    private static string Quote(string text) => $"\"{System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(text)}\"";
 
     private async Task<(ProfilesViewModel Profiles, FakeCli Cli, (string Own, string Base) Files)> OpenOrgs()
     {

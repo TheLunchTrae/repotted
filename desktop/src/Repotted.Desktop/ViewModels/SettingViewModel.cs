@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace Repotted.Desktop.ViewModels;
@@ -18,20 +17,32 @@ internal enum SettingOrigin
     Inherited,
 }
 
+/// <summary>The value a setting would have without this profile, and the profile that sets it.</summary>
+internal sealed record InheritedValue(JsonNode Value, string From);
+
 /// <summary>
 /// One setting row: its saved value and where that comes from, and the change
-/// waiting to be saved, if any.
+/// waiting to be saved, if any. Removing a value the profile sets falls back
+/// to <see cref="Inherited"/>, the value its base profile gives, when there is one.
 /// </summary>
 internal sealed partial class SettingViewModel : ViewModelBase
 {
     private readonly Action changed;
 
-    public SettingViewModel(SettingField field, JsonNode? saved, SettingOrigin origin, string? baseName, Action changed)
+    /// <summary>The value to save, or null to stop setting it here; meaningful only while <see cref="Changed"/>.</summary>
+    private JsonNode? pending;
+
+    public SettingViewModel(
+        SettingField field,
+        JsonNode? saved,
+        SettingOrigin origin,
+        InheritedValue? inherited,
+        Action changed)
     {
         Field = field;
         Saved = saved;
         Origin = origin;
-        BaseName = baseName;
+        Inherited = inherited;
         this.changed = changed;
         Options = [.. field.Options.Select(option => new OptionViewModel(this, option))];
     }
@@ -46,21 +57,16 @@ internal sealed partial class SettingViewModel : ViewModelBase
 
     public SettingOrigin Origin { get; }
 
-    /// <summary>The profile it inherits the value from.</summary>
-    public string? BaseName { get; }
+    /// <summary>What the profiles this one extends give, or null when they leave it out.</summary>
+    public InheritedValue? Inherited { get; }
 
     public IReadOnlyList<OptionViewModel> Options { get; }
 
     /// <summary>Whether a change waits to be saved.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Value), nameof(Managed), nameof(OwnAfterSave), nameof(Note), nameof(CanReset), nameof(ResetLabel), nameof(Removing))]
-    public partial bool Changed { get; private set; }
+    public bool Changed { get; private set; }
 
-    /// <summary>The value to save, or null to stop managing it; meaningful only while <see cref="Changed"/>.</summary>
-    private JsonNode? pending;
-
-    /// <summary>The value shown: the change waiting to be saved, or else the saved one.</summary>
-    public JsonNode? Value => Changed ? pending : Saved;
+    /// <summary>The value shown: what the profile will hold once saved.</summary>
+    public JsonNode? Value => !Changed ? Saved : pending ?? Inherited?.Value;
 
     /// <summary>Whether the profile, once saved, names a value.</summary>
     public bool Managed => Value is not null;
@@ -68,18 +74,16 @@ internal sealed partial class SettingViewModel : ViewModelBase
     /// <summary>Whether the profile file itself will hold the value: the rail is solid.</summary>
     public bool OwnAfterSave => Changed ? pending is not null : Origin == SettingOrigin.Own;
 
-    /// <summary>Whether it will come from a base profile: the rail is pale.</summary>
-    public bool InheritedAfterSave => !Changed && Origin == SettingOrigin.Inherited;
-
-    /// <summary>A change that stops managing a value this profile set.</summary>
-    public bool Removing => Changed && pending is null;
+    /// <summary>Whether a base profile will give the value: the rail is pale.</summary>
+    public bool InheritedAfterSave => Changed ? pending is null && Inherited is not null : Origin == SettingOrigin.Inherited;
 
     public string Note => (Changed, pending, Origin) switch
     {
+        (true, null, _) when Inherited is not null => $"From {Inherited.From} when saved",
         (true, null, _) => "Removed when saved",
         (true, _, _) => "Changed",
         (false, _, SettingOrigin.Own) => "Set here",
-        (false, _, SettingOrigin.Inherited) => $"From {BaseName}",
+        (false, _, SettingOrigin.Inherited) => $"From {Inherited?.From}",
         _ => "Not managed",
     };
 
@@ -101,9 +105,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
             Undo();
             return;
         }
-        pending = option.Value.DeepClone();
-        Changed = true;
-        Refresh();
+        Set(changed: true, option.Value.DeepClone());
     }
 
     /// <summary>Undoes a change, or else stops setting the value in this profile.</summary>
@@ -115,27 +117,28 @@ internal sealed partial class SettingViewModel : ViewModelBase
             Undo();
             return;
         }
-        pending = null;
-        Changed = true;
-        Refresh();
+        Set(changed: true, null);
     }
 
-    public void Undo()
-    {
-        pending = null;
-        Changed = false;
-        Refresh();
-    }
+    public void Undo() => Set(changed: false, null);
 
-    private void Refresh()
+    /// <summary>Records the change and tells the row, its options and the profile, which all show it.</summary>
+    private void Set(bool changed, JsonNode? value)
     {
-        OnPropertyChanged(nameof(InheritedAfterSave));
-        OnPropertyChanged(nameof(ResetName));
+        Changed = changed;
+        pending = value;
+        foreach (var name in (string[])[
+            nameof(Changed), nameof(Value), nameof(Managed), nameof(OwnAfterSave), nameof(InheritedAfterSave),
+            nameof(Note), nameof(CanReset), nameof(ResetLabel), nameof(ResetName),
+        ])
+        {
+            OnPropertyChanged(name);
+        }
         foreach (var option in Options)
         {
             option.Refresh();
         }
-        changed();
+        this.changed();
     }
 
     /// <summary>Reads the value at <paramref name="key"/> in a section, where a dot steps into a nested object.</summary>
@@ -165,6 +168,9 @@ internal sealed partial class OptionViewModel(SettingViewModel setting, SettingO
 
     public string AccessibleName => $"{setting.Label}: {option.Label}";
 
+    /// <summary>Where the setting's value comes from, for screen readers.</summary>
+    public string Note => setting.Note;
+
     [RelayCommand]
     private void Choose() => setting.Choose(option);
 
@@ -172,5 +178,6 @@ internal sealed partial class OptionViewModel(SettingViewModel setting, SettingO
     {
         OnPropertyChanged(nameof(Selected));
         OnPropertyChanged(nameof(Dim));
+        OnPropertyChanged(nameof(Note));
     }
 }

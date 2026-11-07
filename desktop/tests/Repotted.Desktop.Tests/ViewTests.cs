@@ -1,6 +1,8 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -198,6 +200,12 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("1 unsaved change", text);
         Assert.Contains("Save profile", text);
         Save(window, $"profile-{theme}");
+
+        // Screen readers hear which option is chosen, and where the value comes from.
+        var wiki = window.GetVisualDescendants().OfType<ToggleButton>()
+            .Where(toggle => AutomationProperties.GetName(toggle)?.StartsWith("Wiki: ", StringComparison.Ordinal) == true)
+            .Select(toggle => (Name: AutomationProperties.GetName(toggle), toggle.IsChecked, Help: AutomationProperties.GetHelpText(toggle)));
+        Assert.Equal([("Wiki: On", (bool?)false, "Set here"), ("Wiki: Off", true, "Set here")], wiki);
     }
 
     [AvaloniaTheory]
