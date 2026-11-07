@@ -88,6 +88,27 @@ Plan again to see where the repository stands.
 A repository whose GitHub plan does not support rulesets gets a warning, and the
 other sections still plan. So does a token that cannot list environments.
 
+## JSON output
+
+`--json` on `capture`, `plan` and `apply` prints exactly one JSON document on
+stdout, for programs such as the desktop app. Repotted writes nothing to stderr
+in this mode; anything that appears there, such as a deprecation notice from
+the GitHub client, is diagnostic and not a failure. `--help` and `--version`
+still print text.
+
+- `capture` prints `{ repository, profile, warnings }`, where `profile` is the
+  profile the YAML would hold. It does not combine with `--output`.
+- `plan` prints the plan, the same document `--out` saves.
+- `apply` needs `--yes`, since a program has no terminal to confirm in, and
+  prints `{ repository, applied }` with the changes it made.
+
+A failure prints `{ error: { kind, message } }` and exits 1, or 2 for misuse,
+which has `kind: usage`. A stale plan has `kind: stale_plan` and `current`, the
+plan the repository needs now. A write that fails partway has
+`kind: apply_failed`, with the changes in `applied` and the one in `failed`.
+Anything else, such as a missing token, an invalid profile or a network error,
+has `kind: error`.
+
 ## Authentication
 
 `repotted login` signs in with the Repotted GitHub App through the device
