@@ -8,12 +8,14 @@
 - `packages/cli`: the published `repotted` package, the CLI and the MCP
   server. Its build bundles core into one file.
 - `examples/`: example profiles that the tests also load.
+- `desktop/`: the desktop app, in C# with Avalonia. It runs the CLI with
+  `--json` for everything it does. See [desktop/README.md](../desktop/README.md).
 
 ## Setup
 
-[mise](https://mise.jdx.dev/) pins the tools: Bun, gitleaks, and Python for
-the hygiene task. `.config/mise/` holds the config, the tasks, and the
-lockfile.
+[mise](https://mise.jdx.dev/) pins the tools: Bun, the .NET SDK for the
+desktop app, gitleaks, and Python for the hygiene task. `.config/mise/`
+holds the config, the tasks, and the lockfile.
 
 ```sh
 mise install

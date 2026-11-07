@@ -1,0 +1,58 @@
+# The desktop app in desktop/. The SDK is pinned here, so CI and local runs
+# build with the same analyzers and format with the same dotnet format.
+[tools]
+dotnet = "10.0.403"
+
+[tasks."csharp:lock"]
+description = "Refresh the desktop app's NuGet lock files"
+dir = "{{config_root}}/desktop"
+run = "dotnet restore Repotted.Desktop.slnx --force-evaluate"
+
+[tasks."csharp:restore"]
+description = "Restore the desktop app's locked NuGet packages"
+dir = "{{config_root}}/desktop"
+run = "dotnet restore Repotted.Desktop.slnx --locked-mode"
+
+[tasks."csharp:fmt"]
+description = "Format the desktop app"
+depends = ["csharp:restore"]
+dir = "{{config_root}}/desktop"
+run = "dotnet format Repotted.Desktop.slnx --no-restore"
+
+[tasks."csharp:fmt:check"]
+description = "Check the desktop app's formatting"
+depends = ["csharp:restore"]
+dir = "{{config_root}}/desktop"
+run = "dotnet format Repotted.Desktop.slnx --verify-no-changes --no-restore"
+
+[tasks."csharp:lint"]
+description = "Build the desktop app with its analyzers, warnings as errors"
+depends = ["csharp:restore"]
+dir = "{{config_root}}/desktop"
+run = "dotnet build Repotted.Desktop.slnx --no-restore --configuration Release -p:ContinuousIntegrationBuild=true"
+
+[tasks."csharp:test"]
+description = "Run the desktop app's tests, including the check against the CLI's JSON"
+# The contract test runs the CLI from source with Bun, without the token
+# variables or the GitHub CLI's sign-in, so in CI it reads a signed-out
+# status without calling GitHub. A `repotted login` sign-in in the keychain
+# still applies: on such a machine it calls GitHub and needs the network.
+depends = ["csharp:lint", "ts:install"]
+dir = "{{config_root}}/desktop"
+run = """
+set -eu
+no_gh="$(mktemp -d)"
+trap 'rm -rf "$no_gh"' EXIT
+env -u GITHUB_TOKEN -u GH_TOKEN GH_CONFIG_DIR="$no_gh" REPOTTED_CLI="{{config_root}}/packages/cli/src/main.ts" \
+  dotnet test Repotted.Desktop.slnx --no-build --configuration Release
+"""
+run_windows = "set GITHUB_TOKEN=& set GH_TOKEN=& set GH_CONFIG_DIR=%TEMP%\\repotted-no-gh& set REPOTTED_CLI={{config_root}}\\packages\\cli\\src\\main.ts& dotnet test Repotted.Desktop.slnx --no-build --configuration Release"
+
+[tasks."csharp:standards"]
+description = "Run the desktop app's standards workflow with autofixes"
+depends = ["csharp:fmt"]
+
+[tasks."csharp:standards:check"]
+description = "Run the desktop app's standards CI gate"
+depends = ["csharp:fmt:check", "csharp:lint"]
+run = [{ task = "csharp:test" }]

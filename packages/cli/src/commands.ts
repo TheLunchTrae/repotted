@@ -227,6 +227,11 @@ async function repos(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
+/** Where to install the Repotted App on more repositories; null when another App signs in. */
+function appInstallUrl(env: NodeJS.ProcessEnv): string | null {
+  return usesRepottedApp(env) ? installUrl : null;
+}
+
 /** The token variable that is set and used before the sign-in, if any. */
 function tokenVariable(env: NodeJS.ProcessEnv): string | null {
   return tokenVariables(env)[0] ?? null;
@@ -234,9 +239,20 @@ function tokenVariable(env: NodeJS.ProcessEnv): string | null {
 
 async function status(io: Io, args: string[]): Promise<number> {
   const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } });
-  const signedOut = (message: string): number => {
+  const signedOut = (
+    reason: 'not_signed_in' | 'rejected',
+    message: string,
+    problems: readonly string[] = [],
+  ): number => {
     if (values.json === true) {
-      json(io, { signed_in: false, message });
+      json(io, {
+        signed_in: false,
+        reason,
+        message,
+        problems,
+        token_variable: tokenVariable(io.env),
+        install_url: appInstallUrl(io.env),
+      });
     } else {
       io.out(`${message}\n`);
     }
@@ -247,12 +263,13 @@ async function status(io: Io, args: string[]): Promise<number> {
     user = await currentUser(await io.github());
   } catch (error) {
     if (error instanceof NotSignedInError) {
-      return signedOut(error.message);
+      return signedOut('not_signed_in', error.message, error.problems);
     }
     // GitHub rejects a revoked or mistyped token.
     if (error instanceof GitHubError && error.status === 401) {
       const variable = tokenVariable(io.env);
       return signedOut(
+        'rejected',
         variable === null
           ? 'GitHub rejected the sign-in. Run repotted login again.'
           : `GitHub rejected the token in ${variable}.`,
@@ -262,7 +279,13 @@ async function status(io: Io, args: string[]): Promise<number> {
   }
   const variable = tokenVariable(io.env);
   if (values.json === true) {
-    json(io, { signed_in: true, login: user.login, name: user.name, token_variable: variable });
+    json(io, {
+      signed_in: true,
+      login: user.login,
+      name: user.name,
+      token_variable: variable,
+      install_url: appInstallUrl(io.env),
+    });
   } else {
     io.out(`Signed in to GitHub as ${user.login}${variable === null ? '' : `, with ${variable}`}.\n`);
   }
@@ -291,7 +314,7 @@ async function login(io: Io, args: string[]): Promise<number> {
     }
     json(io, {
       event: 'signed_in',
-      install_url: usesRepottedApp(io.env) ? installUrl : null,
+      install_url: appInstallUrl(io.env),
       token_variable: tokenVariable(io.env),
     });
     return 0;

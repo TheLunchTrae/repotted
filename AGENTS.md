@@ -188,6 +188,29 @@ exports and keep module bindings immutable. Tests live in each package's
   mise tasks for lost coverage, and justify every relaxation.
 - A behavior change needs a test that fails without it.
 
+## C# and the desktop app
+
+`desktop/` is the desktop app: C# on .NET 10 with Avalonia. The `csharp:*`
+mise tasks run from there, and `csharp:standards:check` is part of
+`standards:check`. mise pins the exact SDK, so the analyzers and
+`dotnet format` match CI; `desktop/global.json` only sets the floor for
+builds outside mise.
+
+- `Directory.Build.props` holds the compiler and analyzer contract: warnings
+  are errors under `AnalysisMode=Recommended`, with code style enforced in the
+  build. Fix the cause of a diagnostic; an exception is a per-site
+  `[SuppressMessage]` with a real `Justification`.
+- Package versions live in `Directory.Packages.props`. Run
+  `mise run csharp:lock` after changing them and commit the lock files; CI
+  restores in locked mode.
+- The app does no GitHub work itself: it runs the CLI with `--json`.
+  `csharp:test` runs the contract test against the CLI's source, so a change
+  to the JSON the app reads fails there.
+- Keep asynchronous work owned and cancellable, and avoid `async void`. A CLI
+  run must not outlive what started it.
+- View tests draw pages headlessly in light and dark. Set
+  `REPOTTED_SCREENSHOTS` to a folder to save them for review.
+
 ## Git
 
 - Keep generated and local-only files out of commits.

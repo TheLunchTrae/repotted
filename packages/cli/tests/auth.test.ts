@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
-import { app, resolveToken, startSignIn, type TokenSources, type TokenStore, tokenOrSignIn } from '../src/auth.js';
+import {
+  app,
+  NotSignedInError,
+  resolveToken,
+  startSignIn,
+  type TokenSources,
+  type TokenStore,
+  tokenOrSignIn,
+} from '../src/auth.js';
 import type { FlowEnvironment, StoredToken } from '../src/device-flow.js';
 
 const hour = 60 * 60 * 1000;
@@ -157,6 +165,11 @@ describe('resolveToken', () => {
 
     const error = await rejection(resolveToken(sources(store, login)));
     expect(String(error)).toContain('The Repotted sign-in expired. Not signed in to GitHub. Run repotted login');
+    if (!(error instanceof NotSignedInError)) {
+      throw new Error('expected a NotSignedInError');
+    }
+    expect(error.problems).toHaveLength(1);
+    expect(error.problems[0]).toContain('The Repotted sign-in expired.');
     expect(await resolveToken(sources(store, login, { ghToken: () => Promise.resolve('gho_cli') }))).toBe('gho_cli');
   });
 });
