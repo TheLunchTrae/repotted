@@ -12,6 +12,7 @@ import {
   describeFailure,
   formatPlan,
   type GitHub,
+  GitHubError,
   listRepositories,
   loadProfile,
   parsePlan,
@@ -35,6 +36,8 @@ import { createServer } from './mcp.js';
 /** What the CLI reaches outside itself: GitHub, the terminal, and its own version. */
 export interface Io {
   readonly version: string;
+  /** The environment, for the token variables and the client ID override. */
+  readonly env: NodeJS.ProcessEnv;
   github(): Promise<GitHub>;
   out(text: string): void;
   err(text: string): void;
@@ -224,28 +227,44 @@ async function repos(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
+/** The token variable that is set and used before the sign-in, if any. */
+function tokenVariable(env: NodeJS.ProcessEnv): string | null {
+  return tokenVariables(env)[0] ?? null;
+}
+
 async function status(io: Io, args: string[]): Promise<number> {
   const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } });
-  let github: GitHub;
-  try {
-    github = await io.github();
-  } catch (error) {
-    if (!(error instanceof NotSignedInError)) {
-      throw error;
-    }
+  const signedOut = (message: string): number => {
     if (values.json === true) {
-      json(io, { signed_in: false, message: error.message });
+      json(io, { signed_in: false, message });
     } else {
-      io.out(`${error.message}\n`);
+      io.out(`${message}\n`);
     }
     return 1;
+  };
+  let user: Awaited<ReturnType<typeof currentUser>>;
+  try {
+    user = await currentUser(await io.github());
+  } catch (error) {
+    if (error instanceof NotSignedInError) {
+      return signedOut(error.message);
+    }
+    // GitHub rejects a revoked or mistyped token.
+    if (error instanceof GitHubError && error.status === 401) {
+      const variable = tokenVariable(io.env);
+      return signedOut(
+        variable === null
+          ? 'GitHub rejected the sign-in. Run repotted login again.'
+          : `GitHub rejected the token in ${variable}.`,
+      );
+    }
+    throw error;
   }
-  const user = await currentUser(github);
-  const overrides = tokenVariables();
+  const variable = tokenVariable(io.env);
   if (values.json === true) {
-    json(io, { signed_in: true, login: user.login, name: user.name, token_variables: overrides });
+    json(io, { signed_in: true, login: user.login, name: user.name, token_variable: variable });
   } else {
-    io.out(`Signed in to GitHub as ${user.login}${overrides.length > 0 ? `, with ${overrides.join(' and ')}` : ''}.\n`);
+    io.out(`Signed in to GitHub as ${user.login}${variable === null ? '' : `, with ${variable}`}.\n`);
   }
   return 0;
 }
@@ -261,22 +280,30 @@ async function login(io: Io, args: string[]): Promise<number> {
       user_code: signIn.code.userCode,
       expires_at: new Date(signIn.code.expiresAt).toISOString(),
     });
-    await signIn.finished;
+    try {
+      await signIn.finished;
+    } catch (error) {
+      json(io, {
+        event: 'error',
+        error: { kind: 'error', message: error instanceof Error ? error.message : String(error) },
+      });
+      return 1;
+    }
     json(io, {
       event: 'signed_in',
-      install_url: usesRepottedApp() ? installUrl : null,
-      token_variables: tokenVariables(),
+      install_url: usesRepottedApp(io.env) ? installUrl : null,
+      token_variable: tokenVariable(io.env),
     });
     return 0;
   }
   io.err(`To sign in to GitHub, ${enterCode(signIn.code)}.\n`);
   await signIn.finished;
   io.out(
-    usesRepottedApp()
+    usesRepottedApp(io.env)
       ? `Signed in. Install the Repotted GitHub App on the repositories it should manage: ${installUrl}\n`
       : 'Signed in. Install your GitHub App on the repositories it should manage.\n',
   );
-  const overrides = tokenVariables();
+  const overrides = tokenVariables(io.env);
   if (overrides.length > 0) {
     io.err(`${overrides.join(' and ')} ${overrides.length === 1 ? 'is' : 'are'} set and used before this sign-in.\n`);
   }

@@ -50,6 +50,7 @@ async function cliWith(github: FakeGitHub, overrides: Partial<Io>, ...argv: stri
   let err = '';
   const io: Io = {
     version: '0.0.0',
+    env: {},
     github: () => Promise.resolve(github),
     out: (text) => {
       out += text;
@@ -197,7 +198,7 @@ describe('account commands', () => {
   const account = {
     login: 'lunch',
     name: 'Lunch',
-    installations: [{ id: 1, repositories: [{ full_name: 'lunch/app', private: true }] }],
+    installations: [{ id: 1, repositories: [{ full_name: 'lunch/app', private: true, permissions: { admin: true } }] }],
     repositories: [],
   };
   const signedOut = {
@@ -215,6 +216,32 @@ describe('account commands', () => {
     });
 
     expect(await cli(github, 'repos')).toMatchObject({ code: 0, out: 'lunch/app (private)\n' });
+  });
+
+  test('repos says why a list is empty', async () => {
+    const none = await cli(new FakeGitHub({ account: { ...account, installations: [] } }), 'repos');
+    expect(none).toMatchObject({ code: 0, out: '' });
+    expect(none.err).toContain('not installed on any repositories');
+
+    const admin = await cli(new FakeGitHub({ account: { login: 'lunch', name: null, repositories: [] } }), 'repos');
+    expect(admin.err).toBe('This token administers no repositories.\n');
+  });
+
+  test('status treats a token GitHub rejects as signed out', async () => {
+    const github = new FakeGitHub({ account });
+    github.request = (_method, path) =>
+      path === '/user' ? Promise.reject(new GitHubError(401, 'Bad credentials')) : Promise.resolve(undefined);
+
+    const result = await cli(github, 'status', '--json');
+
+    expect(result).toMatchObject({ code: 1, err: '' });
+    expect(document(result)).toEqual({
+      signed_in: false,
+      message: 'GitHub rejected the sign-in. Run repotted login again.',
+    });
+
+    const fromVariable = await cliWith(github, { env: { GH_TOKEN: 'token' } }, 'status', '--json');
+    expect(document(fromVariable)).toEqual({ signed_in: false, message: 'GitHub rejected the token in GH_TOKEN.' });
   });
 
   test('status names the account, or says it is signed out with exit 1', async () => {
@@ -242,6 +269,7 @@ describe('account commands', () => {
     let printed = '';
     const running = run(['login', '--json'], {
       version: '0.0.0',
+      env: {},
       github: () => Promise.reject(new Error('not used')),
       out: (text) => {
         printed += text;
@@ -269,5 +297,42 @@ describe('account commands', () => {
       expires_at: '2026-01-01T00:00:00.000Z',
     });
     expect(lines[1]).toMatchObject({ event: 'signed_in' });
+  });
+
+  const code = {
+    deviceCode: 'device',
+    userCode: 'ABCD-1234',
+    verificationUri: 'https://github.com/login/device',
+    interval: 5,
+    expiresAt: Date.UTC(2026, 0, 1),
+  };
+
+  test('login --json ends with an error line when the sign-in fails after the code', async () => {
+    const result = await cliWith(
+      new FakeGitHub(),
+      { signIn: () => Promise.resolve({ code, finished: Promise.reject(new Error('The code expired.')) }) },
+      'login',
+      '--json',
+    );
+
+    expect(result).toMatchObject({ code: 1, err: '' });
+    const lines = result.out
+      .trimEnd()
+      .split('\n')
+      .map((line): unknown => JSON.parse(line));
+    expect(lines[0]).toMatchObject({ event: 'code' });
+    expect(lines[1]).toEqual({ event: 'error', error: { kind: 'error', message: 'The code expired.' } });
+  });
+
+  test('login prints the code on stderr and where to install the App once signed in', async () => {
+    const result = await cliWith(
+      new FakeGitHub(),
+      { signIn: () => Promise.resolve({ code, finished: Promise.resolve() }) },
+      'login',
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.err).toContain('open https://github.com/login/device and enter the code ABCD-1234');
+    expect(result.out).toContain('Signed in.');
   });
 });

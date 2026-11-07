@@ -15,6 +15,7 @@ const { version } = z
 
 process.exitCode = await run(process.argv.slice(2), {
   version,
+  env: process.env,
   github: async () => createGitHub(await resolveToken()),
   signIn: () => startSignIn(),
   out: (text) => process.stdout.write(text),

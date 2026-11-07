@@ -102,17 +102,22 @@ still print text.
 - `apply` needs `--yes`, since a program has no terminal to confirm in, and
   prints `{ repository, applied }` with the changes it made.
 - `repos` prints `{ source, repositories }`, each repository as
-  `{ full_name, private, archived }`, sorted by name. With a Repotted App
-  sign-in, `source` is `installations` and the list holds the repositories the
-  App is installed on. Any other token gets `admin` and the repositories it
-  administers.
-- `status` prints `{ signed_in: true, login, name, token_variables }`, where
-  `token_variables` names `GITHUB_TOKEN` or `GH_TOKEN` when one is set and used
-  first. Signed out, it prints `{ signed_in: false, message }` and exits 1.
+  `{ full_name, private, archived }`, sorted by name: the repositories your
+  account administers. With a Repotted App sign-in, `source` is
+  `installations` and the list holds those the App is installed on. GitHub
+  refuses the installation list to any other token, which gets `admin` and
+  every repository the account administers; the token itself may not be
+  allowed to change them (see [Authentication](#authentication)).
+- `status` prints `{ signed_in: true, login, name, token_variable }`, where
+  `token_variable` names `GITHUB_TOKEN` or `GH_TOKEN` when one is set and used
+  before the sign-in, and is null otherwise. Signed out, or with a token GitHub
+  rejects, it prints `{ signed_in: false, message }` and exits 1.
 - `login` prints JSON Lines, one document per line: first
   `{ event: code, verification_uri, user_code, expires_at }` for the user to
-  enter, then `{ event: signed_in, install_url, token_variables }` once they
-  have. `install_url` is null when another App's client ID is in use.
+  enter, then `{ event: signed_in, install_url, token_variable }` once they
+  have. `install_url` is null when another App's client ID is in use. If the
+  sign-in fails after the code, such as when the code expires, the second line
+  is `{ event: error, error: { kind, message } }` and `login` exits 1.
 
 A failure prints `{ error: { kind, message } }` and exits 1, or 2 for misuse,
 which has `kind: usage`. A stale plan has `kind: stale_plan` and `current`, the

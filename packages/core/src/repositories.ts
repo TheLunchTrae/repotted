@@ -58,6 +58,10 @@ function describe(entry: z.infer<typeof repository>): Repository {
   return { full_name: entry.full_name, private: entry.private, archived: entry.archived ?? false };
 }
 
+function administered(entry: z.infer<typeof repository>): boolean {
+  return entry.permissions?.admin === true;
+}
+
 function byName(left: Repository, right: Repository): number {
   return left.full_name.localeCompare(right.full_name);
 }
@@ -72,7 +76,9 @@ async function installationRepositories(
       const page = installationRepositoryPage.parse(await github.request('GET', url));
       return { items: page.repositories, total: page.total_count };
     });
-    for (const entry of repositories) {
+    // An installation lists the repositories the user can read; only those
+    // they administer can have their settings changed.
+    for (const entry of repositories.filter(administered)) {
       found.set(entry.full_name, describe(entry));
     }
   }
@@ -84,14 +90,15 @@ async function adminRepositories(github: GitHub): Promise<Repository[]> {
     '/user/repos?affiliation=owner,collaborator,organization_member&sort=full_name',
     async (url) => ({ items: z.array(repository).parse(await github.request('GET', url)) }),
   );
-  return repositories.filter((entry) => entry.permissions?.admin === true).map(describe);
+  return repositories.filter(administered).map(describe);
 }
 
 /**
- * Lists the repositories Repotted can manage with this token, by name. A
- * GitHub App user token reaches the repositories the App is installed on;
- * GitHub refuses the installation list to any other token, which then gets
- * the repositories it administers.
+ * Lists the repositories Repotted can manage with this token, by name: those
+ * the account administers. A GitHub App user token reaches them through the
+ * App's installations. GitHub refuses the installation list to any other
+ * token with a 403, so it gets every repository the account administers,
+ * which the token itself may not be allowed to change.
  */
 export async function listRepositories(github: GitHub): Promise<RepositoryList> {
   let installations: { id: number }[];
@@ -101,7 +108,8 @@ export async function listRepositories(github: GitHub): Promise<RepositoryList> 
       return { items: page.installations, total: page.total_count };
     });
   } catch (error) {
-    if (error instanceof GitHubError && (error.status === 403 || error.status === 404)) {
+    // A rate limit is a 403 too, and must not quietly switch the source.
+    if (error instanceof GitHubError && error.status === 403 && !/rate limit/iu.test(error.message)) {
       return { source: 'admin', repositories: (await adminRepositories(github)).sort(byName) };
     }
     throw error;

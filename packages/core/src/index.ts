@@ -1,4 +1,4 @@
-export { createGitHub, parseRepo } from './github.js';
+export { createGitHub, GitHubError, parseRepo } from './github.js';
 export type { GitHub } from './github.js';
 export {
   applyPlan,
