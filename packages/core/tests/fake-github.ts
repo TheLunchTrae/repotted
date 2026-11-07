@@ -263,7 +263,8 @@ export class FakeGitHub implements GitHub {
     query: string,
     body: unknown,
   ): unknown {
-    const found = this.state.environments.find((item) => item.name === name);
+    // GitHub matches environment names without case.
+    const found = this.state.environments.find((item) => item.name.toLowerCase() === name.toLowerCase());
     if (match[2] === undefined) {
       if (method === 'PUT') {
         return this.saveEnvironment(name, found, body === undefined ? {} : record(body));
@@ -337,7 +338,7 @@ export class FakeGitHub implements GitHub {
       };
     }
     const stored: StoredEnvironment = {
-      name,
+      name: found?.name ?? name,
       wait_timer: typeof body['wait_timer'] === 'number' ? body['wait_timer'] : 0,
       prevent_self_review: body['prevent_self_review'] === true,
       reviewers,

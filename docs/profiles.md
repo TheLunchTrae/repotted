@@ -30,8 +30,8 @@ and no bypass actors, and new `pull_request`, `required_status_checks` and
 the plan shows each of them. Other rule types need their required parameters
 in the profile.
 
-Environments also match by name, and `{ name: <name>, absent: true }` deletes
-one, with its secrets and variables. A setting the profile leaves out keeps its
+Environments also match by name, without case, as GitHub does, and
+`{ name: <name>, absent: true }` deletes one, with its secrets and variables. A setting the profile leaves out keeps its
 live value; a new environment gets no wait timer, no reviewers, and lets every
 branch deploy. `reviewers` lists users and teams by id, as
 `{ type: User, id: 123 }`, and replaces the live list whole.
@@ -39,8 +39,10 @@ branch deploy. `reviewers` lists users and teams by id, as
 `{ name: 'v*', type: tag }`, where `type` defaults to `branch`. It needs
 `deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }`
 in the same entry. When a profile lists `branch_policies`, it manages the
-list: patterns it does not list are deleted. `prevent_self_review: true` needs
-a reviewer, because GitHub keeps it on the required-reviewers rule.
+list: patterns it does not list are deleted, and each may appear once.
+`prevent_self_review: true` needs a reviewer, because GitHub keeps it on the
+required-reviewers rule, so the plan refuses it on an environment that would
+have none, and a profile that removes every reviewer turns it off.
 
 Merge settings are checked against what GitHub accepts, first in the profile
 alone and again at plan time with the profile laid over the live settings: at
@@ -100,9 +102,9 @@ settings under Applications.
 
 The App reaches only repositories it is installed on, so install it on the
 ones Repotted manages; on an organization, an owner installs it or approves
-the request. It asks for the Administration permission: capture and plan read
-with it, and apply writes with it, within what your own account may do.
-Listing environments also needs the Actions read permission.
+the request. It asks for the Administration permission, with which capture
+and plan read and apply writes, within what your own account may do, and the
+Actions read permission, which listing environments needs.
 
 Repotted takes the first token it finds:
 

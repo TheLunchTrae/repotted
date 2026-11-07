@@ -173,6 +173,18 @@ export const environment = z
         path: ['branch_policies'],
       });
     }
+    const patterns = new Set<string>();
+    for (const [index, policy] of (value.branch_policies ?? []).entries()) {
+      const key = `${policy.type ?? 'branch'} ${policy.name}`;
+      if (patterns.has(key)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Pattern "${key}" appears more than once`,
+          path: ['branch_policies', index, 'name'],
+        });
+      }
+      patterns.add(key);
+    }
     // GitHub keeps prevent_self_review on its required-reviewers rule, which needs a reviewer.
     if (value.prevent_self_review === true && value.reviewers?.length === 0) {
       context.addIssue({
@@ -193,22 +205,28 @@ const absentEnvironment = z
 
 export const environmentEntry = z.union([absentEnvironment, environment]);
 
+/** GitHub treats environment names as case-insensitive, so entries pair by this key. */
+export function environmentKey(name: string): string {
+  return name.toLowerCase();
+}
+
 function addDuplicateNameIssues(
   entries: readonly { name: string }[],
   kind: string,
   path: string,
   context: z.RefinementCtx,
+  key: (name: string) => string = (name) => name,
 ): void {
   const names = new Set<string>();
   for (const [index, entry] of entries.entries()) {
-    if (names.has(entry.name)) {
+    if (names.has(key(entry.name))) {
       context.addIssue({
         code: 'custom',
         message: `${kind} "${entry.name}" appears more than once`,
         path: [path, index, 'name'],
       });
     }
-    names.add(entry.name);
+    names.add(key(entry.name));
   }
 }
 
@@ -227,7 +245,7 @@ export const profile = z
       context.addIssue({ code: 'custom', message, path: ['merge'] });
     }
     addDuplicateNameIssues(value.rulesets ?? [], 'Ruleset', 'rulesets', context);
-    addDuplicateNameIssues(value.environments ?? [], 'Environment', 'environments', context);
+    addDuplicateNameIssues(value.environments ?? [], 'Environment', 'environments', context, environmentKey);
   });
 
 /** A profile file, which may extend another profile file. */

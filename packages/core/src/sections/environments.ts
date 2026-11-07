@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { Change, SectionPlan } from '../change.js';
 import { type GitHub, GitHubError, repoPath, type RepoRef } from '../github.js';
 import { type FieldChange, matches } from '../match.js';
-import type { Environment, EnvironmentEntry } from '../schema.js';
+import { type Environment, type EnvironmentEntry, environmentKey } from '../schema.js';
 
 type Reviewer = NonNullable<Environment['reviewers']>[number];
 
@@ -97,24 +97,11 @@ function settingsFrom(listed: z.infer<typeof environmentList>['environments'][nu
   };
 }
 
-/** Reads the repository's environments with the branch and tag patterns that may deploy to each. */
-export async function readEnvironments(github: GitHub, repo: RepoRef): Promise<LiveEnvironments> {
-  let listed: z.infer<typeof environmentList>['environments'];
-  try {
-    listed = await readPages(`${repoPath(repo)}/environments`, async (url) => {
-      const page = environmentList.parse(await github.request('GET', url));
-      return { total: page.total_count, items: page.environments };
-    });
-  } catch (error) {
-    // A GitHub App without the Actions read permission gets a 403 here.
-    if (error instanceof GitHubError && error.status === 403) {
-      return {
-        available: false,
-        reason: `GitHub refused to list environments (${error.message}); reading them needs the Actions read permission`,
-      };
-    }
-    throw error;
-  }
+async function readAll(github: GitHub, repo: RepoRef): Promise<LiveEnvironment[]> {
+  const listed = await readPages(`${repoPath(repo)}/environments`, async (url) => {
+    const page = environmentList.parse(await github.request('GET', url));
+    return { total: page.total_count, items: page.environments };
+  });
   const environments: LiveEnvironment[] = [];
   for (const entry of listed) {
     const settings = settingsFrom(entry);
@@ -130,7 +117,24 @@ export async function readEnvironments(github: GitHub, repo: RepoRef): Promise<L
         : [];
     environments.push({ name: entry.name, settings, branchPolicies });
   }
-  return { available: true, environments };
+  return environments;
+}
+
+/** Reads the repository's environments with the branch and tag patterns that may deploy to each. */
+export async function readEnvironments(github: GitHub, repo: RepoRef): Promise<LiveEnvironments> {
+  try {
+    return { available: true, environments: await readAll(github, repo) };
+  } catch (error) {
+    // A GitHub App without the Actions read permission gets a 403 listing
+    // environments or their deployment patterns.
+    if (error instanceof GitHubError && error.status === 403) {
+      return {
+        available: false,
+        reason: `GitHub refused to read environments (${error.message}); reading them needs the Actions read permission`,
+      };
+    }
+    throw error;
+  }
 }
 
 /** An environment as a profile describes it, for capture. */
@@ -154,10 +158,13 @@ function isAbsent(entry: EnvironmentEntry): entry is Extract<EnvironmentEntry, {
  * environment.
  */
 function writeSettings(entry: Environment, current: EnvironmentSettings | undefined): EnvironmentSettings {
+  const reviewers = entry.reviewers ?? current?.reviewers ?? [];
   return {
     wait_timer: entry.wait_timer ?? current?.wait_timer ?? 0,
-    prevent_self_review: entry.prevent_self_review ?? current?.prevent_self_review ?? false,
-    reviewers: entry.reviewers ?? current?.reviewers ?? [],
+    // Removing every reviewer removes the rule that holds prevent_self_review.
+    prevent_self_review:
+      entry.prevent_self_review ?? (reviewers.length === 0 ? false : current?.prevent_self_review) ?? false,
+    reviewers,
     deployment_branch_policy:
       entry.deployment_branch_policy === undefined
         ? (current?.deployment_branch_policy ?? null)
@@ -178,6 +185,14 @@ function bodyChanges(body: EnvironmentSettings, current: EnvironmentSettings | u
     .map(([field, to]: [string, unknown]) => ({ field, from: before.get(field), to }));
 }
 
+/** Environment settings that GitHub would not keep once the profile is laid over the live ones. */
+export class EnvironmentSettingsError extends Error {
+  constructor(name: string) {
+    super(`Environment "${name}" sets prevent_self_review but would have no reviewers; add reviewers to the profile`);
+    this.name = 'EnvironmentSettingsError';
+  }
+}
+
 /**
  * Environment writes come first, so custom branch policies are on before
  * their name patterns are added. Patterns the profile drops are deleted
@@ -192,33 +207,38 @@ export function planEnvironments(
   if (!live.available) {
     return { changes: [], warnings: [`Skipped environments: ${live.reason}`] };
   }
-  const byName = new Map(live.environments.map((entry) => [entry.name, entry]));
+  const byName = new Map(live.environments.map((entry) => [environmentKey(entry.name), entry]));
   const writes: Change[] = [];
   const policyDeletes: Change[] = [];
   const policyCreates: Change[] = [];
   const deletes: Change[] = [];
 
   for (const entry of desired) {
-    const current = byName.get(entry.name);
-    const path = environmentPath(repo, entry.name);
+    const current = byName.get(environmentKey(entry.name));
+    // GitHub matches names without case, so requests use the name it holds.
+    const name = current?.name ?? entry.name;
+    const path = environmentPath(repo, name);
     if (isAbsent(entry)) {
       if (current !== undefined) {
         deletes.push({
           section: 'environments',
           action: 'delete',
-          target: entry.name,
+          target: name,
           fields: [],
           request: { method: 'DELETE', path },
         });
       }
       continue;
     }
+    const body = writeSettings(entry, current?.settings);
+    if (body.prevent_self_review && body.reviewers.length === 0) {
+      throw new EnvironmentSettingsError(name);
+    }
     if (current === undefined || !matches(desiredSettings(entry), current.settings)) {
-      const body = writeSettings(entry, current?.settings);
       writes.push({
         section: 'environments',
         action: current === undefined ? 'create' : 'update',
-        target: entry.name,
+        target: name,
         fields: bodyChanges(body, current?.settings),
         request: { method: 'PUT', path, body },
       });
@@ -234,7 +254,7 @@ export function planEnvironments(
         policyCreates.push({
           section: 'environments',
           action: 'create',
-          target: `${entry.name}: ${type} ${policy.name}`,
+          target: `${name}: ${type} ${policy.name}`,
           fields: [
             { field: 'name', to: policy.name },
             { field: 'type', to: type },
@@ -249,7 +269,7 @@ export function planEnvironments(
       policyDeletes.push({
         section: 'environments',
         action: 'delete',
-        target: `${entry.name}: ${policy.type} ${policy.name}`,
+        target: `${name}: ${policy.type} ${policy.name}`,
         fields: [],
         request: { method: 'DELETE', path: `${path}/deployment-branch-policies/${policy.id}` },
       });

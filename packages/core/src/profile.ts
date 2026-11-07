@@ -4,7 +4,7 @@ import path from 'node:path';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 
-import { profile, type Profile, profileFile, type ProfileFile } from './schema.js';
+import { environmentKey, profile, type Profile, profileFile, type ProfileFile } from './schema.js';
 
 export class ProfileError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -34,14 +34,15 @@ function parseProfileFile(text: string, source: string): ProfileFile {
 function mergeByName<Entry extends { name: string }>(
   base: Entry[] | undefined,
   override: Entry[] | undefined,
+  key: (name: string) => string = (name) => name,
 ): Entry[] | undefined {
   if (base === undefined || override === undefined) {
     return override ?? base;
   }
-  const replacements = new Map(override.map((entry) => [entry.name, entry]));
-  const merged = base.map((entry) => replacements.get(entry.name) ?? entry);
-  const baseNames = new Set(base.map((entry) => entry.name));
-  return [...merged, ...override.filter((entry) => !baseNames.has(entry.name))];
+  const replacements = new Map(override.map((entry) => [key(entry.name), entry]));
+  const merged = base.map((entry) => replacements.get(key(entry.name)) ?? entry);
+  const baseNames = new Set(base.map((entry) => key(entry.name)));
+  return [...merged, ...override.filter((entry) => !baseNames.has(key(entry.name)))];
 }
 
 /**
@@ -67,7 +68,7 @@ function mergeProfiles(base: Profile, override: ProfileFile): Profile {
   if (rulesets !== undefined) {
     merged.rulesets = rulesets;
   }
-  const environments = mergeByName(base.environments, override.environments);
+  const environments = mergeByName(base.environments, override.environments, environmentKey);
   if (environments !== undefined) {
     merged.environments = environments;
   }

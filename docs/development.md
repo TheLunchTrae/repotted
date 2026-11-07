@@ -51,8 +51,9 @@ settings, GitHub Apps, New GitHub App, uses too:
   installation** off, turn on **Enable Device Flow**, and leave **Expire user
   authorization tokens** on.
 - Webhook: clear **Active**.
-- Repository permissions: Administration, read and write. Metadata, read, is
-  required. No other permissions and no events.
+- Repository permissions: Administration, read and write. Actions, read, to
+  list environments. Metadata, read, is required. No other permissions and no
+  events.
 - Where it can be installed: any account.
 
 Then copy the client ID, not the App ID, into `app.clientId`.

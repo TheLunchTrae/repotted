@@ -14,6 +14,7 @@ import {
 } from '../src/plan.js';
 import { loadProfile } from '../src/profile.js';
 import type { Profile } from '../src/schema.js';
+import { EnvironmentSettingsError } from '../src/sections/environments.js';
 import { MergeSettingsError } from '../src/sections/repository.js';
 import { FakeGitHub } from './fake-github.js';
 
@@ -460,6 +461,81 @@ describe('plan and apply', () => {
 
     expect(plan.changes.map((change) => change.section)).toEqual(['repository']);
     expect(plan.warnings).toEqual([expect.stringContaining('Skipped environments')]);
+  });
+
+  test('updates an environment named in another case, keeping what the profile leaves out', async () => {
+    const github = new FakeGitHub({
+      environments: [
+        {
+          name: 'npm',
+          wait_timer: 0,
+          prevent_self_review: true,
+          reviewers: [{ type: 'User', id: 42 }],
+          deployment_branch_policy: { protected_branches: true, custom_branch_policies: false },
+          branch_policies: [],
+        },
+      ],
+    });
+    const desired: Profile = { environments: [{ name: 'NPM', wait_timer: 5 }] };
+
+    const plan = await createPlan(github, repo, desired);
+    expect(plan.changes.map((change) => `${change.action} ${change.target}`)).toEqual(['update npm']);
+    expect(plan.changes[0]?.request.path).toBe(`${repoPath(repo)}/environments/npm`);
+
+    await applyPlan(github, plan);
+    expect(github.state.environments).toHaveLength(1);
+    expect(github.state.environments[0]).toMatchObject({
+      name: 'npm',
+      wait_timer: 5,
+      reviewers: [{ type: 'User', id: 42 }],
+    });
+    expect((await createPlan(github, repo, desired)).changes).toEqual([]);
+  });
+
+  test('turns off prevent_self_review when the profile removes every reviewer', async () => {
+    const github = new FakeGitHub({
+      environments: [
+        {
+          name: 'npm',
+          wait_timer: 0,
+          prevent_self_review: true,
+          reviewers: [{ type: 'User', id: 42 }],
+          deployment_branch_policy: { protected_branches: true, custom_branch_policies: false },
+          branch_policies: [],
+        },
+      ],
+    });
+    const plan = await createPlan(github, repo, { environments: [{ name: 'npm', reviewers: [] }] });
+
+    expect(plan.changes[0]?.request.body).toMatchObject({ prevent_self_review: false, reviewers: [] });
+  });
+
+  test('refuses prevent_self_review on an environment that would have no reviewers, at plan time', async () => {
+    const github = new FakeGitHub({});
+    const error = await rejection(
+      createPlan(github, repo, { environments: [{ name: 'npm', prevent_self_review: true }] }),
+    );
+
+    expect(error).toBeInstanceOf(EnvironmentSettingsError);
+  });
+
+  test('reads environments past the first page, so it never recreates one', async () => {
+    const environments = Array.from({ length: 101 }, (_, index) => ({
+      ...{
+        name: 'npm',
+        wait_timer: 0,
+        prevent_self_review: true,
+        reviewers: [{ type: 'User', id: 42 }],
+        deployment_branch_policy: { protected_branches: true, custom_branch_policies: false },
+        branch_policies: [],
+      },
+      name: `env-${String(index).padStart(3, '0')}`,
+    }));
+    const github = new FakeGitHub({ environments });
+
+    expect((await createPlan(github, repo, { environments: [{ name: 'env-100', wait_timer: 0 }] })).changes).toEqual(
+      [],
+    );
   });
 
   test('warns instead of writing a selected-actions list the policy would ignore', async () => {

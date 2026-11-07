@@ -105,6 +105,31 @@ rulesets:
     expect(String(await rejection(loadProfile(file)))).toContain('branch_policies needs deployment_branch_policy');
   });
 
+  test('rejects two environments whose names differ only in case, as GitHub treats them as one', async () => {
+    const file = await write('environment-case.yaml', 'environments: [{ name: npm }, { name: NPM, absent: true }]\n');
+
+    expect(String(await rejection(loadProfile(file)))).toContain('Environment "NPM" appears more than once');
+  });
+
+  test('rejects a deployment pattern listed twice', async () => {
+    const file = await write(
+      'patterns-twice.yaml',
+      'environments: [{ name: npm, deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }, branch_policies: [{ name: main }, { name: main, type: branch }] }]\n',
+    );
+
+    expect(String(await rejection(loadProfile(file)))).toContain('Pattern "branch main" appears more than once');
+  });
+
+  test('replaces a base environment whose name differs only in case', async () => {
+    await write('environment-base.yaml', 'environments: [{ name: npm, wait_timer: 5 }]\n');
+    const file = await write(
+      'environment-override.yaml',
+      'extends: environment-base.yaml\nenvironments: [{ name: NPM, wait_timer: 10 }]\n',
+    );
+
+    expect((await loadProfile(file)).environments).toEqual([{ name: 'NPM', wait_timer: 10 }]);
+  });
+
   test('rejects a profile that turns off every merge method', async () => {
     const file = await write(
       'no-merge.yaml',
