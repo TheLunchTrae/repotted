@@ -4,6 +4,8 @@ min_version = "2026.9.16"
 
 [settings]
 lockfile = true
+# The desktop workflow installs these tools on macOS and Windows runners.
+lockfile_platforms = ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"]
 
 [tools]
 gitleaks = "8.30.1"
