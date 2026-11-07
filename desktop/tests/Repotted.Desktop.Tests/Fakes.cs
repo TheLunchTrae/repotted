@@ -175,6 +175,51 @@ internal static class Documents
            "actions":{},"rulesets":{},"environments":{} } }
         """;
 
+    /// <summary>
+    /// A plan as <c>repotted plan --json</c> prints it, requests included.
+    /// GitHub allows squash merges and has write workflow permissions; its
+    /// Require PR ruleset allows every merge method; it has no Require
+    /// Checks ruleset; it still has Block Deletion, which the profile
+    /// removes. Block Force Pushes, the npm environment and the rest match,
+    /// and Tags: Old, which the profile removes, is already gone.
+    /// </summary>
+    public static string Plan(string repository = "TheLunchTrae/repotted", string warnings = "") =>
+        $$$"""
+        {"repository":"{{{repository}}}",
+         "desired":{
+           "repository":{"has_issues":true,"has_wiki":false},
+           "merge":{"allow_rebase_merge":true,"allow_squash_merge":false},
+           "actions":{"allowed_actions":"all","default_workflow_permissions":"read"},
+           "rulesets":[
+             {"name":"Main: Require PR","rules":[{"type":"pull_request","parameters":{"allowed_merge_methods":["rebase"]}}]},
+             {"name":"Main: Require Checks","rules":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"quality"}]}}]},
+             {"name":"Main: Block Deletion","absent":true},
+             {"name":"Main: Block Force Pushes","rules":[{"type":"non_fast_forward"}]},
+             {"name":"Tags: Old","absent":true}],
+           "environments":[{"name":"npm"}]},
+         "changes":[
+           {"section":"merge","action":"update","target":"merge methods",
+            "fields":[{"field":"allow_squash_merge","from":true,"to":false}],
+            "request":{"method":"PATCH","path":"/repos/{{{repository}}}","body":{"allow_squash_merge":false} } },
+           {"section":"actions","action":"update","target":"workflow permissions",
+            "fields":[{"field":"default_workflow_permissions","from":"write","to":"read"}],
+            "request":{"method":"PUT","path":"/repos/{{{repository}}}/actions/permissions/workflow","body":{"default_workflow_permissions":"read"} } },
+           {"section":"rulesets","action":"create","target":"Main: Require Checks",
+            "fields":[{"field":"name","to":"Main: Require Checks"},{"field":"target","to":"branch"},
+              {"field":"enforcement","to":"active"},
+              {"field":"conditions","to":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]} } },
+              {"field":"rules","to":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"quality"}]}}]}],
+            "request":{"method":"POST","path":"/repos/{{{repository}}}/rulesets","body":{} } },
+           {"section":"rulesets","action":"update","target":"Main: Require PR",
+            "fields":[{"field":"rules",
+              "from":[{"type":"pull_request","parameters":{"allowed_merge_methods":["merge","squash","rebase"],"required_approving_review_count":0}}],
+              "to":[{"type":"pull_request","parameters":{"allowed_merge_methods":["rebase"]}}]}],
+            "request":{"method":"PUT","path":"/repos/{{{repository}}}/rulesets/7","body":{} } },
+           {"section":"rulesets","action":"delete","target":"Main: Block Deletion","fields":[],
+            "request":{"method":"DELETE","path":"/repos/{{{repository}}}/rulesets/9"}}],
+         "warnings":[{{{warnings}}}]}
+        """;
+
     private static string Json(string text) => $"\"{System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(text)}\"";
 
     public static readonly Uri InstallUrl = new("https://github.com/apps/repotted-app/installations/new");

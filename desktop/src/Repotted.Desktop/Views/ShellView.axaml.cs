@@ -34,6 +34,15 @@ internal sealed partial class ShellView : UserControl
         base.OnDetachedFromVisualTree(e);
     }
 
+    /// <summary>Repositories in the sidebar leaves a compare, though the page is already selected.</summary>
+    private void OnRepositoriesTapped(object? sender, TappedEventArgs e)
+    {
+        if (DataContext is ViewModels.ShellViewModel shell && shell.CloseCompareCommand.CanExecute(null))
+        {
+            shell.CloseCompareCommand.Execute(null);
+        }
+    }
+
     /// <summary>Ctrl+K, or Command+K on macOS, moves to the search.</summary>
     private void OnShortcut(object? sender, KeyEventArgs e)
     {

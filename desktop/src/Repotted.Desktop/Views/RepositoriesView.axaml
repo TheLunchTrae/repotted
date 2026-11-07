@@ -120,10 +120,22 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
           <Border Classes="rule" />
+          <TextBlock Classes="muted small" FontWeight="SemiBold" Margin="0,0,0,6" Text="Compare with a profile" />
+          <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Profiles.Usable}" SelectedItem="{Binding CompareWith}"
+                    PlaceholderText="No profiles in the folder" AutomationProperties.Name="Profile to compare with">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:ProfileItemViewModel">
+                <TextBlock Text="{Binding Name}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Classes="primary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Content="Compare"
+                  Command="{Binding CompareCommand}" />
+          <Border Classes="rule" />
           <Button Classes="quiet" HorizontalAlignment="Stretch" Content="Open on GitHub"
                   Command="{Binding OpenOnGitHubCommand}" />
           <TextBlock Classes="muted small" Margin="0,12,0,0" TextWrapping="Wrap"
-                     Text="Repotted only reads from GitHub so far." />
+                     Text="Comparing only reads from GitHub. It changes nothing there." />
         </StackPanel>
       </Border>
     </Grid>

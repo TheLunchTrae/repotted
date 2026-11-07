@@ -225,6 +225,58 @@ public sealed class ViewTests : IDisposable
         Save(window, $"profiles-empty-{theme}");
     }
 
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task A_compare_shows_what_the_profile_would_change(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base))
+            .On($"plan TheLunchTrae/repotted --profile {own} --json", Documents.Plan()));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        var repositories = shell.Repositories;
+        repositories.Selected = repositories.Rows.Single(row => row.Name == "repotted");
+
+        var panel = Texts(window);
+        Assert.Contains("Compare with a profile", panel);
+        Assert.Contains("Compare", panel);
+
+        repositories.CompareWith = shell.Profiles.Usable.Single(item => item.Name == "orgs");
+        Save(window, $"repository-compare-{theme}");
+        repositories.CompareCommand.Execute(null);
+
+        var text = Texts(window);
+        Assert.Contains("orgs compared with TheLunchTrae/repotted", text);
+        Assert.Contains("rules[pull_request].parameters.allowed_merge_methods", text);
+        Assert.Contains("merge, squash, rebase", text);
+        Assert.Contains("Back to repositories", text);
+        Assert.DoesNotContain("Issues", text);
+        Save(window, $"compare-{theme}");
+
+        // Every row says what the profile does to it, for screen readers.
+        var names = window.GetVisualDescendants().OfType<ListBoxItem>()
+            .Select(item => ControlAutomationPeer.CreatePeerForElement(item).GetName())
+            .ToList();
+        Assert.Contains("Main: Block Deletion, absent: true: on GitHub, the profile removes it", names);
+        Assert.Contains(
+            "Main: Require PR, rules[pull_request].parameters.allowed_merge_methods: GitHub has merge, squash, rebase, the profile sets rebase",
+            names);
+
+        // Repositories in the sidebar is already selected, and still leaves the compare.
+        var item = window.GetVisualDescendants().OfType<ListBoxItem>()
+            .Single(candidate => AutomationProperties.GetName(candidate) == "Repositories");
+        var point = item.TranslatePoint(new Point(12, 12), window)!.Value;
+        window.MouseDown(point, MouseButton.Left);
+        window.MouseUp(point, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(shell.Compare);
+        Assert.True(shell.ShowingRepositories);
+    }
+
     [AvaloniaFact]
     public async Task A_new_folder_the_app_cannot_remember_says_so()
     {
