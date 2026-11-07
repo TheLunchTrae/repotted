@@ -7,7 +7,8 @@ namespace Repotted.Desktop.ViewModels;
 
 /// <summary>
 /// The repositories Repotted can manage, with a search filter and the selected
-/// one's details, from which it can be compared with a profile.
+/// one's details, from which it can be compared with a profile or captured
+/// as a new one.
 /// </summary>
 internal sealed partial class RepositoriesViewModel : ViewModelBase
 {
@@ -15,6 +16,7 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     private readonly IDesktop desktop;
     private readonly Uri? installUrl;
     private readonly Action<string, ProfileListingDocument> compare;
+    private readonly Action<string> capture;
 
     private IReadOnlyList<RepositoryRowViewModel> all = [];
 
@@ -23,13 +25,16 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     /// <param name="installUrl">Where to add the Repotted App to more repositories, when it is the App that signs in.</param>
     /// <param name="profiles">The profiles a repository can be compared with.</param>
     /// <param name="compare">Opens a compare of a repository, by full name, with a profile.</param>
+    /// <param name="capture">Opens a new profile captured from a repository, by full name.</param>
     public RepositoriesViewModel(
         RepottedClient client,
         IDesktop desktop,
         Uri? installUrl,
         ProfilesViewModel profiles,
-        Action<string, ProfileListingDocument> compare)
+        Action<string, ProfileListingDocument> compare,
+        Action<string> capture)
     {
+        this.capture = capture;
         this.client = client;
         this.desktop = desktop;
         this.installUrl = installUrl;
@@ -57,8 +62,11 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection))]
-    [NotifyCanExecuteChangedFor(nameof(CompareCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CompareCommand), nameof(CaptureCommand))]
     public partial RepositoryRowViewModel? Selected { get; set; }
+
+    /// <summary>Every repository in the list, whatever the search, by full name.</summary>
+    public IReadOnlyList<string> Names => [.. all.Select(row => row.FullName)];
 
     public bool HasSelection => Selected is not null;
 
@@ -156,6 +164,15 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     }
 
     private bool CanCompare() => Selected is not null && CompareWith is not null;
+
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private void Capture()
+    {
+        if (Selected is { } row)
+        {
+            capture(row.FullName);
+        }
+    }
 
     [RelayCommand]
     private Task OpenOnGitHubAsync() => Selected is { } row ? desktop.OpenUrlAsync(row.GitHubUrl) : Task.CompletedTask;

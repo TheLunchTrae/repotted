@@ -48,8 +48,8 @@
           </StackPanel>
         </Border>
         <DockPanel>
-          <ListBox DockPanel.Dock="Top" Classes="nav" SelectedIndex="{Binding Page}" AutomationProperties.Name="Main">
-            <ListBoxItem x:Name="RepositoriesItem" AutomationProperties.Name="Repositories" Tapped="OnRepositoriesTapped">
+          <ListBox x:Name="Nav" DockPanel.Dock="Top" Classes="nav" SelectedIndex="{Binding Page}" AutomationProperties.Name="Main">
+            <ListBoxItem AutomationProperties.Name="Repositories">
               <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Text="Repositories" />
                 <TextBlock Grid.Column="1" Classes="muted" FontSize="13" FontWeight="Normal"
@@ -67,6 +67,8 @@
 
           <!-- The profiles in the folder, while the profiles page is open -->
           <DockPanel IsVisible="{Binding ShowingProfiles}" Margin="0,18,0,12">
+            <Button DockPanel.Dock="Bottom" Classes="quiet" HorizontalAlignment="Stretch" Margin="0,12,0,0"
+                    Content="New profile" Command="{Binding Profiles.StartNewCommand}" CommandParameter="{x:Null}" />
             <TextBlock DockPanel.Dock="Top" Classes="muted small" Margin="12,0,12,6" FontWeight="SemiBold"
                        Text="In this folder" IsVisible="{Binding Profiles.HasProfiles}" />
             <ListBox Classes="nav" ItemsSource="{Binding Profiles.Items}" SelectedItem="{Binding Profiles.Selected}"

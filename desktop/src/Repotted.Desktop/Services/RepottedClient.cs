@@ -107,6 +107,17 @@ internal sealed class RepottedClient(ICli cli)
         return plan;
     }
 
+    /// <summary>
+    /// Writes <paramref name="repository"/>'s setup to <paramref name="file"/>
+    /// as a profile. It only reads from GitHub. The warnings say what it could not read.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> CaptureAsync(string repository, string file, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["capture", repository, "--output", file, "--json"], null, cancellationToken)
+            .ConfigureAwait(false);
+        return Read(run, CliJson.Default.CaptureDocument).Warnings;
+    }
+
     /// <summary>Writes <paramref name="changes"/> to the profile file, which the CLI checks first.</summary>
     public async Task<ResolvedProfile> SaveProfileAsync(
         string file,

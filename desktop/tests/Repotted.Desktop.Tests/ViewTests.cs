@@ -277,6 +277,80 @@ public sealed class ViewTests : IDisposable
         Assert.True(shell.ShowingRepositories);
     }
 
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task A_new_profile_starts_from_nothing_another_profile_or_a_repository(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        Dispatcher.UIThread.RunJobs();
+
+        var start = window.GetVisualDescendants().OfType<Button>()
+            .Single(button => button.Content as string == "New profile" && button.IsEffectivelyVisible);
+        start.Command!.Execute(start.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        var nameBox = window.GetVisualDescendants().OfType<TextBox>()
+            .Single(box => AutomationProperties.GetName(box) == "Profile name");
+        Assert.Same(nameBox, window.FocusManager?.GetFocusedElement());
+        var form = shell.Profiles.Creating!;
+        form.Name = "libraries";
+        form.Captures = true;
+        Dispatcher.UIThread.RunJobs();
+
+        var text = Texts(window);
+        Assert.Contains("Profiles / New profile", text);
+        Assert.Contains("libraries.yaml", text);
+        Assert.Contains("Capture", text);
+        Assert.DoesNotContain("Save profile", text);
+        var extends = window.GetVisualDescendants().OfType<RadioButton>()
+            .Single(radio => radio.IsChecked != true && ControlAutomationPeer.CreatePeerForElement(radio).GetName() == "Another profile");
+        Assert.Equal(
+            "Extends it, so it gets every setting the other one sets.",
+            ControlAutomationPeer.CreatePeerForElement(extends).GetHelpText());
+        Save(window, $"new-profile-{theme}");
+
+        // Going to another page and back keeps the form as it was.
+        Click(window, "Repositories");
+        Assert.True(shell.ShowingRepositories);
+        Click(window, "Profiles");
+        Assert.Same(form, shell.Profiles.Creating);
+        Assert.Contains("libraries.yaml", Texts(window));
+
+        // Choosing Profiles again, while it is selected, leaves the form: by click, Enter or Space.
+        // The click lands apart from the last one, which would otherwise make a double click.
+        Click(window, "Profiles", x: 60);
+        Assert.Null(shell.Profiles.Creating);
+        Assert.Equal("Profiles / base", shell.Crumb);
+        foreach (var key in new[] { PhysicalKey.Enter, PhysicalKey.Space })
+        {
+            shell.Profiles.StartNew(null);
+            Dispatcher.UIThread.RunJobs();
+            Item(window, "Profiles").Focus();
+            window.KeyPressQwerty(key, RawInputModifiers.None);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Null(shell.Profiles.Creating);
+        }
+    }
+
+    private static ListBoxItem Item(Window window, string name) =>
+        window.GetVisualDescendants().OfType<ListBoxItem>()
+            .Single(candidate => AutomationProperties.GetName(candidate) == name);
+
+    private static void Click(Window window, string name, double x = 12)
+    {
+        var point = Item(window, name).TranslatePoint(new Point(x, 12), window)!.Value;
+        window.MouseDown(point, MouseButton.Left);
+        window.MouseUp(point, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+    }
+
     [AvaloniaFact]
     public async Task A_new_folder_the_app_cannot_remember_says_so()
     {

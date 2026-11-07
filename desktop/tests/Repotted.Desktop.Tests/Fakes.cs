@@ -23,6 +23,20 @@ internal sealed class FakeCli : ICli
         return this;
     }
 
+    /// <summary>Answers <paramref name="command"/> with what <paramref name="run"/> returns, which may do what the command would, such as write a file.</summary>
+    public FakeCli On(string command, Func<string> run)
+    {
+        answers[command] = (_, _) => Task.FromResult(new CliRun(0, run(), ""));
+        return this;
+    }
+
+    /// <summary>Answers <paramref name="command"/> with what <paramref name="run"/> returns once it ends, given the run's cancellation.</summary>
+    public FakeCli On(string command, Func<CancellationToken, Task<string>> run)
+    {
+        answers[command] = async (_, cancellationToken) => new CliRun(0, await run(cancellationToken).ConfigureAwait(true), "");
+        return this;
+    }
+
     /// <summary>Answers <paramref name="command"/> with JSON Lines, waiting on <paramref name="between"/> after the first.</summary>
     public FakeCli OnLines(string command, IReadOnlyList<string> lines, Task? between = null, int exitCode = 0)
     {
@@ -114,6 +128,15 @@ internal sealed class Folders : IDisposable
     public string SettingsFolder => Path.Combine(root, "settings");
 
     public string Profiles { get; }
+
+    /// <summary>A link to the profiles folder from a folder of another depth, as a macOS temp folder is.</summary>
+    public string LinkToProfiles()
+    {
+        var link = Path.Combine(root, "linked", "deeper", "profiles");
+        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
+        Directory.CreateSymbolicLink(link, Profiles);
+        return link;
+    }
 
     public AppSettings Settings { get; }
 

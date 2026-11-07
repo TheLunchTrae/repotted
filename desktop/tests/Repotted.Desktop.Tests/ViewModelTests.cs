@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Repotted.Desktop.Services;
@@ -429,7 +430,7 @@ public sealed class ViewModelTests : IDisposable
         Directory.CreateDirectory(other);
         var desktop = new FakeDesktop { Folder = other };
         var cli = new FakeCli().On(folders.List(), Documents.NoProfiles).On(folders.List(other), Documents.NoProfiles);
-        var profiles = new ProfilesViewModel(new RepottedClient(cli), desktop, folders.Settings);
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), desktop, folders.Settings, () => []);
         await profiles.RefreshCommand.ExecuteAsync(null);
 
         await profiles.ChangeFolderCommand.ExecuteAsync(null);
@@ -465,7 +466,7 @@ public sealed class ViewModelTests : IDisposable
         var file = folders.Write("base.yaml", "repository: { has_issues: true }\n");
         var listing = $$"""{"profiles":[{"name":"alias","file":{{Quote(file)}},"extends":null,"problem":null},{"name":"base","file":{{Quote(file)}},"extends":null,"problem":null}]}""";
         var cli = new FakeCli().On(folders.List(), listing).On($"profile {file} --json", Documents.ResolvedBase(file));
-        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings);
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
 
         await profiles.RefreshCommand.ExecuteAsync(null);
 
@@ -484,7 +485,7 @@ public sealed class ViewModelTests : IDisposable
         var cli = new FakeCli()
             .OnceReady(folders.List(), $$"""{"profiles":[{"name":"orgs","file":{{Quote(own)}},"extends":null,"problem":null}]}""", slow.Task)
             .On(folders.List(other), Documents.NoProfiles);
-        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop { Folder = other }, folders.Settings);
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop { Folder = other }, folders.Settings, () => []);
 
         var first = profiles.RefreshAsync();
         await profiles.ChangeFolderCommand.ExecuteAsync(null);
@@ -513,7 +514,9 @@ public sealed class ViewModelTests : IDisposable
         Assert.Equal(
             [new CompareRow(CompareKind.Changes, "Allow squash merging", "allow_squash_merge", "On", "Off"),
              new CompareRow(CompareKind.Changes, "Default permissions", "default_workflow_permissions", "Read and write", "Read"),
-             new CompareRow(CompareKind.Adds, "Main: Require Checks", "new ruleset", "Not on GitHub", "required_status_checks"),
+             // A new ruleset says what each rule sets.
+             new CompareRow(CompareKind.Adds, "Main: Require Checks", "new ruleset", "Not on GitHub",
+                 "required_status_checks: required_status_checks: context: quality"),
              // A ruleset row names the part that differs, not the whole list of rules.
              new CompareRow(CompareKind.Changes, "Main: Require PR", "rules[pull_request].parameters.allowed_merge_methods", "merge, squash, rebase", "rebase"),
              new CompareRow(CompareKind.Removes, "Main: Block Deletion", "absent: true", "On GitHub", "Deleted")],
@@ -691,7 +694,227 @@ public sealed class ViewModelTests : IDisposable
         return compare;
     }
 
-    private async Task<(ProfilesViewModel Profiles, FakeCli Cli, (string Own, string Base) Files)> OpenOrgs()
+    [AvaloniaFact]
+    public async Task A_new_profile_that_extends_another_opens_once_made()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+
+        profiles.StartNew(null);
+
+        Assert.True(profiles.ShowCreating);
+        Assert.False(profiles.ShowProfile);
+        Assert.Null(profiles.Selected);
+        var form = profiles.Creating!;
+        form.Name = "libraries";
+        form.Extends = true;
+        form.Base = form.Bases.Single(item => item.Name == "base");
+        var made = Path.Combine(folders.Profiles, "libraries.yaml");
+        cli.On(folders.List(), Listing(("base", files.Base, null), ("libraries", made, files.Base), ("orgs", files.Own, files.Base)))
+            .On($"profile {made} --json", Documents.ResolvedBase(made));
+
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.Equal("extends: \"base.yaml\"\n", File.ReadAllText(made));
+        Assert.False(profiles.ShowCreating);
+        Assert.Equal("libraries", profiles.Selected?.Name);
+        Assert.Equal(made, profiles.Current?.File);
+        Assert.Null(profiles.Captured);
+    }
+
+    [AvaloniaFact]
+    public async Task A_new_profile_never_takes_a_name_in_use()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        profiles.StartNew(null);
+        var form = profiles.Creating!;
+
+        Assert.False(form.CreateCommand.CanExecute(null));
+        Assert.Null(form.Problem);
+        form.Name = "ORGS";
+        Assert.Equal("orgs.yaml is already in this folder.", form.Problem);
+        Assert.False(form.CreateCommand.CanExecute(null));
+        folders.Write("old.yml", "");
+        form.Name = "Old";
+        Assert.Equal("old.yml is already in this folder.", form.Problem);
+        foreach (var name in new[] { "team/libraries", ".hidden", "nul", "Com1.backup" })
+        {
+            form.Name = name;
+            Assert.NotNull(form.Problem);
+            Assert.False(form.CreateCommand.CanExecute(null));
+        }
+        form.Name = "libraries";
+        Assert.True(form.CreateCommand.CanExecute(null));
+
+        // A file made after the name was typed is not replaced.
+        folders.Write("libraries.yaml", "merge: { allow_squash_merge: false }\n");
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.NotNull(form.Error);
+        Assert.True(profiles.ShowCreating);
+        Assert.Equal("merge: { allow_squash_merge: false }\n", File.ReadAllText(Path.Combine(folders.Profiles, "libraries.yaml")));
+    }
+
+    [AvaloniaFact]
+    public void A_profile_extends_another_only_once_one_is_chosen()
+    {
+        using var form = new NewProfileViewModel(
+            new RepottedClient(new FakeCli()), folders.Profiles, [], [], null, (_, _) => Task.CompletedTask, () => { })
+        {
+            Name = "libraries",
+            Extends = true,
+        };
+
+        Assert.False(form.CreateCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
+    public async Task A_capture_never_replaces_a_file_and_leaves_none_when_it_fails()
+    {
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var cli = new FakeCli().On($"capture TheLunchTrae/repotted --output {made} --json", "", exitCode: 1, error: "Not Found");
+        var profiles = new ProfilesViewModel(new RepottedClient(cli.On(folders.List(), Documents.NoProfiles)), new FakeDesktop(), folders.Settings, () => ["TheLunchTrae/repotted"]);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        profiles.StartNew("TheLunchTrae/repotted");
+        var form = profiles.Creating!;
+
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.NotNull(form.Error);
+        Assert.False(File.Exists(made));
+
+        // A file made after the name was typed stops the capture before it reads GitHub.
+        cli.Calls.Clear();
+        folders.Write("repotted.yaml", "repository: { has_wiki: true }\n");
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.Equal("repotted.yaml is already in this folder.", form.Error);
+        Assert.Empty(cli.Calls);
+        Assert.Equal("repository: { has_wiki: true }\n", File.ReadAllText(made));
+    }
+
+    [AvaloniaFact]
+    public async Task Cancelling_a_capture_stops_it_and_keeps_what_the_user_opened_next()
+    {
+        var (profiles, cli, files) = await OpenOrgs("TheLunchTrae/repotted");
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        var stopped = false;
+        cli.On($"capture TheLunchTrae/repotted --output {made} --json", async cancellationToken =>
+        {
+            cancellationToken.Register(() => stopped = true);
+            // A command line that finishes anyway, as one that is slow to stop would.
+            await finish.Task;
+            File.WriteAllText(made, "repository:\n  has_wiki: false\n");
+            return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":["Skipped rulesets"]}""";
+        });
+        profiles.StartNew("TheLunchTrae/repotted");
+        var capturing = profiles.Creating!.CreateCommand.ExecuteAsync(null);
+
+        profiles.Creating!.CancelCommand.Execute(null);
+        profiles.StartNew(null);
+        var next = profiles.Creating;
+        finish.SetResult();
+        await capturing;
+
+        Assert.True(stopped);
+        Assert.False(File.Exists(made));
+        Assert.Same(next, profiles.Creating);
+        Assert.Null(profiles.Captured);
+        Assert.Equal(files.Own, profiles.Current?.File);
+    }
+
+    [AvaloniaFact]
+    public async Task A_refresh_keeps_the_form_and_a_new_folder_closes_it()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        profiles.StartNew(null);
+        var form = profiles.Creating!;
+        form.Name = "libraries";
+
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Same(form, profiles.Creating);
+        Assert.Null(profiles.Selected);
+        profiles.CancelNew();
+        Assert.Equal(files.Own, profiles.Current?.File);
+
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        var desktop = new FakeDesktop { Folder = other };
+        var moving = new ProfilesViewModel(new RepottedClient(cli.On(folders.List(other), Documents.NoProfiles)), desktop, folders.Settings, () => []);
+        await moving.RefreshCommand.ExecuteAsync(null);
+        moving.StartNew(null);
+
+        await moving.ChangeFolderCommand.ExecuteAsync(null);
+
+        Assert.Null(moving.Creating);
+        Assert.True(moving.ShowEmpty);
+    }
+
+    [AvaloniaFact]
+    public async Task Leaving_a_new_profile_goes_back_to_the_open_one()
+    {
+        var (profiles, _, files) = await OpenOrgs();
+
+        profiles.StartNew(null);
+        profiles.Creating!.CancelCommand.Execute(null);
+
+        Assert.True(profiles.ShowProfile);
+        Assert.Equal("orgs", profiles.Selected?.Name);
+
+        profiles.StartNew(null);
+        profiles.Selected = profiles.Items.Single(item => item.Name == "base");
+
+        Assert.False(profiles.ShowCreating);
+        Assert.Equal(files.Base, profiles.Current?.File);
+    }
+
+    [AvaloniaFact]
+    public async Task Capturing_a_repository_makes_a_profile_and_says_what_it_left_out()
+    {
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var cli = new FakeCli()
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.NoProfiles)
+            .On($"capture TheLunchTrae/repotted --output {made} --json", () =>
+            {
+                File.WriteAllText(made, "repository:\n  has_wiki: false\n");
+                return """{"repository":"TheLunchTrae/repotted","profile":{"repository":{"has_wiki":false}},"warnings":["Skipped rulesets: this repository’s plan does not support rulesets","Skipped environments: the app cannot read Actions"]}""";
+            });
+        var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings);
+        await shell.RefreshAsync();
+        shell.Repositories.Selected = shell.Repositories.Rows.Single(row => row.Name == "repotted");
+
+        shell.Repositories.CaptureCommand.Execute(null);
+
+        Assert.True(shell.ShowingProfiles);
+        Assert.Equal("Profiles / New profile", shell.Crumb);
+        var form = shell.Profiles.Creating!;
+        Assert.True(form.Captures);
+        Assert.Equal(("repotted", "TheLunchTrae/repotted"), (form.Name, form.Repository));
+        Assert.Equal(["TheLunchTrae/github-setup", "TheLunchTrae/repotted", "TheLunchTrae/test-repo"], form.Repositories);
+        var other = folders.Write("other.yaml", "");
+        cli.On(folders.List(), Listing(("other", other, null), ("repotted", made, null)))
+            .On($"profile {made} --json", Documents.ResolvedBase(made))
+            .On($"profile {other} --json", Documents.ResolvedBase(other));
+
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.True(File.Exists(made));
+        Assert.Equal("Profiles / repotted", shell.Crumb);
+        Assert.Equal(
+            "Repotted could not read all of the repository, so this profile leaves out:\nSkipped rulesets: this repository’s plan does not support rulesets\nSkipped environments: the app cannot read Actions",
+            shell.Profiles.Captured);
+
+        // The note is about the captured profile, so it goes once another opens.
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "other");
+        Assert.Null(shell.Profiles.Captured);
+    }
+
+    private static string Listing(params (string Name, string File, string? Extends)[] profiles) =>
+        JsonSerializer.Serialize(new { profiles = profiles.Select(profile => new { name = profile.Name, file = profile.File, extends = profile.Extends, problem = (string?)null }) });
+
+    private async Task<(ProfilesViewModel Profiles, FakeCli Cli, (string Own, string Base) Files)> OpenOrgs(params string[] repositories)
     {
         var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
@@ -699,7 +922,7 @@ public sealed class ViewModelTests : IDisposable
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.Resolved(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base));
-        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings);
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => repositories);
         await profiles.RefreshCommand.ExecuteAsync(null);
         // The fake answers at once, so selecting a profile has loaded it.
         profiles.Selected = profiles.Items.Single(item => item.Name == "orgs");
