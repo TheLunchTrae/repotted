@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 
 namespace Repotted.Desktop.Services;
@@ -30,6 +31,26 @@ internal sealed record DeviceCode(Uri VerificationUri, string UserCode, DateTime
 /// <summary>The repositories Repotted can manage, and how it found them.</summary>
 internal sealed record RepositoryList(bool FromInstallations, IReadOnlyList<RepositoryDocument> Repositories);
 
+/// <summary>
+/// A change to one profile setting: <paramref name="Key"/> is its section and
+/// key, such as <c>repository.has_wiki</c>, and <paramref name="Value"/> is the
+/// new value, or null to stop managing it.
+/// </summary>
+internal sealed record ProfileChange(string Key, JsonNode? Value);
+
+/// <summary>
+/// A profile resolved over the profiles it extends. <paramref name="Chain"/> is
+/// the file, then each one it extends; <paramref name="Sources"/> names the file
+/// behind each value, by section and then by key or entry name.
+/// </summary>
+internal sealed record ResolvedProfile(
+    IReadOnlyList<string> Chain,
+    JsonElement Values,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Sources)
+{
+    public string File => Chain[0];
+}
+
 /// <summary>Reads the CLI's JSON output into what the views show.</summary>
 internal sealed class RepottedClient(ICli cli)
 {
@@ -57,6 +78,56 @@ internal sealed class RepottedClient(ICli cli)
             "admin" => new RepositoryList(false, list.Repositories),
             _ => throw Unreadable(run, $"unknown repository source \"{list.Source}\"."),
         };
+    }
+
+    public async Task<IReadOnlyList<ProfileListingDocument>> ProfilesAsync(
+        string folder,
+        CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["profiles", folder, "--json"], null, cancellationToken).ConfigureAwait(false);
+        return Read(run, CliJson.Default.ProfileListDocument).Profiles;
+    }
+
+    public async Task<ResolvedProfile> ProfileAsync(string file, CancellationToken cancellationToken) =>
+        await ProfileAsync(["profile", file, "--json"], cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Writes <paramref name="changes"/> to the profile file, which the CLI checks first.</summary>
+    public async Task<ResolvedProfile> SaveProfileAsync(
+        string file,
+        IReadOnlyList<ProfileChange> changes,
+        CancellationToken cancellationToken)
+    {
+        List<string> arguments = ["profile", file];
+        foreach (var change in changes)
+        {
+            arguments.AddRange(change.Value is null
+                ? ["--unset", change.Key]
+                : ["--set", $"{change.Key}={change.Value.ToJsonString()}"]);
+        }
+        arguments.Add("--json");
+        return await ProfileAsync(arguments, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ResolvedProfile> ProfileAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(arguments, null, cancellationToken).ConfigureAwait(false);
+        var profile = Read(run, CliJson.Default.ResolvedProfileDocument);
+        if (profile.Chain.Count == 0 || profile.Profile.ValueKind != JsonValueKind.Object)
+        {
+            throw Unreadable(run, "the profile is incomplete.");
+        }
+        var sources = profile.Sources;
+        return new ResolvedProfile(
+            profile.Chain,
+            profile.Profile,
+            new Dictionary<string, IReadOnlyDictionary<string, string>>
+            {
+                ["repository"] = sources.Repository,
+                ["merge"] = sources.Merge,
+                ["actions"] = sources.Actions,
+                ["rulesets"] = sources.Rulesets,
+                ["environments"] = sources.Environments,
+            });
     }
 
     /// <summary>

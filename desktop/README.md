@@ -8,6 +8,19 @@ The app does no GitHub work itself. It runs the Repotted CLI with `--json` and
 shows what the CLI prints (see [JSON output](../docs/profiles.md#json-output)),
 so the CLI's sign-in, keychain and plan checks apply unchanged.
 
+## Profiles and settings
+
+The app edits profiles in a folder of YAML files. The folder starts as
+`Documents/Repotted`, which the app creates, and the user can pick any other
+folder, such as a clone of their setup repository. The profile editor changes
+repository, merge and Actions settings through `repotted profile --set` and
+`--unset`, which keep the rest of the file; rulesets and environments are
+edited in the YAML.
+
+The app keeps its own settings, such as the chosen folder, in `settings.json`
+in the per-user app data folder: `~/Library/Application Support/Repotted` on
+macOS and `%APPDATA%\Repotted` on Windows. It never writes beside itself.
+
 ## Run it
 
 `mise install` installs the pinned .NET SDK; `global.json` only sets the
