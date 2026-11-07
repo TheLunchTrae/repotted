@@ -90,8 +90,8 @@ other sections still plan. So does a token that cannot list environments.
 
 ## JSON output
 
-`--json` on `capture`, `plan` and `apply` prints exactly one JSON document on
-stdout, for programs such as the desktop app. Repotted writes nothing to stderr
+`--json` on `capture`, `plan`, `apply`, `repos` and `status` prints exactly one
+JSON document on stdout, for programs such as the desktop app. Repotted writes nothing to stderr
 in this mode; anything that appears there, such as a deprecation notice from
 the GitHub client, is diagnostic and not a failure. `--help` and `--version`
 still print text.
@@ -101,6 +101,18 @@ still print text.
 - `plan` prints the plan, the same document `--out` saves.
 - `apply` needs `--yes`, since a program has no terminal to confirm in, and
   prints `{ repository, applied }` with the changes it made.
+- `repos` prints `{ source, repositories }`, each repository as
+  `{ full_name, private, archived }`, sorted by name. With a Repotted App
+  sign-in, `source` is `installations` and the list holds the repositories the
+  App is installed on. Any other token gets `admin` and the repositories it
+  administers.
+- `status` prints `{ signed_in: true, login, name, token_variables }`, where
+  `token_variables` names `GITHUB_TOKEN` or `GH_TOKEN` when one is set and used
+  first. Signed out, it prints `{ signed_in: false, message }` and exits 1.
+- `login` prints JSON Lines, one document per line: first
+  `{ event: code, verification_uri, user_code, expires_at }` for the user to
+  enter, then `{ event: signed_in, install_url, token_variables }` once they
+  have. `install_url` is null when another App's client ID is in use.
 
 A failure prints `{ error: { kind, message } }` and exits 1, or 2 for misuse,
 which has `kind: usage`. A stale plan has `kind: stale_plan` and `current`, the

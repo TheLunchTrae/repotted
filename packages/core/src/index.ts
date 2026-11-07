@@ -12,3 +12,4 @@ export {
 } from './plan.js';
 export type { Plan } from './plan.js';
 export { loadProfile, parseProfile, stringifyProfile } from './profile.js';
+export { currentUser, listRepositories } from './repositories.js';

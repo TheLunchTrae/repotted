@@ -29,6 +29,22 @@ export interface FakeState {
   environments: StoredEnvironment[];
   environmentsUnreadable: boolean;
   branchPoliciesUnreadable: boolean;
+  account: FakeAccount;
+}
+
+export interface FakeRepository {
+  full_name: string;
+  private: boolean;
+  archived?: boolean;
+  permissions?: { admin: boolean };
+}
+
+/** The signed-in account. `installations` is undefined for a token GitHub refuses the installation list to. */
+export interface FakeAccount {
+  login: string;
+  name: string | null;
+  installations?: { id: number; repositories: FakeRepository[] }[];
+  repositories: FakeRepository[];
 }
 
 export interface Call {
@@ -116,6 +132,7 @@ export class FakeGitHub implements GitHub {
       environments: [],
       environmentsUnreadable: false,
       branchPoliciesUnreadable: false,
+      account: { login: 'lunch', name: null, repositories: [] },
       ...state,
     };
   }
@@ -220,8 +237,35 @@ export class FakeGitHub implements GitHub {
         this.findRuleset(Number(rulesetId));
         this.state.rulesets = this.state.rulesets.filter((item) => item.id !== Number(rulesetId));
         return undefined;
-      default:
+      case 'GET /user':
+        return { login: this.state.account.login, name: this.state.account.name, id: 7 };
+      case 'GET /user/installations': {
+        const { installations } = this.state.account;
+        if (installations === undefined) {
+          throw new GitHubError(403, 'You must authenticate with an access token authorized to a GitHub App');
+        }
+        const { perPage, page } = paging(new URLSearchParams(query));
+        return {
+          total_count: installations.length,
+          installations: installations.slice((page - 1) * perPage, page * perPage).map(({ id }) => ({ id })),
+        };
+      }
+      case 'GET /user/repos': {
+        const { perPage, page } = paging(new URLSearchParams(query));
+        return this.state.account.repositories.slice((page - 1) * perPage, page * perPage);
+      }
+      default: {
+        const installation = /^\/user\/installations\/(\d+)\/repositories$/u.exec(route)?.[1];
+        const found = this.state.account.installations?.find((item) => String(item.id) === installation);
+        if (method === 'GET' && found !== undefined) {
+          const { perPage, page } = paging(new URLSearchParams(query));
+          return {
+            total_count: found.repositories.length,
+            repositories: found.repositories.slice((page - 1) * perPage, page * perPage),
+          };
+        }
         throw new GitHubError(404, `Not Found: ${method} ${path}`);
+      }
     }
   }
 

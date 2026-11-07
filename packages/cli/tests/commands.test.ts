@@ -9,6 +9,7 @@ import { GitHubError } from '../../core/src/github.js';
 import { FakeGitHub } from '../../core/tests/fake-github.js';
 
 type Method = Parameters<FakeGitHub['request']>[0];
+import { NotSignedInError } from '../src/auth.js';
 import { type Io, run } from '../src/commands.js';
 
 const examples = path.join(import.meta.dir, '../../../examples');
@@ -58,6 +59,7 @@ async function cliWith(github: FakeGitHub, overrides: Partial<Io>, ...argv: stri
     },
     interactive: false,
     confirm: () => Promise.resolve(false),
+    signIn: () => Promise.reject(new Error('no sign-in in this test')),
     ...overrides,
   };
   const code = await run(argv, io);
@@ -188,5 +190,84 @@ describe('--json', () => {
     expect(missing.code).toBe(1);
     expect(document(missing)).toMatchObject({ error: { kind: 'error' } });
     expect(missing.err).toBe('');
+  });
+});
+
+describe('account commands', () => {
+  const account = {
+    login: 'lunch',
+    name: 'Lunch',
+    installations: [{ id: 1, repositories: [{ full_name: 'lunch/app', private: true }] }],
+    repositories: [],
+  };
+  const signedOut = {
+    github: () => Promise.reject(new NotSignedInError('Not signed in to GitHub. Run repotted login.')),
+  };
+
+  test('repos lists what the App reaches, as JSON or as lines', async () => {
+    const github = new FakeGitHub({ account });
+
+    const listed = await cli(github, 'repos', '--json');
+    expect(listed).toMatchObject({ code: 0, err: '' });
+    expect(document(listed)).toEqual({
+      source: 'installations',
+      repositories: [{ full_name: 'lunch/app', private: true, archived: false }],
+    });
+
+    expect(await cli(github, 'repos')).toMatchObject({ code: 0, out: 'lunch/app (private)\n' });
+  });
+
+  test('status names the account, or says it is signed out with exit 1', async () => {
+    const signedIn = await cli(new FakeGitHub({ account }), 'status', '--json');
+    expect(signedIn).toMatchObject({ code: 0, err: '' });
+    expect(document(signedIn)).toMatchObject({ signed_in: true, login: 'lunch', name: 'Lunch' });
+
+    const out = await cliWith(new FakeGitHub(), signedOut, 'status', '--json');
+    expect(out).toMatchObject({ code: 1, err: '' });
+    expect(document(out)).toEqual({ signed_in: false, message: 'Not signed in to GitHub. Run repotted login.' });
+  });
+
+  test('login --json prints the code, then the outcome, one JSON document per line', async () => {
+    let enter = (): void => undefined;
+    const finished = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const code = {
+      deviceCode: 'device',
+      userCode: 'ABCD-1234',
+      verificationUri: 'https://github.com/login/device',
+      interval: 5,
+      expiresAt: Date.UTC(2026, 0, 1),
+    };
+    let printed = '';
+    const running = run(['login', '--json'], {
+      version: '0.0.0',
+      github: () => Promise.reject(new Error('not used')),
+      out: (text) => {
+        printed += text;
+        // The code is out before the user has entered it.
+        enter();
+      },
+      err: (text) => {
+        throw new Error(`stderr: ${text}`);
+      },
+      interactive: false,
+      confirm: () => Promise.resolve(false),
+      signIn: () => Promise.resolve({ code, finished }),
+    });
+
+    expect(await running).toBe(0);
+    const lines = printed
+      .trimEnd()
+      .split('\n')
+      .map((line): unknown => JSON.parse(line));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toEqual({
+      event: 'code',
+      verification_uri: 'https://github.com/login/device',
+      user_code: 'ABCD-1234',
+      expires_at: '2026-01-01T00:00:00.000Z',
+    });
+    expect(lines[1]).toMatchObject({ event: 'signed_in' });
   });
 });
