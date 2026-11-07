@@ -277,6 +277,46 @@ public sealed class ViewTests : IDisposable
         Assert.True(shell.ShowingRepositories);
     }
 
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task A_new_profile_starts_from_nothing_another_profile_or_a_repository(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        Dispatcher.UIThread.RunJobs();
+
+        var start = window.GetVisualDescendants().OfType<Button>()
+            .Single(button => button.Content as string == "New profile" && button.IsEffectivelyVisible);
+        start.Command!.Execute(start.CommandParameter);
+        var form = shell.Profiles.Creating!;
+        form.Name = "libraries";
+        form.Captures = true;
+        Dispatcher.UIThread.RunJobs();
+
+        var text = Texts(window);
+        Assert.Contains("Profiles / New profile", text);
+        Assert.Contains("libraries.yaml", text);
+        Assert.Contains("Capture", text);
+        Assert.DoesNotContain("Save profile", text);
+        Save(window, $"new-profile-{theme}");
+
+        // Enter on Profiles, already selected in the sidebar, leaves the form.
+        var item = window.GetVisualDescendants().OfType<ListBoxItem>()
+            .Single(candidate => AutomationProperties.GetName(candidate) == "Profiles");
+        item.Focus();
+        window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(shell.Profiles.Creating);
+        Assert.Equal("Profiles / base", shell.Crumb);
+    }
+
     [AvaloniaFact]
     public async Task A_new_folder_the_app_cannot_remember_says_so()
     {

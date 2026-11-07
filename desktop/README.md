@@ -17,6 +17,10 @@ repository, merge and Actions settings through `repotted profile --set` and
 `--unset`, which keep the rest of the file; rulesets and environments are
 edited in the YAML.
 
+A new profile starts empty, extends another profile in the folder, or is
+captured from a repository with `repotted capture --output`, which only reads
+from GitHub. The app never replaces a file that is already in the folder.
+
 The app keeps its own settings, such as the chosen folder, in `settings.json`
 in the per-user app data folder: `~/Library/Application Support/Repotted` on
 macOS and `%APPDATA%\Repotted` on Windows. It never writes beside itself.

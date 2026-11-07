@@ -25,6 +25,10 @@
             Padding="32,10" IsVisible="{Binding HasNotice}">
       <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Notice}" />
     </Border>
+    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+            Padding="32,10" IsVisible="{Binding HasCaptured}">
+      <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource DriftBrush}" Text="{Binding Captured}" />
+    </Border>
 
     <Panel>
       <TextBlock Classes="muted" Margin="32,24" Text="Loading profiles" IsVisible="{Binding Loading}" />
@@ -41,12 +45,19 @@
         <TextBlock Classes="h1" Text="Profiles" />
         <TextBlock Text="{Binding EmptyMessage}" TextWrapping="Wrap" />
         <TextBlock Classes="muted" TextWrapping="Wrap"
-                   Text="A profile is a YAML file. Copy one into this folder, or choose a folder that already has profiles, such as a clone of your setup repository." />
+                   Text="A profile is a YAML file. Start a new one here, capture one from a repository, or choose a folder that already has profiles, such as a clone of your setup repository." />
         <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button Classes="primary" Content="Choose a folder" Command="{Binding ChangeFolderCommand}" />
+          <Button Classes="primary" Content="New profile" Command="{Binding StartNewCommand}" CommandParameter="{x:Null}" />
+          <Button Classes="quiet" Content="Choose a folder" Command="{Binding ChangeFolderCommand}" />
           <Button Classes="quiet" Content="Refresh" Command="{Binding RefreshCommand}" />
         </StackPanel>
       </StackPanel>
+
+      <ContentControl Content="{Binding Creating}" IsVisible="{Binding ShowCreating}">
+        <ContentControl.DataTemplates>
+          <DataTemplate DataType="vm:NewProfileViewModel"><views:NewProfileView /></DataTemplate>
+        </ContentControl.DataTemplates>
+      </ContentControl>
 
       <ContentControl Content="{Binding Current}" IsVisible="{Binding ShowProfile}">
         <ContentControl.DataTemplates>

@@ -23,12 +23,24 @@ internal sealed class ProfileItemViewModel(ProfileListingDocument listing, strin
 /// <summary>
 /// The profiles in the profiles folder, which the user picks and the app
 /// remembers. It starts as Documents/Repotted. Each profile opens in an editor,
-/// and an editor keeps its unsaved edits while another profile is open.
+/// and an editor keeps its unsaved edits while another profile is open. A new
+/// profile starts empty, from another profile, or from a repository.
 /// </summary>
-internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop desktop, AppSettings settings)
+/// <param name="client">Lists, reads and saves profiles, and captures new ones.</param>
+/// <param name="desktop">Asks for a folder.</param>
+/// <param name="settings">Remembers the folder.</param>
+/// <param name="repositories">The repositories a new profile can be captured from, by full name.</param>
+internal sealed partial class ProfilesViewModel(
+    RepottedClient client,
+    IDesktop desktop,
+    AppSettings settings,
+    Func<IReadOnlyList<string>> repositories)
     : ViewModelBase
 {
     private readonly Dictionary<string, ProfileViewModel> editors = [];
+
+    /// <summary>The file a refresh selects, such as a profile just made.</summary>
+    private string? select;
 
     private IReadOnlyList<ProfileItemViewModel> all = [];
 
@@ -67,9 +79,55 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
 
     public bool HasProfiles => Count > 0;
 
-    public bool ShowEmpty => !Loading && Error is null && Count == 0;
+    public bool ShowEmpty => !Loading && Error is null && Count == 0 && Creating is null;
 
-    public bool ShowProfile => !Loading && Error is null && Current is not null;
+    public bool ShowProfile => !Loading && Error is null && Current is not null && Creating is null;
+
+    /// <summary>The new profile form, which stands in for the editor until it closes.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowCreating))]
+    public partial NewProfileViewModel? Creating { get; private set; }
+
+    public bool ShowCreating => Creating is not null;
+
+    /// <summary>What a capture could not read, shown over the profile it made until another one opens.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCaptured))]
+    public partial string? Captured { get; private set; }
+
+    public bool HasCaptured => Captured is not null;
+
+    /// <summary>Opens the new profile form, to capture <paramref name="repository"/> when one is given.</summary>
+    [RelayCommand]
+    public void StartNew(string? repository)
+    {
+        Captured = null;
+        // Nothing stays selected, so choosing any profile in the list leaves the form.
+        Selected = null;
+        Creating = new NewProfileViewModel(client, Folder, Usable, repositories(), repository, CreatedAsync, CancelNew);
+    }
+
+    /// <summary>Closes the new profile form, back to the profile that was open.</summary>
+    public void CancelNew()
+    {
+        if (Creating is null)
+        {
+            return;
+        }
+        Creating = null;
+        Selected = Items.FirstOrDefault(item => item.Listing.File == Current?.File);
+    }
+
+    private async Task CreatedAsync(string file, IReadOnlyList<string> warnings)
+    {
+        Creating = null;
+        select = file;
+        await RefreshAsync().ConfigureAwait(true);
+        if (warnings.Count > 0)
+        {
+            Captured = $"Repotted could not read all of the repository, so this profile leaves out: {string.Join(" ", warnings)}";
+        }
+    }
 
     public string EmptyMessage => $"No profiles in {Folder} yet.";
 
@@ -90,6 +148,11 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
     {
         if (value is not null)
         {
+            Creating = null;
+            if (value.Listing.File != Current?.File)
+            {
+                Captured = null;
+            }
             Open(value.Listing);
         }
     }
@@ -149,7 +212,12 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
                     editors.Remove(file);
                 }
             }
-            var keep = Current?.File;
+            // The CLI lists real paths, and the folder's own path may not be one,
+            // so a new file, never a link, is found by its name.
+            var keep = select is null
+                ? Current?.File
+                : names.Keys.FirstOrDefault(listed => Path.GetFileName(listed) == Path.GetFileName(select));
+            select = null;
             Current = null;
             ApplyFilter();
             if (Items.FirstOrDefault(item => item.Listing.File == keep) is { } shown)
@@ -195,6 +263,8 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
             return;
         }
         Notice = null;
+        Captured = null;
+        Creating = null;
         try
         {
             settings.Save(settings.Load() with { ProfilesFolder = folder });

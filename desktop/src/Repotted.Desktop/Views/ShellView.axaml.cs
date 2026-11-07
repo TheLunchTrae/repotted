@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 
 namespace Repotted.Desktop.Views;
 
@@ -12,6 +13,9 @@ internal sealed partial class ShellView : UserControl
     public ShellView()
     {
         InitializeComponent();
+        // The list marks Enter and Space handled, and choosing the selected item changes nothing it reports.
+        Nav.AddHandler(TappedEvent, OnNavTapped, RoutingStrategies.Bubble, handledEventsToo: true);
+        Nav.AddHandler(KeyDownEvent, OnNavKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
         if (OperatingSystem.IsMacOS())
         {
             SearchShortcut.Text = "⌘K";
@@ -34,12 +38,27 @@ internal sealed partial class ShellView : UserControl
         base.OnDetachedFromVisualTree(e);
     }
 
-    /// <summary>Repositories in the sidebar leaves a compare, though the page is already selected.</summary>
-    private void OnRepositoriesTapped(object? sender, TappedEventArgs e)
+    /// <summary>
+    /// Choosing the page that is already selected, by click, Enter or Space,
+    /// leaves what stands in for it, such as a compare.
+    /// </summary>
+    private void OnNavTapped(object? sender, TappedEventArgs e) => ShowPage(e.Source);
+
+    private void OnNavKeyDown(object? sender, KeyEventArgs e)
     {
-        if (DataContext is ViewModels.ShellViewModel shell && shell.CloseCompareCommand.CanExecute(null))
+        if (e.Key is Key.Enter or Key.Space && e.KeyModifiers == KeyModifiers.None)
         {
-            shell.CloseCompareCommand.Execute(null);
+            ShowPage(e.Source);
+        }
+    }
+
+    private void ShowPage(object? source)
+    {
+        if (DataContext is ViewModels.ShellViewModel shell
+            && (source as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true) is { } item
+            && Nav.IndexFromContainer(item) is var page and >= 0)
+        {
+            shell.ShowPage(page);
         }
     }
 

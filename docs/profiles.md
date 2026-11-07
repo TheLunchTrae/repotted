@@ -111,7 +111,8 @@ appears there, such as a deprecation notice from the GitHub client, is
 diagnostic and not a failure. `--help` and `--version` still print text.
 
 - `capture` prints `{ repository, profile, warnings }`, where `profile` is the
-  profile the YAML would hold. It does not combine with `--output`.
+  profile the YAML holds. With `--output`, it also writes the YAML to that
+  file.
 - `plan` prints the plan, the same document `--out` saves.
 - `apply` needs `--yes`, since a program has no terminal to confirm in, and
   prints `{ repository, applied }` with the changes it made.
