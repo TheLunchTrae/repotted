@@ -48,7 +48,7 @@
 
           <DockPanel IsVisible="{Binding ShowTable}">
             <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
-              <Grid ColumnDefinitions="*,72,120,104,64" Margin="12,8">
+              <Grid ColumnDefinitions="*,72,128,104,64" Margin="12,8">
                 <Grid.Styles>
                   <Style Selector="TextBlock">
                     <Setter Property="FontSize" Value="13" />
@@ -74,7 +74,7 @@
                 <DataTemplate x:DataType="vm:RepositoryRowViewModel">
                   <Panel>
                     <Border Classes="selection-rail" />
-                    <Grid ColumnDefinitions="*,72,120,104,64" Margin="12,11">
+                    <Grid ColumnDefinitions="*,72,128,104,64" Margin="12,11">
                       <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding FullName}">
                         <!-- On one line, so no space falls between the owner and the name. -->
                         <Run Text="{Binding Owner}" Foreground="{DynamicResource MutedBrush}" /><Run Text="{Binding Name}" FontWeight="Bold" />
