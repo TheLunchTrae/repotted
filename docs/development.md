@@ -67,9 +67,18 @@ once, so older Repotted versions that still need them stop working.
 
 ## Publishing
 
-Publishing a GitHub release runs `.github/workflows/publish.yml`. The release
-tag must be `v` followed by the version in `packages/cli/package.json`, such as
-`v0.2.0`, and must point at a commit on `main`. Create it as a full release:
+The repository releases two things from GitHub releases, told apart by the
+tag: the CLI on npm from `v` tags, and the desktop app from `desktop-v` tags.
+Each workflow skips the other's releases. Create CLI releases with **Set as
+the latest release** cleared, so the latest release stays the desktop app,
+which is the one people download.
+
+### The CLI
+
+Publishing a GitHub release with a `v` tag runs
+`.github/workflows/publish.yml`. The release tag must be `v` followed by the
+version in `packages/cli/package.json`, such as `v0.2.0`, and must point at a
+commit on `main`. Create it as a full release:
 prereleases do not publish, and promoting one later does not start the
 workflow. The workflow runs the gate on that commit, packs `packages/cli` with
 `bun pm pack`, which builds the bundle and replaces the `workspace:` range, and
@@ -91,3 +100,47 @@ a package that exists, so the first version is published by hand:
 
 Publishing needs the owner's yes. To release a change, bump `version` in
 `packages/cli/package.json` in the same pull request.
+
+### The desktop app
+
+Publishing a GitHub release with a `desktop-v` tag runs
+`.github/workflows/desktop.yml`. The tag must be `desktop-v` followed by
+`Version` in `desktop/src/Repotted.Desktop/Repotted.Desktop.csproj`, such as
+`desktop-v0.1.0`, and must point at a commit on `main`. The workflow runs the
+gate on that commit, builds the app on macOS for Apple silicon and Intel and
+on Windows for x64, and attaches to the release:
+
+- `Repotted-<version>-macos-arm64.dmg` and `Repotted-<version>-macos-x64.dmg`,
+  signed with a Developer ID, notarized, and stapled.
+- `Repotted-<version>-windows-x64-setup.exe`, an unsigned installer that
+  installs for the current user. Windows SmartScreen warns about it until it
+  is signed.
+- `SHA256SUMS.txt`, the checksums of the three.
+
+Each build ships the CLI compiled with `bun build --compile` beside the app as
+`repotted-cli`. `mise run desktop:package` makes the same package on a Mac or
+in Git Bash on Windows, in `artifacts/desktop`. Pull requests that touch the
+app, the CLI, or the build run the workflow without signing, so each one
+checks that the packages build, the CLI starts under the hardened runtime, and
+the macOS app launches. Prereleases run it too, which makes a prerelease the
+way to try a first signed build.
+
+Signing runs only in the `macos-release` environment, which holds:
+
+| Name                          | Kind     | Value                                                                                         |
+| ----------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `MACOS_CERTIFICATE_P12`       | Secret   | The Developer ID Application certificate and its private key, exported as a `.p12`, in base64 |
+| `MACOS_CERTIFICATE_PASSWORD`  | Secret   | The password of that `.p12`                                                                   |
+| `APP_STORE_CONNECT_KEY_P8`    | Secret   | An App Store Connect API key's `.p8` file, in base64, for `notarytool`                        |
+| `APPLE_TEAM_ID`               | Variable | The team ID of the certificate                                                                |
+| `APP_STORE_CONNECT_KEY_ID`    | Variable | The API key's ID                                                                              |
+| `APP_STORE_CONNECT_ISSUER_ID` | Variable | The issuer ID shown above the API keys                                                        |
+
+Limit the environment's deployment branches and tags to the `desktop-v*` tag
+rule, so that only a release run reaches the secrets, and give it the owner as
+a required reviewer, so that each signing run waits for approval. A release
+without these fails rather than attach an unsigned Mac app. A tag ruleset that
+limits who can create `v*` tags needs `desktop-v*` as well.
+
+Publishing needs the owner's yes. To release the app, bump `Version` in the
+project file in the same pull request.
