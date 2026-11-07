@@ -328,6 +328,160 @@ describe('editProfile', () => {
     expect(await readFile(file, 'utf8')).toBe(text);
   });
 
+  test('writes, replaces and drops rulesets and environments by name, and keeps the rest and its comments', async () => {
+    await write('entries-base.yaml', 'environments: [{ name: Production, wait_timer: 5 }]\n');
+    const file = await write(
+      'entries.yaml',
+      [
+        'extends: entries-base.yaml',
+        'rulesets:',
+        '  # Kept as it is',
+        '  - name: First',
+        '    enforcement: active',
+        '  - name: Second',
+        '    target: tag # tags only',
+        '    enforcement: evaluate # for now',
+        '    bypass_actors: []',
+        'environments:',
+        '  - name: staging',
+        '    wait_timer: 1',
+        '',
+      ].join('\n'),
+    );
+
+    const resolved = await editProfile(file, [
+      { list: 'rulesets', name: 'Second', entry: { name: 'Second', target: 'tag', enforcement: 'disabled' } },
+      { list: 'rulesets', name: 'Third', entry: { name: 'Third', rules: [{ type: 'deletion' }] } },
+      { list: 'environments', name: 'Staging', entry: undefined },
+      { list: 'environments', name: 'production', entry: { name: 'production', wait_timer: 10 } },
+    ]);
+
+    expect(await readFile(file, 'utf8')).toBe(
+      [
+        'extends: entries-base.yaml',
+        'rulesets:',
+        '  # Kept as it is',
+        '  - name: First',
+        '    enforcement: active',
+        '  - name: Second',
+        '    target: tag # tags only',
+        '    enforcement: disabled # for now',
+        '  - name: Third',
+        '    rules:',
+        '      - type: deletion',
+        'environments:',
+        '  - name: production',
+        '    wait_timer: 10',
+        '',
+      ].join('\n'),
+    );
+    expect(resolved.profile.environments).toEqual([{ name: 'production', wait_timer: 10 }]);
+    expect(resolved.sources.environments['production']).toBe(file);
+
+    // Dropping the file's own entry lets the base's apply again, and an empty list goes.
+    const dropped = await editProfile(file, [{ list: 'environments', name: 'PRODUCTION', entry: undefined }]);
+    expect(await readFile(file, 'utf8')).not.toContain('environments');
+    expect(dropped.profile.environments).toEqual([{ name: 'Production', wait_timer: 5 }]);
+  });
+
+  test('renames an entry in place, and keeps the comments of rules it still holds', async () => {
+    const file = await write(
+      'entries-rename.yaml',
+      [
+        'rulesets:',
+        '  - name: A',
+        '  - name: B # the main one',
+        '    rules:',
+        '      - type: deletion # never',
+        '      - type: pull_request # reviews',
+        '        parameters:',
+        '          required_approving_review_count: 1 # one',
+        '  - name: C',
+        'environments:',
+        '  - name: staging # shared',
+        '    deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }',
+        '    branch_policies:',
+        '      - name: v* # releases',
+        '        type: tag',
+        '      - name: nightly-* # nightly builds',
+        '        type: tag',
+        '',
+      ].join('\n'),
+    );
+
+    await editProfile(file, [
+      {
+        list: 'rulesets',
+        name: 'B',
+        entry: {
+          name: 'B2',
+          rules: [
+            { type: 'pull_request', parameters: { required_approving_review_count: 2 } },
+            { type: 'non_fast_forward' },
+          ],
+        },
+      },
+      {
+        list: 'environments',
+        name: 'staging',
+        entry: {
+          name: 'Staging',
+          deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+          branch_policies: [{ name: 'nightly-*', type: 'tag' }],
+        },
+      },
+    ]);
+
+    expect(await readFile(file, 'utf8')).toBe(
+      [
+        'rulesets:',
+        '  - name: A',
+        '  - name: B2 # the main one',
+        '    rules:',
+        '      - type: pull_request # reviews',
+        '        parameters:',
+        '          required_approving_review_count: 2 # one',
+        '      - type: non_fast_forward',
+        '  - name: C',
+        'environments:',
+        '  - name: Staging # shared',
+        '    deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }',
+        '    branch_policies:',
+        '      - name: nightly-* # nightly builds',
+        '        type: tag',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  test('rejects an entry edited twice, renamed to a taken name, shared by an alias, or not valid', async () => {
+    const text = 'rulesets: [{ name: Main }, { name: Other }]\n';
+    const file = await write('entries-invalid.yaml', text);
+
+    const twice = rejection(
+      editProfile(file, [
+        { list: 'environments', name: 'Staging', entry: undefined },
+        { list: 'environments', name: 'staging', entry: { name: 'staging' } },
+      ]),
+    );
+    const taken = rejection(editProfile(file, [{ list: 'rulesets', name: 'Main', entry: { name: 'Other' } }]));
+    const shared = await write(
+      'entries-alias.yaml',
+      'rulesets:\n  - { name: A, bypass_actors: &admins [] }\n  - { name: B, bypass_actors: *admins }\n',
+    );
+    const invalid = rejection(
+      editProfile(file, [{ list: 'rulesets', name: 'Main', entry: { name: 'Main', enforcement: 'sometimes' } }]),
+    );
+
+    expect(String(await twice)).toContain('more than once');
+    expect(String(await taken)).toContain('already has a ruleset named Other');
+    expect(
+      String(await rejection(editProfile(shared, [{ list: 'rulesets', name: 'A', entry: { name: 'A' } }]))),
+    ).toContain('anchors and aliases');
+    expect(await invalid).toBeInstanceOf(ProfileError);
+    expect(await readFile(file, 'utf8')).toBe(text);
+  });
+
   test('keeps Windows line endings, the indent width and the file mode', async () => {
     const file = await write('edit-layout.yaml', 'repository:\r\n    has_wiki: false\r\n');
     await chmod(file, 0o664);

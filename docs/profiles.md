@@ -65,12 +65,23 @@ added after the base ones. `examples/base.yaml` is a base profile, and
 extends. `--set section.key=value` and `--unset section.key` edit settings in
 the file itself, such as `--set repository.has_wiki=false`. The value is JSON,
 or a bare word as a string. Edits cover `repository`, `merge` and `actions`
-settings, including `actions.selected_actions.<key>`; rulesets and
-environments are edited in the YAML. An edit keeps the rest of the file,
-including comments, line endings and indent width, though YAML quoting and
-list indentation may be normalized. It removes a section it leaves empty,
-along with any comment above that section, and writes nothing when the result
-is not a valid profile.
+settings, including `actions.selected_actions.<key>`. `--ruleset json` and
+`--environment json` write one entry, a JSON object with a `name`, in place of
+the file's own entry of that name, or after the others when the file has none.
+A written entry changes only what differs, so the rest keep their place and
+comments, as do the rules and other list items it still holds. `--drop-ruleset
+name` and `--drop-environment name` remove the file's own entry, so an entry
+of that name in a base profile applies again. A write right after a drop from
+the same list renames the dropped entry in place, which also changes only the
+case of an environment's name. A plan matches rulesets and environments by
+name, so applying a renamed entry creates a new one and leaves the old one on
+GitHub unless an `absent: true` entry removes it. Environment names match
+regardless of case, as on GitHub. Edits apply in command-line order. An entry
+edit refuses a list that shares parts through YAML anchors and aliases. An
+edit keeps the rest of the file, including comments, line endings and indent
+width, though YAML quoting and list indentation may be normalized. It removes
+a section it leaves empty, along with any comment above that section, and
+writes nothing when the result is not a valid profile.
 Profiles are validated after they are merged, so a base profile may rely on
 the profile that extends it. `repotted profiles <folder>` lists the profiles
 in a folder with real paths, the same paths that `profile --json` reports.

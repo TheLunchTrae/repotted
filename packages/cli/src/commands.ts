@@ -12,6 +12,7 @@ import {
   currentUser,
   describeFailure,
   editProfile,
+  type EntryEdit,
   formatPlan,
   type GitHub,
   GitHubError,
@@ -25,6 +26,7 @@ import {
   StalePlanError,
   stringifyProfile,
 } from '@repotted/core';
+import { z } from 'zod';
 
 import {
   enterCode,
@@ -61,6 +63,8 @@ Commands:
   apply <plan.json> [--yes]                      Apply a saved plan if the repository has not changed
   profiles <folder>                              List the profiles in a folder
   profile <file> [--set key=json] [--unset key]  Show a profile resolved over its bases; edit its settings
+          [--ruleset json] [--drop-ruleset name]  and its rulesets and environments
+          [--environment json] [--drop-environment name]
   mcp [--read-only]                              Run the MCP server over stdio
   repos                                          List the repositories Repotted can manage
   status                                         Show which GitHub account Repotted signs in as
@@ -255,21 +259,63 @@ function profileEdit(argument: string, unset: boolean): ProfileEdit {
   return { path: argument.slice(0, separator).split('.'), value };
 }
 
+/** Reads a ruleset or environment for --ruleset or --environment: a JSON object with a name. */
+function entryEdit(list: EntryEdit['list'], text: string): EntryEdit {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    value = undefined;
+  }
+  const entry = z.looseObject({ name: z.string().min(1) }).safeParse(value);
+  if (!entry.success) {
+    throw new UsageError(`--${list.slice(0, -1)} takes a JSON object with a name, as in {"name":"Main"}: ${text}`);
+  }
+  return { list, name: entry.data.name, entry: entry.data };
+}
+
+/** The profile edits in command-line order; a write right after a drop from the same list renames the dropped entry. */
+function profileEdits(tokens: readonly { kind: string; name?: string; value?: string | undefined }[]): ProfileEdit[] {
+  const edits: ProfileEdit[] = [];
+  for (const token of tokens) {
+    const value = token.value ?? '';
+    const previous = edits.at(-1);
+    if (token.kind !== 'option') {
+      continue;
+    }
+    if (token.name === 'set' || token.name === 'unset') {
+      edits.push(profileEdit(value, token.name === 'unset'));
+    } else if (token.name === 'drop-ruleset' || token.name === 'drop-environment') {
+      edits.push({ list: token.name === 'drop-ruleset' ? 'rulesets' : 'environments', name: value, entry: undefined });
+    } else if (token.name === 'ruleset' || token.name === 'environment') {
+      const edit = entryEdit(token.name === 'ruleset' ? 'rulesets' : 'environments', value);
+      if (previous !== undefined && 'list' in previous && previous.list === edit.list && previous.entry === undefined) {
+        edits[edits.length - 1] = { ...edit, name: previous.name };
+      } else {
+        edits.push(edit);
+      }
+    }
+  }
+  return edits;
+}
+
 async function profile(io: Io, args: string[]): Promise<number> {
-  const { positionals, values } = parseArgs({
+  const { positionals, values, tokens } = parseArgs({
     args,
     allowPositionals: true,
+    tokens: true,
     options: {
       set: { type: 'string', multiple: true },
       unset: { type: 'string', multiple: true },
+      ruleset: { type: 'string', multiple: true },
+      'drop-ruleset': { type: 'string', multiple: true },
+      environment: { type: 'string', multiple: true },
+      'drop-environment': { type: 'string', multiple: true },
       json: { type: 'boolean' },
     },
   });
   const file = only(positionals, 'profile file');
-  const edits = [
-    ...(values.set ?? []).map((argument) => profileEdit(argument, false)),
-    ...(values.unset ?? []).map((argument) => profileEdit(argument, true)),
-  ];
+  const edits = profileEdits(tokens);
   const resolved = edits.length === 0 ? await resolveProfile(file) : await editProfile(file, edits);
   if (values.json === true) {
     json(io, resolved);

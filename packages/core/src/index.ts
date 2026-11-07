@@ -12,5 +12,5 @@ export {
 } from './plan.js';
 export type { Plan } from './plan.js';
 export { editProfile, listProfiles, loadProfile, parseProfile, resolveProfile, stringifyProfile } from './profile.js';
-export type { ProfileEdit } from './profile.js';
+export type { EntryEdit, ProfileEdit } from './profile.js';
 export { currentUser, listRepositories } from './repositories.js';
