@@ -39,6 +39,14 @@ internal sealed record RepositoryList(bool FromInstallations, IReadOnlyList<Repo
 internal sealed record ProfileChange(string Key, JsonNode? Value);
 
 /// <summary>
+/// A change to one ruleset or environment in a profile file, by name:
+/// <paramref name="List"/> is <c>rulesets</c> or <c>environments</c>, and
+/// <paramref name="Entry"/> is the entry to write, or null to stop naming it
+/// in the file.
+/// </summary>
+internal sealed record EntryChange(string List, string Name, JsonObject? Entry);
+
+/// <summary>
 /// A profile resolved over the profiles it extends. <paramref name="Chain"/> is
 /// the file, then each one it extends; <paramref name="Sources"/> names the file
 /// behind each value, by section and then by key or entry name.
@@ -118,10 +126,11 @@ internal sealed class RepottedClient(ICli cli)
         return Read(run, CliJson.Default.CaptureDocument).Warnings;
     }
 
-    /// <summary>Writes <paramref name="changes"/> to the profile file, which the CLI checks first.</summary>
+    /// <summary>Writes <paramref name="changes"/> and <paramref name="entries"/> to the profile file, which the CLI checks first.</summary>
     public async Task<ResolvedProfile> SaveProfileAsync(
         string file,
         IReadOnlyList<ProfileChange> changes,
+        IReadOnlyList<EntryChange> entries,
         CancellationToken cancellationToken)
     {
         List<string> arguments = ["profile", file];
@@ -130,6 +139,14 @@ internal sealed class RepottedClient(ICli cli)
             arguments.AddRange(change.Value is null
                 ? ["--unset", change.Key]
                 : ["--set", $"{change.Key}={change.Value.ToJsonString()}"]);
+        }
+        foreach (var entry in entries)
+        {
+            // --ruleset, --drop-ruleset, --environment and --drop-environment.
+            var flag = entry.List == "rulesets" ? "ruleset" : "environment";
+            arguments.AddRange(entry.Entry is null
+                ? [$"--drop-{flag}", entry.Name]
+                : [$"--{flag}", entry.Entry.ToJsonString()]);
         }
         arguments.Add("--json");
         return await ProfileAsync(arguments, cancellationToken).ConfigureAwait(false);

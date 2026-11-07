@@ -12,6 +12,7 @@ import {
   currentUser,
   describeFailure,
   editProfile,
+  type EntryEdit,
   formatPlan,
   type GitHub,
   GitHubError,
@@ -25,6 +26,7 @@ import {
   StalePlanError,
   stringifyProfile,
 } from '@repotted/core';
+import { z } from 'zod';
 
 import {
   enterCode,
@@ -61,6 +63,8 @@ Commands:
   apply <plan.json> [--yes]                      Apply a saved plan if the repository has not changed
   profiles <folder>                              List the profiles in a folder
   profile <file> [--set key=json] [--unset key]  Show a profile resolved over its bases; edit its settings
+          [--ruleset json] [--drop-ruleset name]  and its rulesets and environments
+          [--environment json] [--drop-environment name]
   mcp [--read-only]                              Run the MCP server over stdio
   repos                                          List the repositories Repotted can manage
   status                                         Show which GitHub account Repotted signs in as
@@ -255,6 +259,21 @@ function profileEdit(argument: string, unset: boolean): ProfileEdit {
   return { path: argument.slice(0, separator).split('.'), value };
 }
 
+/** Reads a ruleset or environment for --ruleset or --environment: a JSON object with a name. */
+function entryEdit(list: EntryEdit['list'], text: string): EntryEdit {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    value = undefined;
+  }
+  const entry = z.looseObject({ name: z.string().min(1) }).safeParse(value);
+  if (!entry.success) {
+    throw new UsageError(`--${list.slice(0, -1)} takes a JSON object with a name, as in {"name":"Main"}: ${text}`);
+  }
+  return { list, name: entry.data.name, entry: entry.data };
+}
+
 async function profile(io: Io, args: string[]): Promise<number> {
   const { positionals, values } = parseArgs({
     args,
@@ -262,13 +281,22 @@ async function profile(io: Io, args: string[]): Promise<number> {
     options: {
       set: { type: 'string', multiple: true },
       unset: { type: 'string', multiple: true },
+      ruleset: { type: 'string', multiple: true },
+      'drop-ruleset': { type: 'string', multiple: true },
+      environment: { type: 'string', multiple: true },
+      'drop-environment': { type: 'string', multiple: true },
       json: { type: 'boolean' },
     },
   });
   const file = only(positionals, 'profile file');
-  const edits = [
+  // Drops come before writes, so a rename drops the old name and writes the new one.
+  const edits: ProfileEdit[] = [
     ...(values.set ?? []).map((argument) => profileEdit(argument, false)),
     ...(values.unset ?? []).map((argument) => profileEdit(argument, true)),
+    ...(values['drop-ruleset'] ?? []).map((name): EntryEdit => ({ list: 'rulesets', name, entry: undefined })),
+    ...(values['drop-environment'] ?? []).map((name): EntryEdit => ({ list: 'environments', name, entry: undefined })),
+    ...(values.ruleset ?? []).map((text) => entryEdit('rulesets', text)),
+    ...(values.environment ?? []).map((text) => entryEdit('environments', text)),
   ];
   const resolved = edits.length === 0 ? await resolveProfile(file) : await editProfile(file, edits);
   if (values.json === true) {

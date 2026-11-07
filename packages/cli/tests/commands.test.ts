@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -425,6 +425,44 @@ describe('profile commands', () => {
     const removed = await cli(new FakeGitHub(), 'profile', file, '--unset', 'repository.has_wiki', '--json');
     expect(document(removed)).not.toHaveProperty('profile.repository.has_wiki');
     expect(await readFile(file, 'utf8')).not.toContain('has_wiki');
+  });
+
+  test('profile renames a ruleset and drops an environment in one save', async () => {
+    const file = path.join(directory, 'entries.yaml');
+    await writeFile(file, 'rulesets: [{ name: Old, enforcement: active }]\nenvironments: [{ name: staging }]\n');
+
+    const edited = await cli(
+      new FakeGitHub(),
+      'profile',
+      file,
+      '--ruleset',
+      '{"name":"New","enforcement":"evaluate"}',
+      '--drop-ruleset',
+      'Old',
+      '--drop-environment',
+      'staging',
+      '--json',
+    );
+
+    expect(edited).toMatchObject({ code: 0, err: '' });
+    expect(document(edited)).toMatchObject({ profile: { rulesets: [{ name: 'New', enforcement: 'evaluate' }] } });
+    expect(await readFile(file, 'utf8')).toBe('rulesets:\n  - name: New\n    enforcement: evaluate\n');
+  });
+
+  test('profile refuses a ruleset that is not an object with a name, as misuse', async () => {
+    for (const text of ['[]', '{"enforcement":"active"}', 'Main']) {
+      const result = await cli(
+        new FakeGitHub(),
+        'profile',
+        path.join(examples, 'base.yaml'),
+        '--ruleset',
+        text,
+        '--json',
+      );
+
+      expect(result.code).toBe(2);
+      expect(document(result)).toMatchObject({ error: { kind: 'usage' } });
+    }
   });
 
   test('profile refuses an edit without a value, as misuse', async () => {

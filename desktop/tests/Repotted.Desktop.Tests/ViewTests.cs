@@ -210,6 +210,89 @@ public sealed class ViewTests : IDisposable
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
+    public async Task Rulesets_and_environments_open_in_an_editor(string theme)
+    {
+        var @base = folders.Write("base.yaml", "rulesets:\n  - name: Tags\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
+        string Path(string file) => System.Text.Json.JsonSerializer.Serialize(file);
+        var resolved = $$$"""
+            {"chain":[{{{Path(own)}}},{{{Path(@base)}}}],
+             "profile":{
+               "rulesets":[
+                 {"name":"Main","enforcement":"active",
+                  "conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},
+                  "rules":[
+                    {"type":"deletion"},{"type":"non_fast_forward"},
+                    {"type":"pull_request","parameters":{"required_approving_review_count":1,"allowed_merge_methods":["rebase"]}},
+                    {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"quality"}]}}]},
+                 {"name":"Tags","target":"tag"}],
+               "environments":[
+                 {"name":"npm","reviewers":[{"type":"User","id":1}],"prevent_self_review":true,
+                  "deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true},
+                  "branch_policies":[{"name":"main"},{"name":"v*","type":"tag"}]}]},
+             "sources":{"repository":{},"merge":{},"actions":{},
+               "rulesets":{"Main":{{{Path(own)}}},"Tags":{{{Path(@base)}}} },
+               "environments":{"npm":{{{Path(own)}}} } } }
+            """;
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", resolved)
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        editor.ShowYaml = false;
+        editor.SelectedTab = editor.Tabs[3];
+
+        var text = Texts(window);
+        Assert.Contains("New ruleset", text);
+        var rows = window.GetVisualDescendants().OfType<Button>()
+            .Where(button => button.Classes.Contains("entry"))
+            .Select(button => AutomationProperties.GetName(button))
+            .ToList();
+        Assert.Equal(["Main: Set here", "Tags: From base"], rows);
+        Save(window, $"rulesets-{theme}");
+
+        // A row opens its ruleset, and every choice says what it leaves to GitHub.
+        window.GetVisualDescendants().OfType<Button>().First(button => AutomationProperties.GetName(button) == "Main: Set here")
+            .Command!.Execute(null);
+        var main = (RulesetEditorViewModel)editor.Tabs[3].Editing!.Editor;
+        main.Enforcement.Options[1].ChooseCommand.Execute(null);
+        text = Texts(window);
+        Assert.Contains("Back to rulesets", text);
+        Assert.Contains("Require a pull request before merging", text);
+        Assert.Contains("Changed, not saved yet", text);
+        Assert.Contains("Not set here, so the repository keeps its own, or Branches when it is new", text);
+        var enforcement = window.GetVisualDescendants().OfType<ToggleButton>()
+            .Where(toggle => AutomationProperties.GetName(toggle)?.StartsWith("Enforcement: ", StringComparison.Ordinal) == true)
+            .Select(toggle => (AutomationProperties.GetName(toggle), toggle.IsChecked));
+        Assert.Equal([("Enforcement: Active", (bool?)false), ("Enforcement: Evaluate", true), ("Enforcement: Disabled", false)], enforcement);
+        // Tall enough to show the whole ruleset.
+        window.Height = 1500;
+        Save(window, $"ruleset-{theme}");
+
+        // A base's ruleset keeps its name here.
+        editor.Tabs[3].BackCommand.Execute(null);
+        editor.Tabs[3].Entries[1].OpenCommand.Execute(null);
+        Assert.Contains("A base profile names this one, so this profile keeps its name and sets the rest.", Texts(window));
+        Assert.True(window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "ruleset name").IsReadOnly);
+
+        editor.SelectedTab = editor.Tabs[4];
+        editor.Tabs[4].Entries[0].OpenCommand.Execute(null);
+        text = Texts(window);
+        Assert.Contains("Back to environments", text);
+        Assert.Contains("Which ones", text);
+        Assert.Equal(
+            "main",
+            window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "Branches that may deploy").Text);
+        Save(window, $"environment-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
     public async Task An_empty_profiles_folder_says_what_a_profile_is(string theme)
     {
         var window = await Show(theme, new FakeCli()
@@ -267,8 +350,7 @@ public sealed class ViewTests : IDisposable
             names);
 
         // Repositories in the sidebar is already selected, and still leaves the compare.
-        var item = window.GetVisualDescendants().OfType<ListBoxItem>()
-            .Single(candidate => AutomationProperties.GetName(candidate) == "Repositories");
+        var item = Item(window, "Repositories");
         var point = item.TranslatePoint(new Point(12, 12), window)!.Value;
         window.MouseDown(point, MouseButton.Left);
         window.MouseUp(point, MouseButton.Left);
@@ -322,6 +404,14 @@ public sealed class ViewTests : IDisposable
         Click(window, "Profiles");
         Assert.Same(form, shell.Profiles.Creating);
         Assert.Contains("libraries.yaml", Texts(window));
+
+        // So does Space on Profiles from another page, which selects it before the key reaches the app.
+        Click(window, "Repositories", x: 60);
+        Item(window, "Profiles").Focus();
+        window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(shell.ShowingProfiles);
+        Assert.Same(form, shell.Profiles.Creating);
 
         // Choosing Profiles again, while it is selected, leaves the form: by click, Enter or Space.
         // The click lands apart from the last one, which would otherwise make a double click.

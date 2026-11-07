@@ -388,6 +388,33 @@
     <Setter Property="Background" Value="{DynamicResource DriftRailBrush}" />
   </Style>
 
+  <!-- An entry row that opens its editor. -->
+  <Style Selector="Button.entry">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="CornerRadius" Value="0" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="VerticalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.entry /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.entry:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+  </Style>
+
+  <!-- A value the profile leaves to GitHub, shown as GitHub's default. -->
+  <Style Selector="CheckBox.dim, NumericUpDown.dim">
+    <Setter Property="Opacity" Value="0.6" />
+  </Style>
+  <Style Selector="TextBox.mono">
+    <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+    <Setter Property="FontSize" Value="13" />
+  </Style>
+
   <!-- Compare rows: tinted by what the profile does to the value. -->
   <Style Selector="Border.field.change">
     <Setter Property="Background" Value="{DynamicResource DriftBgBrush}" />

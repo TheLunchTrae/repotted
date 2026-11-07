@@ -328,6 +328,83 @@ describe('editProfile', () => {
     expect(await readFile(file, 'utf8')).toBe(text);
   });
 
+  test('writes, replaces and drops rulesets and environments by name, and keeps the rest and its comments', async () => {
+    await write('entries-base.yaml', 'environments: [{ name: Production, wait_timer: 5 }]\n');
+    const file = await write(
+      'entries.yaml',
+      [
+        'extends: entries-base.yaml',
+        'rulesets:',
+        '  # Kept as it is',
+        '  - name: First',
+        '    enforcement: active',
+        '  - name: Second',
+        '    target: tag # tags only',
+        '    enforcement: evaluate # for now',
+        '    bypass_actors: []',
+        'environments:',
+        '  - name: staging',
+        '    wait_timer: 1',
+        '',
+      ].join('\n'),
+    );
+
+    const resolved = await editProfile(file, [
+      { list: 'rulesets', name: 'Second', entry: { name: 'Second', target: 'tag', enforcement: 'disabled' } },
+      { list: 'rulesets', name: 'Third', entry: { name: 'Third', rules: [{ type: 'deletion' }] } },
+      { list: 'environments', name: 'Staging', entry: undefined },
+      { list: 'environments', name: 'production', entry: { name: 'production', wait_timer: 10 } },
+    ]);
+
+    expect(await readFile(file, 'utf8')).toBe(
+      [
+        'extends: entries-base.yaml',
+        'rulesets:',
+        '  # Kept as it is',
+        '  - name: First',
+        '    enforcement: active',
+        '  - name: Second',
+        '    target: tag # tags only',
+        '    enforcement: disabled # for now',
+        '  - name: Third',
+        '    rules:',
+        '      - type: deletion',
+        'environments:',
+        '  - name: production',
+        '    wait_timer: 10',
+        '',
+      ].join('\n'),
+    );
+    expect(resolved.profile.environments).toEqual([{ name: 'production', wait_timer: 10 }]);
+    expect(resolved.sources.environments['production']).toBe(file);
+
+    // Dropping the file's own entry lets the base's apply again, and an empty list goes.
+    const dropped = await editProfile(file, [{ list: 'environments', name: 'PRODUCTION', entry: undefined }]);
+    expect(await readFile(file, 'utf8')).not.toContain('environments');
+    expect(dropped.profile.environments).toEqual([{ name: 'Production', wait_timer: 5 }]);
+  });
+
+  test('rejects an entry edited twice, named otherwise, or not a valid entry', async () => {
+    const text = 'rulesets: [{ name: Main }]\n';
+    const file = await write('entries-invalid.yaml', text);
+
+    const twice = rejection(
+      editProfile(file, [
+        { list: 'environments', name: 'Staging', entry: undefined },
+        { list: 'environments', name: 'staging', entry: { name: 'staging' } },
+      ]),
+    );
+    const misnamed = rejection(editProfile(file, [{ list: 'rulesets', name: 'Main', entry: { name: 'Other' } }]));
+    const invalid = rejection(
+      editProfile(file, [{ list: 'rulesets', name: 'Main', entry: { name: 'Main', enforcement: 'sometimes' } }]),
+    );
+
+    expect(String(await twice)).toContain('more than once');
+    expect(String(await misnamed)).toContain('must be named Main');
+    expect(await invalid).toBeInstanceOf(ProfileError);
+    expect(await readFile(file, 'utf8')).toBe(text);
+  });
+
   test('keeps Windows line endings, the indent width and the file mode', async () => {
     const file = await write('edit-layout.yaml', 'repository:\r\n    has_wiki: false\r\n');
     await chmod(file, 0o664);

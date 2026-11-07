@@ -1,7 +1,8 @@
 import { chmod, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
-import { isMap, parse, parseDocument, stringify } from 'yaml';
+import { type Document, isMap, isNode, isScalar, isSeq, parse, parseDocument, stringify, type YAMLMap } from 'yaml';
 import { z } from 'zod';
 
 import {
@@ -288,11 +289,24 @@ export async function listProfiles(directory: string): Promise<ProfileListing[]>
 }
 
 /** One setting to change in a profile file: a value to set, or undefined to remove it. */
-export interface ProfileEdit {
+export interface SettingEdit {
   /** The section and key, such as `['repository', 'has_wiki']` or `['actions', 'selected_actions', 'verified_allowed']`. */
   readonly path: readonly string[];
   readonly value: unknown;
 }
+
+/**
+ * One ruleset or environment to change in a profile file, by name: the entry
+ * to write, or undefined to stop naming it here, so the entry of that name in
+ * a base profile, if any, applies again.
+ */
+export interface EntryEdit {
+  readonly list: 'rulesets' | 'environments';
+  readonly name: string;
+  readonly entry: Readonly<Record<string, unknown>> | undefined;
+}
+
+export type ProfileEdit = SettingEdit | EntryEdit;
 
 const editableKeys = new Set([
   ...Object.keys(repositoryFields).map((key) => `repository.${key}`),
@@ -334,6 +348,74 @@ async function replaceFile(file: string, text: string): Promise<void> {
   }
 }
 
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Makes `map` hold `value` and changes only the keys that differ, so the
+ * rest keep their place and comments. A scalar keeps its comment when only
+ * its value changes; a list that differs is written anew.
+ */
+function updateMap(document: Document, map: YAMLMap, value: Readonly<Record<string, unknown>>): void {
+  map.items = map.items.filter((pair) => {
+    const name = isScalar(pair.key) ? pair.key.value : pair.key;
+    return typeof name === 'string' && Object.hasOwn(value, name);
+  });
+  for (const [name, next] of Object.entries(value)) {
+    const current: unknown = map.get(name, true);
+    if (isMap(current) && isRecord(next)) {
+      updateMap(document, current, next);
+    } else if (!isNode(current) || !isDeepStrictEqual(current.toJSON(), next)) {
+      map.set(
+        name,
+        isScalar(current) && (next === null || typeof next !== 'object') ? next : document.createNode(next),
+      );
+    }
+  }
+}
+
+/**
+ * Writes or removes the file's own entry of the edit's name. A written entry
+ * takes the place of the one it replaces, and a new name goes at the end.
+ */
+function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void {
+  const key = edit.list === 'environments' ? environmentKey : (name: string) => name;
+  const seenKey = `${edit.list}:${key(edit.name)}`;
+  if (seen.has(seenKey)) {
+    throw new ProfileError(
+      `${edit.list === 'rulesets' ? 'Ruleset' : 'Environment'} ${edit.name} is edited more than once`,
+    );
+  }
+  seen.add(seenKey);
+  if (edit.entry !== undefined && edit.entry['name'] !== edit.name) {
+    throw new ProfileError(`The entry for ${edit.name} must be named ${edit.name}`);
+  }
+  const found: unknown = document.get(edit.list);
+  if (found !== undefined && !isSeq(found)) {
+    throw new ProfileError(`Cannot edit ${edit.list}: it is not a list`);
+  }
+  const list = isSeq(found) ? found : undefined;
+  const index = list?.items.findIndex((item) => isMap(item) && key(String(item.get('name'))) === key(edit.name)) ?? -1;
+  if (edit.entry === undefined) {
+    if (list !== undefined && index !== -1) {
+      list.items.splice(index, 1);
+      if (list.items.length === 0) {
+        document.delete(edit.list);
+      }
+    }
+    return;
+  }
+  const item: unknown = list?.items[index];
+  if (list === undefined) {
+    document.set(edit.list, document.createNode([edit.entry]));
+  } else if (isMap(item)) {
+    updateMap(document, item, edit.entry);
+  } else {
+    list.items.push(document.createNode(edit.entry));
+  }
+}
+
 /**
  * Changes settings in one profile file and keeps its comments, line endings
  * and indent width; YAML layout such as quoting and list indentation may be
@@ -346,6 +428,10 @@ export async function editProfile(file: string, edits: readonly ProfileEdit[]): 
   const document = parseDocument(original);
   const seen = new Set<string>();
   for (const edit of edits) {
+    if ('list' in edit) {
+      editEntry(document, edit, seen);
+      continue;
+    }
     const key = edit.path.join('.');
     if (!editableKeys.has(key)) {
       throw new ProfileError(`Cannot edit ${key}: it is not a repository, merge or actions setting`);

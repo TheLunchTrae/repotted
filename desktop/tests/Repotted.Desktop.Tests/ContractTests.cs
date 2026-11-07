@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Avalonia.Headless.XUnit;
 using Repotted.Desktop.Services;
 using Repotted.Desktop.ViewModels;
 
@@ -64,10 +65,65 @@ public sealed class ContractTests
         var saved = await client.SaveProfileAsync(
             orgs.File,
             [new("repository.has_wiki", JsonValue.Create(false)), new("merge.allow_squash_merge", null)],
+            [],
             cancellationToken);
         Assert.Equal(orgs.File, saved.Sources["repository"]["has_wiki"]);
         Assert.Empty(saved.Sources["merge"]);
         Assert.Equal("# Ours\nextends: base.yaml\nrepository:\n  has_wiki: false\n", await File.ReadAllTextAsync(orgs.File, cancellationToken));
+    }
+
+    [AvaloniaFact]
+    public async Task The_cli_saves_the_rulesets_and_environments_the_app_edits()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        folders.Write("base.yaml", "rulesets:\n  - name: Main\n    enforcement: active\n");
+        var orgs = folders.Write("orgs.yaml", "extends: base.yaml\nenvironments:\n  - name: npm\n    wait_timer: 5 # minutes\n");
+        var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken), item => item.Name == "orgs");
+        var editor = new ProfileViewModel(client, listing);
+        await editor.LoadCommand.ExecuteAsync(null);
+        var (rulesets, environments) = (editor.Tabs.Single(tab => tab.List == "rulesets"), editor.Tabs.Single(tab => tab.List == "environments"));
+
+        var main = (RulesetEditorViewModel)rulesets.Entries.Single().Editor;
+        main.Enforcement.Options[1].ChooseCommand.Execute(null);
+        main.Rules.Single(rule => rule.Kind.Type == "pull_request").Enabled = true;
+        environments.NewCommand.Execute(null);
+        var staging = (EnvironmentEditorViewModel)environments.Editing!.Editor;
+        staging.Name = "staging";
+        staging.Deployments.Options[2].ChooseCommand.Execute(null);
+        staging.Branches = "main";
+        staging.Tags = "v*";
+        var npm = (EnvironmentEditorViewModel)environments.Entries[0].Editor;
+        npm.WaitTimer = "10";
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null(editor.SaveError);
+        Assert.False(editor.HasChanges);
+        Assert.Equal(
+            """
+            extends: base.yaml
+            environments:
+              - name: npm
+                wait_timer: 10 # minutes
+              - name: staging
+                deployment_branch_policy:
+                  protected_branches: false
+                  custom_branch_policies: true
+                branch_policies:
+                  - name: main
+                  - name: v*
+                    type: tag
+            rulesets:
+              - name: Main
+                enforcement: evaluate
+                rules:
+                  - type: pull_request
+
+            """.ReplaceLineEndings("\n"),
+            await File.ReadAllTextAsync(orgs, cancellationToken));
+        // The base's ruleset is now set here, over it.
+        Assert.Equal("Set here", editor.Tabs.Single(tab => tab.List == "rulesets").Entries.Single().Note);
     }
 
     [Fact]
@@ -83,7 +139,7 @@ public sealed class ContractTests
         var @base = new ProfileItemViewModel(Assert.Single(listings), null);
         string? made = null;
         NewProfileViewModel Form(string name) =>
-            new(client, folder, [@base], [], null, (file, _) => Task.FromResult(made = file), () => { }) { Name = name };
+            new(client, folder, [@base], [], null, (file, _) => Task.FromResult(made = file), () => { }, () => { }) { Name = name };
 
         var extending = Form("extending");
         extending.Extends = true;
@@ -93,7 +149,7 @@ public sealed class ContractTests
         Assert.Equal(["extending.yaml", @base.Listing.File], [Path.GetFileName(resolved.Chain[0]), .. resolved.Chain.Skip(1)]);
 
         await Form("empty").CreateCommand.ExecuteAsync(null);
-        await client.SaveProfileAsync(made!, [new("repository.has_wiki", JsonValue.Create(false))], cancellationToken);
+        await client.SaveProfileAsync(made!, [new("repository.has_wiki", JsonValue.Create(false))], [], cancellationToken);
         Assert.Equal("repository:\n  has_wiki: false\n", await File.ReadAllTextAsync(made!, cancellationToken));
     }
 }

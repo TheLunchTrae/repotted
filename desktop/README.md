@@ -14,8 +14,17 @@ The app edits profiles in a folder of YAML files. The folder starts as
 `Documents/Repotted`, which the app creates, and the user can pick any other
 folder, such as a clone of their setup repository. The profile editor changes
 repository, merge and Actions settings through `repotted profile --set` and
-`--unset`, which keep the rest of the file; rulesets and environments are
-edited in the YAML.
+`--unset`, which keep the rest of the file.
+
+Rulesets and environments open in an editor of their own, saved through
+`repotted profile --ruleset`, `--environment` and their `--drop-` forms. The
+editor starts from the entry as the profile resolves it and changes only what
+is edited, so keys and rules it does not show stay as they are. A choice left
+unset leaves that key to GitHub. Editing a base profile's entry sets the whole
+entry in this profile, over the base's, under the same name. Renaming an
+entry, or taking it out of the profile, frees its old name only once the
+profile is saved. While a capture runs, the profiles list leaves out the file
+it holds.
 
 A new profile starts empty, extends another profile in the folder, or is
 captured from a repository with `repotted capture --output`, which only reads

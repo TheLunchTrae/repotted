@@ -351,7 +351,7 @@ public sealed class ViewModelTests : IDisposable
         Assert.Equal((SettingOrigin.Inherited, "From base"), Origin(editor, "has_issues"));
         Assert.Equal((SettingOrigin.NotManaged, "Not managed"), Origin(editor, "has_projects"));
         Assert.Equal(
-            ["Protect main: From base", "Old tags: Removed here"],
+            ["Protect main: From base", "Old tags: Removed from GitHub here"],
             editor.Tabs[3].Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
         Assert.StartsWith("extends: base.yaml", editor.Yaml, StringComparison.Ordinal);
     }
@@ -382,6 +382,83 @@ public sealed class ViewModelTests : IDisposable
         Assert.Contains(save, cli.Calls);
         Assert.False(editor.HasChanges);
         Assert.Equal("On", Find(editor, "has_wiki").Options.Single(option => option.Selected).Label);
+    }
+
+    [AvaloniaFact]
+    public async Task Rulesets_and_environments_save_by_name_and_a_rename_takes_the_old_one_out()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var (rulesets, environments) = (editor.Tabs[3], editor.Tabs[4]);
+
+        // A base's ruleset keeps its name, and an edit sets it here over the base's.
+        var main = rulesets.Entries[0];
+        main.OpenCommand.Execute(null);
+        Assert.Same(main, rulesets.Editing);
+        Assert.False(main.Editor.Renamable);
+        Assert.False(main.Changed);
+        ((RulesetEditorViewModel)main.Editor).Enforcement.Options[1].ChooseCommand.Execute(null);
+        rulesets.BackCommand.Execute(null);
+
+        rulesets.Entries[1].Editor.Name = "Retired tags";
+        // The old name stays taken until the rename is saved, and a new entry can go before it is saved.
+        rulesets.NewCommand.Execute(null);
+        var extra = rulesets.Editing!;
+        extra.Editor.Name = "Old tags";
+        Assert.Equal("The profile already has a ruleset named Old tags.", editor.Problem);
+        extra.DropCommand.Execute(null);
+        Assert.Null(rulesets.Editing);
+        Assert.Equal(2, rulesets.Entries.Count);
+        environments.Entries[0].DropCommand.Execute(null);
+        environments.NewCommand.Execute(null);
+        var staging = environments.Editing!;
+
+        // A new entry needs a name, and one the profile has not used in this save.
+        Assert.Equal("An environment needs a name.", editor.Problem);
+        Assert.False(editor.SaveCommand.CanExecute(null));
+        staging.Editor.Name = "NPM";
+        Assert.Equal("The profile already has an environment named NPM.", editor.Problem);
+        staging.Editor.Name = "staging";
+        ((EnvironmentEditorViewModel)staging.Editor).WaitTimer = "10";
+        Assert.True(editor.SaveCommand.CanExecute(null));
+
+        Assert.Equal("4 unsaved changes", editor.ChangesLabel);
+        Assert.Equal(
+            ["Protect main: Changed, not saved yet", "Retired tags: Changed, not saved yet"],
+            rulesets.Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
+        Assert.Equal(
+            ["npm: Taken out of this profile, so the profile stops managing it", "staging: New, not saved yet"],
+            environments.Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
+        Assert.Equal(1, environments.Count);
+
+        var save = $$"""profile {{files.Own}} --ruleset {"name":"Protect main","enforcement":"evaluate"} --drop-ruleset Old tags --ruleset {"name":"Retired tags","absent":true} --drop-environment npm --environment {"name":"staging","wait_timer":10} --json""";
+        cli.On(save, Documents.Resolved(files.Own, files.Base));
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Contains(save, cli.Calls);
+        Assert.Null(editor.SaveError);
+        Assert.False(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
+    public async Task Discarding_puts_rulesets_and_environments_back()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var (rulesets, environments) = (editor.Tabs[3], editor.Tabs[4]);
+        rulesets.Entries[1].OpenCommand.Execute(null);
+        rulesets.Entries[1].Editor.Name = "Retired tags";
+        environments.Entries[0].DropCommand.Execute(null);
+        environments.NewCommand.Execute(null);
+
+        editor.DiscardCommand.Execute(null);
+
+        Assert.False(editor.HasChanges);
+        Assert.Null(rulesets.Editing);
+        Assert.Null(environments.Editing);
+        Assert.Equal(["Protect main", "Old tags"], rulesets.Entries.Select(entry => entry.Name));
+        Assert.False(rulesets.Entries[1].Opened);
+        Assert.Equal(["npm: Set here"], environments.Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
     }
 
     [AvaloniaFact]
@@ -758,7 +835,7 @@ public sealed class ViewModelTests : IDisposable
     public void A_profile_extends_another_only_once_one_is_chosen()
     {
         using var form = new NewProfileViewModel(
-            new RepottedClient(new FakeCli()), folders.Profiles, [], [], null, (_, _) => Task.CompletedTask, () => { })
+            new RepottedClient(new FakeCli()), folders.Profiles, [], [], null, (_, _) => Task.CompletedTask, () => { }, () => { })
         {
             Name = "libraries",
             Extends = true,
@@ -821,6 +898,38 @@ public sealed class ViewModelTests : IDisposable
         Assert.Same(next, profiles.Creating);
         Assert.Null(profiles.Captured);
         Assert.Equal(files.Own, profiles.Current?.File);
+    }
+
+    [AvaloniaFact]
+    public async Task A_capture_hides_the_file_it_holds_and_frees_the_name_once_it_stops()
+    {
+        var (profiles, cli, files) = await OpenOrgs("TheLunchTrae/repotted");
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        cli.On($"capture TheLunchTrae/repotted --output {made} --json", async _ =>
+        {
+            await finish.Task;
+            return """{"error":{"kind":"error","message":"Not Found"}}""";
+        });
+        cli.On(folders.List(), Listing(("base", files.Base, null), ("orgs", files.Own, files.Base), ("repotted", made, null)));
+        profiles.StartNew("TheLunchTrae/repotted");
+        var capturing = profiles.Creating!.CreateCommand.ExecuteAsync(null);
+
+        // The empty file the capture holds is not a profile yet.
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal(["base", "orgs"], profiles.Items.Select(item => item.Name));
+
+        // Another form cannot take the name while the closed one holds it, and can once it lets go.
+        profiles.Creating!.CancelCommand.Execute(null);
+        profiles.StartNew(null);
+        var next = profiles.Creating!;
+        next.Name = "repotted";
+        Assert.Equal("repotted.yaml is already in this folder.", next.Problem);
+        finish.SetResult();
+        await capturing;
+
+        Assert.False(File.Exists(made));
+        Assert.Null(next.Problem);
     }
 
     [AvaloniaFact]
