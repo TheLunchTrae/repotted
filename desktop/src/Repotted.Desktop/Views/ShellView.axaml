@@ -9,10 +9,10 @@
     <Border Grid.ColumnSpan="2" Background="{DynamicResource SurfaceBrush}"
             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,0">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Text="Repositories" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <TextBlock Text="{Binding Crumb}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
         <TextBox x:Name="SearchBox" Grid.Column="1" Classes="search" VerticalAlignment="Center"
-                 PlaceholderText="Find a repository" Text="{Binding Search}"
-                 AutomationProperties.Name="Find a repository">
+                 PlaceholderText="{Binding SearchHint}" Text="{Binding Search}"
+                 AutomationProperties.Name="{Binding SearchHint}">
           <TextBox.InnerRightContent>
             <Border Classes="kbd" Margin="6,0,0,0" IsHitTestVisible="False">
               <TextBlock x:Name="SearchShortcut" Classes="mono muted" FontSize="12" Text="Ctrl K" />
@@ -47,18 +47,55 @@
                     Command="{Binding Repositories.AddRepositoriesCommand}" />
           </StackPanel>
         </Border>
-        <ListBox Classes="nav" SelectedIndex="0" AutomationProperties.Name="Main">
-          <ListBoxItem AutomationProperties.Name="Repositories">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="Repositories" />
-              <TextBlock Grid.Column="1" Classes="muted" FontSize="13" FontWeight="Normal"
-                         Text="{Binding Repositories.Count}" />
-            </Grid>
-          </ListBoxItem>
-        </ListBox>
+        <DockPanel>
+          <ListBox DockPanel.Dock="Top" Classes="nav" SelectedIndex="{Binding Page}" AutomationProperties.Name="Main">
+            <ListBoxItem AutomationProperties.Name="Repositories">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="Repositories" />
+                <TextBlock Grid.Column="1" Classes="muted" FontSize="13" FontWeight="Normal"
+                           Text="{Binding Repositories.Count}" />
+              </Grid>
+            </ListBoxItem>
+            <ListBoxItem AutomationProperties.Name="Profiles">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="Profiles" />
+                <TextBlock Grid.Column="1" Classes="muted" FontSize="13" FontWeight="Normal"
+                           Text="{Binding Profiles.Count}" />
+              </Grid>
+            </ListBoxItem>
+          </ListBox>
+
+          <!-- The profiles in the folder, while the profiles page is open -->
+          <DockPanel IsVisible="{Binding ShowingProfiles}" Margin="0,18,0,12">
+            <TextBlock DockPanel.Dock="Top" Classes="muted small" Margin="12,0,12,6" FontWeight="SemiBold"
+                       Text="In this folder" IsVisible="{Binding Profiles.HasProfiles}" />
+            <ListBox Classes="nav" ItemsSource="{Binding Profiles.Items}" SelectedItem="{Binding Profiles.Selected}"
+                     AutomationProperties.Name="Profiles in this folder">
+              <ListBox.Styles>
+                <Style Selector="ListBoxItem" x:DataType="vm:ProfileItemViewModel">
+                  <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                </Style>
+              </ListBox.Styles>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:ProfileItemViewModel">
+                  <StackPanel Spacing="1">
+                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="muted" FontSize="12.5" FontWeight="Normal" Text="{Binding Note}"
+                               IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DockPanel>
+        </DockPanel>
       </DockPanel>
     </Border>
 
-    <views:RepositoriesView Grid.Row="1" Grid.Column="1" DataContext="{Binding Repositories}" />
+    <Panel Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowingRepositories}">
+      <views:RepositoriesView DataContext="{Binding Repositories}" />
+    </Panel>
+    <Panel Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowingProfiles}">
+      <views:ProfilesView DataContext="{Binding Profiles}" />
+    </Panel>
   </Grid>
 </UserControl>

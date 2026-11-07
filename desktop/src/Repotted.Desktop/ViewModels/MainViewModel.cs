@@ -4,7 +4,7 @@ using Repotted.Desktop.Services;
 namespace Repotted.Desktop.ViewModels;
 
 /// <summary>Chooses the page: the sign-in until GitHub knows the account, then the app.</summary>
-internal sealed partial class MainViewModel(RepottedClient client, IDesktop desktop) : ViewModelBase
+internal sealed partial class MainViewModel(RepottedClient client, IDesktop desktop, AppSettings settings) : ViewModelBase
 {
     [ObservableProperty]
     public partial ViewModelBase? Page { get; set; }
@@ -18,9 +18,9 @@ internal sealed partial class MainViewModel(RepottedClient client, IDesktop desk
             switch (await client.StatusAsync(CancellationToken.None).ConfigureAwait(true))
             {
                 case Account.SignedIn account:
-                    var shell = new ShellViewModel(account, client, desktop);
+                    var shell = new ShellViewModel(account, client, desktop, settings);
                     Page = shell;
-                    await shell.Repositories.RefreshCommand.ExecuteAsync(null).ConfigureAwait(true);
+                    await shell.RefreshAsync().ConfigureAwait(true);
                     break;
                 case Account.SignedOut signedOut:
                     Page = new SignInViewModel(client, desktop, signedOut, StartAsync);

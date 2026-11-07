@@ -41,6 +41,8 @@ internal sealed class FakeCli : ICli
         return this;
     }
 
+    public bool Answers(string command) => answers.ContainsKey(command);
+
     public FakeCli Missing(string command)
     {
         answers[command] = (_, _) => throw new CliNotFoundException("Could not start the Repotted command line (repotted).");
@@ -57,12 +59,17 @@ internal sealed class FakeCli : ICli
     }
 }
 
-/// <summary>Records the links opened and the text copied.</summary>
+/// <summary>Records the links opened and the text copied, and picks the folder it was given.</summary>
 internal sealed class FakeDesktop : IDesktop
 {
     public List<Uri> Opened { get; } = [];
 
     public List<string> Copied { get; } = [];
+
+    /// <summary>The folder the next pick returns; null when the user cancels.</summary>
+    public string? Folder { get; set; }
+
+    public Task<string?> PickFolderAsync(string title) => Task.FromResult(Folder);
 
     public Task OpenUrlAsync(Uri url)
     {
@@ -77,8 +84,82 @@ internal sealed class FakeDesktop : IDesktop
     }
 }
 
+/// <summary>
+/// App settings in a folder of their own, with a profiles folder already
+/// chosen, so tests never touch the user's settings or Documents.
+/// </summary>
+internal sealed class Folders : IDisposable
+{
+    private readonly string root = Directory.CreateTempSubdirectory("repotted-desktop-").FullName;
+
+    public Folders()
+    {
+        Profiles = Path.Combine(root, "profiles");
+        Directory.CreateDirectory(Profiles);
+        Settings = new AppSettings(Path.Combine(root, "settings"));
+        Settings.Save(new SettingsDocument(Profiles));
+    }
+
+    public string Profiles { get; }
+
+    public AppSettings Settings { get; }
+
+    /// <summary>The command that lists <paramref name="folder"/>, the profiles folder by default.</summary>
+    public string List(string? folder = null) => $"profiles {folder ?? Profiles} --json";
+
+    /// <summary>Writes a profile file, which the editor shows as its YAML.</summary>
+    public string Write(string name, string yaml)
+    {
+        var file = Path.Combine(Profiles, name);
+        File.WriteAllText(file, yaml);
+        return file;
+    }
+
+    public void Dispose() => Directory.Delete(root, recursive: true);
+}
+
 internal static class Documents
 {
+    public const string NoProfiles = """{"profiles":[]}""";
+
+    /// <summary>A listing of two profiles: one, and the base it extends.</summary>
+    public static string Profiles(string own, string @base) =>
+        $$$"""
+        {"profiles":[
+          {"name":"base","file":{{{Json(@base)}}},"extends":null,"problem":null},
+          {"name":"orgs","file":{{{Json(own)}}},"extends":{{{Json(@base)}}},"problem":null}
+        ]}
+        """;
+
+    /// <summary>
+    /// orgs over base: the wiki and squash merges set in orgs, issues and
+    /// rebase merges from base, and nothing else managed.
+    /// </summary>
+    public static string Resolved(string own, string @base, bool wiki = false) =>
+        $$$"""
+        {"chain":[{{{Json(own)}}},{{{Json(@base)}}}],
+         "profile":{
+           "repository":{"has_issues":true,"has_wiki":{{{(wiki ? "true" : "false")}}} },
+           "merge":{"allow_rebase_merge":true,"allow_squash_merge":false},
+           "rulesets":[{"name":"Protect main"},{"name":"Old tags","absent":true}],
+           "environments":[{"name":"npm"}]},
+         "sources":{
+           "repository":{"has_issues":{{{Json(@base)}}},"has_wiki":{{{Json(own)}}} },
+           "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(own)}}} },
+           "actions":{},
+           "rulesets":{"Protect main":{{{Json(@base)}}},"Old tags":{{{Json(own)}}} },
+           "environments":{"npm":{{{Json(own)}}} } } }
+        """;
+
+    /// <summary>base alone: issues on, set in base itself.</summary>
+    public static string ResolvedBase(string @base) =>
+        $$$"""
+        {"chain":[{{{Json(@base)}}}],"profile":{"repository":{"has_issues":true}},
+         "sources":{"repository":{"has_issues":{{{Json(@base)}}} },"merge":{},"actions":{},"rulesets":{},"environments":{} } }
+        """;
+
+    private static string Json(string text) => $"\"{System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(text)}\"";
+
     public static readonly Uri InstallUrl = new("https://github.com/apps/repotted-app/installations/new");
 
     public const string SignedIn =

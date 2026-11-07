@@ -19,8 +19,12 @@ namespace Repotted.Desktop.Tests;
 /// Draws each page in light and dark. With REPOTTED_SCREENSHOTS set to a
 /// folder, each drawing is saved there as a PNG.
 /// </summary>
-public sealed class ViewTests
+public sealed class ViewTests : IDisposable
 {
+    private readonly Folders folders = new();
+
+    public void Dispose() => folders.Dispose();
+
     public static TheoryData<string> Themes => ["light", "dark"];
 
     [AvaloniaTheory]
@@ -164,10 +168,63 @@ public sealed class ViewTests
         Save(window, $"problem-{theme}");
     }
 
-    private static async Task<Window> Show(string theme, FakeCli cli)
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task A_profile_shows_where_each_setting_comes_from(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\nmerge:\n  allow_rebase_merge: true\nrulesets:\n  - name: Protect main\n");
+        var own = folders.Write(
+            "orgs.yaml",
+            "# Repositories in our organizations\nextends: base.yaml\nrepository:\n  has_wiki: false\nmerge:\n  allow_squash_merge: false\nrulesets:\n  - name: Old tags\n    absent: true\nenvironments:\n  - name: npm\n");
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var projects = shell.Profiles.Current!.Tabs[0].Groups[0].Settings.Single(setting => setting.Key == "has_projects");
+        projects.Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+
+        var text = Texts(window);
+        Assert.Contains("Profiles / orgs", text);
+        Assert.Contains("Extends base. Saved to orgs.yaml.", text);
+        Assert.Contains("Set here", text);
+        Assert.Contains("From base", text);
+        Assert.Contains("Not managed", text);
+        Assert.Contains("1 unsaved change", text);
+        Assert.Contains("Save profile", text);
+        Save(window, $"profile-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task An_empty_profiles_folder_says_what_a_profile_is(string theme)
+    {
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+
+        shell.Page = 1;
+
+        var text = Texts(window);
+        Assert.Contains($"No profiles in {folders.Profiles} yet.", text);
+        Assert.Contains("Choose a folder", text);
+        Save(window, $"profiles-empty-{theme}");
+    }
+
+    private async Task<Window> Show(string theme, FakeCli cli)
     {
         Application.Current!.RequestedThemeVariant = theme == "dark" ? ThemeVariant.Dark : ThemeVariant.Light;
-        var main = new MainViewModel(new RepottedClient(cli), new FakeDesktop());
+        if (!cli.Answers(folders.List()))
+        {
+            cli.On(folders.List(), Documents.NoProfiles);
+        }
+        var main = new MainViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings);
         var window = new MainWindow { DataContext = main, Width = 1280, Height = 800 };
         window.Show();
         await main.StartAsync();
