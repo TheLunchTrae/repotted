@@ -13,3 +13,11 @@ rulesets:
           strict_required_status_checks_policy: false
           required_status_checks:
             - context: quality
+
+# The environment the publish workflow deploys from, open only to release
+# tags. Its required reviewer is set on GitHub and kept as it is.
+environments:
+  - name: npm
+    deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
+    branch_policies:
+      - { name: 'v*', type: tag }

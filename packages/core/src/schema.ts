@@ -129,12 +129,114 @@ const absentRuleset = z
 
 export const rulesetEntry = z.union([absentRuleset, ruleset]);
 
+export const environmentReviewer = z
+  .object({
+    type: z.enum(['User', 'Team']),
+    id: z.number().int(),
+  })
+  .strict();
+
+export const deploymentBranchPolicy = z
+  .object({
+    protected_branches: z.boolean(),
+    custom_branch_policies: z.boolean(),
+  })
+  .strict()
+  .refine((value) => value.protected_branches !== value.custom_branch_policies, {
+    message: 'Set exactly one of protected_branches and custom_branch_policies to true',
+  });
+
+/** A branch or tag name pattern that may deploy to an environment. */
+export const branchPolicy = z
+  .object({
+    name: z.string().min(1),
+    type: z.enum(['branch', 'tag']).optional(),
+  })
+  .strict();
+
+export const environment = z
+  .object({
+    name: z.string().min(1),
+    wait_timer: z.number().int().min(0).max(43_200).optional(),
+    prevent_self_review: z.boolean().optional(),
+    reviewers: z.array(environmentReviewer).max(6).optional(),
+    deployment_branch_policy: deploymentBranchPolicy.nullable().optional(),
+    branch_policies: z.array(branchPolicy).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    // Name patterns only apply, and GitHub only accepts them, under custom policies.
+    if (value.branch_policies !== undefined && value.deployment_branch_policy?.custom_branch_policies !== true) {
+      context.addIssue({
+        code: 'custom',
+        message: 'branch_policies needs deployment_branch_policy with custom_branch_policies: true',
+        path: ['branch_policies'],
+      });
+    }
+    const patterns = new Set<string>();
+    for (const [index, policy] of (value.branch_policies ?? []).entries()) {
+      const key = `${policy.type ?? 'branch'} ${policy.name}`;
+      if (patterns.has(key)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Pattern "${key}" appears more than once`,
+          path: ['branch_policies', index, 'name'],
+        });
+      }
+      patterns.add(key);
+    }
+    // GitHub keeps prevent_self_review on its required-reviewers rule, which needs a reviewer.
+    if (value.prevent_self_review === true && value.reviewers?.length === 0) {
+      context.addIssue({
+        code: 'custom',
+        message: 'prevent_self_review needs at least one reviewer',
+        path: ['prevent_self_review'],
+      });
+    }
+  });
+
+/** An environment the profile removes by name. */
+const absentEnvironment = z
+  .object({
+    name: z.string().min(1),
+    absent: z.literal(true),
+  })
+  .strict();
+
+export const environmentEntry = z.union([absentEnvironment, environment]);
+
+/** GitHub treats environment names as case-insensitive, so entries pair by this key. */
+export function environmentKey(name: string): string {
+  return name.toLowerCase();
+}
+
+function addDuplicateNameIssues(
+  entries: readonly { name: string }[],
+  kind: string,
+  path: string,
+  context: z.RefinementCtx,
+  key: (name: string) => string = (name) => name,
+): void {
+  const names = new Set<string>();
+  for (const [index, entry] of entries.entries()) {
+    if (names.has(key(entry.name))) {
+      context.addIssue({
+        code: 'custom',
+        message: `${kind} "${entry.name}" appears more than once`,
+        path: [path, index, 'name'],
+      });
+    }
+    names.add(key(entry.name));
+  }
+}
+
 export const profile = z
   .object({
     repository: repositorySettings,
     merge: mergeSettings,
     actions: actionsSettings,
     rulesets: z.array(rulesetEntry),
+    environments: z.array(environmentEntry),
   })
   .partial()
   .strict()
@@ -142,17 +244,8 @@ export const profile = z
     for (const message of mergeSettingsProblems(value.merge ?? {})) {
       context.addIssue({ code: 'custom', message, path: ['merge'] });
     }
-    const names = new Set<string>();
-    for (const [index, entry] of (value.rulesets ?? []).entries()) {
-      if (names.has(entry.name)) {
-        context.addIssue({
-          code: 'custom',
-          message: `Ruleset "${entry.name}" appears more than once`,
-          path: ['rulesets', index, 'name'],
-        });
-      }
-      names.add(entry.name);
-    }
+    addDuplicateNameIssues(value.rulesets ?? [], 'Ruleset', 'rulesets', context);
+    addDuplicateNameIssues(value.environments ?? [], 'Environment', 'environments', context, environmentKey);
   });
 
 /** A profile file, which may extend another profile file. */
@@ -163,6 +256,7 @@ export const profileFile = z
     merge: mergeSettings.optional(),
     actions: actionsSettings.optional(),
     rulesets: z.array(rulesetEntry).optional(),
+    environments: z.array(environmentEntry).optional(),
   })
   .strict();
 
@@ -171,5 +265,7 @@ export type MergeSettings = z.infer<typeof mergeSettings>;
 export type ActionsSettings = z.infer<typeof actionsSettings>;
 export type Ruleset = z.infer<typeof ruleset>;
 export type RulesetEntry = z.infer<typeof rulesetEntry>;
+export type Environment = z.infer<typeof environment>;
+export type EnvironmentEntry = z.infer<typeof environmentEntry>;
 export type Profile = z.infer<typeof profile>;
 export type ProfileFile = z.infer<typeof profileFile>;

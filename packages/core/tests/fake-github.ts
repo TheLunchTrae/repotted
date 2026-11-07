@@ -10,6 +10,15 @@ interface StoredRuleset {
   rules: { type: string; parameters?: Record<string, unknown> }[];
 }
 
+interface StoredEnvironment {
+  name: string;
+  wait_timer: number;
+  prevent_self_review: boolean;
+  reviewers: { type: string; id: number }[];
+  deployment_branch_policy: { protected_branches: boolean; custom_branch_policies: boolean } | null;
+  branch_policies: { id: number; name: string; type: string }[];
+}
+
 export interface FakeState {
   repository: Record<string, unknown>;
   actions: { enabled: boolean; allowed_actions?: string; sha_pinning_required?: boolean };
@@ -17,6 +26,9 @@ export interface FakeState {
   workflow: Record<string, unknown>;
   rulesets: StoredRuleset[];
   rulesetsUnavailable: boolean;
+  environments: StoredEnvironment[];
+  environmentsUnreadable: boolean;
+  branchPoliciesUnreadable: boolean;
 }
 
 export interface Call {
@@ -64,6 +76,10 @@ function storedRules(value: unknown): StoredRuleset['rules'] {
   });
 }
 
+function paging(query: URLSearchParams): { perPage: number; page: number } {
+  return { perPage: Number(query.get('per_page') ?? '30'), page: Number(query.get('page') ?? '1') };
+}
+
 /**
  * An in-memory GitHub that serves the endpoints Repotted uses for one
  * repository, `lunch/app`, and records every write.
@@ -97,6 +113,9 @@ export class FakeGitHub implements GitHub {
       workflow: { default_workflow_permissions: 'write', can_approve_pull_request_reviews: false },
       rulesets: [],
       rulesetsUnavailable: false,
+      environments: [],
+      environmentsUnreadable: false,
+      branchPoliciesUnreadable: false,
       ...state,
     };
   }
@@ -115,6 +134,13 @@ export class FakeGitHub implements GitHub {
     const base = '/repos/lunch/app';
     const permissions = `${base}/actions/permissions`;
     const rulesetId = new RegExp(`^${base}/rulesets/(\\d+)$`, 'u').exec(route)?.[1];
+    const environment = new RegExp(
+      `^${base}/environments/([^/]+)(/deployment-branch-policies(?:/(\\d+))?)?$`,
+      'u',
+    ).exec(route);
+    if (environment !== null) {
+      return this.handleEnvironment(method, decodeURIComponent(environment[1] ?? ''), environment, query, body);
+    }
     const key = `${method} ${rulesetId === undefined ? route : `${base}/rulesets/:id`}`;
 
     switch (key) {
@@ -188,6 +214,8 @@ export class FakeGitHub implements GitHub {
         return this.findRuleset(Number(rulesetId));
       case `PUT ${base}/rulesets/:id`:
         return this.saveRuleset(Number(rulesetId), { ...this.findRuleset(Number(rulesetId)), ...record(body) });
+      case `GET ${base}/environments`:
+        return this.listEnvironments(new URLSearchParams(query));
       case `DELETE ${base}/rulesets/:id`:
         this.findRuleset(Number(rulesetId));
         this.state.rulesets = this.state.rulesets.filter((item) => item.id !== Number(rulesetId));
@@ -197,12 +225,140 @@ export class FakeGitHub implements GitHub {
     }
   }
 
+  private listEnvironments(query: URLSearchParams): unknown {
+    if (this.state.environmentsUnreadable) {
+      throw new GitHubError(403, 'Resource not accessible by integration');
+    }
+    const { perPage, page } = paging(query);
+    // GitHub reports settings as protection rules and leaves out a rule at its default.
+    return {
+      total_count: this.state.environments.length,
+      environments: this.state.environments.slice((page - 1) * perPage, page * perPage).map((stored) => ({
+        id: stored.name.length,
+        name: stored.name,
+        protection_rules: [
+          ...(stored.wait_timer > 0 ? [{ id: 1, type: 'wait_timer', wait_timer: stored.wait_timer }] : []),
+          ...(stored.reviewers.length > 0
+            ? [
+                {
+                  id: 2,
+                  type: 'required_reviewers',
+                  prevent_self_review: stored.prevent_self_review,
+                  reviewers: stored.reviewers.map((reviewer) => ({
+                    type: reviewer.type,
+                    reviewer: { id: reviewer.id, login: `user${reviewer.id}` },
+                  })),
+                },
+              ]
+            : []),
+          ...(stored.deployment_branch_policy === null ? [] : [{ id: 3, type: 'branch_policy' }]),
+        ],
+        deployment_branch_policy: stored.deployment_branch_policy,
+      })),
+    };
+  }
+
+  private handleEnvironment(
+    method: Method,
+    name: string,
+    match: RegExpExecArray,
+    query: string,
+    body: unknown,
+  ): unknown {
+    // GitHub matches environment names without case.
+    const found = this.state.environments.find((item) => item.name.toLowerCase() === name.toLowerCase());
+    if (match[2] === undefined) {
+      if (method === 'PUT') {
+        return this.saveEnvironment(name, found, body === undefined ? {} : record(body));
+      }
+      if (found === undefined) {
+        throw new GitHubError(404, 'Not Found');
+      }
+      if (method === 'DELETE') {
+        this.state.environments = this.state.environments.filter((item) => item !== found);
+        return undefined;
+      }
+      throw new GitHubError(404, `Not Found: ${method} ${name}`);
+    }
+    if (found?.deployment_branch_policy?.custom_branch_policies !== true) {
+      throw new GitHubError(404, 'Not Found');
+    }
+    const policyId = match[3];
+    if (method === 'GET' && policyId === undefined) {
+      if (this.state.branchPoliciesUnreadable) {
+        throw new GitHubError(403, 'Resource not accessible by integration');
+      }
+      const { perPage, page } = paging(new URLSearchParams(query));
+      return {
+        total_count: found.branch_policies.length,
+        branch_policies: found.branch_policies.slice((page - 1) * perPage, page * perPage),
+      };
+    }
+    if (method === 'POST' && policyId === undefined) {
+      const next = record(body);
+      const policy = { id: this.nextId++, name: String(next['name']), type: next['type'] === 'tag' ? 'tag' : 'branch' };
+      if (found.branch_policies.some((item) => item.name === policy.name && item.type === policy.type)) {
+        throw new GitHubError(422, 'Validation Failed: name already exists');
+      }
+      found.branch_policies.push(policy);
+      return policy;
+    }
+    if (method === 'DELETE' && policyId !== undefined) {
+      const before = found.branch_policies.length;
+      found.branch_policies = found.branch_policies.filter((item) => item.id !== Number(policyId));
+      if (found.branch_policies.length === before) {
+        throw new GitHubError(404, 'Not Found');
+      }
+      return undefined;
+    }
+    throw new GitHubError(404, `Not Found: ${method} ${name} branch policies`);
+  }
+
+  /** A PUT replaces the environment's settings: keys it leaves out go back to their defaults. */
+  private saveEnvironment(name: string, found: StoredEnvironment | undefined, body: Record<string, unknown>): unknown {
+    const allowed = new Set(['wait_timer', 'prevent_self_review', 'reviewers', 'deployment_branch_policy']);
+    const unknown = Object.keys(body).filter((key) => !allowed.has(key));
+    if (unknown.length > 0) {
+      throw new GitHubError(422, `Invalid request: ${unknown.join(', ')} is not a permitted key`);
+    }
+    const reviewers = Array.isArray(body['reviewers'])
+      ? body['reviewers'].map((item: unknown) => {
+          const reviewer = record(item);
+          return { type: String(reviewer['type']), id: Number(reviewer['id']) };
+        })
+      : [];
+    if (reviewers.length > 6) {
+      throw new GitHubError(422, 'Invalid request: at most six reviewers');
+    }
+    const policy = body['deployment_branch_policy'] === undefined ? null : body['deployment_branch_policy'];
+    let deploymentBranchPolicy: StoredEnvironment['deployment_branch_policy'] = null;
+    if (policy !== null) {
+      const settings = record(policy);
+      if (settings['protected_branches'] === settings['custom_branch_policies']) {
+        throw new GitHubError(422, 'Invalid request: set exactly one of protected_branches and custom_branch_policies');
+      }
+      deploymentBranchPolicy = {
+        protected_branches: settings['protected_branches'] === true,
+        custom_branch_policies: settings['custom_branch_policies'] === true,
+      };
+    }
+    const stored: StoredEnvironment = {
+      name: found?.name ?? name,
+      wait_timer: typeof body['wait_timer'] === 'number' ? body['wait_timer'] : 0,
+      prevent_self_review: body['prevent_self_review'] === true,
+      reviewers,
+      deployment_branch_policy: deploymentBranchPolicy,
+      branch_policies: deploymentBranchPolicy?.custom_branch_policies === true ? (found?.branch_policies ?? []) : [],
+    };
+    this.state.environments = [...this.state.environments.filter((item) => item !== found), stored];
+    return { name };
+  }
+
   private listRulesets(query: URLSearchParams): unknown {
     if (this.state.rulesetsUnavailable) {
       throw new GitHubError(403, 'Upgrade to GitHub Pro or make this repository public to enable this feature.');
     }
-    const perPage = Number(query.get('per_page') ?? '30');
-    const page = Number(query.get('page') ?? '1');
+    const { perPage, page } = paging(query);
     return this.state.rulesets
       .slice((page - 1) * perPage, page * perPage)
       .map((item) => ({ id: item.id, name: item.name, source_type: 'Repository', source: 'lunch/app' }));

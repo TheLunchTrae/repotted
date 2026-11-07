@@ -2,17 +2,18 @@
 
 ## Profiles
 
-A profile is YAML with up to four sections. Keys are the GitHub REST API's
+A profile is YAML with up to five sections. Keys are the GitHub REST API's
 field names, so the REST docs describe each one. `packages/core/src/schema.ts`
 is the full schema; an unknown key is an error, so a misspelling never passes
 silently.
 
-| Section      | Keys                                                                                                                                                            |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repository` | `has_issues`, `has_projects`, `has_wiki`, `has_discussions`, `allow_auto_merge`, `allow_update_branch`, `delete_branch_on_merge`, `web_commit_signoff_required` |
-| `merge`      | `allow_merge_commit`, `allow_squash_merge`, `allow_rebase_merge`, and the merge and squash commit title and message settings                                    |
-| `actions`    | `enabled`, `allowed_actions`, `selected_actions`, `sha_pinning_required`, `default_workflow_permissions`, `can_approve_pull_request_reviews`                    |
-| `rulesets`   | A list of repository rulesets, as the rulesets API describes them                                                                                               |
+| Section        | Keys                                                                                                                                                            |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repository`   | `has_issues`, `has_projects`, `has_wiki`, `has_discussions`, `allow_auto_merge`, `allow_update_branch`, `delete_branch_on_merge`, `web_commit_signoff_required` |
+| `merge`        | `allow_merge_commit`, `allow_squash_merge`, `allow_rebase_merge`, and the merge and squash commit title and message settings                                    |
+| `actions`      | `enabled`, `allowed_actions`, `selected_actions`, `sha_pinning_required`, `default_workflow_permissions`, `can_approve_pull_request_reviews`                    |
+| `rulesets`     | A list of repository rulesets, as the rulesets API describes them                                                                                               |
+| `environments` | A list of deployment environments: `name`, `wait_timer`, `prevent_self_review`, `reviewers`, `deployment_branch_policy`, and `branch_policies`                  |
 
 A profile manages only what it names. A setting it leaves out keeps its
 current value, and a ruleset it does not name is left alone. To delete a
@@ -29,6 +30,20 @@ and no bypass actors, and new `pull_request`, `required_status_checks` and
 the plan shows each of them. Other rule types need their required parameters
 in the profile.
 
+Environments also match by name, without case, as GitHub does, and
+`{ name: <name>, absent: true }` deletes one, with its secrets and variables.
+A setting the profile leaves out keeps its live value; a new environment gets
+no wait timer, no reviewers, and lets every branch deploy. `reviewers` lists users and teams by id, as
+`{ type: User, id: 123 }`, and replaces the live list whole.
+`branch_policies` lists the branch and tag name patterns that may deploy, as
+`{ name: 'v*', type: tag }`, where `type` defaults to `branch`. It needs
+`deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }`
+in the same entry. When a profile lists `branch_policies`, it manages the
+list: patterns it does not list are deleted, and each may appear once.
+`prevent_self_review: true` needs a reviewer, because GitHub keeps it on the
+required-reviewers rule, so the plan refuses it on an environment that would
+have none, and a profile that removes every reviewer turns it off.
+
 Merge settings are checked against what GitHub accepts, first in the profile
 alone and again at plan time with the profile laid over the live settings: at
 least one merge method stays on, and each commit title and message pair is one
@@ -41,9 +56,9 @@ A profile's values only need to be present in the repository: defaults that
 GitHub fills in are not drift. Lists match as a whole, in any order.
 
 `extends` names a base profile, relative to the file. Settings merge key by
-key, and `selected_actions` merges the same way. A ruleset in the override
-replaces the base ruleset of the same name whole, and new names are added
-after the base ones. `examples/base.yaml` is a base profile, and
+key, and `selected_actions` merges the same way. A ruleset or environment in
+the override replaces the base entry of the same name whole, and new names are
+added after the base ones. `examples/base.yaml` is a base profile, and
 `examples/repotted.yaml` extends it.
 
 ## Plans and apply
@@ -56,6 +71,10 @@ changes, with every value each one writes, in the order they apply:
    permissions.
 3. Ruleset creates, then updates, then deletes, so a replacement exists
    before the rulesets it replaces go.
+4. Environment creates and updates, then deleted deployment patterns, then
+   new ones, then environment deletes. Custom branch policies are on before
+   their patterns are added, and no branch or tag outside both lists can
+   deploy in between.
 
 `--out` saves the plan as JSON. `repotted apply` shows the saved plan, asks
 before it writes (or takes `--yes`), and then plans again from the saved
@@ -67,7 +86,7 @@ If a write fails partway, apply stops and lists the changes it already made.
 Plan again to see where the repository stands.
 
 A repository whose GitHub plan does not support rulesets gets a warning, and the
-other sections still plan.
+other sections still plan. So does a token that cannot list environments.
 
 ## Authentication
 
@@ -83,14 +102,16 @@ settings under Applications.
 
 The App reaches only repositories it is installed on, so install it on the
 ones Repotted manages; on an organization, an owner installs it or approves
-the request. It asks for the Administration permission: capture and plan read
-with it, and apply writes with it, within what your own account may do.
+the request. It asks for the Administration permission, with which capture
+and plan read and apply writes, within what your own account may do, and the
+Actions read permission, which listing environments needs.
 
 Repotted takes the first token it finds:
 
 1. `GITHUB_TOKEN`, then `GH_TOKEN`, for CI and scripts. A fine-grained token
    needs the Administration permission, read for capture and plan and write
-   for apply; a classic token needs the `repo` scope.
+   for apply, and Actions read for environments; a classic token needs the
+   `repo` scope.
 2. The `repotted login` token.
 3. The GitHub CLI's sign-in for github.com (`gh auth token --hostname
    github.com`).

@@ -5,7 +5,8 @@
 - **Base profile**: a profile that others build on with `extends`. A profile
   that extends it is an **override**.
 - **Section**: one area of a repository's setup that a profile can manage:
-  repository settings, merge methods, Actions policy, or rulesets. Each section
+  repository settings, merge methods, Actions policy, rulesets, or deployment
+  environments. Each section
   has one adapter that reads it and plans its writes.
 - **Capture**: reading a repository into a profile that describes it as it is.
 - **Plan**: the changes, in order, that bring a repository in line with a

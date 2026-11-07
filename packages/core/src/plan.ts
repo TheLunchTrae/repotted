@@ -6,6 +6,7 @@ import type { Change } from './change.js';
 import { type GitHub, parseRepo, repoPattern, type RepoRef } from './github.js';
 import { profile, type Profile } from './schema.js';
 import { planActions, readActions } from './sections/actions.js';
+import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';
 import { planRepository, readRepository } from './sections/repository.js';
 import { planRulesets, readRulesets } from './sections/rulesets.js';
 
@@ -39,6 +40,11 @@ export async function createPlan(github: GitHub, repo: RepoRef, desired: Profile
     changes.push(...rulesets.changes);
     warnings.push(...rulesets.warnings);
   }
+  if (desired.environments !== undefined) {
+    const environments = planEnvironments(desired.environments, await readEnvironments(github, repo), repo);
+    changes.push(...environments.changes);
+    warnings.push(...environments.warnings);
+  }
 
   return { repository: `${repo.owner}/${repo.name}`, desired, changes, warnings };
 }
@@ -48,21 +54,30 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
   const { repository, merge } = await readRepository(github, repo);
   const actions = await readActions(github, repo);
   const rulesets = await readRulesets(github, repo);
+  const environments = await readEnvironments(github, repo);
+  const warnings: string[] = [];
+  if (!rulesets.available) {
+    warnings.push(`Skipped rulesets: ${rulesets.reason}`);
+  }
+  if (!environments.available) {
+    warnings.push(`Skipped environments: ${environments.reason}`);
+  }
   return {
     profile: {
       repository,
       merge,
       actions,
       ...(rulesets.available ? { rulesets: rulesets.rulesets.map((entry) => entry.ruleset) } : {}),
+      ...(environments.available ? { environments: environments.environments.map(describeEnvironment) } : {}),
     },
-    warnings: rulesets.available ? [] : [`Skipped rulesets: ${rulesets.reason}`],
+    warnings,
   };
 }
 
 // A saved plan's changes are never executed: apply re-plans from `desired`
 // and only compares, so a hand-edited file cannot smuggle in other requests.
 const savedChange = z.object({
-  section: z.enum(['repository', 'merge', 'actions', 'rulesets']),
+  section: z.enum(['repository', 'merge', 'actions', 'rulesets', 'environments']),
   action: z.enum(['create', 'update', 'delete']),
   target: z.string(),
   fields: z.array(z.object({ field: z.string(), from: z.unknown().optional(), to: z.unknown().optional() })),
@@ -145,7 +160,12 @@ export function formatPlan(plan: Plan): string {
       : `${plan.repository}: ${plan.changes.length} ${plan.changes.length === 1 ? 'change' : 'changes'}`,
   ];
   for (const change of plan.changes) {
-    const kind = change.section === 'rulesets' ? `ruleset "${change.target}"` : change.target;
+    const kind =
+      change.section === 'rulesets'
+        ? `ruleset "${change.target}"`
+        : change.section === 'environments'
+          ? `environment ${change.target}`
+          : change.target;
     lines.push(`  ${symbols[change.action]} ${change.action} ${kind}`);
     for (const field of change.fields) {
       lines.push(`      ${field.field}: ${show(field.from)} -> ${show(field.to)}`);
