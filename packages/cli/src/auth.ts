@@ -18,10 +18,14 @@ import {
 const run = promisify(execFile);
 
 /**
- * The Repotted GitHub App. A client ID is public, so it ships in the package;
- * REPOTTED_GITHUB_CLIENT_ID signs in with another App instead.
+ * The Repotted GitHub App, registered as "Repotted App". A client ID is
+ * public, so it ships in the package; REPOTTED_GITHUB_CLIENT_ID signs in with
+ * another App instead. The slug is the App's name as GitHub writes it in URLs.
  */
-export const app: { readonly clientId: string; readonly slug: string } = { clientId: '', slug: 'repotted' };
+export const app: { readonly clientId: string; readonly slug: string } = {
+  clientId: 'Iv23liAnsCkUv2UeQoiK',
+  slug: 'repotted-app',
+};
 
 export const installUrl = `https://github.com/apps/${app.slug}/installations/new`;
 
