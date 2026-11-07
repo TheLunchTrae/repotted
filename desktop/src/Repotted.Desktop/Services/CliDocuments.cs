@@ -67,6 +67,9 @@ internal sealed record PlanDocument(
     IReadOnlyList<PlanChangeDocument> Changes,
     IReadOnlyList<string> Warnings);
 
+/// <summary>What <c>repotted capture --json</c> prints: the repository's setup as a profile, and what it could not read.</summary>
+internal sealed record CaptureDocument(string Repository, JsonElement Profile, IReadOnlyList<string> Warnings);
+
 /// <summary>The <c>error</c> member of a failure.</summary>
 internal sealed record ErrorDetail(string Kind, string Message);
 
@@ -93,6 +96,7 @@ internal sealed record LoginEvent(
 [JsonSerializable(typeof(ProfileListDocument))]
 [JsonSerializable(typeof(ResolvedProfileDocument))]
 [JsonSerializable(typeof(PlanDocument))]
+[JsonSerializable(typeof(CaptureDocument))]
 [JsonSerializable(typeof(FailureDocument))]
 [JsonSerializable(typeof(LoginEvent))]
 internal sealed partial class CliJson : JsonSerializerContext;

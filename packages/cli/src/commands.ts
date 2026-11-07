@@ -102,19 +102,18 @@ async function capture(io: Io, args: string[]): Promise<number> {
     options: { output: { type: 'string', short: 'o' }, json: { type: 'boolean' } },
   });
   const repo = parseRepo(only(positionals, 'repository'));
-  if (values.json === true && values.output !== undefined) {
-    throw new UsageError('capture takes --json or --output, not both.');
-  }
   const result = await captureProfile(await io.github(), repo);
+  const yaml = stringifyProfile(result.profile);
+  if (values.output !== undefined) {
+    await writeFile(values.output, yaml);
+  }
   if (values.json === true) {
     json(io, { repository: `${repo.owner}/${repo.name}`, profile: result.profile, warnings: result.warnings });
     return 0;
   }
-  const yaml = stringifyProfile(result.profile);
   if (values.output === undefined) {
     io.out(yaml);
   } else {
-    await writeFile(values.output, yaml);
     io.err(`Wrote ${values.output}\n`);
   }
   warn(io, result.warnings);

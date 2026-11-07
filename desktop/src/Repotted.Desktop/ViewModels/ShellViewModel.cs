@@ -17,9 +17,11 @@ internal sealed partial class ShellViewModel : ViewModelBase
     {
         Account = account;
         this.client = client;
-        Profiles = new ProfilesViewModel(client, desktop, settings);
+        // Each list reaches the other: a new profile is captured from a listed repository.
+        RepositoriesViewModel? repositories = null;
+        Profiles = new ProfilesViewModel(client, desktop, settings, () => repositories?.Names ?? []);
         Profiles.PropertyChanged += OnProfilesChanged;
-        Repositories = new RepositoriesViewModel(client, desktop, account.InstallUrl, Profiles, OpenCompare);
+        Repositories = repositories = new RepositoriesViewModel(client, desktop, account.InstallUrl, Profiles, OpenCompare, OpenCapture);
         Repositories.PropertyChanged += OnRepositoriesChanged;
     }
 
@@ -48,6 +50,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
     /// <summary>Where you are, for the header.</summary>
     public string Crumb => (ShowingProfiles, Profiles.Current, Compare) switch
     {
+        (true, _, _) when Profiles.ShowCreating => "Profiles / New profile",
         (true, { } profile, _) => $"Profiles / {profile.Name}",
         (true, null, _) => "Profiles",
         (false, _, { } compare) => $"Repositories / {compare.Repository} / Compare",
@@ -65,6 +68,32 @@ internal sealed partial class ShellViewModel : ViewModelBase
 
     [RelayCommand]
     private void CloseCompare() => Compare = null;
+
+    private void OpenCapture(string repository)
+    {
+        Page = 1;
+        Profiles.StartNew(repository);
+    }
+
+    /// <summary>
+    /// Leaves what stands in for a page, such as a compare or the new profile
+    /// form, when its sidebar entry is chosen though it is already selected.
+    /// </summary>
+    public void ShowPage(int page)
+    {
+        if (page != Page)
+        {
+            return;
+        }
+        if (page == 0)
+        {
+            Compare = null;
+        }
+        else
+        {
+            Profiles.CancelNew();
+        }
+    }
 
     public string SearchHint => ShowingProfiles ? "Find a profile" : "Find a repository";
 
@@ -110,7 +139,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
 
     private void OnProfilesChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(ProfilesViewModel.Current))
+        if (e.PropertyName is nameof(ProfilesViewModel.Current) or nameof(ProfilesViewModel.Creating))
         {
             OnPropertyChanged(nameof(Crumb));
         }

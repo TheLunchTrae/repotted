@@ -147,6 +147,16 @@ describe('--json', () => {
     });
   });
 
+  test('captures into a file and prints the same profile', async () => {
+    const file = path.join(directory, 'captured.yaml');
+
+    const result = await cli(new FakeGitHub(), 'capture', 'lunch/app', '--output', file, '--json');
+
+    expect(result).toMatchObject({ code: 0, err: '' });
+    expect(document(result)).toMatchObject({ repository: 'lunch/app', profile: { repository: { has_wiki: true } } });
+    expect(await readFile(file, 'utf8')).toBe((await cli(new FakeGitHub(), 'capture', 'lunch/app')).out);
+  });
+
   test('reports a stale plan with what the repository needs now, and writes nothing', async () => {
     const github = new FakeGitHub();
     const file = path.join(directory, 'stale.json');

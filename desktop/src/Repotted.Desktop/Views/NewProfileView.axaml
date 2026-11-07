@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Repotted.Desktop.ViewModels"
+             x:Class="Repotted.Desktop.Views.NewProfileView"
+             x:DataType="vm:NewProfileViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="32,24" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+      <StackPanel Spacing="6">
+        <TextBlock Classes="h1" Text="New profile" />
+        <TextBlock Classes="muted" TextWrapping="Wrap"
+                   Text="A profile manages only what it names. Once it is made, edit it here, or compare it with a repository to see what it would change." />
+      </StackPanel>
+
+      <StackPanel Spacing="6">
+        <TextBlock Classes="small" FontWeight="SemiBold" Text="Name" />
+        <TextBox x:Name="NameBox" Text="{Binding Name}" AutomationProperties.Name="Profile name"
+                 AutomationProperties.HelpText="{Binding Problem}" PlaceholderText="For example, libraries" />
+        <TextBlock Classes="muted small" IsVisible="{Binding ShowFileName}">
+          <Run Text="Saved as" /> <Run Classes="mono" Text="{Binding FileName}" /> <Run Text="in the profiles folder." />
+        </TextBlock>
+        <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Problem}"
+                   IsVisible="{Binding HasProblem}" AutomationProperties.LiveSetting="Assertive" />
+      </StackPanel>
+
+      <StackPanel Spacing="10">
+        <TextBlock Classes="small" FontWeight="SemiBold" Text="Start from" />
+        <RadioButton GroupName="start" IsChecked="{Binding StartsEmpty}"
+                     AutomationProperties.HelpText="An empty profile, which manages nothing until you set something.">
+          <StackPanel Spacing="2">
+            <TextBlock Text="Nothing" />
+            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="An empty profile, which manages nothing until you set something." />
+          </StackPanel>
+        </RadioButton>
+        <RadioButton GroupName="start" IsChecked="{Binding Extends}" IsEnabled="{Binding HasBases}"
+                     AutomationProperties.HelpText="{Binding ExtendsHelp}">
+          <StackPanel Spacing="2">
+            <TextBlock Text="Another profile" />
+            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding ExtendsHelp}" />
+          </StackPanel>
+        </RadioButton>
+        <ComboBox Margin="28,0,0,0" HorizontalAlignment="Stretch" ItemsSource="{Binding Bases}" SelectedItem="{Binding Base}"
+                  IsVisible="{Binding Extends}" AutomationProperties.Name="Profile to extend">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ProfileItemViewModel">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <RadioButton GroupName="start" IsChecked="{Binding Captures}" IsEnabled="{Binding HasRepositories}"
+                     AutomationProperties.HelpText="{Binding CaptureHelp}">
+          <StackPanel Spacing="2">
+            <TextBlock Text="A repository" />
+            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding CaptureHelp}" />
+          </StackPanel>
+        </RadioButton>
+        <ComboBox Margin="28,0,0,0" HorizontalAlignment="Stretch" ItemsSource="{Binding Repositories}" SelectedItem="{Binding Repository}"
+                  IsVisible="{Binding Captures}" AutomationProperties.Name="Repository to capture" />
+      </StackPanel>
+
+      <SelectableTextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}"
+                           IsVisible="{Binding HasError}" AutomationProperties.LiveSetting="Assertive" />
+
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Classes="primary" Content="{Binding CreateLabel}" Command="{Binding CreateCommand}" IsDefault="True" />
+        <Button Classes="quiet" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+        <TextBlock Classes="muted small" VerticalAlignment="Center" Text="Capturing from GitHub" IsVisible="{Binding Working}"
+                   AutomationProperties.LiveSetting="Polite" />
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

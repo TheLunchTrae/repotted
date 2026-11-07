@@ -252,7 +252,7 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
                         change.Target,
                         policy ? "new branch policy" : $"new {noun}",
                         CompareRow.NotOnGitHub,
-                        rules is null ? CompareRow.Created : CompareRows.Show(CompareRows.Node(rules.To))));
+                        rules is null ? CompareRow.Created : Rules(CompareRows.Node(rules.To))));
                     break;
                 case "delete":
                     differences.Add(policy
@@ -300,6 +300,10 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
     }
 
     private const string Removed = "Removed";
+
+    /// <summary>A new ruleset's rules, each with what it sets.</summary>
+    private static string Rules(JsonNode? rules) =>
+        rules is JsonArray { Count: > 0 } list ? string.Join("; ", list.Select(CompareRows.Show)) : CompareRows.Show(rules);
 
     /// <summary>The parts of a plan's field change that differ. A field with no <c>from</c> is not on GitHub; a JSON null is.</summary>
     private static IEnumerable<Difference> Differences(FieldChangeDocument field) =>

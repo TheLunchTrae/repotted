@@ -132,10 +132,12 @@
           <Button Classes="primary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Content="Compare"
                   Command="{Binding CompareCommand}" />
           <Border Classes="rule" />
-          <Button Classes="quiet" HorizontalAlignment="Stretch" Content="Open on GitHub"
+          <Button Classes="quiet" HorizontalAlignment="Stretch" Content="Capture as a profile"
+                  Command="{Binding CaptureCommand}" />
+          <Button Classes="quiet" HorizontalAlignment="Stretch" Margin="0,8,0,0" Content="Open on GitHub"
                   Command="{Binding OpenOnGitHubCommand}" />
           <TextBlock Classes="muted small" Margin="0,12,0,0" TextWrapping="Wrap"
-                     Text="Comparing only reads from GitHub. It changes nothing there." />
+                     Text="Comparing and capturing only read from GitHub. They change nothing there." />
         </StackPanel>
       </Border>
     </Grid>
