@@ -1,14 +1,8 @@
-name: Desktop
+name: Build Desktop
 
+# Quality builds and tests the app on every pull request; packaging runs only
+# for a release or by hand.
 on:
-  pull_request:
-    paths:
-      - .config/mise/**
-      - .github/workflows/desktop.yml
-      - bun.lock
-      - desktop/**
-      - package.json
-      - packages/**
   # A release starts from a pushed tag, not a published release: releases are
   # immutable once published, so the workflow attaches the packages to a draft
   # and the owner publishes it.
@@ -21,8 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: desktop-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: desktop-${{ github.ref }}
 
 jobs:
   verify:
@@ -69,11 +62,11 @@ jobs:
   package:
     name: Package for ${{ matrix.os }} ${{ matrix.arch }}
     needs: verify
-    # A pull request or a manual run builds without verify; a release needs it.
+    # A manual run builds without verify; a release needs it.
     if: >-
       !cancelled() &&
       (needs.verify.result == 'success' ||
-      (needs.verify.result == 'skipped' && github.event_name != 'push'))
+      (needs.verify.result == 'skipped' && github.event_name == 'workflow_dispatch'))
     strategy:
       fail-fast: false
       matrix:
@@ -90,8 +83,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     # Notarization alone may wait up to 30 minutes.
     timeout-minutes: 90
-    # Only a release's macOS jobs reach the signing secrets. The environment
-    # admits desktop-v tags alone, so no branch or pull request run can.
+    # Only a release's macOS jobs reach the signing secrets: only a tag push
+    # requests the environment, and the environment admits desktop-v tags alone.
     environment: ${{ github.event_name == 'push' && matrix.os == 'macos' && 'macos-release' || '' }}
     env:
       MISE_LOCKED: '1'
@@ -111,7 +104,7 @@ jobs:
         with:
           version: '2026.10.19'
           install: true
-          cache: ${{ github.event_name != 'push' }}
+          cache: ${{ github.event_name == 'workflow_dispatch' }}
       - name: Install locked dependencies
         run: mise run ts:install
       - name: Import the Developer ID certificate

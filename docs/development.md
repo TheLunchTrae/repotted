@@ -74,7 +74,7 @@ stays the desktop app, which is the one people download.
 
 ### The CLI
 
-Publishing a GitHub release with a `v` tag runs
+Publishing a GitHub release with a `v` tag runs the Publish NPM workflow,
 `.github/workflows/publish.yml`. The release tag must be `v` followed by the
 version in `packages/cli/package.json`, such as `v0.2.0`, and must point at a
 commit on `main`. Create it as a full release:
@@ -102,8 +102,9 @@ pull request.
 
 ### The desktop app
 
-Pushing a `desktop-v` tag runs `.github/workflows/desktop.yml`. The tag must
-be `desktop-v` followed by `Version` in
+Pushing a `desktop-v` tag runs the Build Desktop workflow,
+`.github/workflows/desktop.yml`. The tag must be `desktop-v` followed by
+`Version` in
 `desktop/src/Repotted.Desktop/Repotted.Desktop.csproj`, such as
 `desktop-v0.1.0`, and must point at a commit on `main`:
 
@@ -125,10 +126,17 @@ release for the tag:
 
 Each build ships the CLI compiled with `bun build --compile` beside the app as
 `repotted-cli`. `mise run desktop:package` makes the same package on a Mac or
-in Git Bash on Windows, in `artifacts/desktop`. Pull requests that touch the
-app, the CLI, or the build run the workflow without signing, so each one
-checks that the packages build, the CLI starts under the hardened runtime, and
-the macOS app launches.
+in Git Bash on Windows, in `artifacts/desktop`.
+
+To build test installers from any branch, run Build Desktop from the Actions
+tab. The run uses no Developer ID, notarizes nothing, and makes no release: it
+checks that the packages build, that the CLI starts under the hardened
+runtime, and that the macOS app launches, then keeps the packages as run
+artifacts for 3 days. The macOS app in such a package is signed ad hoc, so
+Gatekeeper refuses it until it is allowed in System Settings. Pull requests
+don't run Build Desktop. Quality builds and tests the app on each one but
+doesn't package it, so run Build Desktop on the branch of a pull request that
+changes the packaging.
 
 The repository's releases are immutable, so files can't be added once a
 release is published. The owner reviews the draft, sets it as a prerelease
