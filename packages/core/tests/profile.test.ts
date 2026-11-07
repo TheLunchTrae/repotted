@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -14,7 +14,8 @@ import {
 } from '../src/profile.js';
 import { commitPairs, mergeFields, mergeSettingsProblems } from '../src/schema.js';
 
-const directory = await mkdtemp(path.join(tmpdir(), 'repotted-profile-'));
+// The real path, because profiles report real paths and macOS links its temporary folder.
+const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-profile-')));
 
 afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
@@ -198,6 +199,17 @@ describe('parseProfile', () => {
     expect(profile).toEqual({ merge: { allow_rebase_merge: true, allow_squash_merge: false } });
     expect(await parseProfile(stringifyProfile(profile), directory)).toEqual(profile);
   });
+
+  test('validates the merged profile, so a base may need the profile that extends it', async () => {
+    await write(
+      'all-off.yaml',
+      'merge: { allow_merge_commit: false, allow_squash_merge: false, allow_rebase_merge: false }\n',
+    );
+
+    const profile = await parseProfile('extends: all-off.yaml\nmerge: { allow_rebase_merge: true }\n', directory);
+
+    expect(profile.merge?.allow_rebase_merge).toBe(true);
+  });
 });
 
 describe('resolveProfile', () => {
@@ -279,9 +291,52 @@ describe('editProfile', () => {
   test('edits only repository, merge and actions settings', async () => {
     const file = await write('edit-rulesets.yaml', 'rulesets: [{ name: Keep }]\n');
 
-    for (const key of [['rulesets', '0'], ['extends'], ['repository'], ['repository', 'has_wiki', 'x']]) {
+    for (const key of [
+      ['rulesets', '0'],
+      ['extends'],
+      ['repository'],
+      ['repository', 'has_wiki', 'x'],
+      ['repository', 'has_wikki'],
+      ['actions', 'selected_actions'],
+    ]) {
       expect(String(await rejection(editProfile(file, [{ path: key, value: true }])))).toContain('Cannot edit');
     }
+  });
+
+  test('rejects a setting edited twice, since only one value can win', async () => {
+    const file = await write('edit-twice.yaml', 'merge: { allow_rebase_merge: true }\n');
+
+    const twice = rejection(
+      editProfile(file, [
+        { path: ['repository', 'has_wiki'], value: true },
+        { path: ['repository', 'has_wiki'], value: undefined },
+      ]),
+    );
+
+    expect(String(await twice)).toContain('more than once');
+  });
+
+  test('removing a setting the file does not name changes nothing', async () => {
+    const text = 'repository: { has_wiki: false }\nmerge: {}\n';
+    const file = await write('edit-unset-missing.yaml', text);
+
+    await editProfile(file, [
+      { path: ['actions', 'selected_actions', 'verified_allowed'], value: undefined },
+      { path: ['merge', 'allow_rebase_merge'], value: undefined },
+    ]);
+
+    expect(await readFile(file, 'utf8')).toBe(text);
+  });
+
+  test('keeps Windows line endings, the indent width and the file mode', async () => {
+    const file = await write('edit-layout.yaml', 'repository:\r\n    has_wiki: false\r\n');
+    await chmod(file, 0o640);
+
+    await editProfile(file, [{ path: ['repository', 'has_issues'], value: true }]);
+
+    expect(await readFile(file, 'utf8')).toBe('repository:\r\n    has_wiki: false\r\n    has_issues: true\r\n');
+    expect((await stat(file)).mode & 0o777).toBe(0o640);
+    expect((await readdir(directory)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
   });
 });
 
@@ -303,5 +358,16 @@ describe('listProfiles', () => {
     ]);
     expect(listings.map((listing) => listing.problem === null)).toEqual([true, true, false]);
     expect(listings[2]?.problem).toContain('has_wikki');
+  });
+
+  test('reports real paths, matching the chain that resolveProfile reports for the same file', async () => {
+    const linked = path.join(directory, 'listing-link');
+    await symlink(path.join(directory, 'listing'), linked);
+
+    const [app] = await listProfiles(linked);
+
+    expect(app?.file).toBe(path.join(directory, 'listing', 'app.yml'));
+    expect(app?.extends).toBe(path.join(directory, 'listing', 'base.yaml'));
+    expect((await resolveProfile(path.join(linked, 'app.yml'))).chain[0]).toBe(app?.file);
   });
 });
