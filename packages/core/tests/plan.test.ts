@@ -14,6 +14,7 @@ import {
 } from '../src/plan.js';
 import { loadProfile } from '../src/profile.js';
 import type { Profile } from '../src/schema.js';
+import { MergeSettingsError } from '../src/sections/repository.js';
 import { FakeGitHub } from './fake-github.js';
 
 const repo = parseRepo('lunch/app');
@@ -268,12 +269,33 @@ describe('plan and apply', () => {
 
   test('sends a commit message setting with its title setting', async () => {
     const github = new FakeGitHub();
+    github.state.repository['squash_merge_commit_title'] = 'PR_TITLE';
     await applyPlan(github, await createPlan(github, repo, { merge: { squash_merge_commit_message: 'PR_BODY' } }));
 
     expect(github.writes[0]?.body).toEqual({
       squash_merge_commit_message: 'PR_BODY',
-      squash_merge_commit_title: 'COMMIT_OR_PR_TITLE',
+      squash_merge_commit_title: 'PR_TITLE',
     });
+  });
+
+  test('refuses a commit message that the live title does not allow, at plan time', async () => {
+    const github = new FakeGitHub();
+    const error = await rejection(createPlan(github, repo, { merge: { squash_merge_commit_message: 'PR_BODY' } }));
+
+    expect(error).toBeInstanceOf(MergeSettingsError);
+    expect(String(error)).toContain(
+      'squash_merge_commit_title: COMMIT_OR_PR_TITLE with squash_merge_commit_message: PR_BODY',
+    );
+  });
+
+  test('refuses to turn off the last merge method left on the repository', async () => {
+    const github = new FakeGitHub();
+    github.state.repository['allow_merge_commit'] = false;
+    github.state.repository['allow_rebase_merge'] = false;
+    const error = await rejection(createPlan(github, repo, { merge: { allow_squash_merge: false } }));
+
+    expect(error).toBeInstanceOf(MergeSettingsError);
+    expect(String(error)).toContain('Every merge method is off');
   });
 
   test('keeps SHA pinning when it changes the Actions policy', async () => {

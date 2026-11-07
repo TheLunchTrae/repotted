@@ -26,6 +26,48 @@ export const mergeFields = {
   squash_merge_commit_message: z.enum(['PR_BODY', 'COMMIT_MESSAGES', 'BLANK']),
 };
 
+// GitHub takes only the title and message pairs that its settings page
+// offers, and rejects any other pair with a 422.
+export const commitPairs = [
+  {
+    title: 'merge_commit_title',
+    message: 'merge_commit_message',
+    allowed: ['MERGE_MESSAGE PR_TITLE', 'PR_TITLE BLANK', 'PR_TITLE PR_BODY'],
+  },
+  {
+    title: 'squash_merge_commit_title',
+    message: 'squash_merge_commit_message',
+    allowed: ['COMMIT_OR_PR_TITLE COMMIT_MESSAGES', 'PR_TITLE BLANK', 'PR_TITLE COMMIT_MESSAGES', 'PR_TITLE PR_BODY'],
+  },
+] as const;
+
+/**
+ * What GitHub would reject in these merge settings: a title and message pair
+ * it does not offer, or every merge method turned off. A setting left out is
+ * not checked, so a profile alone and a profile laid over live settings both
+ * pass through here.
+ */
+export function mergeSettingsProblems(merge: MergeSettings): string[] {
+  const problems: string[] = [];
+  for (const pair of commitPairs) {
+    const title = merge[pair.title];
+    const message = merge[pair.message];
+    if (
+      title !== undefined &&
+      message !== undefined &&
+      !(pair.allowed as readonly string[]).includes(`${title} ${message}`)
+    ) {
+      problems.push(
+        `GitHub does not allow ${pair.title}: ${title} with ${pair.message}: ${message}. Allowed pairs: ${pair.allowed.map((entry) => entry.replace(' ', ' with ')).join(', ')}`,
+      );
+    }
+  }
+  if (merge.allow_merge_commit === false && merge.allow_squash_merge === false && merge.allow_rebase_merge === false) {
+    problems.push('Every merge method is off; GitHub needs at least one');
+  }
+  return problems;
+}
+
 export const repositorySettings = z.object(repositoryFields).partial().strict();
 
 export const mergeSettings = z.object(mergeFields).partial().strict();
@@ -97,17 +139,8 @@ export const profile = z
   .partial()
   .strict()
   .superRefine((value, context) => {
-    const merge = value.merge;
-    if (
-      merge?.allow_merge_commit === false &&
-      merge.allow_squash_merge === false &&
-      merge.allow_rebase_merge === false
-    ) {
-      context.addIssue({
-        code: 'custom',
-        message: 'The profile turns off every merge method; GitHub needs at least one',
-        path: ['merge'],
-      });
+    for (const message of mergeSettingsProblems(value.merge ?? {})) {
+      context.addIssue({ code: 'custom', message, path: ['merge'] });
     }
     const names = new Set<string>();
     for (const [index, entry] of (value.rulesets ?? []).entries()) {

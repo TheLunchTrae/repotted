@@ -130,7 +130,27 @@ export class FakeGitHub implements GitHub {
             throw new GitHubError(422, `Invalid request: ${message} needs ${title}`);
           }
         }
-        Object.assign(this.state.repository, patch);
+        const next = { ...this.state.repository, ...patch };
+        if (
+          next['allow_merge_commit'] === false &&
+          next['allow_squash_merge'] === false &&
+          next['allow_rebase_merge'] === false
+        ) {
+          throw new GitHubError(422, 'Invalid request: at least one merge method must be allowed');
+        }
+        if (next['merge_commit_title'] === 'MERGE_MESSAGE' && next['merge_commit_message'] !== 'PR_TITLE') {
+          throw new GitHubError(422, 'Invalid request: merge commit title and message combination');
+        }
+        if (
+          next['squash_merge_commit_title'] === 'COMMIT_OR_PR_TITLE' &&
+          next['squash_merge_commit_message'] !== 'COMMIT_MESSAGES'
+        ) {
+          throw new GitHubError(422, 'Invalid request: squash merge commit title and message combination');
+        }
+        if (next['merge_commit_title'] === 'PR_TITLE' && next['merge_commit_message'] === 'PR_TITLE') {
+          throw new GitHubError(422, 'Invalid request: merge commit title and message combination');
+        }
+        this.state.repository = next;
         return this.handle('GET', base, undefined);
       }
       case `GET ${permissions}`:

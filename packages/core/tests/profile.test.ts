@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { loadProfile, parseProfile, ProfileError, stringifyProfile } from '../src/profile.js';
+import { commitPairs, mergeFields, mergeSettingsProblems } from '../src/schema.js';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'repotted-profile-'));
 
@@ -101,7 +102,40 @@ rulesets:
       'merge: { allow_merge_commit: false, allow_squash_merge: false, allow_rebase_merge: false }\n',
     );
 
-    expect(String(await rejection(loadProfile(file)))).toContain('turns off every merge method');
+    expect(String(await rejection(loadProfile(file)))).toContain('Every merge method is off');
+  });
+
+  test('accepts exactly the commit title and message pairs the settings page offers', () => {
+    const accepted = commitPairs.flatMap(({ title, message }) =>
+      mergeFields[title].options.flatMap((titleValue) =>
+        mergeFields[message].options
+          .filter(
+            (messageValue) => mergeSettingsProblems({ [title]: titleValue, [message]: messageValue }).length === 0,
+          )
+          .map((messageValue) => `${title}=${titleValue} ${messageValue}`),
+      ),
+    );
+
+    expect(accepted).toEqual([
+      'merge_commit_title=PR_TITLE PR_BODY',
+      'merge_commit_title=PR_TITLE BLANK',
+      'merge_commit_title=MERGE_MESSAGE PR_TITLE',
+      'squash_merge_commit_title=PR_TITLE PR_BODY',
+      'squash_merge_commit_title=PR_TITLE COMMIT_MESSAGES',
+      'squash_merge_commit_title=PR_TITLE BLANK',
+      'squash_merge_commit_title=COMMIT_OR_PR_TITLE COMMIT_MESSAGES',
+    ]);
+  });
+
+  test('rejects a merge commit title and message pair that GitHub does not offer', async () => {
+    const file = await write(
+      'pair.yaml',
+      'merge: { merge_commit_title: MERGE_MESSAGE, merge_commit_message: PR_BODY }\n',
+    );
+
+    expect(String(await rejection(loadProfile(file)))).toContain(
+      'GitHub does not allow merge_commit_title: MERGE_MESSAGE with merge_commit_message: PR_BODY',
+    );
   });
 
   test('loads the example profiles', async () => {
