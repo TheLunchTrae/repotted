@@ -1,0 +1,60 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- The custom theme's colors, from the approved mock-ups. Views take them
+       with DynamicResource, so they follow the light or dark setting. -->
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="BgBrush" Color="#f7fff8" />
+      <SolidColorBrush x:Key="SurfaceBrush" Color="#ffffff" />
+      <SolidColorBrush x:Key="SunkenBrush" Color="#eef8f0" />
+      <SolidColorBrush x:Key="FgBrush" Color="#14281a" />
+      <SolidColorBrush x:Key="MutedBrush" Color="#4a6352" />
+      <SolidColorBrush x:Key="BorderBrush" Color="#d3e4d7" />
+      <SolidColorBrush x:Key="TintBrush" Color="#e7f6ea" />
+      <SolidColorBrush x:Key="PrimaryBrush" Color="#8af793" />
+      <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#74ea80" />
+      <SolidColorBrush x:Key="OnPrimaryBrush" Color="#14281a" />
+      <SolidColorBrush x:Key="LinkBrush" Color="#256438" />
+      <SolidColorBrush x:Key="FocusBrush" Color="#14281a" />
+      <SolidColorBrush x:Key="RailBrush" Color="#256438" />
+      <SolidColorBrush x:Key="RailInheritedBrush" Color="#8fbf9a" />
+      <SolidColorBrush x:Key="DriftBrush" Color="#7a4f00" />
+      <SolidColorBrush x:Key="DriftBgBrush" Color="#fff3d6" />
+      <SolidColorBrush x:Key="DriftRailBrush" Color="#d6961a" />
+      <SolidColorBrush x:Key="RemoveBrush" Color="#9e2416" />
+      <SolidColorBrush x:Key="RemoveBgBrush" Color="#fde9e5" />
+      <SolidColorBrush x:Key="AddBrush" Color="#1f5a31" />
+      <SolidColorBrush x:Key="AddBgBrush" Color="#dff6e3" />
+      <SolidColorBrush x:Key="CodeBgBrush" Color="#f1f8f2" />
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="BgBrush" Color="#111a14" />
+      <SolidColorBrush x:Key="SurfaceBrush" Color="#1a261e" />
+      <SolidColorBrush x:Key="SunkenBrush" Color="#152019" />
+      <SolidColorBrush x:Key="FgBrush" Color="#f3fff5" />
+      <SolidColorBrush x:Key="MutedBrush" Color="#a3baa9" />
+      <SolidColorBrush x:Key="BorderBrush" Color="#2b3b30" />
+      <SolidColorBrush x:Key="TintBrush" Color="#223329" />
+      <SolidColorBrush x:Key="PrimaryBrush" Color="#8af793" />
+      <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#a6fbad" />
+      <SolidColorBrush x:Key="OnPrimaryBrush" Color="#14281a" />
+      <SolidColorBrush x:Key="LinkBrush" Color="#8af793" />
+      <SolidColorBrush x:Key="FocusBrush" Color="#f3fff5" />
+      <SolidColorBrush x:Key="RailBrush" Color="#8af793" />
+      <SolidColorBrush x:Key="RailInheritedBrush" Color="#4d7a58" />
+      <SolidColorBrush x:Key="DriftBrush" Color="#ffd27a" />
+      <SolidColorBrush x:Key="DriftBgBrush" Color="#3a2e14" />
+      <SolidColorBrush x:Key="DriftRailBrush" Color="#e7a93a" />
+      <SolidColorBrush x:Key="RemoveBrush" Color="#ffab9f" />
+      <SolidColorBrush x:Key="RemoveBgBrush" Color="#3d1f1b" />
+      <SolidColorBrush x:Key="AddBrush" Color="#a6fbad" />
+      <SolidColorBrush x:Key="AddBgBrush" Color="#1f3a26" />
+      <SolidColorBrush x:Key="CodeBgBrush" Color="#152019" />
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+
+  <FontFamily x:Key="SansFont">avares://Repotted/Assets/Fonts#Atkinson Hyperlegible Next</FontFamily>
+  <FontFamily x:Key="MonoFont">avares://Repotted/Assets/Fonts#Atkinson Hyperlegible Mono</FontFamily>
+  <CornerRadius x:Key="ControlRadius">8</CornerRadius>
+  <CornerRadius x:Key="PanelRadius">12</CornerRadius>
+</ResourceDictionary>

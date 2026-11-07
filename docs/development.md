@@ -8,6 +8,8 @@
 - `packages/cli`: the published `repotted` package, the CLI and the MCP
   server. Its build bundles core into one file.
 - `examples/`: example profiles that the tests also load.
+- `desktop/`: the desktop app, in C# with Avalonia. It runs the CLI with
+  `--json` for everything it does. See [desktop/README.md](../desktop/README.md).
 
 ## Setup
 

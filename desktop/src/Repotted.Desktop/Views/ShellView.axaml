@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Repotted.Desktop.ViewModels"
+             xmlns:views="using:Repotted.Desktop.Views"
+             x:Class="Repotted.Desktop.Views.ShellView"
+             x:DataType="vm:ShellViewModel">
+  <Grid RowDefinitions="44,*" ColumnDefinitions="248,*">
+    <!-- Header: where you are, and the search -->
+    <Border Grid.ColumnSpan="2" Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,0">
+      <Grid ColumnDefinitions="232,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <views:BrandMark />
+          <TextBlock Text="Repotted" FontWeight="Bold" FontSize="17" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock Grid.Column="1" Text="Repositories" FontSize="14" FontWeight="SemiBold"
+                   VerticalAlignment="Center" Margin="16,0" />
+        <Panel Grid.Column="2" VerticalAlignment="Center">
+          <TextBox x:Name="SearchBox" Classes="search" PlaceholderText="Find a repository"
+                   Text="{Binding Search}" AutomationProperties.Name="Find a repository" />
+          <Border Classes="kbd" HorizontalAlignment="Right" Margin="0,0,8,0" IsHitTestVisible="False">
+            <TextBlock x:Name="SearchShortcut" Classes="mono muted" FontSize="12" Text="Ctrl K" />
+          </Border>
+        </Panel>
+      </Grid>
+    </Border>
+
+    <!-- Sidebar -->
+    <Border Grid.Row="1" Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0" Padding="12,16">
+      <DockPanel>
+        <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
+                Padding="8,14,8,0">
+          <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <Border Classes="avatar">
+                <TextBlock Text="{Binding Initials}" FontSize="12" FontWeight="Bold"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <TextBlock Text="{Binding Account.Login}" FontWeight="Bold" FontSize="13.5" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock Classes="muted" FontSize="13.5" TextWrapping="Wrap" Text="{Binding SignedInWith}" />
+            <Button Classes="link" Content="Add repositories" HorizontalAlignment="Left"
+                    IsVisible="{Binding Repositories.FromInstallations}"
+                    Command="{Binding Repositories.AddRepositoriesCommand}" />
+          </StackPanel>
+        </Border>
+        <ListBox Classes="nav" SelectedIndex="0" AutomationProperties.Name="Main">
+          <ListBoxItem>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="Repositories" />
+              <TextBlock Grid.Column="1" Classes="muted" FontSize="13" FontWeight="Normal"
+                         Text="{Binding Repositories.Count}" />
+            </Grid>
+          </ListBoxItem>
+        </ListBox>
+      </DockPanel>
+    </Border>
+
+    <views:RepositoriesView Grid.Row="1" Grid.Column="1" DataContext="{Binding Repositories}" />
+  </Grid>
+</UserControl>

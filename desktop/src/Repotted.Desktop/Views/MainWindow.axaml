@@ -1,0 +1,10 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Repotted.Desktop.ViewModels"
+        x:Class="Repotted.Desktop.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="Repotted"
+        Width="1280" Height="800" MinWidth="960" MinHeight="600"
+        WindowStartupLocation="CenterScreen">
+  <ContentControl Content="{Binding Page}" />
+</Window>

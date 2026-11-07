@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Repotted.Desktop.ViewModels"
+             x:Class="Repotted.Desktop.Views.ProblemView"
+             x:DataType="vm:ProblemViewModel">
+  <Border Classes="panel" Width="460" HorizontalAlignment="Center" VerticalAlignment="Center"
+          BorderBrush="{DynamicResource RemoveBrush}" BorderThickness="4,1,1,1">
+    <StackPanel Spacing="12">
+      <TextBlock Classes="h2" Text="Repotted could not start" />
+      <SelectableTextBlock Text="{Binding Message}" TextWrapping="Wrap"
+                           Foreground="{DynamicResource MutedBrush}" />
+      <Button Classes="primary" Content="Try again" HorizontalAlignment="Left"
+              Command="{Binding TryAgainCommand}" />
+    </StackPanel>
+  </Border>
+</UserControl>
