@@ -1,4 +1,4 @@
-import { readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { isMap, parse, parseDocument, stringify } from 'yaml';
@@ -313,7 +313,9 @@ const retriedCodes = new Set(['EPERM', 'EBUSY', 'EACCES']);
 async function replaceFile(file: string, text: string): Promise<void> {
   const temporary = `${file}.${process.pid}.tmp`;
   try {
-    await writeFile(temporary, text, { mode: (await stat(file)).mode });
+    await writeFile(temporary, text);
+    // Set after writing, since the mode a write asks for passes through the umask.
+    await chmod(temporary, (await stat(file)).mode);
     for (let attempt = 1; ; attempt += 1) {
       try {
         await rename(temporary, file);
@@ -334,8 +336,8 @@ async function replaceFile(file: string, text: string): Promise<void> {
 
 /**
  * Changes settings in one profile file and keeps its comments, line endings
- * and indent width; YAML layout such as quoting may be normalized. The file
- * changes only when the result, laid over the profiles it extends, is a valid
+ * and indent width; YAML layout such as quoting and list indentation may be
+ * normalized. The file changes only when the result, laid over the profiles it extends, is a valid
  * profile.
  */
 export async function editProfile(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
