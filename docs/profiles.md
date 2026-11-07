@@ -67,9 +67,12 @@ the file itself, such as `--set repository.has_wiki=false`. The value is JSON,
 or a bare word as a string. Edits cover `repository`, `merge` and `actions`
 settings, including `actions.selected_actions.<key>`; rulesets and
 environments are edited in the YAML. An edit keeps the rest of the file,
-comments included, removes a section it leaves empty, and writes nothing when
-the result is not a valid profile. `repotted profiles <folder>` lists the
-profiles in a folder.
+including comments, line endings and indent width, though YAML quoting may be
+normalized. It removes a section it leaves empty, along with any comment above
+that section, and writes nothing when the result is not a valid profile.
+Profiles are validated after they are merged, so a base profile may rely on
+the profile that extends it. `repotted profiles <folder>` lists the profiles
+in a folder with real paths, the same paths that `profile --json` reports.
 
 ## Plans and apply
 
@@ -101,11 +104,10 @@ other sections still plan. So does a token that cannot list environments.
 ## JSON output
 
 `--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `repos` and
-`status` prints exactly one
-JSON document on stdout, for programs such as the desktop app. Repotted writes nothing to stderr
-in this mode; anything that appears there, such as a deprecation notice from
-the GitHub client, is diagnostic and not a failure. `--help` and `--version`
-still print text.
+`status` prints exactly one JSON document on stdout, for programs such as the
+desktop app. Repotted writes nothing to stderr in this mode; anything that
+appears there, such as a deprecation notice from the GitHub client, is
+diagnostic and not a failure. `--help` and `--version` still print text.
 
 - `capture` prints `{ repository, profile, warnings }`, where `profile` is the
   profile the YAML would hold. It does not combine with `--output`.

@@ -1,17 +1,21 @@
-import { readdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
+import { readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { isMap, parse, parseDocument, stringify } from 'yaml';
 import { z } from 'zod';
 
 import {
+  actionsSettings,
   environmentKey,
   type EnvironmentEntry,
+  mergeFields,
   profile,
   type Profile,
   profileFile,
   type ProfileFile,
+  repositoryFields,
   type RulesetEntry,
+  selectedActions,
 } from './schema.js';
 
 export class ProfileError extends Error {
@@ -162,14 +166,20 @@ export interface ProfileSources {
 
 /** A profile file laid over every profile it extends. */
 export interface ResolvedProfile {
-  /** The profile file, then each one it extends, as absolute paths. */
+  /** The profile file, then each one it extends, as real paths. */
   readonly chain: readonly string[];
   readonly profile: Profile;
   readonly sources: ProfileSources;
 }
 
-async function readChain(file: string): Promise<{ file: string; parsed: ProfileFile }[]> {
-  const chain: { file: string; parsed: ProfileFile }[] = [];
+interface Link {
+  /** The file's real path, so the same file always has the same name. */
+  readonly file: string;
+  readonly parsed: ProfileFile;
+}
+
+async function readChain(file: string): Promise<[Link, ...Link[]]> {
+  const chain: Link[] = [];
   const seen = new Set<string>();
   let next: string | undefined = path.resolve(file);
   while (next !== undefined) {
@@ -189,10 +199,14 @@ async function readChain(file: string): Promise<{ file: string; parsed: ProfileF
     chain.push({ file: resolved, parsed });
     next = parsed.extends === undefined ? undefined : path.resolve(path.dirname(resolved), parsed.extends);
   }
-  return chain;
+  const [own, ...base] = chain;
+  if (own === undefined) {
+    throw new ProfileError(`Cannot read profile ${file}`);
+  }
+  return [own, ...base];
 }
 
-function resolveChain(chain: readonly { file: string; parsed: ProfileFile }[], source: string): ResolvedProfile {
+function resolveChain(chain: readonly Link[], source: string): ResolvedProfile {
   const merged = chain
     .toReversed()
     .reduce<SourcedProfile>((base, { file, parsed }) => mergeProfiles(base, parsed, file), {});
@@ -238,8 +252,9 @@ export async function parseProfile(text: string, directory: string): Promise<Pro
 export interface ProfileListing {
   /** The file name without its extension. */
   readonly name: string;
+  /** The file's real path, as \`resolveProfile\` reports it in its chain. */
   readonly file: string;
-  /** The absolute path of the profile this one extends, or null. */
+  /** The real path of the profile this one extends, or null when it extends none or cannot be read. */
   readonly extends: string | null;
   /** Why the profile cannot be used, or null when it resolves. */
   readonly problem: string | null;
@@ -256,13 +271,14 @@ export async function listProfiles(directory: string): Promise<ProfileListing[]>
   }
   const listings: ProfileListing[] = [];
   for (const name of names.filter((entry) => /\.ya?ml$/iu.test(entry)).sort()) {
-    const file = path.join(folder, name);
+    let file = path.join(folder, name);
     let base: string | null = null;
     let problem: string | null = null;
     try {
-      const parsed = parseProfileFile(await readFile(file, 'utf8'), file);
-      base = parsed.extends === undefined ? null : path.resolve(folder, parsed.extends);
-      await resolveProfile(file);
+      const chain = await readChain(file);
+      file = chain[0].file;
+      base = chain[1]?.file ?? null;
+      resolveChain(chain, file);
     } catch (error) {
       problem = error instanceof Error ? error.message : String(error);
     }
@@ -278,50 +294,85 @@ export interface ProfileEdit {
   readonly value: unknown;
 }
 
-function editable(key: readonly string[]): boolean {
-  const [section, ...rest] = key;
-  if (section === 'actions' && rest[0] === 'selected_actions') {
-    return rest.length === 2;
+const editableKeys = new Set([
+  ...Object.keys(repositoryFields).map((key) => `repository.${key}`),
+  ...Object.keys(mergeFields).map((key) => `merge.${key}`),
+  ...Object.keys(actionsSettings.shape)
+    .filter((key) => key !== 'selected_actions')
+    .map((key) => `actions.${key}`),
+  ...Object.keys(selectedActions.shape).map((key) => `actions.selected_actions.${key}`),
+]);
+
+const retriedCodes = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
+/**
+ * Replaces a file through a temporary file beside it, so a failure never
+ * leaves half a profile, and keeps the file's permissions. On Windows another
+ * program reading the file can hold the move up briefly, so it is tried again.
+ */
+async function replaceFile(file: string, text: string): Promise<void> {
+  const temporary = `${file}.${process.pid}.tmp`;
+  try {
+    await writeFile(temporary, text, { mode: (await stat(file)).mode });
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await rename(temporary, file);
+        return;
+      } catch (error) {
+        const code = error instanceof Error && 'code' in error ? String(error.code) : '';
+        if (attempt === 5 || !retriedCodes.has(code)) {
+          throw error;
+        }
+        await new Promise((done) => setTimeout(done, attempt * 50));
+      }
+    }
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw new ProfileError(`Cannot save profile ${file}`, { cause: error });
   }
-  return (section === 'repository' || section === 'merge' || section === 'actions') && rest.length === 1;
 }
 
 /**
- * Changes settings in one profile file and keeps the rest of its text,
- * comments included. The file changes only when the result, laid over the
- * profiles it extends, is a valid profile.
+ * Changes settings in one profile file and keeps its comments, line endings
+ * and indent width; YAML layout such as quoting may be normalized. The file
+ * changes only when the result, laid over the profiles it extends, is a valid
+ * profile.
  */
 export async function editProfile(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
   const [own, ...base] = await readChain(file);
-  if (own === undefined) {
-    throw new ProfileError(`Cannot read profile ${file}`);
-  }
-  const document = parseDocument(await readFile(own.file, 'utf8'));
+  const original = await readFile(own.file, 'utf8');
+  const document = parseDocument(original);
+  const seen = new Set<string>();
   for (const edit of edits) {
-    if (!editable(edit.path)) {
-      throw new ProfileError(
-        `Cannot edit ${edit.path.join('.')}: only repository, merge and actions settings can be edited`,
-      );
+    const key = edit.path.join('.');
+    if (!editableKeys.has(key)) {
+      throw new ProfileError(`Cannot edit ${key}: it is not a repository, merge or actions setting`);
     }
-    if (edit.value === undefined) {
-      document.deleteIn(edit.path);
-      // A section left empty goes too, so removing a setting leaves no trace.
-      for (let depth = edit.path.length - 1; depth > 0; depth -= 1) {
-        const parent = document.getIn(edit.path.slice(0, depth));
-        if (isMap(parent) && parent.items.length === 0) {
-          document.deleteIn(edit.path.slice(0, depth));
-        }
-      }
-    } else {
+    if (seen.has(key)) {
+      throw new ProfileError(`${key} is edited more than once`);
+    }
+    seen.add(key);
+    if (edit.value !== undefined) {
       document.setIn(edit.path, edit.value);
+      continue;
+    }
+    // Nothing to remove when the file does not name the setting.
+    if (!document.hasIn(edit.path)) {
+      continue;
+    }
+    document.deleteIn(edit.path);
+    // A section left empty goes too, so removing a setting leaves no trace.
+    for (let depth = edit.path.length - 1; depth > 0; depth -= 1) {
+      const parent = document.getIn(edit.path.slice(0, depth));
+      if (isMap(parent) && parent.items.length === 0) {
+        document.deleteIn(edit.path.slice(0, depth));
+      }
     }
   }
-  const text = document.toString({ lineWidth: 0 });
+  const indent = /^( +)\S/mu.exec(original)?.[1]?.length ?? 2;
+  const text = document.toString({ lineWidth: 0, indent });
   const resolved = resolveChain([{ file: own.file, parsed: parseProfileFile(text, own.file) }, ...base], own.file);
-  // Written beside the file, then moved over it, so a failure never leaves half a profile.
-  const temporary = `${own.file}.${process.pid}.tmp`;
-  await writeFile(temporary, text);
-  await rename(temporary, own.file);
+  await replaceFile(own.file, original.includes('\r\n') ? text.replaceAll('\n', '\r\n') : text);
   return resolved;
 }
 
