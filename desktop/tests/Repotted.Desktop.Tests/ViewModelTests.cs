@@ -475,25 +475,6 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
-    public async Task A_folder_the_app_cannot_remember_is_still_used()
-    {
-        var other = Path.Combine(folders.Profiles, "other");
-        Directory.CreateDirectory(other);
-        var cli = new FakeCli().On(folders.List(), Documents.NoProfiles).On(folders.List(other), Documents.NoProfiles);
-        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop { Folder = other }, folders.Settings);
-        await profiles.RefreshCommand.ExecuteAsync(null);
-        // A directory where the settings file goes makes every save fail.
-        File.Delete(Path.Combine(folders.SettingsFolder, "settings.json"));
-        Directory.CreateDirectory(Path.Combine(folders.SettingsFolder, "settings.json"));
-
-        await profiles.ChangeFolderCommand.ExecuteAsync(null);
-
-        Assert.Equal(other, profiles.Folder);
-        Assert.StartsWith("Repotted could not remember this folder", profiles.Notice, StringComparison.Ordinal);
-        Assert.Empty(Directory.GetFiles(folders.SettingsFolder));
-    }
-
-    [AvaloniaFact]
     public async Task A_slow_listing_of_the_old_folder_does_not_replace_the_new_one()
     {
         var own = folders.Write("orgs.yaml", "repository: { has_wiki: false }\n");

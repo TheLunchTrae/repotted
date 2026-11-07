@@ -8,18 +8,22 @@
     <!-- The folder the profiles come from -->
     <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
             Padding="32,10" IsVisible="{Binding !ShowEmpty}">
-      <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto">
+      <Grid ColumnDefinitions="*,Auto,Auto">
         <TextBlock Classes="muted small" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                    ToolTip.Tip="{Binding Folder}">
           <Run Text="Profiles folder:" /> <Run Classes="mono" Text="{Binding Folder}" />
         </TextBlock>
-        <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Classes="small" Margin="0,4,0,0" TextWrapping="Wrap"
-                   Foreground="{DynamicResource RemoveBrush}" Text="{Binding Notice}" IsVisible="{Binding HasNotice}" />
         <Button Grid.Column="1" Classes="link" Margin="16,0,0,0" Content="Change folder"
                 Command="{Binding ChangeFolderCommand}" />
         <Button Grid.Column="2" Classes="link" Margin="16,0,0,0" Content="Refresh"
                 Command="{Binding RefreshCommand}" />
       </Grid>
+    </Border>
+
+    <!-- Shown in every state, the empty folder included, because the usual folder to choose is a new one -->
+    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+            Padding="32,10" IsVisible="{Binding HasNotice}">
+      <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Notice}" />
     </Border>
 
     <Panel>

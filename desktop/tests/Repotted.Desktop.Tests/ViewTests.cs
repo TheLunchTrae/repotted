@@ -225,14 +225,37 @@ public sealed class ViewTests : IDisposable
         Save(window, $"profiles-empty-{theme}");
     }
 
-    private async Task<Window> Show(string theme, FakeCli cli)
+    [AvaloniaFact]
+    public async Task A_new_folder_the_app_cannot_remember_says_so()
+    {
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        var window = await Show("light", new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(other), Documents.NoProfiles), new FakeDesktop { Folder = other });
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        // A directory where the settings file goes makes every save fail.
+        File.Delete(Path.Combine(folders.SettingsFolder, "settings.json"));
+        Directory.CreateDirectory(Path.Combine(folders.SettingsFolder, "settings.json"));
+
+        await shell.Profiles.ChangeFolderCommand.ExecuteAsync(null);
+
+        var text = Texts(window);
+        Assert.Contains($"No profiles in {other} yet.", text);
+        Assert.Contains(text, line => line.StartsWith("Repotted could not remember this folder", StringComparison.Ordinal));
+        Assert.Empty(Directory.GetFiles(folders.SettingsFolder));
+    }
+
+    private async Task<Window> Show(string theme, FakeCli cli, FakeDesktop? desktop = null)
     {
         Application.Current!.RequestedThemeVariant = theme == "dark" ? ThemeVariant.Dark : ThemeVariant.Light;
         if (!cli.Answers(folders.List()))
         {
             cli.On(folders.List(), Documents.NoProfiles);
         }
-        var main = new MainViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings);
+        var main = new MainViewModel(new RepottedClient(cli), desktop ?? new FakeDesktop(), folders.Settings);
         var window = new MainWindow { DataContext = main, Width = 1280, Height = 800 };
         window.Show();
         await main.StartAsync();
