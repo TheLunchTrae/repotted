@@ -427,26 +427,30 @@ describe('profile commands', () => {
     expect(await readFile(file, 'utf8')).not.toContain('has_wiki');
   });
 
-  test('profile renames a ruleset and drops an environment in one save', async () => {
+  test('profile renames a ruleset in place when its write follows its drop, and drops an environment', async () => {
     const file = path.join(directory, 'entries.yaml');
-    await writeFile(file, 'rulesets: [{ name: Old, enforcement: active }]\nenvironments: [{ name: staging }]\n');
+    await writeFile(
+      file,
+      'rulesets:\n  - name: Old # the main one\n    enforcement: active\n  - name: Tags\nenvironments: [{ name: -legacy }]\n',
+    );
 
     const edited = await cli(
       new FakeGitHub(),
       'profile',
       file,
-      '--ruleset',
-      '{"name":"New","enforcement":"evaluate"}',
       '--drop-ruleset',
       'Old',
-      '--drop-environment',
-      'staging',
+      '--ruleset',
+      '{"name":"New","enforcement":"evaluate"}',
+      '--drop-environment=-legacy',
       '--json',
     );
 
     expect(edited).toMatchObject({ code: 0, err: '' });
-    expect(document(edited)).toMatchObject({ profile: { rulesets: [{ name: 'New', enforcement: 'evaluate' }] } });
-    expect(await readFile(file, 'utf8')).toBe('rulesets:\n  - name: New\n    enforcement: evaluate\n');
+    expect(document(edited)).toMatchObject({ profile: { rulesets: [{ name: 'New' }, { name: 'Tags' }] } });
+    expect(await readFile(file, 'utf8')).toBe(
+      'rulesets:\n  - name: New # the main one\n    enforcement: evaluate\n  - name: Tags\n',
+    );
   });
 
   test('profile refuses a ruleset that is not an object with a name, as misuse', async () => {

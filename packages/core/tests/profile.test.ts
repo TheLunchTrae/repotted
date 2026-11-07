@@ -384,8 +384,60 @@ describe('editProfile', () => {
     expect(dropped.profile.environments).toEqual([{ name: 'Production', wait_timer: 5 }]);
   });
 
-  test('rejects an entry edited twice, named otherwise, or not a valid entry', async () => {
-    const text = 'rulesets: [{ name: Main }]\n';
+  test('renames an entry in place, and keeps the comments of rules it still holds', async () => {
+    const file = await write(
+      'entries-rename.yaml',
+      [
+        'rulesets:',
+        '  - name: A',
+        '  - name: B # the main one',
+        '    rules:',
+        '      - type: deletion # never',
+        '      - type: pull_request # reviews',
+        '        parameters:',
+        '          required_approving_review_count: 1 # one',
+        '  - name: C',
+        'environments:',
+        '  - name: staging # shared',
+        '',
+      ].join('\n'),
+    );
+
+    await editProfile(file, [
+      {
+        list: 'rulesets',
+        name: 'B',
+        entry: {
+          name: 'B2',
+          rules: [
+            { type: 'pull_request', parameters: { required_approving_review_count: 2 } },
+            { type: 'non_fast_forward' },
+          ],
+        },
+      },
+      { list: 'environments', name: 'staging', entry: { name: 'Staging' } },
+    ]);
+
+    expect(await readFile(file, 'utf8')).toBe(
+      [
+        'rulesets:',
+        '  - name: A',
+        '  - name: B2 # the main one',
+        '    rules:',
+        '      - type: pull_request # reviews',
+        '        parameters:',
+        '          required_approving_review_count: 2 # one',
+        '      - type: non_fast_forward',
+        '  - name: C',
+        'environments:',
+        '  - name: Staging # shared',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  test('rejects an entry edited twice, renamed to a taken name, shared by an alias, or not valid', async () => {
+    const text = 'rulesets: [{ name: Main }, { name: Other }]\n';
     const file = await write('entries-invalid.yaml', text);
 
     const twice = rejection(
@@ -394,13 +446,20 @@ describe('editProfile', () => {
         { list: 'environments', name: 'staging', entry: { name: 'staging' } },
       ]),
     );
-    const misnamed = rejection(editProfile(file, [{ list: 'rulesets', name: 'Main', entry: { name: 'Other' } }]));
+    const taken = rejection(editProfile(file, [{ list: 'rulesets', name: 'Main', entry: { name: 'Other' } }]));
+    const shared = await write(
+      'entries-alias.yaml',
+      'rulesets:\n  - { name: A, bypass_actors: &admins [] }\n  - { name: B, bypass_actors: *admins }\n',
+    );
     const invalid = rejection(
       editProfile(file, [{ list: 'rulesets', name: 'Main', entry: { name: 'Main', enforcement: 'sometimes' } }]),
     );
 
     expect(String(await twice)).toContain('more than once');
-    expect(String(await misnamed)).toContain('must be named Main');
+    expect(String(await taken)).toContain('already has a ruleset named Other');
+    expect(
+      String(await rejection(editProfile(shared, [{ list: 'rulesets', name: 'A', entry: { name: 'A' } }]))),
+    ).toContain('anchors and aliases');
     expect(await invalid).toBeInstanceOf(ProfileError);
     expect(await readFile(file, 'utf8')).toBe(text);
   });

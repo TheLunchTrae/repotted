@@ -48,6 +48,7 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
             }
             name = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(RenameNote));
             Touched();
         }
     }
@@ -67,9 +68,22 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
             removes = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(Manages));
+            OnPropertyChanged(nameof(RenameNote));
             Touched();
         }
     }
+
+    /// <summary>How names compare: GitHub's environment names ignore case.</summary>
+    protected virtual StringComparison NameComparison => StringComparison.Ordinal;
+
+    /// <summary>What a rename does on GitHub, which knows each entry by its name.</summary>
+    public string? RenameNote =>
+        !Removes
+        && Saved?["name"]?.GetValue<string>() is { } old
+        && Name.Trim() is { Length: > 0 } renamed
+        && !string.Equals(old, renamed, NameComparison)
+            ? $"GitHub knows each {Kind} by its name, so applying this profile creates {renamed} and leaves {old} on each repository as it is."
+            : null;
 
     public bool Manages
     {

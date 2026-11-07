@@ -132,6 +132,23 @@ public sealed class EntryEditorTests
     }
 
     [Fact]
+    public void A_rename_says_what_it_does_on_GitHub()
+    {
+        var editor = Ruleset("""{"name":"Main"}""");
+        Assert.Null(editor.RenameNote);
+
+        editor.Name = "Protect main";
+        Assert.Equal("GitHub knows each ruleset by its name, so applying this profile creates Protect main and leaves Main on each repository as it is.", editor.RenameNote);
+        editor.Removes = true;
+        Assert.Null(editor.RenameNote);
+
+        // Environment names ignore case on GitHub, so a change of case renames the same one.
+        var environment = Environment("""{"name":"npm"}""");
+        environment.Name = "NPM";
+        Assert.Null(environment.RenameNote);
+    }
+
+    [Fact]
     public void A_removed_ruleset_can_be_managed_again()
     {
         var editor = Ruleset("""{"name":"Old","absent":true}""");
@@ -191,8 +208,13 @@ public sealed class EntryEditorTests
         editor.SelfReview.Options[0].ChooseCommand.Execute(null);
         editor.Reviewers.Options[0].ChooseCommand.Execute(null);
         Assert.Equal("Prevent self-review needs at least one required reviewer.", editor.Problem);
+        // GitHub refuses it where the repository has no reviewers either, and the YAML is where they are listed.
         editor.Reviewers.ClearCommand.Execute(null);
+        Assert.Equal("Prevent self-review needs at least one required reviewer. List them in the YAML first.", editor.Problem);
+        editor.SelfReview.ClearCommand.Execute(null);
         Assert.Null(editor.Problem);
+        // A file that already leaves reviewers to the repository stays as it is.
+        Assert.Null(Environment("""{"name":"npm","prevent_self_review":true}""").Problem);
 
         editor.Deployments.Options[2].ChooseCommand.Execute(null);
         editor.Tags = "v*\nv*";

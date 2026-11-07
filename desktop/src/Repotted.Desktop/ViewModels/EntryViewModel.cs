@@ -42,8 +42,14 @@ internal sealed partial class EntryViewModel : ViewModelBase
     /// <summary>The name the entry has in the profile now, before any edit.</summary>
     public string SavedName => Saved?["name"]?.GetValue<string>() ?? "";
 
-    /// <summary>Whether this profile's file names the entry, so it can be renamed or taken out.</summary>
+    /// <summary>Whether this profile's file names the entry, so it can be taken out.</summary>
     public bool Own => IsNew || Origin == SettingOrigin.Own;
+
+    /// <summary>
+    /// Whether the entry can be renamed: only one that this profile alone
+    /// names, since renaming one over a base's would bring the base's back.
+    /// </summary>
+    public bool Renamable => Own && !InBase;
 
     private EntryEditorViewModel? editor;
 
@@ -61,7 +67,8 @@ internal sealed partial class EntryViewModel : ViewModelBase
     public bool Absent => editor?.Removes ?? Saved?["absent"]?.GetValue<bool>() == true;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Changed), nameof(Note), nameof(AccessibleName))]
+    [NotifyPropertyChangedFor(nameof(Changed), nameof(Note), nameof(AccessibleName), nameof(Editable))]
+    [NotifyCanExecuteChangedFor(nameof(PutBackCommand))]
     public partial bool Dropped { get; private set; }
 
     /// <summary>Whether something about the entry is waiting to be saved.</summary>
@@ -70,6 +77,9 @@ internal sealed partial class EntryViewModel : ViewModelBase
     public bool Unchanged => !Changed;
 
     public bool CanDrop => Own && !Dropped;
+
+    /// <summary>Whether the editor can change the entry: not once it is taken out.</summary>
+    public bool Editable => !Dropped;
 
     public string DropLabel => IsNew ? $"Discard this {tab.Noun}" : "Take out of profile";
 
@@ -104,8 +114,8 @@ internal sealed partial class EntryViewModel : ViewModelBase
         }
         var entry = editor.Entry;
         var name = entry["name"]!.GetValue<string>();
-        // A rename takes the old entry out of the file; the CLI drops before it writes.
-        if (Own && !IsNew && !tab.SameName(name, SavedName))
+        // The CLI takes a write right after a drop as a rename in place.
+        if (Renames)
         {
             yield return new EntryChange(tab.List, SavedName, null);
         }
@@ -130,11 +140,20 @@ internal sealed partial class EntryViewModel : ViewModelBase
         tab.Closed(this);
     }
 
+    /// <summary>Takes back taking the entry out, so it is as the profile has it.</summary>
+    [RelayCommand(CanExecute = nameof(Dropped))]
+    private void PutBack()
+    {
+        Undo();
+        tab.Refresh();
+    }
+
     /// <summary>Puts the entry back as the profile has it.</summary>
     public void Undo()
     {
         Dropped = false;
         editor = null;
+        OnPropertyChanged(nameof(Editor));
         Refresh();
     }
 
@@ -150,6 +169,9 @@ internal sealed partial class EntryViewModel : ViewModelBase
         OnPropertyChanged(nameof(AccessibleName));
         DropCommand.NotifyCanExecuteChanged();
     }
+
+    /// <summary>A rename on save: the old name is dropped, then the entry written in its place.</summary>
+    public bool Renames => !Dropped && editor is not null && Changed && Own && !IsNew && !tab.SameName(editor.Entry["name"]!.GetValue<string>(), SavedName);
 }
 
 /// <summary>A tab: a section's settings, or the rulesets or environments the profile names.</summary>
@@ -207,6 +229,17 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowList))]
     public partial EntryViewModel? Editing { get; set; }
 
+    /// <summary>The entry last closed, so the list can put focus back on it.</summary>
+    public EntryViewModel? Left { get; private set; }
+
+    partial void OnEditingChanged(EntryViewModel? oldValue, EntryViewModel? newValue)
+    {
+        if (newValue is null)
+        {
+            Left = oldValue;
+        }
+    }
+
     public bool ShowList => Editing is null;
 
     /// <summary>What the profile manages here, once resolved over its bases.</summary>
@@ -229,14 +262,10 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
     public EntryEditorViewModel MakeEditor(EntryViewModel entry)
     {
         bool Taken(string name) => this.Taken(entry, name);
-        void Changed()
-        {
-            entry.Refresh();
-            Refresh();
-        }
+        void Changed() => Refresh();
         return List == "environments"
-            ? new EnvironmentEditorViewModel(entry.Saved, entry.Own, Taken, Changed)
-            : new RulesetEditorViewModel(entry.Saved, entry.Own, Taken, Changed);
+            ? new EnvironmentEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed)
+            : new RulesetEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed);
     }
 
     [RelayCommand]
@@ -280,6 +309,11 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
 
     public void Refresh()
     {
+        // A name one entry frees or takes changes what the others can be called.
+        foreach (var entry in Entries)
+        {
+            entry.Refresh();
+        }
         OnPropertyChanged(nameof(Count));
         OnPropertyChanged(nameof(HasEntries));
         changed();

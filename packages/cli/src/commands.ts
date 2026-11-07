@@ -274,10 +274,36 @@ function entryEdit(list: EntryEdit['list'], text: string): EntryEdit {
   return { list, name: entry.data.name, entry: entry.data };
 }
 
+/** The profile edits in command-line order; a write right after a drop from the same list renames the dropped entry. */
+function profileEdits(tokens: readonly { kind: string; name?: string; value?: string | undefined }[]): ProfileEdit[] {
+  const edits: ProfileEdit[] = [];
+  for (const token of tokens) {
+    const value = token.value ?? '';
+    const previous = edits.at(-1);
+    if (token.kind !== 'option') {
+      continue;
+    }
+    if (token.name === 'set' || token.name === 'unset') {
+      edits.push(profileEdit(value, token.name === 'unset'));
+    } else if (token.name === 'drop-ruleset' || token.name === 'drop-environment') {
+      edits.push({ list: token.name === 'drop-ruleset' ? 'rulesets' : 'environments', name: value, entry: undefined });
+    } else if (token.name === 'ruleset' || token.name === 'environment') {
+      const edit = entryEdit(token.name === 'ruleset' ? 'rulesets' : 'environments', value);
+      if (previous !== undefined && 'list' in previous && previous.list === edit.list && previous.entry === undefined) {
+        edits[edits.length - 1] = { ...edit, name: previous.name };
+      } else {
+        edits.push(edit);
+      }
+    }
+  }
+  return edits;
+}
+
 async function profile(io: Io, args: string[]): Promise<number> {
-  const { positionals, values } = parseArgs({
+  const { positionals, values, tokens } = parseArgs({
     args,
     allowPositionals: true,
+    tokens: true,
     options: {
       set: { type: 'string', multiple: true },
       unset: { type: 'string', multiple: true },
@@ -289,15 +315,7 @@ async function profile(io: Io, args: string[]): Promise<number> {
     },
   });
   const file = only(positionals, 'profile file');
-  // Drops come before writes, so a rename drops the old name and writes the new one.
-  const edits: ProfileEdit[] = [
-    ...(values.set ?? []).map((argument) => profileEdit(argument, false)),
-    ...(values.unset ?? []).map((argument) => profileEdit(argument, true)),
-    ...(values['drop-ruleset'] ?? []).map((name): EntryEdit => ({ list: 'rulesets', name, entry: undefined })),
-    ...(values['drop-environment'] ?? []).map((name): EntryEdit => ({ list: 'environments', name, entry: undefined })),
-    ...(values.ruleset ?? []).map((text) => entryEdit('rulesets', text)),
-    ...(values.environment ?? []).map((text) => entryEdit('environments', text)),
-  ];
+  const edits = profileEdits(tokens);
   const resolved = edits.length === 0 ? await resolveProfile(file) : await editProfile(file, edits);
   if (values.json === true) {
     json(io, resolved);

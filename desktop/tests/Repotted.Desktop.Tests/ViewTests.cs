@@ -256,10 +256,14 @@ public sealed class ViewTests : IDisposable
         Assert.Equal(["Main: Set here", "Tags: From base"], rows);
         Save(window, $"rulesets-{theme}");
 
-        // A row opens its ruleset, and every choice says what it leaves to GitHub.
-        window.GetVisualDescendants().OfType<Button>().First(button => AutomationProperties.GetName(button) == "Main: Set here")
-            .Command!.Execute(null);
+        // A row opens its ruleset with focus on its name, and every choice says what it leaves to GitHub.
+        window.GetVisualDescendants().OfType<Button>().First(button => AutomationProperties.GetName(button) == "Main: Set here").Focus();
+        window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
         var main = (RulesetEditorViewModel)editor.Tabs[3].Editing!.Editor;
+        Assert.Same(
+            window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "ruleset name"),
+            window.FocusManager?.GetFocusedElement());
         main.Enforcement.Options[1].ChooseCommand.Execute(null);
         text = Texts(window);
         Assert.Contains("Back to rulesets", text);
@@ -274,8 +278,10 @@ public sealed class ViewTests : IDisposable
         window.Height = 1500;
         Save(window, $"ruleset-{theme}");
 
-        // A base's ruleset keeps its name here.
+        // Back puts focus on the row it left, and a base's ruleset keeps its name here.
         editor.Tabs[3].BackCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Main: Changed, not saved yet", AutomationProperties.GetName((Control)window.FocusManager!.GetFocusedElement()!));
         editor.Tabs[3].Entries[1].OpenCommand.Execute(null);
         Assert.Contains("A base profile names this one, so this profile keeps its name and sets the rest.", Texts(window));
         Assert.True(window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "ruleset name").IsReadOnly);

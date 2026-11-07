@@ -21,9 +21,12 @@ Rulesets and environments open in an editor of their own, saved through
 editor starts from the entry as the profile resolves it and changes only what
 is edited, so keys and rules it does not show stay as they are. A choice left
 unset leaves that key to GitHub. Editing a base profile's entry sets the whole
-entry in this profile, over the base's, under the same name. Renaming an
-entry, or taking it out of the profile, frees its old name only once the
-profile is saved. While a capture runs, the profiles list leaves out the file
+entry in this profile, over the base's, under the same name, so only an
+entry that this profile alone names can be renamed. GitHub knows rulesets and
+environments by name, so the editor warns that applying a renamed entry
+creates a new one and leaves the old one as it is. Renaming an entry, or
+taking it out of the profile, frees its old name only once the profile is
+saved. While a capture runs, the profiles list leaves out the file
 it holds.
 
 A new profile starts empty, extends another profile in the folder, or is

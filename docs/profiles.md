@@ -68,11 +68,16 @@ or a bare word as a string. Edits cover `repository`, `merge` and `actions`
 settings, including `actions.selected_actions.<key>`. `--ruleset json` and
 `--environment json` write one entry, a JSON object with a `name`, in place of
 the file's own entry of that name, or after the others when the file has none.
-A written entry changes only the keys that differ, so the rest keep their
-place and comments. `--drop-ruleset name` and `--drop-environment name` remove
-the file's own entry, so an entry of that name in a base profile applies
-again. Environment names match regardless of case, as on GitHub. Drops come
-before writes, so dropping one name and writing another renames an entry. An
+A written entry changes only what differs, so the rest keep their place and
+comments, as do the rules and other list items it still holds. `--drop-ruleset
+name` and `--drop-environment name` remove the file's own entry, so an entry
+of that name in a base profile applies again. A write right after a drop from
+the same list renames the dropped entry in place, which also changes only the
+case of an environment's name. A plan matches rulesets and environments by
+name, so applying a renamed entry creates a new one and leaves the old one on
+GitHub unless an `absent: true` entry removes it. Environment names match
+regardless of case, as on GitHub. Edits apply in command-line order. An entry
+edit refuses a list that shares parts through YAML anchors and aliases. An
 edit keeps the rest of the file, including comments, line endings and indent
 width, though YAML quoting and list indentation may be normalized. It removes
 a section it leaves empty, along with any comment above that section, and

@@ -41,6 +41,8 @@ internal sealed partial class EnvironmentEditorViewModel : EntryEditorViewModel
 
     public override string Kind => "environment";
 
+    protected override StringComparison NameComparison => StringComparison.OrdinalIgnoreCase;
+
     private string waitTimer;
 
     /// <summary>Minutes to wait before a deployment; empty leaves the repository's own.</summary>
@@ -122,9 +124,14 @@ internal sealed partial class EnvironmentEditorViewModel : EntryEditorViewModel
             {
                 return "Each branch or tag pattern can be listed once.";
             }
-            if (SelfReview.Value?.GetValue<bool>() == true && Reviewers.Value is JsonArray { Count: 0 })
+            // GitHub refuses it without reviewers. A file that leaves reviewers to the
+            // repository, as this one already did, stays as it is.
+            var asSaved = Start["prevent_self_review"]?.GetValue<bool>() == true && !Start.ContainsKey("reviewers") && !Reviewers.IsSet;
+            if (SelfReview.Value?.GetValue<bool>() == true && Reviewers.Value is not JsonArray { Count: > 0 } && !asSaved)
             {
-                return "Prevent self-review needs at least one required reviewer.";
+                return Reviewers.IsSet
+                    ? "Prevent self-review needs at least one required reviewer."
+                    : "Prevent self-review needs at least one required reviewer. List them in the YAML first.";
             }
             return null;
         }

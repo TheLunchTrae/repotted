@@ -116,7 +116,11 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
     private async Task SaveAsync()
     {
         var changes = Settings.Select(setting => setting.Change).OfType<ProfileChange>().ToList();
-        var entries = Entries.SelectMany(entry => entry.Changes()).ToList();
+        // The CLI takes a write right after a drop as a rename, so plain writes
+        // and drops go first and each rename last, as its own drop and write.
+        var entries = Entries.OrderBy(entry => entry.Renames ? 2 : entry.Dropped ? 1 : 0)
+            .SelectMany(entry => entry.Changes())
+            .ToList();
         Saving = true;
         SaveError = null;
         try

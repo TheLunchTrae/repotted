@@ -86,11 +86,14 @@
             <Grid ColumnDefinitions="180,*" Margin="16,10">
               <TextBlock Text="Name" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
               <StackPanel Grid.Column="1" Spacing="4">
-                <TextBox x:Name="EntryName" Text="{Binding Name}" IsReadOnly="{Binding !Renamable}" MaxWidth="420"
-                         HorizontalAlignment="Left" MinWidth="320"
+                <TextBox Classes="entryName" Text="{Binding Name}" IsReadOnly="{Binding !Renamable}" MaxWidth="420"
+                         HorizontalAlignment="Left" MinWidth="320" AttachedToVisualTree="OnEntryNameAttached"
                          AutomationProperties.Name="{Binding Kind, StringFormat='{}{0} name'}" />
                 <TextBlock Classes="muted small" TextWrapping="Wrap" IsVisible="{Binding !Renamable}"
                            Text="A base profile names this one, so this profile keeps its name and sets the rest." />
+                <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding RenameNote}"
+                           IsVisible="{Binding RenameNote, Converter={x:Static ObjectConverters.IsNotNull}}"
+                           AutomationProperties.LiveSetting="Polite" />
               </StackPanel>
             </Grid>
           </Border>
@@ -210,7 +213,7 @@
 
                     <!-- The rulesets or environments the profile names -->
                     <StackPanel Spacing="10" Margin="0,12,0,0" IsVisible="{Binding IsEntries}">
-                      <StackPanel Spacing="10" IsVisible="{Binding ShowList}">
+                      <StackPanel Spacing="10" IsVisible="{Binding ShowList}" PropertyChanged="OnListPropertyChanged">
                         <Grid ColumnDefinitions="*,Auto">
                           <TextBlock Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding Help}" />
                           <Button Grid.Column="1" Classes="quiet" Margin="16,0,0,0" Content="{Binding NewLabel}"
@@ -257,11 +260,16 @@
                                     <TextBlock Classes="muted small" Text="{Binding Note}" TextWrapping="Wrap"
                                                AutomationProperties.LiveSetting="Polite" />
                                   </StackPanel>
-                                  <Button Grid.Column="1" Classes="quiet" VerticalAlignment="Top" Content="{Binding DropLabel}"
-                                          IsVisible="{Binding CanDrop}" Command="{Binding DropCommand}"
-                                          AutomationProperties.HelpText="Takes it out of this profile, once the profile is saved." />
+                                  <StackPanel Grid.Column="1" VerticalAlignment="Top">
+                                    <Button Classes="quiet" Content="{Binding DropLabel}"
+                                            IsVisible="{Binding CanDrop}" Command="{Binding DropCommand}"
+                                            AutomationProperties.HelpText="Takes it out of this profile, once the profile is saved." />
+                                    <Button Classes="quiet" Content="Put it back" IsVisible="{Binding Dropped}"
+                                            Command="{Binding PutBackCommand}"
+                                            AutomationProperties.HelpText="Keeps it in this profile, as it is saved." />
+                                  </StackPanel>
                                 </Grid>
-                                <ContentControl Content="{Binding Editor}" />
+                                <ContentControl Content="{Binding Editor}" IsEnabled="{Binding Editable}" />
                               </StackPanel>
                             </DataTemplate>
                             <DataTemplate DataType="vm:RulesetEditorViewModel">
@@ -278,7 +286,7 @@
                                           <StackPanel Spacing="2">
                                             <TextBlock Text="Branches and tags" FontWeight="SemiBold" FontSize="14" />
                                             <TextBlock Classes="muted small" TextWrapping="Wrap" Margin="0,0,12,0"
-                                                       Text="One pattern per line. ~DEFAULT_BRANCH is the default branch, and ~ALL is every one." />
+                                                       Text="One pattern per line. ~DEFAULT_BRANCH is the default branch, and ~ALL is every one. Leave both empty to keep the repository's own." />
                                           </StackPanel>
                                           <Grid Grid.Column="1" ColumnDefinitions="*,16,*">
                                             <StackPanel Spacing="4">
@@ -328,9 +336,15 @@
                                                 <StackPanel Spacing="4">
                                                   <TextBlock Classes="small" Text="Allowed merge methods" />
                                                   <StackPanel Orientation="Horizontal" Spacing="16">
-                                                    <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Merge}" Content="Merge" />
-                                                    <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Squash}" Content="Squash" />
-                                                    <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Rebase}" Content="Rebase" />
+                                                    <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Merge}" Content="Merge"
+                                                              AutomationProperties.Name="Allowed merge method: Merge"
+                                                              AutomationProperties.HelpText="{Binding Methods.HelpText}" />
+                                                    <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Squash}" Content="Squash"
+                                                              AutomationProperties.Name="Allowed merge method: Squash"
+                                                              AutomationProperties.HelpText="{Binding Methods.HelpText}" />
+                                                    <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Rebase}" Content="Rebase"
+                                                              AutomationProperties.Name="Allowed merge method: Rebase"
+                                                              AutomationProperties.HelpText="{Binding Methods.HelpText}" />
                                                   </StackPanel>
                                                 </StackPanel>
                                                 <TextBlock Classes="small" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Problem}"

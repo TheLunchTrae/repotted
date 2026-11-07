@@ -79,7 +79,9 @@ public sealed class ContractTests
         var cancellationToken = TestContext.Current.CancellationToken;
         using var folders = new Folders();
         folders.Write("base.yaml", "rulesets:\n  - name: Main\n    enforcement: active\n");
-        var orgs = folders.Write("orgs.yaml", "extends: base.yaml\nenvironments:\n  - name: npm\n    wait_timer: 5 # minutes\n");
+        var orgs = folders.Write(
+            "orgs.yaml",
+            "extends: base.yaml\nenvironments:\n  - name: legacy\n  - name: npm\n    wait_timer: 5 # minutes\n  - name: review # apps\n  - name: -old\n");
         var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken), item => item.Name == "orgs");
         var editor = new ProfileViewModel(client, listing);
         await editor.LoadCommand.ExecuteAsync(null);
@@ -94,8 +96,12 @@ public sealed class ContractTests
         staging.Deployments.Options[2].ChooseCommand.Execute(null);
         staging.Branches = "main";
         staging.Tags = "v*";
-        var npm = (EnvironmentEditorViewModel)environments.Entries[0].Editor;
+        // Taken out ahead of an edit and a rename, and one whose name starts with a dash.
+        environments.Entries[0].DropCommand.Execute(null);
+        environments.Entries.Single(entry => entry.SavedName == "-old").DropCommand.Execute(null);
+        var npm = (EnvironmentEditorViewModel)environments.Entries.Single(entry => entry.SavedName == "npm").Editor;
         npm.WaitTimer = "10";
+        environments.Entries.Single(entry => entry.SavedName == "review").Editor.Name = "preview";
         await editor.SaveCommand.ExecuteAsync(null);
 
         Assert.Null(editor.SaveError);
@@ -106,6 +112,7 @@ public sealed class ContractTests
             environments:
               - name: npm
                 wait_timer: 10 # minutes
+              - name: preview # apps
               - name: staging
                 deployment_branch_policy:
                   protected_branches: false

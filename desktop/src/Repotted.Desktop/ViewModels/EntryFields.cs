@@ -263,6 +263,8 @@ internal sealed partial class MergeMethodsViewModel : ViewModelBase
 
     public bool Dim => !IsSet;
 
+    public string HelpText => IsSet ? "" : "Not set here, so the repository keeps its own";
+
     public bool Merge { get => merge; set => Set(ref merge, value); }
 
     public bool Squash { get => squash; set => Set(ref squash, value); }
@@ -284,6 +286,7 @@ internal sealed partial class MergeMethodsViewModel : ViewModelBase
         OnPropertyChanged(nameof(Rebase));
         OnPropertyChanged(nameof(IsSet));
         OnPropertyChanged(nameof(Dim));
+        OnPropertyChanged(nameof(HelpText));
         changed();
     }
 

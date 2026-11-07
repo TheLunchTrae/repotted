@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Repotted.Desktop.Services;
@@ -431,13 +432,60 @@ public sealed class ViewModelTests : IDisposable
             environments.Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
         Assert.Equal(1, environments.Count);
 
-        var save = $$"""profile {{files.Own}} --ruleset {"name":"Protect main","enforcement":"evaluate"} --drop-ruleset Old tags --ruleset {"name":"Retired tags","absent":true} --drop-environment npm --environment {"name":"staging","wait_timer":10} --json""";
+        // Plain writes and drops go first, so only a rename's write follows its drop.
+        var save = $$"""profile {{files.Own}} --ruleset={"name":"Protect main","enforcement":"evaluate"} --environment={"name":"staging","wait_timer":10} --drop-environment=npm --drop-ruleset=Old tags --ruleset={"name":"Retired tags","absent":true} --json""";
         cli.On(save, Documents.Resolved(files.Own, files.Base));
         await editor.SaveCommand.ExecuteAsync(null);
 
         Assert.Contains(save, cli.Calls);
         Assert.Null(editor.SaveError);
         Assert.False(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
+    public async Task An_entry_that_a_base_also_names_keeps_its_name_and_one_taken_out_can_be_put_back()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var (rulesets, environments) = (editor.Tabs[3], editor.Tabs[4]);
+        var shared = new EntryViewModel(rulesets, new JsonObject { ["name"] = "Shared" }, SettingOrigin.Own, null, inBase: true);
+        Assert.True(shared.CanDrop);
+        Assert.False(shared.Renamable);
+        Assert.False(shared.Editor.Renamable);
+
+        // A name one entry gives up is free for the others at once.
+        rulesets.NewCommand.Execute(null);
+        var first = rulesets.Editing!;
+        first.Editor.Name = "Same";
+        rulesets.NewCommand.Execute(null);
+        var second = rulesets.Editing!;
+        second.Editor.Name = "Same";
+        Assert.Equal("The profile already has a ruleset named Same.", first.Note);
+        List<string?> told = [];
+        first.PropertyChanged += (_, e) => told.Add(e.PropertyName);
+        second.Editor.Name = "Other";
+        Assert.Equal("New, not saved yet", first.Note);
+        Assert.Contains(nameof(EntryViewModel.Note), told);
+        first.DropCommand.Execute(null);
+        second.DropCommand.Execute(null);
+
+        // A change of case renames an environment in place, by its write alone.
+        environments.Entries[0].Editor.Name = "NPM";
+        var save = $$"""profile {{files.Own}} --environment={"name":"NPM"} --json""";
+        cli.On(save, Documents.Resolved(files.Own, files.Base));
+
+        // Taking out an entry closes its editor, and putting it back keeps it as saved.
+        var old = rulesets.Entries[1];
+        old.OpenCommand.Execute(null);
+        old.DropCommand.Execute(null);
+        Assert.False(old.Editable);
+        Assert.True(old.PutBackCommand.CanExecute(null));
+        old.PutBackCommand.Execute(null);
+        Assert.Equal("Old tags: Removed from GitHub here", $"{old.Name}: {old.Note}");
+        Assert.Equal("1 unsaved change", editor.ChangesLabel);
+
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Contains(save, cli.Calls);
     }
 
     [AvaloniaFact]
@@ -930,6 +978,33 @@ public sealed class ViewModelTests : IDisposable
 
         Assert.False(File.Exists(made));
         Assert.Null(next.Problem);
+    }
+
+    [AvaloniaFact]
+    public async Task A_capture_still_running_in_the_folder_left_behind_hides_nothing_in_the_new_one()
+    {
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .On(folders.List(), Documents.NoProfiles)
+            .On(folders.List(other), Listing(("repotted", Path.Combine(other, "repotted.yaml"), null)))
+            .On($"capture TheLunchTrae/repotted --output {made} --json", async _ =>
+            {
+                await finish.Task;
+                return """{"error":{"kind":"error","message":"Not Found"}}""";
+            });
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop { Folder = other }, folders.Settings, () => ["TheLunchTrae/repotted"]);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        profiles.StartNew("TheLunchTrae/repotted");
+        var capturing = profiles.Creating!.CreateCommand.ExecuteAsync(null);
+
+        await profiles.ChangeFolderCommand.ExecuteAsync(null);
+
+        Assert.Equal(["repotted"], profiles.Items.Select(item => item.Name));
+        finish.SetResult();
+        await capturing;
     }
 
     [AvaloniaFact]

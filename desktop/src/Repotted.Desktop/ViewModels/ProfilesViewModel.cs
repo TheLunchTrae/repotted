@@ -200,10 +200,12 @@ internal sealed partial class ProfilesViewModel(
             {
                 return;
             }
-            // A capture still running holds its file empty, so the file is not a profile yet.
+            // A capture still running holds its file empty, so the file is not a
+            // profile yet; one that runs on in a folder left behind holds nothing here.
             var held = forms
                 .Select(form => form.Holding)
                 .OfType<string>()
+                .Where(file => string.Equals(Path.GetDirectoryName(file), folder, StringComparison.Ordinal))
                 .Select(Path.GetFileNameWithoutExtension)
                 .ToHashSet(StringComparer.Ordinal);
             var listings = listed.Where(listing => !held.Contains(listing.Name)).ToList();

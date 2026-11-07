@@ -142,11 +142,10 @@ internal sealed class RepottedClient(ICli cli)
         }
         foreach (var entry in entries)
         {
-            // --ruleset, --drop-ruleset, --environment and --drop-environment.
+            // --ruleset, --drop-ruleset, --environment and --drop-environment, joined
+            // to their value so a name that starts with a dash stays a value.
             var flag = entry.List == "rulesets" ? "ruleset" : "environment";
-            arguments.AddRange(entry.Entry is null
-                ? [$"--drop-{flag}", entry.Name]
-                : [$"--{flag}", entry.Entry.ToJsonString()]);
+            arguments.Add(entry.Entry is null ? $"--drop-{flag}={entry.Name}" : $"--{flag}={entry.Entry.ToJsonString()}");
         }
         arguments.Add("--json");
         return await ProfileAsync(arguments, cancellationToken).ConfigureAwait(false);
