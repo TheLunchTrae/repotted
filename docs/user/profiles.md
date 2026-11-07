@@ -10,7 +10,8 @@ each part.
 A profile has up to five sections. Keys are the field names of the
 [GitHub REST API](https://docs.github.com/rest), so GitHub's REST docs
 describe each one. Repotted rejects a key it doesn't know, so a misspelling
-never passes silently.
+never passes silently. The exceptions are a rule's `parameters` and a
+ruleset's `conditions`, which Repotted passes to GitHub as they are.
 
 | Section        | Keys                                                                                                                                                            |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |

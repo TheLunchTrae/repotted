@@ -1,13 +1,8 @@
 # JSON output
 
-The desktop app, and any other program, reads Repotted through these
-documents. They are a contract: `csharp:test` runs the CLI from source and
-reads what it prints, so a change to a document that the app doesn't expect fails the
-gate.
-
 `--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `repos` and
-`status` prints exactly one JSON document on stdout, for programs such as the
-desktop app. Repotted writes nothing to stderr in this mode; anything that
+`status` prints exactly one JSON document on stdout, for scripts and programs
+such as the desktop app. Repotted writes nothing to stderr in this mode; anything that
 appears there, such as a deprecation notice from the GitHub client, is
 diagnostic and not a failure. `--help` and `--version` still print text.
 
@@ -25,7 +20,8 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   by name. A value whose file is `chain[0]` is set in the profile itself.
 - `profiles` prints `{ profiles }`, each as `{ name, file, extends, problem }`,
   sorted by file name: the `.yaml` and `.yml` files directly in the folder.
-  `extends` is the absolute path of the profile it extends, or null, and
+  `file` is a real path, with links resolved, as in `profile`'s `chain`.
+  `extends` is the real path of the profile it extends, or null, and
   `problem` says why the profile cannot be used, or is null.
 - `repos` prints `{ source, repositories }`, each repository as
   `{ full_name, private, archived }`, sorted by name: the repositories your
@@ -33,7 +29,7 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `installations` and the list holds those the App is installed on. GitHub
   refuses the installation list to any other token, which gets `admin` and
   every repository the account administers; the token itself may not be
-  allowed to change them (see [The GitHub App](github-app.md#where-the-token-comes-from)).
+  allowed to change them (see [Sign in](sign-in.md#use-a-token-instead)).
 - `status` prints `{ signed_in: true, login, name, token_variable,
   install_url }`, where `token_variable` names `GITHUB_TOKEN` or `GH_TOKEN`
   when one is set and used before the sign-in, and is null otherwise, and

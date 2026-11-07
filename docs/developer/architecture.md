@@ -9,10 +9,14 @@ job, so the rules about what Repotted may write live in one place.
 ## Profiles
 
 `packages/core/src/schema.ts` defines a profile with zod. Its keys are the
-GitHub REST API's field names, so GitHub's REST docs describe each key,
-capture writes what the API returns without translating it, and no mapping
-layer needs maintaining. Every object is strict, so an unknown key is an error
-and a misspelling never passes silently.
+fields that the GitHub REST API's write endpoints take, so GitHub's REST docs
+describe each key. Most sections capture the API's response as it is.
+Environments are the exception: `sections/environments.ts` turns GitHub's
+protection rules into `wait_timer`, `reviewers`, and `prevent_self_review`,
+and reads `branch_policies` from a separate endpoint. The schema's objects are
+strict, so an unknown key is an error, except inside a rule's `parameters` and
+a ruleset's `conditions`, which are open records passed to GitHub as they
+are.
 
 `packages/core/src/profile.ts` loads a profile and the chain of profiles it
 `extends`, merges them, and only then validates the result. Validating after
@@ -44,16 +48,19 @@ target, with the fields it changes and the request that makes it.
 A profile manages only what it names: a setting it leaves out keeps its live
 value, a ruleset or environment it doesn't name is left alone, and inside a
 ruleset a key it leaves out keeps its live value. Deleting a ruleset or an
-environment needs an explicit `absent: true` entry. This lets a profile adopt
-a repository one setting at a time, and it keeps every destructive change
-visible in the profile itself rather than implied by an omission.
+environment needs an explicit `absent: true` entry. As a result, a profile can
+cover a repository one setting at a time, and every delete a plan makes
+appears in the profile as an `absent: true` entry.
 
 `packages/core/src/match.ts` decides what counts as drift. A desired value
 only needs to be present in the live value, so defaults that GitHub fills in
 are not drift. Lists match as a whole, in any order. `overlay` lays a desired
-value over the live one where GitHub needs the whole object. The environment
-endpoint, for example, replaces every setting, so each environment write sends
-the live value of every setting the profile leaves out.
+value over the live one where GitHub needs the whole object: the rulesets
+adapter uses it for a rule's `parameters` and a ruleset's `conditions`, so the
+keys a profile leaves out keep their live values. The environment endpoint
+replaces every setting, so `writeSettings` in the environments adapter sends
+the live value of each setting the profile leaves out, or its default for a
+new environment.
 
 ### Order
 
@@ -72,14 +79,13 @@ never less protected in between:
 
 ### Checks at plan time
 
-Merge settings are checked against what GitHub accepts, first in the profile
-alone and again at plan time with the profile laid over the live settings: at
-least one merge method stays on, and each commit title and message pair is one
-the repository settings page offers, as `commitPairs` in `schema.ts` lists
-them. A setting GitHub leaves out of its response is not checked. The
-environments adapter refuses `prevent_self_review` on an environment that
-would have no reviewers, since GitHub keeps it on the required-reviewers rule.
-Either failure stops planning before apply can write anything.
+[Merge settings](../user/profiles.md#merge-settings) and
+[`prevent_self_review`](../user/profiles.md#environments) are checked before
+anything is written. `mergeSettingsProblems` in `schema.ts` runs on the
+profile alone when it loads, and again at plan time with the profile laid over
+the live settings; `commitPairs` lists the title and message pairs the
+repository settings page offers. A setting GitHub leaves out of its response
+is not checked. Either failure stops planning, so apply never sees it.
 
 A section that GitHub won't let Repotted read gives a warning, and the other
 sections still plan: rulesets on a GitHub plan that doesn't support them, or
@@ -109,7 +115,7 @@ interface: the GitHub client, the output streams, the prompt, and the sign-in.
 Tests run the real commands against the in-memory GitHub in
 `packages/core/tests/fake-github.ts`, and `main.ts` only wires in the token,
 the terminal, and the version. With `--json`, each command prints the
-documents described in [JSON output](json-output.md).
+documents described in [JSON output](../user/json-output.md).
 
 `packages/cli/src/mcp.ts` serves `capture`, `plan`, and `apply`. The server
 keeps each plan in memory under a random `plan_id`, and `apply` accepts only
@@ -129,8 +135,15 @@ and exist once. `Services/RepottedCli.cs` runs the CLI as a child process,
 streams its JSON Lines, and kills the run whenever whatever started it ends.
 `Services/RepottedClient.cs` reads each document strictly with source-generated
 System.Text.Json, so a renamed or missing member is an error rather than a
-null. The contract test in `csharp:test` runs the CLI from source, so a change
-to the JSON the app reads fails there.
+null.
+
+`ContractTests.cs` in `csharp:test` runs the CLI from source and reads what it
+prints for the commands that need no GitHub: signed-out `status`, `profiles`,
+`profile`, and profile saves through `--set`, `--ruleset`, and
+`--environment`. A change to those documents that the app doesn't expect
+fails the gate. The `capture`, `plan`, `repos`, `apply`, and `login` documents
+need GitHub, so the app's tests read hand-written examples of them, and only the
+strict parsing guards them against the real CLI.
 
 Each package ships the CLI compiled with `bun build --compile` beside the app
 as `repotted-cli`. It has a name of its own because macOS and Windows ignore
@@ -150,12 +163,12 @@ are, and a choice left unset leaves that key to GitHub.
 - Editing a base profile's entry sets the whole entry in this profile, over the
   base's, under the same name. So only an entry that this profile alone names
   can be renamed.
-- GitHub knows rulesets and environments by name, so the editor warns that
-  applying a renamed entry creates a new one and leaves the old one as it is.
 - Renaming an entry, or taking it out of the profile, frees its old name only
   once the profile is saved.
-- Saving writes each edited entry whole, so a change made to that entry in the
-  file outside the app since it was opened is lost.
+- Saving writes each edited entry whole through `--ruleset` or
+  `--environment`, which is why an outside edit to that entry since it was
+  opened is lost, as [the user guide](../user/desktop.md#edit-a-profile)
+  warns.
 
 A new profile starts empty, extends another profile in the folder, or is
 captured with `repotted capture --output`. The app never replaces a file

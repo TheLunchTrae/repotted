@@ -32,14 +32,11 @@ with `Bun.build`, targeted at Node. The published dependencies stay external;
 bun packages/cli/src/main.ts --help
 ```
 
-Tests use the in-memory GitHub in `packages/core/tests/fake-github.ts`. The
-Safety section of AGENTS.md says when a real repository may be touched.
-
 ## Run the desktop app
 
 `mise install` installs the pinned .NET SDK; `desktop/global.json` only sets
 the oldest SDK that builds the app outside mise. Point the app at the CLI with
-`REPOTTED_CLI`: a `.ts` file runs with Bun, a `.js` file with Node, and
+`REPOTTED_CLI`: a `.ts` file runs with Bun, a `.js` or `.mjs` file with Node, and
 anything else runs directly.
 
 ```sh
@@ -59,8 +56,8 @@ mise run csharp:standards:check
 ```
 
 That checks formatting, builds with the analyzers, and runs the tests,
-including a contract test that runs the CLI from source and reads what it
-prints. The view tests draw each page headlessly in light and dark. Set
+including the [contract test](architecture.md#the-desktop-app) against the
+CLI's source. The view tests draw each page headlessly in light and dark. Set
 `REPOTTED_SCREENSHOTS` to a folder to save those drawings as PNGs.
 
 ## Package the desktop app

@@ -6,8 +6,8 @@ MCP server that lets an AI agent do the same.
 
 ## Install
 
-Repotted needs [Node.js](https://nodejs.org/) 22 or later. Run it with `npx`,
-which fetches the latest version each time:
+Repotted needs [Node.js](https://nodejs.org/) 22 or later. Run the latest
+published version with `npx`:
 
 ```sh
 npx repotted --help
@@ -34,7 +34,8 @@ Repotted uses, and `logout` signs out. [Sign in](sign-in.md) has the details,
 including how to use a token in CI.
 
 `npx repotted repos` lists the repositories Repotted can manage: those the
-Repotted App is installed on and that you administer.
+Repotted App is installed on and that you administer. With a token instead of
+the App, it lists every repository your account administers.
 
 ## Capture a repository
 
@@ -85,16 +86,17 @@ profiles it extends. With these options, it edits the file instead:
   as `--set repository.has_wiki=false` or
   `--set actions.selected_actions.github_owned_allowed=true`. The value is
   JSON, or a bare word as a string.
-- `--unset section.key` removes a setting from the profile, so the repository
-  keeps its own value.
+- `--unset section.key` removes a setting from the file, so a base profile's
+  value applies, or else the repository keeps its own.
 - `--ruleset json` and `--environment json` write one ruleset or environment,
   given as a JSON object with a `name`. It replaces the file's own entry of
   that name, or goes after the others when the file has none.
 - `--drop-ruleset name` and `--drop-environment name` remove the file's own
   entry, so an entry of that name in a base profile applies again.
 
-You can give several options at once; they apply in order. A drop followed by a
-write to the same list renames the dropped entry in place. GitHub knows
+You can give several options at once; they apply in order. A write right after
+a drop from the same list renames the dropped entry in place, which can also
+change only the case of an environment's name. GitHub knows
 rulesets and environments by name, so applying a renamed entry creates a new
 one and leaves the old one on the repository, unless an `absent: true` entry
 removes it.
@@ -138,4 +140,4 @@ enter on GitHub. Once you have entered it, the agent's next call works.
 
 `--json` makes `capture`, `plan`, `apply`, `profile`, `profiles`, `repos`, and
 `status` print one JSON document instead of text. The
-[JSON output reference](../developer/json-output.md) describes each document.
+[JSON output reference](json-output.md) describes each document.

@@ -7,16 +7,15 @@ repositories without the command line. It runs on macOS and Windows.
 
 Download the app from the
 [repository's releases](https://github.com/TheLunchTrae/repotted/releases).
-Desktop releases are named `desktop-v` and a version, such as
-`desktop-v0.1.0`.
+Desktop releases are titled Repotted and a version, such as Repotted 0.1.0.
 
 - **macOS**: download `Repotted-<version>-macos-arm64.dmg` for a Mac with
   Apple silicon, or `Repotted-<version>-macos-x64.dmg` for an Intel Mac. Open
   the DMG and drag Repotted to Applications.
 - **Windows**: download `Repotted-<version>-windows-x64-setup.exe` and run it.
-  It installs Repotted for your user account only. The installer is not
-  signed yet, so Windows SmartScreen warns about it: click **More info**,
-  then **Run anyway**.
+  It installs Repotted for your user account only. The installer is unsigned,
+  so Windows SmartScreen warns about it: click **More info**, then
+  **Run anyway**.
 
 `SHA256SUMS.txt` in the same release lists each file's checksum, so you can
 check a download.
@@ -35,7 +34,7 @@ the Repotted App asks for, and how to use a token instead.
 The **Repositories** page lists the repositories that the Repotted App is
 installed on and that you administer. With a token instead of the App, it
 lists every repository your account administers. Press <kbd>Ctrl</kbd>+<kbd>K</kbd>, or
-<kbd>⌘</kbd>+<kbd>K</kbd> on macOS, to search them from anywhere in the app.
+<kbd>⌘</kbd>+<kbd>K</kbd> on macOS, to search the list on the current page.
 To add repositories to the list, click **Add repositories**, which opens the
 Repotted App's install page on GitHub.
 
@@ -69,20 +68,26 @@ Open a profile to edit it. Its tabs follow the parts of a repository's setup:
 repository settings, merge settings, Actions, rulesets, and environments.
 
 A profile manages only what it names. A setting you leave unset keeps whatever
-value each repository has. To stop managing a setting, click
-**Leave it to GitHub**. When a profile extends another, each setting shows
+value each repository has. When a profile extends another, each setting shows
 which profile it comes from, and setting it here overrides the base profile.
+To stop setting a value in this profile, click **Remove** beside it; if a base
+profile sets it, the base's value applies again. **Undo** reverts a change you
+haven't saved, and **Discard** reverts them all. **Show YAML** shows the profile's
+file as it is saved.
 
 Rulesets and environments open in their own editor. The editor changes only
-what you edit, so anything it doesn't show stays as the YAML has it. For each
-ruleset or environment, choose **Manage it**, or
+what you edit, so anything it doesn't show stays as the YAML has it.
+**Leave it to GitHub** clears a choice, so each repository keeps its own. For
+each ruleset or environment, choose **Manage it**, or
 **Remove it from the repository** to delete it from each repository that
 follows the profile. **Take out of profile** stops the profile from managing
 it at all; **Put it back** undoes that before you save.
 
 GitHub knows rulesets and environments by name. If you rename one, applying
 the profile creates a new one with the new name and leaves the old one on the
-repository. The app warns you when you rename one.
+repository. The app warns you when you rename one. You can rename only an
+entry that this profile names on its own; one from a base profile keeps its
+name.
 
 Click **Save profile** to write your changes to the file. Saving writes each
 edited ruleset or environment whole, so if you edited the same entry in the
@@ -97,7 +102,7 @@ difference by section, with what GitHub has now and what the profile sets.
 Settings that already match are folded away; click **Show everything** to see
 them. Comparing only reads from GitHub.
 
-The app doesn't apply profiles yet. To make the changes a comparison shows, use
+The app doesn't apply profiles. To make the changes a comparison shows, use
 [`repotted plan` and `repotted apply`](cli.md#plan-and-apply) on the command
 line.
 

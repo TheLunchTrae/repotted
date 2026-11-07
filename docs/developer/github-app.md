@@ -30,14 +30,12 @@ ID.
 
 ## Where the token comes from
 
-`resolveToken` takes the first token it finds:
-
-1. `GITHUB_TOKEN`, then `GH_TOKEN`, so CI and scripts can override a sign-in.
-2. The `repotted login` token from the keychain.
-3. The GitHub CLI's sign-in for github.com, from
-   `gh auth token --hostname github.com`, since requests go to api.github.com.
-
-Apart from the keychain entry, a token is only ever held in memory.
+`resolveToken` in `auth.ts` takes the first token it finds, in the order
+[Sign in](../user/sign-in.md#use-a-token-instead) lists. The environment
+variables come first so CI and scripts can override a sign-in. The GitHub CLI's
+token is read with `gh auth token --hostname github.com`, since requests go to
+api.github.com. Apart from the keychain entry, a token is only ever held in
+memory.
 
 `repos` lists the Repotted App's installations, which GitHub only gives to a
 token from that App. Any other token lists every repository the account
@@ -45,8 +43,7 @@ administers, though the token itself may not be allowed to change them.
 
 ## Register the App
 
-`repotted login` signs in with the Repotted GitHub App, named Repotted App on
-GitHub and owned by the project's owner. Its client ID and slug are
+The Repotted App is owned by the project's owner. Its client ID and slug are
 `app.clientId` and `app.slug` in `packages/cli/src/auth.ts`. The client ID is
 public; the App needs no client secret or private key for the device flow. The
 gate fails if `app.clientId` is empty.

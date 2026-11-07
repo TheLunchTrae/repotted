@@ -75,7 +75,7 @@ The GitHub token comes from GITHUB_TOKEN or GH_TOKEN, then repotted login, then
 the GitHub CLI (gh auth token).
 
 Options:
-  --json         Print JSON for programs; see docs/developer/json-output.md
+  --json         Print JSON for programs; see docs/user/json-output.md
   -h, --help     Show this help
   -v, --version  Show the version`;
 

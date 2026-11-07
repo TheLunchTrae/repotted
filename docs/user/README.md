@@ -16,6 +16,7 @@ You can use Repotted in three ways:
 
 All three sign in the same way; see [Sign in](sign-in.md). [Profiles](profiles.md)
 describes what a profile can hold and how Repotted plans and applies it.
+[JSON output](json-output.md) describes what the CLI prints for scripts.
 
 To learn how Repotted works inside, or to change it, see the
 [developer guide](../developer/README.md).

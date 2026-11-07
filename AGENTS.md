@@ -11,10 +11,11 @@ minimal; put context that agents need in this file. Docs live in `docs/`, in
 two sets for two readers:
 
 - `docs/user/`: how to install and use the desktop app, the CLI, and the MCP
-  server, and the profile format. No implementation detail: no source paths,
+  server, the profile format, and the JSON output scripts read. No
+  implementation detail: no source paths,
   internal names, or design rationale.
 - `docs/developer/`: how Repotted works and why: the architecture and design
-  decisions, local setup, the JSON contract, the GitHub App, and releasing.
+  decisions, local setup, the GitHub App, and releasing.
 
 When a change affects both, update the user page for what changes for users
 and the developer page for how and why.
@@ -216,7 +217,8 @@ builds outside mise.
   restores in locked mode.
 - The app does no GitHub work itself: it runs the CLI with `--json`.
   `csharp:test` runs the contract test against the CLI's source, so a change
-  to the JSON the app reads fails there.
+  to the documents it covers fails there; see
+  [the architecture](docs/developer/architecture.md#the-desktop-app).
 - Keep asynchronous work owned and cancellable, and avoid `async void`. A CLI
   run must not outlive what started it.
 - View tests draw pages headlessly in light and dark. Set
