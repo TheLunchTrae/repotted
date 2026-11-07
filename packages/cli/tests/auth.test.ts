@@ -316,8 +316,8 @@ describe('device flow', () => {
 });
 
 describe('release', () => {
-  // The publish workflow sets RELEASE_TAG, so a release cannot ship without the App.
-  test.if(process.env['RELEASE_TAG'] !== undefined)('ships with the Repotted GitHub App client ID', () => {
+  // A build without the client ID cannot sign in, so the gate holds it back.
+  test('ships with the Repotted GitHub App client ID', () => {
     expect(app.clientId).not.toBe('');
   });
 });

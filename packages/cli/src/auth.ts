@@ -18,10 +18,14 @@ import {
 const run = promisify(execFile);
 
 /**
- * The Repotted GitHub App. A client ID is public, so it ships in the package;
- * REPOTTED_GITHUB_CLIENT_ID signs in with another App instead.
+ * The Repotted GitHub App, registered as "Repotted App". A client ID is
+ * public, so it ships in the package; REPOTTED_GITHUB_CLIENT_ID signs in with
+ * another App instead. The slug is the App's name as GitHub writes it in URLs.
  */
-export const app: { readonly clientId: string; readonly slug: string } = { clientId: '', slug: 'repotted' };
+export const app: { readonly clientId: string; readonly slug: string } = {
+  clientId: 'Iv23liAnsCkUv2UeQoiK',
+  slug: 'repotted-app',
+};
 
 export const installUrl = `https://github.com/apps/${app.slug}/installations/new`;
 
@@ -49,13 +53,7 @@ export class NotSignedInError extends AuthError {
 
 function appClientId(env: NodeJS.ProcessEnv): string {
   const override = clientIdOverride(env);
-  const clientId = override === '' ? app.clientId : override;
-  if (clientId === '') {
-    throw new AuthError(
-      'This build of Repotted has no GitHub App to sign in with. Set GITHUB_TOKEN, or set REPOTTED_GITHUB_CLIENT_ID to the client ID of your own GitHub App.',
-    );
-  }
-  return clientId;
+  return override === '' ? app.clientId : override;
 }
 
 /** Where the user token from `repotted login` lives between runs. */
