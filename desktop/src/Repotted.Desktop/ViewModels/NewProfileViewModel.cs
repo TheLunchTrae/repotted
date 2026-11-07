@@ -38,6 +38,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     private readonly string folder;
     private readonly Func<string, IReadOnlyList<string>, Task> created;
     private readonly Action cancel;
+    private readonly Action released;
 
     /// <summary>Stops a capture once the form closes, however it closes.</summary>
     private readonly CancellationTokenSource closed = new();
@@ -51,6 +52,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     /// <param name="repository">A repository to capture, when the form opens for one.</param>
     /// <param name="created">Runs with the new file and what a capture could not read.</param>
     /// <param name="cancel">Closes the form.</param>
+    /// <param name="released">Runs once the form gives up a file it held, so another form can take its name.</param>
     public NewProfileViewModel(
         RepottedClient client,
         string folder,
@@ -58,12 +60,14 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         IReadOnlyList<string> repositories,
         string? repository,
         Func<string, IReadOnlyList<string>, Task> created,
-        Action cancel)
+        Action cancel,
+        Action released)
     {
         this.client = client;
         this.folder = folder;
         this.created = created;
         this.cancel = cancel;
+        this.released = released;
         Bases = bases;
         Repositories = repositories;
         Base = bases.Count > 0 ? bases[0] : null;
@@ -90,7 +94,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
 
     public string CaptureHelp => HasRepositories
         ? "Captures its settings, rulesets and environments as they are on GitHub now. This only reads from GitHub."
-        : "No repositories are listed yet. Sign in, or wait for the list to load.";
+        : "No repositories are listed. Add the Repotted App to one, then start a new profile again.";
 
     /// <summary>The file name without its extension.</summary>
     [ObservableProperty]
@@ -183,6 +187,13 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
 
     public bool HasProblem => Problem is not null;
 
+    /// <summary>Checks the name again, since the folder may have changed under it.</summary>
+    public void Recheck() => Problem = Check(Name.Trim());
+
+    /// <summary>The file the form holds while it captures, which the list leaves out.</summary>
+    [ObservableProperty]
+    public partial string? Holding { get; private set; }
+
     /// <summary>The file already in the folder under this name, as a .yaml or .yml file in any case.</summary>
     private string? Taken(string name) =>
         Entries().FirstOrDefault(entry =>
@@ -234,6 +245,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
                     // Holds the name while GitHub is read, since the CLI then writes over the file.
                     Write(file, "");
                     made = true;
+                    Holding = file;
                     warnings = await client.CaptureAsync(Repository!, file, closed.Token).ConfigureAwait(true);
                     break;
                 case NewProfileStart.Extends:
@@ -253,6 +265,8 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
                 return;
             }
             made = false;
+            // The file is a profile now, so the list shows it.
+            Holding = null;
             await created(file, warnings).ConfigureAwait(true);
         }
         catch (OperationCanceledException) when (disposed)
@@ -269,7 +283,9 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
             {
                 // A capture that failed or was stopped leaves nothing behind.
                 File.Delete(file);
+                released();
             }
+            Holding = null;
             Working = false;
         }
     }

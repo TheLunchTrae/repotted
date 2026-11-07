@@ -13,11 +13,15 @@ internal sealed partial class ShellView : UserControl
     /// <summary>The page selected when the pointer went down, since the list selects on press, before the tap.</summary>
     private int pressedOn = -1;
 
+    /// <summary>The page selected when the key went down, since Space selects a focused item first.</summary>
+    private int keyedOn = -1;
+
     public ShellView()
     {
         InitializeComponent();
         // The list marks Enter and Space handled, and choosing the selected item changes nothing it reports.
         Nav.AddHandler(PointerPressedEvent, (_, _) => pressedOn = Nav.SelectedIndex, RoutingStrategies.Tunnel, handledEventsToo: true);
+        Nav.AddHandler(KeyDownEvent, (_, _) => keyedOn = Nav.SelectedIndex, RoutingStrategies.Tunnel, handledEventsToo: true);
         Nav.AddHandler(TappedEvent, OnNavTapped, RoutingStrategies.Bubble, handledEventsToo: true);
         Nav.AddHandler(KeyDownEvent, OnNavKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
         if (OperatingSystem.IsMacOS())
@@ -53,7 +57,7 @@ internal sealed partial class ShellView : UserControl
     {
         if (e.Key is Key.Enter or Key.Space && e.KeyModifiers == KeyModifiers.None)
         {
-            ShowPage(e.Source, Nav.SelectedIndex);
+            ShowPage(e.Source, keyedOn);
         }
     }
 

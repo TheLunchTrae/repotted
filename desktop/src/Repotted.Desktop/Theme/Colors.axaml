@@ -28,6 +28,16 @@
       <SolidColorBrush x:Key="AddBrush" Color="#1f5a31" />
       <SolidColorBrush x:Key="AddBgBrush" Color="#dff6e3" />
       <SolidColorBrush x:Key="CodeBgBrush" Color="#f1f8f2" />
+      <!-- A ticked box takes the rail color. -->
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked" Color="#256438" />
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeChecked" Color="#256438" />
+      <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked" Color="#ffffff" />
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="#256438" />
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPointerOver" Color="#256438" />
+      <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" Color="#ffffff" />
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed" Color="#256438" />
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPressed" Color="#256438" />
+      <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPressed" Color="#ffffff" />
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
       <SolidColorBrush x:Key="BgBrush" Color="#111a14" />
@@ -54,6 +64,16 @@
       <SolidColorBrush x:Key="AddBrush" Color="#a6fbad" />
       <SolidColorBrush x:Key="AddBgBrush" Color="#1f3a26" />
       <SolidColorBrush x:Key="CodeBgBrush" Color="#152019" />
+      <!-- A ticked box takes the rail color. -->
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked" Color="#8af793" />
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeChecked" Color="#8af793" />
+      <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked" Color="#14281a" />
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="#8af793" />
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPointerOver" Color="#8af793" />
+      <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" Color="#14281a" />
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed" Color="#8af793" />
+      <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPressed" Color="#8af793" />
+      <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPressed" Color="#14281a" />
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 

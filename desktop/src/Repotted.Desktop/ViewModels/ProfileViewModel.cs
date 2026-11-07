@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Repotted.Desktop.Services;
@@ -8,41 +9,6 @@ namespace Repotted.Desktop.ViewModels;
 
 /// <summary>A group of setting rows under its heading.</summary>
 internal sealed record SettingGroupViewModel(string Title, string Description, IReadOnlyList<SettingViewModel> Settings);
-
-/// <summary>A ruleset or environment the profile names, and the file that does.</summary>
-internal sealed record EntryViewModel(string Name, bool Absent, SettingOrigin Origin, string? BaseName)
-{
-    public bool Own => Origin == SettingOrigin.Own;
-
-    public string Note => (Absent, Origin) switch
-    {
-        (true, SettingOrigin.Own) => "Removed here",
-        (true, _) => $"Removed in {BaseName}",
-        (false, SettingOrigin.Own) => "Set here",
-        _ => $"From {BaseName}",
-    };
-}
-
-/// <summary>A tab: a section's settings, or the rulesets or environments the profile names.</summary>
-internal sealed partial class ProfileTabViewModel(string name) : ViewModelBase
-{
-    public string Name => name;
-
-    public IReadOnlyList<SettingGroupViewModel> Groups { get; init; } = [];
-
-    public IReadOnlyList<EntryViewModel> Entries { get; init; } = [];
-
-    public bool IsSettings => Groups.Count > 0;
-
-    public bool HasEntries => Entries.Count > 0;
-
-    /// <summary>What the profile manages here, once resolved over its bases.</summary>
-    public int Count => IsSettings
-        ? Groups.Sum(group => group.Settings.Count(setting => setting.Managed))
-        : Entries.Count;
-
-    public void Refresh() => OnPropertyChanged(nameof(Count));
-}
 
 /// <summary>
 /// One profile, resolved over the profiles it extends: its settings by tab,
@@ -120,6 +86,11 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
     private IEnumerable<SettingViewModel> Settings =>
         Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings);
 
+    private IEnumerable<EntryViewModel> Entries => Tabs.SelectMany(tab => tab.Entries);
+
+    /// <summary>Why the edits cannot be saved yet, such as a ruleset with no name.</summary>
+    public string? Problem => Entries.Select(entry => entry.Problem).FirstOrDefault(problem => problem is not null);
+
     [RelayCommand]
     public async Task LoadAsync()
     {
@@ -145,11 +116,16 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
     private async Task SaveAsync()
     {
         var changes = Settings.Select(setting => setting.Change).OfType<ProfileChange>().ToList();
+        // The CLI takes a write right after a drop as a rename, so plain writes
+        // and drops go first and each rename last, as its own drop and write.
+        var entries = Entries.OrderBy(entry => entry.Renames ? 2 : entry.Dropped ? 1 : 0)
+            .SelectMany(entry => entry.Changes())
+            .ToList();
         Saving = true;
         SaveError = null;
         try
         {
-            var profile = await client.SaveProfileAsync(File, changes, CancellationToken.None).ConfigureAwait(true);
+            var profile = await client.SaveProfileAsync(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
             Show(profile, await BaseAsync(profile).ConfigureAwait(true));
         }
         catch (Exception error)
@@ -162,14 +138,20 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
         }
     }
 
-    private bool CanSave() => HasChanges && !Saving;
+    private bool CanSave() => HasChanges && !Saving && Problem is null;
 
-    [RelayCommand(CanExecute = nameof(CanSave))]
+    private bool CanDiscard() => HasChanges && !Saving;
+
+    [RelayCommand(CanExecute = nameof(CanDiscard))]
     private void Discard()
     {
         foreach (var setting in Settings.Where(setting => setting.Changed))
         {
             setting.Undo();
+        }
+        foreach (var tab in Tabs.Where(tab => tab.IsEntries))
+        {
+            tab.Undo();
         }
         SaveError = null;
     }
@@ -212,9 +194,8 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
         {
             var values = profile.Values.TryGetProperty(section.Section, out var found) ? found : default;
             var sources = profile.Sources[section.Section];
-            Tabs.Add(new ProfileTabViewModel(section.Name)
-            {
-                Groups =
+            Tabs.Add(new ProfileTabViewModel(
+                section.Name,
                 [
                     .. section.Groups.Select(group => new SettingGroupViewModel(
                         group.Title,
@@ -230,8 +211,7 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
                                 return new SettingViewModel(field, saved, origin, inherited, OnSettingChanged);
                             }),
                         ])),
-                ],
-            });
+                ]));
         }
         Tabs.Add(EntriesTab("Rulesets", "rulesets"));
         Tabs.Add(EntriesTab("Environments", "environments"));
@@ -242,25 +222,24 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
 
         ProfileTabViewModel EntriesTab(string name, string section)
         {
+            var tab = new ProfileTabViewModel(name, section, OnSettingChanged);
             var sources = profile.Sources[section];
-            var entries = profile.Values.TryGetProperty(section, out var list) && list.ValueKind == JsonValueKind.Array
-                ? list.EnumerateArray()
-                    .Where(entry => entry.TryGetProperty("name", out _))
-                    .Select(entry =>
-                    {
-                        var entryName = entry.GetProperty("name").GetString() ?? "";
-                        var file = sources.GetValueOrDefault(entryName);
-                        return new EntryViewModel(
-                            entryName,
-                            entry.TryGetProperty("absent", out var absent) && absent.ValueKind == JsonValueKind.True,
-                            Origin(file),
-                            file is null ? null : Base(file));
-                    })
-                    .ToList()
-                : [];
-            return new ProfileTabViewModel(name) { Entries = entries };
+            foreach (var entry in EntriesOf(profile, section))
+            {
+                var entryName = entry["name"]!.GetValue<string>();
+                var file = sources.GetValueOrDefault(entryName);
+                var inBase = @base is not null && EntriesOf(@base, section).Any(other => tab.SameName(other["name"]!.GetValue<string>(), entryName));
+                tab.Entries.Add(new EntryViewModel(tab, entry, Origin(file), file is null ? null : Base(file), inBase));
+            }
+            return tab;
         }
     }
+
+    /// <summary>The named rulesets or environments of a resolved profile.</summary>
+    private static IEnumerable<JsonObject> EntriesOf(ResolvedProfile profile, string section) =>
+        profile.Values.TryGetProperty(section, out var list) && list.ValueKind == JsonValueKind.Array
+            ? JsonNode.Parse(list.GetRawText())!.AsArray().OfType<JsonObject>().Where(entry => entry["name"] is JsonValue)
+            : [];
 
     /// <summary>The value a base profile gives a setting, and the file that sets it there.</summary>
     private static InheritedValue? Inherit(ResolvedProfile? @base, string section, string key)
@@ -277,12 +256,17 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
 
     private void OnSettingChanged()
     {
-        ChangeCount = Settings.Count(setting => setting.Changed);
+        ChangeCount = Settings.Count(setting => setting.Changed) + Entries.Count(entry => entry.Changed);
         foreach (var tab in Tabs)
         {
-            tab.Refresh();
+            tab.RefreshCount();
         }
+        OnPropertyChanged(nameof(Problem));
+        OnPropertyChanged(nameof(HasProblem));
+        SaveCommand.NotifyCanExecuteChanged();
     }
+
+    public bool HasProblem => Problem is not null;
 
     private static string ReadText(string file)
     {
