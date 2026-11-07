@@ -1,14 +1,8 @@
-name: Desktop
+name: Build Desktop
 
+# Quality builds and tests the app on every pull request; packaging runs only
+# for a release or by hand.
 on:
-  pull_request:
-    paths:
-      - .config/mise/**
-      - .github/workflows/desktop.yml
-      - bun.lock
-      - desktop/**
-      - package.json
-      - packages/**
   # A release starts from a pushed tag, not a published release: releases are
   # immutable once published, so the workflow attaches the packages to a draft
   # and the owner publishes it.
@@ -21,8 +15,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: desktop-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   verify:
@@ -69,7 +63,7 @@ jobs:
   package:
     name: Package for ${{ matrix.os }} ${{ matrix.arch }}
     needs: verify
-    # A pull request or a manual run builds without verify; a release needs it.
+    # A manual run builds without verify; a release needs it.
     if: >-
       !cancelled() &&
       (needs.verify.result == 'success' ||
@@ -91,7 +85,7 @@ jobs:
     # Notarization alone may wait up to 30 minutes.
     timeout-minutes: 90
     # Only a release's macOS jobs reach the signing secrets. The environment
-    # admits desktop-v tags alone, so no branch or pull request run can.
+    # admits desktop-v tags alone, so no manual run can.
     environment: ${{ github.event_name == 'push' && matrix.os == 'macos' && 'macos-release' || '' }}
     env:
       MISE_LOCKED: '1'
