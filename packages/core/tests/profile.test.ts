@@ -330,12 +330,12 @@ describe('editProfile', () => {
 
   test('keeps Windows line endings, the indent width and the file mode', async () => {
     const file = await write('edit-layout.yaml', 'repository:\r\n    has_wiki: false\r\n');
-    await chmod(file, 0o640);
+    await chmod(file, 0o664);
 
     await editProfile(file, [{ path: ['repository', 'has_issues'], value: true }]);
 
     expect(await readFile(file, 'utf8')).toBe('repository:\r\n    has_wiki: false\r\n    has_issues: true\r\n');
-    expect((await stat(file)).mode & 0o777).toBe(0o640);
+    expect((await stat(file)).mode & 0o777).toBe(0o664);
     expect((await readdir(directory)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
   });
 });

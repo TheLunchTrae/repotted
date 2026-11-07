@@ -67,9 +67,10 @@ the file itself, such as `--set repository.has_wiki=false`. The value is JSON,
 or a bare word as a string. Edits cover `repository`, `merge` and `actions`
 settings, including `actions.selected_actions.<key>`; rulesets and
 environments are edited in the YAML. An edit keeps the rest of the file,
-including comments, line endings and indent width, though YAML quoting may be
-normalized. It removes a section it leaves empty, along with any comment above
-that section, and writes nothing when the result is not a valid profile.
+including comments, line endings and indent width, though YAML quoting and
+list indentation may be normalized. It removes a section it leaves empty,
+along with any comment above that section, and writes nothing when the result
+is not a valid profile.
 Profiles are validated after they are merged, so a base profile may rely on
 the profile that extends it. `repotted profiles <folder>` lists the profiles
 in a folder with real paths, the same paths that `profile --json` reports.
