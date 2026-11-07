@@ -61,6 +61,20 @@ the override replaces the base entry of the same name whole, and new names are
 added after the base ones. `examples/base.yaml` is a base profile, and
 `examples/repotted.yaml` extends it.
 
+`repotted profile <file>` prints a profile resolved over the profiles it
+extends. `--set section.key=value` and `--unset section.key` edit settings in
+the file itself, such as `--set repository.has_wiki=false`. The value is JSON,
+or a bare word as a string. Edits cover `repository`, `merge` and `actions`
+settings, including `actions.selected_actions.<key>`; rulesets and
+environments are edited in the YAML. An edit keeps the rest of the file,
+including comments, line endings and indent width, though YAML quoting and
+list indentation may be normalized. It removes a section it leaves empty,
+along with any comment above that section, and writes nothing when the result
+is not a valid profile.
+Profiles are validated after they are merged, so a base profile may rely on
+the profile that extends it. `repotted profiles <folder>` lists the profiles
+in a folder with real paths, the same paths that `profile --json` reports.
+
 ## Plans and apply
 
 `repotted plan` reads only the sections the profile names and lists the
@@ -90,17 +104,27 @@ other sections still plan. So does a token that cannot list environments.
 
 ## JSON output
 
-`--json` on `capture`, `plan`, `apply`, `repos` and `status` prints exactly one
-JSON document on stdout, for programs such as the desktop app. Repotted writes nothing to stderr
-in this mode; anything that appears there, such as a deprecation notice from
-the GitHub client, is diagnostic and not a failure. `--help` and `--version`
-still print text.
+`--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `repos` and
+`status` prints exactly one JSON document on stdout, for programs such as the
+desktop app. Repotted writes nothing to stderr in this mode; anything that
+appears there, such as a deprecation notice from the GitHub client, is
+diagnostic and not a failure. `--help` and `--version` still print text.
 
 - `capture` prints `{ repository, profile, warnings }`, where `profile` is the
   profile the YAML would hold. It does not combine with `--output`.
 - `plan` prints the plan, the same document `--out` saves.
 - `apply` needs `--yes`, since a program has no terminal to confirm in, and
   prints `{ repository, applied }` with the changes it made.
+- `profile` prints `{ chain, profile, sources }`. `chain` is the profile
+  file, then each one it extends, as absolute paths. `profile` is the
+  resolved profile, and `sources` names the file that sets each value:
+  `repository`, `merge` and `actions` by key, with `selected_actions` keys as
+  `selected_actions.<key>` under `actions`, and `rulesets` and `environments`
+  by name. A value whose file is `chain[0]` is set in the profile itself.
+- `profiles` prints `{ profiles }`, each as `{ name, file, extends, problem }`,
+  sorted by file name: the `.yaml` and `.yml` files directly in the folder.
+  `extends` is the absolute path of the profile it extends, or null, and
+  `problem` says why the profile cannot be used, or is null.
 - `repos` prints `{ source, repositories }`, each repository as
   `{ full_name, private, archived }`, sorted by name: the repositories your
   account administers. With a Repotted App sign-in, `source` is

@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -10,13 +11,17 @@ import {
   createPlan,
   currentUser,
   describeFailure,
+  editProfile,
   formatPlan,
   type GitHub,
   GitHubError,
+  listProfiles,
   listRepositories,
   loadProfile,
   parsePlan,
   parseRepo,
+  type ProfileEdit,
+  resolveProfile,
   StalePlanError,
   stringifyProfile,
 } from '@repotted/core';
@@ -54,6 +59,8 @@ Commands:
   capture <owner/repo> [--output file]          Write the repository's setup as a YAML profile
   plan <owner/repo> --profile file [--out file]  Show the changes a profile needs; --out saves the plan
   apply <plan.json> [--yes]                      Apply a saved plan if the repository has not changed
+  profiles <folder>                              List the profiles in a folder
+  profile <file> [--set key=json] [--unset key]  Show a profile resolved over its bases; edit its settings
   mcp [--read-only]                              Run the MCP server over stdio
   repos                                          List the repositories Repotted can manage
   status                                         Show which GitHub account Repotted signs in as
@@ -204,6 +211,76 @@ async function apply(io: Io, args: string[]): Promise<number> {
     }
     throw error;
   }
+}
+
+async function profiles(io: Io, args: string[]): Promise<number> {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } });
+  const folder = only(positionals, 'folder');
+  const listings = await listProfiles(folder);
+  if (values.json === true) {
+    json(io, { profiles: listings });
+    return 0;
+  }
+  for (const listing of listings) {
+    const notes = [
+      listing.extends === null ? '' : `extends ${path.basename(listing.extends)}`,
+      listing.problem === null ? '' : 'invalid',
+    ].filter(Boolean);
+    io.out(`${listing.name}${notes.length > 0 ? ` (${notes.join(', ')})` : ''}\n`);
+  }
+  for (const listing of listings) {
+    if (listing.problem !== null) {
+      io.err(`${listing.problem}\n`);
+    }
+  }
+  return 0;
+}
+
+/** Reads `section.key=json` for --set, or `section.key` for --unset. */
+function profileEdit(argument: string, unset: boolean): ProfileEdit {
+  if (unset) {
+    return { path: argument.split('.'), value: undefined };
+  }
+  const separator = argument.indexOf('=');
+  if (separator === -1) {
+    throw new UsageError(`--set takes key=value, as in repository.has_wiki=false: ${argument}`);
+  }
+  const text = argument.slice(separator + 1);
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    // A bare word, such as selected, is a string.
+    value = text;
+  }
+  return { path: argument.slice(0, separator).split('.'), value };
+}
+
+async function profile(io: Io, args: string[]): Promise<number> {
+  const { positionals, values } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      set: { type: 'string', multiple: true },
+      unset: { type: 'string', multiple: true },
+      json: { type: 'boolean' },
+    },
+  });
+  const file = only(positionals, 'profile file');
+  const edits = [
+    ...(values.set ?? []).map((argument) => profileEdit(argument, false)),
+    ...(values.unset ?? []).map((argument) => profileEdit(argument, true)),
+  ];
+  const resolved = edits.length === 0 ? await resolveProfile(file) : await editProfile(file, edits);
+  if (values.json === true) {
+    json(io, resolved);
+    return 0;
+  }
+  io.out(stringifyProfile(resolved.profile));
+  if (edits.length > 0) {
+    io.err(`Saved ${file}\n`);
+  }
+  return 0;
 }
 
 async function repos(io: Io, args: string[]): Promise<number> {
@@ -357,6 +434,8 @@ const commands: Record<string, (io: Io, args: string[]) => Promise<number>> = {
   capture,
   plan,
   apply,
+  profiles,
+  profile,
   mcp,
   repos,
   status,
