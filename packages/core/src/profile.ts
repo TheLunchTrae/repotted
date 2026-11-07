@@ -4,7 +4,7 @@ import path from 'node:path';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 
-import { profile, type Profile, profileFile, type ProfileFile, type RulesetEntry } from './schema.js';
+import { profile, type Profile, profileFile, type ProfileFile } from './schema.js';
 
 export class ProfileError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -31,10 +31,10 @@ function parseProfileFile(text: string, source: string): ProfileFile {
   return result.data;
 }
 
-function mergeRulesets(
-  base: RulesetEntry[] | undefined,
-  override: RulesetEntry[] | undefined,
-): RulesetEntry[] | undefined {
+function mergeByName<Entry extends { name: string }>(
+  base: Entry[] | undefined,
+  override: Entry[] | undefined,
+): Entry[] | undefined {
   if (base === undefined || override === undefined) {
     return override ?? base;
   }
@@ -45,8 +45,8 @@ function mergeRulesets(
 }
 
 /**
- * Lays `override` over `base`. Settings merge key by key; a ruleset in the
- * override replaces the base ruleset of the same name whole.
+ * Lays `override` over `base`. Settings merge key by key; a ruleset or
+ * environment in the override replaces the base entry of the same name whole.
  */
 function mergeProfiles(base: Profile, override: ProfileFile): Profile {
   const merged: Profile = {};
@@ -63,9 +63,13 @@ function mergeProfiles(base: Profile, override: ProfileFile): Profile {
       merged.actions.selected_actions = { ...selected, ...override.actions.selected_actions };
     }
   }
-  const rulesets = mergeRulesets(base.rulesets, override.rulesets);
+  const rulesets = mergeByName(base.rulesets, override.rulesets);
   if (rulesets !== undefined) {
     merged.rulesets = rulesets;
+  }
+  const environments = mergeByName(base.environments, override.environments);
+  if (environments !== undefined) {
+    merged.environments = environments;
   }
   return merged;
 }

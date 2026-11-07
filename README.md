@@ -2,8 +2,8 @@
 
 Capture a GitHub repository's setup as a YAML profile, plan the changes a
 profile needs, and apply a reviewed plan. Repotted covers repository settings,
-merge methods, Actions policy, and rulesets, from the command line or from an
-agent over MCP.
+merge methods, Actions policy, rulesets, and deployment environments, from the
+command line or from an agent over MCP.
 
 ```sh
 npx repotted login

@@ -7,7 +7,7 @@ export interface Request {
   readonly body?: unknown;
 }
 
-export type Section = 'repository' | 'merge' | 'actions' | 'rulesets';
+export type Section = 'repository' | 'merge' | 'actions' | 'rulesets' | 'environments';
 
 /** One write that brings part of a repository in line with its profile. */
 export interface Change {

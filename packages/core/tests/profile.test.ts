@@ -96,6 +96,15 @@ rulesets:
     expect(String(await rejection(loadProfile(file)))).toContain('Ruleset "Same" appears more than once');
   });
 
+  test('rejects deployment patterns without custom branch policies', async () => {
+    const file = await write(
+      'patterns.yaml',
+      "environments: [{ name: npm, branch_policies: [{ name: 'v*', type: tag }] }]\n",
+    );
+
+    expect(String(await rejection(loadProfile(file)))).toContain('branch_policies needs deployment_branch_policy');
+  });
+
   test('rejects a profile that turns off every merge method', async () => {
     const file = await write(
       'no-merge.yaml',
