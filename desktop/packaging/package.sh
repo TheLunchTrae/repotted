@@ -51,7 +51,12 @@ dotnet publish "$project" --configuration Release --runtime "$rid" --self-contai
 
 # The app finds the CLI beside itself as repotted-cli; see RepottedCli.Locate.
 cli="$publish/repotted-cli$exe"
-bun build --compile --minify "$root/packages/cli/src/main.ts" --outfile "$cli"
+# On x64, Bun's default runtime needs AVX2; the baseline one runs on any x64 CPU.
+target=
+if [[ $arch == x64 ]]; then
+  target="bun-$([[ $os == macos ]] && echo darwin || echo windows)-x64-baseline"
+fi
+bun build --compile --minify ${target:+--target "$target"} "$root/packages/cli/src/main.ts" --outfile "$cli"
 
 # The compiled CLI must start and load its keychain module on this platform.
 smoke() {
@@ -61,11 +66,12 @@ smoke() {
     echo "$1 reports version $reported, not $cli_version." >&2
     exit 1
   fi
-  # Signed out, status exits 1 with a JSON answer; anything else is a failure.
-  local status=0
-  "$1" status --json >/dev/null || status=$?
-  if ((status > 1)); then
-    echo "$1 status --json exited $status." >&2
+  # Without a token variable, status reads the keychain. Signed out, it exits 1
+  # either way, so a keychain that fails to load shows only in problems.
+  local status=0 answer
+  answer="$(env -u GITHUB_TOKEN -u GH_TOKEN "$1" status --json)" || status=$?
+  if ((status > 1)) || [[ $answer == *'"problems":["'* ]]; then
+    echo "$1 status --json exited $status with: $answer" >&2
     exit 1
   fi
 }
@@ -102,11 +108,11 @@ fi
 sign() {
   codesign --force "$timestamp" --options runtime --sign "$identity" ${MACOS_SIGNING_KEYCHAIN:+--keychain "$MACOS_SIGNING_KEYCHAIN"} "$@"
 }
-# Each file first, then the bundle; --deep would give every file the app's entitlements.
+# Each file first, then the bundle, which signs its executable, Repotted;
+# --deep would give every file the app's entitlements.
 find "$app/Contents/MacOS" -type f ! -name Repotted ! -name repotted-cli -print0 |
   while IFS= read -r -d '' file; do sign "$file"; done
 sign --entitlements "$packaging/macos/repotted-cli.entitlements" "$app/Contents/MacOS/repotted-cli"
-sign --entitlements "$packaging/macos/Repotted.entitlements" "$app/Contents/MacOS/Repotted"
 sign --entitlements "$packaging/macos/Repotted.entitlements" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 # The hardened runtime must still let the CLI JIT and load its keychain module,
@@ -121,7 +127,7 @@ if ! kill -0 "$launched" 2>/dev/null; then
   echo "Repotted exited on launch with status $launch_status." >&2
   exit 1
 fi
-kill "$launched"
+kill "$launched" 2>/dev/null || true
 
 dmg="$out/Repotted-$version-macos-$arch.dmg"
 stage="$(mktemp -d)"

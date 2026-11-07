@@ -32,7 +32,8 @@ CLI and the MCP server over that engine.
   Never run `apply` against a real repository, and never change a real
   repository's settings, rulesets, or branch protection, without the owner's
   explicit yes for that repository and that plan.
-- Do not publish to npm without the owner's explicit yes.
+- Do not publish to npm, push a release tag, or publish a release without the
+  owner's explicit yes.
 
 ## Commands
 

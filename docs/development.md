@@ -67,11 +67,10 @@ once, so older Repotted versions that still need them stop working.
 
 ## Publishing
 
-The repository releases two things from GitHub releases, told apart by the
-tag: the CLI on npm from `v` tags, and the desktop app from `desktop-v` tags.
-Each workflow skips the other's releases. Create CLI releases with **Set as
-the latest release** cleared, so the latest release stays the desktop app,
-which is the one people download.
+The repository releases two things, told apart by the tag: the CLI on npm
+from `v` releases, and the desktop app from `desktop-v` tags. Create CLI
+releases with **Set as the latest release** cleared, so the latest release
+stays the desktop app, which is the one people download.
 
 ### The CLI
 
@@ -98,17 +97,24 @@ a package that exists, so the first version is published by hand:
    required reviewer and a `v*` tag rule, so only an approved release
    publishes.
 
-Publishing needs the owner's yes. To release a change, bump `version` in
-`packages/cli/package.json` in the same pull request.
+To release a change, bump `version` in `packages/cli/package.json` in the same
+pull request.
 
 ### The desktop app
 
-Publishing a GitHub release with a `desktop-v` tag runs
-`.github/workflows/desktop.yml`. The tag must be `desktop-v` followed by
-`Version` in `desktop/src/Repotted.Desktop/Repotted.Desktop.csproj`, such as
-`desktop-v0.1.0`, and must point at a commit on `main`. The workflow runs the
-gate on that commit, builds the app on macOS for Apple silicon and Intel and
-on Windows for x64, and attaches to the release:
+Pushing a `desktop-v` tag runs `.github/workflows/desktop.yml`. The tag must
+be `desktop-v` followed by `Version` in
+`desktop/src/Repotted.Desktop/Repotted.Desktop.csproj`, such as
+`desktop-v0.1.0`, and must point at a commit on `main`:
+
+```sh
+git tag desktop-v0.1.0 origin/main
+git push origin desktop-v0.1.0
+```
+
+The workflow runs the gate on that commit, builds the app on macOS for Apple
+silicon and Intel and on Windows for x64, and attaches these files to a draft
+release for the tag:
 
 - `Repotted-<version>-macos-arm64.dmg` and `Repotted-<version>-macos-x64.dmg`,
   signed with a Developer ID, notarized, and stapled.
@@ -122,8 +128,14 @@ Each build ships the CLI compiled with `bun build --compile` beside the app as
 in Git Bash on Windows, in `artifacts/desktop`. Pull requests that touch the
 app, the CLI, or the build run the workflow without signing, so each one
 checks that the packages build, the CLI starts under the hardened runtime, and
-the macOS app launches. Prereleases run it too, which makes a prerelease the
-way to try a first signed build.
+the macOS app launches.
+
+The repository's releases are immutable, so files can't be added once a
+release is published. The owner reviews the draft, sets it as a prerelease
+or the latest release, and publishes it. A draft also lets the owner try a
+first signed build without publishing it. Re-running a failed run's jobs
+retries the same commit; a fix on `main` needs the next version, since the tag
+rulesets keep a tag from moving.
 
 Signing runs only in the `macos-release` environment, which holds:
 
@@ -139,8 +151,11 @@ Signing runs only in the `macos-release` environment, which holds:
 Limit the environment's deployment branches and tags to the `desktop-v*` tag
 rule, so that only a release run reaches the secrets, and give it the owner as
 a required reviewer, so that each signing run waits for approval. A release
-without these fails rather than attach an unsigned Mac app. A tag ruleset that
-limits who can create `v*` tags needs `desktop-v*` as well.
+run without these fails rather than attach an unsigned Mac app.
 
-Publishing needs the owner's yes. To release the app, bump `Version` in the
-project file in the same pull request.
+Tag rulesets must let the owner push `desktop-v*` tags. A ruleset that blocks
+creating every tag except `v*` needs `desktop-v*` excluded as well, and a
+ruleset that limits who creates `v*` tags needs `desktop-v*` included.
+
+To release the app, bump `Version` in the project file in the same pull
+request.

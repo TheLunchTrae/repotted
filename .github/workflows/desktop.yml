@@ -9,9 +9,12 @@ on:
       - desktop/**
       - package.json
       - packages/**
-  release:
-    types:
-      - published
+  # A release starts from a pushed tag, not a published release: releases are
+  # immutable once published, so the workflow attaches the packages to a draft
+  # and the owner publishes it.
+  push:
+    tags:
+      - desktop-v*
   workflow_dispatch:
 
 permissions:
@@ -24,10 +27,7 @@ concurrency:
 jobs:
   verify:
     name: Verify the release
-    # CLI releases are v tags and belong to publish.yml.
-    if: >-
-      github.repository == 'TheLunchTrae/repotted' && github.event_name == 'release' &&
-      startsWith(github.event.release.tag_name, 'desktop-v')
+    if: github.repository == 'TheLunchTrae/repotted' && github.event_name == 'push'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     env:
@@ -35,7 +35,7 @@ jobs:
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
       DOTNET_NOLOGO: 'true'
       DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
-      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - name: Require a desktop version tag
         run: '[[ "$RELEASE_TAG" =~ ^desktop-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]'
@@ -73,7 +73,7 @@ jobs:
     if: >-
       !cancelled() &&
       (needs.verify.result == 'success' ||
-      (needs.verify.result == 'skipped' && github.event_name != 'release'))
+      (needs.verify.result == 'skipped' && github.event_name != 'push'))
     strategy:
       fail-fast: false
       matrix:
@@ -88,10 +88,11 @@ jobs:
             arch: x64
             runner: windows-2025
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    # Notarization alone may wait up to 30 minutes.
+    timeout-minutes: 90
     # Only a release's macOS jobs reach the signing secrets. The environment
     # admits desktop-v tags alone, so no branch or pull request run can.
-    environment: ${{ github.event_name == 'release' && matrix.os == 'macos' && 'macos-release' || '' }}
+    environment: ${{ github.event_name == 'push' && matrix.os == 'macos' && 'macos-release' || '' }}
     env:
       MISE_LOCKED: '1'
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
@@ -110,11 +111,11 @@ jobs:
         with:
           version: '2026.10.19'
           install: true
-          cache: ${{ github.event_name != 'release' }}
+          cache: ${{ github.event_name != 'push' }}
       - name: Install locked dependencies
         run: mise run ts:install
       - name: Import the Developer ID certificate
-        if: github.event_name == 'release' && matrix.os == 'macos'
+        if: github.event_name == 'push' && matrix.os == 'macos'
         env:
           CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -134,7 +135,7 @@ jobs:
           rm "$RUNNER_TEMP/certificate.p12"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
-          identity="$(security find-identity -v -p codesigning "$keychain" | grep "Developer ID Application: .* ($TEAM_ID)" | head -n 1 | awk '{print $2}')"
+          identity="$(security find-identity -v -p codesigning "$keychain" | grep "Developer ID Application: .* ($TEAM_ID)" | head -n 1 | awk '{print $2}' || true)"
           if [[ -z $identity ]]; then
             echo "::error::The certificate holds no Developer ID Application identity for team $TEAM_ID."
             exit 1
@@ -144,7 +145,7 @@ jobs:
       - name: Build the app
         run: mise run desktop:package
       - name: Notarize and staple the DMG
-        if: github.event_name == 'release' && matrix.os == 'macos'
+        if: github.event_name == 'push' && matrix.os == 'macos'
         env:
           KEY: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
           KEY_ID: ${{ vars.APP_STORE_CONNECT_KEY_ID }}
@@ -155,12 +156,13 @@ jobs:
             exit 1
           fi
           key="$RUNNER_TEMP/notary.p8"
+          trap 'rm -f "$key"' EXIT
           printf '%s' "$KEY" | base64 --decode >"$key"
           dmg="$(ls artifacts/desktop/*.dmg)"
-          result="$(xcrun notarytool submit "$dmg" --key "$key" --key-id "$KEY_ID" --issuer "$ISSUER_ID" --wait --timeout 1h --output-format json)"
-          rm "$key"
+          # A rejection exits non-zero too; keep its answer for the id and status.
+          result="$(xcrun notarytool submit "$dmg" --key "$key" --key-id "$KEY_ID" --issuer "$ISSUER_ID" --wait --timeout 30m --output-format json)" || true
           echo "$result"
-          if [[ "$(jq -r .status <<<"$result")" != Accepted ]]; then
+          if [[ "$(jq -r .status <<<"$result" 2>/dev/null || true)" != Accepted ]]; then
             echo "::error::Notarization did not accept $dmg. Run xcrun notarytool log with the id above for the reasons."
             exit 1
           fi
@@ -168,7 +170,7 @@ jobs:
           xcrun stapler validate "$dmg"
           spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
       - name: Remove the signing keychain
-        if: always() && github.event_name == 'release' && matrix.os == 'macos'
+        if: always() && github.event_name == 'push' && matrix.os == 'macos'
         run: |
           if [[ -n ${MACOS_SIGNING_KEYCHAIN:-} ]]; then
             security delete-keychain "$MACOS_SIGNING_KEYCHAIN"
@@ -181,12 +183,12 @@ jobs:
             artifacts/desktop/*.dmg
             artifacts/desktop/*-setup.exe
           if-no-files-found: error
-          retention-days: ${{ github.event_name == 'release' && 3 || 7 }}
+          retention-days: ${{ github.event_name == 'push' && 3 || 7 }}
 
   upload:
-    name: Attach to the release
+    name: Attach to a draft release
     needs: package
-    if: github.event_name == 'release' && !cancelled() && needs.package.result == 'success'
+    if: github.event_name == 'push' && !cancelled() && needs.package.result == 'success'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -202,7 +204,12 @@ jobs:
         working-directory: release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           sha256sum -- * >SHA256SUMS.txt
-          gh release upload "$RELEASE_TAG" ./* --repo "$GITHUB_REPOSITORY"
+          # A re-run finds the draft from the first run and replaces its files.
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+              --title "Repotted ${RELEASE_TAG#desktop-v}" --notes "Repotted desktop app ${RELEASE_TAG#desktop-v}."
+          fi
+          gh release upload "$RELEASE_TAG" ./* --repo "$GITHUB_REPOSITORY" --clobber

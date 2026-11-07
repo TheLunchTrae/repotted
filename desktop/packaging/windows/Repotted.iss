@@ -11,7 +11,6 @@ AppVersion={#AppVersion}
 AppPublisher=TheLunchTrae
 AppPublisherURL=https://github.com/TheLunchTrae/repotted
 DefaultDirName={autopf}\Repotted
-DefaultGroupName=Repotted
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
