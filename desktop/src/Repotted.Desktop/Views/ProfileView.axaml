@@ -1,0 +1,187 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Repotted.Desktop.ViewModels"
+             x:Class="Repotted.Desktop.Views.ProfileView"
+             x:DataType="vm:ProfileViewModel">
+  <UserControl.Resources>
+    <!-- One setting: where its value comes from, its choices, and a way back. -->
+    <DataTemplate x:Key="SettingRow" x:DataType="vm:SettingViewModel">
+      <Border Classes="field">
+        <Grid ColumnDefinitions="4,*,Auto,150">
+          <Border Classes="rail" Classes.own="{Binding OwnAfterSave}" Classes.inherited="{Binding InheritedAfterSave}"
+                  Classes.changed="{Binding Changed}" />
+          <StackPanel Grid.Column="1" Margin="16,10" VerticalAlignment="Center" Spacing="2">
+            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="14.5" />
+            <TextBlock Classes="mono muted" FontSize="12.5" Text="{Binding Key}" />
+          </StackPanel>
+          <Border Grid.Column="2" Classes="seg">
+            <ItemsControl ItemsSource="{Binding Options}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:OptionViewModel">
+                  <!-- A toggle, so screen readers hear which option is chosen. -->
+                  <ToggleButton Classes="seg" Classes.on="{Binding Selected}" Classes.dim="{Binding Dim}"
+                                IsChecked="{Binding Selected, Mode=OneWay}"
+                                Content="{Binding Label}" Command="{Binding ChooseCommand}"
+                                AutomationProperties.Name="{Binding AccessibleName}"
+                                AutomationProperties.HelpText="{Binding Note}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Border>
+          <StackPanel Grid.Column="3" Margin="16,0" VerticalAlignment="Center" Spacing="2">
+            <TextBlock Classes="muted small" Text="{Binding Note}" TextTrimming="CharacterEllipsis" />
+            <Button Classes="link" FontSize="13" HorizontalAlignment="Left" Content="{Binding ResetLabel}"
+                    IsVisible="{Binding CanReset}" Command="{Binding ResetCommand}"
+                    AutomationProperties.Name="{Binding ResetName}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <DockPanel>
+    <!-- Heading and actions -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="32,24,32,0">
+      <StackPanel Spacing="6">
+        <TextBlock Classes="h1" Text="{Binding Name}" />
+        <TextBlock Classes="muted" Text="{Binding Summary}" TextWrapping="Wrap" ToolTip.Tip="{Binding File}" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
+        <TextBlock Classes="muted small" VerticalAlignment="Center" Text="{Binding ChangesLabel}"
+                   IsVisible="{Binding HasChanges}" />
+        <Button Classes="quiet" Content="Discard" IsVisible="{Binding HasChanges}" Command="{Binding DiscardCommand}" />
+        <Button Classes="quiet" Content="{Binding YamlLabel}" Command="{Binding ToggleYamlCommand}" />
+        <Button Classes="primary" Content="Save profile" Command="{Binding SaveCommand}" />
+      </StackPanel>
+    </Grid>
+
+    <SelectableTextBlock DockPanel.Dock="Top" Margin="32,12,32,0" TextWrapping="Wrap" Text="{Binding SaveError}"
+                         Foreground="{DynamicResource RemoveBrush}" IsVisible="{Binding HasSaveError}" />
+
+    <Panel>
+      <TextBlock Classes="muted" Margin="32,24" Text="Loading the profile" IsVisible="{Binding Loading}" />
+
+      <StackPanel Margin="32,24" Spacing="12" IsVisible="{Binding HasError}">
+        <SelectableTextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" />
+        <Button Classes="quiet" Content="Try again" HorizontalAlignment="Left" Command="{Binding LoadCommand}" />
+      </StackPanel>
+
+      <Grid ColumnDefinitions="*,Auto" Margin="32,16,32,24" IsVisible="{Binding ShowEditor}"
+            IsEnabled="{Binding !Saving}">
+        <DockPanel>
+          <!-- Tabs, each with how many values the profile manages there -->
+          <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+            <ListBox Classes="tabs" ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}"
+                     AutomationProperties.Name="Sections">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.Styles>
+                <Style Selector="ListBoxItem" x:DataType="vm:ProfileTabViewModel">
+                  <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                </Style>
+              </ListBox.Styles>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:ProfileTabViewModel">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                    <Border Classes="count"><TextBlock Text="{Binding Count}" /></Border>
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Border>
+
+          <!-- What the rails mean -->
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="20" Margin="0,14,0,6">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Border Classes="legend" Background="{DynamicResource RailBrush}" />
+              <TextBlock Classes="muted small" Text="Set in this profile" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Border Classes="legend" Background="{DynamicResource RailInheritedBrush}" />
+              <TextBlock Classes="muted small" Text="{Binding InheritedLabel}" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Border Classes="legend" Background="{DynamicResource DriftRailBrush}" />
+              <TextBlock Classes="muted small" Text="Not saved yet" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Border Classes="legend" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" />
+              <TextBlock Classes="muted small" Text="Not managed" VerticalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
+
+          <ScrollViewer>
+            <ContentControl Content="{Binding SelectedTab}" Margin="0,8,16,0">
+              <ContentControl.DataTemplates>
+                <DataTemplate DataType="vm:ProfileTabViewModel">
+                  <Panel>
+                    <!-- A section's settings, in groups -->
+                    <ItemsControl ItemsSource="{Binding Groups}" IsVisible="{Binding IsSettings}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SettingGroupViewModel">
+                          <StackPanel Margin="0,12,0,8" Spacing="4">
+                            <TextBlock Classes="h2" Text="{Binding Title}" />
+                            <TextBlock Classes="muted small" Text="{Binding Description}" TextWrapping="Wrap"
+                                       Margin="0,0,0,8" />
+                            <Border Classes="fields">
+                              <ItemsControl ItemsSource="{Binding Settings}" ItemTemplate="{StaticResource SettingRow}"
+                                            Margin="0,-1,0,0" />
+                            </Border>
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- The rulesets or environments the profile names -->
+                    <StackPanel Spacing="10" Margin="0,12,0,0" IsVisible="{Binding !IsSettings}">
+                      <TextBlock Classes="muted" TextWrapping="Wrap"
+                                 Text="Edit these in the profile's YAML for now. The app shows which file names each one." />
+                      <TextBlock Classes="muted" Text="The profile names none." IsVisible="{Binding !HasEntries}" />
+                      <Border Classes="fields" IsVisible="{Binding HasEntries}">
+                        <ItemsControl ItemsSource="{Binding Entries}" Margin="0,-1,0,0">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:EntryViewModel">
+                              <Border Classes="field" MinHeight="48">
+                                <Grid ColumnDefinitions="4,*,Auto">
+                                  <Border Classes="rail" Classes.own="{Binding Own}" Classes.inherited="{Binding !Own}" />
+                                  <TextBlock Grid.Column="1" Margin="16,0" VerticalAlignment="Center" FontWeight="SemiBold"
+                                             FontSize="14.5" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                  <TextBlock Grid.Column="2" Margin="16,0" Classes="muted small" VerticalAlignment="Center"
+                                             Text="{Binding Note}" />
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </Border>
+                    </StackPanel>
+                  </Panel>
+                </DataTemplate>
+              </ContentControl.DataTemplates>
+            </ContentControl>
+          </ScrollViewer>
+        </DockPanel>
+
+        <!-- The file as saved -->
+        <Border Grid.Column="1" Classes="panel" Width="360" Margin="24,0,0,0" VerticalAlignment="Stretch"
+                IsVisible="{Binding ShowYaml}">
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,12">
+              <TextBlock Classes="mono" FontWeight="SemiBold" Text="{Binding FileName}" />
+              <TextBlock Classes="muted small" Text="As saved. Save to see your changes here." TextWrapping="Wrap"
+                         IsVisible="{Binding HasChanges}" />
+            </StackPanel>
+            <ScrollViewer HorizontalScrollBarVisibility="Auto">
+              <SelectableTextBlock Classes="yaml" Text="{Binding Yaml}" />
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+      </Grid>
+    </Panel>
+  </DockPanel>
+</UserControl>

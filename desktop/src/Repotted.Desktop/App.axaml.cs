@@ -16,7 +16,10 @@ internal sealed partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var window = new MainWindow();
-            var main = new MainViewModel(new RepottedClient(RepottedCli.Locate()), new SystemDesktop(() => window));
+            var main = new MainViewModel(
+                new RepottedClient(RepottedCli.Locate()),
+                new SystemDesktop(() => window),
+                AppSettings.ForUser());
             window.DataContext = main;
             desktop.MainWindow = window;
             desktop.Exit += (_, _) => main.Stop();

@@ -4,19 +4,44 @@ using Repotted.Desktop.Services;
 
 namespace Repotted.Desktop.ViewModels;
 
-/// <summary>The signed-in app: the sidebar, the header with its search, and the page.</summary>
+/// <summary>
+/// The signed-in app: the sidebar, the header with its search, and the page,
+/// which is the repository list or the profiles.
+/// </summary>
 internal sealed partial class ShellViewModel : ViewModelBase
 {
-    public ShellViewModel(Account.SignedIn account, RepottedClient client, IDesktop desktop)
+    public ShellViewModel(Account.SignedIn account, RepottedClient client, IDesktop desktop, AppSettings settings)
     {
         Account = account;
         Repositories = new RepositoriesViewModel(client, desktop, account.InstallUrl);
         Repositories.PropertyChanged += OnRepositoriesChanged;
+        Profiles = new ProfilesViewModel(client, desktop, settings);
+        Profiles.PropertyChanged += OnProfilesChanged;
     }
 
     public Account.SignedIn Account { get; }
 
     public RepositoriesViewModel Repositories { get; }
+
+    public ProfilesViewModel Profiles { get; }
+
+    /// <summary>The page: 0 for the repositories, 1 for the profiles, as the sidebar lists them.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowingProfiles), nameof(ShowingRepositories), nameof(Crumb), nameof(SearchHint))]
+    public partial int Page { get; set; }
+
+    public bool ShowingRepositories => Page == 0;
+
+    public bool ShowingProfiles => Page == 1;
+
+    /// <summary>Where you are, for the header.</summary>
+    public string Crumb => ShowingProfiles && Profiles.Current is { } profile ? $"Profiles / {profile.Name}" : ShowingProfiles ? "Profiles" : "Repositories";
+
+    public string SearchHint => ShowingProfiles ? "Find a profile" : "Find a repository";
+
+    /// <summary>Loads both lists, which the sidebar counts.</summary>
+    public Task RefreshAsync() =>
+        Task.WhenAll(Repositories.RefreshCommand.ExecuteAsync(null), Profiles.RefreshCommand.ExecuteAsync(null));
 
     /// <summary>Up to two letters for the avatar.</summary>
     public string Initials
@@ -48,7 +73,19 @@ internal sealed partial class ShellViewModel : ViewModelBase
     [ObservableProperty]
     public partial string Search { get; set; } = "";
 
-    partial void OnSearchChanged(string value) => Repositories.Filter = value;
+    partial void OnSearchChanged(string value)
+    {
+        Repositories.Filter = value;
+        Profiles.Filter = value;
+    }
+
+    private void OnProfilesChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ProfilesViewModel.Current))
+        {
+            OnPropertyChanged(nameof(Crumb));
+        }
+    }
 
     private void OnRepositoriesChanged(object? sender, PropertyChangedEventArgs e)
     {
