@@ -117,12 +117,12 @@ jobs:
       - name: Import the Developer ID certificate
         if: github.event_name == 'push' && matrix.os == 'macos'
         env:
-          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          CERTIFICATE: ${{ secrets.DEVELOPER_ID_APPLICATION_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
           TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           if [[ -z $CERTIFICATE || -z $CERTIFICATE_PASSWORD || -z $TEAM_ID ]]; then
-            echo "::error::A release needs MACOS_CERTIFICATE_P12, MACOS_CERTIFICATE_PASSWORD and APPLE_TEAM_ID in the macos-release environment."
+            echo "::error::A release needs DEVELOPER_ID_APPLICATION_P12, DEVELOPER_ID_APPLICATION_P12_PASSWORD and APPLE_TEAM_ID in the macos-release environment."
             exit 1
           fi
           keychain="$RUNNER_TEMP/signing.keychain-db"
@@ -147,12 +147,12 @@ jobs:
       - name: Notarize and staple the DMG
         if: github.event_name == 'push' && matrix.os == 'macos'
         env:
-          KEY: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
-          KEY_ID: ${{ vars.APP_STORE_CONNECT_KEY_ID }}
-          ISSUER_ID: ${{ vars.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          KEY_ID: ${{ vars.APP_STORE_CONNECT_API_KEY_ID }}
+          ISSUER_ID: ${{ vars.APP_STORE_CONNECT_API_ISSUER_ID }}
         run: |
           if [[ -z $KEY || -z $KEY_ID || -z $ISSUER_ID ]]; then
-            echo "::error::A release needs APP_STORE_CONNECT_KEY_P8, APP_STORE_CONNECT_KEY_ID and APP_STORE_CONNECT_ISSUER_ID in the macos-release environment."
+            echo "::error::A release needs APP_STORE_CONNECT_API_KEY_P8, APP_STORE_CONNECT_API_KEY_ID and APP_STORE_CONNECT_API_ISSUER_ID in the macos-release environment."
             exit 1
           fi
           key="$RUNNER_TEMP/notary.p8"
@@ -183,7 +183,7 @@ jobs:
             artifacts/desktop/*.dmg
             artifacts/desktop/*-setup.exe
           if-no-files-found: error
-          retention-days: ${{ github.event_name == 'push' && 3 || 7 }}
+          retention-days: 3
 
   upload:
     name: Attach to a draft release

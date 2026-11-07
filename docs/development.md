@@ -139,14 +139,14 @@ rulesets keep a tag from moving.
 
 Signing runs only in the `macos-release` environment, which holds:
 
-| Name                          | Kind     | Value                                                                                         |
-| ----------------------------- | -------- | --------------------------------------------------------------------------------------------- |
-| `MACOS_CERTIFICATE_P12`       | Secret   | The Developer ID Application certificate and its private key, exported as a `.p12`, in base64 |
-| `MACOS_CERTIFICATE_PASSWORD`  | Secret   | The password of that `.p12`                                                                   |
-| `APP_STORE_CONNECT_KEY_P8`    | Secret   | An App Store Connect API key's `.p8` file, in base64, for `notarytool`                        |
-| `APPLE_TEAM_ID`               | Variable | The team ID of the certificate                                                                |
-| `APP_STORE_CONNECT_KEY_ID`    | Variable | The API key's ID                                                                              |
-| `APP_STORE_CONNECT_ISSUER_ID` | Variable | The issuer ID shown above the API keys                                                        |
+| Name                                    | Kind     | Value                                                                                                                                                                                |
+| --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DEVELOPER_ID_APPLICATION_P12`          | Secret   | The Developer ID Application certificate from Certificates, Identifiers & Profiles on developer.apple.com, exported with its private key from Keychain Access as a `.p12`, in base64 |
+| `DEVELOPER_ID_APPLICATION_P12_PASSWORD` | Secret   | The password set when exporting that `.p12`                                                                                                                                          |
+| `APP_STORE_CONNECT_API_KEY_P8`          | Secret   | The `.p8` file of an App Store Connect API team key, from Users and Access > Integrations > App Store Connect API, in base64; Apple offers the download only once                    |
+| `APPLE_TEAM_ID`                         | Variable | The Team ID in the Apple Developer account's membership details                                                                                                                      |
+| `APP_STORE_CONNECT_API_KEY_ID`          | Variable | The Key ID shown beside that API key                                                                                                                                                 |
+| `APP_STORE_CONNECT_API_ISSUER_ID`       | Variable | The Issuer ID shown above the team keys                                                                                                                                              |
 
 Limit the environment's deployment branches and tags to the `desktop-v*` tag
 rule, so that only a release run reaches the secrets, and give it the owner as
