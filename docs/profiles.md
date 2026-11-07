@@ -108,13 +108,16 @@ still print text.
   refuses the installation list to any other token, which gets `admin` and
   every repository the account administers; the token itself may not be
   allowed to change them (see [Authentication](#authentication)).
-- `status` prints `{ signed_in: true, login, name, token_variable }`, where
-  `token_variable` names `GITHUB_TOKEN` or `GH_TOKEN` when one is set and used
-  before the sign-in, and is null otherwise. Signed out, or with a token GitHub
-  rejects, it prints `{ signed_in: false, reason, message, problems,
-  token_variable }` and exits 1. `reason` is `not_signed_in` or `rejected`,
-  and `problems` says why a sign-in could not be read, such as an unreadable
-  keychain.
+- `status` prints `{ signed_in: true, login, name, token_variable,
+  install_url }`, where `token_variable` names `GITHUB_TOKEN` or `GH_TOKEN`
+  when one is set and used before the sign-in, and is null otherwise, and
+  `install_url` is the Repotted App's install page, or null when another App's
+  client ID is in use. Signed out, or with a token GitHub rejects, it prints
+  `{ signed_in: false, reason, message, problems, token_variable, install_url }`
+  and exits 1. `reason` is `not_signed_in` or `rejected`; a rejected token
+  that came from a variable is the only case where `token_variable` is set
+  while signed out. `problems` says why a sign-in could not be used, such as
+  an unreadable keychain or an expired sign-in that could not be refreshed.
 - `login` prints JSON Lines, one document per line: first
   `{ event: code, verification_uri, user_code, expires_at }` for the user to
   enter, then `{ event: signed_in, install_url, token_variable }` once they

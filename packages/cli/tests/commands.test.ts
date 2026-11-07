@@ -9,7 +9,7 @@ import { GitHubError } from '../../core/src/github.js';
 import { FakeGitHub } from '../../core/tests/fake-github.js';
 
 type Method = Parameters<FakeGitHub['request']>[0];
-import { NotSignedInError } from '../src/auth.js';
+import { installUrl, NotSignedInError } from '../src/auth.js';
 import { type Io, run } from '../src/commands.js';
 
 const examples = path.join(import.meta.dir, '../../../examples');
@@ -241,6 +241,7 @@ describe('account commands', () => {
       message: 'GitHub rejected the sign-in. Run repotted login again.',
       problems: [],
       token_variable: null,
+      install_url: installUrl,
     });
 
     const fromVariable = await cliWith(github, { env: { GH_TOKEN: 'token' } }, 'status', '--json');
@@ -250,13 +251,29 @@ describe('account commands', () => {
       message: 'GitHub rejected the token in GH_TOKEN.',
       problems: [],
       token_variable: 'GH_TOKEN',
+      install_url: installUrl,
     });
   });
 
   test('status names the account, or says it is signed out with exit 1', async () => {
     const signedIn = await cli(new FakeGitHub({ account }), 'status', '--json');
     expect(signedIn).toMatchObject({ code: 0, err: '' });
-    expect(document(signedIn)).toMatchObject({ signed_in: true, login: 'lunch', name: 'Lunch' });
+    expect(document(signedIn)).toEqual({
+      signed_in: true,
+      login: 'lunch',
+      name: 'Lunch',
+      token_variable: null,
+      install_url: installUrl,
+    });
+
+    // Another App's install page is not one Repotted knows.
+    const otherApp = await cliWith(
+      new FakeGitHub({ account }),
+      { env: { REPOTTED_GITHUB_CLIENT_ID: 'Iv1.other' } },
+      'status',
+      '--json',
+    );
+    expect(document(otherApp)).toMatchObject({ signed_in: true, install_url: null });
 
     const out = await cliWith(new FakeGitHub(), signedOut, 'status', '--json');
     expect(out).toMatchObject({ code: 1, err: '' });
@@ -266,6 +283,7 @@ describe('account commands', () => {
       message: 'Not signed in to GitHub. Run repotted login.',
       problems: [],
       token_variable: null,
+      install_url: installUrl,
     });
   });
 
