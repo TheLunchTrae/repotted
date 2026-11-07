@@ -183,7 +183,7 @@ jobs:
             artifacts/desktop/*.dmg
             artifacts/desktop/*-setup.exe
           if-no-files-found: error
-          retention-days: ${{ github.event_name == 'push' && 3 || 7 }}
+          retention-days: 3
 
   upload:
     name: Attach to a draft release
