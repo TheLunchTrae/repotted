@@ -26,14 +26,23 @@ internal enum NewProfileStart
 /// profile, or captured from a repository. It never replaces a file, and a
 /// capture only reads from GitHub.
 /// </summary>
-internal sealed partial class NewProfileViewModel : ViewModelBase
+internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
 {
     private static readonly SearchValues<char> Unsafe = SearchValues.Create("/\\:*?\"<>|");
+
+    private static readonly HashSet<string> Reserved = new(
+        ["CON", "PRN", "AUX", "NUL", .. Enumerable.Range(1, 9).SelectMany(n => new[] { $"COM{n}", $"LPT{n}" })],
+        StringComparer.OrdinalIgnoreCase);
 
     private readonly RepottedClient client;
     private readonly string folder;
     private readonly Func<string, IReadOnlyList<string>, Task> created;
     private readonly Action cancel;
+
+    /// <summary>Stops a capture once the form closes, however it closes.</summary>
+    private readonly CancellationTokenSource closed = new();
+
+    private bool disposed;
 
     /// <param name="client">Captures a repository.</param>
     /// <param name="folder">The profiles folder, where the file goes.</param>
@@ -62,7 +71,8 @@ internal sealed partial class NewProfileViewModel : ViewModelBase
         Start = repository is null ? NewProfileStart.Empty : NewProfileStart.Capture;
         if (repository is not null)
         {
-            Name = repository.Split('/')[^1];
+            // A repository such as .github has a name a file cannot start with.
+            Name = repository.Split('/')[^1].TrimStart('.');
         }
     }
 
@@ -74,11 +84,21 @@ internal sealed partial class NewProfileViewModel : ViewModelBase
 
     public bool HasRepositories => Repositories.Count > 0;
 
+    public string ExtendsHelp => HasBases
+        ? "Extends it, so it gets every setting the other one sets."
+        : "There is no other profile in this folder to extend yet.";
+
+    public string CaptureHelp => HasRepositories
+        ? "Captures its settings, rulesets and environments as they are on GitHub now. This only reads from GitHub."
+        : "No repositories are listed yet. Sign in, or wait for the list to load.";
+
     /// <summary>The file name without its extension.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Problem), nameof(HasProblem), nameof(FileName), nameof(ShowFileName))]
+    [NotifyPropertyChangedFor(nameof(FileName), nameof(ShowFileName))]
     [NotifyCanExecuteChangedFor(nameof(CreateCommand))]
     public partial string Name { get; set; } = "";
+
+    partial void OnNameChanged(string value) => Problem = Check(value.Trim());
 
     public string FileName => $"{Name.Trim()}.yaml";
 
@@ -138,38 +158,48 @@ internal sealed partial class NewProfileViewModel : ViewModelBase
     public bool HasError => Error is not null;
 
     /// <summary>Why the name cannot be used; nothing while it is still empty.</summary>
-    public string? Problem
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasProblem), nameof(ShowFileName))]
+    [NotifyCanExecuteChangedFor(nameof(CreateCommand))]
+    public partial string? Problem { get; private set; }
+
+    private string? Check(string name)
     {
-        get
+        if (name.Length == 0)
         {
-            var name = Name.Trim();
-            if (name.Length == 0)
-            {
-                return null;
-            }
-            if (name.AsSpan().ContainsAny(Unsafe) || name.Any(char.IsControl) || name.StartsWith('.'))
-            {
-                return "A name cannot start with a dot or hold / \\ : * ? \" < > |.";
-            }
-            return Taken(name) is { } taken ? $"{taken} is already in this folder." : null;
+            return null;
         }
+        if (name.AsSpan().ContainsAny(Unsafe) || name.Any(char.IsControl) || name.StartsWith('.'))
+        {
+            return "A name cannot start with a dot or hold / \\ : * ? \" < > |.";
+        }
+        // Windows keeps these names for devices, so a profile under one cannot be shared.
+        if (Reserved.Contains(name.Split('.')[0].TrimEnd()))
+        {
+            return $"Windows keeps the name {name} for itself, so it cannot be a file there.";
+        }
+        return Taken(name) is { } taken ? $"{taken} is already in this folder." : null;
     }
 
     public bool HasProblem => Problem is not null;
 
     /// <summary>The file already in the folder under this name, as a .yaml or .yml file in any case.</summary>
-    private string? Taken(string name)
-    {
-        if (!Directory.Exists(folder))
-        {
-            return null;
-        }
-        return Directory.EnumerateFileSystemEntries(folder)
-            .Select(Path.GetFileName)
-            .FirstOrDefault(entry => entry is not null
-                && (string.Equals(entry, $"{name}.yaml", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(entry, $"{name}.yml", StringComparison.OrdinalIgnoreCase)));
-    }
+    private string? Taken(string name) =>
+        Entries().FirstOrDefault(entry =>
+            string.Equals(entry, $"{name}.yaml", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entry, $"{name}.yml", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The profile file named <paramref name="name"/> as the folder lists it, which is how the CLI names it.</summary>
+    private string? Entry(string name) =>
+        Entries().FirstOrDefault(entry =>
+            string.Equals(entry, $"{name}.yaml", StringComparison.Ordinal)
+            || string.Equals(entry, $"{name}.yml", StringComparison.Ordinal))
+        ?? Taken(name);
+
+    private IEnumerable<string> Entries() =>
+        Directory.Exists(folder)
+            ? Directory.EnumerateFileSystemEntries(folder).Select(entry => Path.GetFileName(entry))
+            : [];
 
     private bool CanCreate() =>
         !Working
@@ -188,28 +218,46 @@ internal sealed partial class NewProfileViewModel : ViewModelBase
         Working = true;
         Error = null;
         var file = Path.Combine(folder, FileName);
+        var made = false;
         try
         {
+            // The name was free when it was typed; the folder may have changed since.
+            if (Taken(Name.Trim()) is { } taken)
+            {
+                Error = $"{taken} is already in this folder.";
+                return;
+            }
             IReadOnlyList<string> warnings = [];
             switch (Start)
             {
                 case NewProfileStart.Capture:
-                    // Checked again here: the name was free when it was typed.
-                    if (Taken(Name.Trim()) is { } taken)
-                    {
-                        Error = $"{taken} is already in this folder.";
-                        return;
-                    }
-                    warnings = await client.CaptureAsync(Repository!, file, CancellationToken.None).ConfigureAwait(true);
+                    // Holds the name while GitHub is read, since the CLI then writes over the file.
+                    Write(file, "");
+                    made = true;
+                    warnings = await client.CaptureAsync(Repository!, file, closed.Token).ConfigureAwait(true);
                     break;
                 case NewProfileStart.Extends:
-                    Write(file, $"extends: {Quoted(Path.GetRelativePath(folder, Base!.Listing.File))}\n");
+                    // The base's own name in the folder: the CLI follows it from the
+                    // new file's real folder, which a path from the folder as picked may not reach.
+                    var entry = Entry(Base!.Name) ?? throw new FileNotFoundException($"{Base.Name} is no longer in this folder.");
+                    Write(file, $"extends: {Quoted(entry)}\n");
+                    made = true;
                     break;
                 default:
                     Write(file, "");
+                    made = true;
                     break;
             }
+            if (disposed)
+            {
+                return;
+            }
+            made = false;
             await created(file, warnings).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (disposed)
+        {
+            // The form closed; the user has moved on.
         }
         catch (Exception error) when (error is CliException or CliNotFoundException or IOException or UnauthorizedAccessException)
         {
@@ -217,12 +265,28 @@ internal sealed partial class NewProfileViewModel : ViewModelBase
         }
         finally
         {
+            if (made)
+            {
+                // A capture that failed or was stopped leaves nothing behind.
+                File.Delete(file);
+            }
             Working = false;
         }
     }
 
     [RelayCommand]
     private void Cancel() => cancel();
+
+    /// <summary>Closes the form, which stops a capture still running.</summary>
+    public void Dispose()
+    {
+        if (!disposed)
+        {
+            disposed = true;
+            closed.Cancel();
+            closed.Dispose();
+        }
+    }
 
     /// <summary>Creates the file, and fails rather than replace one.</summary>
     private static void Write(string file, string text)
@@ -233,5 +297,5 @@ internal sealed partial class NewProfileViewModel : ViewModelBase
 
     /// <summary>A YAML double-quoted string; JSON's escapes are YAML's too.</summary>
     private static string Quoted(string text) =>
-        $"\"{JsonEncodedText.Encode(text.Replace('\\', '/'), JavaScriptEncoder.UnsafeRelaxedJsonEscaping)}\"";
+        $"\"{JsonEncodedText.Encode(text, JavaScriptEncoder.UnsafeRelaxedJsonEscaping)}\"";
 }

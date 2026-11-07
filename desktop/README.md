@@ -19,7 +19,10 @@ edited in the YAML.
 
 A new profile starts empty, extends another profile in the folder, or is
 captured from a repository with `repotted capture --output`, which only reads
-from GitHub. The app never replaces a file that is already in the folder.
+from GitHub. The app never replaces a file that is already in the folder: it
+creates the new file first, and a capture that fails or is cancelled removes
+it. A profile that extends another names that file as the folder lists it, so
+the reference still works when the folder is reached through a link.
 
 The app keeps its own settings, such as the chosen folder, in `settings.json`
 in the per-user app data folder: `~/Library/Application Support/Repotted` on

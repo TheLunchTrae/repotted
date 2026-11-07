@@ -77,17 +77,20 @@ public sealed class ContractTests
         var cancellationToken = TestContext.Current.CancellationToken;
         using var folders = new Folders();
         folders.Write("my base.yaml", "repository: { has_issues: true }\n");
-        var listings = await client.ProfilesAsync(folders.Profiles, cancellationToken);
+        // The folder as the user picked it goes through a link, so its path is not the one the CLI lists.
+        var folder = folders.LinkToProfiles();
+        var listings = await client.ProfilesAsync(folder, cancellationToken);
         var @base = new ProfileItemViewModel(Assert.Single(listings), null);
         string? made = null;
         NewProfileViewModel Form(string name) =>
-            new(client, folders.Profiles, [@base], [], null, (file, _) => Task.FromResult(made = file), () => { }) { Name = name };
+            new(client, folder, [@base], [], null, (file, _) => Task.FromResult(made = file), () => { }) { Name = name };
 
         var extending = Form("extending");
         extending.Extends = true;
         await extending.CreateCommand.ExecuteAsync(null);
+        Assert.Null(extending.Error);
         var resolved = await client.ProfileAsync(made!, cancellationToken);
-        Assert.Equal([made!, @base.Listing.File], resolved.Chain);
+        Assert.Equal(["extending.yaml", @base.Listing.File], [Path.GetFileName(resolved.Chain[0]), .. resolved.Chain.Skip(1)]);
 
         await Form("empty").CreateCommand.ExecuteAsync(null);
         await client.SaveProfileAsync(made!, [new("repository.has_wiki", JsonValue.Create(false))], cancellationToken);

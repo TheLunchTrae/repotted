@@ -387,15 +387,6 @@
   <Style Selector="Border.rail.changed">
     <Setter Property="Background" Value="{DynamicResource DriftRailBrush}" />
   </Style>
-  <!-- Radio buttons in the theme's green, not the system accent -->
-  <Style Selector="RadioButton:checked /template/ Ellipse#CheckOuterEllipse, RadioButton:checked:pointerover /template/ Ellipse#CheckOuterEllipse, RadioButton:checked:pressed /template/ Ellipse#CheckOuterEllipse">
-    <Setter Property="Fill" Value="{DynamicResource RailBrush}" />
-    <Setter Property="Stroke" Value="{DynamicResource RailBrush}" />
-  </Style>
-  <Style Selector="RadioButton:checked /template/ Ellipse#CheckGlyph, RadioButton:checked:pointerover /template/ Ellipse#CheckGlyph, RadioButton:checked:pressed /template/ Ellipse#CheckGlyph">
-    <Setter Property="Fill" Value="{DynamicResource SurfaceBrush}" />
-    <Setter Property="Stroke" Value="{DynamicResource SurfaceBrush}" />
-  </Style>
 
   <!-- Compare rows: tinted by what the profile does to the value. -->
   <Style Selector="Border.field.change">

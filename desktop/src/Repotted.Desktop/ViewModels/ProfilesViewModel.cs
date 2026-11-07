@@ -90,6 +90,9 @@ internal sealed partial class ProfilesViewModel(
 
     public bool ShowCreating => Creating is not null;
 
+    // However the form closes, a capture it started stops with it.
+    partial void OnCreatingChanged(NewProfileViewModel? oldValue, NewProfileViewModel? newValue) => oldValue?.Dispose();
+
     /// <summary>What a capture could not read, shown over the profile it made until another one opens.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasCaptured))]
@@ -125,7 +128,7 @@ internal sealed partial class ProfilesViewModel(
         await RefreshAsync().ConfigureAwait(true);
         if (warnings.Count > 0)
         {
-            Captured = $"Repotted could not read all of the repository, so this profile leaves out: {string.Join(" ", warnings)}";
+            Captured = $"Repotted could not read all of the repository, so this profile leaves out:\n{string.Join("\n", warnings)}";
         }
     }
 
@@ -213,16 +216,21 @@ internal sealed partial class ProfilesViewModel(
                 }
             }
             // The CLI lists real paths, and the folder's own path may not be one,
-            // so a new file, never a link, is found by its name.
+            // so a new file is found by its name in the folder.
             var keep = select is null
                 ? Current?.File
-                : names.Keys.FirstOrDefault(listed => Path.GetFileName(listed) == Path.GetFileName(select));
+                : listings.FirstOrDefault(listing => listing.Name == Path.GetFileNameWithoutExtension(select))?.File;
             select = null;
             Current = null;
             ApplyFilter();
+            // The new profile form stays open, and nothing in the list is selected under it.
+            var creating = Creating is not null;
             if (Items.FirstOrDefault(item => item.Listing.File == keep) is { } shown)
             {
-                Selected = shown;
+                if (!creating)
+                {
+                    Selected = shown;
+                }
                 Open(shown.Listing);
             }
             else if (all.FirstOrDefault(item => item.Listing.File == keep) is { } hidden)
@@ -230,13 +238,17 @@ internal sealed partial class ProfilesViewModel(
                 // The search hides it, but it stays open.
                 Open(hidden.Listing);
             }
+            else if (Items.FirstOrDefault() is { } first)
+            {
+                if (!creating)
+                {
+                    Selected = first;
+                }
+                Open(first.Listing);
+            }
             else
             {
-                Selected = Items.FirstOrDefault();
-                if (Selected is not null)
-                {
-                    Open(Selected.Listing);
-                }
+                Selected = null;
             }
         }
         catch (Exception error) when (error is CliException or CliNotFoundException or IOException or UnauthorizedAccessException)

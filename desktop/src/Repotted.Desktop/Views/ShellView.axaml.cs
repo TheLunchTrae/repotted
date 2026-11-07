@@ -10,10 +10,14 @@ internal sealed partial class ShellView : UserControl
 {
     private TopLevel? topLevel;
 
+    /// <summary>The page selected when the pointer went down, since the list selects on press, before the tap.</summary>
+    private int pressedOn = -1;
+
     public ShellView()
     {
         InitializeComponent();
         // The list marks Enter and Space handled, and choosing the selected item changes nothing it reports.
+        Nav.AddHandler(PointerPressedEvent, (_, _) => pressedOn = Nav.SelectedIndex, RoutingStrategies.Tunnel, handledEventsToo: true);
         Nav.AddHandler(TappedEvent, OnNavTapped, RoutingStrategies.Bubble, handledEventsToo: true);
         Nav.AddHandler(KeyDownEvent, OnNavKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
         if (OperatingSystem.IsMacOS())
@@ -42,21 +46,23 @@ internal sealed partial class ShellView : UserControl
     /// Choosing the page that is already selected, by click, Enter or Space,
     /// leaves what stands in for it, such as a compare.
     /// </summary>
-    private void OnNavTapped(object? sender, TappedEventArgs e) => ShowPage(e.Source);
+    private void OnNavTapped(object? sender, TappedEventArgs e) => ShowPage(e.Source, pressedOn);
 
+    // Enter and Space leave the selection as it is, so the page chosen is the one already shown.
     private void OnNavKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key is Key.Enter or Key.Space && e.KeyModifiers == KeyModifiers.None)
         {
-            ShowPage(e.Source);
+            ShowPage(e.Source, Nav.SelectedIndex);
         }
     }
 
-    private void ShowPage(object? source)
+    private void ShowPage(object? source, int shown)
     {
         if (DataContext is ViewModels.ShellViewModel shell
             && (source as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true) is { } item
-            && Nav.IndexFromContainer(item) is var page and >= 0)
+            && Nav.IndexFromContainer(item) is var page and >= 0
+            && page == shown)
         {
             shell.ShowPage(page);
         }

@@ -733,8 +733,15 @@ public sealed class ViewModelTests : IDisposable
         form.Name = "ORGS";
         Assert.Equal("orgs.yaml is already in this folder.", form.Problem);
         Assert.False(form.CreateCommand.CanExecute(null));
-        form.Name = "team/libraries";
-        Assert.NotNull(form.Problem);
+        folders.Write("old.yml", "");
+        form.Name = "Old";
+        Assert.Equal("old.yml is already in this folder.", form.Problem);
+        foreach (var name in new[] { "team/libraries", ".hidden", "nul", "Com1.backup" })
+        {
+            form.Name = name;
+            Assert.NotNull(form.Problem);
+            Assert.False(form.CreateCommand.CanExecute(null));
+        }
         form.Name = "libraries";
         Assert.True(form.CreateCommand.CanExecute(null));
 
@@ -745,6 +752,103 @@ public sealed class ViewModelTests : IDisposable
         Assert.NotNull(form.Error);
         Assert.True(profiles.ShowCreating);
         Assert.Equal("merge: { allow_squash_merge: false }\n", File.ReadAllText(Path.Combine(folders.Profiles, "libraries.yaml")));
+    }
+
+    [AvaloniaFact]
+    public void A_profile_extends_another_only_once_one_is_chosen()
+    {
+        using var form = new NewProfileViewModel(
+            new RepottedClient(new FakeCli()), folders.Profiles, [], [], null, (_, _) => Task.CompletedTask, () => { })
+        {
+            Name = "libraries",
+            Extends = true,
+        };
+
+        Assert.False(form.CreateCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
+    public async Task A_capture_never_replaces_a_file_and_leaves_none_when_it_fails()
+    {
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var cli = new FakeCli().On($"capture TheLunchTrae/repotted --output {made} --json", "", exitCode: 1, error: "Not Found");
+        var profiles = new ProfilesViewModel(new RepottedClient(cli.On(folders.List(), Documents.NoProfiles)), new FakeDesktop(), folders.Settings, () => ["TheLunchTrae/repotted"]);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        profiles.StartNew("TheLunchTrae/repotted");
+        var form = profiles.Creating!;
+
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.NotNull(form.Error);
+        Assert.False(File.Exists(made));
+
+        // A file made after the name was typed stops the capture before it reads GitHub.
+        cli.Calls.Clear();
+        folders.Write("repotted.yaml", "repository: { has_wiki: true }\n");
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.Equal("repotted.yaml is already in this folder.", form.Error);
+        Assert.Empty(cli.Calls);
+        Assert.Equal("repository: { has_wiki: true }\n", File.ReadAllText(made));
+    }
+
+    [AvaloniaFact]
+    public async Task Cancelling_a_capture_stops_it_and_keeps_what_the_user_opened_next()
+    {
+        var (profiles, cli, files) = await OpenOrgs("TheLunchTrae/repotted");
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        var stopped = false;
+        cli.On($"capture TheLunchTrae/repotted --output {made} --json", async cancellationToken =>
+        {
+            cancellationToken.Register(() => stopped = true);
+            // A command line that finishes anyway, as one that is slow to stop would.
+            await finish.Task;
+            File.WriteAllText(made, "repository:\n  has_wiki: false\n");
+            return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":["Skipped rulesets"]}""";
+        });
+        profiles.StartNew("TheLunchTrae/repotted");
+        var capturing = profiles.Creating!.CreateCommand.ExecuteAsync(null);
+
+        profiles.Creating!.CancelCommand.Execute(null);
+        profiles.StartNew(null);
+        var next = profiles.Creating;
+        finish.SetResult();
+        await capturing;
+
+        Assert.True(stopped);
+        Assert.False(File.Exists(made));
+        Assert.Same(next, profiles.Creating);
+        Assert.Null(profiles.Captured);
+        Assert.Equal(files.Own, profiles.Current?.File);
+    }
+
+    [AvaloniaFact]
+    public async Task A_refresh_keeps_the_form_and_a_new_folder_closes_it()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        profiles.StartNew(null);
+        var form = profiles.Creating!;
+        form.Name = "libraries";
+
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Same(form, profiles.Creating);
+        Assert.Null(profiles.Selected);
+        profiles.CancelNew();
+        Assert.Equal(files.Own, profiles.Current?.File);
+
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        var desktop = new FakeDesktop { Folder = other };
+        var moving = new ProfilesViewModel(new RepottedClient(cli.On(folders.List(other), Documents.NoProfiles)), desktop, folders.Settings, () => []);
+        await moving.RefreshCommand.ExecuteAsync(null);
+        moving.StartNew(null);
+
+        await moving.ChangeFolderCommand.ExecuteAsync(null);
+
+        Assert.Null(moving.Creating);
+        Assert.True(moving.ShowEmpty);
     }
 
     [AvaloniaFact]
@@ -775,7 +879,7 @@ public sealed class ViewModelTests : IDisposable
             .On($"capture TheLunchTrae/repotted --output {made} --json", () =>
             {
                 File.WriteAllText(made, "repository:\n  has_wiki: false\n");
-                return """{"repository":"TheLunchTrae/repotted","profile":{"repository":{"has_wiki":false}},"warnings":["Skipped rulesets: this repository’s plan does not support rulesets"]}""";
+                return """{"repository":"TheLunchTrae/repotted","profile":{"repository":{"has_wiki":false}},"warnings":["Skipped rulesets: this repository’s plan does not support rulesets","Skipped environments: the app cannot read Actions"]}""";
             });
         var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings);
         await shell.RefreshAsync();
@@ -789,22 +893,28 @@ public sealed class ViewModelTests : IDisposable
         Assert.True(form.Captures);
         Assert.Equal(("repotted", "TheLunchTrae/repotted"), (form.Name, form.Repository));
         Assert.Equal(["TheLunchTrae/github-setup", "TheLunchTrae/repotted", "TheLunchTrae/test-repo"], form.Repositories);
-        cli.On(folders.List(), Listing(("repotted", made, null)))
-            .On($"profile {made} --json", Documents.ResolvedBase(made));
+        var other = folders.Write("other.yaml", "");
+        cli.On(folders.List(), Listing(("other", other, null), ("repotted", made, null)))
+            .On($"profile {made} --json", Documents.ResolvedBase(made))
+            .On($"profile {other} --json", Documents.ResolvedBase(other));
 
         await form.CreateCommand.ExecuteAsync(null);
 
         Assert.True(File.Exists(made));
         Assert.Equal("Profiles / repotted", shell.Crumb);
         Assert.Equal(
-            "Repotted could not read all of the repository, so this profile leaves out: Skipped rulesets: this repository’s plan does not support rulesets",
+            "Repotted could not read all of the repository, so this profile leaves out:\nSkipped rulesets: this repository’s plan does not support rulesets\nSkipped environments: the app cannot read Actions",
             shell.Profiles.Captured);
+
+        // The note is about the captured profile, so it goes once another opens.
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "other");
+        Assert.Null(shell.Profiles.Captured);
     }
 
     private static string Listing(params (string Name, string File, string? Extends)[] profiles) =>
         JsonSerializer.Serialize(new { profiles = profiles.Select(profile => new { name = profile.Name, file = profile.File, extends = profile.Extends, problem = (string?)null }) });
 
-    private async Task<(ProfilesViewModel Profiles, FakeCli Cli, (string Own, string Base) Files)> OpenOrgs()
+    private async Task<(ProfilesViewModel Profiles, FakeCli Cli, (string Own, string Base) Files)> OpenOrgs(params string[] repositories)
     {
         var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
@@ -812,7 +922,7 @@ public sealed class ViewModelTests : IDisposable
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.Resolved(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base));
-        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => repositories);
         await profiles.RefreshCommand.ExecuteAsync(null);
         // The fake answers at once, so selecting a profile has loaded it.
         profiles.Selected = profiles.Items.Single(item => item.Name == "orgs");

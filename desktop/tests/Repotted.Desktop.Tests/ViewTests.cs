@@ -295,6 +295,10 @@ public sealed class ViewTests : IDisposable
         var start = window.GetVisualDescendants().OfType<Button>()
             .Single(button => button.Content as string == "New profile" && button.IsEffectivelyVisible);
         start.Command!.Execute(start.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        var nameBox = window.GetVisualDescendants().OfType<TextBox>()
+            .Single(box => AutomationProperties.GetName(box) == "Profile name");
+        Assert.Same(nameBox, window.FocusManager?.GetFocusedElement());
         var form = shell.Profiles.Creating!;
         form.Name = "libraries";
         form.Captures = true;
@@ -305,16 +309,46 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("libraries.yaml", text);
         Assert.Contains("Capture", text);
         Assert.DoesNotContain("Save profile", text);
+        var extends = window.GetVisualDescendants().OfType<RadioButton>()
+            .Single(radio => radio.IsChecked != true && ControlAutomationPeer.CreatePeerForElement(radio).GetName() == "Another profile");
+        Assert.Equal(
+            "Extends it, so it gets every setting the other one sets.",
+            ControlAutomationPeer.CreatePeerForElement(extends).GetHelpText());
         Save(window, $"new-profile-{theme}");
 
-        // Enter on Profiles, already selected in the sidebar, leaves the form.
-        var item = window.GetVisualDescendants().OfType<ListBoxItem>()
-            .Single(candidate => AutomationProperties.GetName(candidate) == "Profiles");
-        item.Focus();
-        window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
-        Dispatcher.UIThread.RunJobs();
+        // Going to another page and back keeps the form as it was.
+        Click(window, "Repositories");
+        Assert.True(shell.ShowingRepositories);
+        Click(window, "Profiles");
+        Assert.Same(form, shell.Profiles.Creating);
+        Assert.Contains("libraries.yaml", Texts(window));
+
+        // Choosing Profiles again, while it is selected, leaves the form: by click, Enter or Space.
+        // The click lands apart from the last one, which would otherwise make a double click.
+        Click(window, "Profiles", x: 60);
         Assert.Null(shell.Profiles.Creating);
         Assert.Equal("Profiles / base", shell.Crumb);
+        foreach (var key in new[] { PhysicalKey.Enter, PhysicalKey.Space })
+        {
+            shell.Profiles.StartNew(null);
+            Dispatcher.UIThread.RunJobs();
+            Item(window, "Profiles").Focus();
+            window.KeyPressQwerty(key, RawInputModifiers.None);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Null(shell.Profiles.Creating);
+        }
+    }
+
+    private static ListBoxItem Item(Window window, string name) =>
+        window.GetVisualDescendants().OfType<ListBoxItem>()
+            .Single(candidate => AutomationProperties.GetName(candidate) == name);
+
+    private static void Click(Window window, string name, double x = 12)
+    {
+        var point = Item(window, name).TranslatePoint(new Point(x, 12), window)!.Value;
+        window.MouseDown(point, MouseButton.Left);
+        window.MouseUp(point, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
     }
 
     [AvaloniaFact]

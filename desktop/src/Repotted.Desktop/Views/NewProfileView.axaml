@@ -14,26 +14,28 @@
       <StackPanel Spacing="6">
         <TextBlock Classes="small" FontWeight="SemiBold" Text="Name" />
         <TextBox x:Name="NameBox" Text="{Binding Name}" AutomationProperties.Name="Profile name"
-                 PlaceholderText="For example, libraries" />
+                 AutomationProperties.HelpText="{Binding Problem}" PlaceholderText="For example, libraries" />
         <TextBlock Classes="muted small" IsVisible="{Binding ShowFileName}">
           <Run Text="Saved as" /> <Run Classes="mono" Text="{Binding FileName}" /> <Run Text="in the profiles folder." />
         </TextBlock>
         <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Problem}"
-                   IsVisible="{Binding HasProblem}" />
+                   IsVisible="{Binding HasProblem}" AutomationProperties.LiveSetting="Assertive" />
       </StackPanel>
 
       <StackPanel Spacing="10">
         <TextBlock Classes="small" FontWeight="SemiBold" Text="Start from" />
-        <RadioButton GroupName="start" IsChecked="{Binding StartsEmpty}">
+        <RadioButton GroupName="start" IsChecked="{Binding StartsEmpty}"
+                     AutomationProperties.HelpText="An empty profile, which manages nothing until you set something.">
           <StackPanel Spacing="2">
             <TextBlock Text="Nothing" />
             <TextBlock Classes="muted small" TextWrapping="Wrap" Text="An empty profile, which manages nothing until you set something." />
           </StackPanel>
         </RadioButton>
-        <RadioButton GroupName="start" IsChecked="{Binding Extends}" IsEnabled="{Binding HasBases}">
+        <RadioButton GroupName="start" IsChecked="{Binding Extends}" IsEnabled="{Binding HasBases}"
+                     AutomationProperties.HelpText="{Binding ExtendsHelp}">
           <StackPanel Spacing="2">
             <TextBlock Text="Another profile" />
-            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="Extends it, so it gets every setting the other one sets." />
+            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding ExtendsHelp}" />
           </StackPanel>
         </RadioButton>
         <ComboBox Margin="28,0,0,0" HorizontalAlignment="Stretch" ItemsSource="{Binding Bases}" SelectedItem="{Binding Base}"
@@ -44,11 +46,11 @@
             </DataTemplate>
           </ComboBox.ItemTemplate>
         </ComboBox>
-        <RadioButton GroupName="start" IsChecked="{Binding Captures}" IsEnabled="{Binding HasRepositories}">
+        <RadioButton GroupName="start" IsChecked="{Binding Captures}" IsEnabled="{Binding HasRepositories}"
+                     AutomationProperties.HelpText="{Binding CaptureHelp}">
           <StackPanel Spacing="2">
             <TextBlock Text="A repository" />
-            <TextBlock Classes="muted small" TextWrapping="Wrap"
-                       Text="Captures its settings, rulesets and environments as they are on GitHub now. This only reads from GitHub." />
+            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding CaptureHelp}" />
           </StackPanel>
         </RadioButton>
         <ComboBox Margin="28,0,0,0" HorizontalAlignment="Stretch" ItemsSource="{Binding Repositories}" SelectedItem="{Binding Repository}"
@@ -56,12 +58,13 @@
       </StackPanel>
 
       <SelectableTextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}"
-                           IsVisible="{Binding HasError}" />
+                           IsVisible="{Binding HasError}" AutomationProperties.LiveSetting="Assertive" />
 
       <StackPanel Orientation="Horizontal" Spacing="8">
         <Button Classes="primary" Content="{Binding CreateLabel}" Command="{Binding CreateCommand}" IsDefault="True" />
         <Button Classes="quiet" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
-        <TextBlock Classes="muted small" VerticalAlignment="Center" Text="Capturing from GitHub" IsVisible="{Binding Working}" />
+        <TextBlock Classes="muted small" VerticalAlignment="Center" Text="Capturing from GitHub" IsVisible="{Binding Working}"
+                   AutomationProperties.LiveSetting="Polite" />
       </StackPanel>
     </StackPanel>
   </ScrollViewer>
