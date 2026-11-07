@@ -141,6 +141,25 @@
     <Setter Property="Fill" Value="{DynamicResource MutedBrush}" />
   </Style>
 
+  <Style Selector="Border.pill.ok">
+    <Setter Property="Background" Value="{DynamicResource AddBgBrush}" />
+  </Style>
+  <Style Selector="Border.pill.ok TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource AddBrush}" />
+  </Style>
+  <Style Selector="Border.pill.ok Ellipse">
+    <Setter Property="Fill" Value="{DynamicResource AddBrush}" />
+  </Style>
+  <Style Selector="Border.pill.drift">
+    <Setter Property="Background" Value="{DynamicResource DriftBgBrush}" />
+  </Style>
+  <Style Selector="Border.pill.drift TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource DriftBrush}" />
+  </Style>
+  <Style Selector="Border.pill.drift Ellipse">
+    <Setter Property="Fill" Value="{DynamicResource DriftBrush}" />
+  </Style>
+
   <!-- A section's bar in the Sections column. -->
   <Style Selector="Border.bar">
     <Setter Property="Width" Value="22" />
@@ -343,6 +362,45 @@
   <Style Selector="Border.rail.changed">
     <Setter Property="Background" Value="{DynamicResource DriftRailBrush}" />
   </Style>
+  <!-- Compare rows: tinted by what the profile does to the value. -->
+  <Style Selector="Border.field.change">
+    <Setter Property="Background" Value="{DynamicResource DriftBgBrush}" />
+  </Style>
+  <Style Selector="Border.field.add">
+    <Setter Property="Background" Value="{DynamicResource AddBgBrush}" />
+  </Style>
+  <Style Selector="Border.field.remove">
+    <Setter Property="Background" Value="{DynamicResource RemoveBgBrush}" />
+  </Style>
+  <Style Selector="Border.rail.change">
+    <Setter Property="Background" Value="{DynamicResource DriftRailBrush}" />
+  </Style>
+  <Style Selector="Border.rail.add">
+    <Setter Property="Background" Value="{DynamicResource RailBrush}" />
+  </Style>
+  <Style Selector="Border.rail.remove">
+    <Setter Property="Background" Value="{DynamicResource RemoveBrush}" />
+  </Style>
+  <Style Selector="Border.rail.match">
+    <Setter Property="Background" Value="{DynamicResource RailInheritedBrush}" />
+  </Style>
+  <Style Selector="TextBlock.gone">
+    <Setter Property="Foreground" Value="{DynamicResource RemoveBrush}" />
+    <Setter Property="TextDecorations" Value="Strikethrough" />
+  </Style>
+  <Style Selector="TextBlock.wanted">
+    <Setter Property="Foreground" Value="{DynamicResource AddBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.wanted.removed">
+    <Setter Property="Foreground" Value="{DynamicResource RemoveBrush}" />
+    <Setter Property="FontWeight" Value="Normal" />
+  </Style>
+  <Style Selector="TextBlock.wanted.same">
+    <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
+    <Setter Property="FontWeight" Value="Normal" />
+  </Style>
+
   <Style Selector="Border.legend">
     <Setter Property="Width" Value="4" />
     <Setter Property="Height" Value="16" />

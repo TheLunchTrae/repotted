@@ -21,6 +21,15 @@ The app keeps its own settings, such as the chosen folder, in `settings.json`
 in the per-user app data folder: `~/Library/Application Support/Repotted` on
 macOS and `%APPDATA%\Repotted` on Windows. It never writes beside itself.
 
+## Compare
+
+A repository can be compared with a profile from its panel on the
+Repositories page. The app runs `repotted plan --json`, which only reads from
+GitHub, and shows each difference by section: what GitHub has now and what the
+profile sets. A ruleset change names the part that differs, such as
+`rules[pull_request].parameters.allowed_merge_methods`. Matching settings are
+counted and shown on request. The app does not apply plans.
+
 ## Run it
 
 `mise install` installs the pinned .NET SDK; `global.json` only sets the

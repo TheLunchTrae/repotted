@@ -46,6 +46,23 @@ internal sealed record ResolvedProfileDocument(
     JsonElement Profile,
     ProfileSourcesDocument Sources);
 
+/// <summary>One field a change writes: what GitHub has, absent when it has nothing, and what the profile wants.</summary>
+internal sealed record FieldChangeDocument(string Field, JsonElement? From = null, JsonElement? To = null);
+
+/// <summary>One write of a plan. The app shows it and never sends it.</summary>
+internal sealed record PlanChangeDocument(
+    string Section,
+    string Action,
+    string Target,
+    IReadOnlyList<FieldChangeDocument> Fields);
+
+/// <summary>What <c>repotted plan --json</c> prints: the resolved profile and the writes that bring the repository in line.</summary>
+internal sealed record PlanDocument(
+    string Repository,
+    JsonElement Desired,
+    IReadOnlyList<PlanChangeDocument> Changes,
+    IReadOnlyList<string> Warnings);
+
 /// <summary>The <c>error</c> member of a failure.</summary>
 internal sealed record ErrorDetail(string Kind, string Message);
 
@@ -71,6 +88,7 @@ internal sealed record LoginEvent(
 [JsonSerializable(typeof(RepositoryListDocument))]
 [JsonSerializable(typeof(ProfileListDocument))]
 [JsonSerializable(typeof(ResolvedProfileDocument))]
+[JsonSerializable(typeof(PlanDocument))]
 [JsonSerializable(typeof(FailureDocument))]
 [JsonSerializable(typeof(LoginEvent))]
 internal sealed partial class CliJson : JsonSerializerContext;

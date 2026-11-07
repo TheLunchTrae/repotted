@@ -36,6 +36,10 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
 
     public ObservableCollection<ProfileItemViewModel> Items { get; } = [];
 
+    /// <summary>Every profile without a problem, whatever the search, for a compare.</summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<ProfileItemViewModel> Usable { get; private set; } = [];
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile))]
     public partial string Folder { get; private set; } = settings.Load().ProfilesFolder ?? AppSettings.DefaultProfilesFolder();
@@ -135,6 +139,7 @@ internal sealed partial class ProfilesViewModel(RepottedClient client, IDesktop 
                     listing.Extends is null ? null : names.GetValueOrDefault(listing.Extends) ?? Path.GetFileNameWithoutExtension(listing.Extends))),
             ];
             Count = all.Count;
+            Usable = [.. all.Where(item => !item.Invalid)];
             // Editors start over from the file, which may have changed outside
             // the app, unless they hold edits that are not saved yet.
             foreach (var (file, editor) in editors.ToList())

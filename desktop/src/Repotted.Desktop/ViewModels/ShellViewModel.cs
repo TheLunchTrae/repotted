@@ -1,22 +1,26 @@
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Repotted.Desktop.Services;
 
 namespace Repotted.Desktop.ViewModels;
 
 /// <summary>
 /// The signed-in app: the sidebar, the header with its search, and the page,
-/// which is the repository list or the profiles.
+/// which is the repository list, a compare, or the profiles.
 /// </summary>
 internal sealed partial class ShellViewModel : ViewModelBase
 {
+    private readonly RepottedClient client;
+
     public ShellViewModel(Account.SignedIn account, RepottedClient client, IDesktop desktop, AppSettings settings)
     {
         Account = account;
-        Repositories = new RepositoriesViewModel(client, desktop, account.InstallUrl);
-        Repositories.PropertyChanged += OnRepositoriesChanged;
+        this.client = client;
         Profiles = new ProfilesViewModel(client, desktop, settings);
         Profiles.PropertyChanged += OnProfilesChanged;
+        Repositories = new RepositoriesViewModel(client, desktop, account.InstallUrl, Profiles, OpenCompare);
+        Repositories.PropertyChanged += OnRepositoriesChanged;
     }
 
     public Account.SignedIn Account { get; }
@@ -27,15 +31,40 @@ internal sealed partial class ShellViewModel : ViewModelBase
 
     /// <summary>The page: 0 for the repositories, 1 for the profiles, as the sidebar lists them.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowingProfiles), nameof(ShowingRepositories), nameof(Crumb), nameof(SearchHint))]
+    [NotifyPropertyChangedFor(nameof(ShowingProfiles), nameof(ShowingRepositories), nameof(ShowingCompare), nameof(Crumb), nameof(SearchHint))]
     public partial int Page { get; set; }
 
-    public bool ShowingRepositories => Page == 0;
+    /// <summary>The open compare, which stands in for the repository list until it closes.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowingRepositories), nameof(ShowingCompare), nameof(Crumb))]
+    public partial CompareViewModel? Compare { get; private set; }
+
+    public bool ShowingRepositories => Page == 0 && Compare is null;
+
+    public bool ShowingCompare => Page == 0 && Compare is not null;
 
     public bool ShowingProfiles => Page == 1;
 
     /// <summary>Where you are, for the header.</summary>
-    public string Crumb => ShowingProfiles && Profiles.Current is { } profile ? $"Profiles / {profile.Name}" : ShowingProfiles ? "Profiles" : "Repositories";
+    public string Crumb => (ShowingProfiles, Profiles.Current, Compare) switch
+    {
+        (true, { } profile, _) => $"Profiles / {profile.Name}",
+        (true, null, _) => "Profiles",
+        (false, _, { } compare) => $"Repositories / {compare.Repository} / Compare",
+        _ => "Repositories",
+    };
+
+    // Leaving the repositories closes the compare, so the sidebar always leads back to the list.
+    partial void OnPageChanged(int value) => Compare = null;
+
+    private void OpenCompare(string repository, ProfileListingDocument profile)
+    {
+        Compare = new CompareViewModel(client, repository, profile);
+        _ = Compare.LoadCommand.ExecuteAsync(null);
+    }
+
+    [RelayCommand]
+    private void CloseCompare() => Compare = null;
 
     public string SearchHint => ShowingProfiles ? "Find a profile" : "Find a repository";
 

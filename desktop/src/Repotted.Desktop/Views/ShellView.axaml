@@ -94,6 +94,15 @@
     <Panel Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowingRepositories}">
       <views:RepositoriesView DataContext="{Binding Repositories}" />
     </Panel>
+    <DockPanel Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowingCompare}">
+      <Button DockPanel.Dock="Top" Classes="link" Margin="32,16,32,0" HorizontalAlignment="Left"
+              Content="Back to repositories" Command="{Binding CloseCompareCommand}" />
+      <ContentControl Content="{Binding Compare}">
+        <ContentControl.DataTemplates>
+          <DataTemplate DataType="vm:CompareViewModel"><views:CompareView /></DataTemplate>
+        </ContentControl.DataTemplates>
+      </ContentControl>
+    </DockPanel>
     <Panel Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowingProfiles}">
       <views:ProfilesView DataContext="{Binding Profiles}" />
     </Panel>

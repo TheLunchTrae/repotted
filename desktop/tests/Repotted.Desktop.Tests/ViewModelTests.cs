@@ -498,6 +498,104 @@ public sealed class ViewModelTests : IDisposable
 
     private static string Quote(string text) => $"\"{System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(text)}\"";
 
+    [AvaloniaFact]
+    public async Task A_compare_shows_each_difference_and_counts_what_matches()
+    {
+        var compare = await Compare(Documents.Plan());
+
+        Assert.Equal("5 differences in 3 sections. Matching settings are folded away.", compare.Summary);
+        Assert.Equal(
+            [("Repository and merge settings", "1 change", "3 settings match."),
+             ("Actions", "1 change", "1 setting matches."),
+             ("Rulesets", "3 changes", "1 ruleset matches. 1 removed ruleset is already gone."),
+             ("Environments", "In line", "1 environment matches.")],
+            compare.Sections.Select(section => (section.Title, section.Status, section.Summary)));
+        Assert.Equal(
+            [new CompareRow(CompareKind.Changes, "Allow squash merging", "allow_squash_merge", "On", "Off"),
+             new CompareRow(CompareKind.Changes, "Default permissions", "default_workflow_permissions", "Read and write", "Read"),
+             // A ruleset row names the part that differs, not the whole list of rules.
+             new CompareRow(CompareKind.Changes, "Main: Require PR", "rules[pull_request].parameters.allowed_merge_methods", "merge, squash, rebase", "rebase"),
+             new CompareRow(CompareKind.Adds, "Main: Require Checks", "new ruleset", "Not on GitHub", "required_status_checks"),
+             new CompareRow(CompareKind.Removes, "Main: Block Deletion", "absent: true", "On GitHub", "Deleted")],
+            compare.Sections.SelectMany(section => section.Rows));
+    }
+
+    [AvaloniaFact]
+    public async Task Showing_everything_adds_the_matching_rows()
+    {
+        var compare = await Compare(Documents.Plan());
+
+        compare.ToggleEverythingCommand.Execute(null);
+
+        var settings = compare.Sections[0].Rows;
+        Assert.Equal(
+            [("Allow squash merging", CompareKind.Changes), ("Issues", CompareKind.Matches), ("Wiki", CompareKind.Matches),
+             ("Allow rebase merging", CompareKind.Matches)],
+            settings.Select(row => (row.Label, row.Kind)));
+        Assert.Equal(("On", "On"), (settings[1].Now, settings[1].Wanted));
+        Assert.Equal("Show differences only", compare.EverythingLabel);
+    }
+
+    [AvaloniaFact]
+    public async Task What_the_plan_skipped_is_not_called_in_line()
+    {
+        const string Skipped = "Skipped allowed_actions: it only applies while Actions is enabled";
+        var compare = await Compare(Documents.Plan(
+            warnings: $"\"Skipped environments: the sign-in cannot read environments\",\"{Skipped}\""));
+
+        var environments = compare.Sections.Single(section => section.Title == "Environments");
+        Assert.Equal("Not checked", environments.Status);
+        Assert.False(environments.InLine);
+        Assert.Equal("Repotted could not read the environments: the sign-in cannot read environments", environments.Summary);
+        // A setting the plan skipped is not counted as matching; the warning says why.
+        Assert.Equal("", compare.Sections.Single(section => section.Title == "Actions").Summary);
+        Assert.Equal([Skipped], compare.Warnings);
+    }
+
+    [AvaloniaFact]
+    public async Task Comparing_a_repository_opens_the_compare_and_leaving_closes_it()
+    {
+        var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
+        var cli = new FakeCli()
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base))
+            .On($"plan TheLunchTrae/repotted --profile {own} --json", Documents.Plan());
+        var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings);
+        await shell.RefreshAsync();
+        var repositories = shell.Repositories;
+        Assert.Equal("base", repositories.CompareWith?.Name);
+
+        repositories.Selected = repositories.Rows.Single(row => row.Name == "repotted");
+        repositories.CompareWith = shell.Profiles.Usable.Single(item => item.Name == "orgs");
+        repositories.CompareCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(shell.ShowingCompare);
+        Assert.False(shell.ShowingRepositories);
+        Assert.Equal("Repositories / TheLunchTrae/repotted / Compare", shell.Crumb);
+        Assert.Equal("orgs compared with TheLunchTrae/repotted", shell.Compare?.Heading);
+        Assert.Equal(4, shell.Compare?.Sections.Count);
+
+        shell.Page = 1;
+        shell.Page = 0;
+
+        Assert.Null(shell.Compare);
+        Assert.True(shell.ShowingRepositories);
+    }
+
+    private static async Task<CompareViewModel> Compare(string plan)
+    {
+        var compare = new CompareViewModel(
+            new RepottedClient(new FakeCli().On("plan TheLunchTrae/repotted --profile orgs.yaml --json", plan)),
+            "TheLunchTrae/repotted",
+            new ProfileListingDocument("orgs", "orgs.yaml", null, null));
+        await compare.LoadCommand.ExecuteAsync(null);
+        Assert.Null(compare.Error);
+        return compare;
+    }
+
     private async Task<(ProfilesViewModel Profiles, FakeCli Cli, (string Own, string Base) Files)> OpenOrgs()
     {
         var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");

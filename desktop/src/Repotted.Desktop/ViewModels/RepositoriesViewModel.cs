@@ -7,18 +7,57 @@ namespace Repotted.Desktop.ViewModels;
 
 /// <summary>
 /// The repositories Repotted can manage, with a search filter and the selected
-/// one's details. <paramref name="installUrl"/> is where to add the Repotted App
-/// to more repositories, when it is the App that signs in.
+/// one's details, from which it can be compared with a profile.
 /// </summary>
-internal sealed partial class RepositoriesViewModel(RepottedClient client, IDesktop desktop, Uri? installUrl)
-    : ViewModelBase
+internal sealed partial class RepositoriesViewModel : ViewModelBase
 {
+    private readonly RepottedClient client;
+    private readonly IDesktop desktop;
+    private readonly Uri? installUrl;
+    private readonly Action<string, ProfileListingDocument> compare;
+
     private IReadOnlyList<RepositoryRowViewModel> all = [];
+
+    /// <param name="client">Reads the list.</param>
+    /// <param name="desktop">Opens pages on GitHub.</param>
+    /// <param name="installUrl">Where to add the Repotted App to more repositories, when it is the App that signs in.</param>
+    /// <param name="profiles">The profiles a repository can be compared with.</param>
+    /// <param name="compare">Opens a compare of a repository, by full name, with a profile.</param>
+    public RepositoriesViewModel(
+        RepottedClient client,
+        IDesktop desktop,
+        Uri? installUrl,
+        ProfilesViewModel profiles,
+        Action<string, ProfileListingDocument> compare)
+    {
+        this.client = client;
+        this.desktop = desktop;
+        this.installUrl = installUrl;
+        this.compare = compare;
+        Profiles = profiles;
+        profiles.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ProfilesViewModel.Usable))
+            {
+                CompareWith = profiles.Usable.FirstOrDefault(item => item.Listing.File == CompareWith?.Listing.File)
+                    ?? (profiles.Usable.Count > 0 ? profiles.Usable[0] : null);
+            }
+        };
+    }
+
+    /// <summary>The profiles a repository can be compared with.</summary>
+    public ProfilesViewModel Profiles { get; }
+
+    /// <summary>The profile to compare the selected repository with.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CompareCommand))]
+    public partial ProfileItemViewModel? CompareWith { get; set; }
 
     public ObservableCollection<RepositoryRowViewModel> Rows { get; } = [];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection))]
+    [NotifyCanExecuteChangedFor(nameof(CompareCommand))]
     public partial RepositoryRowViewModel? Selected { get; set; }
 
     public bool HasSelection => Selected is not null;
@@ -106,6 +145,17 @@ internal sealed partial class RepositoriesViewModel(RepottedClient client, IDesk
 
     [RelayCommand]
     private Task AddRepositoriesAsync() => installUrl is { } url ? desktop.OpenUrlAsync(url) : Task.CompletedTask;
+
+    [RelayCommand(CanExecute = nameof(CanCompare))]
+    private void Compare()
+    {
+        if (Selected is { } row && CompareWith is { } profile)
+        {
+            compare(row.FullName, profile.Listing);
+        }
+    }
+
+    private bool CanCompare() => Selected is not null && CompareWith is not null;
 
     [RelayCommand]
     private Task OpenOnGitHubAsync() => Selected is { } row ? desktop.OpenUrlAsync(row.GitHubUrl) : Task.CompletedTask;
