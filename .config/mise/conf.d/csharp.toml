@@ -56,3 +56,10 @@ depends = ["csharp:fmt"]
 description = "Run the desktop app's standards CI gate"
 depends = ["csharp:fmt:check", "csharp:lint"]
 run = [{ task = "csharp:test" }]
+
+[tasks."desktop:package"]
+description = "Build the desktop app for this machine: a macOS DMG or a Windows installer, in artifacts/desktop"
+# Publishes the app, compiles the CLI it ships with, and signs on macOS when
+# MACOS_SIGNING_IDENTITY is set. On Windows, run it from Git Bash.
+depends = ["ts:install"]
+run = "bash desktop/packaging/package.sh"

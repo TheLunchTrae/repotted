@@ -23,19 +23,26 @@ internal sealed class CliNotFoundException(string message, Exception? inner = nu
 /// <summary>
 /// Starts the CLI as a child process. REPOTTED_CLI names it: a .js file runs
 /// with node, a .ts file with bun, and anything else directly. Without it, the
-/// app runs the repotted that ships beside it, then repotted on the PATH.
+/// app runs the repotted-cli that ships beside it, then repotted on the PATH.
 /// </summary>
 internal sealed class RepottedCli(string fileName, IReadOnlyList<string> prefix) : ICli
 {
-    public static RepottedCli Locate()
+    public static RepottedCli Locate() =>
+        Locate(Environment.GetEnvironmentVariable("REPOTTED_CLI"), AppContext.BaseDirectory);
+
+    /// <param name="configured">REPOTTED_CLI, if set.</param>
+    /// <param name="directory">The folder the app runs from.</param>
+    internal static RepottedCli Locate(string? configured, string directory)
     {
-        var configured = Environment.GetEnvironmentVariable("REPOTTED_CLI")?.Trim();
+        configured = configured?.Trim();
         if (!string.IsNullOrEmpty(configured))
         {
             return FromPath(configured);
         }
-        var executable = OperatingSystem.IsWindows() ? "repotted.exe" : "repotted";
-        var bundled = Path.Combine(AppContext.BaseDirectory, executable);
+        // The shipped CLI cannot be named repotted: where file names ignore case,
+        // as on macOS and Windows, that is the app's own Repotted.
+        var executable = OperatingSystem.IsWindows() ? "repotted-cli.exe" : "repotted-cli";
+        var bundled = Path.Combine(directory, executable);
         return new RepottedCli(File.Exists(bundled) ? bundled : "repotted", []);
     }
 

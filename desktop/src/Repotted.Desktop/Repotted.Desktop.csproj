@@ -4,6 +4,12 @@
     <AssemblyName>Repotted</AssemblyName>
     <RootNamespace>Repotted.Desktop</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\repotted.ico</ApplicationIcon>
+    <!-- The desktop release tag is desktop-v and this version. -->
+    <Version>0.1.0</Version>
+    <Product>Repotted</Product>
+    <!-- The platforms the release builds, so the lock file covers their native packages. -->
+    <RuntimeIdentifiers>osx-arm64;osx-x64;win-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>

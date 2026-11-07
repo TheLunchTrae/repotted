@@ -1,20 +1,16 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 
 import { createGitHub } from '@repotted/core';
-import { z } from 'zod';
 
+import manifest from '../package.json' with { type: 'json' };
 import { resolveToken, startSignIn } from './auth.js';
 import { run } from './commands.js';
 
-// Both src/main.ts and the built dist/repotted.js sit one level below package.json.
-const { version } = z
-  .object({ version: z.string() })
-  .parse(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')));
-
+// The build inlines the version, so the npm bundle and the desktop app's
+// compiled CLI report it without a package.json beside them.
 process.exitCode = await run(process.argv.slice(2), {
-  version,
+  version: manifest.version,
   env: process.env,
   github: async () => createGitHub(await resolveToken()),
   signIn: () => startSignIn(),

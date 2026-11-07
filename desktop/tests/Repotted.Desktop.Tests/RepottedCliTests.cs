@@ -17,6 +17,26 @@ public sealed class RepottedCliTests
     }
 
     [Fact]
+    public void The_app_runs_the_cli_that_ships_beside_it_unless_one_is_configured()
+    {
+        var folder = Directory.CreateTempSubdirectory();
+        try
+        {
+            Assert.Equal("repotted", RepottedCli.Locate(null, folder.FullName).FileName);
+
+            // The app itself is Repotted, so the shipped CLI has a name of its own.
+            var bundled = Path.Combine(folder.FullName, OperatingSystem.IsWindows() ? "repotted-cli.exe" : "repotted-cli");
+            File.WriteAllText(bundled, "");
+            Assert.Equal(bundled, RepottedCli.Locate(" ", folder.FullName).FileName);
+            Assert.Equal("bun", RepottedCli.Locate("/src/main.ts", folder.FullName).FileName);
+        }
+        finally
+        {
+            folder.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Streams_each_line_and_reports_the_exit_code()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "Uses /bin/sh.");

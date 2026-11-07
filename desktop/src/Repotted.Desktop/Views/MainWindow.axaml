@@ -4,6 +4,7 @@
         x:Class="Repotted.Desktop.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="Repotted"
+        Icon="/Assets/repotted.ico"
         Width="1280" Height="800" MinWidth="960" MinHeight="600"
         WindowStartupLocation="CenterScreen">
   <ContentControl Content="{Binding Page}" />

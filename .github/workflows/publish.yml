@@ -15,7 +15,10 @@ concurrency:
 jobs:
   verify:
     name: Verify the release
-    if: github.repository == 'TheLunchTrae/repotted' && !github.event.release.prerelease
+    # Desktop releases are desktop-v tags and belong to desktop.yml.
+    if: >-
+      github.repository == 'TheLunchTrae/repotted' && !github.event.release.prerelease &&
+      startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     env:

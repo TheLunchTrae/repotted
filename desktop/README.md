@@ -61,8 +61,22 @@ Node, and anything else runs directly.
 REPOTTED_CLI="$PWD/packages/cli/src/main.ts" dotnet run --project desktop/src/Repotted.Desktop
 ```
 
-Without `REPOTTED_CLI`, the app looks for `repotted` (`repotted.exe` on
-Windows) next to itself, then on `PATH`.
+Without `REPOTTED_CLI`, the app looks next to itself for `repotted-cli`
+(`repotted-cli.exe` on Windows), the compiled CLI that its packages ship, then
+for `repotted` on `PATH`. The shipped CLI has a name of its own because macOS
+and Windows ignore case in file names, where `repotted` would be the app.
+
+## Package it
+
+```sh
+mise run desktop:package
+```
+
+On a Mac that writes `Repotted.app` and a DMG to `artifacts/desktop`, and in
+Git Bash on Windows an installer, both for the machine's own architecture. The
+Mac app is signed ad hoc unless `MACOS_SIGNING_IDENTITY` names a Developer ID
+identity. Releases build the same way; see
+[the desktop app's releases](../docs/development.md#the-desktop-app).
 
 ## Test it
 
@@ -87,3 +101,8 @@ prints. The view tests draw each page headlessly in light and dark. Set
   Fluent.
 - `src/Repotted.Desktop/Assets/Fonts`: Atkinson Hyperlegible Next and Mono,
   under the SIL Open Font License.
+- `src/Repotted.Desktop/Assets/repotted.ico` and
+  `packaging/macos/Repotted.icns`: the app icon, the seedling mark of
+  `Views/BrandMark.axaml` on a green tile.
+- `packaging`: `package.sh`, which builds the packages, with the macOS bundle's
+  `Info.plist` and entitlements and the Windows installer's Inno Setup script.
