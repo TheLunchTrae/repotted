@@ -234,9 +234,13 @@ function tokenVariable(env: NodeJS.ProcessEnv): string | null {
 
 async function status(io: Io, args: string[]): Promise<number> {
   const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } });
-  const signedOut = (message: string): number => {
+  const signedOut = (
+    reason: 'not_signed_in' | 'rejected',
+    message: string,
+    problems: readonly string[] = [],
+  ): number => {
     if (values.json === true) {
-      json(io, { signed_in: false, message });
+      json(io, { signed_in: false, reason, message, problems, token_variable: tokenVariable(io.env) });
     } else {
       io.out(`${message}\n`);
     }
@@ -247,12 +251,13 @@ async function status(io: Io, args: string[]): Promise<number> {
     user = await currentUser(await io.github());
   } catch (error) {
     if (error instanceof NotSignedInError) {
-      return signedOut(error.message);
+      return signedOut('not_signed_in', error.message, error.problems);
     }
     // GitHub rejects a revoked or mistyped token.
     if (error instanceof GitHubError && error.status === 401) {
       const variable = tokenVariable(io.env);
       return signedOut(
+        'rejected',
         variable === null
           ? 'GitHub rejected the sign-in. Run repotted login again.'
           : `GitHub rejected the token in ${variable}.`,

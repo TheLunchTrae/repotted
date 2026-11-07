@@ -111,7 +111,10 @@ still print text.
 - `status` prints `{ signed_in: true, login, name, token_variable }`, where
   `token_variable` names `GITHUB_TOKEN` or `GH_TOKEN` when one is set and used
   before the sign-in, and is null otherwise. Signed out, or with a token GitHub
-  rejects, it prints `{ signed_in: false, message }` and exits 1.
+  rejects, it prints `{ signed_in: false, reason, message, problems,
+  token_variable }` and exits 1. `reason` is `not_signed_in` or `rejected`,
+  and `problems` says why a sign-in could not be read, such as an unreadable
+  keychain.
 - `login` prints JSON Lines, one document per line: first
   `{ event: code, verification_uri, user_code, expires_at }` for the user to
   enter, then `{ event: signed_in, install_url, token_variable }` once they

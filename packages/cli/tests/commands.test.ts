@@ -237,11 +237,20 @@ describe('account commands', () => {
     expect(result).toMatchObject({ code: 1, err: '' });
     expect(document(result)).toEqual({
       signed_in: false,
+      reason: 'rejected',
       message: 'GitHub rejected the sign-in. Run repotted login again.',
+      problems: [],
+      token_variable: null,
     });
 
     const fromVariable = await cliWith(github, { env: { GH_TOKEN: 'token' } }, 'status', '--json');
-    expect(document(fromVariable)).toEqual({ signed_in: false, message: 'GitHub rejected the token in GH_TOKEN.' });
+    expect(document(fromVariable)).toEqual({
+      signed_in: false,
+      reason: 'rejected',
+      message: 'GitHub rejected the token in GH_TOKEN.',
+      problems: [],
+      token_variable: 'GH_TOKEN',
+    });
   });
 
   test('status names the account, or says it is signed out with exit 1', async () => {
@@ -251,7 +260,25 @@ describe('account commands', () => {
 
     const out = await cliWith(new FakeGitHub(), signedOut, 'status', '--json');
     expect(out).toMatchObject({ code: 1, err: '' });
-    expect(document(out)).toEqual({ signed_in: false, message: 'Not signed in to GitHub. Run repotted login.' });
+    expect(document(out)).toEqual({
+      signed_in: false,
+      reason: 'not_signed_in',
+      message: 'Not signed in to GitHub. Run repotted login.',
+      problems: [],
+      token_variable: null,
+    });
+  });
+
+  test('status passes on why a sign-in could not be read', async () => {
+    const problem = 'Could not read the OS keychain: locked.';
+    const result = await cliWith(
+      new FakeGitHub(),
+      { github: () => Promise.reject(new NotSignedInError(`${problem} Not signed in to GitHub.`, [problem])) },
+      'status',
+      '--json',
+    );
+
+    expect(document(result)).toMatchObject({ signed_in: false, reason: 'not_signed_in', problems: [problem] });
   });
 
   test('login --json prints the code, then the outcome, one JSON document per line', async () => {

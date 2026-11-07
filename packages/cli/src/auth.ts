@@ -45,9 +45,13 @@ export function tokenVariables(env: NodeJS.ProcessEnv = process.env): string[] {
 
 /** Thrown when no token source is set up, so the caller can offer the device flow. */
 export class NotSignedInError extends AuthError {
-  constructor(message: string) {
+  /** Why a sign-in that should exist could not be used, such as an unreadable keychain; empty when there is none. */
+  readonly problems: readonly string[];
+
+  constructor(message: string, problems: readonly string[] = []) {
     super(message);
     this.name = 'NotSignedInError';
+    this.problems = problems;
   }
 }
 
@@ -208,6 +212,7 @@ export async function resolveToken(sources: TokenSources = {}): Promise<string> 
   }
   throw new NotSignedInError(
     [...problems, 'Not signed in to GitHub. Run repotted login, or set GITHUB_TOKEN.'].join(' '),
+    problems,
   );
 }
 
