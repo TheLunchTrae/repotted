@@ -2,8 +2,8 @@
 
 Capture a GitHub repository's setup as a YAML profile, plan the changes a
 profile needs, and apply a reviewed plan. Repotted covers repository settings,
-merge methods, Actions policy, rulesets, and deployment environments, from the
-command line or from an agent over MCP.
+merge methods, Actions policy, rulesets, and deployment environments, from a
+desktop app for macOS and Windows, the command line, or an agent over MCP.
 
 ```sh
 npx repotted login
@@ -12,6 +12,9 @@ npx repotted plan octo-org/app --profile app.yaml --out plan.json
 npx repotted apply plan.json
 ```
 
-[docs/profiles.md](https://github.com/TheLunchTrae/repotted/blob/main/docs/profiles.md) describes profiles, plans, and the MCP
-server. Developer docs start at [docs/development.md](https://github.com/TheLunchTrae/repotted/blob/main/docs/development.md).
+- [User guide](https://github.com/TheLunchTrae/repotted/blob/main/docs/user/README.md): install and use the desktop app, the CLI,
+  and the MCP server, and write profiles.
+- [Developer guide](https://github.com/TheLunchTrae/repotted/blob/main/docs/developer/README.md): how Repotted works and why, and
+  how to build, test, and release it.
+
 Code is under the [MIT License](https://github.com/TheLunchTrae/repotted/blob/main/LICENSE).
