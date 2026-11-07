@@ -34,6 +34,26 @@ with `Bun.build`, targeted at Node. The published dependencies stay external;
 bun packages/cli/src/main.ts --help
 ```
 
+## The GitHub App
+
+`repotted login` signs in with the Repotted GitHub App, whose client ID is
+`app.clientId` in `packages/cli/src/auth.ts`. The owner registers it once, on
+GitHub under Settings, Developer settings, GitHub Apps, New GitHub App:
+
+- Name: Repotted, so its slug matches `app.slug`. Homepage:
+  the repository's URL.
+- Callback URL: none. Leave **Request user authorization (OAuth) during
+  installation** off, turn on **Enable Device Flow**, and leave **Expire user
+  authorization tokens** on.
+- Webhook: clear **Active**.
+- Repository permissions: Administration, read and write. Metadata, read, is
+  required. No other permissions and no events.
+- Where it can be installed: any account.
+
+Then copy the client ID, not the App ID, into `app.clientId`. The client ID
+is public; the App needs no client secret or private key for the device
+flow. A release fails its gate while `app.clientId` is empty.
+
 ## Publishing
 
 Publishing a GitHub release runs `.github/workflows/publish.yml`. The release

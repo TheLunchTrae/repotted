@@ -9,8 +9,16 @@ import { createServer } from '../src/mcp.js';
 
 const examples = path.join(import.meta.dir, '../../../examples');
 
-async function connect(github: FakeGitHub, readOnly = false): Promise<Client> {
-  const server = createServer({ version: '0.0.0', github: () => Promise.resolve(github), cwd: examples, readOnly });
+async function connect(github: FakeGitHub, readOnly = false, onClient: () => void = () => undefined): Promise<Client> {
+  const server = createServer({
+    version: '0.0.0',
+    github: () => {
+      onClient();
+      return Promise.resolve(github);
+    },
+    cwd: examples,
+    readOnly,
+  });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   const client = new Client({ name: 'test', version: '0.0.0' });
@@ -49,6 +57,17 @@ describe('MCP server', () => {
     expect(again.text).toBe('lunch/app matches the profile.');
   });
 
+  test('asks for a client on every call, so a refreshed token takes over', async () => {
+    let clients = 0;
+    const client = await connect(new FakeGitHub(), false, () => {
+      clients += 1;
+    });
+
+    await call(client, 'capture', { repository: 'lunch/app' });
+    await call(client, 'capture', { repository: 'lunch/app' });
+    expect(clients).toBe(2);
+  });
+
   test('accepts a profile as YAML text', async () => {
     const client = await connect(new FakeGitHub());
     const planned = await call(client, 'plan', { repository: 'lunch/app', profile: 'repository: { has_wiki: false }' });
@@ -65,6 +84,24 @@ describe('MCP server', () => {
       isError: true,
     });
     expect(github.writes).toEqual([]);
+  });
+
+  test('keeps the plan when the sign-in fails at apply', async () => {
+    let calls = 0;
+    const client = await connect(new FakeGitHub(), false, () => {
+      calls += 1;
+      if (calls === 2) {
+        throw new Error('The Repotted sign-in expired.');
+      }
+    });
+    const planned = await call(client, 'plan', { repository: 'lunch/app', profile: 'repository: { has_wiki: false }' });
+    const id = /plan_id: (\S+)/u.exec(planned.text)?.[1];
+
+    expect(await call(client, 'apply', { plan_id: id })).toEqual({
+      text: 'The Repotted sign-in expired.',
+      isError: true,
+    });
+    expect((await call(client, 'apply', { plan_id: id })).isError).toBe(false);
   });
 
   test('applies a plan only once', async () => {

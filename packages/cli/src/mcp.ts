@@ -21,7 +21,11 @@ import { z } from 'zod';
 
 export interface ServerOptions {
   readonly version: string;
-  /** Called on the first tool call, so the server starts without a token. */
+  /**
+   * Called on every tool call, so the server starts without a token and
+   * picks up a refreshed one: user tokens expire, and refreshing one ends the
+   * old token.
+   */
   readonly github: () => Promise<GitHub>;
   /** Directory that profile paths and `extends` resolve from. */
   readonly cwd: string;
@@ -63,14 +67,7 @@ const instructions = [
 export function createServer(options: ServerOptions): McpServer {
   const server = new McpServer({ name: 'repotted', version: options.version }, { instructions });
   const plans = new Map<string, Plan>();
-  let github: Promise<GitHub> | undefined;
-  const client = (): Promise<GitHub> => {
-    github ??= options.github().catch((error: unknown) => {
-      github = undefined;
-      throw error;
-    });
-    return github;
-  };
+  const client = (): Promise<GitHub> => options.github();
 
   server.registerTool(
     'capture',
@@ -131,14 +128,19 @@ export function createServer(options: ServerOptions): McpServer {
       },
       ({ plan_id: id }) =>
         attempt(async () => {
+          if (!plans.has(id)) {
+            return text('No plan has that plan_id. Call plan first.', true);
+          }
+          // The client comes first, so a failed sign-in keeps the plan.
+          const github = await client();
           const plan = plans.get(id);
           if (plan === undefined) {
             return text('No plan has that plan_id. Call plan first.', true);
           }
-          // Taken before any await, so two calls with one id cannot both apply it.
+          // Taken before the next await, so two calls with one id cannot both apply it.
           plans.delete(id);
           try {
-            const applied = await applyPlan(await client(), plan);
+            const applied = await applyPlan(github, plan);
             return text(
               `Applied ${applied.length} ${applied.length === 1 ? 'change' : 'changes'} to ${plan.repository}.`,
             );

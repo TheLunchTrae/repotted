@@ -1,6 +1,6 @@
 {
   "name": "repotted",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Capture, plan and apply GitHub repository setups, with agent access over MCP",
   "license": "MIT",
   "type": "module",
@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
+    "@napi-rs/keyring": "2.1.2",
     "@octokit/core": "7.0.8",
     "yaml": "2.9.1",
     "zod": "4.6.7"

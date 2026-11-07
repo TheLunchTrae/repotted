@@ -22,7 +22,16 @@ import {
 } from '@repotted/core';
 import { z } from 'zod';
 
-import { resolveToken } from './auth.js';
+import {
+  enterCode,
+  installUrl,
+  keychain,
+  resolveToken,
+  startSignIn,
+  tokenOrSignIn,
+  tokenVariables,
+  usesRepottedApp,
+} from './auth.js';
 import { createServer } from './mcp.js';
 
 // Both src/main.ts and the built dist/repotted.js sit one level below package.json.
@@ -37,8 +46,11 @@ Commands:
   plan <owner/repo> --profile file [--out file]  Show the changes a profile needs; --out saves the plan
   apply <plan.json> [--yes]                      Apply a saved plan if the repository has not changed
   mcp [--read-only]                              Run the MCP server over stdio
+  login                                          Sign in with the Repotted GitHub App
+  logout                                         Remove the sign-in from the OS keychain
 
-The GitHub token comes from GITHUB_TOKEN, GH_TOKEN or the GitHub CLI (gh auth token).
+The GitHub token comes from GITHUB_TOKEN or GH_TOKEN, then repotted login, then
+the GitHub CLI (gh auth token).
 
 Options:
   -h, --help     Show this help
@@ -150,15 +162,46 @@ async function apply(args: string[]): Promise<number> {
   }
 }
 
+async function login(args: string[]): Promise<number> {
+  parseArgs({ args, options: {} });
+  const signIn = await startSignIn();
+  process.stderr.write(`To sign in to GitHub, ${enterCode(signIn.code)}.\n`);
+  await signIn.finished;
+  process.stdout.write(
+    usesRepottedApp()
+      ? `Signed in. Install the Repotted GitHub App on the repositories it should manage: ${installUrl}\n`
+      : 'Signed in. Install your GitHub App on the repositories it should manage.\n',
+  );
+  const overrides = tokenVariables();
+  if (overrides.length > 0) {
+    process.stderr.write(
+      `${overrides.join(' and ')} ${overrides.length === 1 ? 'is' : 'are'} set and used before this sign-in.\n`,
+    );
+  }
+  return 0;
+}
+
+async function logout(args: string[]): Promise<number> {
+  parseArgs({ args, options: {} });
+  process.stdout.write((await keychain.clear()) ? 'Signed out.\n' : 'Not signed in.\n');
+  return 0;
+}
+
 async function mcp(args: string[]): Promise<number> {
+  const mcpToken = tokenOrSignIn();
   const { values } = parseArgs({ args, options: { 'read-only': { type: 'boolean' } } });
-  const server = createServer({ version, github, cwd: process.cwd(), readOnly: values['read-only'] === true });
+  const server = createServer({
+    version,
+    github: async () => createGitHub(await mcpToken()),
+    cwd: process.cwd(),
+    readOnly: values['read-only'] === true,
+  });
   await server.connect(new StdioServerTransport());
   // The transport keeps the process alive until the client disconnects.
   return 0;
 }
 
-const commands: Record<string, (args: string[]) => Promise<number>> = { capture, plan, apply, mcp };
+const commands: Record<string, (args: string[]) => Promise<number>> = { capture, plan, apply, mcp, login, logout };
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
