@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline/promises';
 import { createGitHub } from '@repotted/core';
 import { z } from 'zod';
 
-import { resolveToken } from './auth.js';
+import { resolveToken, startSignIn } from './auth.js';
 import { run } from './commands.js';
 
 // Both src/main.ts and the built dist/repotted.js sit one level below package.json.
@@ -15,7 +15,9 @@ const { version } = z
 
 process.exitCode = await run(process.argv.slice(2), {
   version,
+  env: process.env,
   github: async () => createGitHub(await resolveToken()),
+  signIn: () => startSignIn(),
   out: (text) => process.stdout.write(text),
   err: (text) => process.stderr.write(text),
   interactive: process.stdin.isTTY,

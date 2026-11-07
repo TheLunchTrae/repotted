@@ -1,4 +1,4 @@
-export { createGitHub, parseRepo } from './github.js';
+export { createGitHub, GitHubError, parseRepo } from './github.js';
 export type { GitHub } from './github.js';
 export {
   applyPlan,
@@ -12,3 +12,4 @@ export {
 } from './plan.js';
 export type { Plan } from './plan.js';
 export { loadProfile, parseProfile, stringifyProfile } from './profile.js';
+export { currentUser, listRepositories } from './repositories.js';

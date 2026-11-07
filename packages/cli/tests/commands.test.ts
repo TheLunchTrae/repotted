@@ -9,6 +9,7 @@ import { GitHubError } from '../../core/src/github.js';
 import { FakeGitHub } from '../../core/tests/fake-github.js';
 
 type Method = Parameters<FakeGitHub['request']>[0];
+import { NotSignedInError } from '../src/auth.js';
 import { type Io, run } from '../src/commands.js';
 
 const examples = path.join(import.meta.dir, '../../../examples');
@@ -49,6 +50,7 @@ async function cliWith(github: FakeGitHub, overrides: Partial<Io>, ...argv: stri
   let err = '';
   const io: Io = {
     version: '0.0.0',
+    env: {},
     github: () => Promise.resolve(github),
     out: (text) => {
       out += text;
@@ -58,6 +60,7 @@ async function cliWith(github: FakeGitHub, overrides: Partial<Io>, ...argv: stri
     },
     interactive: false,
     confirm: () => Promise.resolve(false),
+    signIn: () => Promise.reject(new Error('no sign-in in this test')),
     ...overrides,
   };
   const code = await run(argv, io);
@@ -188,5 +191,148 @@ describe('--json', () => {
     expect(missing.code).toBe(1);
     expect(document(missing)).toMatchObject({ error: { kind: 'error' } });
     expect(missing.err).toBe('');
+  });
+});
+
+describe('account commands', () => {
+  const account = {
+    login: 'lunch',
+    name: 'Lunch',
+    installations: [{ id: 1, repositories: [{ full_name: 'lunch/app', private: true, permissions: { admin: true } }] }],
+    repositories: [],
+  };
+  const signedOut = {
+    github: () => Promise.reject(new NotSignedInError('Not signed in to GitHub. Run repotted login.')),
+  };
+
+  test('repos lists what the App reaches, as JSON or as lines', async () => {
+    const github = new FakeGitHub({ account });
+
+    const listed = await cli(github, 'repos', '--json');
+    expect(listed).toMatchObject({ code: 0, err: '' });
+    expect(document(listed)).toEqual({
+      source: 'installations',
+      repositories: [{ full_name: 'lunch/app', private: true, archived: false }],
+    });
+
+    expect(await cli(github, 'repos')).toMatchObject({ code: 0, out: 'lunch/app (private)\n' });
+  });
+
+  test('repos says why a list is empty', async () => {
+    const none = await cli(new FakeGitHub({ account: { ...account, installations: [] } }), 'repos');
+    expect(none).toMatchObject({ code: 0, out: '' });
+    expect(none.err).toContain('not installed on any repositories');
+
+    const admin = await cli(new FakeGitHub({ account: { login: 'lunch', name: null, repositories: [] } }), 'repos');
+    expect(admin.err).toBe('This token administers no repositories.\n');
+  });
+
+  test('status treats a token GitHub rejects as signed out', async () => {
+    const github = new FakeGitHub({ account });
+    github.request = (_method, path) =>
+      path === '/user' ? Promise.reject(new GitHubError(401, 'Bad credentials')) : Promise.resolve(undefined);
+
+    const result = await cli(github, 'status', '--json');
+
+    expect(result).toMatchObject({ code: 1, err: '' });
+    expect(document(result)).toEqual({
+      signed_in: false,
+      message: 'GitHub rejected the sign-in. Run repotted login again.',
+    });
+
+    const fromVariable = await cliWith(github, { env: { GH_TOKEN: 'token' } }, 'status', '--json');
+    expect(document(fromVariable)).toEqual({ signed_in: false, message: 'GitHub rejected the token in GH_TOKEN.' });
+  });
+
+  test('status names the account, or says it is signed out with exit 1', async () => {
+    const signedIn = await cli(new FakeGitHub({ account }), 'status', '--json');
+    expect(signedIn).toMatchObject({ code: 0, err: '' });
+    expect(document(signedIn)).toMatchObject({ signed_in: true, login: 'lunch', name: 'Lunch' });
+
+    const out = await cliWith(new FakeGitHub(), signedOut, 'status', '--json');
+    expect(out).toMatchObject({ code: 1, err: '' });
+    expect(document(out)).toEqual({ signed_in: false, message: 'Not signed in to GitHub. Run repotted login.' });
+  });
+
+  test('login --json prints the code, then the outcome, one JSON document per line', async () => {
+    let enter = (): void => undefined;
+    const finished = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const code = {
+      deviceCode: 'device',
+      userCode: 'ABCD-1234',
+      verificationUri: 'https://github.com/login/device',
+      interval: 5,
+      expiresAt: Date.UTC(2026, 0, 1),
+    };
+    let printed = '';
+    const running = run(['login', '--json'], {
+      version: '0.0.0',
+      env: {},
+      github: () => Promise.reject(new Error('not used')),
+      out: (text) => {
+        printed += text;
+        // The code is out before the user has entered it.
+        enter();
+      },
+      err: (text) => {
+        throw new Error(`stderr: ${text}`);
+      },
+      interactive: false,
+      confirm: () => Promise.resolve(false),
+      signIn: () => Promise.resolve({ code, finished }),
+    });
+
+    expect(await running).toBe(0);
+    const lines = printed
+      .trimEnd()
+      .split('\n')
+      .map((line): unknown => JSON.parse(line));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toEqual({
+      event: 'code',
+      verification_uri: 'https://github.com/login/device',
+      user_code: 'ABCD-1234',
+      expires_at: '2026-01-01T00:00:00.000Z',
+    });
+    expect(lines[1]).toMatchObject({ event: 'signed_in' });
+  });
+
+  const code = {
+    deviceCode: 'device',
+    userCode: 'ABCD-1234',
+    verificationUri: 'https://github.com/login/device',
+    interval: 5,
+    expiresAt: Date.UTC(2026, 0, 1),
+  };
+
+  test('login --json ends with an error line when the sign-in fails after the code', async () => {
+    const result = await cliWith(
+      new FakeGitHub(),
+      { signIn: () => Promise.resolve({ code, finished: Promise.reject(new Error('The code expired.')) }) },
+      'login',
+      '--json',
+    );
+
+    expect(result).toMatchObject({ code: 1, err: '' });
+    const lines = result.out
+      .trimEnd()
+      .split('\n')
+      .map((line): unknown => JSON.parse(line));
+    expect(lines[0]).toMatchObject({ event: 'code' });
+    expect(lines[1]).toEqual({ event: 'error', error: { kind: 'error', message: 'The code expired.' } });
+  });
+
+  test('login prints the code on stderr and where to install the App once signed in', async () => {
+    const result = await cliWith(
+      new FakeGitHub(),
+      { signIn: () => Promise.resolve({ code, finished: Promise.resolve() }) },
+      'login',
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.err).toContain('open https://github.com/login/device and enter the code ABCD-1234');
+    expect(result.out).toContain('Signed in.');
   });
 });

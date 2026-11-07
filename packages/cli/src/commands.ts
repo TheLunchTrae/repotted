@@ -8,9 +8,12 @@ import {
   captureProfile,
   createGitHub,
   createPlan,
+  currentUser,
   describeFailure,
   formatPlan,
   type GitHub,
+  GitHubError,
+  listRepositories,
   loadProfile,
   parsePlan,
   parseRepo,
@@ -22,7 +25,8 @@ import {
   enterCode,
   installUrl,
   keychain,
-  startSignIn,
+  NotSignedInError,
+  type SignIn,
   tokenOrSignIn,
   tokenVariables,
   usesRepottedApp,
@@ -32,12 +36,16 @@ import { createServer } from './mcp.js';
 /** What the CLI reaches outside itself: GitHub, the terminal, and its own version. */
 export interface Io {
   readonly version: string;
+  /** The environment, for the token variables and the client ID override. */
+  readonly env: NodeJS.ProcessEnv;
   github(): Promise<GitHub>;
   out(text: string): void;
   err(text: string): void;
   /** Whether a person can answer a prompt. */
   readonly interactive: boolean;
   confirm(question: string): Promise<boolean>;
+  /** Starts the device flow; the token is stored once the user enters the code. */
+  signIn(): Promise<SignIn>;
 }
 
 const usage = `Usage: repotted <command> [options]
@@ -47,6 +55,8 @@ Commands:
   plan <owner/repo> --profile file [--out file]  Show the changes a profile needs; --out saves the plan
   apply <plan.json> [--yes]                      Apply a saved plan if the repository has not changed
   mcp [--read-only]                              Run the MCP server over stdio
+  repos                                          List the repositories Repotted can manage
+  status                                         Show which GitHub account Repotted signs in as
   login                                          Sign in with the Repotted GitHub App
   logout                                         Remove the sign-in from the OS keychain
 
@@ -54,7 +64,7 @@ The GitHub token comes from GITHUB_TOKEN or GH_TOKEN, then repotted login, then
 the GitHub CLI (gh auth token).
 
 Options:
-  --json         With capture, plan or apply, print one JSON document for programs
+  --json         Print JSON for programs; see docs/profiles.md
   -h, --help     Show this help
   -v, --version  Show the version`;
 
@@ -196,17 +206,104 @@ async function apply(io: Io, args: string[]): Promise<number> {
   }
 }
 
+async function repos(io: Io, args: string[]): Promise<number> {
+  const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } });
+  const list = await listRepositories(await io.github());
+  if (values.json === true) {
+    json(io, list);
+    return 0;
+  }
+  for (const repository of list.repositories) {
+    const notes = [repository.private ? 'private' : '', repository.archived ? 'archived' : ''].filter(Boolean);
+    io.out(`${repository.full_name}${notes.length > 0 ? ` (${notes.join(', ')})` : ''}\n`);
+  }
+  if (list.repositories.length === 0) {
+    io.err(
+      list.source === 'installations'
+        ? `The GitHub App is not installed on any repositories yet. Install it: ${installUrl}\n`
+        : 'This token administers no repositories.\n',
+    );
+  }
+  return 0;
+}
+
+/** The token variable that is set and used before the sign-in, if any. */
+function tokenVariable(env: NodeJS.ProcessEnv): string | null {
+  return tokenVariables(env)[0] ?? null;
+}
+
+async function status(io: Io, args: string[]): Promise<number> {
+  const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } });
+  const signedOut = (message: string): number => {
+    if (values.json === true) {
+      json(io, { signed_in: false, message });
+    } else {
+      io.out(`${message}\n`);
+    }
+    return 1;
+  };
+  let user: Awaited<ReturnType<typeof currentUser>>;
+  try {
+    user = await currentUser(await io.github());
+  } catch (error) {
+    if (error instanceof NotSignedInError) {
+      return signedOut(error.message);
+    }
+    // GitHub rejects a revoked or mistyped token.
+    if (error instanceof GitHubError && error.status === 401) {
+      const variable = tokenVariable(io.env);
+      return signedOut(
+        variable === null
+          ? 'GitHub rejected the sign-in. Run repotted login again.'
+          : `GitHub rejected the token in ${variable}.`,
+      );
+    }
+    throw error;
+  }
+  const variable = tokenVariable(io.env);
+  if (values.json === true) {
+    json(io, { signed_in: true, login: user.login, name: user.name, token_variable: variable });
+  } else {
+    io.out(`Signed in to GitHub as ${user.login}${variable === null ? '' : `, with ${variable}`}.\n`);
+  }
+  return 0;
+}
+
 async function login(io: Io, args: string[]): Promise<number> {
-  parseArgs({ args, options: {} });
-  const signIn = await startSignIn();
+  const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } });
+  const signIn = await io.signIn();
+  if (values.json === true) {
+    // JSON Lines: the code to show first, then the outcome once the user enters it.
+    json(io, {
+      event: 'code',
+      verification_uri: signIn.code.verificationUri,
+      user_code: signIn.code.userCode,
+      expires_at: new Date(signIn.code.expiresAt).toISOString(),
+    });
+    try {
+      await signIn.finished;
+    } catch (error) {
+      json(io, {
+        event: 'error',
+        error: { kind: 'error', message: error instanceof Error ? error.message : String(error) },
+      });
+      return 1;
+    }
+    json(io, {
+      event: 'signed_in',
+      install_url: usesRepottedApp(io.env) ? installUrl : null,
+      token_variable: tokenVariable(io.env),
+    });
+    return 0;
+  }
   io.err(`To sign in to GitHub, ${enterCode(signIn.code)}.\n`);
   await signIn.finished;
   io.out(
-    usesRepottedApp()
+    usesRepottedApp(io.env)
       ? `Signed in. Install the Repotted GitHub App on the repositories it should manage: ${installUrl}\n`
       : 'Signed in. Install your GitHub App on the repositories it should manage.\n',
   );
-  const overrides = tokenVariables();
+  const overrides = tokenVariables(io.env);
   if (overrides.length > 0) {
     io.err(`${overrides.join(' and ')} ${overrides.length === 1 ? 'is' : 'are'} set and used before this sign-in.\n`);
   }
@@ -238,6 +335,8 @@ const commands: Record<string, (io: Io, args: string[]) => Promise<number>> = {
   plan,
   apply,
   mcp,
+  repos,
+  status,
   login,
   logout,
 };
