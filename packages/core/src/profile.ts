@@ -337,8 +337,8 @@ async function replaceFile(file: string, text: string): Promise<void> {
 /**
  * Changes settings in one profile file and keeps its comments, line endings
  * and indent width; YAML layout such as quoting and list indentation may be
- * normalized. The file changes only when the result, laid over the profiles it extends, is a valid
- * profile.
+ * normalized. The file changes only when the result, laid over the profiles
+ * it extends, is a valid profile.
  */
 export async function editProfile(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
   const [own, ...base] = await readChain(file);
