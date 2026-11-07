@@ -36,15 +36,14 @@ bun packages/cli/src/main.ts --help
 
 ## The GitHub App
 
-`repotted login` signs in with the Repotted GitHub App, registered as
-Repotted App by the owner. Its client ID and slug are `app.clientId` and
+`repotted login` signs in with the Repotted GitHub App, named Repotted App on
+GitHub and owned by the project's owner. Its client ID and slug are `app.clientId` and
 `app.slug` in `packages/cli/src/auth.ts`. The client ID is public; the App
 needs no client secret or private key for the device flow. The gate fails if
 `app.clientId` is empty.
 
-The App was registered on GitHub under Settings, Developer settings, GitHub
-Apps, New GitHub App, with these settings; registering a replacement uses the
-same ones:
+Its settings, which a replacement App, registered under Settings, Developer
+settings, GitHub Apps, New GitHub App, uses too:
 
 - Name: Repotted App. Its slug, the name as GitHub writes it in URLs, must
   match `app.slug`. Homepage: the repository's URL.
@@ -60,7 +59,8 @@ Then copy the client ID, not the App ID, into `app.clientId`.
 
 The App's permissions can change later in its settings. GitHub asks each
 installation's owner to accept added permissions, and until they do, the App
-keeps the old ones on that installation.
+keeps the old ones on that installation. Removed permissions take effect at
+once, so older Repotted versions that still need them stop working.
 
 ## Publishing
 

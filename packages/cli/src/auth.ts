@@ -53,13 +53,7 @@ export class NotSignedInError extends AuthError {
 
 function appClientId(env: NodeJS.ProcessEnv): string {
   const override = clientIdOverride(env);
-  const clientId = override === '' ? app.clientId : override;
-  if (clientId === '') {
-    throw new AuthError(
-      'This build of Repotted has no GitHub App to sign in with. Set GITHUB_TOKEN, or set REPOTTED_GITHUB_CLIENT_ID to the client ID of your own GitHub App.',
-    );
-  }
-  return clientId;
+  return override === '' ? app.clientId : override;
 }
 
 /** Where the user token from `repotted login` lives between runs. */
