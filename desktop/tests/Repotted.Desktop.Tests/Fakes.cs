@@ -9,8 +9,8 @@ internal sealed class FakeCli : ICli
 
     public List<string> Calls { get; } = [];
 
-    /// <summary>Answers <paramref name="command"/> with one document and an exit code.</summary>
-    public FakeCli On(string command, string output, int exitCode = 0)
+    /// <summary>Answers <paramref name="command"/> with one document, an exit code, and what it said on stderr.</summary>
+    public FakeCli On(string command, string output, int exitCode = 0, string error = "")
     {
         answers[command] = (onLine, _) =>
         {
@@ -18,7 +18,7 @@ internal sealed class FakeCli : ICli
             {
                 onLine?.Invoke(line);
             }
-            return Task.FromResult(new CliRun(exitCode, output));
+            return Task.FromResult(new CliRun(exitCode, output, error));
         };
         return this;
     }
@@ -36,7 +36,7 @@ internal sealed class FakeCli : ICli
                 }
                 onLine?.Invoke(lines[index]);
             }
-            return new CliRun(exitCode, string.Join('\n', lines) + "\n");
+            return new CliRun(exitCode, string.Join('\n', lines) + "\n", "");
         };
         return this;
     }
@@ -64,7 +64,11 @@ internal sealed class FakeDesktop : IDesktop
 
     public List<string> Copied { get; } = [];
 
-    public void OpenUrl(Uri url) => Opened.Add(url);
+    public Task OpenUrlAsync(Uri url)
+    {
+        Opened.Add(url);
+        return Task.CompletedTask;
+    }
 
     public Task CopyTextAsync(string text)
     {
@@ -75,14 +79,16 @@ internal sealed class FakeDesktop : IDesktop
 
 internal static class Documents
 {
+    public static readonly Uri InstallUrl = new("https://github.com/apps/repotted-app/installations/new");
+
     public const string SignedIn =
-        """{"signed_in":true,"login":"TheLunchTrae","name":"Trae","token_variable":null}""";
+        """{"signed_in":true,"login":"TheLunchTrae","name":"Trae","token_variable":null,"install_url":"https://github.com/apps/repotted-app/installations/new"}""";
 
     public const string SignedOut =
-        """{"signed_in":false,"reason":"not_signed_in","message":"Not signed in to GitHub. Run repotted login, or set GITHUB_TOKEN.","problems":[],"token_variable":null}""";
+        """{"signed_in":false,"reason":"not_signed_in","message":"Not signed in to GitHub. Run repotted login, or set GITHUB_TOKEN.","problems":[],"token_variable":null,"install_url":"https://github.com/apps/repotted-app/installations/new"}""";
 
     public const string Rejected =
-        """{"signed_in":false,"reason":"rejected","message":"GitHub rejected the sign-in. Run repotted login again.","problems":[],"token_variable":null}""";
+        """{"signed_in":false,"reason":"rejected","message":"GitHub rejected the sign-in. Run repotted login again.","problems":[],"token_variable":null,"install_url":"https://github.com/apps/repotted-app/installations/new"}""";
 
     public const string Repositories =
         """

@@ -9,22 +9,23 @@ internal sealed class CliException(string message) : Exception(message);
 /// <summary>Who Repotted signs in as, or why it is signed out.</summary>
 internal abstract record Account
 {
-    internal sealed record SignedIn(string Login, string? Name, string? TokenVariable) : Account;
+    /// <summary>
+    /// <paramref name="InstallUrl"/> is where to install the Repotted App on more
+    /// repositories; null when Repotted signs in with another GitHub App.
+    /// </summary>
+    internal sealed record SignedIn(string Login, string? Name, string? TokenVariable, Uri? InstallUrl) : Account;
 
     /// <summary>
     /// <paramref name="Rejected"/> is true when GitHub refused a token, rather
     /// than there being none; <paramref name="TokenVariable"/> names the variable
     /// that holds it, if one does. <paramref name="Problems"/> says why a
-    /// sign-in could not be read, such as an unreadable keychain.
+    /// sign-in could not be used, such as an unreadable keychain.
     /// </summary>
     internal sealed record SignedOut(bool Rejected, string? TokenVariable, IReadOnlyList<string> Problems) : Account;
 }
 
 /// <summary>The code to enter on GitHub while a sign-in waits.</summary>
 internal sealed record DeviceCode(Uri VerificationUri, string UserCode, DateTimeOffset ExpiresAt);
-
-/// <summary>A finished sign-in.</summary>
-internal sealed record SignInResult(Uri? InstallUrl, string? TokenVariable);
 
 /// <summary>The repositories Repotted can manage, and how it found them.</summary>
 internal sealed record RepositoryList(bool FromInstallations, IReadOnlyList<RepositoryDocument> Repositories);
@@ -36,25 +37,33 @@ internal sealed class RepottedClient(ICli cli)
     {
         var run = await cli.RunAsync(["status", "--json"], null, cancellationToken).ConfigureAwait(false);
         var status = Read(run, CliJson.Default.StatusDocument);
-        if (status.SignedIn && status.Login is { } login)
+        return status switch
         {
-            return new Account.SignedIn(login, status.Name, status.TokenVariable);
-        }
-        return new Account.SignedOut(status.Reason == "rejected", status.TokenVariable, status.Problems ?? []);
+            { SignedIn: true, Login: { } login } =>
+                new Account.SignedIn(login, status.Name, status.TokenVariable, Link(status.InstallUrl)),
+            { SignedIn: false, Reason: "not_signed_in" or "rejected", Problems: { } problems } =>
+                new Account.SignedOut(status.Reason == "rejected", status.TokenVariable, problems),
+            _ => throw Unreadable(run, "the sign-in status is incomplete."),
+        };
     }
 
     public async Task<RepositoryList> RepositoriesAsync(CancellationToken cancellationToken)
     {
         var run = await cli.RunAsync(["repos", "--json"], null, cancellationToken).ConfigureAwait(false);
         var list = Read(run, CliJson.Default.RepositoryListDocument);
-        return new RepositoryList(list.Source == "installations", list.Repositories);
+        return list.Source switch
+        {
+            "installations" => new RepositoryList(true, list.Repositories),
+            "admin" => new RepositoryList(false, list.Repositories),
+            _ => throw Unreadable(run, $"unknown repository source \"{list.Source}\"."),
+        };
     }
 
     /// <summary>
     /// Starts the device flow. <paramref name="onCode"/> gets the code to show as
     /// soon as the CLI prints it; the task finishes once the user has entered it.
     /// </summary>
-    public async Task<SignInResult> SignInAsync(Action<DeviceCode> onCode, CancellationToken cancellationToken)
+    public async Task SignInAsync(Action<DeviceCode> onCode, CancellationToken cancellationToken)
     {
         LoginEvent? last = null;
         var run = await cli.RunAsync(
@@ -65,11 +74,19 @@ internal sealed class RepottedClient(ICli cli)
                 {
                     return;
                 }
+                // A failure before the code is a failure document, not an event.
+                if (FailureMessage(line) is { } failure)
+                {
+                    throw new CliException(failure);
+                }
                 var parsed = Parse(line, CliJson.Default.LoginEvent);
                 last = parsed;
                 if (parsed is { Event: "code", VerificationUri: { } uri, UserCode: { } code, ExpiresAt: { } expires })
                 {
-                    onCode(new DeviceCode(new Uri(uri), code, expires));
+                    onCode(new DeviceCode(
+                        Link(uri) ?? throw new CliException($"The sign-in gave a link that is not a GitHub address: {uri}"),
+                        code,
+                        expires));
                 }
             },
             cancellationToken).ConfigureAwait(false);
@@ -77,19 +94,19 @@ internal sealed class RepottedClient(ICli cli)
         switch (last)
         {
             case { Event: "signed_in" }:
-                return new SignInResult(
-                    last.InstallUrl is { } install ? new Uri(install) : null,
-                    last.TokenVariable);
-            // A failure after the code is an error event; one before it is a
-            // failure document, which reads the same way.
+                return;
             case { Error: { } error }:
                 throw new CliException(error.Message);
             case null:
-                throw new CliException(FailureMessage(run.Output) ?? "The sign-in did not start.");
+                throw new CliException(FailureMessage(run.Output) ?? Crash(run) ?? "The sign-in did not start.");
             default:
                 throw new CliException("The sign-in ended without signing in.");
         }
     }
+
+    /// <summary>An https link, or null for anything else.</summary>
+    private static Uri? Link(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps ? uri : null;
 
     /// <summary>
     /// Reads one document. A failure document becomes a <see cref="CliException"/>
@@ -102,7 +119,14 @@ internal sealed class RepottedClient(ICli cli)
         {
             throw new CliException(message);
         }
-        return Parse(run.Output, type);
+        try
+        {
+            return JsonSerializer.Deserialize(run.Output, type) ?? throw Unreadable(run, "it printed null.");
+        }
+        catch (JsonException error)
+        {
+            throw Unreadable(run, error.Message);
+        }
     }
 
     private static string? FailureMessage(string output)
@@ -123,11 +147,27 @@ internal sealed class RepottedClient(ICli cli)
         try
         {
             return JsonSerializer.Deserialize(json, type)
-                ?? throw new CliException("The Repotted command line printed nothing.");
+                ?? throw new CliException("The Repotted command line printed null.");
         }
         catch (JsonException error)
         {
             throw new CliException($"Could not read what the Repotted command line printed: {error.Message}");
         }
     }
+
+    /// <summary>
+    /// What a failed run that printed no readable document said on stderr,
+    /// which is where a crash ends up. A run that succeeded may still warn
+    /// there, so its stderr says nothing about unreadable output.
+    /// </summary>
+    private static string? Crash(CliRun run)
+    {
+        var lines = run.Error.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return run.ExitCode == 0 || lines.Length == 0
+            ? null
+            : $"The Repotted command line failed (exit code {run.ExitCode}): {string.Join(' ', lines.TakeLast(3))}";
+    }
+
+    private static CliException Unreadable(CliRun run, string detail) =>
+        new(Crash(run) ?? $"Could not read what the Repotted command line printed: {detail}");
 }

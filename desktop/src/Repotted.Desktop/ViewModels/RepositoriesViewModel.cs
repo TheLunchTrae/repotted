@@ -5,12 +5,14 @@ using Repotted.Desktop.Services;
 
 namespace Repotted.Desktop.ViewModels;
 
-/// <summary>The repositories Repotted can manage, with a search filter and the selected one's details.</summary>
-internal sealed partial class RepositoriesViewModel(RepottedClient client, IDesktop desktop) : ViewModelBase
+/// <summary>
+/// The repositories Repotted can manage, with a search filter and the selected
+/// one's details. <paramref name="installUrl"/> is where to add the Repotted App
+/// to more repositories, when it is the App that signs in.
+/// </summary>
+internal sealed partial class RepositoriesViewModel(RepottedClient client, IDesktop desktop, Uri? installUrl)
+    : ViewModelBase
 {
-    /// <summary>Where a user adds the Repotted App to more repositories.</summary>
-    internal static readonly Uri InstallUrl = new("https://github.com/apps/repotted-app/installations/new");
-
     private IReadOnlyList<RepositoryRowViewModel> all = [];
 
     public ObservableCollection<RepositoryRowViewModel> Rows { get; } = [];
@@ -22,54 +24,72 @@ internal sealed partial class RepositoriesViewModel(RepottedClient client, IDesk
     public bool HasSelection => Selected is not null;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty))]
+    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(ShowAddInHeading))]
+    [NotifyCanExecuteChangedFor(nameof(RefreshCommand))]
     public partial bool Loading { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(HasError))]
+    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(HasError), nameof(ShowAddInHeading))]
     public partial string? Error { get; set; }
 
     public bool HasError => Error is not null;
 
-    /// <summary>Whether the App's installations decide the list, so more repositories come from installing it.</summary>
+    /// <summary>
+    /// Whether the App's installations decide the list, so more repositories
+    /// come from installing it. Null until the list has loaded.
+    /// </summary>
     [ObservableProperty]
-    public partial bool FromInstallations { get; set; }
+    [NotifyPropertyChangedFor(nameof(CanAddRepositories), nameof(ShowAddInHeading), nameof(EmptyMessage), nameof(Description))]
+    public partial bool? FromInstallations { get; set; }
+
+    /// <summary>Whether installing the Repotted App on more repositories adds to the list.</summary>
+    public bool CanAddRepositories => FromInstallations == true && installUrl is not null;
+
+    /// <summary>The heading offers it too, except where the empty list already does.</summary>
+    public bool ShowAddInHeading => CanAddRepositories && !ShowEmpty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(CountLabel))]
+    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(CountLabel), nameof(ShowAddInHeading))]
     public partial int Count { get; set; }
 
     public string CountLabel => $"All {Count}";
 
     public bool ShowTable => !Loading && Error is null && Count > 0;
 
-    public bool ShowEmpty => !Loading && Error is null && Count == 0;
+    public bool ShowEmpty => !Loading && Error is null && FromInstallations is not null && Count == 0;
 
-    public string EmptyMessage => FromInstallations
-        ? "The Repotted App is not installed on any repositories you administer yet."
+    public string EmptyMessage => FromInstallations == true
+        ? $"{Capitalized(AppName)} is not installed on any repositories you administer yet."
         : "This token administers no repositories.";
 
-    public string Description => FromInstallations
-        ? "Repositories the Repotted App is installed on that you administer."
-        : "Repositories your account administers.";
+    public string Description => FromInstallations switch
+    {
+        true => $"Repositories {AppName} is installed on that you administer.",
+        false => "Repositories your account administers.",
+        null => "",
+    };
+
+    private string AppName => installUrl is null ? "your GitHub App" : "the Repotted App";
+
+    private static string Capitalized(string text) => string.Concat(text[..1].ToUpperInvariant(), text[1..]);
 
     [ObservableProperty]
     public partial string Filter { get; set; } = "";
 
     partial void OnFilterChanged(string value) => ApplyFilter();
 
-    public async Task LoadAsync()
+    /// <summary>Reads the list; one read at a time, which the Refresh command enforces.</summary>
+    [RelayCommand(CanExecute = nameof(CanRefresh))]
+    private async Task RefreshAsync()
     {
         Loading = true;
         Error = null;
         try
         {
             var list = await client.RepositoriesAsync(CancellationToken.None).ConfigureAwait(true);
-            FromInstallations = list.FromInstallations;
             all = [.. list.Repositories.Select(repository => new RepositoryRowViewModel(repository))];
             Count = all.Count;
-            OnPropertyChanged(nameof(EmptyMessage));
-            OnPropertyChanged(nameof(Description));
+            FromInstallations = list.FromInstallations;
             ApplyFilter();
         }
         catch (Exception error) when (error is CliException or CliNotFoundException)
@@ -82,20 +102,13 @@ internal sealed partial class RepositoriesViewModel(RepottedClient client, IDesk
         }
     }
 
-    [RelayCommand]
-    private Task RefreshAsync() => LoadAsync();
+    private bool CanRefresh() => !Loading;
 
     [RelayCommand]
-    private void AddRepositories() => desktop.OpenUrl(InstallUrl);
+    private Task AddRepositoriesAsync() => installUrl is { } url ? desktop.OpenUrlAsync(url) : Task.CompletedTask;
 
     [RelayCommand]
-    private void OpenOnGitHub()
-    {
-        if (Selected is { } row)
-        {
-            desktop.OpenUrl(row.GitHubUrl);
-        }
-    }
+    private Task OpenOnGitHubAsync() => Selected is { } row ? desktop.OpenUrlAsync(row.GitHubUrl) : Task.CompletedTask;
 
     private void ApplyFilter()
     {

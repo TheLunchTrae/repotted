@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Repotted.Desktop.Services;
 
@@ -9,7 +10,8 @@ internal sealed partial class ShellViewModel : ViewModelBase
     public ShellViewModel(Account.SignedIn account, RepottedClient client, IDesktop desktop)
     {
         Account = account;
-        Repositories = new RepositoriesViewModel(client, desktop);
+        Repositories = new RepositoriesViewModel(client, desktop, account.InstallUrl);
+        Repositories.PropertyChanged += OnRepositoriesChanged;
     }
 
     public Account.SignedIn Account { get; }
@@ -30,13 +32,29 @@ internal sealed partial class ShellViewModel : ViewModelBase
         }
     }
 
-    /// <summary>What the token is: the App's sign-in, or a variable that overrides it.</summary>
-    public string SignedInWith => Account.TokenVariable is { } variable
-        ? $"Signed in with {variable}."
-        : "Signed in with Repotted App.";
+    /// <summary>
+    /// What the token is. A variable says so itself. Otherwise only an App's
+    /// sign-in reaches its installations, so the repository list tells an App
+    /// sign-in from another token, such as the GitHub CLI's.
+    /// </summary>
+    public string? SignedInWith => (Account.TokenVariable, Repositories.FromInstallations) switch
+    {
+        ({ } variable, _) => $"Signed in with {variable}.",
+        (null, true) => Account.InstallUrl is null ? "Signed in with your GitHub App." : "Signed in with Repotted App.",
+        (null, false) => "Signed in with a GitHub token.",
+        (null, null) => null,
+    };
 
     [ObservableProperty]
     public partial string Search { get; set; } = "";
 
     partial void OnSearchChanged(string value) => Repositories.Filter = value;
+
+    private void OnRepositoriesChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(RepositoriesViewModel.FromInstallations))
+        {
+            OnPropertyChanged(nameof(SignedInWith));
+        }
+    }
 }

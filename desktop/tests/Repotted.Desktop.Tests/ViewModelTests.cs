@@ -54,7 +54,7 @@ public sealed class ViewModelTests
     {
         var main = App(new FakeCli().On(
             "status --json",
-            """{"signed_in":false,"reason":"not_signed_in","message":"…","problems":["Could not read the OS keychain: locked."],"token_variable":null}""",
+            """{"signed_in":false,"reason":"not_signed_in","message":"…","problems":["Could not read the OS keychain: locked."],"token_variable":null,"install_url":"https://github.com/apps/repotted-app/installations/new"}""",
             exitCode: 1));
 
         await main.StartAsync();
@@ -64,17 +64,34 @@ public sealed class ViewModelTests
     }
 
     [AvaloniaFact]
-    public async Task A_rejected_token_variable_says_to_fix_it()
+    public async Task A_rejected_token_variable_says_to_fix_it_and_check_again()
     {
-        var main = App(new FakeCli().On(
+        var cli = new FakeCli().On(
             "status --json",
-            """{"signed_in":false,"reason":"rejected","message":"GitHub rejected the token in GH_TOKEN.","token_variable":"GH_TOKEN"}""",
-            exitCode: 1));
+            """{"signed_in":false,"reason":"rejected","message":"GitHub rejected the token in GH_TOKEN.","problems":[],"token_variable":"GH_TOKEN","install_url":"https://github.com/apps/repotted-app/installations/new"}""",
+            exitCode: 1);
+        var main = App(cli);
 
         await main.StartAsync();
 
         var signIn = Assert.IsType<SignInViewModel>(main.Page);
         Assert.StartsWith("GitHub rejected the token in GH_TOKEN.", signIn.Notice, StringComparison.Ordinal);
+        // Signing in would change nothing while the variable comes first.
+        Assert.False(signIn.CanSignIn);
+
+        cli.On("status --json", Documents.SignedIn).On("repos --json", Documents.Repositories);
+        await signIn.CheckAgainCommand.ExecuteAsync(null);
+        Assert.IsType<ShellViewModel>(main.Page);
+    }
+
+    [AvaloniaFact]
+    public async Task A_rejected_sign_in_without_a_variable_can_sign_in_again()
+    {
+        var main = App(new FakeCli().On("status --json", Documents.Rejected, exitCode: 1));
+
+        await main.StartAsync();
+
+        Assert.True(Assert.IsType<SignInViewModel>(main.Page).CanSignIn);
     }
 
     [AvaloniaFact]
@@ -94,6 +111,18 @@ public sealed class ViewModelTests
     }
 
     [AvaloniaFact]
+    public async Task An_unexpected_failure_shows_instead_of_the_loading_page()
+    {
+        // The fake throws for a command it has no answer for.
+        var main = App(new FakeCli());
+
+        await main.StartAsync();
+
+        var problem = Assert.IsType<ProblemViewModel>(main.Page);
+        Assert.StartsWith("Something unexpected went wrong: No answer for: status --json", problem.Message, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact]
     public async Task Sign_in_shows_the_code_then_opens_the_app()
     {
         var entered = new TaskCompletionSource();
@@ -107,8 +136,12 @@ public sealed class ViewModelTests
         var signIn = Assert.IsType<SignInViewModel>(main.Page);
 
         var signingIn = signIn.SignInCommand.ExecuteAsync(null);
+        // Until the code reaches the page, it shows that the sign-in started.
+        Assert.True(signIn.Starting);
+        Assert.False(signIn.ShowStart);
         Dispatcher.UIThread.RunJobs();
 
+        Assert.False(signIn.Starting);
         Assert.True(signIn.HasCode);
         Assert.Equal("ABCD-1234", signIn.Code?.UserCode);
         signIn.OpenGitHubCommand.Execute(null);
@@ -141,8 +174,27 @@ public sealed class ViewModelTests
         await signingIn;
 
         Assert.False(signIn.HasCode);
+        Assert.True(signIn.ShowStart);
         Assert.Null(signIn.Error);
         Assert.Same(signIn, main.Page);
+    }
+
+    [AvaloniaFact]
+    public async Task Closing_the_app_stops_a_waiting_sign_in()
+    {
+        var never = new TaskCompletionSource();
+        var main = App(new FakeCli()
+            .On("status --json", Documents.SignedOut, exitCode: 1)
+            .OnLines("login --json", [Documents.Code, Documents.Done], never.Task));
+        await main.StartAsync();
+        var signIn = Assert.IsType<SignInViewModel>(main.Page);
+        var signingIn = signIn.SignInCommand.ExecuteAsync(null);
+
+        main.Stop();
+        await signingIn;
+
+        Assert.False(signIn.SignInCommand.IsRunning);
+        Assert.Null(signIn.Error);
     }
 
     [AvaloniaFact]
@@ -197,12 +249,16 @@ public sealed class ViewModelTests
 
         Assert.True(repositories.ShowEmpty);
         Assert.Contains("not installed", repositories.EmptyMessage, StringComparison.Ordinal);
-        repositories.AddRepositoriesCommand.Execute(null);
-        Assert.Equal([RepositoriesViewModel.InstallUrl], desktop.Opened);
+        Assert.True(repositories.CanAddRepositories);
+        // The empty list offers it, so the heading does not as well.
+        Assert.False(repositories.ShowAddInHeading);
+        await repositories.AddRepositoriesCommand.ExecuteAsync(null);
+        Assert.Equal([Documents.InstallUrl], desktop.Opened);
 
         cli.On("repos --json", """{"source":"admin","repositories":[]}""");
         await repositories.RefreshCommand.ExecuteAsync(null);
         Assert.False(repositories.FromInstallations);
+        Assert.False(repositories.CanAddRepositories);
         Assert.Equal("This token administers no repositories.", repositories.EmptyMessage);
     }
 
@@ -226,6 +282,55 @@ public sealed class ViewModelTests
         Assert.True(repositories.ShowTable);
     }
 
+    [AvaloniaFact]
+    public async Task Refresh_waits_for_the_read_under_way()
+    {
+        var answer = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .OnLines("repos --json", ["", Documents.Repositories], answer.Task);
+        var main = App(cli);
+
+        var starting = main.StartAsync();
+        var repositories = Assert.IsType<ShellViewModel>(main.Page).Repositories;
+
+        Assert.True(repositories.Loading);
+        Assert.False(repositories.RefreshCommand.CanExecute(null));
+        answer.SetResult();
+        await starting;
+        Assert.True(repositories.RefreshCommand.CanExecute(null));
+    }
+
+    [AvaloniaTheory]
+    [InlineData("installations", null, "Signed in with Repotted App.")]
+    [InlineData("admin", null, "Signed in with a GitHub token.")]
+    [InlineData("admin", "GITHUB_TOKEN", "Signed in with GITHUB_TOKEN.")]
+    public async Task Signed_in_with_says_what_the_token_is(string source, string? variable, string expected)
+    {
+        var shell = Shell("lunch", null, variable, source);
+        // Without a variable, only the list tells an App sign-in from another token.
+        Assert.Equal(variable is null ? null : expected, shell.SignedInWith);
+
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal(expected, shell.SignedInWith);
+    }
+
+    [AvaloniaFact]
+    public async Task Another_App_has_no_install_page_to_offer()
+    {
+        var shell = new ShellViewModel(
+            new Account.SignedIn("lunch", null, null, null),
+            new RepottedClient(new FakeCli().On("repos --json", """{"source":"installations","repositories":[]}""")),
+            new FakeDesktop());
+
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal("Signed in with your GitHub App.", shell.SignedInWith);
+        Assert.False(shell.Repositories.CanAddRepositories);
+        Assert.StartsWith("Your GitHub App is not installed", shell.Repositories.EmptyMessage, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Initials_take_the_first_and_last_words()
     {
@@ -234,16 +339,9 @@ public sealed class ViewModelTests
         Assert.Equal("AB", Shell("a-b", null).Initials);
     }
 
-    [Fact]
-    public void Signed_in_with_names_a_token_variable()
-    {
-        Assert.Equal("Signed in with Repotted App.", Shell("lunch", null).SignedInWith);
-        Assert.Equal(
-            "Signed in with GITHUB_TOKEN.",
-            new ShellViewModel(new Account.SignedIn("lunch", null, "GITHUB_TOKEN"),
-                new RepottedClient(new FakeCli()), new FakeDesktop()).SignedInWith);
-    }
-
-    private static ShellViewModel Shell(string login, string? name) =>
-        new(new Account.SignedIn(login, name, null), new RepottedClient(new FakeCli()), new FakeDesktop());
+    private static ShellViewModel Shell(string login, string? name, string? variable = null, string source = "installations") =>
+        new(
+            new Account.SignedIn(login, name, variable, Documents.InstallUrl),
+            new RepottedClient(new FakeCli().On("repos --json", $$"""{"source":"{{source}}","repositories":[]}""")),
+            new FakeDesktop());
 }

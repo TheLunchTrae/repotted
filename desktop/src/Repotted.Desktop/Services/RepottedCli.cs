@@ -4,8 +4,8 @@ using System.Text;
 
 namespace Repotted.Desktop.Services;
 
-/// <summary>What a finished CLI run printed on stdout, and how it exited.</summary>
-internal sealed record CliRun(int ExitCode, string Output);
+/// <summary>What a finished CLI run printed on stdout and stderr, and how it exited.</summary>
+internal sealed record CliRun(int ExitCode, string Output, string Error);
 
 /// <summary>Runs the Repotted CLI, which does all the reading and writing on GitHub.</summary>
 internal interface ICli
@@ -86,7 +86,10 @@ internal sealed class RepottedCli(string fileName, IReadOnlyList<string> prefix)
         process.StandardInput.Close();
 
         var output = new StringBuilder();
-        var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
+        var stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
+        // The process must not outlive the run, whether it is cancelled or a
+        // line handler throws: a sign-in left running could finish on its own.
+        using var stop = cancellationToken.Register(() => Stop(process));
         try
         {
             while (await process.StandardOutput.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
@@ -96,12 +99,26 @@ internal sealed class RepottedCli(string fileName, IReadOnlyList<string> prefix)
             }
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        finally
+        {
+            if (!process.HasExited)
+            {
+                Stop(process);
+            }
+        }
+        var errors = await stderr.ConfigureAwait(false);
+        return new CliRun(process.ExitCode, output.ToString(), errors);
+    }
+
+    private static void Stop(Process process)
+    {
+        try
         {
             process.Kill(entireProcessTree: true);
-            throw;
         }
-        await stderr.ConfigureAwait(false);
-        return new CliRun(process.ExitCode, output.ToString());
+        catch (InvalidOperationException)
+        {
+            // It exited first.
+        }
     }
 }

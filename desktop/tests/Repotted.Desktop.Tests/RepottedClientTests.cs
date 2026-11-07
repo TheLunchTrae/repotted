@@ -13,7 +13,7 @@ public sealed class RepottedClientTests
 
         var account = await client.StatusAsync(None);
 
-        Assert.Equal(new Account.SignedIn("TheLunchTrae", "Trae", null), account);
+        Assert.Equal(new Account.SignedIn("TheLunchTrae", "Trae", null, Documents.InstallUrl), account);
     }
 
     [Fact]
@@ -79,8 +79,7 @@ public sealed class RepottedClientTests
         Assert.Equal(new DeviceCode(new Uri("https://github.com/login/device"), "ABCD-1234",
             new DateTimeOffset(2026, 11, 7, 8, 0, 0, TimeSpan.Zero)), shown);
         entered.SetResult();
-        var result = await signingIn;
-        Assert.Equal(new Uri("https://github.com/apps/repotted-app/installations/new"), result.InstallUrl);
+        await signingIn;
     }
 
     [Fact]
@@ -107,5 +106,84 @@ public sealed class RepottedClientTests
         var error = await Assert.ThrowsAsync<CliException>(() => client.SignInAsync(_ => { }, None));
 
         Assert.Equal("GitHub refused the device flow.", error.Message);
+    }
+
+    [Theory]
+    // A renamed member reads as missing, which a signed-out status never is.
+    [InlineData("""{"signed_in":false,"why":"rejected","message":"…","problems":[],"token_variable":null,"install_url":null}""")]
+    [InlineData("""{"signed_in":false,"reason":"rejected","message":"…","trouble":[],"token_variable":null,"install_url":null}""")]
+    [InlineData("""{"signed_in":false,"reason":"expired","message":"…","problems":[],"token_variable":null,"install_url":null}""")]
+    [InlineData("""{"signed_in":true,"name":"Trae","token_variable":null,"install_url":null}""")]
+    [InlineData("""{"signed_in":true,"login":"lunch","name":null,"install_url":null}""")]
+    [InlineData("""{"signed_in":true,"login":null,"name":null,"token_variable":null,"install_url":null}""")]
+    public async Task A_status_the_app_does_not_know_says_so(string document)
+    {
+        var client = new RepottedClient(new FakeCli().On("status --json", document));
+
+        var error = await Assert.ThrowsAsync<CliException>(() => client.StatusAsync(None));
+
+        Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_install_page_that_is_not_https_is_dropped()
+    {
+        var client = new RepottedClient(new FakeCli().On(
+            "status --json",
+            """{"signed_in":true,"login":"lunch","name":null,"token_variable":null,"install_url":"file:///etc/passwd"}"""));
+
+        var account = Assert.IsType<Account.SignedIn>(await client.StatusAsync(None));
+
+        Assert.Null(account.InstallUrl);
+    }
+
+    [Fact]
+    public async Task An_unknown_repository_source_says_so()
+    {
+        var client = new RepottedClient(new FakeCli().On("repos --json", """{"source":"org","repositories":[]}"""));
+
+        var error = await Assert.ThrowsAsync<CliException>(() => client.RepositoriesAsync(None));
+
+        Assert.Contains("unknown repository source", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_crash_shows_what_it_printed_on_stderr()
+    {
+        var client = new RepottedClient(new FakeCli().On(
+            "status --json",
+            "",
+            exitCode: 1,
+            error: "file:///repotted/main.js:12\n  throw error;\nTypeError: Cannot read properties of undefined (reading 'login')\n"));
+
+        var error = await Assert.ThrowsAsync<CliException>(() => client.StatusAsync(None));
+
+        Assert.Equal(
+            "The Repotted command line failed (exit code 1): file:///repotted/main.js:12 throw error; TypeError: Cannot read properties of undefined (reading 'login')",
+            error.Message);
+    }
+
+    [Fact]
+    public async Task Warnings_from_a_run_that_succeeded_are_not_a_crash()
+    {
+        var client = new RepottedClient(new FakeCli().On("status --json", "not json", error: "ExperimentalWarning: …"));
+
+        var error = await Assert.ThrowsAsync<CliException>(() => client.StatusAsync(None));
+
+        Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""{"event":"code","verification_uri":"not a link","user_code":"ABCD-1234","expires_at":"2026-11-07T08:00:00.000Z"}""")]
+    [InlineData("""{"event":"code","verification_uri":"http://github.com/login/device","user_code":"ABCD-1234","expires_at":"2026-11-07T08:00:00.000Z"}""")]
+    [InlineData("Debugger listening on ws://127.0.0.1:9229")]
+    public async Task A_sign_in_line_the_app_cannot_use_fails_the_sign_in(string line)
+    {
+        DeviceCode? shown = null;
+        var client = new RepottedClient(new FakeCli().OnLines("login --json", [line, Documents.Done]));
+
+        await Assert.ThrowsAsync<CliException>(() => client.SignInAsync(code => shown = code, None));
+
+        Assert.Null(shown);
     }
 }

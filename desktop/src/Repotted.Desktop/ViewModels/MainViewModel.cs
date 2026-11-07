@@ -20,7 +20,7 @@ internal sealed partial class MainViewModel(RepottedClient client, IDesktop desk
                 case Account.SignedIn account:
                     var shell = new ShellViewModel(account, client, desktop);
                     Page = shell;
-                    await shell.Repositories.LoadAsync().ConfigureAwait(true);
+                    await shell.Repositories.RefreshCommand.ExecuteAsync(null).ConfigureAwait(true);
                     break;
                 case Account.SignedOut signedOut:
                     Page = new SignInViewModel(client, desktop, signedOut, StartAsync);
@@ -30,6 +30,21 @@ internal sealed partial class MainViewModel(RepottedClient client, IDesktop desk
         catch (Exception error) when (error is CliException or CliNotFoundException)
         {
             Page = new ProblemViewModel(error.Message, StartAsync);
+        }
+        // Nothing awaits the start, so an unexpected failure is shown here
+        // rather than lost behind the loading page.
+        catch (Exception error)
+        {
+            Page = new ProblemViewModel($"Something unexpected went wrong: {error.Message}", StartAsync);
+        }
+    }
+
+    /// <summary>Stops what still runs as the app closes, so no sign-in outlives it.</summary>
+    public void Stop()
+    {
+        if (Page is SignInViewModel signIn)
+        {
+            signIn.Stop();
         }
     }
 }

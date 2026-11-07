@@ -30,6 +30,22 @@
     <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
   </Style>
 
+  <!-- Keyboard focus: a 2px ring, set 2px outside the control. -->
+  <Style Selector="Button, ListBoxItem">
+    <Setter Property="FocusAdorner">
+      <FocusAdornerTemplate>
+        <Border BorderThickness="2" BorderBrush="{DynamicResource FocusBrush}" Margin="-4" CornerRadius="10" />
+      </FocusAdornerTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ListBox.table ListBoxItem">
+    <Setter Property="FocusAdorner">
+      <FocusAdornerTemplate>
+        <Border BorderThickness="2" BorderBrush="{DynamicResource FocusBrush}" />
+      </FocusAdornerTemplate>
+    </Setter>
+  </Style>
+
   <!-- Buttons -->
   <Style Selector="Button">
     <Setter Property="MinHeight" Value="34" />
@@ -49,12 +65,6 @@
     <Setter Property="BorderBrush" Value="{DynamicResource RailBrush}" />
     <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
   </Style>
-  <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
-  </Style>
-  <Style Selector="Button:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
-  </Style>
   <Style Selector="Button.primary">
     <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
     <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
@@ -72,6 +82,14 @@
   <Style Selector="Button.quiet:pointerover /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
   </Style>
+  <!-- After the hover styles, which a press would otherwise lose to. -->
+  <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+  </Style>
+  <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource RailBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource RailBrush}" />
+  </Style>
   <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
     <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
@@ -88,10 +106,12 @@
     <Setter Property="FontSize" Value="13.5" />
     <Setter Property="Cursor" Value="Hand" />
   </Style>
-  <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector="Button.link /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="TextBlock.TextDecorations" Value="Underline" />
+  </Style>
+  <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.link:pressed /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{DynamicResource LinkBrush}" />
-    <Setter Property="TextBlock.TextDecorations" Value="Underline" />
   </Style>
 
   <!-- Status pills: a dot and a label on a tinted ground. -->
@@ -119,30 +139,14 @@
   <Style Selector="Border.pill.none Ellipse">
     <Setter Property="Fill" Value="{DynamicResource MutedBrush}" />
   </Style>
-  <Style Selector="Border.pill.ok">
-    <Setter Property="Background" Value="{DynamicResource AddBgBrush}" />
-  </Style>
-  <Style Selector="Border.pill.ok TextBlock">
-    <Setter Property="Foreground" Value="{DynamicResource AddBrush}" />
-  </Style>
-  <Style Selector="Border.pill.ok Ellipse">
-    <Setter Property="Fill" Value="{DynamicResource AddBrush}" />
-  </Style>
 
-  <!-- A section's bar in the Sections column and the legend. -->
+  <!-- A section's bar in the Sections column. -->
   <Style Selector="Border.bar">
     <Setter Property="Width" Value="22" />
     <Setter Property="Height" Value="6" />
     <Setter Property="CornerRadius" Value="3" />
     <Setter Property="Margin" Value="0,0,3,0" />
     <Setter Property="VerticalAlignment" Value="Center" />
-  </Style>
-  <Style Selector="Border.bar.inline">
-    <Setter Property="Background" Value="{DynamicResource AddBrush}" />
-    <Setter Property="Opacity" Value="0.85" />
-  </Style>
-  <Style Selector="Border.bar.differs">
-    <Setter Property="Background" Value="{DynamicResource DriftRailBrush}" />
   </Style>
   <Style Selector="Border.bar.unmanaged">
     <Setter Property="Background" Value="{DynamicResource BorderBrush}" />
@@ -275,8 +279,5 @@
   </Style>
   <Style Selector="ListBox.table ListBoxItem:selected Border.selection-rail">
     <Setter Property="Background" Value="{DynamicResource RailBrush}" />
-  </Style>
-  <Style Selector="ListBox.table ListBoxItem:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
   </Style>
 </Styles>

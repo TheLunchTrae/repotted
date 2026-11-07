@@ -31,15 +31,38 @@ public sealed class RepottedCliTests
     }
 
     [Fact]
-    public async Task Cancelling_stops_the_process()
+    public async Task Cancelling_while_the_output_is_quiet_stops_the_process()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "Uses /bin/sh.");
-        var cli = new RepottedCli("/bin/sh", ["-c", "echo started; sleep 30"]);
+        var pidFile = Path.GetTempFileName();
+        var cli = new RepottedCli("/bin/sh", ["-c", $"echo $$ > '{pidFile}'; exec sleep 30"]);
         using var cancel = new CancellationTokenSource();
 
-        var running = cli.RunAsync([], _ => cancel.Cancel(), cancel.Token);
+        var running = cli.RunAsync([], null, cancel.Token);
+        var pid = await ProcessId(pidFile);
+        await cancel.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running).WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running).WaitAsync(Limit, TestContext.Current.CancellationToken);
+        Assert.True(await Ended(pid));
+    }
+
+    [Fact]
+    public async Task A_line_handler_that_throws_stops_the_process()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Uses /bin/sh.");
+        var cli = new RepottedCli("/bin/sh", ["-c", "echo $$; exec sleep 30"]);
+        var pid = 0;
+
+        await Assert.ThrowsAsync<CliException>(() => cli.RunAsync(
+            [],
+            line =>
+            {
+                pid = int.Parse(line, System.Globalization.CultureInfo.InvariantCulture);
+                throw new CliException("Not JSON.");
+            },
+            CancellationToken.None)).WaitAsync(Limit, TestContext.Current.CancellationToken);
+
+        Assert.True(await Ended(pid));
     }
 
     [Fact]
@@ -51,5 +74,45 @@ public sealed class RepottedCliTests
             () => cli.RunAsync(["status", "--json"], null, CancellationToken.None));
 
         Assert.Contains("REPOTTED_CLI", error.Message, StringComparison.Ordinal);
+    }
+
+    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(10);
+
+    private static async Task<int> ProcessId(string pidFile)
+    {
+        var deadline = DateTime.UtcNow + Limit;
+        while (DateTime.UtcNow < deadline)
+        {
+            var text = await File.ReadAllTextAsync(pidFile, TestContext.Current.CancellationToken);
+            if (int.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out var pid))
+            {
+                return pid;
+            }
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
+        throw new TimeoutException("The process never wrote its id.");
+    }
+
+    /// <summary>Whether the process with <paramref name="pid"/> ends within the limit.</summary>
+    private static async Task<bool> Ended(int pid)
+    {
+        var deadline = DateTime.UtcNow + Limit;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                using var process = System.Diagnostics.Process.GetProcessById(pid);
+                if (process.HasExited)
+                {
+                    return true;
+                }
+            }
+            catch (ArgumentException)
+            {
+                return true;
+            }
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
+        return false;
     }
 }

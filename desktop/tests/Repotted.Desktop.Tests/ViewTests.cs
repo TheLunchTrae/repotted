@@ -1,7 +1,9 @@
 using Avalonia;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.LogicalTree;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
@@ -39,6 +41,41 @@ public sealed class ViewTests
         Save(window, $"repositories-{theme}");
     }
 
+    [AvaloniaFact]
+    public async Task Screen_readers_hear_each_repository_by_name()
+    {
+        var window = await Show("light", new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories));
+
+        var names = window.GetVisualDescendants().OfType<ListBoxItem>()
+            .Where(item => item.DataContext is RepositoryRowViewModel)
+            .Select(item => ControlAutomationPeer.CreatePeerForElement(item).GetName());
+
+        Assert.Equal(
+            [
+                "TheLunchTrae/github-setup, public, no profile",
+                "TheLunchTrae/repotted, public, no profile",
+                "TheLunchTrae/test-repo, private, no profile",
+            ],
+            names);
+    }
+
+    [AvaloniaFact]
+    public async Task The_search_shortcut_works_before_anything_has_focus()
+    {
+        var window = await Show("light", new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories));
+        var search = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "SearchBox");
+        Assert.Null(window.FocusManager?.GetFocusedElement());
+
+        window.KeyPressQwerty(PhysicalKey.K, OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(search.IsFocused);
+    }
+
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
     public async Task The_sign_in_shows_the_code_to_enter(string theme)
@@ -67,6 +104,42 @@ public sealed class ViewTests
 
         Assert.Contains("GitHub no longer accepts your last sign-in. Sign in again.", Texts(window));
         Save(window, $"sign-in-rejected-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task The_sign_in_shows_it_has_started_before_the_code(string theme)
+    {
+        var never = new TaskCompletionSource();
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedOut, exitCode: 1)
+            .OnLines("login --json", ["", Documents.Code], never.Task));
+        var signIn = Assert.IsType<SignInViewModel>(((MainViewModel)window.DataContext!).Page);
+
+        _ = signIn.SignInCommand.ExecuteAsync(null);
+
+        var text = Texts(window);
+        Assert.Contains("Asking GitHub for a code", text);
+        Assert.Contains("Cancel", text);
+        Assert.DoesNotContain("Sign in with GitHub", text);
+        Save(window, $"sign-in-starting-{theme}");
+        signIn.SignInCancelCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task A_rejected_token_variable_offers_to_check_again(string theme)
+    {
+        var window = await Show(theme, new FakeCli().On(
+            "status --json",
+            """{"signed_in":false,"reason":"rejected","message":"GitHub rejected the token in GH_TOKEN.","problems":[],"token_variable":"GH_TOKEN","install_url":"https://github.com/apps/repotted-app/installations/new"}""",
+            exitCode: 1));
+
+        var text = Texts(window);
+        Assert.Contains("Check again", text);
+        Assert.DoesNotContain("Sign in with GitHub", text);
+        Save(window, $"sign-in-variable-{theme}");
     }
 
     [AvaloniaTheory]
