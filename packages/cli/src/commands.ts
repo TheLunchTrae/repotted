@@ -276,7 +276,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
       error instanceof UsageError ||
       (error instanceof Error && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS'));
     const message = error instanceof Error ? error.message : String(error);
-    if (argv.includes('--json')) {
+    // Also --json=true, which parseArgs rejects, so the rejection is JSON too.
+    if (argv.some((arg) => /^--json(?:=|$)/.test(arg))) {
       json(io, { error: { kind: misused ? 'usage' : 'error', message } });
     } else {
       io.err(`repotted: ${message}\n`);

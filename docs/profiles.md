@@ -71,8 +71,11 @@ other sections still plan.
 
 ## JSON output
 
-`--json` on `capture`, `plan` and `apply` prints one JSON document on stdout
-and nothing on stderr, for programs such as the desktop app:
+`--json` on `capture`, `plan` and `apply` prints exactly one JSON document on
+stdout, for programs such as the desktop app. Repotted writes nothing to stderr
+in this mode; anything that appears there, such as a deprecation notice from
+the GitHub client, is diagnostic and not a failure. `--help` and `--version`
+still print text.
 
 - `capture` prints `{ repository, profile, warnings }`, where `profile` is the
   profile the YAML would hold. It does not combine with `--output`.
@@ -84,6 +87,8 @@ A failure prints `{ error: { kind, message } }` and exits 1, or 2 for misuse,
 which has `kind: usage`. A stale plan has `kind: stale_plan` and `current`, the
 plan the repository needs now. A write that fails partway has
 `kind: apply_failed`, with the changes in `applied` and the one in `failed`.
+Anything else, such as a missing token, an invalid profile or a network error,
+has `kind: error`.
 
 ## Authentication
 
