@@ -37,10 +37,10 @@ bun packages/cli/src/main.ts --help
 ## The GitHub App
 
 `repotted login` signs in with the Repotted GitHub App, named Repotted App on
-GitHub and owned by the project's owner. Its client ID and slug are `app.clientId` and
-`app.slug` in `packages/cli/src/auth.ts`. The client ID is public; the App
-needs no client secret or private key for the device flow. The gate fails if
-`app.clientId` is empty.
+GitHub and owned by the project's owner. Its client ID and slug are
+`app.clientId` and `app.slug` in `packages/cli/src/auth.ts`. The client ID is
+public; the App needs no client secret or private key for the device flow. The
+gate fails if `app.clientId` is empty.
 
 Its settings, which a replacement App, registered under Settings, Developer
 settings, GitHub Apps, New GitHub App, uses too:
