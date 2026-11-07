@@ -91,6 +91,22 @@ internal sealed class RepottedClient(ICli cli)
     public async Task<ResolvedProfile> ProfileAsync(string file, CancellationToken cancellationToken) =>
         await ProfileAsync(["profile", file, "--json"], cancellationToken).ConfigureAwait(false);
 
+    /// <summary>
+    /// Compares <paramref name="repository"/> with the profile in <paramref name="file"/>.
+    /// It only reads: the CLI writes nothing to GitHub without <c>apply</c>.
+    /// </summary>
+    public async Task<PlanDocument> PlanAsync(string repository, string file, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["plan", repository, "--profile", file, "--json"], null, cancellationToken)
+            .ConfigureAwait(false);
+        var plan = Read(run, CliJson.Default.PlanDocument);
+        if (plan.Desired.ValueKind != JsonValueKind.Object)
+        {
+            throw Unreadable(run, "the plan has no profile.");
+        }
+        return plan;
+    }
+
     /// <summary>Writes <paramref name="changes"/> to the profile file, which the CLI checks first.</summary>
     public async Task<ResolvedProfile> SaveProfileAsync(
         string file,
