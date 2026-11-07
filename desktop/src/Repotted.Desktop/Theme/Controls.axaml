@@ -38,7 +38,7 @@
       </FocusAdornerTemplate>
     </Setter>
   </Style>
-  <Style Selector="ListBox.table ListBoxItem">
+  <Style Selector="ListBox.table ListBoxItem, ListBox.rows ListBoxItem">
     <Setter Property="FocusAdorner">
       <FocusAdornerTemplate>
         <Border BorderThickness="2" BorderBrush="{DynamicResource FocusBrush}" />
@@ -270,6 +270,21 @@
     <Setter Property="BorderThickness" Value="3,0,0,0" />
     <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
     <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- Compare rows: a list so each row is read out, which looks like the table around it -->
+  <Style Selector="ListBox.rows">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+  </Style>
+  <Style Selector="ListBox.rows ListBoxItem">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="ListBox.rows ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter, ListBox.rows ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
   </Style>
 
   <!-- Table rows -->

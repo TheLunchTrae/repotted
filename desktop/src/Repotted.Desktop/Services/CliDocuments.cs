@@ -46,8 +46,12 @@ internal sealed record ResolvedProfileDocument(
     JsonElement Profile,
     ProfileSourcesDocument Sources);
 
-/// <summary>One field a change writes: what GitHub has, absent when it has nothing, and what the profile wants.</summary>
-internal sealed record FieldChangeDocument(string Field, JsonElement? From = null, JsonElement? To = null);
+/// <summary>
+/// One field a change writes: what GitHub has and what the profile wants. A
+/// member the CLI leaves out reads as <see cref="JsonValueKind.Undefined"/>,
+/// apart from a JSON null: GitHub has no value at all, rather than a null one.
+/// </summary>
+internal sealed record FieldChangeDocument(string Field, JsonElement From = default, JsonElement To = default);
 
 /// <summary>One write of a plan. The app shows it and never sends it.</summary>
 internal sealed record PlanChangeDocument(

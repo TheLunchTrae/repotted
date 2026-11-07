@@ -258,11 +258,23 @@ public sealed class ViewTests : IDisposable
         Save(window, $"compare-{theme}");
 
         // Every row says what the profile does to it, for screen readers.
-        var names = window.GetVisualDescendants().OfType<Border>()
-            .Select(AutomationProperties.GetName)
-            .OfType<string>()
+        var names = window.GetVisualDescendants().OfType<ListBoxItem>()
+            .Select(item => ControlAutomationPeer.CreatePeerForElement(item).GetName())
             .ToList();
-        Assert.Contains("Main: Block Deletion, absent: true: the profile removes On GitHub", names);
+        Assert.Contains("Main: Block Deletion, absent: true: on GitHub, the profile removes it", names);
+        Assert.Contains(
+            "Main: Require PR, rules[pull_request].parameters.allowed_merge_methods: GitHub has merge, squash, rebase, the profile sets rebase",
+            names);
+
+        // Repositories in the sidebar is already selected, and still leaves the compare.
+        var item = window.GetVisualDescendants().OfType<ListBoxItem>()
+            .Single(candidate => AutomationProperties.GetName(candidate) == "Repositories");
+        var point = item.TranslatePoint(new Point(12, 12), window)!.Value;
+        window.MouseDown(point, MouseButton.Left);
+        window.MouseUp(point, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(shell.Compare);
+        Assert.True(shell.ShowingRepositories);
     }
 
     [AvaloniaFact]

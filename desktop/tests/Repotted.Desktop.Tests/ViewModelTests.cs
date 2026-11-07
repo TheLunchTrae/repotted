@@ -513,9 +513,9 @@ public sealed class ViewModelTests : IDisposable
         Assert.Equal(
             [new CompareRow(CompareKind.Changes, "Allow squash merging", "allow_squash_merge", "On", "Off"),
              new CompareRow(CompareKind.Changes, "Default permissions", "default_workflow_permissions", "Read and write", "Read"),
+             new CompareRow(CompareKind.Adds, "Main: Require Checks", "new ruleset", "Not on GitHub", "required_status_checks"),
              // A ruleset row names the part that differs, not the whole list of rules.
              new CompareRow(CompareKind.Changes, "Main: Require PR", "rules[pull_request].parameters.allowed_merge_methods", "merge, squash, rebase", "rebase"),
-             new CompareRow(CompareKind.Adds, "Main: Require Checks", "new ruleset", "Not on GitHub", "required_status_checks"),
              new CompareRow(CompareKind.Removes, "Main: Block Deletion", "absent: true", "On GitHub", "Deleted")],
             compare.Sections.SelectMany(section => section.Rows));
     }
@@ -534,6 +534,88 @@ public sealed class ViewModelTests : IDisposable
             settings.Select(row => (row.Label, row.Kind)));
         Assert.Equal(("On", "On"), (settings[1].Now, settings[1].Wanted));
         Assert.Equal("Show differences only", compare.EverythingLabel);
+        Assert.Equal("5 differences in 3 sections. Matching settings show below them.", compare.Summary);
+    }
+
+    [AvaloniaFact]
+    public async Task A_changed_ruleset_shows_a_dropped_rule_and_a_new_order()
+    {
+        var compare = await Compare(Plan(
+            """{"rulesets":[{"name":"Main","rules":[{"type":"pull_request","parameters":{"allowed_merge_methods":["squash","rebase"]}}]}]}""",
+            """
+            {"section":"rulesets","action":"update","target":"Main",
+             "fields":[{"field":"rules",
+               "from":[{"type":"pull_request","parameters":{"allowed_merge_methods":["rebase","squash"]}},{"type":"non_fast_forward"}],
+               "to":[{"type":"pull_request","parameters":{"allowed_merge_methods":["squash","rebase"]}}]}],
+             "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/rulesets/7","body":{}}}
+            """));
+
+        Assert.Equal(
+            [new CompareRow(CompareKind.Changes, "Main", "rules[pull_request].parameters.allowed_merge_methods", "rebase, squash", "squash, rebase"),
+             new CompareRow(CompareKind.Removes, "Main", "rules[non_fast_forward]", "non_fast_forward", "Removed")],
+            compare.Sections.Single().Rows);
+    }
+
+    [AvaloniaFact]
+    public async Task An_environment_shows_each_setting_and_branch_policy_the_profile_changes()
+    {
+        // GitHub holds the environment as npm; the profile names it NPM.
+        var compare = await Compare(Plan(
+            """{"environments":[{"name":"NPM","wait_timer":5,"branch_policies":[{"name":"v*","type":"tag"}]},{"name":"staging"}]}""",
+            """
+            {"section":"environments","action":"update","target":"npm",
+             "fields":[{"field":"wait_timer","from":0,"to":5},
+               {"field":"deployment_branch_policy","from":null,"to":{"protected_branches":false,"custom_branch_policies":true}}],
+             "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/environments/npm","body":{}}},
+            {"section":"environments","action":"delete","target":"npm: branch main","fields":[],
+             "request":{"method":"DELETE","path":"/repos/TheLunchTrae/repotted/environments/npm/deployment-branch-policies/3"}},
+            {"section":"environments","action":"create","target":"npm: tag v*",
+             "fields":[{"field":"name","to":"v*"},{"field":"type","to":"tag"}],
+             "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/environments/npm/deployment-branch-policies","body":{"name":"v*","type":"tag"}}}
+            """));
+
+        var environments = compare.Sections.Single();
+        Assert.Equal(
+            [new CompareRow(CompareKind.Changes, "npm", "wait_timer", "0", "5"),
+             // GitHub has the setting, as null, so it is changed rather than added.
+             new CompareRow(CompareKind.Changes, "npm", "deployment_branch_policy", "none", "protected_branches: false, custom_branch_policies: true"),
+             new CompareRow(CompareKind.Removes, "npm: branch main", "branch_policies", "On GitHub", "Removed"),
+             new CompareRow(CompareKind.Adds, "npm: tag v*", "new branch policy", "Not on GitHub", "Created")],
+            environments.Rows);
+        Assert.Equal("1 environment matches.", environments.Summary);
+    }
+
+    [AvaloniaFact]
+    public async Task What_matches_shows_by_name()
+    {
+        var compare = await Compare(Plan(
+            """
+            {"actions":{"allowed_actions":"selected","selected_actions":{"patterns_allowed":["actions/*"]}},
+             "rulesets":[{"name":"Main"},{"name":"main"},{"name":"Main: Tags"}]}
+            """,
+            """
+            {"section":"rulesets","action":"update","target":"Main: Tags",
+             "fields":[{"field":"enforcement","from":"disabled","to":"active"}],
+             "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/rulesets/8","body":{}}}
+            """));
+
+        compare.ToggleEverythingCommand.Execute(null);
+
+        Assert.Contains(
+            new CompareRow(CompareKind.Matches, "Allowed action patterns", "selected_actions.patterns_allowed", "actions/*", "actions/*"),
+            compare.Sections[0].Rows);
+        // GitHub tells rulesets apart by their exact names.
+        Assert.Equal("2 rulesets match.", compare.Sections[1].Summary);
+    }
+
+    [AvaloniaFact]
+    public async Task A_profile_with_nothing_to_compare_says_so()
+    {
+        var compare = await Compare(Plan("{}", ""));
+
+        Assert.True(compare.ShowResult);
+        Assert.Empty(compare.Sections);
+        Assert.Equal("orgs does not set anything Repotted compares.", compare.Summary);
     }
 
     [AvaloniaFact]
@@ -584,6 +666,9 @@ public sealed class ViewModelTests : IDisposable
         Assert.Null(shell.Compare);
         Assert.True(shell.ShowingRepositories);
     }
+
+    private static string Plan(string desired, string changes) =>
+        $$"""{"repository":"TheLunchTrae/repotted","desired":{{desired}},"changes":[{{changes}}],"warnings":[]}""";
 
     private static async Task<CompareViewModel> Compare(string plan)
     {

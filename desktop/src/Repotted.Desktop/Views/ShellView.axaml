@@ -49,7 +49,7 @@
         </Border>
         <DockPanel>
           <ListBox DockPanel.Dock="Top" Classes="nav" SelectedIndex="{Binding Page}" AutomationProperties.Name="Main">
-            <ListBoxItem AutomationProperties.Name="Repositories">
+            <ListBoxItem x:Name="RepositoriesItem" AutomationProperties.Name="Repositories" Tapped="OnRepositoriesTapped">
               <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Text="Repositories" />
                 <TextBlock Grid.Column="1" Classes="muted" FontSize="13" FontWeight="Normal"
