@@ -10,7 +10,8 @@ so the CLI's sign-in, keychain and plan checks apply unchanged.
 
 ## Run it
 
-You need the .NET 10 SDK. `global.json` pins the feature band. Point the app
+`mise install` installs the pinned .NET SDK; `global.json` only sets the
+oldest SDK that builds the app outside mise. Point the app
 at the CLI with `REPOTTED_CLI`: a `.ts` file runs with Bun, a `.js` file with
 Node, and anything else runs directly.
 
@@ -24,13 +25,13 @@ Windows) next to itself, then on `PATH`.
 ## Test it
 
 ```sh
-dotnet test desktop/Repotted.Desktop.slnx
-dotnet format desktop/Repotted.Desktop.slnx --verify-no-changes
+mise run csharp:standards:check
 ```
 
-The view tests draw each page headlessly in light and dark. Set
-`REPOTTED_SCREENSHOTS` to a folder to save those drawings as PNGs. Set
-`REPOTTED_CLI` as above to check that the app reads the real CLI's output.
+That checks formatting, builds with the analyzers, and runs the tests,
+including a contract test that runs the CLI from source and reads what it
+prints. The view tests draw each page headlessly in light and dark. Set
+`REPOTTED_SCREENSHOTS` to a folder to save those drawings as PNGs.
 
 ## Layout
 

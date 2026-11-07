@@ -13,8 +13,8 @@
 
 ## Setup
 
-[mise](https://mise.jdx.dev/) pins the tools: Bun, gitleaks, and Python for
-the hygiene task. `.config/mise/` holds the config, the tasks, and the
+[mise](https://mise.jdx.dev/) pins the tools: Bun, the .NET SDK for the
+desktop app, gitleaks, and Python for the hygiene task. `.config/mise/` holds the config, the tasks, and the
 lockfile.
 
 ```sh

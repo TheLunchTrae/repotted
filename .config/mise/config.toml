@@ -14,24 +14,24 @@ run = "gitleaks dir . --redact --no-banner"
 
 [tasks.fmt]
 description = "Format the project"
-depends = ["ts:fmt"]
+depends = ["ts:fmt", "csharp:fmt"]
 
 [tasks."fmt:check"]
 description = "Check formatting"
-depends = ["ts:fmt:check"]
+depends = ["ts:fmt:check", "csharp:fmt:check"]
 
 [tasks.lint]
 description = "Lint and analyze"
-depends = ["ts:lint"]
+depends = ["ts:lint", "csharp:lint"]
 
 [tasks.test]
 description = "Run the tests"
-depends = ["ts:test"]
+depends = ["ts:test", "csharp:test"]
 
 [tasks.standards]
 description = "Run standards workflows and available autofixes"
-depends = ["ts:standards"]
+depends = ["ts:standards", "csharp:standards"]
 
 [tasks."standards:check"]
 description = "Run the standards CI gate"
-depends = ["secrets", "hygiene", "ts:standards:check"]
+depends = ["secrets", "hygiene", "ts:standards:check", "csharp:standards:check"]
