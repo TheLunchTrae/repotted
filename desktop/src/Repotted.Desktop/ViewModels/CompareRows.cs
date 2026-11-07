@@ -31,6 +31,12 @@ internal sealed record CompareRow(CompareKind Kind, string Label, string Key, st
     /// <summary>What GitHub has of a whole ruleset, environment or branch policy that the profile removes.</summary>
     public const string OnGitHub = "On GitHub";
 
+    /// <summary>What the profile has of a whole environment or branch policy it adds.</summary>
+    public const string Created = "Created";
+
+    /// <summary>What GitHub has of a whole ruleset or environment that already matches.</summary>
+    public const string SameAsProfile = "Same as the profile";
+
     public bool IsChange => Kind == CompareKind.Changes;
 
     public bool IsAdd => Kind == CompareKind.Adds;
@@ -46,9 +52,11 @@ internal sealed record CompareRow(CompareKind Kind, string Label, string Key, st
     public string AccessibleName => Kind switch
     {
         CompareKind.Changes => $"{Label}, {Key}: GitHub has {Now}, the profile sets {Wanted}",
+        CompareKind.Adds when Wanted == Created => $"{Label}, {Key}: not on GitHub, the profile creates it",
         CompareKind.Adds => $"{Label}, {Key}: not on GitHub, the profile adds {Wanted}",
         CompareKind.Removes when Now == OnGitHub => $"{Label}, {Key}: on GitHub, the profile removes it",
         CompareKind.Removes => $"{Label}, {Key}: GitHub has {Now}, the profile removes it",
+        _ when Now == SameAsProfile => $"{Label}, {Key}: matches the profile",
         _ => $"{Label}, {Key}: {Now}, matches the profile",
     };
 }
@@ -158,7 +166,9 @@ internal static class CompareRows
         JsonValue scalar => scalar.ToJsonString(),
         JsonArray { Count: 0 } => "none",
         JsonArray array when IsRules(array) => string.Join(", ", array.Select(item => item!["type"]!.GetValue<string>())),
-        JsonObject rule when IsRule(rule) => rule["type"]!.GetValue<string>(),
+        JsonObject rule when IsRule(rule) => rule["parameters"] is JsonObject { Count: > 0 } parameters
+            ? $"{rule["type"]!.GetValue<string>()}: {Show(parameters)}"
+            : rule["type"]!.GetValue<string>(),
         JsonArray array when array.All(item => item is JsonObject) => string.Join("; ", array.Select(Show)),
         JsonArray array => string.Join(", ", array.Select(Show)),
         JsonObject { Count: 0 } => "none",

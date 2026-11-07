@@ -541,17 +541,24 @@ public sealed class ViewModelTests : IDisposable
     public async Task A_changed_ruleset_shows_a_dropped_rule_and_a_new_order()
     {
         var compare = await Compare(Plan(
-            """{"rulesets":[{"name":"Main","rules":[{"type":"pull_request","parameters":{"allowed_merge_methods":["squash","rebase"]}}]}]}""",
+            """
+            {"rulesets":[{"name":"Main","rules":[{"type":"pull_request","parameters":{"allowed_merge_methods":["squash","rebase"]}},
+              {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"quality"}]}}]}]}
+            """,
             """
             {"section":"rulesets","action":"update","target":"Main",
              "fields":[{"field":"rules",
                "from":[{"type":"pull_request","parameters":{"allowed_merge_methods":["rebase","squash"]}},{"type":"non_fast_forward"}],
-               "to":[{"type":"pull_request","parameters":{"allowed_merge_methods":["squash","rebase"]}}]}],
+               "to":[{"type":"pull_request","parameters":{"allowed_merge_methods":["squash","rebase"]}},
+                 {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"quality"}]}}]}],
              "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/rulesets/7","body":{}}}
             """));
 
         Assert.Equal(
             [new CompareRow(CompareKind.Changes, "Main", "rules[pull_request].parameters.allowed_merge_methods", "rebase, squash", "squash, rebase"),
+             // An added rule says what it sets, not only its type.
+             new CompareRow(CompareKind.Adds, "Main", "rules[required_status_checks]", "Not on GitHub",
+                 "required_status_checks: required_status_checks: context: quality"),
              new CompareRow(CompareKind.Removes, "Main", "rules[non_fast_forward]", "non_fast_forward", "Removed")],
             compare.Sections.Single().Rows);
     }
@@ -583,6 +590,9 @@ public sealed class ViewModelTests : IDisposable
              new CompareRow(CompareKind.Adds, "npm: tag v*", "new branch policy", "Not on GitHub", "Created")],
             environments.Rows);
         Assert.Equal("1 environment matches.", environments.Summary);
+        Assert.Equal("npm: tag v*, new branch policy: not on GitHub, the profile creates it", environments.Rows[3].AccessibleName);
+        environments.ShowEverything = true;
+        Assert.Equal("staging, environment: matches the profile", environments.Rows[^1].AccessibleName);
     }
 
     [AvaloniaFact]

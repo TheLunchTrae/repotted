@@ -252,7 +252,7 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
                         change.Target,
                         policy ? "new branch policy" : $"new {noun}",
                         CompareRow.NotOnGitHub,
-                        rules is null ? "Created" : CompareRows.Show(CompareRows.Node(rules.To))));
+                        rules is null ? CompareRow.Created : CompareRows.Show(CompareRows.Node(rules.To))));
                     break;
                 case "delete":
                     differences.Add(policy
@@ -285,7 +285,7 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
                 absent++;
                 continue;
             }
-            matching.Add(new CompareRow(CompareKind.Matches, entryName, noun, "Same as the profile", "No change"));
+            matching.Add(new CompareRow(CompareKind.Matches, entryName, noun, CompareRow.SameAsProfile, "No change"));
         }
         List<string> parts = [];
         if (matching.Count > 0)
