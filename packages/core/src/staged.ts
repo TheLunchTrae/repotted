@@ -611,3 +611,13 @@ export async function discardStagedApply(file: string): Promise<void> {
   await readStagedFile(file);
   await rm(file);
 }
+
+/** The repository a staged apply file applies to, as it holds it, without resolving the profile it starts from. */
+export async function stagedRepository(file: string): Promise<string> {
+  return (await readStagedFile(file)).apply_to;
+}
+
+/** Whether `key` names something a staged apply can exclude, as in `repository.has_wiki` or `rulesets/Main`. */
+export function isExclusionKey(key: string): boolean {
+  return parseExclusion(key) !== undefined;
+}
