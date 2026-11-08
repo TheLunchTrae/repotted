@@ -95,8 +95,6 @@ jobs:
           version: '2026.10.19'
           install: true
           cache: ${{ github.event_name == 'workflow_dispatch' }}
-      - name: Install locked dependencies
-        run: mise run ts:install
       - name: Import the Developer ID certificate
         if: github.event_name == 'push' && matrix.os == 'macos'
         env:
