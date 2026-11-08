@@ -1,4 +1,4 @@
-import { type GitHub, GitHubError, type Method } from '../src/github.js';
+import { type GitHub, GitHubError, type Method, responseError } from '../src/github.js';
 
 interface StoredRuleset {
   id: number;
@@ -116,6 +116,11 @@ function storedRules(value: unknown): StoredRuleset['rules'] {
   });
 }
 
+/** An error as GitHub sends it, with a link to its docs, read as `createGitHub` reads one. */
+function answered(status: number, message: string): GitHubError {
+  return responseError(status, { message, documentation_url: 'https://docs.github.com/rest', status: String(status) });
+}
+
 const unhandled = Symbol('unhandled');
 
 function paging(query: URLSearchParams): { perPage: number; page: number } {
@@ -190,7 +195,7 @@ export class FakeGitHub implements GitHub {
       return this.handleEnvironment(method, decodeURIComponent(environment[1] ?? ''), environment, query, body);
     }
     if (route.startsWith(`${base}/`) && this.state.refused.includes(`${method} ${route.slice(base.length)}`)) {
-      throw new GitHubError(403, 'Resource not accessible by integration');
+      throw answered(403, 'Resource not accessible by integration');
     }
     const setting = this.handleSetting(method, route.slice(base.length), body);
     if (setting !== unhandled) {
@@ -293,7 +298,7 @@ export class FakeGitHub implements GitHub {
       case 'GET /user/installations': {
         const { installations } = this.state.account;
         if (installations === undefined) {
-          throw new GitHubError(403, 'You must authenticate with an access token authorized to a GitHub App');
+          throw answered(403, 'You must authenticate with an access token authorized to a GitHub App');
         }
         const { perPage, page } = paging(new URLSearchParams(query));
         return {
@@ -331,7 +336,7 @@ export class FakeGitHub implements GitHub {
     const { settings } = this.state;
     const stored = (): unknown => {
       if (!Object.hasOwn(settings, relative)) {
-        throw new GitHubError(404, `Not Found: ${method} ${relative}`);
+        throw answered(404, `Not Found: ${method} ${relative}`);
       }
       return settings[relative];
     };
@@ -475,12 +480,12 @@ export class FakeGitHub implements GitHub {
       }
       return undefined;
     }
-    throw new GitHubError(404, `Not Found: ${method} ${relative}`);
+    throw answered(404, `Not Found: ${method} ${relative}`);
   }
 
   private listEnvironments(query: URLSearchParams): unknown {
     if (this.state.environmentsUnreadable) {
-      throw new GitHubError(403, 'Resource not accessible by integration');
+      throw answered(403, 'Resource not accessible by integration');
     }
     const { perPage, page } = paging(query);
     // GitHub reports settings as protection rules and leaves out a rule at its default.
@@ -539,7 +544,7 @@ export class FakeGitHub implements GitHub {
     const policyId = match[3];
     if (method === 'GET' && policyId === undefined) {
       if (this.state.branchPoliciesUnreadable) {
-        throw new GitHubError(403, 'Resource not accessible by integration');
+        throw answered(403, 'Resource not accessible by integration');
       }
       const { perPage, page } = paging(new URLSearchParams(query));
       return {
@@ -609,7 +614,7 @@ export class FakeGitHub implements GitHub {
 
   private listRulesets(query: URLSearchParams): unknown {
     if (this.state.rulesetsUnavailable) {
-      throw new GitHubError(403, 'Upgrade to GitHub Pro or make this repository public to enable this feature.');
+      throw answered(403, 'Upgrade to GitHub Pro or make this repository public to enable this feature.');
     }
     const { perPage, page } = paging(query);
     return this.state.rulesets

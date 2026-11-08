@@ -64,7 +64,8 @@ function explain(error: unknown, repository: string, branch: string): unknown {
   if (!(error instanceof GitHubError)) {
     return error;
   }
-  const detail = error.message.split(/ - https:|\n/u)[0] ?? error.message;
+  // GitHub explains a rule violation on the lines after its first.
+  const detail = error.message.split('\n')[0] ?? error.message;
   if (/rule|protected branch/iu.test(error.message)) {
     return new SyncError(
       `GitHub refused the commit to ${branch} in ${repository}: ${detail}. A ruleset or branch protection on ${branch}, such as one that requires pull requests, needs a bypass for you or the Repotted App.`,

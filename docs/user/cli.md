@@ -79,7 +79,8 @@ already made. Plan again to see where the repository stands.
 If the repository doesn't have a setting the profile names, such as rulesets
 on a GitHub plan that lacks them, `plan` warns you and still plans the rest.
 When GitHub refuses to read or change a setting, the warning or error names
-the GitHub App permission it needs.
+the GitHub App permission it needs. When GitHub links a failure to a page of
+its docs, the CLI prints that link on a line of its own after the error.
 
 `plan` also marks each change Repotted can't make, as in
 `(locked: Needs Pages write)`. With a Repotted App sign-in, it checks the

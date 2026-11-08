@@ -118,7 +118,7 @@ async function listInstallations(github: GitHub): Promise<z.infer<typeof install
     });
   } catch (error) {
     // A rate limit is a 403 too, and must not read as a token without installations.
-    if (error instanceof GitHubError && error.status === 403 && !/rate limit/iu.test(error.message)) {
+    if (error instanceof GitHubError && error.status === 403 && !error.rateLimited) {
       return undefined;
     }
     throw error;
