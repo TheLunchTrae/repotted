@@ -727,7 +727,14 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("Repotted can't change 2 differences below. Each says what it needs.", text);
         Assert.Contains(ControlLabel.For("Review App access"), text);
         Assert.Contains("Needs Actions write", text);
+        // A compare's rows offer nothing to leave out; that is the apply's.
+        Assert.DoesNotContain(ControlLabel.For("Leave out"), text);
         Save(window, $"compare-locked-{theme}");
+
+        // The count of what Repotted can't change is read out when it changes, as after granting access and comparing again.
+        var locks = window.GetVisualDescendants().OfType<TextBlock>()
+            .Single(block => block.IsEffectivelyVisible && block.Text == "Repotted can't change 2 differences below. Each says what it needs.");
+        Assert.Equal(AutomationLiveSetting.Polite, AutomationProperties.GetLiveSetting(locks));
 
         // The filter for what Repotted can't change shows only the locked rows.
         Assert.Contains(ControlLabel.For("Can't change"), text);

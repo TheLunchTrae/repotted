@@ -364,7 +364,10 @@ plan field to a profile key itself. It applies the saved plan file with
 
 Compare and Apply list every section a plan changes. Sections the profile
 editor has no tab for, such as security, Pages, autolinks and custom
-properties, show as a row per change.
+properties, show as a row per change. `ViewModels/PlanSections.cs` turns a
+plan into those sections and rows, and `Views/PlanTable.axaml` shows them on
+both pages; Apply adds **Leave out**, or the **One-off edit** chip, to each
+row it can leave out.
 
 ### Profiles in the app
 

@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Repotted.Desktop.ViewModels"
+             xmlns:views="using:Repotted.Desktop.Views"
+             x:Class="Repotted.Desktop.Views.PlanTable">
+  <!-- A plan's rows by section. The last column holds the row action, and takes no room without one. -->
+  <StackPanel>
+    <Grid ColumnDefinitions="4,*,*,*,Auto" Background="{DynamicResource SunkenBrush}">
+      <Grid.Styles>
+        <Style Selector="TextBlock">
+          <Setter Property="FontSize" Value="13" />
+          <Setter Property="FontWeight" Value="SemiBold" />
+          <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+          <Setter Property="Margin" Value="16,9" />
+        </Style>
+      </Grid.Styles>
+      <TextBlock Grid.Column="1" Text="Setting" />
+      <TextBlock Grid.Column="2" Text="On GitHub now" />
+      <TextBlock Grid.Column="3" Text="{Binding $parent[views:PlanTable].WantedHeader}" />
+      <Border Grid.Column="4" Width="150"
+              IsVisible="{Binding $parent[views:PlanTable].RowAction, Converter={x:Static ObjectConverters.IsNotNull}}" />
+    </Grid>
+
+    <ItemsControl ItemsSource="{Binding $parent[views:PlanTable].Sections}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:CompareSectionViewModel">
+          <StackPanel IsVisible="{Binding Shown}">
+            <Border Classes="field" MinHeight="52">
+              <StackPanel Orientation="Horizontal" Spacing="10" Margin="20,0" VerticalAlignment="Center">
+                <TextBlock Classes="h2" FontSize="15" Text="{Binding Title}" VerticalAlignment="Center" />
+                <Border Classes="pill" Classes.ok="{Binding InLine}" Classes.drift="{Binding HasChanges}"
+                        Classes.none="{Binding Skipped}">
+                  <StackPanel Orientation="Horizontal"><Ellipse /><TextBlock Text="{Binding Status}" /></StackPanel>
+                </Border>
+              </StackPanel>
+            </Border>
+
+            <ListBox Classes="rows" ItemsSource="{Binding Rows}" AutomationProperties.Name="{Binding Title}">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel /></ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.Styles>
+                <Style Selector="ListBoxItem" x:DataType="vm:CompareRow">
+                  <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
+                </Style>
+              </ListBox.Styles>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:CompareRow">
+                  <Border Classes="field" Classes.change="{Binding IsChange}" Classes.add="{Binding IsAdd}"
+                          Classes.remove="{Binding IsRemove}">
+                    <Grid ColumnDefinitions="4,*,*,*,Auto">
+                      <Border Classes="rail" Classes.change="{Binding IsChange}" Classes.add="{Binding IsAdd}"
+                              Classes.remove="{Binding IsRemove}" Classes.match="{Binding IsMatch}" />
+                      <StackPanel Grid.Column="1" Margin="16,10" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="14.5" TextWrapping="Wrap" />
+                        <TextBlock Classes="mono muted" FontSize="12.5" Text="{Binding Key}" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0" IsVisible="{Binding IsLocked}">
+                          <Path Classes="lock" VerticalAlignment="Center" />
+                          <TextBlock Classes="muted small" Text="{Binding Lock}" TextWrapping="Wrap" />
+                        </StackPanel>
+                      </StackPanel>
+                      <TextBlock Grid.Column="2" Margin="16,10" VerticalAlignment="Center" TextWrapping="Wrap"
+                                 Classes.gone="{Binding NowGoes}" Text="{Binding Now}" />
+                      <TextBlock Grid.Column="3" Margin="16,10" VerticalAlignment="Center" TextWrapping="Wrap"
+                                 Classes="wanted" Classes.removed="{Binding IsRemove}" Classes.same="{Binding IsMatch}"
+                                 Text="{Binding Wanted}" />
+                      <ContentControl Grid.Column="4" Width="150" Content="{Binding}"
+                                      ContentTemplate="{Binding $parent[views:PlanTable].RowAction}"
+                                      IsVisible="{Binding $parent[views:PlanTable].RowAction, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+
+            <Border Classes="field" MinHeight="44" IsVisible="{Binding HasSummary}">
+              <TextBlock Classes="muted" Margin="20,0" VerticalAlignment="Center" TextWrapping="Wrap"
+                         Text="{Binding Summary}" />
+            </Border>
+          </StackPanel>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>
