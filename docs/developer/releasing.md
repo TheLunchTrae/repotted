@@ -13,7 +13,7 @@ version in `packages/cli/package.json`, such as `v0.2.0`, and must point at a
 commit on `main`. Create it as a full release:
 prereleases do not publish, and promoting one later does not start the
 workflow. The workflow runs the gate on that commit, as Quality does but
-without mise's tool cache, packs `packages/cli` with `pnpm pack`, which builds
+without Quality's caches, packs `packages/cli` with `pnpm pack`, which builds
 the bundle and replaces the `workspace:` range, and publishes the tarball to
 npm with trusted publishing and provenance. Each run waits for the one before
 it to finish, including its wait for the `npm` approval, so CLI releases

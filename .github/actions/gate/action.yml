@@ -7,9 +7,9 @@ description: >-
 
 inputs:
   cache:
-    # A release builds only from the locked, checksummed tools, so it keeps
-    # the default.
-    description: Restore and save mise's tool cache, as true or false.
+    # A release builds only from the locked, checksummed downloads, so it
+    # keeps the default.
+    description: Restore and save the caches of mise's tools, the pnpm store and NuGet's packages, as true or false.
     required: false
     default: 'false'
   task:
@@ -26,6 +26,20 @@ runs:
         version: '2026.10.19'
         install: true
         cache: ${{ inputs.cache }}
+    # The next two steps only cache, keyed on the lockfiles: with no version
+    # given, neither installs anything, so Node, pnpm and .NET stay mise's.
+    - name: Cache the pnpm store
+      if: inputs.cache == 'true'
+      uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      with:
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
+    - name: Cache NuGet packages
+      if: inputs.cache == 'true'
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        cache: true
+        cache-dependency-path: desktop/**/packages.lock.json
     - name: Install locked dependencies
       shell: bash
       run: mise run ts:install
