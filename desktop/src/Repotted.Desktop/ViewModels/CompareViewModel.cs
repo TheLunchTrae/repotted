@@ -165,9 +165,18 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
         {
             sections.Add(Settings("Repository and merge settings", plan, desired, ["repository", "merge"]));
         }
-        if (desired["actions"] is JsonObject)
+        foreach (var (title, name) in (ReadOnlySpan<(string, string)>)[
+            ("Actions", "actions"), ("Security", "security"), ("Custom properties", "custom_properties"), ("GitHub Pages", "pages"),
+        ])
         {
-            sections.Add(Settings("Actions", plan, desired, ["actions"]));
+            if (desired[name] is JsonObject)
+            {
+                sections.Add(Settings(title, plan, desired, [name]));
+            }
+        }
+        if (desired["autolinks"] is JsonArray autolinks)
+        {
+            sections.Add(Entries("Autolinks", "autolink", plan, autolinks, "autolinks", key: "key_prefix"));
         }
         if (desired["rulesets"] is JsonArray rulesets)
         {
@@ -183,33 +192,55 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
     /// <summary>A section of single settings, one row for each that differs.</summary>
     private static CompareSectionViewModel Settings(string title, PlanDocument plan, JsonObject desired, string[] names)
     {
+        // A section GitHub doesn't offer or show at all, such as Pages, is skipped whole.
+        if (names is [var only]
+            && plan.Warnings.FirstOrDefault(warning => warning.StartsWith($"Skipped {only}: ", StringComparison.Ordinal)) is { } skipped)
+        {
+            // A read GitHub refused or doesn't offer says so; anything else is the profile's to fix.
+            var reason = skipped[$"Skipped {only}: ".Length..];
+            var why = reason.StartsWith("GitHub ", StringComparison.Ordinal)
+                ? $"Repotted could not read it: {reason}"
+                : $"Not checked: {reason}";
+            return new CompareSectionViewModel(title, [], [], why, skippedBy: skipped);
+        }
         List<CompareRow> differences = [];
         HashSet<string> changed = new(StringComparer.Ordinal);
         foreach (var change in plan.Changes.Where(change => names.Contains(change.Section)))
         {
+            // Making or taking down a whole thing, such as a Pages site, changes no one field.
+            if (change.Fields.Count == 0)
+            {
+                differences.Add(change.Action == "delete"
+                    ? new CompareRow(CompareKind.Removes, change.Target, "absent: true", CompareRow.OnGitHub, "Deleted")
+                    : new CompareRow(CompareKind.Adds, change.Target, $"new {change.Target}", CompareRow.NotOnGitHub, CompareRow.Created));
+                changed.Add($"{change.Section}.absent");
+                continue;
+            }
             foreach (var field in change.Fields)
             {
                 changed.Add($"{change.Section}.{field.Field}");
                 foreach (var difference in Differences(field))
                 {
                     var setting = Field(change.Section, difference.Path);
-                    differences.Add(Row(difference, Label(setting, difference.Path), difference.Path, value => Show(setting, value)));
+                    differences.Add(Row(difference, Label(setting, difference.Path), difference.Path, value => Show(setting, difference.Path, value)));
                 }
             }
         }
         List<CompareRow> matching = [];
         foreach (var name in names)
         {
-            foreach (var (key, value) in Flat(desired[name] as JsonObject))
+            var created = plan.Changes.Any(change => change.Section == name && change.Action == "create" && change.Fields.Count == 0);
+            foreach (var (key, value) in Flat(name, desired[name] as JsonObject))
             {
-                // A plan skips what cannot apply, such as selected actions while all actions are allowed.
-                if (changed.Contains($"{name}.{key}")
-                    || plan.Warnings.Any(warning => warning.StartsWith($"Skipped {key.Split('.')[0]}:", StringComparison.Ordinal)))
+                // A plan skips what cannot apply, such as selected actions while
+                // all actions are allowed, and a new site's settings come with it.
+                if (Covers(changed, name, key) || created || Skips(plan, name, key))
                 {
                     continue;
                 }
                 var setting = Field(name, key);
-                matching.Add(new CompareRow(CompareKind.Matches, Label(setting, key), key, Show(setting, value), Show(setting, value)));
+                var shown = key == "absent" ? "Yes" : Show(setting, key, value);
+                matching.Add(new CompareRow(CompareKind.Matches, Label(setting, key), key, shown, shown));
             }
         }
         var summary = matching.Count switch
@@ -226,7 +257,8 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
     /// one row, a changed one a row for each part that differs, and an entry
     /// the profile removes one row.
     /// </summary>
-    private static CompareSectionViewModel Entries(string title, string noun, PlanDocument plan, JsonArray entries, string name)
+    private static CompareSectionViewModel Entries(
+        string title, string noun, PlanDocument plan, JsonArray entries, string name, string key = "name")
     {
         if (plan.Warnings.FirstOrDefault(warning => warning.StartsWith($"Skipped {name}: ", StringComparison.Ordinal)) is { } skipped)
         {
@@ -238,13 +270,31 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
         var comparer = environments ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         List<CompareRow> differences = [];
         HashSet<string> touched = new(comparer);
-        foreach (var change in plan.Changes.Where(change => change.Section == name))
+        var section = plan.Changes.Where(change => change.Section == name).ToList();
+        foreach (var change in section)
         {
             touched.Add(change.Target);
+            // GitHub can't change an autolink, so the plan deletes one and makes it
+            // again, and the row shows what differs.
+            var remade = change.Action == "delete"
+                && section.Any(other => other.Action == "create" && other.Target == change.Target && other.Fields.Count > 0);
+            if (remade)
+            {
+                continue;
+            }
             // An environment's branch policy is named "environment: type pattern".
             var policy = environments && change.Target.Contains(": ", StringComparison.Ordinal);
             switch (change.Action)
             {
+                case "create" when name == "autolinks" && change.Fields.Count > 0:
+                    foreach (var field in change.Fields)
+                    {
+                        foreach (var difference in Differences(field))
+                        {
+                            differences.Add(Row(difference, change.Target, difference.Path, CompareRows.Show));
+                        }
+                    }
+                    break;
                 case "create":
                     var rules = change.Fields.FirstOrDefault(field => field.Field == "rules");
                     differences.Add(new CompareRow(
@@ -274,7 +324,7 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
         var absent = 0;
         foreach (var entry in entries.OfType<JsonObject>())
         {
-            var entryName = entry["name"]?.GetValue<string>() ?? "";
+            var entryName = entry[key]?.GetValue<string>() ?? "";
             if (touched.Contains(entryName)
                 || (environments && touched.Any(target => target.StartsWith($"{entryName}: ", StringComparison.OrdinalIgnoreCase))))
             {
@@ -321,16 +371,50 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
         var kind => new CompareRow(kind, label, key, show(difference.Now), show(difference.Wanted)),
     };
 
-    /// <summary>A section's settings by key, with <c>selected_actions</c> opened up as the editor shows it.</summary>
-    private static IEnumerable<(string Key, JsonNode? Value)> Flat(JsonObject? section)
+    /// <summary>
+    /// Whether a change covers a setting: it names the setting, or an object
+    /// the setting is part of, as Pages names <c>source</c> for <c>source.branch</c>.
+    /// </summary>
+    private static bool Covers(HashSet<string> changed, string section, string key)
     {
-        foreach (var (key, value) in section ?? [])
+        var parts = key.Split('.');
+        return Enumerable.Range(1, parts.Length).Any(count => changed.Contains($"{section}.{string.Join('.', parts[..count])}"));
+    }
+
+    /// <summary>
+    /// Whether the plan skipped a setting, with a warning that names it, the
+    /// object it is part of, or its section. Actions alone names a setting
+    /// without its section, as in "Skipped allowed_actions:".
+    /// </summary>
+    private static bool Skips(PlanDocument plan, string section, string key)
+    {
+        var top = key.Split('.')[0];
+        string[] prefixes = section == "actions"
+            ? [$"Skipped {section}.{key}:", $"Skipped {section}.{top}:", $"Skipped {top}:", $"Skipped {section}:"]
+            : [$"Skipped {section}.{key}:", $"Skipped {section}.{top}:", $"Skipped {section}:"];
+        return plan.Warnings.Any(warning => prefixes.Any(prefix => warning.StartsWith(prefix, StringComparison.Ordinal)));
+    }
+
+    private static readonly IReadOnlyList<SettingField> Fields =
+        [.. ProfileFields.Sections.SelectMany(tab => tab.Groups).SelectMany(group => group.Fields)];
+
+    /// <summary>
+    /// A section's settings by key, with an object opened up where the editor
+    /// shows its parts as settings of their own, such as <c>selected_actions</c>.
+    /// </summary>
+    private static IEnumerable<(string Key, JsonNode? Value)> Flat(string section, JsonObject? values, string prefix = "")
+    {
+        foreach (var (name, value) in values ?? [])
         {
-            if (key == "selected_actions" && value is JsonObject selected)
+            var key = prefix + name;
+            var opens = value is JsonObject
+                && !Fields.Any(field => field.Section == section && field.Key == key)
+                && Fields.Any(field => field.Section == section && field.Key.StartsWith($"{key}.", StringComparison.Ordinal));
+            if (opens)
             {
-                foreach (var (inner, innerValue) in selected)
+                foreach (var inner in Flat(section, (JsonObject)value!, $"{key}."))
                 {
-                    yield return ($"{key}.{inner}", innerValue);
+                    yield return inner;
                 }
             }
             else
@@ -340,15 +424,33 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
         }
     }
 
-    /// <summary>A setting's name as the editor shows it; the editor leaves allowed action patterns to the YAML.</summary>
-    private static string Label(SettingField? setting, string key) =>
-        setting?.Label ?? (key == "selected_actions.patterns_allowed" ? "Allowed action patterns" : key);
+    /// <summary>A setting's name as the editor shows it, or its key for one the editor leaves to the YAML.</summary>
+    private static string Label(SettingField? setting, string key) => setting?.Label ?? key switch
+    {
+        "selected_actions.patterns_allowed" => "Allowed action patterns",
+        "absent" => "No Pages site",
+        _ => key,
+    };
 
+    /// <summary>
+    /// The editor's setting at a key, or the one a part of a value belongs to,
+    /// as <c>security_and_analysis.secret_scanning.status</c> is part of Secret
+    /// Protection.
+    /// </summary>
     private static SettingField? Field(string section, string key) =>
-        ProfileFields.Sections.SelectMany(tab => tab.Groups).SelectMany(group => group.Fields)
-            .FirstOrDefault(field => field.Section == section && field.Key == key);
+        Fields.FirstOrDefault(field => field.Section == section && field.Key == key)
+        ?? Fields.Where(field => field.Section == section && key.StartsWith($"{field.Key}.", StringComparison.Ordinal))
+            .MaxBy(field => field.Key.Length);
 
     /// <summary>A value as the editor names it, such as On or Read and write, or as GitHub writes it.</summary>
-    private static string Show(SettingField? field, JsonNode? value) =>
-        field?.Options.FirstOrDefault(option => JsonNode.DeepEquals(option.Value, value))?.Label ?? CompareRows.Show(value);
+    private static string Show(SettingField? field, string key, JsonNode? value)
+    {
+        // A part of a value is matched against the same part of each option.
+        var rest = field is null || key == field.Key ? [] : key[(field.Key.Length + 1)..].Split('.');
+        return field?.Options.FirstOrDefault(option => JsonNode.DeepEquals(Part(option.Value, rest), value))?.Label
+            ?? CompareRows.Show(value);
+    }
+
+    private static JsonNode? Part(JsonNode? value, string[] path) =>
+        path.Aggregate(value, (node, part) => node is JsonObject inner ? inner[part] : null);
 }
