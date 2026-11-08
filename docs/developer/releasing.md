@@ -59,29 +59,31 @@ release for the tag:
 
 Before the upload, the attest job records a build provenance attestation for
 each package with [`actions/attest`](https://github.com/actions/attest), which
-users check with `gh attestation verify`, as
-[the user guide](../user/desktop.md#install) shows. It attests the packages
-after signing, notarization, and stapling, since each of those changes the
-file, so the attested digest is that of the file the release offers. The
-upload job runs only after the attestations succeed, so a draft never holds
-an unattested package. The attest job is the only one with `id-token: write`
-and `attestations: write`, and it neither checks out the repository nor
-builds anything, so the signing identity never meets the build steps or the
-Apple secrets.
+[the user guide](../user/desktop.md#install) shows how to verify. It attests
+the packages after signing, notarization, and stapling, since each of those
+changes the file, so the attested digest is that of the file the release
+offers. The upload job runs only after the attestations succeed, so a draft
+never holds an unattested package. The attest job holds the workflow's only
+permission to sign attestations, and it neither checks out the repository nor
+builds anything, so that identity never shares a job with the build steps or
+the Apple secrets.
 
-Manual runs attest nothing. Their packages are unsigned test builds from any
-branch, and `gh attestation verify --repo` would accept an attested test build
-just as it accepts a release.
+Build provenance shows which workflow, commit, and tag built a file. It
+differs from the release attestation that GitHub records when it publishes an
+immutable release, which `gh release verify-asset` checks: that one shows a
+file belongs to the release, `SHA256SUMS.txt` included, but a file uploaded by
+hand passes it too.
 
 Each build ships the CLI compiled with `bun build --compile` beside the app as
 `repotted-cli`. `mise run desktop:package` makes the same package on a Mac or
 in Git Bash on Windows, in `artifacts/desktop`.
 
 To build test installers from any branch, run Build Desktop from the Actions
-tab. The run uses no Developer ID, notarizes nothing, and makes no release: it
-checks that the packages build, that the CLI starts under the hardened
-runtime, and that the macOS app launches, then keeps the packages as run
-artifacts for 3 days. The macOS app in such a package is signed ad hoc, so
+tab. The run uses no Developer ID, notarizes nothing, attests nothing, and
+makes no release, so a test build has no record that could pass for a
+release's. It checks that the packages build, that the CLI starts under the
+hardened runtime, and that the macOS app launches, then keeps the packages as
+run artifacts for 3 days. The macOS app in such a package is signed ad hoc, so
 Gatekeeper refuses it until it is allowed in System Settings. Pull requests
 don't run Build Desktop. Quality builds and tests the app on each one but
 doesn't package it, so run Build Desktop on the branch of a pull request that

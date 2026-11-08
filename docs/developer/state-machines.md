@@ -294,7 +294,8 @@ Other calls run until the CLI exits, which every command does on its own.
 
 `.github/workflows/desktop.yml` packages the app, as
 [Releasing](releasing.md#the-desktop-app) describes. Three states matter when a
-run fails:
+run fails. Re-running a failed job reuses the run's packages, which last 3
+days; after that, re-running all jobs builds, signs, and attests them again.
 
 | State    | Event                 | Next                                                                                                                    |
 | -------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
