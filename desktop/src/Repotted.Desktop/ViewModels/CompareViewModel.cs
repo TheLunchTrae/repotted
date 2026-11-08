@@ -68,6 +68,9 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
 
     public bool HasWarnings => Warnings.Count > 0;
 
+    /// <summary>What the profile holds as drafts, which the compare leaves out, or null for none.</summary>
+    public string? DraftsNote { get; private set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowResult))]
     public partial bool Loading { get; set; }
@@ -122,6 +125,15 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
     [RelayCommand]
     private void ToggleEverything() => ShowEverything = !ShowEverything;
 
+    /// <summary>A draft as the plan names it: the ruleset Later, or a setting's path.</summary>
+    private static string Describe(SkippedDocument draft) => draft.Section switch
+    {
+        "rulesets" => $"the ruleset {draft.Target}",
+        "environments" => $"the environment {draft.Target}",
+        "autolinks" => $"the autolink {draft.Target}",
+        _ => $"{draft.Section}.{draft.Target}",
+    };
+
     [RelayCommand]
     public async Task LoadAsync()
     {
@@ -140,6 +152,10 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
             OnPropertyChanged(nameof(Sections));
             OnPropertyChanged(nameof(Warnings));
             OnPropertyChanged(nameof(HasWarnings));
+            DraftsNote = plan.Skipped is { Count: > 0 } skipped
+                ? $"Left out as {(skipped.Count == 1 ? "a draft" : "drafts")}: {string.Join(", ", skipped.Select(Describe))}."
+                : null;
+            OnPropertyChanged(nameof(DraftsNote));
             OnPropertyChanged(nameof(Summary));
             Loaded = true;
         }

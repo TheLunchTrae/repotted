@@ -29,22 +29,31 @@ internal sealed record ProfileListingDocument(string Name, string File, string? 
 /// <summary>What <c>repotted profiles --json</c> prints.</summary>
 internal sealed record ProfileListDocument(IReadOnlyList<ProfileListingDocument> Profiles);
 
-/// <summary>The file behind each value of a resolved profile.</summary>
+/// <summary>
+/// The file behind each value of a resolved profile. <c>Drafts</c> gives the
+/// same for drafts, by section and then key or name; it is null from a CLI
+/// without drafts.
+/// </summary>
 internal sealed record ProfileSourcesDocument(
     IReadOnlyDictionary<string, string> Repository,
     IReadOnlyDictionary<string, string> Merge,
     IReadOnlyDictionary<string, string> Actions,
     IReadOnlyDictionary<string, string> Rulesets,
-    IReadOnlyDictionary<string, string> Environments);
+    IReadOnlyDictionary<string, string> Environments,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? Drafts = null);
 
 /// <summary>
 /// What <c>repotted profile --json</c> prints: the profile file, then each one
-/// it extends; the resolved profile; and the file behind each value.
+/// it extends; the resolved profile, which leaves out its drafts; the drafts,
+/// by section, and what stops each from applying; and the file behind each
+/// value.
 /// </summary>
 internal sealed record ResolvedProfileDocument(
     IReadOnlyList<string> Chain,
     JsonElement Profile,
-    ProfileSourcesDocument Sources);
+    ProfileSourcesDocument Sources,
+    JsonElement Drafts = default,
+    IReadOnlyList<string>? Warnings = null);
 
 /// <summary>
 /// One field a change writes: what GitHub has and what the profile wants. A
@@ -65,7 +74,11 @@ internal sealed record PlanDocument(
     string Repository,
     JsonElement Desired,
     IReadOnlyList<PlanChangeDocument> Changes,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<SkippedDocument>? Skipped = null);
+
+/// <summary>A draft a plan leaves out: a setting by its section and key, or an entry by its list and name.</summary>
+internal sealed record SkippedDocument(string Section, string Target);
 
 /// <summary>What <c>repotted capture --json</c> prints: the repository's setup as a profile, and what it could not read.</summary>
 internal sealed record CaptureDocument(string Repository, JsonElement Profile, IReadOnlyList<string> Warnings);

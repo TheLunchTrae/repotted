@@ -870,6 +870,60 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Drafts_show_where_they_are_saved_and_a_draft_and_an_entry_can_share_a_name()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        cli.On($"profile {files.Own} --json", Documents.ResolvedWithDrafts(files.Own, files.Base));
+        var editor = profiles.Current!;
+        await editor.LoadCommand.ExecuteAsync(null);
+        var (rulesets, environments) = (editor.Tabs[3], editor.Tabs[4]);
+
+        // A base's draft shows, but only this profile's own drafts can be finished or discarded here.
+        var projects = Find(editor, "has_projects");
+        Assert.Equal(("On", false, "Saved in base, not applied."), (projects.DraftLabel, projects.OwnDraft, projects.DraftNote));
+        Assert.False(projects.FinishDraftCommand.CanExecute(null));
+        Assert.Equal(
+            ["Protect main: From base", "Old tags: Removed from GitHub here", "Later: Draft, left out of compare and apply", "Protect main: Draft, left out of compare and apply"],
+            rulesets.Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
+        Assert.Equal("NPM: Draft in base, left out of compare and apply", $"{environments.Entries[1].Name}: {environments.Entries[1].Note}");
+        Assert.Equal([2, 2, 0, 2, 1], editor.Tabs.Select(tab => tab.Count));
+
+        // A draft can take an entry's name, but not another draft's.
+        rulesets.NewCommand.Execute(null);
+        var extra = rulesets.Editing!.Editor;
+        extra.IsDraft = true;
+        extra.Name = "Old tags";
+        Assert.Null(extra.Problem);
+        extra.Name = "Later";
+        Assert.Equal("The profile already has a draft ruleset named Later.", extra.Problem);
+        rulesets.Editing!.DropCommand.Execute(null);
+
+        // Finishing the draft of a base's ruleset replaces the base's, as an override does.
+        var draft = rulesets.Entries[3];
+        draft.Editor.IsDraft = false;
+        Assert.Null(draft.Editor.Problem);
+        Assert.Equal("Finished, applies once saved", draft.Note);
+
+        // Saving a change as a draft puts the value back, and an undo takes the draft out.
+        Choose(editor, "has_wiki", "On");
+        var wiki = Find(editor, "has_wiki");
+        wiki.SaveAsDraftCommand.Execute(null);
+        Assert.Equal((false, true, "Off"), (wiki.Changed, wiki.DraftChanged, wiki.Options.Single(option => option.Selected).Label));
+        Assert.Equal("2 unsaved changes", editor.ChangesLabel);
+        wiki.ResetCommand.Execute(null);
+        Assert.False(wiki.HasDraft);
+        Assert.Equal("1 unsaved change", editor.ChangesLabel);
+
+        Choose(editor, "has_wiki", "On");
+        wiki.SaveAsDraftCommand.Execute(null);
+        var save = $$"""profile {{files.Own}} --set drafts.repository.has_wiki=true --drop-draft-ruleset=Protect main --ruleset={"name":"Protect main","enforcement":"evaluate"} --json""";
+        cli.On(save, Documents.ResolvedWithDrafts(files.Own, files.Base));
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Contains(save, cli.Calls);
+        Assert.Null(editor.SaveError);
+    }
+
+    [AvaloniaFact]
     public async Task Rulesets_and_environments_save_by_name_and_a_rename_takes_the_old_one_out()
     {
         var (profiles, cli, files) = await OpenOrgs();
@@ -1881,6 +1935,16 @@ public sealed class ViewModelTests : IDisposable
              new CompareRow(CompareKind.Changes, "Main: Require PR", "rules[pull_request].parameters.allowed_merge_methods", "merge, squash, rebase", "rebase"),
              new CompareRow(CompareKind.Removes, "Main: Block Deletion", "absent: true", "On GitHub", "Deleted")],
             compare.Sections.SelectMany(section => section.Rows));
+        Assert.Null(compare.DraftsNote);
+    }
+
+    [AvaloniaFact]
+    public async Task A_compare_names_the_drafts_it_leaves_out()
+    {
+        var compare = await Compare(Documents.Plan(skipped: """{"section":"repository","target":"has_wiki"},{"section":"rulesets","target":"Later"}"""));
+
+        Assert.Equal("Left out as drafts: repository.has_wiki, the ruleset Later.", compare.DraftsNote);
+        Assert.Equal("5 differences in 3 sections. Matching settings are folded away.", compare.Summary);
     }
 
     [AvaloniaFact]

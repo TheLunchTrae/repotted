@@ -5,39 +5,65 @@
              x:Class="Repotted.Desktop.Views.ProfileView"
              x:DataType="vm:ProfileViewModel">
   <UserControl.Resources>
-    <!-- One setting: where its value comes from, its choices, and a way back. -->
+    <!-- One setting: where its value comes from, its choices, a way back, and any draft of it. -->
     <DataTemplate x:Key="SettingRow" x:DataType="vm:SettingViewModel">
       <Border Classes="field">
-        <Grid ColumnDefinitions="4,*,Auto,150">
-          <Border Classes="rail" Classes.own="{Binding OwnAfterSave}" Classes.inherited="{Binding InheritedAfterSave}"
-                  Classes.changed="{Binding Changed}" />
-          <StackPanel Grid.Column="1" Margin="16,10" VerticalAlignment="Center" Spacing="2">
-            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="14.5" />
-            <TextBlock Classes="mono muted" FontSize="12.5" Text="{Binding Key}" />
-          </StackPanel>
-          <Border Grid.Column="2" Classes="seg">
-            <ItemsControl ItemsSource="{Binding Options}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:OptionViewModel">
-                  <!-- A toggle, so screen readers hear which option is chosen. -->
-                  <ToggleButton Classes="seg" Classes.on="{Binding Selected}" Classes.dim="{Binding Dim}"
-                                IsChecked="{Binding Selected, Mode=OneWay}"
-                                Content="{Binding Label}" Command="{Binding ChooseCommand}"
-                                AutomationProperties.Name="{Binding AccessibleName}"
-                                AutomationProperties.HelpText="{Binding Note}" />
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </Border>
-          <StackPanel Grid.Column="3" Margin="16,0" VerticalAlignment="Center" Spacing="2">
-            <TextBlock Classes="muted small" Text="{Binding Note}" TextTrimming="CharacterEllipsis" />
-            <Button Classes="link" FontSize="13" HorizontalAlignment="Left" Content="{Binding ResetLabel}"
-                    IsVisible="{Binding CanReset}" Command="{Binding ResetCommand}"
-                    AutomationProperties.Name="{Binding ResetName}" />
-          </StackPanel>
+        <Grid RowDefinitions="Auto,Auto">
+          <Grid ColumnDefinitions="4,*,Auto,150">
+            <Border Classes="rail" Classes.own="{Binding OwnAfterSave}" Classes.inherited="{Binding InheritedAfterSave}"
+                    Classes.changed="{Binding Changed}" />
+            <StackPanel Grid.Column="1" Margin="16,10" VerticalAlignment="Center" Spacing="2">
+              <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="14.5" />
+              <TextBlock Classes="mono muted" FontSize="12.5" Text="{Binding Key}" />
+            </StackPanel>
+            <Border Grid.Column="2" Classes="seg">
+              <ItemsControl ItemsSource="{Binding Options}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:OptionViewModel">
+                    <!-- A toggle, so screen readers hear which option is chosen. -->
+                    <ToggleButton Classes="seg" Classes.on="{Binding Selected}" Classes.dim="{Binding Dim}"
+                                  IsChecked="{Binding Selected, Mode=OneWay}"
+                                  Content="{Binding Label}" Command="{Binding ChooseCommand}"
+                                  AutomationProperties.Name="{Binding AccessibleName}"
+                                  AutomationProperties.HelpText="{Binding Note}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Border>
+            <StackPanel Grid.Column="3" Margin="16,0" VerticalAlignment="Center" Spacing="2">
+              <TextBlock Classes="muted small" Text="{Binding Note}" TextTrimming="CharacterEllipsis" />
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button Classes="link" FontSize="13" HorizontalAlignment="Left" Content="{Binding ResetLabel}"
+                        IsVisible="{Binding CanReset}" Command="{Binding ResetCommand}"
+                        AutomationProperties.Name="{Binding ResetName}" />
+                <Button Classes="link" FontSize="13" HorizontalAlignment="Left" Content="Save as draft"
+                        IsVisible="{Binding CanSaveAsDraft}" Command="{Binding SaveAsDraftCommand}"
+                        AutomationProperties.Name="{Binding Label, StringFormat='Save the change to {0} as a draft'}"
+                        AutomationProperties.HelpText="Keeps the value in the profile without applying it, and puts the setting back as it was." />
+              </StackPanel>
+            </StackPanel>
+          </Grid>
+          <!-- The draft: saved with the profile, left out of compare and apply until it is finished. -->
+          <Grid Grid.Row="1" ColumnDefinitions="4,Auto,*,Auto" IsVisible="{Binding HasDraft}" Margin="0,0,0,10">
+            <Border Grid.Column="1" Classes="pill none" Margin="16,0,10,0">
+              <StackPanel Orientation="Horizontal"><Ellipse /><TextBlock Text="Draft" /></StackPanel>
+            </Border>
+            <TextBlock Grid.Column="2" Classes="small" VerticalAlignment="Center" TextWrapping="Wrap"
+                       AutomationProperties.Name="{Binding DraftName}">
+              <Run Text="{Binding DraftLabel}" FontWeight="SemiBold" />
+              <Run Text="{Binding DraftNote, StringFormat=' · {0}'}" Foreground="{DynamicResource MutedBrush}" />
+            </TextBlock>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="12" Margin="16,0" IsVisible="{Binding OwnDraft}">
+              <Button Classes="link" FontSize="13" Content="Finish draft" Command="{Binding FinishDraftCommand}"
+                      AutomationProperties.Name="{Binding Label, StringFormat='Finish the draft of {0}'}"
+                      AutomationProperties.HelpText="Makes the draft the value, so it applies once the profile is saved." />
+              <Button Classes="link" FontSize="13" Content="Discard draft" Command="{Binding DiscardDraftCommand}"
+                      AutomationProperties.Name="{Binding Label, StringFormat='Discard the draft of {0}'}" />
+            </StackPanel>
+          </Grid>
         </Grid>
       </Border>
     </DataTemplate>
@@ -95,6 +121,16 @@
                 <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding RenameNote}"
                            IsVisible="{Binding RenameNote, Converter={x:Static ObjectConverters.IsNotNull}}"
                            AutomationProperties.LiveSetting="Polite" />
+              </StackPanel>
+            </Grid>
+          </Border>
+          <Border Classes="field" MinHeight="56">
+            <Grid ColumnDefinitions="180,*" Margin="16,10">
+              <TextBlock Text="Draft" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" Spacing="4">
+                <CheckBox IsChecked="{Binding IsDraft}" Content="Save as a draft"
+                          AutomationProperties.HelpText="{Binding DraftNote}" />
+                <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding DraftNote}" />
               </StackPanel>
             </Grid>
           </Border>
@@ -240,15 +276,18 @@
                                 <Border Classes="field" MinHeight="48">
                                   <Button Classes="entry" Command="{Binding OpenCommand}"
                                           AutomationProperties.Name="{Binding AccessibleName}">
-                                    <Grid ColumnDefinitions="4,*,Auto,Auto">
+                                    <Grid ColumnDefinitions="4,Auto,*,Auto,Auto">
                                       <Border Classes="rail" Classes.own="{Binding Own}" Classes.inherited="{Binding !Own}"
                                               Classes.changed="{Binding Changed}" />
-                                      <TextBlock Grid.Column="1" Margin="16,0" VerticalAlignment="Center" FontWeight="SemiBold"
-                                                 FontSize="14.5" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                                      <TextBlock Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"
+                                                 FontSize="14.5" Text="{Binding Name}" TextTrimming="CharacterEllipsis" MaxWidth="360"
                                                  Classes.gone="{Binding Dropped}" />
-                                      <TextBlock Grid.Column="2" Margin="16,0" Classes="muted small" VerticalAlignment="Center"
+                                      <Border Grid.Column="2" Classes="pill none" Margin="10,0,16,0" IsVisible="{Binding IsDraft}">
+                                        <StackPanel Orientation="Horizontal"><Ellipse /><TextBlock Text="Draft" /></StackPanel>
+                                      </Border>
+                                      <TextBlock Grid.Column="3" Margin="16,0" Classes="muted small" VerticalAlignment="Center"
                                                  Text="{Binding Note}" TextTrimming="CharacterEllipsis" MaxWidth="420" />
-                                      <TextBlock Grid.Column="3" Margin="0,0,16,0" Classes="muted" VerticalAlignment="Center"
+                                      <TextBlock Grid.Column="4" Margin="0,0,16,0" Classes="muted" VerticalAlignment="Center"
                                                  Text="&#x203A;" FontSize="18" />
                                     </Grid>
                                   </Button>

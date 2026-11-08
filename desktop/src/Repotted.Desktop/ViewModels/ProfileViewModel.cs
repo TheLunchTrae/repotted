@@ -271,7 +271,13 @@ internal sealed partial class ProfileViewModel(
 
     private async Task SaveAsync(bool overwrite)
     {
-        var changes = Settings.Select(setting => setting.Change).OfType<ProfileChange>().ToList();
+        // Drafts follow the values, each draft written before any is taken out,
+        // so a drafts section that keeps a draft stays where the file has it.
+        var drafts = Settings.Select(setting => setting.DraftChange).OfType<ProfileChange>().ToList();
+        var changes = Settings.Select(setting => setting.Change).OfType<ProfileChange>()
+            .Concat(drafts.Where(change => change.Value is not null))
+            .Concat(drafts.Where(change => change.Value is null))
+            .ToList();
         // The CLI takes a write right after a drop as a rename, so plain writes
         // and drops go first and each rename last, as its own drop and write.
         var entries = Entries.OrderBy(entry => entry.Renames ? 2 : entry.Dropped ? 1 : 0)
@@ -357,7 +363,7 @@ internal sealed partial class ProfileViewModel(
     [RelayCommand(CanExecute = nameof(CanDiscard))]
     private void Discard()
     {
-        foreach (var setting in Settings.Where(setting => setting.Changed))
+        foreach (var setting in Settings.Where(setting => setting.HasChanges))
         {
             setting.Undo();
         }
@@ -406,6 +412,7 @@ internal sealed partial class ProfileViewModel(
         foreach (var section in ProfileFields.Sections)
         {
             var values = profile.Values.TryGetProperty(section.Section, out var found) ? found : default;
+            var drafts = profile.Drafts.ValueKind == JsonValueKind.Object && profile.Drafts.TryGetProperty(section.Section, out var drafted) ? drafted : default;
             var sources = profile.Sources[section.Section];
             Tabs.Add(new ProfileTabViewModel(
                 section.Name,
@@ -421,7 +428,10 @@ internal sealed partial class ProfileViewModel(
                                 var inherited = origin == SettingOrigin.Inherited
                                     ? new InheritedValue(saved!, Base(sources[field.Key])!)
                                     : Inherit(@base, section.Section, field.Key);
-                                return new SettingViewModel(field, saved, origin, inherited, OnSettingChanged);
+                                var draft = SettingViewModel.Find(drafts, field.Key) is { } value
+                                    ? new DraftValue(value, profile.DraftSource(section.Section, field.Key) is { } file ? Base(file) : null)
+                                    : null;
+                                return new SettingViewModel(field, saved, origin, inherited, OnSettingChanged, draft);
                             }),
                         ])),
                 ]));
@@ -444,6 +454,14 @@ internal sealed partial class ProfileViewModel(
                 var inBase = @base is not null && EntriesOf(@base, section).Any(other => tab.SameName(other["name"]!.GetValue<string>(), entryName));
                 tab.Entries.Add(new EntryViewModel(tab, entry, Origin(file), file is null ? null : Base(file), inBase));
             }
+            // Drafts follow what applies, each with the file that holds it.
+            foreach (var entry in DraftsOf(profile, section))
+            {
+                var entryName = entry["name"]!.GetValue<string>();
+                var file = profile.DraftSource(section, entryName);
+                var inBase = @base is not null && DraftsOf(@base, section).Any(other => tab.SameName(other["name"]!.GetValue<string>(), entryName));
+                tab.Entries.Add(new EntryViewModel(tab, entry, Origin(file), file is null ? null : Base(file), inBase));
+            }
             return tab;
         }
     }
@@ -451,6 +469,12 @@ internal sealed partial class ProfileViewModel(
     /// <summary>The named rulesets or environments of a resolved profile.</summary>
     private static IEnumerable<JsonObject> EntriesOf(ResolvedProfile profile, string section) =>
         profile.Values.TryGetProperty(section, out var list) && list.ValueKind == JsonValueKind.Array
+            ? JsonNode.Parse(list.GetRawText())!.AsArray().OfType<JsonObject>().Where(entry => entry["name"] is JsonValue)
+            : [];
+
+    /// <summary>The draft rulesets or environments of a resolved profile, each with <c>draft: true</c>.</summary>
+    private static IEnumerable<JsonObject> DraftsOf(ResolvedProfile profile, string section) =>
+        profile.Drafts.ValueKind == JsonValueKind.Object && profile.Drafts.TryGetProperty(section, out var list) && list.ValueKind == JsonValueKind.Array
             ? JsonNode.Parse(list.GetRawText())!.AsArray().OfType<JsonObject>().Where(entry => entry["name"] is JsonValue)
             : [];
 
@@ -469,7 +493,7 @@ internal sealed partial class ProfileViewModel(
 
     private void OnSettingChanged()
     {
-        ChangeCount = Settings.Count(setting => setting.Changed) + Entries.Count(entry => entry.Changed);
+        ChangeCount = Settings.Count(setting => setting.HasChanges) + Entries.Count(entry => entry.Changed);
         foreach (var tab in Tabs)
         {
             tab.RefreshCount();

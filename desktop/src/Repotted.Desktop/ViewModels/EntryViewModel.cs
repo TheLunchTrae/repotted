@@ -9,7 +9,7 @@ namespace Repotted.Desktop.ViewModels;
 /// <summary>
 /// A ruleset or environment the profile names once resolved, the file that
 /// names it, and what is waiting to be saved: an edit, a new entry, or the
-/// entry taken out of this profile.
+/// entry taken out of this profile. A draft is one too, which plans leave out.
 /// </summary>
 internal sealed partial class EntryViewModel : ViewModelBase
 {
@@ -19,7 +19,7 @@ internal sealed partial class EntryViewModel : ViewModelBase
     /// <param name="saved">The entry as the profile resolves it, or null for a new one.</param>
     /// <param name="origin">Whether this profile's file names it, or a base's.</param>
     /// <param name="baseName">The base profile that names it, when this one does not.</param>
-    /// <param name="inBase">Whether a base profile names it too, so taking it out of this file brings that one back.</param>
+    /// <param name="inBase">Whether a base profile names it too, as a draft when this is one, so taking it out of this file brings that one back.</param>
     public EntryViewModel(ProfileTabViewModel tab, JsonObject? saved, SettingOrigin origin, string? baseName, bool inBase)
     {
         this.tab = tab;
@@ -40,7 +40,13 @@ internal sealed partial class EntryViewModel : ViewModelBase
     public bool IsNew => Saved is null;
 
     /// <summary>The name the entry has in the profile now, before any edit.</summary>
-    public string SavedName => Saved?["name"]?.GetValue<string>() ?? "";
+    public string SavedName => Saved?["name"].AsText() ?? "";
+
+    /// <summary>Whether the profile saved the entry as a draft.</summary>
+    public bool SavedDraft => Saved?["draft"].AsFlag() == true;
+
+    /// <summary>Whether the entry will be a draft once saved.</summary>
+    public bool IsDraft => editor?.IsDraft ?? SavedDraft;
 
     /// <summary>Whether this profile's file names the entry, so it can be taken out.</summary>
     public bool Own => IsNew || Origin == SettingOrigin.Own;
@@ -64,7 +70,7 @@ internal sealed partial class EntryViewModel : ViewModelBase
     public string Name => CurrentName is { Length: > 0 } name ? name : $"New {tab.Noun}";
 
     /// <summary>Whether the entry removes the ruleset or environment from GitHub.</summary>
-    public bool Absent => editor?.Removes ?? Saved?["absent"]?.GetValue<bool>() == true;
+    public bool Absent => editor?.Removes ?? Saved?["absent"].AsFlag() == true;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Changed), nameof(Note), nameof(AccessibleName), nameof(Editable))]
@@ -87,11 +93,18 @@ internal sealed partial class EntryViewModel : ViewModelBase
 
     public string Note => this switch
     {
+        { Dropped: true, SavedDraft: true, InBase: true } => "Draft taken out of this profile, so the base profile's draft comes back",
+        { Dropped: true, SavedDraft: true } => "Draft taken out of this profile",
         { Dropped: true, InBase: true } => $"Taken out of this profile, so the base profile's {tab.Noun} applies again",
         { Dropped: true } => $"Taken out of this profile, so the profile stops managing it",
         { Problem: { } problem } => problem,
+        { IsNew: true, IsDraft: true } => "New draft, not saved yet",
         { IsNew: true } => "New, not saved yet",
+        { Changed: true, SavedDraft: true, IsDraft: false } => "Finished, applies once saved",
+        { Changed: true, IsDraft: true } => "Draft, changed, not saved yet",
         { Changed: true } => "Changed, not saved yet",
+        { IsDraft: true, Own: true } => "Draft, left out of compare and apply",
+        { IsDraft: true } => $"Draft in {BaseName}, left out of compare and apply",
         { Absent: true, Own: true } => "Removed from GitHub here",
         { Absent: true } => $"Removed from GitHub in {BaseName}",
         { Own: true } => "Set here",
@@ -105,7 +118,7 @@ internal sealed partial class EntryViewModel : ViewModelBase
     {
         if (Dropped)
         {
-            yield return new EntryChange(tab.List, SavedName, null);
+            yield return new EntryChange(tab.List, SavedName, null, SavedDraft);
             yield break;
         }
         if (editor is null || !Changed)
@@ -117,7 +130,7 @@ internal sealed partial class EntryViewModel : ViewModelBase
         // The CLI takes a write right after a drop as a rename in place.
         if (Renames)
         {
-            yield return new EntryChange(tab.List, SavedName, null);
+            yield return new EntryChange(tab.List, SavedName, null, SavedDraft);
         }
         yield return new EntryChange(tab.List, name, entry);
     }
@@ -161,6 +174,7 @@ internal sealed partial class EntryViewModel : ViewModelBase
     public void Refresh()
     {
         OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(IsDraft));
         OnPropertyChanged(nameof(Absent));
         OnPropertyChanged(nameof(Changed));
         OnPropertyChanged(nameof(Unchanged));
@@ -170,8 +184,12 @@ internal sealed partial class EntryViewModel : ViewModelBase
         DropCommand.NotifyCanExecuteChanged();
     }
 
-    /// <summary>A rename on save: the old name is dropped, then the entry written in its place.</summary>
-    public bool Renames => !Dropped && editor is not null && Changed && Own && !IsNew && !tab.SameName(editor.Entry["name"]!.GetValue<string>(), SavedName);
+    /// <summary>
+    /// A rename on save: the old name is dropped, then the entry written in its
+    /// place. Making the entry a draft, or finishing one, moves it the same way.
+    /// </summary>
+    public bool Renames => !Dropped && editor is not null && Changed && Own && !IsNew
+        && (!tab.SameName(editor.Entry["name"]!.GetValue<string>(), SavedName) || editor.IsDraft != SavedDraft);
 }
 
 /// <summary>A tab: a section's settings, or the rulesets or environments the profile names.</summary>
@@ -260,23 +278,28 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
     /// <summary>What the profile manages here, once resolved over its bases.</summary>
     public int Count => IsSettings
         ? Groups.Sum(group => group.Settings.Count(setting => setting.Managed))
-        : Entries.Count(entry => !entry.Dropped);
+        : Entries.Count(entry => !entry.Dropped && !entry.IsDraft);
 
     /// <summary>Whether two names are the same entry: environment names are case-insensitive, as on GitHub.</summary>
     public bool SameName(string left, string right) =>
         string.Equals(left, right, List == "environments" ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     /// <summary>
-    /// Whether another entry has or had <paramref name="name"/>. A name this
-    /// save takes out is not free until it is saved, since the file names
-    /// each entry once.
+    /// Whether another entry has or had <paramref name="name"/>, as a draft
+    /// when <paramref name="draft"/> or else not. A name this save takes out is
+    /// not free until it is saved, since the file names each entry once, and
+    /// each draft once. A draft that is finished may take the name of an entry
+    /// a base profile names, which it then replaces as any override does.
     /// </summary>
-    private bool Taken(EntryViewModel entry, string name) =>
-        Entries.Any(other => other != entry && (SameName(other.CurrentName, name) || SameName(other.SavedName, name)));
+    private bool Taken(EntryViewModel entry, string name, bool draft) =>
+        Entries.Any(other => other != entry
+            && !(entry.SavedDraft && !draft && !other.Own)
+            && ((other.IsDraft == draft && SameName(other.CurrentName, name))
+                || (!other.IsNew && other.SavedDraft == draft && SameName(other.SavedName, name))));
 
     public EntryEditorViewModel MakeEditor(EntryViewModel entry)
     {
-        bool Taken(string name) => this.Taken(entry, name);
+        bool Taken(string name, bool draft) => this.Taken(entry, name, draft);
         void Changed() => Refresh();
         return List == "environments"
             ? new EnvironmentEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed)

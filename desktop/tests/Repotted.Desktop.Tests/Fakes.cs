@@ -219,6 +219,36 @@ internal static class Documents
            "environments":{"npm":{{{Json(own)}}} } } }
         """;
 
+    /// <summary>
+    /// orgs over base, as <see cref="Resolved"/>, with drafts: base drafts
+    /// projects on and an npm environment, and orgs drafts a Later ruleset and
+    /// a Protect main ruleset beside the one base applies.
+    /// </summary>
+    public static string ResolvedWithDrafts(string own, string @base) =>
+        $$$"""
+        {"chain":[{{{Json(own)}}},{{{Json(@base)}}}],
+         "profile":{
+           "repository":{"has_issues":true,"has_wiki":false},
+           "merge":{"allow_rebase_merge":true,"allow_squash_merge":false},
+           "rulesets":[{"name":"Protect main"},{"name":"Old tags","absent":true}],
+           "environments":[{"name":"npm"}]},
+         "drafts":{
+           "repository":{"has_projects":true},
+           "rulesets":[{"name":"Later","draft":true},{"name":"Protect main","draft":true,"enforcement":"evaluate"}],
+           "environments":[{"name":"NPM","draft":true,"wait_timer":"soon"}]},
+         "warnings":["Draft environment \"NPM\": Invalid input at wait_timer"],
+         "sources":{
+           "repository":{"has_issues":{{{Json(@base)}}},"has_wiki":{{{Json(own)}}} },
+           "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(own)}}} },
+           "actions":{},
+           "rulesets":{"Protect main":{{{Json(@base)}}},"Old tags":{{{Json(own)}}} },
+           "environments":{"npm":{{{Json(own)}}} },
+           "drafts":{
+             "repository":{"has_projects":{{{Json(@base)}}} },"merge":{},"actions":{},
+             "rulesets":{"Later":{{{Json(own)}}},"Protect main":{{{Json(own)}}} },
+             "environments":{"NPM":{{{Json(@base)}}} } } } }
+        """;
+
     /// <summary>base alone: issues on, and rebase and squash merges allowed.</summary>
     public static string ResolvedBase(string @base) =>
         $$$"""
@@ -237,7 +267,7 @@ internal static class Documents
     /// removes. Block Force Pushes, the npm environment and the rest match,
     /// and Tags: Old, which the profile removes, is already gone.
     /// </summary>
-    public static string Plan(string repository = "TheLunchTrae/repotted", string warnings = "") =>
+    public static string Plan(string repository = "TheLunchTrae/repotted", string warnings = "", string skipped = "") =>
         $$$"""
         {"repository":"{{{repository}}}",
          "desired":{
@@ -271,6 +301,7 @@ internal static class Documents
             "request":{"method":"PUT","path":"/repos/{{{repository}}}/rulesets/7","body":{} } },
            {"section":"rulesets","action":"delete","target":"Main: Block Deletion","fields":[],
             "request":{"method":"DELETE","path":"/repos/{{{repository}}}/rulesets/9"}}],
+         "skipped":[{{{skipped}}}],
          "warnings":[{{{warnings}}}]}
         """;
 

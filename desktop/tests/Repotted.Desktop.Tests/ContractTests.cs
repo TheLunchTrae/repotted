@@ -155,6 +155,84 @@ public sealed class ContractTests
         Assert.Equal("Set here", editor.Tabs.Single(tab => tab.List == "rulesets").Entries.Single().Note);
     }
 
+    [AvaloniaFact]
+    public async Task The_cli_saves_the_drafts_the_app_makes_and_finishes()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        var orgs = folders.Write(
+            "orgs.yaml",
+            """
+            repository: { has_wiki: false }
+            drafts:
+              repository: { has_issues: true }
+            rulesets:
+              - name: Main
+                enforcement: active
+              - name: Later
+                draft: true
+                enforcement: maybe
+            environments:
+              - name: npm
+                draft: true
+                wait_timer: soon
+
+            """.ReplaceLineEndings("\n"));
+        var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken));
+        var editor = new ProfileViewModel(client, listing);
+        await editor.LoadCommand.ExecuteAsync(null);
+        var settings = editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).ToList();
+        var (wiki, issues) = (settings.Single(setting => setting.Key == "has_wiki"), settings.Single(setting => setting.Key == "has_issues"));
+        var (rulesets, environments) = (editor.Tabs.Single(tab => tab.List == "rulesets"), editor.Tabs.Single(tab => tab.List == "environments"));
+
+        // Drafts show beside what applies, and the counts leave them out.
+        Assert.Equal(("On", true, false), (issues.DraftLabel, issues.OwnDraft, issues.Managed));
+        Assert.Equal(
+            ["Main: Set here", "Later: Draft, left out of compare and apply"],
+            rulesets.Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
+        Assert.Equal((1, 0), (rulesets.Count, environments.Count));
+        // A draft's value of the wrong kind opens, and stops nothing while it is a draft.
+        Assert.Null(environments.Entries.Single().Editor.Problem);
+
+        wiki.Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
+        wiki.SaveAsDraftCommand.Execute(null);
+        Assert.Equal((false, "On"), (wiki.Changed, wiki.DraftLabel));
+        issues.FinishDraftCommand.Execute(null);
+        Assert.Equal((true, false), (issues.Changed, issues.HasDraft));
+        rulesets.Entries[0].Editor.IsDraft = true;
+        var later = (RulesetEditorViewModel)rulesets.Entries[1].Editor;
+        later.IsDraft = false;
+        later.Enforcement.Options[0].ChooseCommand.Execute(null);
+        Assert.Equal("4 unsaved changes", editor.ChangesLabel);
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null(editor.SaveError);
+        Assert.False(editor.HasChanges);
+        // Each change lands in place: a draft finished, one made, and the drafts section kept where it was.
+        Assert.Equal(
+            """
+            repository: { has_wiki: false, has_issues: true }
+            drafts:
+              repository: { has_wiki: true }
+            rulesets:
+              - name: Main
+                enforcement: active
+                draft: true
+              - name: Later
+                enforcement: active
+            environments:
+              - name: npm
+                draft: true
+                wait_timer: soon
+
+            """.ReplaceLineEndings("\n"),
+            await File.ReadAllTextAsync(orgs, cancellationToken));
+        Assert.Equal(
+            ["Later: Set here", "Main: Draft, left out of compare and apply"],
+            editor.Tabs.Single(tab => tab.List == "rulesets").Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
+    }
+
     [Fact]
     public async Task The_cli_reads_the_profiles_the_app_makes()
     {
