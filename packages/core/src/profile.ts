@@ -246,13 +246,20 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 /** A section's settings by path, as `has_wiki` or `selected_actions.verified_allowed`. */
 type SourcedSettings = Map<string, Sourced<unknown>>;
 
-/** A profile mid-merge: each setting and entry carries the file that sets it. */
-interface SourcedProfile {
+/**
+ * A profile or its drafts mid-merge: each setting and entry carries the file
+ * that sets it.
+ */
+interface SourcedLayer<Autolink, Ruleset, Environment> {
   settings: Partial<Record<SettingsSection, SourcedSettings>>;
-  autolinks?: Sourced<AutolinkEntry>[] | undefined;
-  rulesets?: Sourced<RulesetEntry>[] | undefined;
-  environments?: Sourced<EnvironmentEntry>[] | undefined;
+  autolinks?: Sourced<Autolink>[] | undefined;
+  rulesets?: Sourced<Ruleset>[] | undefined;
+  environments?: Sourced<Environment>[] | undefined;
 }
+
+type SourcedProfile = SourcedLayer<AutolinkEntry, RulesetEntry, EnvironmentEntry>;
+
+type SourcedDrafts = SourcedLayer<DraftAutolink, DraftEntry, DraftEntry>;
 
 function mergeSettings(
   section: SettingsSection,
@@ -315,34 +322,25 @@ function mergeSections(
 }
 
 /**
- * Lays `override` over `base`. Settings merge key by key, and so do the
- * settings inside a group such as `selected_actions`; an autolink, ruleset
- * or environment in the override replaces the base entry of the same name
- * whole.
+ * Lays `override` over `base`, a profile over a profile or drafts over
+ * drafts. Settings merge key by key, and so do the settings inside a group
+ * such as `selected_actions`; an autolink, ruleset or environment in the
+ * override replaces the base entry of the same name whole. Drafts never
+ * merge with what applies.
  */
-function mergeProfiles(base: SourcedProfile, override: OwnProfile, file: string): SourcedProfile {
-  return {
-    settings: mergeSections(base.settings, override, file),
-    autolinks: mergeByKey(base.autolinks, sourced(override.autolinks, file), autolinkKey),
-    rulesets: mergeByKey(base.rulesets, sourced(override.rulesets, file), rulesetKey),
-    environments: mergeByKey(base.environments, sourced(override.environments, file), environmentEntryKey),
-  };
-}
-
-/** Drafts mid-merge, as a profile is: each draft carries the file that holds it. */
-interface SourcedDrafts {
-  settings: Partial<Record<SettingsSection, SourcedSettings>>;
-  autolinks?: Sourced<DraftAutolink>[] | undefined;
-  rulesets?: Sourced<DraftEntry>[] | undefined;
-  environments?: Sourced<DraftEntry>[] | undefined;
-}
-
-/**
- * Lays `override`'s drafts over `base`'s as a profile merges: a draft
- * setting replaces the base's draft of that setting, and a draft entry the
- * base's draft of that name. Drafts never merge with what applies.
- */
-function mergeDrafts(base: SourcedDrafts, override: Drafts, file: string): SourcedDrafts {
+function mergeLayers<
+  Autolink extends { key_prefix: string },
+  Ruleset extends { name: string },
+  Environment extends { name: string },
+>(
+  base: SourcedLayer<Autolink, Ruleset, Environment>,
+  override: Readonly<Partial<Record<SettingsSection, Settings | undefined>>> & {
+    readonly autolinks?: Autolink[] | undefined;
+    readonly rulesets?: Ruleset[] | undefined;
+    readonly environments?: Environment[] | undefined;
+  },
+  file: string,
+): SourcedLayer<Autolink, Ruleset, Environment> {
   return {
     settings: mergeSections(base.settings, override, file),
     autolinks: mergeByKey(base.autolinks, sourced(override.autolinks, file), autolinkKey),
@@ -569,10 +567,10 @@ export type Adjust = (data: unknown) => unknown;
 function resolveChain(chain: readonly Link[], source: string, adjust?: Adjust): ResolvedProfile {
   const merged = chain
     .toReversed()
-    .reduce<SourcedProfile>((base, { file, parsed }) => mergeProfiles(base, parsed, file), { settings: {} });
+    .reduce<SourcedProfile>((base, { file, parsed }) => mergeLayers(base, parsed, file), { settings: {} });
   const mergedDrafts = chain
     .toReversed()
-    .reduce<SourcedDrafts>((base, { file, drafts }) => mergeDrafts(base, drafts, file), { settings: {} });
+    .reduce<SourcedDrafts>((base, { file, drafts }) => mergeLayers(base, drafts, file), { settings: {} });
   const drafts = toDrafts(mergedDrafts);
   return {
     chain: chain.map((link) => link.file),
