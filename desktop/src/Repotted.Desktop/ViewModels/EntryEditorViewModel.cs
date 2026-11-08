@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 namespace Repotted.Desktop.ViewModels;
 
 /// <summary>
-/// The editor for one ruleset or environment. It starts from the entry as the
+/// The editor for one ruleset, environment or label. It starts from the entry as the
 /// profile resolves it and changes only what is edited here, so keys the
 /// editor does not show stay as they are. A draft is saved with
 /// <c>draft: true</c>: its fields may be unfinished, and plans leave it out.
@@ -116,11 +116,11 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
         _ => "Applies once saved.",
     };
 
-    /// <summary>How names compare: GitHub's environment names ignore case.</summary>
+    /// <summary>How names compare: GitHub's environment and label names ignore case.</summary>
     protected virtual StringComparison NameComparison => StringComparison.Ordinal;
 
     /// <summary>What a rename does on GitHub, which knows each entry by its name.</summary>
-    public string? RenameNote =>
+    public virtual string? RenameNote =>
         !Removes
         && Saved?["name"].AsText() is { } old
         && Name.Trim() is { Length: > 0 } renamed
@@ -197,7 +197,7 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
     /// <summary>The entry from the fields, before the name is set.</summary>
     protected abstract JsonObject Build();
 
-    protected void Touched()
+    protected virtual void Touched()
     {
         OnPropertyChanged(nameof(Changed));
         OnPropertyChanged(nameof(Problem));

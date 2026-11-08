@@ -14,7 +14,7 @@ namespace Repotted.Desktop.Tests;
 public sealed class ContractTests
 {
     /// <summary>The top-level keys of a profile file that hold no settings, or entries that editors of their own edit.</summary>
-    private static readonly HashSet<string> NotSettings = ["extends", "drafts", "rulesets", "environments"];
+    private static readonly HashSet<string> NotSettings = ["extends", "drafts", "rulesets", "environments", "labels"];
 
     /// <summary>
     /// The settings the app leaves to the YAML, each with everything under it.
@@ -25,7 +25,6 @@ public sealed class ContractTests
         "repository.topics",
         "custom_properties",
         "autolinks",
-        "labels",
         "actions.selected_actions.patterns_allowed",
         "actions.oidc_customization_sub.include_claim_keys",
         "security.security_and_analysis.secret_scanning_delegated_bypass_options",
@@ -352,6 +351,54 @@ public sealed class ContractTests
             await File.ReadAllTextAsync(orgs, cancellationToken));
         // The base's ruleset is now set here, over it.
         Assert.Equal("Set here", editor.Tabs.Single(tab => tab.List == "rulesets").Entries.Single().Note);
+    }
+
+    [AvaloniaFact]
+    public async Task The_cli_saves_the_labels_the_app_edits()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        var own = folders.Write(
+            "labels.yaml",
+            "labels:\n  - name: bug # GitHub's\n    color: 'd73a4a'\n    description: Something isn't working\n  - name: wontfix\n  - name: help\n");
+        var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken));
+        var editor = Editor(client, listing, folders);
+        await editor.LoadCommand.ExecuteAsync(null);
+        var labels = editor.Tabs.Single(tab => tab.List == "labels");
+
+        // A rename that renames on GitHub, a color that YAML would read as a number, and a removal.
+        var bug = (LabelEditorViewModel)labels.Entries.Single(entry => entry.SavedName == "bug").Editor;
+        bug.Name = "type: bug";
+        bug.AddOldNameCommand.Execute(null);
+        bug.Description = "";
+        labels.Entries.Single(entry => entry.SavedName == "wontfix").Editor.Removes = true;
+        labels.NewCommand.Execute(null);
+        var dark = (LabelEditorViewModel)labels.Editing!.Editor;
+        dark.Name = "-dark";
+        dark.Color = "000000";
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null(editor.SaveError);
+        Assert.False(editor.HasChanges);
+        Assert.Equal(
+            """
+            labels:
+              - name: "type: bug" # GitHub's
+                color: 'd73a4a'
+                description: ""
+                renamed_from:
+                  - bug
+              - name: wontfix
+                absent: true
+              - name: help
+              - name: -dark
+                color: "000000"
+
+            """.ReplaceLineEndings("\n"),
+            await File.ReadAllTextAsync(own, cancellationToken));
+        var saved = await client.ProfileAsync(own, cancellationToken);
+        Assert.Equal("000000", saved.Values.GetProperty("labels")[3].GetProperty("color").GetString());
     }
 
     [AvaloniaFact]

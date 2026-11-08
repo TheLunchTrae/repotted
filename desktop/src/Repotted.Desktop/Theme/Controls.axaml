@@ -505,6 +505,67 @@
   <Style Selector="Border.rail.match">
     <Setter Property="Background" Value="{DynamicResource RailInheritedBrush}" />
   </Style>
+  <!-- A label as GitHub shows it: its name on its own color. -->
+  <Style Selector="Border.chip">
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="Padding" Value="10,2" />
+    <Setter Property="MinHeight" Value="24" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ChipBorderBrush}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.chip TextBlock">
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="MaxWidth" Value="320" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style Selector="Border.chip.plain">
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+  </Style>
+  <Style Selector="Border.chip.plain TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
+  </Style>
+  <Style Selector="Border.chip TextBlock.struck">
+    <Setter Property="TextDecorations" Value="Strikethrough" />
+  </Style>
+
+  <!-- A color to pick for a label, and the label's color beside its box. -->
+  <Style Selector="Button.swatch">
+    <Setter Property="Width" Value="28" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="MinWidth" Value="28" />
+    <Setter Property="MinHeight" Value="28" />
+    <Setter Property="Padding" Value="2" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.swatch > Border">
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ChipBorderBrush}" />
+  </Style>
+  <Style Selector="Button.swatch:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="BorderBrush" Value="{DynamicResource MutedBrush}" />
+  </Style>
+  <Style Selector="Button.swatch.chosen /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="BorderBrush" Value="{DynamicResource FgBrush}" />
+  </Style>
+  <Style Selector="Border.swatch">
+    <Setter Property="Width" Value="34" />
+    <Setter Property="Height" Value="34" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ChipBorderBrush}" />
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+  </Style>
+
   <Style Selector="TextBlock.gone">
     <Setter Property="Foreground" Value="{DynamicResource RemoveBrush}" />
     <Setter Property="TextDecorations" Value="Strikethrough" />

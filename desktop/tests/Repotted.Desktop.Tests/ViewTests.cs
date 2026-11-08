@@ -6,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -224,7 +225,7 @@ public sealed class ViewTests : IDisposable
                  "code_scanning_default_setup.runner_type":{{{Json(own)}}},"code_scanning_default_setup.runner_label":{{{Json(own)}}} },
                "custom_properties":{},
                "pages":{"build_type":{{{Json(own)}}},"source.branch":{{{Json(own)}}} },
-               "autolinks":{},"rulesets":{},"environments":{},
+               "autolinks":{},"rulesets":{},"environments":{},"labels":{},
                {{{Documents.NoDraftSources}}} } }
             """;
         var window = await Show(theme, FakeCli.SignedIn()
@@ -462,6 +463,81 @@ public sealed class ViewTests : IDisposable
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
+    public async Task Labels_show_on_their_colors_and_open_in_an_editor(string theme)
+    {
+        var @base = folders.Write("base.yaml", "labels:\n  - name: good first issue\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
+        var resolved = $$$"""
+            {"chain":[{{{Json(own)}}},{{{Json(@base)}}}],
+             "profile":{
+               "labels":[
+                 {"name":"type: feature","color":"a2eeef","description":"New feature or request","renamed_from":["enhancement"]},
+                 {"name":"type: bug","color":"d73a4a","description":"Something isn't working"},
+                 {"name":"wontfix","absent":true},
+                 {"name":"good first issue","color":"7057ff","description":"Good for newcomers"}]},
+             {{{Documents.NoDrafts}}},
+             "sources":{"repository":{},"merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
+               "rulesets":{},"environments":{},
+               "labels":{"type: feature":{{{Json(own)}}},"type: bug":{{{Json(own)}}},"wontfix":{{{Json(own)}}},"good first issue":{{{Json(@base)}}} },
+               {{{Documents.NoDraftSources}}} } }
+            """;
+        var window = await Show(theme, FakeCli.SignedIn()
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", resolved)
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        editor.ShowYaml = false;
+        editor.SelectedTab = editor.Tab("Labels");
+        Dispatcher.UIThread.RunJobs();
+
+        var rows = window.GetVisualDescendants().OfType<Button>()
+            .Where(button => button.Classes.Contains("entry"))
+            .Select(button => AutomationProperties.GetName(button))
+            .ToList();
+        Assert.Equal(
+            [
+                "type: feature: Renames enhancement where a repository still has it",
+                "type: bug: Set here",
+                "wontfix: Removed from GitHub here",
+                "good first issue: From base",
+            ],
+            rows);
+        // Each label shows on its own color, with text that reads on it.
+        var chips = window.GetVisualDescendants().OfType<Border>()
+            .Where(border => border.Classes.Contains("chip") && border.IsEffectivelyVisible)
+            .Select(border => ((border.Background as ISolidColorBrush)?.Color.ToString(), ((TextBlock)border.Child!).Text))
+            .ToList();
+        Assert.Contains(("#ffa2eeef", "type: feature"), chips);
+        Assert.Contains(("#ffd73a4a", "type: bug"), chips);
+        Assert.Contains("Good for newcomers", Texts(window));
+        Save(window, $"labels-{theme}");
+
+        // A row opens its label, and a color from GitHub's colors shows in the preview.
+        editor.Tab("Labels").Entries[1].OpenCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        var text = Texts(window);
+        Assert.Contains(ControlLabel.For("Back to labels"), text);
+        Assert.Contains("Renamed from", text);
+        Assert.Contains("23 of 100 characters. Empty clears each repository's description.", text);
+        var swatch = window.GetVisualDescendants().OfType<Button>().Single(button => AutomationProperties.GetName(button) == "Purple, 5319e7");
+        swatch.Command!.Execute(swatch.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("5319e7", window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "Label color").Text);
+        Assert.Contains(swatch, window.GetVisualDescendants().OfType<Button>().Where(button => button.Classes.Contains("chosen")));
+        var label = (LabelEditorViewModel)editor.Tab("Labels").Editing!.Editor;
+        label.Name = "type: defect";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains(ControlLabel.For("Rename it on GitHub too"), Texts(window));
+        Assert.Contains(window.GetVisualDescendants().OfType<Button>(), button => AutomationProperties.GetName(button) == "Rename type: bug on GitHub");
+        window.Height = 1200;
+        Save(window, $"label-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
     public async Task Rulesets_and_environments_open_in_an_editor(string theme)
     {
         var @base = folders.Write("base.yaml", "rulesets:\n  - name: Tags\n");
@@ -484,7 +560,7 @@ public sealed class ViewTests : IDisposable
              {{{Documents.NoDrafts}}},
              "sources":{"repository":{},"merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
                "rulesets":{"Main":{{{Json(own)}}},"Tags":{{{Json(@base)}}} },
-               "environments":{"npm":{{{Json(own)}}} },
+               "environments":{"npm":{{{Json(own)}}} },"labels":{},
                {{{Documents.NoDraftSources}}} } }
             """;
         var window = await Show(theme, FakeCli.SignedIn()

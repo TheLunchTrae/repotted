@@ -147,11 +147,11 @@ internal sealed partial class ProfileViewModel(
     public string OutOfDateMessage => returned
         ? $"{FileName} is back in the folder, but not as you opened it, so saving would put your unsaved changes over what it has now. Reload discards your unsaved changes."
         : ChangedFile is null || ChangedFile == File
-        ? $"{FileName} changed since you opened it, so saving would undo that change to the rulesets and environments you edited. Reload discards your unsaved changes."
+        ? $"{FileName} changed since you opened it, so saving would undo that change to the rulesets, environments and labels you edited. Reload discards your unsaved changes."
         // A removed profile has no file to reload, so only Keep mine is offered.
         : Removed
-        ? $"{Path.GetFileName(ChangedFile)} changed since you opened this profile, so saving would set the old copy of the inherited rulesets and environments you edited."
-        : $"{Path.GetFileName(ChangedFile)} changed since you opened this profile, so saving would set the old copy of the inherited rulesets and environments you edited. Reload discards your unsaved changes.";
+        ? $"{Path.GetFileName(ChangedFile)} changed since you opened this profile, so saving would set the old copy of the inherited rulesets, environments and labels you edited."
+        : $"{Path.GetFileName(ChangedFile)} changed since you opened this profile, so saving would set the old copy of the inherited rulesets, environments and labels you edited. Reload discards your unsaved changes.";
 
     /// <summary>
     /// Whether the file is gone from the folder, such as after a sync, while
@@ -244,7 +244,7 @@ internal sealed partial class ProfileViewModel(
 
     public string ChangesLabel => ChangeCount == 1 ? "1 unsaved change" : $"{ChangeCount} unsaved changes";
 
-    /// <summary>Whether the file, as last loaded or saved, sets any setting, ruleset or environment itself.</summary>
+    /// <summary>Whether the file, as last loaded or saved, sets any setting, ruleset, environment or label itself.</summary>
     public bool SetsAnything =>
         Settings.Any(setting => setting.Origin == SettingOrigin.Own) || Entries.Any(entry => entry.Origin == SettingOrigin.Own);
 
@@ -345,8 +345,8 @@ internal sealed partial class ProfileViewModel(
         ResultsSummary = count switch
         {
             0 when words.Length > 0 => $"No settings match \u201c{Query.Trim()}\u201d.",
-            0 when OnlyUnsaved && Entries.Any(entry => entry.Changed) => "No settings match these filters. Unsaved changes to rulesets and environments are on their own tabs.",
-            0 when OnlyDrafts && Entries.Any(entry => entry.IsDraft) => "No settings match these filters. Drafts of rulesets and environments are on their own tabs.",
+            0 when OnlyUnsaved && Entries.Any(entry => entry.Changed) => "No settings match these filters. Unsaved changes to rulesets, environments and labels are on their own tabs.",
+            0 when OnlyDrafts && Entries.Any(entry => entry.IsDraft) => "No settings match these filters. Drafts of rulesets, environments and labels are on their own tabs.",
             0 => "No settings match these filters.",
             1 => "1 setting found.",
             _ => $"{count} settings found.",
@@ -457,7 +457,7 @@ internal sealed partial class ProfileViewModel(
     /// <summary>
     /// Asks whether saving would undo a change to the file since the editor
     /// read it, and shows the choice when it would. Saving settings writes
-    /// only the keys edited, so only edited rulesets and environments count.
+    /// only the keys edited, so only edited rulesets, environments and labels count.
     /// </summary>
     public void CheckFile()
     {
@@ -720,6 +720,7 @@ internal sealed partial class ProfileViewModel(
         }
         Tabs.Add(EntriesTab("Rulesets", "rulesets"));
         Tabs.Add(EntriesTab("Environments", "environments"));
+        Tabs.Add(EntriesTab("Labels", "labels"));
         SelectedTab = Tabs.FirstOrDefault(tab => tab.Name == selected) ?? Tabs[0];
         BaseName = profile.Chain.Count > 1 ? Path.GetFileNameWithoutExtension(profile.Chain[1]) : null;
         DraftWarnings = profile.Warnings;
@@ -753,13 +754,13 @@ internal sealed partial class ProfileViewModel(
         }
     }
 
-    /// <summary>The named rulesets or environments of a resolved profile.</summary>
+    /// <summary>The named rulesets, environments or labels of a resolved profile.</summary>
     private static IEnumerable<JsonObject> EntriesOf(ResolvedProfile profile, string section) =>
         profile.Values.TryGetProperty(section, out var list) && list.ValueKind == JsonValueKind.Array
             ? JsonNode.Parse(list.GetRawText())!.AsArray().OfType<JsonObject>().Where(entry => entry["name"] is JsonValue)
             : [];
 
-    /// <summary>The draft rulesets or environments of a resolved profile, each with <c>draft: true</c>.</summary>
+    /// <summary>The draft rulesets, environments or labels of a resolved profile, each with <c>draft: true</c>.</summary>
     private static IEnumerable<JsonObject> DraftsOf(ResolvedProfile profile, string section) =>
         profile.Drafts.TryGetProperty(section, out var list) && list.ValueKind == JsonValueKind.Array
             ? JsonNode.Parse(list.GetRawText())!.AsArray().OfType<JsonObject>().Where(entry => entry["name"] is JsonValue)

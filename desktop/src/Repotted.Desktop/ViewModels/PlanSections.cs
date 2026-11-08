@@ -155,7 +155,7 @@ internal static class PlanSections
     }
 
     /// <summary>
-    /// A section of named entries: rulesets or environments. A new entry is
+    /// A section of named entries: rulesets, environments or labels. A new entry is
     /// one row, a changed one a row for each part that differs, and an entry
     /// the profile removes one row.
     /// </summary>

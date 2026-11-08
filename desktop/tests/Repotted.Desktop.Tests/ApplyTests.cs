@@ -59,7 +59,7 @@ public sealed class ApplyTests : IDisposable
              {{Documents.NoDrafts}},
              "sources":{"repository":{"has_issues":{{Json(from)}}{{wikiSource}} },
                "merge":{"allow_squash_merge":{{Json(file)}} },"actions":{},"security":{},"custom_properties":{},
-               "pages":{},"autolinks":{},"rulesets":{},"environments":{},
+               "pages":{},"autolinks":{},"rulesets":{},"environments":{},"labels":{},
                {{Documents.NoDraftSources}} } }
             """;
     }
@@ -69,7 +69,7 @@ public sealed class ApplyTests : IDisposable
         {"chain":[{{Json(@base)}}],"profile":{"repository":{"has_issues":true,"has_wiki":false} },
          {{Documents.NoDrafts}},
          "sources":{"repository":{"has_issues":{{Json(@base)}},"has_wiki":{{Json(@base)}} },
-           "merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{},
+           "merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{},"labels":{},
            {{Documents.NoDraftSources}} } }
         """;
 

@@ -7,7 +7,7 @@ using Repotted.Desktop.Services;
 namespace Repotted.Desktop.ViewModels;
 
 /// <summary>
-/// A ruleset or environment the profile names once resolved, the file that
+/// A ruleset, environment or label the profile names once resolved, the file that
 /// names it, and what is waiting to be saved: an edit, a new entry, or the
 /// entry taken out of this profile. A draft is one too, which plans leave out.
 /// </summary>
@@ -15,7 +15,7 @@ internal sealed partial class EntryViewModel : ViewModelBase
 {
     private readonly ProfileTabViewModel tab;
 
-    /// <param name="tab">The rulesets or environments tab.</param>
+    /// <param name="tab">The rulesets, environments or labels tab.</param>
     /// <param name="saved">The entry as the profile resolves it, or null for a new one.</param>
     /// <param name="origin">Whether this profile's file names it, or a base's.</param>
     /// <param name="baseName">The base profile that names it, when this one does not.</param>
@@ -81,8 +81,39 @@ internal sealed partial class EntryViewModel : ViewModelBase
 
     public string Name => CurrentName is { Length: > 0 } name ? name : $"New {tab.Noun}";
 
-    /// <summary>Whether the entry removes the ruleset or environment from GitHub.</summary>
+    /// <summary>Whether the entry removes the ruleset, environment or label from GitHub.</summary>
     public bool Absent => editor?.Removes ?? Saved?["absent"].AsFlag() == true;
+
+    /// <summary>Whether the entry is a label, which the list shows as GitHub does.</summary>
+    public bool IsLabel => tab.List == "labels";
+
+    private LabelEditorViewModel? Label => editor as LabelEditorViewModel;
+
+    /// <summary>The label's color as GitHub writes it, or null when the profile leaves it out.</summary>
+    public string? Hex => Label is { } label ? label.Hex : LabelColor.Normal(Saved?["color"].AsText());
+
+    public bool HasColor => Hex is not null;
+
+    /// <summary>The text color that reads on the label's color.</summary>
+    public string Ink => LabelColor.Ink(Hex);
+
+    /// <summary>The label's description as the profile sets it, or null when it leaves each repository's own.</summary>
+    public string? Description => Label is { } label
+        ? label.SetsDescription ? label.Description : null
+        : Saved?["description"].AsText();
+
+    /// <summary>The old names the label renames, as it will be saved.</summary>
+    public IReadOnlyList<string> Claims => Label is { } label
+        ? label.Claims
+        : Absent ? [] : [.. (Saved?["renamed_from"] as JsonArray ?? []).Select(item => item.AsText()).OfType<string>()];
+
+    /// <summary>What a label's old names do, for the list and the editor's heading.</summary>
+    public string? Renaming => Claims switch
+    {
+        [] => null,
+        [var one] => $"Renames {one} where a repository still has it",
+        var several => $"Renames {string.Join(", ", several.SkipLast(1))} or {several[^1]} where a repository still has one",
+    };
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Changed), nameof(Note), nameof(AccessibleName), nameof(Editable))]
@@ -121,6 +152,7 @@ internal sealed partial class EntryViewModel : ViewModelBase
         { IsDraft: true, Own: true } => "Draft, left out of compare and apply",
         { IsDraft: true } => $"Draft in {BaseName}, left out of compare and apply",
         { Absent: true, Own: true } => "Removed from GitHub here",
+        { Renaming: { } renaming, Own: true } => renaming,
         { Absent: true } => $"Removed from GitHub in {BaseName}",
         { Own: true } => "Set here",
         _ => $"From {BaseName}",
@@ -214,7 +246,7 @@ internal sealed partial class EntryViewModel : ViewModelBase
         && (!tab.SameName(editor.Entry["name"]!.GetValue<string>(), SavedName) || editor.IsDraft != SavedDraft);
 }
 
-/// <summary>A tab: a section's settings, or the rulesets or environments the profile names.</summary>
+/// <summary>A tab: a section's settings, or the rulesets, environments or labels the profile names.</summary>
 internal sealed partial class ProfileTabViewModel : ViewModelBase
 {
     private readonly Action changed;
@@ -229,14 +261,14 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
         changed = () => { };
     }
 
-    /// <summary>A rulesets or environments tab; <paramref name="list"/> is the profile key, and <paramref name="drafts"/> whether the file holds drafts.</summary>
+    /// <summary>A rulesets, environments or labels tab; <paramref name="list"/> is the profile key, and <paramref name="drafts"/> whether the file holds drafts.</summary>
     public ProfileTabViewModel(string name, string list, Action changed, bool drafts = true)
     {
         Drafts = drafts;
         Name = name;
         Groups = [];
         List = list;
-        Noun = list == "environments" ? "environment" : "ruleset";
+        Noun = list[..^1];
         this.changed = changed;
     }
 
@@ -244,7 +276,7 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
 
     public IReadOnlyList<SettingGroupViewModel> Groups { get; }
 
-    /// <summary>The profile key the entries are under: rulesets or environments.</summary>
+    /// <summary>The profile key the entries are under: rulesets, environments or labels.</summary>
     public string List { get; }
 
     public string Noun { get; }
@@ -264,9 +296,9 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
 
     public string BackLabel => $"Back to {Name.ToLowerInvariant()}";
 
-    public string Help => List == "environments"
-        ? "Each environment names only what it sets; the rest stays as the repository has it. Open one to edit it."
-        : "Each ruleset names only what it sets; the rest stays as the repository has it. Open one to edit it.";
+    public string Help => List == "labels"
+        ? "Each label names only what it sets; labels the profile leaves out stay as each repository has them. Open one to edit it."
+        : $"Each {Noun} names only what it sets; the rest stays as the repository has it. Open one to edit it.";
 
     /// <summary>The entry open in its editor, or null for the list.</summary>
     [ObservableProperty]
@@ -306,9 +338,9 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
         ? Groups.Sum(group => group.Settings.Count(setting => setting.Managed))
         : Entries.Count(entry => !entry.Dropped && (!entry.IsDraft || entry.BaseApplies) && entry.ReplacedBy is null);
 
-    /// <summary>Whether two names are the same entry: environment names are case-insensitive, as on GitHub.</summary>
+    /// <summary>Whether two names are the same entry: environment and label names are case-insensitive, as on GitHub.</summary>
     public bool SameName(string left, string right) =>
-        string.Equals(left, right, List == "environments" ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        string.Equals(left, right, List == "rulesets" ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Whether another entry has or had <paramref name="name"/>, as a draft
@@ -333,7 +365,7 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
             ? null
             : Entries.FirstOrDefault(other => other != entry && other.Finishes && SameName(other.CurrentName, entry.SavedName));
 
-    /// <summary>Whether this file names a ruleset or environment of <paramref name="name"/> that applies, other than <paramref name="entry"/>.</summary>
+    /// <summary>Whether this file names a ruleset, environment or label of <paramref name="name"/> that applies, other than <paramref name="entry"/>.</summary>
     public bool OwnApplies(EntryViewModel entry, string name) =>
         Entries.Any(other => other != entry && !other.IsNew && other.Own && !other.SavedDraft && SameName(other.SavedName, name));
 
@@ -343,10 +375,24 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
         void Changed() => Refresh();
         // A draft is this file's own: a base's entry or draft stays as that file has it.
         var (canDraft, baseApplies) = (entry.Own, entry.BaseApplies);
-        return List == "environments"
-            ? new EnvironmentEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed) { CanDraft = canDraft, Drafts = Drafts, BaseApplies = baseApplies }
-            : new RulesetEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed) { CanDraft = canDraft, Drafts = Drafts, BaseApplies = baseApplies };
+        return List switch
+        {
+            "environments" => new EnvironmentEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed) { CanDraft = canDraft, Drafts = Drafts, BaseApplies = baseApplies },
+            "labels" => new LabelEditorViewModel(entry.Saved, entry.Renamable, Taken, old => ClaimedBy(entry, old), Changed) { CanDraft = canDraft, Drafts = Drafts, BaseApplies = baseApplies },
+            _ => new RulesetEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed) { CanDraft = canDraft, Drafts = Drafts, BaseApplies = baseApplies },
+        };
     }
+
+    /// <summary>
+    /// The other label that applies under <paramref name="old"/> or lists it
+    /// as an old name, as the profile will be saved, or null. A label's old
+    /// name can be neither, since apply would then rename one label into
+    /// another or two into one.
+    /// </summary>
+    private string? ClaimedBy(EntryViewModel entry, string old) =>
+        Entries.Where(other => other != entry && !other.Dropped && !other.IsDraft)
+            .FirstOrDefault(other => SameName(other.CurrentName, old) || other.Claims.Any(name => SameName(name, old)))
+            ?.CurrentName;
 
     [RelayCommand]
     private void New()
