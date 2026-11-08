@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Repotted.Desktop.Services;
 
 namespace Repotted.Desktop.Tests;
@@ -141,6 +142,34 @@ public sealed class RepottedClientTests
         var client = new RepottedClient(new FakeCli().On("status --json", document));
 
         var error = await Assert.ThrowsAsync<CliException>(() => client.StatusAsync(None));
+
+        Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("drafts")]
+    [InlineData("warnings")]
+    [InlineData("sources.drafts")]
+    public async Task A_profile_that_leaves_out_its_drafts_is_unreadable(string member)
+    {
+        var document = JsonNode.Parse(Documents.Resolved("orgs.yaml", "base.yaml"))!.AsObject();
+        var path = member.Split('.');
+        (path.Length == 1 ? document : document[path[0]]!.AsObject()).Remove(path[^1]);
+        var client = new RepottedClient(new FakeCli().On("profile orgs.yaml --json", document.ToJsonString()));
+
+        var error = await Assert.ThrowsAsync<CliException>(() => client.ProfileAsync("orgs.yaml", None));
+
+        Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_plan_that_leaves_out_the_drafts_it_skips_is_unreadable()
+    {
+        var document = JsonNode.Parse(Documents.Plan())!.AsObject();
+        document.Remove("skipped");
+        var client = new RepottedClient(new FakeCli().On("plan TheLunchTrae/repotted --profile orgs.yaml --json", document.ToJsonString()));
+
+        var error = await Assert.ThrowsAsync<CliException>(() => client.PlanAsync("TheLunchTrae/repotted", "orgs.yaml", None));
 
         Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
     }

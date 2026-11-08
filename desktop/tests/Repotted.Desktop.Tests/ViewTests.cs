@@ -223,6 +223,7 @@ public sealed class ViewTests : IDisposable
                "repository":{"has_wiki":true,"pull_request_creation_cap":{"enabled":true,"max_open_pull_requests":3}},
                "security":{"vulnerability_alerts":true,"security_and_analysis":{"secret_scanning":{"status":"enabled"} } },
                "pages":{"build_type":"legacy","source":{"branch":"main"} } },
+             {{{Documents.NoDrafts}}},
              "sources":{
                "repository":{"has_wiki":{{{Path(own)}}},"pull_request_creation_cap.enabled":{{{Path(own)}}},
                  "pull_request_creation_cap.max_open_pull_requests":{{{Path(own)}}} },
@@ -230,7 +231,8 @@ public sealed class ViewTests : IDisposable
                "security":{"vulnerability_alerts":{{{Path(@base)}}},"security_and_analysis.secret_scanning":{{{Path(own)}}} },
                "custom_properties":{},
                "pages":{"build_type":{{{Path(own)}}},"source.branch":{{{Path(own)}}} },
-               "autolinks":{},"rulesets":{},"environments":{} } }
+               "autolinks":{},"rulesets":{},"environments":{},
+               {{{Documents.NoDraftSources}}} } }
             """;
         var window = await Show(theme, new FakeCli()
             .On("status --json", Documents.SignedIn)
@@ -493,9 +495,11 @@ public sealed class ViewTests : IDisposable
                  {"name":"npm","reviewers":[{"type":"User","id":1}],"prevent_self_review":true,
                   "deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true},
                   "branch_policies":[{"name":"main"},{"name":"v*","type":"tag"}]}]},
+             {{{Documents.NoDrafts}}},
              "sources":{"repository":{},"merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
                "rulesets":{"Main":{{{Path(own)}}},"Tags":{{{Path(@base)}}} },
-               "environments":{"npm":{{{Path(own)}}} } } }
+               "environments":{"npm":{{{Path(own)}}} },
+               {{{Documents.NoDraftSources}}} } }
             """;
         var window = await Show(theme, new FakeCli()
             .On("status --json", Documents.SignedIn)

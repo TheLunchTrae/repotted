@@ -610,7 +610,7 @@ internal sealed partial class ProfileViewModel(
         foreach (var section in ProfileFields.Sections)
         {
             var values = profile.Values.TryGetProperty(section.Section, out var found) ? found : default;
-            var drafts = profile.Drafts.ValueKind == JsonValueKind.Object && profile.Drafts.TryGetProperty(section.Section, out var drafted) ? drafted : default;
+            var drafts = profile.Drafts.TryGetProperty(section.Section, out var drafted) ? drafted : default;
             var sources = profile.Sources[section.Section];
             Tabs.Add(new ProfileTabViewModel(
                 section.Name,
@@ -640,7 +640,7 @@ internal sealed partial class ProfileViewModel(
         Tabs.Add(EntriesTab("Environments", "environments"));
         SelectedTab = Tabs.FirstOrDefault(tab => tab.Name == selected) ?? Tabs[0];
         BaseName = profile.Chain.Count > 1 ? Path.GetFileNameWithoutExtension(profile.Chain[1]) : null;
-        DraftWarnings = profile.Warnings ?? [];
+        DraftWarnings = profile.Warnings;
         ChangeCount = 0;
         Yaml = ReadText(profile.File);
         // The rows are new, so what a search found is found again among them.
@@ -679,7 +679,7 @@ internal sealed partial class ProfileViewModel(
 
     /// <summary>The draft rulesets or environments of a resolved profile, each with <c>draft: true</c>.</summary>
     private static IEnumerable<JsonObject> DraftsOf(ResolvedProfile profile, string section) =>
-        profile.Drafts.ValueKind == JsonValueKind.Object && profile.Drafts.TryGetProperty(section, out var list) && list.ValueKind == JsonValueKind.Array
+        profile.Drafts.TryGetProperty(section, out var list) && list.ValueKind == JsonValueKind.Array
             ? JsonNode.Parse(list.GetRawText())!.AsArray().OfType<JsonObject>().Where(entry => entry["name"] is JsonValue)
             : [];
 
@@ -700,7 +700,6 @@ internal sealed partial class ProfileViewModel(
     private static DraftValue? BaseDraft(ResolvedProfile? @base, string section, string key)
     {
         if (@base is null
-            || @base.Drafts.ValueKind != JsonValueKind.Object
             || !@base.Drafts.TryGetProperty(section, out var drafts)
             || SettingViewModel.Find(drafts, key) is not { } value
             || @base.DraftSource(section, key) is not { } file)

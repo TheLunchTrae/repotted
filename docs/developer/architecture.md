@@ -246,7 +246,9 @@ drafts included, and a staged apply through `stage` from `--new` to
 gate. The `capture`, `plan`, `repos`, and `login` documents need GitHub, and
 `logout` would remove a real sign-in, so the app's tests read hand-written
 examples of them, and only the strict parsing guards them against the real
-CLI.
+CLI. The app ships its own CLI, so every member that CLI always prints is
+required, and a hand-written example that leaves one out fails to parse
+rather than reading as empty.
 
 Each package ships the CLI beside the app as `repotted-cli`, a Node single
 executable application that `packages/cli/sea.ts` builds: the CLI and its

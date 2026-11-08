@@ -2332,7 +2332,7 @@ public sealed class ViewModelTests : IDisposable
             {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"workflow"}},
              "changes":[{"section":"pages","action":"create","target":"GitHub Pages site","fields":[],
                "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/pages","body":{"build_type":"workflow"} } }],
-             "warnings":[],
+             "skipped":[],"warnings":[],
              "access":{"role":"admin","app":{"status":"installed","permissions":{"administration":"write"},"settings_url":null}},
              "locks":[{"change":0,"reason":"Needs Pages write"}]}
             """;
@@ -2553,7 +2553,7 @@ public sealed class ViewModelTests : IDisposable
     }
 
     private static string Plan(string desired, string changes) =>
-        $$"""{"repository":"TheLunchTrae/repotted","desired":{{desired}},"changes":[{{changes}}],"warnings":[],"access":{{Documents.Unknown}},"locks":[]}""";
+        $$"""{"repository":"TheLunchTrae/repotted","desired":{{desired}},"changes":[{{changes}}],"skipped":[],"warnings":[],"access":{{Documents.Unknown}},"locks":[]}""";
 
     [AvaloniaFact]
     public async Task A_compare_covers_security_pages_and_autolinks()
@@ -2577,7 +2577,7 @@ public sealed class ViewModelTests : IDisposable
                {"section":"autolinks","action":"create","target":"JIRA-",
                 "fields":[{"field":"url_template","from":"https://old.example.com/<num>","to":"https://jira.example.com/<num>"}],
                 "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/autolinks","body":{} } }],
-             "warnings":["Skipped security.dependabot_runner_settings.runner_labels: GitHub keeps none with standard runners"],
+             "skipped":[],"warnings":["Skipped security.dependabot_runner_settings.runner_labels: GitHub keeps none with standard runners"],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
@@ -2608,7 +2608,7 @@ public sealed class ViewModelTests : IDisposable
     {
         const string plan = """
             {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"workflow"}},"changes":[],
-             "warnings":["Skipped pages: GitHub refused to read GitHub Pages (Forbidden); that needs the Pages read permission"],
+             "skipped":[],"warnings":["Skipped pages: GitHub refused to read GitHub Pages (Forbidden); that needs the Pages read permission"],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
@@ -2626,7 +2626,7 @@ public sealed class ViewModelTests : IDisposable
              "changes":[{"section":"pages","action":"update","target":"GitHub Pages site",
                "fields":[{"field":"source","from":{"branch":"gh-pages","path":"/"},"to":{"branch":"main","path":"/"}}],
                "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/pages","body":{} } }],
-             "warnings":[],
+             "skipped":[],"warnings":[],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
@@ -2643,7 +2643,7 @@ public sealed class ViewModelTests : IDisposable
     {
         const string plan = """
             {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"legacy"}},"changes":[],
-             "warnings":["Skipped pages: a new site built from a branch needs source.branch, or build_type: workflow"],
+             "skipped":[],"warnings":["Skipped pages: a new site built from a branch needs source.branch, or build_type: workflow"],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
@@ -2656,7 +2656,7 @@ public sealed class ViewModelTests : IDisposable
     {
         const string plan = """
             {"repository":"TheLunchTrae/repotted","desired":{"custom_properties":{"rulesets":"strict"}},"changes":[],
-             "warnings":["Skipped rulesets: GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"],
+             "skipped":[],"warnings":["Skipped rulesets: GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
@@ -2672,7 +2672,7 @@ public sealed class ViewModelTests : IDisposable
     {
         const string plan = """
             {"repository":"TheLunchTrae/repotted","desired":{"repository":{"has_wiki":false},"rulesets":[{"name":"Main"}]},"changes":[],
-             "warnings":["Skipped rulesets: GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"],
+             "skipped":[],"warnings":["Skipped rulesets: GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
@@ -3272,14 +3272,19 @@ public sealed class ViewModelTests : IDisposable
         var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
         var given = JsonNode.Parse(sources.Replace("OWN", JsonSerializer.Serialize(own), StringComparison.Ordinal))!.AsObject();
         var all = new JsonObject();
+        var drafts = new JsonObject();
         foreach (var section in (string[])["repository", "merge", "actions", "security", "custom_properties", "pages", "autolinks", "rulesets", "environments"])
         {
             all[section] = given[section]?.DeepClone() ?? new JsonObject();
+            drafts[section] = new JsonObject();
         }
+        all["drafts"] = drafts;
         var resolved = new JsonObject
         {
             ["chain"] = new JsonArray(own, @base),
             ["profile"] = JsonNode.Parse(profile),
+            ["drafts"] = new JsonObject(),
+            ["warnings"] = new JsonArray(),
             ["sources"] = all,
         }.ToJsonString();
         var cli = new FakeCli()

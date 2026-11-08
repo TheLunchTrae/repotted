@@ -189,6 +189,18 @@ internal static class Documents
 {
     public const string NoProfiles = """{"profiles":[]}""";
 
+    /// <summary>What a resolved profile with no drafts has beside its values: no drafts, and nothing they need.</summary>
+    public const string NoDrafts =
+        """
+        "drafts":{},"warnings":[]
+        """;
+
+    /// <summary>The <c>drafts</c> member of a resolved profile's sources when it has no drafts.</summary>
+    public const string NoDraftSources =
+        """
+        "drafts":{"repository":{},"merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{}}
+        """;
+
     /// <summary>A listing of two profiles: one, and the base it extends.</summary>
     public static string Profiles(string own, string @base) =>
         $$$"""
@@ -211,12 +223,14 @@ internal static class Documents
            "merge":{"allow_rebase_merge":true,"allow_squash_merge":false},
            "rulesets":[{"name":"Protect main"},{"name":"Old tags","absent":true}],
            "environments":[{"name":"npm"}]},
+         {{{NoDrafts}}},
          "sources":{
            "repository":{"has_issues":{{{Json(@base)}}},"has_wiki":{{{Json(own)}}} },
            "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(own)}}} },
            "actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
            "rulesets":{"Protect main":{{{Json(@base)}}},"Old tags":{{{Json(own)}}} },
-           "environments":{"npm":{{{Json(own)}}} } } }
+           "environments":{"npm":{{{Json(own)}}} },
+           {{{NoDraftSources}}} } }
         """;
 
     /// <summary>
@@ -255,9 +269,11 @@ internal static class Documents
         $$$"""
         {"chain":[{{{Json(@base)}}}],
          "profile":{"repository":{"has_issues":true},"merge":{"allow_rebase_merge":true,"allow_squash_merge":true}},
+         {{{NoDrafts}}},
          "sources":{"repository":{"has_issues":{{{Json(@base)}}} },
            "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(@base)}}} },
-           "actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{} } }
+           "actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{},
+           {{{NoDraftSources}}} } }
         """;
 
     /// <summary>
