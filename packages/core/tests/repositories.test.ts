@@ -59,10 +59,7 @@ describe('listRepositories', () => {
       responseError(403, { message: 'You have exceeded a secondary rate limit.' }, { 'retry-after': '60' }),
       new GitHubError(500, 'Server Error'),
     ]) {
-      const github = new FakeGitHub();
-      const request = github.request.bind(github);
-      github.request = (method, path, body) =>
-        path.startsWith('/user/installations') ? Promise.reject(error) : request(method, path, body);
+      const github = new FakeGitHub().fail('GET /user/installations', error);
 
       const caught = await listRepositories(github).then(
         () => undefined,

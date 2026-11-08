@@ -9,9 +9,7 @@ import { parsePlan, profileFileJsonSchema } from '@repotted/core';
 
 import { type GitHub, GitHubError, responseError } from '../../core/src/github.js';
 import { FakeGitRepository } from '../../core/tests/fake-git.js';
-import { FakeGitHub } from '../../core/tests/fake-github.js';
-
-type Method = Parameters<FakeGitHub['request']>[0];
+import { answered, FakeGitHub } from '../../core/tests/fake-github.js';
 import { installUrl, NotSignedInError } from '../src/auth.js';
 import { type Io, run } from '../src/commands.js';
 
@@ -26,26 +24,6 @@ interface Result {
   readonly code: number;
   readonly out: string;
   readonly err: string;
-}
-
-/** A fake that refuses its nth write, as GitHub might partway through an apply. */
-class FailingGitHub extends FakeGitHub {
-  private remaining: number;
-
-  constructor(failOnWrite: number) {
-    super();
-    this.remaining = failOnWrite;
-  }
-
-  override request(method: Method, path: string, body?: unknown): Promise<unknown> {
-    if (method !== 'GET') {
-      this.remaining -= 1;
-      if (this.remaining === 0) {
-        return Promise.reject(new GitHubError(500, 'Server Error'));
-      }
-    }
-    return super.request(method, path, body);
-  }
 }
 
 async function cliWith(github: GitHub, overrides: Partial<Io>, ...argv: string[]): Promise<Result> {
@@ -141,7 +119,12 @@ describe('--json', () => {
   });
 
   test('captures a repository as its profile and warnings', async () => {
-    const result = await cli(new FakeGitHub({ rulesetsUnavailable: true }), 'capture', 'lunch/app', '--json');
+    const github = new FakeGitHub().fail(
+      'GET /repos/lunch/app/rulesets',
+      answered(403, 'Upgrade to GitHub Pro or make this repository public to enable this feature.'),
+    );
+
+    const result = await cli(github, 'capture', 'lunch/app', '--json');
 
     expect(result).toMatchObject({ code: 0, err: '' });
     expect(document(result)).toMatchObject({
@@ -180,11 +163,17 @@ describe('--json', () => {
     const changes = parsePlan(JSON.parse(await readFile(file, 'utf8'))).changes;
     expect(changes.length).toBeGreaterThan(2);
 
-    const result = await cli(new FailingGitHub(2), 'apply', file, '--yes', '--json');
+    const github = new FakeGitHub().fail(
+      'PUT /repos/lunch/app/actions/permissions/workflow',
+      new GitHubError(500, 'Server Error'),
+    );
+
+    const result = await cli(github, 'apply', file, '--yes', '--json');
 
     expect(result).toMatchObject({ code: 1, err: '' });
+    expect(changes[2]?.target).toBe('workflow permissions');
     expect(document(result)).toMatchObject({
-      error: { kind: 'apply_failed', applied: changes.slice(0, 1), failed: changes[1] },
+      error: { kind: 'apply_failed', applied: changes.slice(0, 2), failed: changes[2] },
     });
   });
 
@@ -221,16 +210,13 @@ describe('--json', () => {
 
   test("gives GitHub's reason for a write it refuses for good", async () => {
     const file = await savePlan(new FakeGitHub(), 'refused.json');
-    const refusing = new FakeGitHub();
-    refusing.request = (method, requestPath, body) =>
-      method === 'GET'
-        ? FakeGitHub.prototype.request.call(refusing, method, requestPath, body)
-        : Promise.reject(
-            responseError(403, {
-              message: 'Resource not accessible by integration',
-              documentation_url: 'https://docs.github.com/rest/repos/repos#update-a-repository',
-            }),
-          );
+    const refusing = new FakeGitHub().fail(
+      /^(?!GET )/u,
+      responseError(403, {
+        message: 'Resource not accessible by integration',
+        documentation_url: 'https://docs.github.com/rest/repos/repos#update-a-repository',
+      }),
+    );
 
     const result = await cli(refusing, 'apply', file, '--yes', '--json');
 
@@ -245,11 +231,10 @@ describe('--json', () => {
   });
 
   test("links GitHub's docs after a failure in text, and leaves them out of JSON", async () => {
-    const github = new FakeGitHub();
-    github.request = () =>
-      Promise.reject(
-        responseError(404, { message: 'Not Found', documentation_url: 'https://docs.github.com/rest/repos/repos' }),
-      );
+    const github = new FakeGitHub().fail(
+      /^/u,
+      responseError(404, { message: 'Not Found', documentation_url: 'https://docs.github.com/rest/repos/repos' }),
+    );
 
     expect(await cli(github, 'capture', 'lunch/app')).toMatchObject({
       code: 1,
@@ -320,9 +305,11 @@ describe('account commands', () => {
       error: { kind: 'signed_out', message: 'Not signed in to GitHub. Run repotted login.' },
     });
 
-    const github = new FakeGitHub({ account });
-    github.request = () => Promise.reject(new GitHubError(401, 'Bad credentials'));
-    const rejected = await cli(github, 'repos', '--json');
+    const rejected = await cli(
+      new FakeGitHub({ account }).fail(/^/u, new GitHubError(401, 'Bad credentials')),
+      'repos',
+      '--json',
+    );
     expect(rejected.code).toBe(1);
     expect(document(rejected)).toEqual({ error: { kind: 'signed_out', message: 'Bad credentials' } });
 
@@ -339,8 +326,11 @@ describe('account commands', () => {
     expect(document(passing)).toMatchObject({ error: { kind: 'error' } });
 
     // Other refusals from GitHub say nothing about the sign-in.
-    github.request = () => Promise.reject(new GitHubError(403, 'Resource not accessible by integration'));
-    expect(document(await cli(github, 'repos', '--json'))).toMatchObject({ error: { kind: 'error' } });
+    const refused = new FakeGitHub({ account }).fail(
+      /^/u,
+      new GitHubError(403, 'Resource not accessible by integration'),
+    );
+    expect(document(await cli(refused, 'repos', '--json'))).toMatchObject({ error: { kind: 'error' } });
   });
 
   test('logout removes the sign-in and says whether there was one', async () => {
@@ -358,9 +348,7 @@ describe('account commands', () => {
   });
 
   test('status treats a token GitHub rejects as signed out', async () => {
-    const github = new FakeGitHub({ account });
-    github.request = (_method, path) =>
-      path === '/user' ? Promise.reject(new GitHubError(401, 'Bad credentials')) : Promise.resolve(undefined);
+    const github = new FakeGitHub({ account }).fail('GET /user', new GitHubError(401, 'Bad credentials'));
 
     const result = await cli(github, 'status', '--json');
 
