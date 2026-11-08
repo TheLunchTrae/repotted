@@ -56,7 +56,7 @@ export async function readPages(github: GitHub, repo: RepoRef): Promise<LivePage
 }
 
 function isAbsent(entry: PagesEntry): entry is Extract<PagesEntry, { absent: true }> {
-  return 'absent' in entry;
+  return entry.absent === true;
 }
 
 /**

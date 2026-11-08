@@ -284,6 +284,19 @@ export const securitySettings = z
 /** Custom property values by property name; null clears a value. */
 export const customProperties = z.record(z.string().min(1), z.union([z.string(), z.array(z.string()), z.null()]));
 
+/**
+ * `absent: true` marks an entry that removes, and `draft: true` a draft in a
+ * profile file. Every other branch leaves the key out, so entry unions pick
+ * their branch by it, and an error names the field that fails rather than the
+ * whole entry.
+ */
+const unmarked = z.undefined().optional();
+
+/** The message for a marking key that holds anything but `true`. */
+function marked(key: 'absent' | 'draft'): { error: z.core.$ZodErrorMap } {
+  return { error: (issue) => (issue.code === 'invalid_union' ? `${key} is true or left out` : undefined) };
+}
+
 export const autolink = z
   .object({
     key_prefix: z.string().min(1),
@@ -297,10 +310,15 @@ const absentAutolink = z
   .object({
     key_prefix: z.string().min(1),
     absent: z.literal(true),
+    draft: unmarked,
   })
   .strict();
 
-export const autolinkEntry = z.union([absentAutolink, autolink]);
+export const autolinkEntry = z.discriminatedUnion(
+  'absent',
+  [absentAutolink, autolink.extend({ absent: unmarked, draft: unmarked })],
+  marked('absent'),
+);
 
 export const pagesSite = z
   .object({
@@ -324,7 +342,11 @@ export const pagesSite = z
 /** A GitHub Pages site the profile turns off. */
 const absentPages = z.object({ absent: z.literal(true) }).strict();
 
-export const pagesEntry = z.union([absentPages, pagesSite]);
+export const pagesEntry = z.discriminatedUnion(
+  'absent',
+  [absentPages, pagesSite.extend({ absent: unmarked })],
+  marked('absent'),
+);
 
 export const bypassActor = z
   .object({
@@ -404,10 +426,15 @@ const absentRuleset = z
   .object({
     name: z.string().min(1),
     absent: z.literal(true),
+    draft: unmarked,
   })
   .strict();
 
-export const rulesetEntry = z.union([absentRuleset, ruleset]);
+export const rulesetEntry = z.discriminatedUnion(
+  'absent',
+  [absentRuleset, ruleset.extend({ absent: unmarked, draft: unmarked })],
+  marked('absent'),
+);
 
 export const environmentReviewer = z
   .object({
@@ -480,10 +507,15 @@ const absentEnvironment = z
   .object({
     name: z.string().min(1),
     absent: z.literal(true),
+    draft: unmarked,
   })
   .strict();
 
-export const environmentEntry = z.union([absentEnvironment, environment]);
+export const environmentEntry = z.discriminatedUnion(
+  'absent',
+  [absentEnvironment, environment.extend({ absent: unmarked, draft: unmarked })],
+  marked('absent'),
+);
 
 /** GitHub treats environment names as case-insensitive, so entries pair by this key. */
 export function environmentKey(name: string): string {
@@ -592,9 +624,9 @@ export const profileFile = z
     security: securitySettings.optional(),
     custom_properties: customProperties.optional(),
     pages: pagesEntry.optional(),
-    autolinks: z.array(z.union([draftAutolink, autolinkEntry])).optional(),
-    rulesets: z.array(z.union([draftEntry, rulesetEntry])).optional(),
-    environments: z.array(z.union([draftEntry, environmentEntry])).optional(),
+    autolinks: z.array(z.discriminatedUnion('draft', [draftAutolink, autolinkEntry], marked('draft'))).optional(),
+    rulesets: z.array(z.discriminatedUnion('draft', [draftEntry, rulesetEntry], marked('draft'))).optional(),
+    environments: z.array(z.discriminatedUnion('draft', [draftEntry, environmentEntry], marked('draft'))).optional(),
     drafts: draftSettings.optional(),
   })
   .strict();

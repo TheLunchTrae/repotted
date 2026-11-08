@@ -25,7 +25,10 @@ GitHub's REST description constrains, such as a `pull_request` rule's
 `allowed_merge_methods`, so a profile GitHub would refuse partway through an
 apply fails when it loads. Each parameter there is optional, because a rule
 keeps the live parameters the profile leaves out; other parameters and rule
-types stay open.
+types stay open. Entry lists and `pages` pick a branch by `absent` and, in a
+profile file, by `draft`, with zod's discriminated unions, so an error names
+the field that fails rather than the whole entry. Every branch but the one a
+key marks has that key as `undefined`, which a discriminated union needs.
 
 `packages/core/src/profile.ts` loads a profile and the chain of profiles it
 `extends`, merges them, and only then validates the result. Validating after

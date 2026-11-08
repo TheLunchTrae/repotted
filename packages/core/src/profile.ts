@@ -431,16 +431,9 @@ function settingProblems(section: SettingsSection, key: string, value: unknown):
   return result.success ? [] : issueLines(result.error);
 }
 
-/**
- * What stops one draft entry from applying as it stands, if anything. It is
- * checked against the entry that removes, when it has `absent`, or the one
- * that describes, so a problem names its field rather than failing both.
- */
-function entryProblems(
-  [absent, present]: readonly [z.ZodType, z.ZodType],
-  { draft: _draft, ...entry }: Readonly<Record<string, unknown>>,
-): string[] {
-  const result = (Object.hasOwn(entry, 'absent') ? absent : present).safeParse(entry);
+/** What stops one draft entry from applying as it stands, if anything. */
+function entryProblems(schema: z.ZodType, { draft: _draft, ...entry }: Readonly<Record<string, unknown>>): string[] {
+  const result = schema.safeParse(entry);
   return result.success ? [] : issueLines(result.error);
 }
 
@@ -458,17 +451,15 @@ function draftWarnings(drafts: Drafts): string[] {
   }
   for (const entry of drafts.autolinks ?? []) {
     warnings.push(
-      ...entryProblems(autolinkEntry.options, entry).map((line) => `Draft autolink "${entry.key_prefix}": ${line}`),
+      ...entryProblems(autolinkEntry, entry).map((line) => `Draft autolink "${entry.key_prefix}": ${line}`),
     );
   }
   for (const entry of drafts.rulesets ?? []) {
-    warnings.push(
-      ...entryProblems(rulesetEntry.options, entry).map((line) => `Draft ruleset "${entry.name}": ${line}`),
-    );
+    warnings.push(...entryProblems(rulesetEntry, entry).map((line) => `Draft ruleset "${entry.name}": ${line}`));
   }
   for (const entry of drafts.environments ?? []) {
     warnings.push(
-      ...entryProblems(environmentEntry.options, entry).map((line) => `Draft environment "${entry.name}": ${line}`),
+      ...entryProblems(environmentEntry, entry).map((line) => `Draft environment "${entry.name}": ${line}`),
     );
   }
   return warnings;

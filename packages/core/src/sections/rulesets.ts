@@ -108,7 +108,7 @@ export async function readRulesets(github: GitHub, repo: RepoRef): Promise<LiveR
 }
 
 function isAbsent(entry: RulesetEntry): entry is Extract<RulesetEntry, { absent: true }> {
-  return 'absent' in entry;
+  return entry.absent === true;
 }
 
 // Parameters the rulesets API requires but gives a documented default. A new

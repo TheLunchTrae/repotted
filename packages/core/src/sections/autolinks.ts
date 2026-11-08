@@ -26,7 +26,7 @@ export async function readAutolinks(github: GitHub, repo: RepoRef): Promise<Live
 }
 
 function isAbsent(entry: AutolinkEntry): entry is Extract<AutolinkEntry, { absent: true }> {
-  return 'absent' in entry;
+  return entry.absent === true;
 }
 
 /**

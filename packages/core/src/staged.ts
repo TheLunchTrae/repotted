@@ -466,7 +466,7 @@ export async function saveStagedEdits(file: string): Promise<StagedApply> {
   }
   // `absent` replaces a whole Pages site when files merge, but an edit sets one key of the profile.
   const pages = (await resolveProfile(before.base)).profile.pages;
-  if (layer.pages !== undefined && pages !== undefined && 'absent' in layer.pages !== 'absent' in pages) {
+  if (layer.pages !== undefined && pages !== undefined && (layer.pages.absent === true) !== (pages.absent === true)) {
     throw new ProfileError(
       'Cannot save a change between a Pages site and no Pages site to a profile; change pages in the profile file',
     );
