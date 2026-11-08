@@ -144,6 +144,29 @@ function usable(token: StoredToken, now: number): boolean {
   return token.expires_at === undefined || token.expires_at - now > expiryMargin;
 }
 
+// How long a run whose refresh GitHub refused waits for a concurrent run to store its token.
+const refusedRefreshWait = 1000;
+
+/**
+ * A usable token in the store other than `stored`, as a run that refreshed
+ * first leaves there. Undefined when there is none, or the store can't be
+ * read now, which leaves the refresh's own failure to report.
+ */
+async function newerToken(
+  store: TokenStore,
+  stored: StoredToken,
+  environment: FlowEnvironment,
+): Promise<string | undefined> {
+  try {
+    const latest = await store.read();
+    return latest !== undefined && latest.access_token !== stored.access_token && usable(latest, environment.now())
+      ? latest.access_token
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Turns the stored sign-in into a token that works now, refreshing it when
  * it is about to expire. Without a token, `problem` says why the sign-in no
@@ -177,16 +200,23 @@ async function signedInToken(
     return { token: fresh.access_token };
   } catch (error) {
     // A refresh token works once. Another run may have refreshed it first and
-    // stored the result, so take that before giving up.
-    const latest = await store.read();
-    if (latest !== undefined && latest.access_token !== stored.access_token && usable(latest, environment.now())) {
-      return { token: latest.access_token };
+    // stored the result, so take that before giving up. When GitHub refused
+    // this refresh, that run may still be storing its token, so look again
+    // after a moment.
+    const refused = !refreshed && error instanceof GrantRefusedError;
+    let newer = await newerToken(store, stored, environment);
+    if (newer === undefined && refused) {
+      await environment.sleep(refusedRefreshWait);
+      newer = await newerToken(store, stored, environment);
+    }
+    if (newer !== undefined) {
+      return { token: newer };
     }
     return {
       problem: sentence(`The Repotted sign-in could not be refreshed: ${describe(error)}`),
       // A refresh token works once, so one spent on a token the keychain
       // would not keep is as gone as one GitHub refused.
-      lost: refreshed || error instanceof GrantRefusedError,
+      lost: refreshed || refused,
     };
   }
 }
