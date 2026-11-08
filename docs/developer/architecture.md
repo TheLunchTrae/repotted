@@ -259,10 +259,14 @@ and a repository still has one staged apply at a time, since a batch starts a
 new one with `createStagedApply`, which never replaces a file, or joins one
 in progress. Members are planned a few at a time and applied one at a time,
 in the manifest's order, and a member's failure is a result of its own rather
-than the batch's. The saved batch plan records each staged apply's SHA-256,
-and apply ends a member's staged apply only when the file still has it, so an
-edit made after the review is never discarded. Apply also reads the manifest
-before each member, so a member left out after the review is not applied.
+than the batch's. The saved batch plan records the batch's id and each staged apply's
+SHA-256, and apply writes a member, and ends its staged apply, only while the
+file still has it, so a plan reviewed before an edit is never applied and the
+edit is never discarded. Apply also reads the manifest before each member, so
+a member left out or taken out after the review, or a batch that ended or
+started again, is not applied. A member with no changes is planned again too,
+so it ends only when the repository still matches. Discarding checks that each
+listed file is its member's staged apply before it removes any.
 
 ## The CLI and the MCP server
 

@@ -9,13 +9,14 @@ import {
   applyPlan,
   type Batch,
   batchMemberFile,
+  chosenMembers,
   type BatchPlan,
   createBatch,
   discardBatch,
   discardBatchMember,
   editEverywhere,
   isBatchPlan,
-  isFailure,
+  isUnfinished,
   leaveOut,
   type MemberResult,
   parseBatchPlan,
@@ -201,11 +202,13 @@ async function planBatchCommand(io: Io, folder: string, out: string | undefined,
   if (out !== undefined) {
     await writeFile(out, `${JSON.stringify(result, null, 2)}\n`);
   }
+  // A repository that could not be planned leaves the batch unreviewed, which a script should notice.
+  const code = result.failures.length > 0 ? 1 : 0;
   if (asJson) {
     json(io, result);
-    return 0;
+    return code;
   }
-  io.out(`${result.plans.map((member) => formatPlan(member.plan, member.locks)).join('\n\n')}\n`);
+  io.out(`${result.plans.map((member) => formatPlan(member, member.locks)).join('\n\n')}\n`);
   for (const { repository, error } of result.failures) {
     io.err(`${repository} could not be planned: ${error.message}\n`);
   }
@@ -215,7 +218,7 @@ async function planBatchCommand(io: Io, folder: string, out: string | undefined,
   if (out !== undefined) {
     io.err(`Saved the plans to ${out}. Apply them with: repotted apply ${out}\n`);
   }
-  return 0;
+  return code;
 }
 
 function plural(count: number, noun: string, nouns = `${noun}s`): string {
@@ -232,13 +235,15 @@ function describeResult(result: MemberResult): string {
     case 'locked':
       return `not applied: ${plural(result.locks.length, 'change')} locked (${result.locks[0]?.reason ?? 'locked'}).`;
     case 'left_out':
-      return 'not applied: it was left out of the batch after the review.';
+      return 'not applied: the batch no longer holds it as reviewed, since it was left out or taken out, or the batch ended.';
+    case 'changed':
+      return 'not applied: its staged apply changed after the review. Plan the batch again to review it.';
     case 'stopped':
       return 'not applied, since an earlier repository failed.';
     case 'stale':
-      return result.message;
+      return `${result.message}\n\nThe repository now needs:\n${formatPlan(result.current)}`;
     case 'apply_failed':
-      return `${describeFailure(new ApplyError(result.applied, result.failed, result.cause))}\n${docsLink(result.cause)}`;
+      return `${result.message}\n${docsLink(result.cause)}`;
     case 'failed':
       return result.error.message;
   }
@@ -262,11 +267,8 @@ interface BatchApplyFlags {
 
 async function applyBatchCommand(io: Io, data: unknown, flags: BatchApplyFlags): Promise<number> {
   const reviewed = parseBatchPlan(data);
-  const chosen = reviewed.plans.filter(
-    (member) =>
-      flags.only === undefined ||
-      flags.only.some((repository) => repository.toLowerCase() === member.repository.toLowerCase()),
-  );
+  // Checked before anything prints, so a name the plan lacks stops the run at once.
+  const chosen = chosenMembers(reviewed, flags.only);
   if (!flags.json) {
     io.out(`${chosen.map((member) => formatPlan(member.plan, member.locks)).join('\n\n')}\n`);
   }
@@ -295,9 +297,7 @@ async function applyBatchCommand(io: Io, data: unknown, flags: BatchApplyFlags):
       : { onResult: (result: MemberResult) => io.err(`${result.repository}: ${describeResult(result)}\n`) }),
   });
   // A repository that was not applied, or failed, leaves the batch unfinished, which a script should notice.
-  const unfinished = results.filter(
-    (result) => isFailure(result) || result.status === 'locked' || result.status === 'stopped',
-  );
+  const unfinished = results.filter(isUnfinished);
   if (flags.json) {
     json(io, { batch: reviewed.batch, results: results.map(resultDocument) });
   } else if (unfinished.length > 0) {
@@ -749,22 +749,37 @@ async function stageBatch(
       throw new UsageError('--repo edits one repository of the batch, so it takes only the options of a staged apply.');
     }
     if (options.discard) {
-      if (edits.length > 0 || options.saveToProfile) {
+      if (edits.length > 0 || options.saveToProfile || options.profile !== undefined) {
         throw new UsageError('--discard removes the staged apply, so it takes no other option.');
       }
-      const left = await discardBatchMember(folder, options.repo);
+      const result = await discardBatchMember(folder, options.repo);
       if (options.json) {
-        json(io, left);
+        json(io, { repository: options.repo, ...result });
+        return 0;
+      }
+      io.err(
+        result.discarded
+          ? `Took ${options.repo} out of the batch and discarded its staged apply.\n`
+          : `Took ${options.repo} out of the batch. Its staged apply joined the batch, so it stays in ${result.file}.\n`,
+      );
+      if (result.batch === null) {
+        io.err('That was its last repository, so the batch ended.\n');
       } else {
-        io.err(`Took ${options.repo} out of the batch and discarded its staged apply.\n`);
-        printBatch(io, left);
+        printBatch(io, result.batch);
       }
       return 0;
     }
     return stageFile(io, await batchMemberFile(folder, options.repo), options, edits);
   }
   if (options.discard) {
-    if (membership || leaving || options.everywhere || edits.length > 0 || options.saveToProfile) {
+    if (
+      membership ||
+      leaving ||
+      options.everywhere ||
+      edits.length > 0 ||
+      options.saveToProfile ||
+      options.profile !== undefined
+    ) {
       throw new UsageError('--discard removes the batch, so it takes no other option but --repo.');
     }
     await discardBatch(folder);
@@ -777,7 +792,15 @@ async function stageBatch(
   }
   if (options.everywhere) {
     const [edit, ...more] = edits;
-    if (edit === undefined || !('exclude' in edit) || more.length > 0 || membership || leaving) {
+    if (
+      edit === undefined ||
+      !('exclude' in edit) ||
+      more.length > 0 ||
+      membership ||
+      leaving ||
+      options.saveToProfile ||
+      options.profile !== undefined
+    ) {
       throw new UsageError('--everywhere takes one --exclude or --include, and no other option.');
     }
     const result = await editEverywhere(folder, edit.exclude, edit.excluded);

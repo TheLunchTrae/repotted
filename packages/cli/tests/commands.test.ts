@@ -295,8 +295,11 @@ describe('batch', () => {
       '--json',
     );
     expect(started).toMatchObject({ code: 0, err: '' });
+    const id = /"id":"([^"]+)"/u.exec(started.out)?.[1];
+    expect(id).toBeDefined();
     expect(document(started)).toEqual({
       folder,
+      id,
       profile,
       members: [
         { repository: 'lunch/app', file: path.join(folder, 'lunch', 'app.yaml'), left_out: false, joined: false },
@@ -337,10 +340,11 @@ describe('batch', () => {
     expect(planned.code).toBe(0);
     expect(document(planned)).toMatchObject({
       batch: folder,
+      id,
       profile,
       plans: [
-        { repository: 'lunch/app', plan: { changes: [] }, locks: [] },
-        { repository: 'lunch/web', plan: { changes: [{ fields: [{ field: 'has_projects' }] }] }, locks: [] },
+        { repository: 'lunch/app', changes: [], locks: [], staged: { exclude: ['repository.has_wiki'] } },
+        { repository: 'lunch/web', changes: [{ fields: [{ field: 'has_projects' }] }], locks: [] },
       ],
       left_out: [],
       failures: [],
@@ -387,8 +391,9 @@ describe('batch', () => {
     );
     const plans = path.join(folder, 'plans.json');
 
+    // A repository that could not be planned exits 1, though the rest are planned and saved.
     const planned = await cliWith(github, {}, 'plan', '--staged', folder, '--out', plans);
-    expect(planned.code).toBe(0);
+    expect(planned.code).toBe(1);
     expect(planned.out).toContain('lunch/app: 1 change');
     expect(planned.err).toContain('lunch/gone could not be planned: Not Found');
 
@@ -418,6 +423,77 @@ describe('batch', () => {
 
     const discarded = await cliWith(github, {}, 'stage', folder, '--discard', '--json');
     expect(document(discarded)).toEqual({ discarded: folder });
+  });
+
+  test('applies only the repositories named, stops after a failure when asked, and takes one out', async () => {
+    const { profile, folder } = await batchPlace();
+    const fakes = ['app', 'web', 'api'].map((name) => new FakeGitHub({}, `lunch/${name}`));
+    const github = new FakeFleet(fakes);
+    await cliWith(
+      github,
+      {},
+      'stage',
+      folder,
+      '--batch',
+      '--new',
+      'lunch/app',
+      '--new',
+      'lunch/web',
+      '--new',
+      'lunch/api',
+      '--profile',
+      profile,
+    );
+    const plans = path.join(folder, '..', 'plans.json');
+    await cliWith(github, {}, 'plan', '--staged', folder, '--out', plans);
+
+    const missing = await cliWith(github, {}, 'apply', plans, '--yes', '--only', 'lunch/none');
+    expect(missing).toMatchObject({ code: 1, out: '' });
+    expect(missing.err).toContain('no plan for lunch/none');
+
+    fakes[0]?.fail('PATCH /repos/lunch/app', answered(422, 'Validation failed'));
+    const stopped = await cliWith(
+      github,
+      {},
+      'apply',
+      plans,
+      '--yes',
+      '--only',
+      'lunch/app',
+      '--only',
+      'LUNCH/web',
+      '--stop-on-failure',
+      '--json',
+    );
+    expect(stopped.code).toBe(1);
+    expect(document(stopped)).toMatchObject({
+      results: [
+        { repository: 'lunch/app', status: 'apply_failed' },
+        { repository: 'lunch/web', status: 'stopped' },
+      ],
+    });
+    expect(fakes.map((fake) => fake.writes.length)).toEqual([1, 0, 0]);
+
+    const taken = await cliWith(github, {}, 'stage', folder, '--repo', 'lunch/api', '--discard', '--json');
+    expect(document(taken)).toMatchObject({
+      repository: 'lunch/api',
+      file: path.join(folder, 'lunch', 'api.yaml'),
+      discarded: true,
+      batch: { members: [{ repository: 'lunch/app' }, { repository: 'lunch/web' }] },
+    });
+    const profiled = await cliWith(github, {}, 'stage', folder, '--discard', '--profile', profile);
+    expect(profiled.code).toBe(2);
+    const everywhere = await cliWith(
+      github,
+      {},
+      'stage',
+      folder,
+      '--exclude',
+      'repository.has_wiki',
+      '--everywhere',
+      '--save-to-profile',
+    );
+    expect(everywhere.code).toBe(2);
   });
 
   test('refuses options that belong to the other kind of staged apply', async () => {

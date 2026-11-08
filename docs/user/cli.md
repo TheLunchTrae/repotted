@@ -180,7 +180,8 @@ changes it:
   plans and applies; `--put-back owner/repo` takes it back.
 - `--repo owner/repo` with any option of `stage <file>` above shows or edits
   that repository's staged apply, and `--repo owner/repo --discard` takes it
-  out of the batch and discards its staged apply.
+  out of the batch and discards its staged apply, unless it joined the batch,
+  when it stays as it was.
 - `--exclude key --everywhere` leaves a value out of every repository whose
   profile sets it, and `--include key --everywhere` takes it back in each. A
   repository whose own one-off edits set that value keeps its staged apply as
@@ -191,17 +192,17 @@ changes it:
 `plan --staged <folder>` plans every repository of the batch that isn't left
 out, a few at a time. A repository that can't be planned, such as one the
 Repotted App isn't installed on, is reported on its own, and the rest are
-planned all the same.
+planned all the same, and `plan` exits 1.
 
 `apply` applies a batch's saved plan one repository at a time, in the batch's
 order, after you confirm all of them at once. Each repository is applied as
 one plan is: planned again first, and written only when its changes are the
-ones you reviewed. It skips a repository whose changes are locked, and one you
-left out of the batch since the review. A repository that fails doesn't stop
+ones you reviewed. It skips a repository whose changes are locked, one whose
+staged apply you edited since the review, and one you left out of the batch
+or took out of it since the review. A repository that fails doesn't stop
 the rest unless you pass `--stop-on-failure`; `--only owner/repo` applies only
-the repositories it names. Each repository that is applied, or already
-matched, ends its staged apply and leaves the batch, unless its staged apply
-changed after the review, so an edit you made meanwhile is never lost. The
+the repositories it names. Each repository that is applied, or still
+matches when planned again, ends its staged apply and leaves the batch. The
 batch ends with its last repository. `apply` exits 1 when any repository
 didn't finish; plan the batch again to review what is left.
 
