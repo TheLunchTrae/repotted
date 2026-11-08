@@ -11,6 +11,9 @@ internal class CliException(string message) : Exception(message);
 /// <summary>A command failed because there is no sign-in, or GitHub rejected it.</summary>
 internal sealed class SignInLostException(string message) : CliException(message);
 
+/// <summary>The command line printed something the app could not read, such as after a crash, rather than a failure it explains.</summary>
+internal sealed class CliOutputException(string message) : CliException(message);
+
 /// <summary>Who Repotted signs in as, or why it is signed out.</summary>
 internal abstract record Account
 {
@@ -347,6 +350,116 @@ internal sealed class RepottedClient(ICli cli)
         };
     }
 
+    /// <summary>
+    /// Starts a batch in the new folder <paramref name="folder"/>: a staged apply
+    /// in <paramref name="stagedFolder"/> for each of <paramref name="repositories"/>,
+    /// from the profile in <paramref name="profile"/>, or from each repository as
+    /// it is when that is null, and each staged apply in <paramref name="join"/>
+    /// as it is. A failed start leaves no file behind.
+    /// </summary>
+    public Task<BatchDocument> StartBatchAsync(
+        string folder,
+        string stagedFolder,
+        IReadOnlyList<string> repositories,
+        IReadOnlyList<string> join,
+        string? profile,
+        CancellationToken cancellationToken) =>
+        BatchAsync(
+            [
+                "stage", folder, "--batch",
+                // Only new staged applies need a place; the CLI refuses one for a batch that only joins.
+                .. repositories.Count == 0 ? Array.Empty<string>() : [$"--staged-dir={stagedFolder}"],
+                .. repositories.Select(repository => $"--new={repository}"),
+                .. join.Select(file => $"--join={file}"),
+                .. profile is null ? Array.Empty<string>() : [$"--profile={profile}"],
+                "--json",
+            ],
+            cancellationToken);
+
+    /// <summary>Reads the batch in <paramref name="folder"/>.</summary>
+    public Task<BatchDocument> BatchAsync(string folder, CancellationToken cancellationToken) =>
+        BatchAsync(["stage", folder, "--json"], cancellationToken);
+
+    /// <summary>Leaves <paramref name="repository"/> out of the batch's plans and applies, or puts it back.</summary>
+    public Task<BatchDocument> LeaveOutOfBatchAsync(string folder, string repository, bool leftOut, CancellationToken cancellationToken) =>
+        BatchAsync(["stage", folder, leftOut ? $"--leave-out={repository}" : $"--put-back={repository}", "--json"], cancellationToken);
+
+    private async Task<BatchDocument> BatchAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(arguments, null, cancellationToken).ConfigureAwait(false);
+        return Read(run, CliJson.Default.BatchDocument);
+    }
+
+    /// <summary>
+    /// Leaves out what <paramref name="key"/> names in every repository of the
+    /// batch whose profile sets it, or stops leaving it out in each. A
+    /// repository whose one-off edits set it keeps its staged apply, and is
+    /// named in the answer.
+    /// </summary>
+    public async Task<EverywhereDocument> ExcludeEverywhereAsync(string folder, string key, bool excluded, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(
+            ["stage", folder, excluded ? $"--exclude={key}" : $"--include={key}", "--everywhere", "--json"], null, cancellationToken)
+            .ConfigureAwait(false);
+        return Read(run, CliJson.Default.EverywhereDocument);
+    }
+
+    /// <summary>
+    /// Plans every repository of the batch in <paramref name="folder"/>, and
+    /// saves the plan to <paramref name="planFile"/>, which
+    /// <see cref="ApplyBatchMemberAsync"/> applies. It only reads from GitHub.
+    /// </summary>
+    public async Task<BatchPlanDocument> PlanBatchAsync(string folder, string planFile, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["plan", $"--staged={folder}", $"--out={planFile}", "--json"], null, cancellationToken)
+            .ConfigureAwait(false);
+        var plan = Read(run, CliJson.Default.BatchPlanDocument);
+        if (plan.Plans.Any(member => member.Desired.ValueKind != JsonValueKind.Object))
+        {
+            throw Unreadable(run, "a repository's plan has no profile.");
+        }
+        // A lost sign-in fails every repository alike, so it is the app's to handle, not one repository's.
+        if (plan.Failures.FirstOrDefault(failure => failure.Error.Kind == "signed_out") is { } signedOut)
+        {
+            throw Raise(new ErrorDetail(signedOut.Error.Kind, signedOut.Error.Message));
+        }
+        return plan;
+    }
+
+    /// <summary>
+    /// Applies one repository of the reviewed batch plan in
+    /// <paramref name="planFile"/>. The CLI plans it again first, and writes
+    /// only if its changes are the reviewed ones and its staged apply is still
+    /// the one reviewed. This writes to GitHub.
+    /// </summary>
+    public async Task<MemberResultDocument> ApplyBatchMemberAsync(string planFile, string repository, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["apply", planFile, $"--only={repository}", "--yes", "--json"], null, cancellationToken)
+            .ConfigureAwait(false);
+        var results = Read(run, CliJson.Default.BatchApplyDocument).Results;
+        if (results.Count != 1)
+        {
+            throw Unreadable(run, $"it did not say how {repository} went.");
+        }
+        return results[0].Error is { Kind: "signed_out" } signedOut
+            ? throw Raise(new ErrorDetail(signedOut.Kind, signedOut.Message))
+            : results[0];
+    }
+
+    /// <summary>Ends the batch: discards the staged applies it started; one that joined it stays, as do the profiles.</summary>
+    public async Task DiscardBatchAsync(string folder, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["stage", folder, "--discard", "--json"], null, cancellationToken).ConfigureAwait(false);
+        if (Failure(run.Output) is { } failure)
+        {
+            throw Raise(failure);
+        }
+        if (run.ExitCode != 0)
+        {
+            throw Unreadable(run, "it did not say the batch was removed.");
+        }
+    }
+
     private async Task<ResolvedProfile> ProfileAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
         var run = await cli.RunAsync(arguments, null, cancellationToken).ConfigureAwait(false);
@@ -523,6 +636,6 @@ internal sealed class RepottedClient(ICli cli)
             : $"The Repotted command line failed (exit code {run.ExitCode}): {string.Join(' ', lines.TakeLast(3))}";
     }
 
-    private static CliException Unreadable(CliRun run, string detail) =>
+    private static CliOutputException Unreadable(CliRun run, string detail) =>
         new(Crash(run) ?? $"Could not read what the Repotted command line printed: {detail}");
 }

@@ -31,7 +31,7 @@ internal static class ControlLabel
     // A particle that belongs to its verb is capitalized, as in "Sign In".
     private static readonly HashSet<string> PhrasalVerbs = new(StringComparer.Ordinal)
     {
-        "back up", "check out", "log in", "log out", "look up", "opt in", "opt out", "set up", "sign in", "sign out",
+        "back up", "check out", "leave out", "log in", "log out", "look up", "opt in", "opt out", "set up", "sign in", "sign out",
         "take out", "turn off", "turn on",
     };
 

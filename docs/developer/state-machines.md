@@ -283,6 +283,46 @@ Unsaved profile changes on the Profiles page are asked about after the apply.
 A lost sign-in that asked either question checks the sign-in again once it is
 answered. Opening another apply while one is open does nothing.
 
+## Desktop batch
+
+The Batch apply page (`BatchViewModel`) drives a batch through the CLI: the
+manifest is kept in a `batch` folder in the app data folder, its members'
+staged applies in `staged/` as the Apply page keeps them, and the reviewed
+plan as `batch.plan.json`. Leaving the page keeps the batch, so the
+Repositories page offers it again, and opening the Apply page for one of its
+members opens the batch. Each repository's entry (`BatchMemberViewModel`) is
+Planned, Left out or Failed, and its one-off edits open, in the same profile
+editor as the Apply page, when it is first selected.
+
+| State                   | Event                                              | Next                                                                                                                                                                                                          |
+| ----------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Starting                | No batch, with repositories chosen                 | Planning, after `stage --batch`; a repository with a staged apply joins as it is, and the notice names it.                                                                                                    |
+| Starting                | No batch, and none chosen (Resume)                 | Failed: there is no batch to resume.                                                                                                                                                                          |
+| Starting                | A batch is there, and none chosen                  | Planning, from the batch as it is.                                                                                                                                                                            |
+| Starting                | A batch is there, with repositories chosen         | Unfinished, naming the batch's size and profile; one the CLI can't read can still be started over.                                                                                                            |
+| Unfinished              | Resume                                             | Planning.                                                                                                                                                                                                     |
+| Unfinished              | Start over                                         | Starting: the batch is discarded, keeping staged applies that joined it, the plan is removed, and a new batch starts. One the CLI cannot read is removed as it is, and the notice says so.                    |
+| Planning                | `stage` and `plan --staged` succeed                | Reviewing. Entries are kept by repository with their edits and the selection; one that left the batch goes.                                                                                                   |
+| Planning                | Either fails                                       | Failed; Review again plans once more, and Discard batch is offered while the batch is there.                                                                                                                  |
+| Reviewing               | Leave out or Put back a member, a row, or a change | Working, then Planning. Everywhere changes name each repository that kept its own; a refused change shows why. Open one-off edits are read again.                                                             |
+| Reviewing               | One-off edits not saved yet                        | Reviewing, with Apply, every change and leaving held until saved or undone.                                                                                                                                   |
+| Reviewing               | The edits are saved                                | Planning, since the edits change that member's plan.                                                                                                                                                          |
+| Reviewing               | Apply, with changes to write                       | Confirming. Members that need access, left out or failed are not in it.                                                                                                                                       |
+| Confirming              | Cancel                                             | Reviewing; nothing is written.                                                                                                                                                                                |
+| Confirming              | Apply now                                          | Applying: `apply --only` on the plan file for each ready member in order. Members that need access are marked as waiting.                                                                                     |
+| Applying                | A member's run ends                                | Its result: Finished when applied or in line, otherwise Unfinished with why; a failed run warns some may be written, and a lost sign-in stops the rest. Applied but not let go of by the batch is Unfinished. |
+| Applying                | Stop after this repository                         | The member being applied finishes; the rest are marked not applied.                                                                                                                                           |
+| Applying                | The last member's run ends                         | Done. With no batch left, the plan file and empty staged folders are removed and the batch is finished; otherwise the batch stays with what didn't finish or wasn't in the apply.                             |
+| Done                    | Review again, with the batch still there           | Planning, for the members still in the batch.                                                                                                                                                                 |
+| Reviewing, Done, Failed | Discard batch, with the batch there                | Confirming discard. Held while a change runs or the edits are read or saved.                                                                                                                                  |
+| Confirming discard      | Keep it                                            | The state it came from; held while the discard runs.                                                                                                                                                          |
+| Confirming discard      | Discard batch                                      | Discarded: the batch, the staged applies it started and the plan are removed, and the page closes. A refusal returns.                                                                                         |
+
+Leaving the page goes by `CanLeave` as the Apply page does: not while it
+starts, plans, applies or runs a change, nor while the edits of the selected
+member are read, saved or unsaved, and the same question asks to save or undo
+them first, showing that member's edits.
+
 ## Config repository sync
 
 `syncFolder` (`packages/core/src/sync.ts`) brings a folder and a folder in a

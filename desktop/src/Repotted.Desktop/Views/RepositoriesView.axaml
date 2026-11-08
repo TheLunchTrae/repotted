@@ -27,10 +27,19 @@
     <Grid ColumnDefinitions="*,340" Margin="32,20,32,32">
       <!-- The list -->
       <DockPanel Margin="0,0,24,0">
-        <Border DockPanel.Dock="Top" Classes="chip" HorizontalAlignment="Left" Margin="0,0,0,14"
-                IsVisible="{Binding ShowTable}">
-          <TextBlock Text="{Binding CountLabel}" />
-        </Border>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,14">
+          <Border Classes="chip" IsVisible="{Binding ShowTable}">
+            <TextBlock Text="{Binding CountLabel}" />
+          </Border>
+          <!-- A batch apply that was left unfinished -->
+          <Border Classes="chip" Padding="10,0" IsVisible="{Binding HasUnfinishedBatch}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="A batch apply is not finished." VerticalAlignment="Center" />
+              <Button Classes="link" Content="Resume" Command="{Binding ResumeBatchCommand}" VerticalAlignment="Center"
+                      AutomationProperties.Name="Resume the batch apply" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
 
         <Panel>
           <TextBlock Classes="muted" Text="Loading repositories" IsVisible="{Binding Loading}" />
@@ -48,7 +57,7 @@
 
           <DockPanel IsVisible="{Binding ShowTable}">
             <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
-              <Grid ColumnDefinitions="*,72,128,104,64" Margin="12,8">
+              <Grid ColumnDefinitions="32,*,72,128,104,64" Margin="12,8">
                 <Grid.Styles>
                   <Style Selector="TextBlock">
                     <Setter Property="FontSize" Value="13" />
@@ -56,15 +65,15 @@
                     <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
                   </Style>
                 </Grid.Styles>
-                <TextBlock Text="Repository" />
-                <TextBlock Grid.Column="1" Text="Profile" />
-                <TextBlock Grid.Column="2" Text="Sections" />
-                <TextBlock Grid.Column="3" Text="Status" />
-                <TextBlock Grid.Column="4" Text="Checked" />
+                <TextBlock Grid.Column="1" Text="Repository" />
+                <TextBlock Grid.Column="2" Text="Profile" />
+                <TextBlock Grid.Column="3" Text="Sections" />
+                <TextBlock Grid.Column="4" Text="Status" />
+                <TextBlock Grid.Column="5" Text="Checked" />
               </Grid>
             </Border>
-            <ListBox Classes="table" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}"
-                     AutomationProperties.Name="Repositories">
+            <ListBox x:Name="List" Classes="table" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}"
+                     SelectionMode="Multiple" AutomationProperties.Name="Repositories">
               <ListBox.Styles>
                 <Style Selector="ListBoxItem" x:DataType="vm:RepositoryRowViewModel">
                   <Setter Property="AutomationProperties.Name" Value="{Binding Description}" />
@@ -74,22 +83,25 @@
                 <DataTemplate x:DataType="vm:RepositoryRowViewModel">
                   <Panel>
                     <Border Classes="selection-rail" />
-                    <Grid ColumnDefinitions="*,72,128,104,64" Margin="12,11">
-                      <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding FullName}">
+                    <Grid ColumnDefinitions="32,*,72,128,104,64" Margin="12,11">
+                      <!-- Ticking several repositories, or Shift- or Ctrl-clicking them, chooses them for a batch apply -->
+                      <CheckBox VerticalAlignment="Center" IsChecked="{Binding $parent[ListBoxItem].IsSelected}"
+                                AutomationProperties.Name="{Binding FullName, StringFormat='Choose {0}'}" />
+                      <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding FullName}">
                         <!-- On one line, so no space falls between the owner and the name. -->
                         <Run Text="{Binding Owner}" Foreground="{DynamicResource MutedBrush}" /><Run Text="{Binding Name}" FontWeight="Bold" />
                       </TextBlock>
-                      <TextBlock Grid.Column="1" Classes="muted" Text="None" VerticalAlignment="Center" />
-                      <ItemsControl Grid.Column="2" ItemsSource="{Binding Sections}" VerticalAlignment="Center"
+                      <TextBlock Grid.Column="2" Classes="muted" Text="None" VerticalAlignment="Center" />
+                      <ItemsControl Grid.Column="3" ItemsSource="{Binding Sections}" VerticalAlignment="Center"
                                     ItemTemplate="{StaticResource SectionBar}">
                         <ItemsControl.ItemsPanel>
                           <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                       </ItemsControl>
-                      <Border Grid.Column="3" Classes="pill none">
+                      <Border Grid.Column="4" Classes="pill none">
                         <StackPanel Orientation="Horizontal"><Ellipse /><TextBlock Text="No profile" /></StackPanel>
                       </Border>
-                      <TextBlock Grid.Column="4" Classes="muted" Text="Never" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="5" Classes="muted" Text="Never" VerticalAlignment="Center" />
                     </Grid>
                   </Panel>
                 </DataTemplate>
@@ -98,6 +110,29 @@
           </DockPanel>
         </Panel>
       </DockPanel>
+
+      <!-- The chosen repositories, for a batch apply -->
+      <Border Grid.Column="1" Classes="panel" VerticalAlignment="Top" IsVisible="{Binding Choosing}">
+        <StackPanel>
+          <TextBlock Classes="h2" Text="{Binding ChosenLabel}" TextWrapping="Wrap" />
+          <TextBlock Classes="muted small" Margin="0,4,0,14" TextWrapping="Wrap"
+                     Text="Apply one profile to all of them, with each repository's changes to review on its own first." />
+          <TextBlock Classes="muted small" FontWeight="SemiBold" Margin="0,0,0,6" Text="Profile to apply" />
+          <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Choices}" SelectedItem="{Binding CompareWith}"
+                    PlaceholderText="No profiles in the folder" AutomationProperties.Name="Profile to apply">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:ProfileItemViewModel">
+                <TextBlock Text="{Binding Name}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Classes="primary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Content="Review apply"
+                  Command="{Binding ReviewBatchCommand}" IsVisible="{Binding CanBatch}"
+                  AutomationProperties.HelpText="Shows what the profile changes in each repository, to edit before anything is written." />
+          <TextBlock Classes="muted small" Margin="0,12,0,0" TextWrapping="Wrap"
+                     Text="A repository with an apply that isn't finished joins the batch as it is. Nothing is written until you confirm." />
+        </StackPanel>
+      </Border>
 
       <!-- The selected repository -->
       <Border Grid.Column="1" Classes="panel" VerticalAlignment="Top" IsVisible="{Binding HasSelection}">

@@ -64,7 +64,10 @@ To add repositories to the list, click **Add repositories**, which opens the
 Repotted App's install page on GitHub.
 
 Select a repository to open its panel. From there you can open it on GitHub,
-compare it with a profile, or capture it as a new profile.
+compare it with a profile, or capture it as a new profile. Tick several
+repositories, or <kbd>Shift</kbd>-click or <kbd>Ctrl</kbd>-click them
+(<kbd>⌘</kbd>-click on macOS), to [apply a profile to all of
+them](#apply-a-profile-to-several-repositories).
 
 ## Profiles
 
@@ -294,7 +297,7 @@ An apply you leave before it finishes is kept. The repository shows "An apply
 here is not finished." with **Resume**, which offers to pick it up or start
 over. **Discard apply** throws an apply away with its one-off edits; the
 profile stays as it is. The app keeps unfinished applies in a `staged` folder
-in its app data folder, below.
+in its app data folder, below, and a batch in a `batch` folder beside it.
 
 One-off edits you haven't saved keep the apply open. If you quit or sign out
 then, the apply asks you to save or undo them first, and goes on once you do;
@@ -304,6 +307,51 @@ and leaves you on the apply; try again once it is done.
 
 The command line does the same with [`repotted stage`](cli.md#stage-an-apply), if you prefer
 it or want to script it.
+
+## Apply a profile to several repositories
+
+A batch apply applies one profile to several repositories, with each
+repository's changes reviewed on its own first. Nothing is written to GitHub
+until you confirm.
+
+To start one, tick the repositories on the **Repositories** page, pick a
+profile in the panel and click **Review apply**. A repository that already has
+an apply in progress joins the batch as it is, one-off edits and all, and the
+batch says so.
+
+The list down the side starts with **All repositories**, which counts the
+changes and lists each one the profile makes with how many repositories it
+reaches. **Leave out everywhere** leaves a change out of every repository's
+apply; the profile keeps it. What repositories leave out is listed under
+**Left out**, with **Put back everywhere**. A repository whose one-off edits
+set that change keeps them, and the batch says which.
+
+Under it, each repository shows its status: how many changes, **Already in
+line**, **Needs access** for a change GitHub will refuse, or **Couldn't
+compare** with why. Select one to see its **Changes** and **One-off edits**
+tabs, which work as they do in an apply to one repository, with **Previous**
+and **Next** to go through them. Untick a repository to leave it out of the
+batch; its staged apply stays, and ticking it puts it back. Any change plans
+every repository again, and **Apply** waits while one-off edits are unsaved.
+
+Click **Apply to N repositories** and then **Apply now** to write them, one
+repository at a time. Repotted checks each on GitHub first, and writes nothing
+to one that changed since you reviewed it. A repository with a change GitHub
+will refuse waits, as do those you left out. **Stop after this repository**
+finishes the one it writes to and leaves the rest.
+
+Then the page lists the repositories that didn't finish first, with why, and
+**Review again** plans them again, along with any you left out. Those that
+finished, or needed nothing, have left the batch, and the batch ends with the
+last of them. If you lose your sign-in partway, the apply stops there. A batch you leave
+before it finishes is kept: the **Repositories** page shows "A batch apply is
+not finished." with **Resume**, and starting an apply to one of its
+repositories opens the batch. **Discard batch** throws it away; a staged apply
+that joined it stays, to resume on its own. A batch Repotted can't read can
+still be discarded or started over; any apply it started then stays on its own.
+
+The command line does the same with
+[`repotted stage --batch`](cli.md#apply-a-profile-to-several-repositories).
 
 ## Where the app keeps its settings
 

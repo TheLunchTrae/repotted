@@ -84,6 +84,22 @@ internal sealed partial class AppSettings(string folder)
         return Path.Combine(folder, "staged", parts[0], $"{parts[1]}.yaml");
     }
 
+    /// <summary>The folder that holds every staged apply the app starts, one for each repository.</summary>
+    public string StagedFolder => Path.Combine(folder, "staged");
+
+    /// <summary>
+    /// Where the app keeps its batch: one profile applied to several
+    /// repositories, through a staged apply for each in <see cref="StagedFolder"/>.
+    /// The app keeps one batch at a time.
+    /// </summary>
+    public string BatchFolder => Path.Combine(folder, "batch");
+
+    /// <summary>The batch's plan under review, beside the batch folder.</summary>
+    public string BatchPlanFile => Path.Combine(folder, "batch.plan.json");
+
+    /// <summary>Whether the app's batch is there, unfinished.</summary>
+    public bool HasBatch => System.IO.File.Exists(Path.Combine(BatchFolder, "batch.yaml"));
+
     /// <summary>The plan under review for the staged apply in <paramref name="stagedFile"/>.</summary>
     public static string PlanFile(string stagedFile) => Path.ChangeExtension(stagedFile, ".plan.json");
 

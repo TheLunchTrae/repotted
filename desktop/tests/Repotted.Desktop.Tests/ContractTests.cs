@@ -662,6 +662,67 @@ public sealed class ContractTests
         await Assert.ThrowsAsync<CliException>(() => client.SaveStagedToProfileAsync(file, cancellationToken));
     }
 
+    [Fact]
+    public async Task The_cli_keeps_a_batch_the_way_the_app_drives_it()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        var settings = folders.Settings;
+        var orgs = folders.Write("orgs.yaml", "repository: { has_issues: true, has_wiki: false }\n");
+        // A repository with an apply already in progress joins the batch as it is.
+        var joined = settings.StagedFile("TheLunchTrae/test-repo");
+        Directory.CreateDirectory(Path.GetDirectoryName(joined)!);
+        await client.StartStagedAsync(joined, "TheLunchTrae/test-repo", null, cancellationToken);
+
+        var started = await client.StartBatchAsync(
+            settings.BatchFolder, settings.StagedFolder, ["TheLunchTrae/repotted"], [joined], orgs, cancellationToken);
+        Assert.True(settings.HasBatch);
+        Assert.Equal("orgs.yaml", Path.GetFileName(started.Profile));
+        Assert.Equal(
+            [("TheLunchTrae/test-repo", true), ("TheLunchTrae/repotted", false)],
+            started.Members.Select(member => (member.Repository, member.Joined)));
+        // The batch puts a new staged apply where the app's Apply page looks for one.
+        Assert.Equal(
+            Path.GetFileName(settings.StagedFile("TheLunchTrae/repotted")),
+            Path.GetFileName(started.Members.Single(member => !member.Joined).File));
+        Assert.True(File.Exists(settings.StagedFile("TheLunchTrae/repotted")));
+        Assert.Equal(started, await client.BatchAsync(settings.BatchFolder, cancellationToken), BatchComparer.Instance);
+
+        var left = await client.LeaveOutOfBatchAsync(settings.BatchFolder, "TheLunchTrae/test-repo", true, cancellationToken);
+        Assert.True(left.Members.Single(member => member.Joined).LeftOut);
+        Assert.False((await client.LeaveOutOfBatchAsync(settings.BatchFolder, "TheLunchTrae/test-repo", false, cancellationToken))
+            .Members.Single(member => member.Joined).LeftOut);
+
+        // Only the profile sets the wiki, so the staged apply that joined from the repository as it is has nothing to leave out.
+        var everywhere = await client.ExcludeEverywhereAsync(settings.BatchFolder, "repository.has_wiki", true, cancellationToken);
+        Assert.Equal(["TheLunchTrae/repotted"], everywhere.Changed);
+        Assert.Empty(everywhere.Refused);
+        Assert.Equal(["repository.has_wiki"], (await client.StagedAsync(settings.StagedFile("TheLunchTrae/repotted"), cancellationToken)).Exclude);
+
+        await client.DiscardBatchAsync(settings.BatchFolder, cancellationToken);
+        Assert.False(settings.HasBatch);
+        Assert.False(File.Exists(settings.StagedFile("TheLunchTrae/repotted")));
+        Assert.True(File.Exists(joined));
+
+        // A batch of only joined staged applies starts too, with nowhere new to put any.
+        var only = await client.StartBatchAsync(settings.BatchFolder, settings.StagedFolder, [], [joined], orgs, cancellationToken);
+        Assert.Equal([("TheLunchTrae/test-repo", true)], only.Members.Select(member => (member.Repository, member.Joined)));
+        await client.DiscardBatchAsync(settings.BatchFolder, cancellationToken);
+        Assert.True(File.Exists(joined));
+    }
+
+    /// <summary>Two reads of a batch match when they list the same members the same way.</summary>
+    private sealed class BatchComparer : IEqualityComparer<BatchDocument>
+    {
+        public static readonly BatchComparer Instance = new();
+
+        public bool Equals(BatchDocument? x, BatchDocument? y) =>
+            x is not null && y is not null && x.Id == y.Id && x.Profile == y.Profile && x.Members.SequenceEqual(y.Members);
+
+        public int GetHashCode(BatchDocument obj) => obj.Id.GetHashCode(StringComparison.Ordinal);
+    }
+
     /// <summary>Two reads of a staged apply match when they name the same repository, base, exclusions and chain.</summary>
     private sealed class StagedComparer : IEqualityComparer<StagedApply>
     {

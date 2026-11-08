@@ -9,6 +9,7 @@ public sealed class ControlLabelTests
     [InlineData("Sign in with GitHub", "Sign In with GitHub")]
     [InlineData("Remove it from the repository", "Remove It from the Repository")]
     [InlineData("Take out of profile", "Take Out of Profile")]
+    [InlineData("Leave out everywhere", "Leave Out Everywhere")]
     [InlineData("Capture as a profile", "Capture as a Profile")]
     [InlineData("Back to rulesets", "Back to Rulesets")]
     [InlineData("Use a GitHub repository", "Use a GitHub Repository")]

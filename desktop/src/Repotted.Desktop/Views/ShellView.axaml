@@ -116,6 +116,15 @@
         </ContentControl.DataTemplates>
       </ContentControl>
     </DockPanel>
+    <DockPanel Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowingBatch}">
+      <Button DockPanel.Dock="Top" Classes="link" Margin="32,16,32,0" HorizontalAlignment="Left"
+              Content="Back to repositories" Command="{Binding Batch.CloseCommand, FallbackValue={x:Null}}" />
+      <ContentControl Content="{Binding Batch}">
+        <ContentControl.DataTemplates>
+          <DataTemplate DataType="vm:BatchViewModel"><views:BatchView /></DataTemplate>
+        </ContentControl.DataTemplates>
+      </ContentControl>
+    </DockPanel>
     <Panel Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowingProfiles}">
       <views:ProfilesView DataContext="{Binding Profiles}" />
     </Panel>

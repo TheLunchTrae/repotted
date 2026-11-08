@@ -35,7 +35,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         Profiles = new ProfilesViewModel(client, desktop, settings, () => repositories?.Names ?? []);
         Profiles.PropertyChanged += OnProfilesChanged;
         Repositories = repositories = new RepositoriesViewModel(
-            client, desktop, account.InstallUrl, Profiles, OpenCompare, OpenCapture, OpenApply, Unfinished);
+            client, desktop, account.InstallUrl, Profiles, OpenCompare, OpenCapture, OpenApply, Unfinished, OpenBatch, () => settings.HasBatch);
         Repositories.PropertyChanged += OnRepositoriesChanged;
     }
 
@@ -47,7 +47,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
 
     /// <summary>The page: 0 for the repositories, 1 for the profiles, as the sidebar lists them.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowingProfiles), nameof(ShowingRepositories), nameof(ShowingCompare), nameof(ShowingApply), nameof(Crumb), nameof(SearchHint))]
+    [NotifyPropertyChangedFor(nameof(ShowingProfiles), nameof(ShowingRepositories), nameof(ShowingCompare), nameof(ShowingApply), nameof(ShowingBatch), nameof(Crumb), nameof(SearchHint))]
     public partial int Page { get; set; }
 
     /// <summary>The open compare, which stands in for the repository list until it closes.</summary>
@@ -55,22 +55,30 @@ internal sealed partial class ShellViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowingRepositories), nameof(ShowingCompare), nameof(Crumb))]
     public partial CompareViewModel? Compare { get; private set; }
 
+    /// <summary>The open batch apply, which stands in for the repository list until it closes.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowingRepositories), nameof(ShowingCompare), nameof(ShowingApply), nameof(ShowingBatch), nameof(Crumb))]
+    public partial BatchViewModel? Batch { get; private set; }
+
     /// <summary>The open apply, which stands in for the repository list, and for a compare, until it closes.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowingRepositories), nameof(ShowingCompare), nameof(ShowingApply), nameof(Crumb))]
     public partial ApplyViewModel? Apply { get; private set; }
 
-    public bool ShowingRepositories => Page == 0 && Compare is null && Apply is null;
+    public bool ShowingRepositories => Page == 0 && Compare is null && Apply is null && Batch is null;
 
-    public bool ShowingCompare => Page == 0 && Compare is not null && Apply is null;
+    public bool ShowingCompare => Page == 0 && Compare is not null && Apply is null && Batch is null;
 
     public bool ShowingApply => Page == 0 && Apply is not null;
+
+    public bool ShowingBatch => Page == 0 && Batch is not null && Apply is null;
 
     public bool ShowingProfiles => Page == 1;
 
     /// <summary>Where you are, for the header.</summary>
     public string Crumb => (ShowingProfiles, Profiles.Current, Compare, Apply) switch
     {
+        (false, _, _, null) when Batch is not null => $"Repositories / {ControlLabel.For("Batch apply")}",
         (true, _, _, _) when Profiles.ShowCreating => $"Profiles / {ControlLabel.For("New profile")}",
         (true, { } profile, _, _) => $"Profiles / {profile.Name}",
         (true, null, _, _) => "Profiles",
@@ -89,6 +97,10 @@ internal sealed partial class ShellViewModel : ViewModelBase
         {
             CloseApply();
         }
+        if (Batch?.CanLeave == true)
+        {
+            CloseBatch();
+        }
     }
 
     private void OpenCompare(string repository, ProfileListingDocument profile)
@@ -100,10 +112,25 @@ internal sealed partial class ShellViewModel : ViewModelBase
     [RelayCommand]
     private void CloseCompare() => Compare = null;
 
-    /// <summary>Opens an apply to a repository, from a profile or from the repository as it is, in place of a compare.</summary>
-    private void OpenApply(string repository, ProfileListingDocument? profile)
+    /// <summary>
+    /// Opens an apply to a repository, from a profile or from the repository
+    /// as it is, in place of a compare. A repository of the unfinished batch
+    /// opens the batch instead, since a repository has one apply at a time.
+    /// </summary>
+    private void OpenApply(string repository, ProfileListingDocument? profile) => _ = OpenApplyAsync(repository, profile);
+
+    private async Task OpenApplyAsync(string repository, ProfileListingDocument? profile)
     {
-        if (Apply is not null)
+        if (Apply is not null || Batch is not null)
+        {
+            return;
+        }
+        if (settings.HasBatch && Unfinished(repository) && await InBatchAsync(repository).ConfigureAwait(true))
+        {
+            OpenBatch([], null);
+            return;
+        }
+        if (Apply is not null || Batch is not null)
         {
             return;
         }
@@ -117,6 +144,39 @@ internal sealed partial class ShellViewModel : ViewModelBase
     private void CloseApply()
     {
         Apply = null;
+        Repositories.RefreshUnfinished();
+    }
+
+    /// <summary>Whether the unfinished batch lists the repository; a batch the CLI cannot read lists none.</summary>
+    private async Task<bool> InBatchAsync(string repository)
+    {
+        try
+        {
+            var batch = await client.BatchAsync(settings.BatchFolder, CancellationToken.None).ConfigureAwait(true);
+            return batch.Members.Any(member => string.Equals(member.Repository, repository, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception error) when (error is CliException or CliNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Opens a batch apply of a profile to several repositories, or the unfinished one when none are given.</summary>
+    private void OpenBatch(IReadOnlyList<string> repositories, ProfileListingDocument? profile)
+    {
+        if (Apply is not null || Batch is not null)
+        {
+            return;
+        }
+        Page = 0;
+        Compare = null;
+        Batch = new BatchViewModel(client, settings, repositories, profile, CloseBatch, desktop, Account.InstallUrl);
+        _ = Batch.OpenAsync();
+    }
+
+    private void CloseBatch()
+    {
+        Batch = null;
         Repositories.RefreshUnfinished();
     }
 
@@ -147,6 +207,10 @@ internal sealed partial class ShellViewModel : ViewModelBase
             {
                 CloseApply();
             }
+            else if (Apply is null && Batch?.CanLeave == true)
+            {
+                CloseBatch();
+            }
         }
         else
         {
@@ -174,6 +238,14 @@ internal sealed partial class ShellViewModel : ViewModelBase
                 return false;
             }
         }
+        if (Batch is { CanLeave: false } batch)
+        {
+            Page = 0;
+            if (!await batch.ConfirmLeaveAsync(act, wait).ConfigureAwait(true))
+            {
+                return false;
+            }
+        }
         if (!Profiles.HasUnsaved)
         {
             return true;
@@ -183,7 +255,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
     }
 
     /// <summary>Whether leaving the app would ask first, or wait, for unsaved changes or an apply.</summary>
-    public bool MustAskToLeave => Profiles.HasUnsaved || Apply is { CanLeave: false };
+    public bool MustAskToLeave => Profiles.HasUnsaved || Apply is { CanLeave: false } || Batch is { CanLeave: false };
 
     public string SearchHint => ShowingProfiles ? "Find a profile" : "Find a repository";
 
