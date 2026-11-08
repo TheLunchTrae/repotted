@@ -20,6 +20,8 @@ export const repositoryEndpoints: readonly Endpoint[] = [
     path: '/immutable-releases',
     target: 'release immutability',
     reads: 'enabled',
+    // GitHub answers 404 while immutable releases are off.
+    missingIsOff: true,
   },
   {
     kind: 'object',

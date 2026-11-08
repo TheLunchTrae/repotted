@@ -83,6 +83,13 @@ export function planPages(desired: PagesEntry, live: LivePages, repo: RepoRef): 
   const changes: Change[] = [];
   const { cname, https_enforced: httpsEnforced, public: isPublic, ...created } = desired;
   if (site === null) {
+    // GitHub builds a new site from a branch unless a workflow builds it.
+    if (created.build_type !== 'workflow' && created.source?.branch === undefined) {
+      return {
+        changes: [],
+        warnings: ['Skipped pages: a new site built from a branch needs source.branch, or build_type: workflow'],
+      };
+    }
     changes.push({
       section: 'pages',
       action: 'create',

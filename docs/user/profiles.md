@@ -113,8 +113,9 @@ no wait timer and no reviewers, and lets every branch deploy.
 
 ## Repository settings that name the repository
 
-`description`, `homepage`, `visibility`, `topics`, and the Pages `cname`
-describe one repository, so `capture` leaves them out and a profile that sets
+`description`, `homepage`, `visibility`, `topics`, the Pages `cname`, and the
+`languages` of code scanning and code quality describe one repository, so
+`capture` leaves them out and a profile that sets
 them suits few repositories. A plan that changes `visibility` warns what the
 change does beyond the setting: making a repository public shows its history
 to everyone, and making it private detaches public forks.
@@ -134,13 +135,20 @@ Dependabot security updates, which need the alerts. A plan that turns the
 alerts off turns the updates off first, and skips a profile that turns the
 updates on with the alerts off.
 
+Some settings only hold together. With standard Dependabot runners, GitHub
+keeps no runner labels or group, so a plan skips them with a warning. Naming
+OIDC `include_claim_keys` stops using the default subject, and claim keys next
+to `use_default: true` are skipped, since GitHub ignores them.
+
 ## Autolinks and Pages
 
 Autolinks match by `key_prefix`. GitHub can't change an autolink, so one that
 differs from the profile is deleted and made again; the plan shows both.
 
 A `pages` section that describes a site the repository doesn't have creates
-it, then sets the custom domain and HTTPS, which creating a site can't. A
+it, then sets the custom domain and HTTPS, which creating a site can't. A new
+site built from a branch needs `source.branch`. GitHub may refuse HTTPS until
+the new site has a certificate, so a second apply can be needed for it. A
 `source` the profile names part of keeps the rest of the live source.
 
 ## Merge settings

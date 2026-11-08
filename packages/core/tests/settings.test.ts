@@ -198,11 +198,11 @@ describe('settings at their own endpoints', () => {
 
 describe('settings GitHub does not offer or refuses', () => {
   test('skips a setting the repository does not have, naming why', async () => {
-    const plan = await createPlan(new FakeGitHub(), repo, { repository: { immutable_releases: true } });
+    const plan = await createPlan(new FakeGitHub(), repo, { security: { private_vulnerability_reporting: true } });
 
     expect(plan.changes).toEqual([]);
     expect(plan.warnings).toEqual([
-      'Skipped repository.immutable_releases: GitHub does not offer release immutability on this repository (Not Found: GET /immutable-releases)',
+      'Skipped security.private_vulnerability_reporting: GitHub does not offer private vulnerability reporting on this repository (Not Found: GET /private-vulnerability-reporting)',
     ]);
   });
 
@@ -392,5 +392,118 @@ describe('profiles of every section', () => {
         'it is not one setting of a profile section',
       );
     }
+  });
+});
+
+describe('settings GitHub ties together', () => {
+  test('turns on immutable releases and security updates that GitHub reports as missing while off', async () => {
+    const github = new FakeGitHub(offered());
+    const profile: Profile = {
+      repository: { immutable_releases: true },
+      security: { vulnerability_alerts: true, automated_security_fixes: true },
+    };
+
+    const plan = await createPlan(github, repo, profile);
+    expect(plan.warnings).toEqual([]);
+    expect(plan.changes.map((change) => `${change.request.method} ${change.request.path}`)).toEqual([
+      'PUT /repos/lunch/app/immutable-releases',
+      'PUT /repos/lunch/app/vulnerability-alerts',
+      'PUT /repos/lunch/app/automated-security-fixes',
+    ]);
+    await applyPlan(github, plan);
+    expect((await createPlan(github, repo, profile)).changes).toEqual([]);
+  });
+
+  test('leaves out runner labels with standard Dependabot runners, so the plan settles', async () => {
+    const github = new FakeGitHub(offered());
+    github.state.settings['/dependabot/runner-settings'] = { runner_type: 'labeled', runner_labels: ['dependabot'] };
+    const profile: Profile = {
+      security: { dependabot_runner_settings: { runner_type: 'standard', runner_labels: ['x'] } },
+    };
+    const warning =
+      'Skipped security.dependabot_runner_settings.runner_labels: GitHub keeps none with standard runners';
+
+    const plan = await createPlan(github, repo, profile);
+    expect(plan.warnings).toEqual([warning]);
+    expect(plan.changes.map((change) => change.request.body)).toEqual([{ runner_type: 'standard' }]);
+    await applyPlan(github, plan);
+    const next = await createPlan(github, repo, profile);
+    expect(next.changes).toEqual([]);
+    expect(next.warnings).toEqual([warning]);
+  });
+
+  test('sends no null a live setting holds', async () => {
+    const github = new FakeGitHub(offered());
+    github.state.settings['/dependabot/runner-settings'] = { runner_type: 'standard', runner_group: null };
+
+    const plan = await createPlan(github, repo, {
+      security: { dependabot_runner_settings: { runner_type: 'labeled', runner_labels: ['dependabot'] } },
+    });
+    expect(plan.changes.map((change) => change.request.body)).toEqual([
+      { runner_type: 'labeled', runner_labels: ['dependabot'] },
+    ]);
+  });
+
+  test('stops using the default OIDC subject when a profile names claim keys, so the plan settles', async () => {
+    const github = new FakeGitHub(offered());
+    const profile: Profile = { actions: { oidc_customization_sub: { include_claim_keys: ['repo'] } } };
+
+    const plan = await createPlan(github, repo, profile);
+    expect(plan.changes.map((change) => change.request.body)).toEqual([
+      { use_default: false, include_claim_keys: ['repo'] },
+    ]);
+    await applyPlan(github, plan);
+    expect((await createPlan(github, repo, profile)).changes).toEqual([]);
+
+    const ignored = await createPlan(github, repo, {
+      actions: { oidc_customization_sub: { use_default: true, include_claim_keys: ['repo'] } },
+    });
+    expect(ignored.warnings).toEqual([
+      'Skipped actions.oidc_customization_sub.include_claim_keys: GitHub ignores claim keys while use_default is true',
+    ]);
+    expect(ignored.changes.map((change) => change.request.body)).toEqual([
+      { use_default: true, include_claim_keys: ['repo'] },
+    ]);
+  });
+
+  test('sets a limit GitHub reports as unset', async () => {
+    const github = new FakeGitHub(offered());
+    github.state.settings['/actions/cache/storage-limit'] = {};
+    const profile: Profile = { actions: { max_cache_size_gb: 5 } };
+
+    const plan = await createPlan(github, repo, profile);
+    expect(plan.changes.map((change) => change.request.body)).toEqual([{ max_cache_size_gb: 5 }]);
+    await applyPlan(github, plan);
+    expect((await createPlan(github, repo, profile)).changes).toEqual([]);
+
+    github.state.settings['/actions/cache/storage-limit'] = {};
+    const { profile: captured } = await captureProfile(github, repo);
+    expect(captured.actions).not.toHaveProperty('max_cache_size_gb');
+  });
+
+  test('reads JavaScript and TypeScript as the one language code scanning takes, and leaves languages out of capture', async () => {
+    const github = new FakeGitHub(offered());
+    github.state.settings['/code-scanning/default-setup'] = {
+      state: 'configured',
+      query_suite: 'default',
+      languages: ['javascript', 'typescript', 'python'],
+    };
+
+    const plan = await createPlan(github, repo, {
+      security: { code_scanning_default_setup: { languages: ['javascript-typescript', 'python'] } },
+    });
+    expect(plan.changes).toEqual([]);
+
+    const { profile: captured } = await captureProfile(github, repo);
+    expect(captured.security?.code_scanning_default_setup).toEqual({ state: 'configured', query_suite: 'default' });
+  });
+
+  test('skips a new Pages site built from a branch it does not name', async () => {
+    const plan = await createPlan(new FakeGitHub(offered()), repo, { pages: { source: { path: '/docs' } } });
+
+    expect(plan.changes).toEqual([]);
+    expect(plan.warnings).toEqual([
+      'Skipped pages: a new site built from a branch needs source.branch, or build_type: workflow',
+    ]);
   });
 });

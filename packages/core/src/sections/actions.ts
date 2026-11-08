@@ -72,6 +72,20 @@ export const actionsEndpoints: readonly Endpoint[] = [
     method: 'PUT',
     fields: ['use_default', 'include_claim_keys', 'use_immutable_subject'],
     carries: ['use_default', 'include_claim_keys', 'use_immutable_subject'],
+    // GitHub uses the claim keys only in place of the default subject.
+    adjust: (desired) => {
+      if (desired['include_claim_keys'] === undefined) {
+        return { desired };
+      }
+      if (desired['use_default'] === true) {
+        const { include_claim_keys: _keys, ...rest } = desired;
+        return {
+          desired: rest,
+          dropped: { fields: ['include_claim_keys'], reason: 'GitHub ignores claim keys while use_default is true' },
+        };
+      }
+      return { desired: { ...desired, use_default: false } };
+    },
   },
 ];
 

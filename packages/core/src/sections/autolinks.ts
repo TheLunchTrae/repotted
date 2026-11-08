@@ -66,7 +66,7 @@ export function planAutolinks(desired: readonly AutolinkEntry[], live: LiveAutol
     remove();
     creates.push({
       section: 'autolinks',
-      action: current === undefined ? 'create' : 'update',
+      action: 'create',
       target: entry.key_prefix,
       fields: current === undefined ? [] : fields,
       request: { method: 'POST', path, body: wanted },

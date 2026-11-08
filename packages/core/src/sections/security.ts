@@ -5,6 +5,21 @@ import { fieldChanges } from '../match.js';
 import { securityAndAnalysis, type SecuritySettings } from '../schema.js';
 
 /**
+ * GitHub reports JavaScript and TypeScript apart for code scanning but takes
+ * them as one language, so a profile names them the way a write sends them.
+ */
+function combineScriptLanguages(value: Record<string, unknown>): Record<string, unknown> {
+  const languages = value['languages'];
+  if (!Array.isArray(languages)) {
+    return value;
+  }
+  const combined = languages.map((language: unknown) =>
+    language === 'javascript' || language === 'typescript' ? 'javascript-typescript' : language,
+  );
+  return { ...value, languages: [...new Set(combined)] };
+}
+
+/**
  * Security and code quality settings at endpoints of their own, in the
  * order they apply: Dependabot alerts before the security updates that
  * answer them, and code scanning after the repository settings that turn on
@@ -24,6 +39,8 @@ export const securityEndpoints: readonly Endpoint[] = [
     path: '/automated-security-fixes',
     target: 'Dependabot security updates',
     reads: 'enabled',
+    // GitHub answers 404 while Dependabot alerts are off.
+    missingIsOff: true,
   },
   {
     kind: 'toggle',
@@ -40,6 +57,8 @@ export const securityEndpoints: readonly Endpoint[] = [
     method: 'PATCH',
     fields: ['state', 'runner_type', 'runner_label', 'query_suite', 'threat_model', 'languages'],
     carries: [],
+    identifying: ['languages'],
+    fromGitHub: combineScriptLanguages,
   },
   {
     kind: 'object',
@@ -58,6 +77,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     method: 'PATCH',
     fields: ['state', 'runner_type', 'runner_label', 'languages', 'ai_findings_option'],
     carries: [],
+    identifying: ['languages'],
   },
   {
     kind: 'object',
@@ -67,7 +87,19 @@ export const securityEndpoints: readonly Endpoint[] = [
     method: 'PUT',
     fields: ['runner_type', 'runner_labels', 'runner_group'],
     carries: ['runner_type', 'runner_labels', 'runner_group'],
-    // GitHub refuses runner labels and a group with standard runners.
+    // GitHub keeps no runner labels or group with standard runners, and
+    // refuses them in the write.
+    adjust: (desired, live) => {
+      const { runner_labels: labels, runner_group: group, ...rest } = desired;
+      const standard = (desired['runner_type'] ?? live['runner_type']) === 'standard';
+      const dropped = [
+        ...(labels === undefined ? [] : ['runner_labels']),
+        ...(group === undefined ? [] : ['runner_group']),
+      ];
+      return standard && dropped.length > 0
+        ? { desired: rest, dropped: { fields: dropped, reason: 'GitHub keeps none with standard runners' } }
+        : { desired };
+    },
     body: (body) => (body['runner_type'] === 'standard' ? { runner_type: 'standard' } : body),
   },
 ];

@@ -217,7 +217,6 @@ export const securityAndAnalysis = z
 const runnerSetup = {
   runner_type: z.enum(['standard', 'labeled']),
   runner_label: z.string().min(1).nullable(),
-  languages: z.array(z.string().min(1)),
 };
 
 /**
@@ -234,6 +233,10 @@ export const securityFields = {
     .object({
       state: z.enum(['configured', 'not-configured']),
       ...runnerSetup,
+      // As GitHub takes them, which a capture leaves out.
+      languages: z.array(
+        z.enum(['actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'swift']),
+      ),
       query_suite: z.enum(['default', 'extended']),
       threat_model: z.enum(['remote', 'remote_and_local']),
     })
@@ -247,6 +250,7 @@ export const securityFields = {
     .object({
       state: z.enum(['configured', 'not-configured']),
       ...runnerSetup,
+      languages: z.array(z.enum(['csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby'])),
       ai_findings_option: z.enum(['disabled', 'on_push']),
     })
     .partial()

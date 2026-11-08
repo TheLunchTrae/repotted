@@ -342,6 +342,14 @@ export class FakeGitHub implements GitHub {
         settings[relative] = { ...current, enabled: method === 'PUT' };
         return undefined;
       }
+      // GitHub answers 404 while immutable releases are off, and for
+      // security updates while Dependabot alerts are off.
+      if (
+        (relative === '/immutable-releases' && current['enabled'] !== true) ||
+        (relative === '/automated-security-fixes' && settings['/vulnerability-alerts'] !== true)
+      ) {
+        throw new GitHubError(404, 'Not Found');
+      }
       return current;
     }
     if (relative === '/properties/values') {

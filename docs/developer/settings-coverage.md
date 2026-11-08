@@ -8,7 +8,7 @@ purpose, and the options on GitHub's settings pages that have no API at all.
 The inventory was made from GitHub's OpenAPI descriptions for api.github.com
 and GitHub Enterprise Cloud, in
 [github/rest-api-description](https://github.com/github/rest-api-description),
-and GitHub's docs, in November 2026. When GitHub adds a setting, add it to
+and GitHub's docs. When GitHub adds a setting, add it to
 `schema.ts`, the adapter for its section, `permissions.ts` when it needs a
 permission other than Administration, and this page.
 
@@ -20,13 +20,33 @@ The rest each live at an endpoint of their own under the repository.
 reads and plans them all the same way:
 
 - A `toggle` is on while a `GET` finds it on. `PUT` turns it on and `DELETE`
-  turns it off. For `vulnerability_alerts`, a `404` means off; for the others,
-  a `404` means the repository doesn't have the feature.
+  turns it off. GitHub answers `404` while `vulnerability_alerts` and
+  `immutable_releases` are off, and `automated_security_fixes` while
+  Dependabot alerts are off, so those read as off (`missingIsOff`). For the
+  others, a `404` means the repository doesn't have the feature.
 - A `field` is one field of an endpoint, kept in the profile under its name.
+  A field GitHub leaves out of its answer is unset, so a plan sets it.
 - An `object` is several fields of an endpoint, kept together in the profile
   under the endpoint's key, such as `code_scanning_default_setup`. A write
   sends the fields the profile names, plus the `carries` fields from the live
-  value, for endpoints that replace what they're sent.
+  value, for endpoints that replace what they're sent. A carried `null`
+  stays out. Three optional hooks keep a plan in line with what GitHub keeps:
+  `fromGitHub` puts what GitHub reports in the form a write takes, `adjust`
+  fills in fields GitHub ties to the ones a profile names and leaves out,
+  with a warning, fields GitHub drops with the option chosen, and
+  `identifying` names fields that a capture leaves out.
+
+These hooks are why a plan settles after one apply:
+
+- Dependabot runner labels and a runner group are dropped with standard
+  runners.
+- Naming `include_claim_keys` for the OIDC subject claim sets
+  `use_default: false`, and claim keys alongside `use_default: true` are
+  dropped, because GitHub ignores them then.
+- Code scanning reports `javascript` and `typescript` apart but takes
+  `javascript-typescript`, so the two read as the one. `languages` describe
+  one repository's code, so `capture` leaves them out of code scanning and
+  code quality.
 
 A setting the repository doesn't have, because of its plan, its owner or its
 visibility, reads as unavailable. A plan skips it with a warning that gives
@@ -50,7 +70,9 @@ Administration.
 | `pull_request_creation_cap`: `enabled`, `max_open_pull_requests`, `include_drafts`                                                                                                                                                                                                                              | `PATCH /interaction-limits/pulls/creation-cap` | Administration write, to read it too         |
 
 `capture` leaves out `description`, `homepage`, `visibility` and `topics`,
-because they describe one repository. A plan that changes `visibility` warns
+because they describe one repository. It keeps `default_branch`, so a
+captured profile applied to a repository without that branch fails there
+with GitHub's `422`. A plan that changes `visibility` warns
 what the change does beyond the setting.
 
 ### `merge`
@@ -95,17 +117,20 @@ the alerts off.
 
 ### `custom_properties`, `pages`, `autolinks`
 
-| Section             | Endpoint                                       | Permission                                                         |
-| ------------------- | ---------------------------------------------- | ------------------------------------------------------------------ |
-| `custom_properties` | `PATCH /properties/values`                     | Custom properties write; reading needs Metadata                    |
-| `pages`             | `POST`, `PUT`, and `DELETE /pages`             | Pages; creating and deleting a site also need Administration write |
-| `autolinks`         | `POST /autolinks` and `DELETE /autolinks/{id}` | Administration                                                     |
+| Section             | Endpoint                                       | Permission                                      |
+| ------------------- | ---------------------------------------------- | ----------------------------------------------- |
+| `custom_properties` | `PATCH /properties/values`                     | Custom properties write; reading needs Metadata |
+| `pages`             | `POST`, `PUT`, and `DELETE /pages`             | Administration write and Pages write            |
+| `autolinks`         | `POST /autolinks` and `DELETE /autolinks/{id}` | Administration                                  |
 
 Custom properties are defined by the organization, so a profile can set any
 property name, and a personal repository has none. Pages `public` exists only
 on GitHub Enterprise Cloud. `capture` leaves out the custom domain and `public`,
-which follow one repository. GitHub can't change an autolink, so the plan
-deletes and makes one that differs.
+which follow one repository. A new site built from a branch needs
+`source.branch`; a plan skips one without it. A new site has no certificate
+at first, so GitHub may refuse `https_enforced` in the update that follows
+the create, and a second apply sets it. GitHub can't change an autolink, so
+the plan deletes and makes again one that differs.
 
 ### `rulesets` and `environments`
 
@@ -221,6 +246,3 @@ Other pages:
 - Planning: **Agent suggestions for issues**.
 - Codespaces: prebuild configurations.
 - Email notifications.
-
-The desktop app shows a short note under a setting whose sub-option has no
-API, such as **Wikis**, so it's clear why the option isn't there.

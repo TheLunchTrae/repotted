@@ -12,7 +12,7 @@ import { describeAutolink, planAutolinks, readAutolinks } from './sections/autol
 import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';
 import { describePages, planPages, readPages } from './sections/pages.js';
 import { captureCustomProperties, planCustomProperties, readCustomProperties } from './sections/properties.js';
-import { planRepository, readRepository } from './sections/repository.js';
+import { planRepository, readRepository, repositoryEndpoints } from './sections/repository.js';
 import { planRulesets, readRulesets } from './sections/rulesets.js';
 import { liveSecurityAndAnalysis, planSecurity, securityEndpoints } from './sections/security.js';
 
@@ -99,7 +99,7 @@ export async function createPlan(github: GitHub, repo: RepoRef, desired: Profile
 export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ profile: Profile; warnings: string[] }> {
   const warnings: string[] = [];
   const live = await readRepository(github, repo);
-  const repositoryEndpointSettings = captureEndpoints('repository', live.endpoints);
+  const repositoryEndpointSettings = captureEndpoints('repository', repositoryEndpoints, live.endpoints);
   warnings.push(...repositoryEndpointSettings.warnings);
   const repository = Object.fromEntries(
     Object.entries({ ...live.repository, ...repositoryEndpointSettings.settings }).filter(
@@ -107,7 +107,11 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     ),
   );
 
-  const securityEndpointSettings = captureEndpoints('security', await readEndpoints(github, repo, securityEndpoints));
+  const securityEndpointSettings = captureEndpoints(
+    'security',
+    securityEndpoints,
+    await readEndpoints(github, repo, securityEndpoints),
+  );
   warnings.push(...securityEndpointSettings.warnings);
   const securityAndAnalysis = liveSecurityAndAnalysis(live.securityAndAnalysis);
   const security = {
@@ -115,7 +119,11 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     ...securityEndpointSettings.settings,
   };
 
-  const actionsEndpointSettings = captureEndpoints('actions', await readEndpoints(github, repo, actionsEndpoints));
+  const actionsEndpointSettings = captureEndpoints(
+    'actions',
+    actionsEndpoints,
+    await readEndpoints(github, repo, actionsEndpoints),
+  );
   warnings.push(...actionsEndpointSettings.warnings);
   const actions = { ...(await readActions(github, repo)), ...actionsEndpointSettings.settings };
 

@@ -17,23 +17,49 @@ interface EndpointBase {
  *
  * - A `toggle` is on while a GET finds it: PUT turns it on and DELETE turns
  *   it off. `reads` says whether a found one is on (`presence`) or says so in
- *   its `enabled` field.
- * - A `field` is one field of an endpoint, kept under the field's name.
+ *   its `enabled` field. A 404 means off for a `presence` toggle, and for an
+ *   `enabled` one marked `missingIsOff`; for any other it means the
+ *   repository does not have the feature.
+ * - A `field` is one field of an endpoint, kept under the field's name. One
+ *   GitHub leaves out of its answer is unset.
  * - An `object` is an endpoint's fields, kept together under the endpoint's
  *   name. A write sends what the profile names and the `carries` fields,
- *   taking any the profile leaves out from the live value; `body` adjusts
- *   that, as dropping fields GitHub refuses with the option chosen.
+ *   taking any the profile leaves out from the live value.
  */
 export type Endpoint =
-  | (EndpointBase & { readonly kind: 'toggle'; readonly reads: 'presence' | 'enabled' })
-  | (EndpointBase & { readonly kind: 'field'; readonly method: 'PUT' | 'PATCH' })
   | (EndpointBase & {
-      readonly kind: 'object';
-      readonly method: 'PUT' | 'PATCH';
-      readonly fields: readonly string[];
-      readonly carries: readonly string[];
-      readonly body?: (body: Record<string, unknown>) => Record<string, unknown>;
-    });
+      readonly kind: 'toggle';
+      readonly reads: 'presence' | 'enabled';
+      readonly missingIsOff?: true;
+    })
+  | (EndpointBase & { readonly kind: 'field'; readonly method: 'PUT' | 'PATCH' })
+  | (EndpointBase & ObjectEndpoint);
+
+/** What GitHub ties together in an object setting, so a plan matches what GitHub keeps. */
+interface ObjectEndpoint {
+  readonly kind: 'object';
+  readonly method: 'PUT' | 'PATCH';
+  readonly fields: readonly string[];
+  readonly carries: readonly string[];
+  /** Fields that describe one repository, which a capture leaves out. */
+  readonly identifying?: readonly string[];
+  /** Puts what GitHub reports in the form a profile and a write use. */
+  readonly fromGitHub?: (value: Record<string, unknown>) => Record<string, unknown>;
+  /**
+   * Makes what the profile names into what GitHub will keep, given the live
+   * value: fills in fields GitHub ties to the ones named, and leaves out,
+   * with the reason, fields GitHub drops with the option chosen.
+   */
+  readonly adjust?: (
+    desired: Record<string, unknown>,
+    live: Record<string, unknown>,
+  ) => {
+    readonly desired: Record<string, unknown>;
+    readonly dropped?: { readonly fields: readonly string[]; readonly reason: string };
+  };
+  /** Changes the body a write sends, as dropping fields GitHub refuses with the option chosen. */
+  readonly body?: (body: Record<string, unknown>) => Record<string, unknown>;
+}
 
 /**
  * A setting as the repository holds it, or why it cannot be read there:
@@ -104,9 +130,7 @@ export async function readEndpoint(github: GitHub, repo: RepoRef, endpoint: Endp
     repo,
     endpoint.path,
     endpoint.target,
-    // A 404 means off only for a toggle found by its presence; elsewhere it
-    // means the repository does not have the feature.
-    endpoint.kind === 'toggle' && endpoint.reads === 'presence' ? off : undefined,
+    endpoint.kind === 'toggle' && (endpoint.reads === 'presence' || endpoint.missingIsOff === true) ? off : undefined,
   );
   if (!read.available) {
     return read;
@@ -120,12 +144,11 @@ export async function readEndpoint(github: GitHub, repo: RepoRef, endpoint: Endp
     return { available: false, refused: false, reason: `GitHub sent no ${endpoint.target} settings` };
   }
   if (endpoint.kind === 'field') {
-    return data[endpoint.key] === undefined
-      ? { available: false, refused: false, reason: `GitHub sent no ${endpoint.key}` }
-      : { available: true, value: data[endpoint.key] };
+    return { available: true, value: data[endpoint.key] };
   }
+  const reported = endpoint.fromGitHub?.(data) ?? data;
   const value = Object.fromEntries(
-    endpoint.fields.filter((field) => data[field] !== undefined).map((field) => [field, data[field]]),
+    endpoint.fields.filter((field) => reported[field] !== undefined).map((field) => [field, reported[field]]),
   );
   return { available: true, value };
 }
@@ -156,6 +179,7 @@ export function planEndpoint(
   }
   const path = `${repoPath(repo)}${endpoint.path}`;
   const changes: Change[] = [];
+  const warnings: string[] = [];
   if (endpoint.kind === 'toggle') {
     if (desired !== live.value) {
       changes.push({
@@ -179,12 +203,22 @@ export function planEndpoint(
     }
   } else if (isRecord(desired)) {
     const current = isRecord(live.value) ? live.value : {};
-    const fields = fieldChanges(desired, current);
+    const adjusted = endpoint.adjust?.(desired, current) ?? { desired };
+    if (adjusted.dropped !== undefined) {
+      for (const field of adjusted.dropped.fields) {
+        warnings.push(`Skipped ${section}.${endpoint.key}.${field}: ${adjusted.dropped.reason}`);
+      }
+    }
+    const wanted = adjusted.desired;
+    const fields = fieldChanges(wanted, current);
     if (fields.length > 0) {
+      // GitHub takes no null for a field it leaves unset, so one stays out.
       const carried = Object.fromEntries(
-        endpoint.carries.filter((field) => current[field] !== undefined).map((field) => [field, current[field]]),
+        endpoint.carries
+          .filter((field) => current[field] !== undefined && current[field] !== null)
+          .map((field) => [field, current[field]]),
       );
-      const body = { ...carried, ...desired };
+      const body = { ...carried, ...wanted };
       changes.push({
         section,
         action: 'update',
@@ -194,22 +228,34 @@ export function planEndpoint(
       });
     }
   }
-  return { changes, warnings: [] };
+  return { changes, warnings };
 }
 
 /** A captured section: the settings it could read, and a warning for each it could not. */
 export function captureEndpoints(
   section: Section,
+  endpoints: readonly Endpoint[],
   values: ReadonlyMap<string, EndpointValue>,
 ): { settings: Record<string, unknown>; warnings: string[] } {
   const settings: Record<string, unknown> = {};
   const warnings: string[] = [];
-  for (const [key, value] of values) {
+  for (const endpoint of endpoints) {
+    const value = values.get(endpoint.key);
+    if (value === undefined) {
+      continue;
+    }
     if (value.available) {
-      settings[key] = value.value;
+      const identifying = endpoint.kind === 'object' ? (endpoint.identifying ?? []) : [];
+      const kept = isRecord(value.value)
+        ? Object.fromEntries(Object.entries(value.value).filter(([field]) => !identifying.includes(field)))
+        : value.value;
+      // A setting GitHub reports as unset has nothing to capture.
+      if (kept !== undefined && !(isRecord(kept) && Object.keys(kept).length === 0)) {
+        settings[endpoint.key] = kept;
+      }
     } else if (value.refused) {
       // A setting the repository does not have is no news; one GitHub hides is.
-      warnings.push(`Skipped ${section}.${key}: ${value.reason}`);
+      warnings.push(`Skipped ${section}.${endpoint.key}: ${value.reason}`);
     }
   }
   return { settings, warnings };
