@@ -126,7 +126,7 @@ repository in line, file by file, against the blob ids in
 | Kept       | The branch's history holds the recorded commit                                           | Three-way merge against the record.                                                   |
 | Reset      | The history doesn't hold that commit, such as after a force push or a new default branch | The pass runs as a first sync. The file keeps the old record until a pass records.    |
 | Refused    | The folder already syncs with another repository or path                                 | `SyncError`; the folder is left alone.                                                |
-| Unreadable | `.repotted-sync.json` isn't a sync record                                                | `SyncError` on every sync until the file is fixed or removed.                         |
+| Unreadable | `.repotted-sync.json` isn't a sync record                                                | Every sync fails until the file is fixed or removed.                                  |
 
 ### Each file
 
@@ -283,7 +283,7 @@ Other calls run until the CLI exits, which every command does on its own.
 [Releasing](releasing.md#the-desktop-app) describes. Two states matter when a
 run fails:
 
-| State    | Event               | Next                                                                               |
-| -------- | ------------------- | ---------------------------------------------------------------------------------- |
-| Packaged | A platform fails    | No upload; re-running the failed job continues the same tag and its draft release. |
-| Draft    | The owner publishes | Released. A published release is immutable, so a fix needs the next version's tag. |
+| State    | Event               | Next                                                                                                |
+| -------- | ------------------- | --------------------------------------------------------------------------------------------------- |
+| Packaged | A platform fails    | No upload; re-running the failed job continues the same tag, and its upload then creates the draft. |
+| Draft    | The owner publishes | Released. A published release is immutable, so a fix needs the next version's tag.                  |
