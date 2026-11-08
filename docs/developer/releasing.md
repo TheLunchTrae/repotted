@@ -1,78 +1,11 @@
-# Development
-
-## Layout
-
-- `packages/core`: the engine, private to the workspace. `schema.ts` defines
-  profiles, `sections/` holds one adapter per section, `profile.ts` loads and
-  merges profiles, and `plan.ts` plans and applies.
-- `packages/cli`: the published `repotted` package, the CLI and the MCP
-  server. Its build bundles core into one file.
-- `examples/`: example profiles that the tests also load.
-- `desktop/`: the desktop app, in C# with Avalonia. It runs the CLI with
-  `--json` for everything it does. See [desktop/README.md](../desktop/README.md).
-
-## Setup
-
-[mise](https://mise.jdx.dev/) pins the tools: Bun, the .NET SDK for the
-desktop app, gitleaks, and Python for the hygiene task. `.config/mise/`
-holds the config, the tasks, and the lockfile.
-
-```sh
-mise install
-mise run ts:install
-mise run standards:check
-```
-
-`ts:node:check` needs Node 22 or later on `PATH`, because it runs the built
-CLI the way `npx` does. CI installs Node 22, the oldest version `engines` allows.
-
-## Build and run
-
-`mise run ts:build` (or `bun run build`) writes `packages/cli/dist/repotted.js`
-with `Bun.build`, targeted at Node. The published dependencies stay external;
-`@repotted/core` is bundled. To try the CLI from source:
-
-```sh
-bun packages/cli/src/main.ts --help
-```
-
-## The GitHub App
-
-`repotted login` signs in with the Repotted GitHub App, named Repotted App on
-GitHub and owned by the project's owner. Its client ID and slug are
-`app.clientId` and `app.slug` in `packages/cli/src/auth.ts`. The client ID is
-public; the App needs no client secret or private key for the device flow. The
-gate fails if `app.clientId` is empty.
-
-Its settings, which a replacement App, registered under Settings, Developer
-settings, GitHub Apps, New GitHub App, uses too:
-
-- Name: Repotted App. Its slug, the name as GitHub writes it in URLs, must
-  match `app.slug`. Homepage: the repository's URL.
-- Callback URL: none. Leave **Request user authorization (OAuth) during
-  installation** off, turn on **Enable Device Flow**, and leave **Expire user
-  authorization tokens** on.
-- Webhook: clear **Active**.
-- Repository permissions: Administration, read and write. Actions, read, to
-  list environments. Metadata, read, is required. No other permissions and no
-  events.
-- Where it can be installed: any account.
-
-Then copy the client ID, not the App ID, into `app.clientId`.
-
-The App's permissions can change later in its settings. GitHub asks each
-installation's owner to accept added permissions, and until they do, the App
-keeps the old ones on that installation. Removed permissions take effect at
-once, so older Repotted versions that still need them stop working.
-
-## Publishing
+# Releasing
 
 The repository releases two things, told apart by the tag: the CLI on npm
 from `v` releases, and the desktop app from `desktop-v` tags. Create CLI
 releases with **Set as the latest release** cleared, so the latest release
 stays the desktop app, which is the one people download.
 
-### The CLI
+## The CLI
 
 Publishing a GitHub release with a `v` tag runs the Publish NPM workflow,
 `.github/workflows/publish.yml`. The release tag must be `v` followed by the
@@ -100,7 +33,7 @@ a package that exists, so the first version is published by hand:
 To release a change, bump `version` in `packages/cli/package.json` in the same
 pull request.
 
-### The desktop app
+## The desktop app
 
 Pushing a `desktop-v` tag runs the Build Desktop workflow,
 `.github/workflows/desktop.yml`. The tag must be `desktop-v` followed by

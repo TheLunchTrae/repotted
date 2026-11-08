@@ -7,14 +7,24 @@ before changing architecture or domain language.
 
 Repotted captures, plans, and applies GitHub repository setups: repository
 settings, merge methods, Actions policy, rulesets, and environments. `README.md` stays
-minimal; put context that agents need in this file and developer docs in
-`docs/`.
+minimal; put context that agents need in this file. Docs live in `docs/`, in
+two sets for two readers:
+
+- `docs/user/`: how to install and use the desktop app, the CLI, and the MCP
+  server, the profile format, and the JSON output scripts read. No
+  implementation detail: no source paths, internal names, or design rationale.
+- `docs/developer/`: how Repotted works and why: the architecture and design
+  decisions, local setup, the GitHub App, and releasing.
+
+When a change affects both, update the user page for what changes for users
+and the developer page for how and why.
 
 - [CONTEXT.md](CONTEXT.md): the domain vocabulary.
-- [docs/development.md](docs/development.md): layout, local setup, the build,
-  and publishing.
-- [docs/profiles.md](docs/profiles.md): the profile format, how plans and
-  apply work, and the MCP server.
+- [docs/user/README.md](docs/user/README.md): the user guide's index.
+- [docs/developer/README.md](docs/developer/README.md): the developer guide's
+  index and the repository layout.
+- [docs/developer/architecture.md](docs/developer/architecture.md): how
+  profiles, plans, apply, the CLI, the MCP server, and the desktop app work.
 
 `packages/core` is the engine: the profile schema, one adapter per section,
 and the plan engine. `packages/cli` is the published `repotted` package: the
@@ -206,7 +216,8 @@ builds outside mise.
   restores in locked mode.
 - The app does no GitHub work itself: it runs the CLI with `--json`.
   `csharp:test` runs the contract test against the CLI's source, so a change
-  to the JSON the app reads fails there.
+  to the documents it covers fails there; see
+  [the architecture](docs/developer/architecture.md#the-desktop-app).
 - Keep asynchronous work owned and cancellable, and avoid `async void`. A CLI
   run must not outlive what started it.
 - View tests draw pages headlessly in light and dark. Set
