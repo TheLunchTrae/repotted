@@ -831,6 +831,18 @@ public sealed class ProfileEditorTests : ViewModelTests
         help.Name = "WONTFIX";
         Assert.Equal("The profile already has a label named WONTFIX.", labels.Entries[1].Note);
 
+        // A removed label's name counts too, and each label hears when another claims its name.
+        var wontfix = labels.Entries[2].Editor;
+        var rechecked = 0;
+        wontfix.PropertyChanged += (_, e) => rechecked += e.PropertyName == nameof(EntryEditorViewModel.Problem) ? 1 : 0;
+        help.Name = "help";
+        help.RenamedFrom = "wontfix";
+        Assert.Equal("The profile has a label named wontfix, so it can't be an old name.", labels.Entries[1].Note);
+        Assert.Equal("help lists wontfix in Renamed from, so no label can be named that.", wontfix.Problem);
+        Assert.True(rechecked > 0);
+        help.RenamedFrom = "";
+        Assert.Null(wontfix.Problem);
+
         // Renaming offers to rename on GitHub too, which the save writes after dropping the old name.
         help.Name = "needs help";
         help.AddOldNameCommand.Execute(null);

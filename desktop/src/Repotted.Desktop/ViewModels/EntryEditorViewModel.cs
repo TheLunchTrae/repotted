@@ -185,7 +185,11 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
                     : $"The profile already has {Article} {Kind} named {trimmed}.";
             }
             // A draft may be unfinished: what would stop it applying waits until it is finished.
-            return Removes || IsDraft ? null : FieldProblem;
+            if (IsDraft)
+            {
+                return null;
+            }
+            return NameProblem ?? (Removes ? null : FieldProblem);
         }
     }
 
@@ -193,6 +197,16 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
 
     /// <summary>Why a field cannot be saved, if anything.</summary>
     protected abstract string? FieldProblem { get; }
+
+    /// <summary>Why the name cannot be saved, if anything, even on an entry that removes it from GitHub.</summary>
+    protected virtual string? NameProblem => null;
+
+    /// <summary>Checks the entry again after another entry changed, without telling the tab back.</summary>
+    public void Recheck()
+    {
+        OnPropertyChanged(nameof(Problem));
+        OnPropertyChanged(nameof(HasProblem));
+    }
 
     /// <summary>The entry from the fields, before the name is set.</summary>
     protected abstract JsonObject Build();

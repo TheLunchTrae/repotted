@@ -145,7 +145,8 @@ internal sealed partial class LabelEditorViewModel : EntryEditorViewModel
 
     public bool CanAddOldName => Unlisted is not null;
 
-    public string AddOldNameLabel => Unlisted is { } old ? $"Rename {old} on GitHub" : "";
+    /// <summary>What the rename link does, naming the old name, which its fixed text leaves out.</summary>
+    public string AddOldNameHelp => Unlisted is { } old ? $"Lists {old} in Renamed from, so applying renames {old} on each repository." : "";
 
     /// <summary>Lists the name the label was saved under in Renamed from, so applying renames it.</summary>
     [RelayCommand]
@@ -160,7 +161,7 @@ internal sealed partial class LabelEditorViewModel : EntryEditorViewModel
     protected override void Touched()
     {
         OnPropertyChanged(nameof(CanAddOldName));
-        OnPropertyChanged(nameof(AddOldNameLabel));
+        OnPropertyChanged(nameof(AddOldNameHelp));
         base.Touched();
     }
 
@@ -169,10 +170,6 @@ internal sealed partial class LabelEditorViewModel : EntryEditorViewModel
         get
         {
             var name = Name.Trim();
-            if (name.Length > NameLimit)
-            {
-                return $"A label's name can be at most {NameLimit} characters.";
-            }
             if (Color.Trim().Length > 0 && Hex is null)
             {
                 return "The color is six hex digits, such as a2eeef, with or without #.";
@@ -190,6 +187,10 @@ internal sealed partial class LabelEditorViewModel : EntryEditorViewModel
             {
                 return "Each old name can be listed once.";
             }
+            if (old.Any(each => each.Length > NameLimit))
+            {
+                return $"An old name can be at most {NameLimit} characters.";
+            }
             foreach (var each in old)
             {
                 if (claimedBy(each) is { } other)
@@ -200,6 +201,26 @@ internal sealed partial class LabelEditorViewModel : EntryEditorViewModel
                 }
             }
             return null;
+        }
+    }
+
+    /// <summary>
+    /// The name's own checks, which hold for a label that is removed too:
+    /// GitHub's limit, and no other label listing it as an old name, since
+    /// apply would rename that label into this one.
+    /// </summary>
+    protected override string? NameProblem
+    {
+        get
+        {
+            var name = Name.Trim();
+            if (name.Length > NameLimit)
+            {
+                return $"A label's name can be at most {NameLimit} characters.";
+            }
+            return claimedBy(name) is { } other && !string.Equals(other, name, StringComparison.OrdinalIgnoreCase)
+                ? $"{other} lists {name} in Renamed from, so no label can be named that."
+                : null;
         }
     }
 
@@ -252,9 +273,14 @@ internal sealed class LabelSwatchViewModel(LabelEditorViewModel editor, string h
     /// <summary>Whether the label has this color now.</summary>
     public bool IsChosen => Editor.Hex == Hex;
 
-    public string AccessibleName => $"{Name}, {Hex}";
+    /// <summary>The swatch's name for a screen reader, which says when it is the label's color.</summary>
+    public string AccessibleName => IsChosen ? $"{Name}, {Hex}, chosen" : $"{Name}, {Hex}";
 
-    public void Refresh() => OnPropertyChanged(nameof(IsChosen));
+    public void Refresh()
+    {
+        OnPropertyChanged(nameof(IsChosen));
+        OnPropertyChanged(nameof(AccessibleName));
+    }
 }
 
 /// <summary>Label colors as GitHub writes them, and the text that reads on each.</summary>

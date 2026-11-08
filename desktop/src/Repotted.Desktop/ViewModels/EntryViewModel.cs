@@ -89,16 +89,16 @@ internal sealed partial class EntryViewModel : ViewModelBase
 
     private LabelEditorViewModel? Label => editor as LabelEditorViewModel;
 
-    /// <summary>The label's color as GitHub writes it, or null when the profile leaves it out.</summary>
-    public string? Hex => Label is { } label ? label.Hex : LabelColor.Normal(Saved?["color"].AsText());
+    /// <summary>The label's color as GitHub writes it, or null when the profile leaves it out or removes the label.</summary>
+    public string? Hex => Absent ? null : Label is { } label ? label.Hex : LabelColor.Normal(Saved?["color"].AsText());
 
     public bool HasColor => Hex is not null;
 
     /// <summary>The text color that reads on the label's color.</summary>
     public string Ink => LabelColor.Ink(Hex);
 
-    /// <summary>The label's description as the profile sets it, or null when it leaves each repository's own.</summary>
-    public string? Description => Label is { } label
+    /// <summary>The label's description as the profile sets it, or null when it leaves each repository's own or removes the label.</summary>
+    public string? Description => Absent ? null : Label is { } label
         ? label.SetsDescription ? label.Description : null
         : Saved?["description"].AsText();
 
@@ -236,6 +236,7 @@ internal sealed partial class EntryViewModel : ViewModelBase
     {
         OnAllPropertiesChanged();
         DropCommand.NotifyCanExecuteChanged();
+        editor?.Recheck();
     }
 
     /// <summary>
@@ -384,13 +385,13 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// The other label that applies under <paramref name="old"/> or lists it
-    /// as an old name, as the profile will be saved, or null. A label's old
-    /// name can be neither, since apply would then rename one label into
-    /// another or two into one.
+    /// The other label that applies under <paramref name="old"/>, or removes
+    /// it, or lists it as an old name, as the profile will be saved, or null.
+    /// A label's old name can be none of these, since apply would then rename
+    /// one label into another or two into one.
     /// </summary>
     private string? ClaimedBy(EntryViewModel entry, string old) =>
-        Entries.Where(other => other != entry && !other.Dropped && !other.IsDraft)
+        Entries.Where(other => other != entry && !other.Dropped && !other.IsDraft && other.ReplacedBy is null)
             .FirstOrDefault(other => SameName(other.CurrentName, old) || other.Claims.Any(name => SameName(name, old)))
             ?.CurrentName;
 

@@ -527,11 +527,12 @@ public sealed class ViewTests : IDisposable
         Dispatcher.UIThread.RunJobs();
         Assert.Equal("5319e7", window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "Label color").Text);
         Assert.Contains(swatch, window.GetVisualDescendants().OfType<Button>().Where(button => button.Classes.Contains("chosen")));
+        Assert.Equal("Purple, 5319e7, chosen", AutomationProperties.GetName(swatch));
         var label = (LabelEditorViewModel)editor.Tab("Labels").Editing!.Editor;
         label.Name = "type: defect";
         Dispatcher.UIThread.RunJobs();
         Assert.Contains(ControlLabel.For("Rename it on GitHub too"), Texts(window));
-        Assert.Contains(window.GetVisualDescendants().OfType<Button>(), button => AutomationProperties.GetName(button) == "Rename type: bug on GitHub");
+        Assert.Contains(window.GetVisualDescendants().OfType<Button>(), button => AutomationProperties.GetHelpText(button) == "Lists type: bug in Renamed from, so applying renames type: bug on each repository.");
         window.Height = 1200;
         Save(window, $"label-{theme}");
     }

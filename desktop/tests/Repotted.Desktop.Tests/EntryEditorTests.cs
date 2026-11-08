@@ -234,6 +234,9 @@ public sealed class EntryEditorTests
         editor.PickCommand.Execute("fef2c0");
         Assert.True(editor.Swatches.Single(swatch => swatch.Hex == "fef2c0").IsChosen);
         Assert.Equal((LabelColor.Dark, 1), (editor.Ink, editor.Swatches.Count(swatch => swatch.IsChosen)));
+        Assert.Equal(
+            ["Light yellow, fef2c0, chosen", "Green, 0e8a16"],
+            editor.Swatches.Where(swatch => swatch.Hex is "fef2c0" or "0e8a16").Select(swatch => swatch.AccessibleName).OrderDescending());
         Assert.True(JsonNode.DeepEquals(Json("""{"name":"bug","description":"Broken","color":"fef2c0"}"""), editor.Entry));
 
         // Leaving the description to each repository takes it out; an empty one clears it.
@@ -275,7 +278,7 @@ public sealed class EntryEditorTests
         Assert.Null(editor.RenameNote);
         editor.Name = "type: bug";
         Assert.Equal("Applying creates type: bug and leaves bug on each repository, unless Renamed from lists bug.", editor.RenameNote);
-        Assert.Equal((true, "Rename bug on GitHub"), (editor.CanAddOldName, editor.AddOldNameLabel));
+        Assert.Equal((true, "Lists bug in Renamed from, so applying renames bug on each repository."), (editor.CanAddOldName, editor.AddOldNameHelp));
 
         editor.AddOldNameCommand.Execute(null);
 
@@ -315,11 +318,25 @@ public sealed class EntryEditorTests
         Assert.Equal("The profile has a label named wontfix, so it can't be an old name.", editor.Problem);
         editor.RenamedFrom = "defect";
         Assert.Equal("type: bug already lists defect in Renamed from.", editor.Problem);
+        editor.RenamedFrom = new string('o', 51);
+        Assert.Equal("An old name can be at most 50 characters.", editor.Problem);
         editor.RenamedFrom = "";
         editor.Name = new string('b', 51);
         Assert.Equal("A label's name can be at most 50 characters.", editor.Problem);
+        editor.Name = "defect";
+        Assert.Equal("type: bug lists defect in Renamed from, so no label can be named that.", editor.Problem);
+
+        // A removed label's fields don't matter, but its name still does.
+        editor.Color = "red";
+        editor.Removes = true;
+        Assert.Equal("type: bug lists defect in Renamed from, so no label can be named that.", editor.Problem);
+        editor.Name = new string('b', 51);
+        Assert.Equal("A label's name can be at most 50 characters.", editor.Problem);
+        editor.Name = "bug";
+        Assert.Null(editor.Problem);
 
         // A draft may be unfinished.
+        editor.Removes = false;
         editor.IsDraft = true;
         Assert.Null(editor.Problem);
     }

@@ -158,8 +158,7 @@
                                  Text="A repository that has one of these and not this label has it renamed, so issues and pull requests keep the label. Where both are there, apply leaves both and says so." />
                       <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding CanAddOldName}"
                               Content="{Binding Source='Rename it on GitHub too', Converter={x:Static theme:ControlLabel.Converter}}"
-                              Command="{Binding AddOldNameCommand}" AutomationProperties.Name="{Binding AddOldNameLabel}"
-                              AutomationProperties.HelpText="Lists the label's saved name in Renamed from, so applying renames it." />
+                              Command="{Binding AddOldNameCommand}" AutomationProperties.HelpText="{Binding AddOldNameHelp}" />
                     </StackPanel>
                   </Grid>
                 </Border>
@@ -670,8 +669,7 @@
                                                        AutomationProperties.Name="Label description"
                                                        AutomationProperties.HelpText="{Binding DescriptionNote}" />
                                             </Grid>
-                                            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding DescriptionNote}"
-                                                       AutomationProperties.LiveSetting="Polite" />
+                                            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding DescriptionNote}" />
                                             <CheckBox IsChecked="{Binding KeepsDescription}" Content="Leave each repository's own description" />
                                           </StackPanel>
                                         </Grid>
