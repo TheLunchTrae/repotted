@@ -45,7 +45,7 @@ jobs:
         run: |
           version="$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' desktop/src/Repotted.Desktop/Repotted.Desktop.csproj)"
           test "desktop-v$version" = "$RELEASE_TAG"
-      # No cache: a release builds only from the locked, checksummed tools.
+      # No cache: a release builds only from the locked, checksummed downloads.
       - name: Run the mandatory gate
         uses: ./.github/actions/gate
         with:
