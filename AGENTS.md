@@ -222,6 +222,13 @@ builds outside mise.
   run must not outlive what started it.
 - View tests draw pages headlessly in light and dark. Set
   `REPOTTED_SCREENSHOTS` to a folder to save them for review.
+- UI text uses sentence case: capitalize the first word and proper nouns,
+  such as GitHub, YAML, and the Repotted App, and nothing else. This covers
+  buttons, links, menu items, tabs, segmented options, window and page
+  titles, headings, and field labels as well as messages: "Keep mine" and
+  "Back to rulesets", not "Keep Mine". A label built from a noun keeps the
+  noun lowercase, as in "New ruleset". The user docs quote a label in bold,
+  exactly as the app shows it.
 
 ## Git
 
