@@ -241,6 +241,37 @@ public sealed class ViewTests : IDisposable
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
+    public async Task Edits_to_a_removed_profile_stay_until_saved_or_discarded(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository:\n  has_wiki: false\n");
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base));
+        var window = await Show(theme, cli);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        editor.ShowYaml = false;
+        editor.Tabs[0].Groups.SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki")
+            .Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
+        File.Delete(own);
+        cli.On(folders.List(), $$$"""{"profiles":[{"name":"base","file":{{{System.Text.Json.JsonSerializer.Serialize(@base)}}},"extends":null,"problem":null}]}""");
+
+        await shell.Profiles.RefreshCommand.ExecuteAsync(null);
+
+        var text = Texts(window);
+        Assert.Contains(editor.RemovedMessage, text);
+        Assert.Contains("Removed, edits not saved", text);
+        Save(window, $"profile-removed-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
     public async Task Rulesets_and_environments_open_in_an_editor(string theme)
     {
         var @base = folders.Write("base.yaml", "rulesets:\n  - name: Tags\n");

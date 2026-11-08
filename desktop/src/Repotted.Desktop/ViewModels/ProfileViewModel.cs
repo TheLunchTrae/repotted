@@ -76,9 +76,45 @@ internal sealed partial class ProfileViewModel(
 
     public bool OutOfDate => ChangedFile is not null;
 
-    public string OutOfDateMessage => ChangedFile is null || ChangedFile == File
+    public string OutOfDateMessage => returned
+        ? $"{FileName} is back in the folder, but not as you opened it, so saving would put your unsaved changes over what it has now. Reload discards your unsaved changes."
+        : ChangedFile is null || ChangedFile == File
         ? $"{FileName} changed since you opened it, so saving would undo that change to the rulesets and environments you edited. Reload discards your unsaved changes."
+        // A removed profile has no file to reload, so only Keep mine is offered.
+        : Removed
+        ? $"{Path.GetFileName(ChangedFile)} changed since you opened this profile, so saving would set the old copy of the inherited rulesets and environments you edited."
         : $"{Path.GetFileName(ChangedFile)} changed since you opened this profile, so saving would set the old copy of the inherited rulesets and environments you edited. Reload discards your unsaved changes.";
+
+    /// <summary>
+    /// Whether the file is gone from the folder, such as after a sync, while
+    /// the editor holds unsaved edits; saving puts it back.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RemovedMessage), nameof(OutOfDateMessage))]
+    [NotifyCanExecuteChangedFor(nameof(ReloadCommand))]
+    public partial bool Removed { get; set; }
+
+    partial void OnRemovedChanged(bool value)
+    {
+        if (value)
+        {
+            ChangedFile = null;
+        }
+    }
+
+    /// <summary>Whether the file came back after it was removed, with other text than the editor read.</summary>
+    private bool returned;
+
+    partial void OnChangedFileChanged(string? value)
+    {
+        if (value is null)
+        {
+            returned = false;
+        }
+    }
+
+    public string RemovedMessage =>
+        $"{FileName} is no longer in the folder, such as after a sync with GitHub removed it. Save profile puts it back with your unsaved changes, and Discard lets it go.";
 
     public bool ShowEditor => !Loading && Error is null && Tabs.Count > 0;
 
@@ -162,8 +198,30 @@ internal sealed partial class ProfileViewModel(
     private Task KeepMineAsync() => SaveAsync(overwrite: true);
 
     /// <summary>Starts over from the file as it is now, without the unsaved edits.</summary>
-    [RelayCommand(CanExecute = nameof(CanDiscard))]
+    [RelayCommand(CanExecute = nameof(CanReload))]
     private Task ReloadAsync() => LoadAsync();
+
+    private bool CanReload() => CanDiscard() && !Removed;
+
+    /// <summary>
+    /// Takes the file as listed again: a removed file that came back with
+    /// other text than the editor read, such as a new profile of the same
+    /// name, asks before any save; otherwise the file is checked as usual.
+    /// </summary>
+    public void FileListed()
+    {
+        if (Removed)
+        {
+            Removed = false;
+            if (!string.Equals(ReadFile(File), loaded.GetValueOrDefault(File), StringComparison.Ordinal))
+            {
+                returned = true;
+                ChangedFile = File;
+                return;
+            }
+        }
+        CheckFile();
+    }
 
     /// <summary>
     /// Asks whether saving would undo a change to the file since the editor
@@ -186,6 +244,11 @@ internal sealed partial class ProfileViewModel(
     /// </summary>
     private string? StaleFile()
     {
+        // A file that came back as something else stops any save, settings too.
+        if (returned && !string.Equals(ReadFile(File), loaded.GetValueOrDefault(File), StringComparison.Ordinal))
+        {
+            return File;
+        }
         var edited = Entries.Where(entry => entry.Changed).ToList();
         if (edited.Count == 0)
         {
@@ -222,20 +285,53 @@ internal sealed partial class ProfileViewModel(
             Dictionary<string, string?> texts = [];
             async Task Write()
             {
-                // Checked here, after any sync before the save, so a file that sync changed counts.
-                if (!overwrite && StaleFile() is { } file)
+                // A file gone since the last refresh is shown as gone first, and put back only on a save made knowing that.
+                var restored = false;
+                if (!System.IO.File.Exists(File))
                 {
-                    ChangedFile = file;
-                    return;
+                    if (!Removed)
+                    {
+                        Removed = true;
+                        return;
+                    }
+                    Restore();
+                    restored = true;
                 }
-                profile = await client.SaveProfileAsync(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
-                texts = ReadFiles(ChainOf(profile));
+                else if (Removed)
+                {
+                    // Back before a refresh listed it, so it is taken as listed first.
+                    FileListed();
+                    if (returned)
+                    {
+                        return;
+                    }
+                }
+                try
+                {
+                    // Checked here, after any sync before the save, so a file that sync changed counts.
+                    if (!overwrite && StaleFile() is { } file)
+                    {
+                        ChangedFile = file;
+                        return;
+                    }
+                    profile = await client.SaveProfileAsync(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
+                    texts = ReadFiles(ChainOf(profile));
+                }
+                finally
+                {
+                    // A put-back file that took no edits goes again, so the profile stays removed.
+                    if (restored && profile is null)
+                    {
+                        System.IO.File.Delete(File);
+                    }
+                }
             }
             await (exclusive is null ? Write() : exclusive(Write)).ConfigureAwait(true);
             if (profile is null)
             {
                 return;
             }
+            Removed = false;
             Show(profile, await BaseAsync(profile).ConfigureAwait(true));
             Remember(ChainOf(profile), texts);
             ChangedFile = null;
@@ -389,6 +485,18 @@ internal sealed partial class ProfileViewModel(
     /// <summary>Each file's text, keyed by its path, or null for a file that cannot be read.</summary>
     private static Dictionary<string, string?> ReadFiles(IEnumerable<string> files) =>
         files.Distinct(StringComparer.Ordinal).ToDictionary(file => file, ReadFile, StringComparer.Ordinal);
+
+    /// <summary>Writes the file back as the editor read it, so the save's edits apply to it.</summary>
+    private void Restore()
+    {
+        if (loaded.GetValueOrDefault(File) is not { } text)
+        {
+            throw new IOException($"Repotted could not put {FileName} back, because it could not read the file when it opened it.");
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(File)!);
+        using var stream = new FileStream(File, FileMode.CreateNew, FileAccess.Write);
+        stream.Write(System.Text.Encoding.UTF8.GetBytes(text));
+    }
 
     /// <summary>The file's text, or null when it cannot be read, such as once a sync removed it.</summary>
     private static string? ReadFile(string file)

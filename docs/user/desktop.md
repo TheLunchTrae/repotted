@@ -120,6 +120,12 @@ brings the change in: **Keep mine** saves your version over the change, and
 settings alone save over a change to the file, since only the settings you
 changed are written.
 
+If the file is removed while you have unsaved changes, such as by a sync with
+GitHub, the profile stays in the list with the note **Removed, edits not
+saved**. **Save profile** puts the file back with your changes, and
+**Discard** lets the profile go. If the profile was renamed on GitHub, saving
+brings it back under its old name, beside the renamed one.
+
 ## Compare a repository with a profile
 
 On the **Repositories** page, select a repository, pick a profile under
