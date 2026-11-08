@@ -331,6 +331,19 @@ export function formatPlan(plan: Plan, locks: readonly Lock[] = []): string {
   return lines.join('\n');
 }
 
+/** The `message` of each error in Octokit's comma-joined JSON objects, or none when they don't parse. */
+function errorMessages(tail: string): string[] {
+  try {
+    const errors: unknown = JSON.parse(`[${tail}]`);
+    return z
+      .array(z.object({ message: z.string().optional() }).loose())
+      .parse(errors)
+      .flatMap((item) => (item.message === undefined ? [] : [item.message]));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Why GitHub refused the change that failed, when it says something lasting
  * about the repository, the token or the App: a `403` or a `422`. A refusal
@@ -347,8 +360,14 @@ export function failureReason(error: ApplyError): string | null {
     const { method, path } = error.failed.request;
     return `Needs ${requiredPermission(method, path)}`;
   }
-  // Octokit appends the docs link to GitHub's message, and the raw details of a 422 after a colon.
-  return cause.message.replace(/ - https:\/\/\S+$/u, '').replace(/: [[{].*$/su, '');
+  // Octokit appends the docs link to GitHub's message, and a 422's errors as JSON after a colon.
+  const message = cause.message.replace(/ - https:\/\/\S+$/u, '');
+  const split = /^(?<head>.*?): (?<tail>\{.*\})$/su.exec(message);
+  if (split?.groups === undefined) {
+    return message;
+  }
+  const { head = '', tail = '' } = split.groups;
+  return [head, ...errorMessages(tail)].join(': ');
 }
 
 /** What an ApplyError means for the repository: what was written and what failed. */

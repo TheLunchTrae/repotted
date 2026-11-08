@@ -158,6 +158,16 @@ describe('failureReason', () => {
     ).toBe('Your current plan does not support GitHub Pages for this repository.');
     expect(
       failureReason(
+        failed(
+          new GitHubError(
+            422,
+            'Validation Failed: {"resource":"Ruleset","code":"custom","message":"Invalid target patterns"}, {"code":"invalid"}',
+          ),
+        ),
+      ),
+    ).toBe('Validation Failed: Invalid target patterns');
+    expect(
+      failureReason(
         failed(new GitHubError(422, 'Validation Failed: {"resource":"Repository","code":"custom","field":"name"}')),
       ),
     ).toBe('Validation Failed');
