@@ -11,22 +11,23 @@ links to the issue that tracks it.
 Every command that talks to GitHub resolves a token in `resolveToken`
 (`packages/cli/src/auth.ts`). The first source that yields a token wins.
 
-| Step                                                                       | Outcome                                                                                                            | Next                                           |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
-| `GITHUB_TOKEN` or `GH_TOKEN` is set                                        | That token is used, unchecked.                                                                                     | Done.                                          |
-| The keychain holds no sign-in                                              | No token from the keychain.                                                                                        | The GitHub CLI.                                |
-| The keychain sign-in expires in more than 5 minutes, or never              | Its access token is used.                                                                                          | Done.                                          |
-| The sign-in is close to expiry and its refresh token is missing or expired | The problem "The Repotted sign-in expired." is kept.                                                               | The GitHub CLI.                                |
-| The sign-in is close to expiry and its refresh token is usable             | The token is refreshed and the result is stored.                                                                   | Done.                                          |
-| The refresh fails                                                          | The keychain is read again: another run may have used the refresh token first. A newer usable token there is used. | Done, or the GitHub CLI with the problem kept. |
-| The keychain can't be read                                                 | The problem is kept.                                                                                               | The GitHub CLI.                                |
-| `gh auth token` prints a token                                             | That token is used.                                                                                                | Done.                                          |
-| Nothing yields a token                                                     | `NotSignedInError` with the kept problems.                                                                         | `status` reports `not_signed_in`.              |
+| Step                                                                       | Outcome                                                                                                                                     | Next                                                           |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `GITHUB_TOKEN` or `GH_TOKEN` is set                                        | That token is used, unchecked.                                                                                                              | Done.                                                          |
+| The keychain holds no sign-in                                              | No token from the keychain.                                                                                                                 | The GitHub CLI.                                                |
+| The keychain sign-in expires in more than 5 minutes, or never              | Its access token is used.                                                                                                                   | Done.                                                          |
+| The sign-in is close to expiry and its refresh token is missing or expired | The problem "The Repotted sign-in expired." is kept.                                                                                        | The GitHub CLI.                                                |
+| The sign-in is close to expiry and its refresh token is usable             | The token is refreshed and the result is stored.                                                                                            | Done.                                                          |
+| The refresh fails                                                          | The keychain is read again: another run may have used the refresh token first. A newer usable token there is used.                          | Done, or the GitHub CLI with the problem kept.                 |
+| The refresh succeeds but the keychain refuses the new token                | The refresh token is spent, so the sign-in is lost although a valid token was in hand. The problem says the sign-in could not be refreshed. | The GitHub CLI with the problem kept; the user signs in again. |
+| The keychain can't be read                                                 | The problem is kept.                                                                                                                        | The GitHub CLI.                                                |
+| `gh auth token` prints a token                                             | That token is used.                                                                                                                         | Done.                                                          |
+| Nothing yields a token                                                     | `NotSignedInError` with the kept problems.                                                                                                  | `status` reports `not_signed_in`.                              |
 
 A token that resolves can still be refused: `status` reports a 401 from
-GitHub as `rejected`, and names the token variable when one was used. A
-variable is read once per process, so the desktop app sees a changed
-variable only after it restarts.
+GitHub as `rejected`, and names the token variable when one was used. Each
+CLI the desktop app starts inherits the app's environment, which is fixed at
+launch, so the app sees a changed variable only after it restarts.
 
 ## Device flow
 
@@ -54,8 +55,8 @@ token into a sign-in that finishes between tool calls.
 | State           | Event                                              | Next                                                                                                                |
 | --------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Idle            | A call resolves a token                            | Idle; concurrent calls share one lookup, so an expiring token is refreshed once.                                    |
-| Idle            | `NotSignedInError`                                 | A device flow starts, or the running one is reused, and the call fails with its code.                               |
-| Sign-in pending | Another call                                       | The same code again.                                                                                                |
+| Idle            | `NotSignedInError`                                 | Sign-in pending: a device flow starts, and the call fails with its code.                                            |
+| Sign-in pending | Another call, which finds no token                 | The same code again, from the same flow.                                                                            |
 | Sign-in pending | The flow stores a token                            | Idle; the next call finds the token.                                                                                |
 | Sign-in pending | The flow fails with `KeychainError`                | Keychain failed: every later call without a token fails with that error, since another code would end the same way. |
 | Sign-in pending | The flow fails in another way                      | Idle; the next call starts a new flow and repeats the reason first.                                                 |
@@ -69,22 +70,23 @@ keychain-failed state, because the lookup runs before that state is checked.
 `MainViewModel` picks the page from `repotted status --json`, and
 `SignInViewModel` runs the device flow through `repotted login --json`.
 
-| State    | Event                                               | Next                                                                                                         |
-| -------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Checking | Signed in                                           | The app, which refreshes the repositories and profiles.                                                      |
-| Checking | Signed out or rejected                              | Sign-in, with a notice for a rejected or unusable earlier sign-in.                                           |
-| Checking | The CLI is missing or fails                         | Problem, with a retry that checks again.                                                                     |
-| Sign-in  | Start                                               | Starting, then showing the code once the CLI prints it.                                                      |
-| Sign-in  | The flow ends                                       | Checking.                                                                                                    |
-| Sign-in  | The flow fails                                      | Sign-in, with the error.                                                                                     |
-| Sign-in  | Cancel, or the app closes                           | Sign-in; the CLI process is stopped.                                                                         |
-| Sign-in  | A rejected token variable                           | Sign-in with signing in turned off: the variable comes first, so the user must change it and reopen the app. |
-| The app  | A command fails because the sign-in stopped working | The page that ran it shows the error.                                                                        |
+| State                                  | Event                                               | Next                                                                                           |
+| -------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Checking                               | Signed in                                           | The app, which refreshes the repositories and profiles.                                        |
+| Checking                               | Signed out or rejected                              | Sign-in, with a notice for a rejected or unusable earlier sign-in.                             |
+| Checking                               | The CLI is missing or fails                         | Problem, with a retry that checks again.                                                       |
+| Sign-in                                | Start                                               | Starting, then showing the code once the CLI prints it.                                        |
+| Sign-in                                | The flow ends                                       | Checking.                                                                                      |
+| Sign-in                                | The flow fails                                      | Sign-in, with the error.                                                                       |
+| Sign-in                                | Cancel, or the app closes                           | Sign-in; the CLI process is stopped.                                                           |
+| Sign-in, for a rejected token variable | Any                                                 | Signing in stays off: the variable comes first, so the user must change it and reopen the app. |
+| The app                                | A command fails because the sign-in stopped working | The page that ran it shows the error.                                                          |
 
 **Failure:** checking runs only at launch and from the problem page. Once the
-app shows, nothing returns to it, so a sign-in that expires, is revoked, or
-loses its keychain entry mid-session leaves every page failing with "Not
-signed in" until the app restarts. Tracked in
+app shows, nothing returns to it. A sign-in that expires, is revoked, or loses
+its keychain entry mid-session leaves every page failing with "Not signed in"
+or GitHub's own refusal. The app offers no way back to the sign-in page, so
+the user must restart it or sign in from a terminal. Tracked in
 [#45](https://github.com/TheLunchTrae/repotted/issues/45).
 
 ## Plan and apply
@@ -118,12 +120,13 @@ repository in line, file by file, against the blob ids in
 
 ### The record
 
-| State   | When                                                                                     | Effect                                                                                |
-| ------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| None    | No record, or the repository has another id than the record names                        | First sync: nothing is deleted on either side, and a file that differs is a conflict. |
-| Kept    | The branch's history holds the recorded commit                                           | Three-way merge against the record.                                                   |
-| Reset   | The history doesn't hold that commit, such as after a force push or a new default branch | The record is cleared and the pass runs as a first sync.                              |
-| Refused | The folder already syncs with another repository or path                                 | `SyncError`; the folder is left alone.                                                |
+| State      | When                                                                                     | Effect                                                                                |
+| ---------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| None       | No record, or the repository has another id than the record names                        | First sync: nothing is deleted on either side, and a file that differs is a conflict. |
+| Kept       | The branch's history holds the recorded commit                                           | Three-way merge against the record.                                                   |
+| Reset      | The history doesn't hold that commit, such as after a force push or a new default branch | The pass runs as a first sync. The file keeps the old record until a pass records.    |
+| Refused    | The folder already syncs with another repository or path                                 | `SyncError`; the folder is left alone.                                                |
+| Unreadable | `.repotted-sync.json` isn't a sync record                                                | `SyncError` on every sync until the file is fixed or removed.                         |
 
 ### Each file
 
@@ -170,8 +173,9 @@ is one, and the sync state the page shows.
 | Any          | Choose another folder, which leaves any repository | Local folder, listed from the start.                        |
 | Any          | Connect another repository                         | Connecting, through the connect form below.                 |
 
-Saves and syncs share one chain (`ExclusiveAsync` and `SyncAsync`), so a
-sync never reads a file a save is writing.
+Saves and the page's syncs share one chain (`ExclusiveAsync` and
+`SyncAsync`), so a sync never reads a file a save is writing. The connect
+form's first sync runs outside it.
 
 **Failure:** a capture writes its file outside that chain, and the sync
 covers the whole folder, including the empty file a capture holds. A sync
@@ -186,25 +190,25 @@ per file in a cache.
 
 ### The profile
 
-| State   | Event                     | Next                                                                                                   |
-| ------- | ------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Loading | The CLI resolves the file | Saved.                                                                                                 |
-| Loading | It fails                  | Error.                                                                                                 |
-| Saved   | Any edit                  | Changed.                                                                                               |
-| Changed | Discard                   | Saved.                                                                                                 |
-| Changed | Save                      | Saving: settings through `--set` and `--unset`, entries whole through `--ruleset` and `--environment`. |
-| Saving  | It succeeds               | Saved, then a sync for a config repository.                                                            |
-| Saving  | It fails                  | Changed, with the error.                                                                               |
+| State   | Event                     | Next                                                                                                                                                                            |
+| ------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Loading | The CLI resolves the file | Saved.                                                                                                                                                                          |
+| Loading | It fails                  | Error.                                                                                                                                                                          |
+| Saved   | Any edit                  | Changed.                                                                                                                                                                        |
+| Changed | Discard                   | Saved.                                                                                                                                                                          |
+| Changed | Save                      | Saving: settings through `--set` and `--unset`, entries whole through `--ruleset` and `--environment`, and taken-out entries through `--drop-ruleset` and `--drop-environment`. |
+| Saving  | It succeeds               | Saved, then a sync for a config repository.                                                                                                                                     |
+| Saving  | It fails                  | Changed, with the error.                                                                                                                                                        |
 
 ### Each ruleset or environment
 
-| State            | Event               | Next                                                                           |
-| ---------------- | ------------------- | ------------------------------------------------------------------------------ |
-| Saved            | Edit                | Changed; a changed name on an entry this profile owns is a rename.             |
-| New              | Discard             | Gone from the list.                                                            |
-| Saved or changed | Take out of profile | Dropped.                                                                       |
-| Dropped          | Put back            | Saved, as the profile has it.                                                  |
-| Any              | Save                | Dropped entries go first, then writes, then each rename as a drop and a write. |
+| State                                     | Event               | Next                                                                                                                                   |
+| ----------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Saved                                     | Edit                | Changed; a changed name on an entry this profile owns is a rename.                                                                     |
+| New                                       | Discard             | Gone from the list.                                                                                                                    |
+| Saved or changed, and set in this profile | Take out of profile | Dropped. An entry from a base profile can't be taken out here.                                                                         |
+| Dropped                                   | Put back            | Saved, as the profile has it.                                                                                                          |
+| Any                                       | Save                | Plain writes go first, then drops, then each rename as a drop and a write, since the CLI reads a write right after a drop as a rename. |
 
 An editor builds the entry it saves from the copy it loaded, so saving writes
 the whole entry as that copy plus the edits.
@@ -252,11 +256,12 @@ The failure in this machine is the sync during a hold, under
 
 `ConfigRepositoryViewModel` starts a working copy for a repository and folder.
 
-| State   | Event                        | Next                                                                                                           |
-| ------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Editing | Connect                      | Copies the local profiles over if asked, skipping names already there, then syncs.                             |
-| Syncing | It records                   | Connected; the app remembers the repository.                                                                   |
-| Syncing | It fails, or the form closes | Editing, with the error; a working copy that never synced is removed, and otherwise only the copied files are. |
+| State   | Event           | Next                                                                                                           |
+| ------- | --------------- | -------------------------------------------------------------------------------------------------------------- |
+| Editing | Connect         | Copies the local profiles over if asked, skipping names already there, then syncs.                             |
+| Syncing | It records      | Connected; the app remembers the repository.                                                                   |
+| Syncing | It fails        | Editing, with the error; a working copy that never synced is removed, and otherwise only the copied files are. |
+| Syncing | The form closes | The sync is stopped and cleaned up the same way, with no error shown.                                          |
 
 ## CLI runs
 
@@ -274,13 +279,11 @@ Other calls run until the CLI exits, which every command does on its own.
 
 ## Desktop releases
 
-`.github/workflows/desktop.yml` packages the app.
+`.github/workflows/desktop.yml` packages the app, as
+[Releasing](releasing.md#the-desktop-app) describes. Two states matter when a
+run fails:
 
-| State            | Event                   | Next                                                                                                                  |
-| ---------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Manual run       | Package                 | Unsigned packages as artifacts for 3 days, with no release.                                                           |
-| Tag `desktop-v*` | Verify                  | Fails unless the tag is `desktop-vX.Y.Z`, its commit is on `main`, it matches the app's version, and the gate passes. |
-| Verified         | Package                 | Each platform, with macOS signed and notarized in the `macos-release` environment.                                    |
-| Packaged         | Every platform succeeds | Upload to a draft release, created on the first run and refilled on a re-run.                                         |
-| Packaged         | A platform fails        | No upload; re-running the failed job continues the same tag.                                                          |
-| Draft            | The owner publishes     | Released. A published release is immutable, so a fix needs the next version's tag.                                    |
+| State    | Event               | Next                                                                               |
+| -------- | ------------------- | ---------------------------------------------------------------------------------- |
+| Packaged | A platform fails    | No upload; re-running the failed job continues the same tag and its draft release. |
+| Draft    | The owner publishes | Released. A published release is immutable, so a fix needs the next version's tag. |
