@@ -485,7 +485,7 @@ export async function saveStagedEdits(file: string): Promise<StagedApply> {
     (head) => {
       if (!isDeepStrictEqual(head.layer, read.head.layer)) {
         throw new ProfileError(
-          `${file} changed after its edits were read, so they are saved to ${before.base} but not cleared from it`,
+          `${file} changed after its edits were read, so they are saved to ${before.base} but not cleared from ${file}`,
         );
       }
       return layerEdits(layer, true);
