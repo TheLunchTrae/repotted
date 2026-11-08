@@ -660,6 +660,23 @@ public sealed class BatchTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_command_line_that_cannot_answer_leaves_the_batch_as_it_is()
+    {
+        var (world, page) = await Reviewing();
+        var batch = page.Batch;
+        world.Cli.On($"stage {world.Folder} --json", "not json", exitCode: 1)
+            .On($"stage {world.Folder} --discard --json", "not json", exitCode: 1);
+
+        batch.DiscardCommand.Execute(null);
+        await batch.ConfirmDiscardCommand.ExecuteAsync(null);
+
+        Assert.Equal(BatchStep.Reviewing, batch.Step);
+        Assert.NotNull(batch.Error);
+        Assert.True(Settings.HasBatch);
+        Assert.Equal(0, page.Closed);
+    }
+
+    [AvaloniaFact]
     public async Task A_batch_the_cli_cannot_read_can_still_be_started_over()
     {
         var world = new World(this, Repotted);

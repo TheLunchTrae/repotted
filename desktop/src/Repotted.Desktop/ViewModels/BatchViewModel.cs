@@ -882,7 +882,8 @@ internal sealed partial class BatchViewModel(
             await client.BatchAsync(Folder, CancellationToken.None).ConfigureAwait(true);
             return true;
         }
-        catch (CliException error) when (error is not SignInLostException)
+        // Only the command line saying it cannot read the batch counts; a crash says nothing of the batch.
+        catch (CliException error) when (error is not (SignInLostException or CliOutputException))
         {
             return false;
         }

@@ -38,7 +38,7 @@ public sealed class RepottedClientTests
             """{"error":{"kind":"error","message":"getaddrinfo ENOTFOUND api.github.com"}}""",
             exitCode: 1));
 
-        var error = await Assert.ThrowsAsync<CliException>(() => client.RepositoriesAsync(None));
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.RepositoriesAsync(None));
 
         Assert.Equal("getaddrinfo ENOTFOUND api.github.com", error.Message);
     }
@@ -58,7 +58,7 @@ public sealed class RepottedClientTests
 
         // Any other failure says nothing about the sign-in.
         cli.On("repos --json", """{"error":{"kind":"error","message":"fetch failed"}}""", exitCode: 1);
-        var other = await Assert.ThrowsAsync<CliException>(() => client.RepositoriesAsync(None));
+        var other = await Assert.ThrowsAnyAsync<CliException>(() => client.RepositoriesAsync(None));
         Assert.IsNotType<SignInLostException>(other);
         Assert.Equal(1, lost);
     }
@@ -68,7 +68,7 @@ public sealed class RepottedClientTests
     {
         var client = new RepottedClient(new FakeCli().On("status --json", "Usage: repotted <command>", exitCode: 2));
 
-        var error = await Assert.ThrowsAsync<CliException>(() => client.StatusAsync(None));
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.StatusAsync(None));
 
         Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
     }
@@ -111,7 +111,7 @@ public sealed class RepottedClientTests
             [Documents.Code, """{"event":"error","error":{"kind":"error","message":"The code expired."}}"""],
             exitCode: 1));
 
-        var error = await Assert.ThrowsAsync<CliException>(() => client.SignInAsync(_ => { }, None));
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.SignInAsync(_ => { }, None));
 
         Assert.Equal("The code expired.", error.Message);
     }
@@ -124,7 +124,7 @@ public sealed class RepottedClientTests
             """{"error":{"kind":"error","message":"GitHub refused the device flow."}}""",
             exitCode: 1));
 
-        var error = await Assert.ThrowsAsync<CliException>(() => client.SignInAsync(_ => { }, None));
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.SignInAsync(_ => { }, None));
 
         Assert.Equal("GitHub refused the device flow.", error.Message);
     }
@@ -141,7 +141,7 @@ public sealed class RepottedClientTests
     {
         var client = new RepottedClient(new FakeCli().On("status --json", document));
 
-        var error = await Assert.ThrowsAsync<CliException>(() => client.StatusAsync(None));
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.StatusAsync(None));
 
         Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
     }
@@ -157,7 +157,7 @@ public sealed class RepottedClientTests
         (path.Length == 1 ? document : document[path[0]]!.AsObject()).Remove(path[^1]);
         var client = new RepottedClient(new FakeCli().On("profile orgs.yaml --json", document.ToJsonString()));
 
-        var error = await Assert.ThrowsAsync<CliException>(() => client.ProfileAsync("orgs.yaml", None));
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.ProfileAsync("orgs.yaml", None));
 
         Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
     }
@@ -169,7 +169,7 @@ public sealed class RepottedClientTests
         document.Remove("skipped");
         var client = new RepottedClient(new FakeCli().On("plan TheLunchTrae/repotted --profile orgs.yaml --json", document.ToJsonString()));
 
-        var error = await Assert.ThrowsAsync<CliException>(() => client.PlanAsync("TheLunchTrae/repotted", "orgs.yaml", None));
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.PlanAsync("TheLunchTrae/repotted", "orgs.yaml", None));
 
         Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
     }
@@ -191,7 +191,7 @@ public sealed class RepottedClientTests
     {
         var client = new RepottedClient(new FakeCli().On("repos --json", """{"source":"org","repositories":[]}"""));
 
-        var error = await Assert.ThrowsAsync<CliException>(() => client.RepositoriesAsync(None));
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.RepositoriesAsync(None));
 
         Assert.Contains("unknown repository source", error.Message, StringComparison.Ordinal);
     }
@@ -205,7 +205,7 @@ public sealed class RepottedClientTests
             exitCode: 1,
             error: "file:///repotted/main.js:12\n  throw error;\nTypeError: Cannot read properties of undefined (reading 'login')\n"));
 
-        var error = await Assert.ThrowsAsync<CliException>(() => client.StatusAsync(None));
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.StatusAsync(None));
 
         Assert.Equal(
             "The Repotted command line failed (exit code 1): file:///repotted/main.js:12 throw error; TypeError: Cannot read properties of undefined (reading 'login')",
@@ -217,7 +217,7 @@ public sealed class RepottedClientTests
     {
         var client = new RepottedClient(new FakeCli().On("status --json", "not json", error: "ExperimentalWarning: …"));
 
-        var error = await Assert.ThrowsAsync<CliException>(() => client.StatusAsync(None));
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.StatusAsync(None));
 
         Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
     }
@@ -231,7 +231,7 @@ public sealed class RepottedClientTests
         DeviceCode? shown = null;
         var client = new RepottedClient(new FakeCli().OnLines("login --json", [line, Documents.Done]));
 
-        await Assert.ThrowsAsync<CliException>(() => client.SignInAsync(code => shown = code, None));
+        await Assert.ThrowsAnyAsync<CliException>(() => client.SignInAsync(code => shown = code, None));
 
         Assert.Null(shown);
     }

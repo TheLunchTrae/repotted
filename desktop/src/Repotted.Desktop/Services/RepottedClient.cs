@@ -11,6 +11,9 @@ internal class CliException(string message) : Exception(message);
 /// <summary>A command failed because there is no sign-in, or GitHub rejected it.</summary>
 internal sealed class SignInLostException(string message) : CliException(message);
 
+/// <summary>The command line printed something the app could not read, such as after a crash, rather than a failure it explains.</summary>
+internal sealed class CliOutputException(string message) : CliException(message);
+
 /// <summary>Who Repotted signs in as, or why it is signed out.</summary>
 internal abstract record Account
 {
@@ -633,6 +636,6 @@ internal sealed class RepottedClient(ICli cli)
             : $"The Repotted command line failed (exit code {run.ExitCode}): {string.Join(' ', lines.TakeLast(3))}";
     }
 
-    private static CliException Unreadable(CliRun run, string detail) =>
+    private static CliOutputException Unreadable(CliRun run, string detail) =>
         new(Crash(run) ?? $"Could not read what the Repotted command line printed: {detail}");
 }
