@@ -37,13 +37,10 @@ internal partial class RuleViewModel : ViewModelBase
         get => enabled;
         set
         {
-            if (enabled == value)
+            if (SetProperty(ref enabled, value))
             {
-                return;
+                Changed();
             }
-            enabled = value;
-            OnPropertyChanged();
-            Changed();
         }
     }
 
@@ -143,13 +140,10 @@ internal sealed partial class StatusChecksRuleViewModel : RuleViewModel
         get => contexts;
         set
         {
-            if (contexts == value)
+            if (SetProperty(ref contexts, value))
             {
-                return;
+                Changed();
             }
-            contexts = value;
-            OnPropertyChanged();
-            Changed();
         }
     }
 
