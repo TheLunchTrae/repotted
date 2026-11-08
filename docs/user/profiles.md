@@ -28,7 +28,8 @@ ruleset's `conditions`, which Repotted passes to GitHub as they are.
 Most keys are settings GitHub keeps on the repository. The rest each have an
 endpoint of their own, and a key whose value is an object, such as
 `code_scanning_default_setup` or `oidc_customization_sub`, holds that
-endpoint's fields. What each key does, and the endpoint behind it, is in
+endpoint's fields. How Repotted reads and writes each section, and the
+GitHub App permissions it needs, is in
 [Settings coverage](../developer/settings-coverage.md).
 
 Some settings depend on the repository's plan or owner. Code scanning, the
