@@ -10,6 +10,9 @@ use Repotted, see the [user guide](../user/README.md).
   [JSON output](../user/json-output.md).
 - [Development](development.md): local setup, building, running, and testing
   the CLI and the desktop app.
+- [State machines](state-machines.md): the states that sign-in, plan and
+  apply, sync, the profile editor, and releases move through, and the
+  failure states each can reach.
 - [The GitHub App](github-app.md): how Repotted signs in, and the Repotted
   App's registration settings.
 - [Releasing](releasing.md): publishing the CLI to npm and building, signing,

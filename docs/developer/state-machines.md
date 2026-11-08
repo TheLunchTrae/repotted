@@ -1,0 +1,286 @@
+# State machines
+
+Several parts of Repotted move through states that no type names: a sign-in,
+a sync, an open profile, a running capture. This page lists each one, its
+states and the transitions between them, and the failure states it can reach.
+A failure that leaves the user worse off than the state they started from
+links to the issue that tracks it.
+
+## Token sources
+
+Every command that talks to GitHub resolves a token in `resolveToken`
+(`packages/cli/src/auth.ts`). The first source that yields a token wins.
+
+| Step                                                                       | Outcome                                                                                                            | Next                                           |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| `GITHUB_TOKEN` or `GH_TOKEN` is set                                        | That token is used, unchecked.                                                                                     | Done.                                          |
+| The keychain holds no sign-in                                              | No token from the keychain.                                                                                        | The GitHub CLI.                                |
+| The keychain sign-in expires in more than 5 minutes, or never              | Its access token is used.                                                                                          | Done.                                          |
+| The sign-in is close to expiry and its refresh token is missing or expired | The problem "The Repotted sign-in expired." is kept.                                                               | The GitHub CLI.                                |
+| The sign-in is close to expiry and its refresh token is usable             | The token is refreshed and the result is stored.                                                                   | Done.                                          |
+| The refresh fails                                                          | The keychain is read again: another run may have used the refresh token first. A newer usable token there is used. | Done, or the GitHub CLI with the problem kept. |
+| The keychain can't be read                                                 | The problem is kept.                                                                                               | The GitHub CLI.                                |
+| `gh auth token` prints a token                                             | That token is used.                                                                                                | Done.                                          |
+| Nothing yields a token                                                     | `NotSignedInError` with the kept problems.                                                                         | `status` reports `not_signed_in`.              |
+
+A token that resolves can still be refused: `status` reports a 401 from
+GitHub as `rejected`, and names the token variable when one was used. A
+variable is read once per process, so the desktop app sees a changed
+variable only after it restarts.
+
+## Device flow
+
+`repotted login`, and the desktop app's sign-in through it, run the GitHub
+App device flow (`packages/cli/src/device-flow.ts`, `startSignIn` in
+`auth.ts`).
+
+| State                | Event                                    | Next                                                                                                   |
+| -------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Start                | The keychain can't be read               | Fails with `KeychainError` before a code is shown, so the user never enters a code that can't be kept. |
+| Start                | GitHub issues a device code              | Waiting for the user.                                                                                  |
+| Waiting for the user | `authorization_pending`                  | Waiting, after the same interval.                                                                      |
+| Waiting for the user | `slow_down`                              | Waiting, with the interval 5 seconds longer.                                                           |
+| Waiting for the user | A token                                  | Storing.                                                                                               |
+| Waiting for the user | Any other error, such as `access_denied` | Fails with GitHub's description.                                                                       |
+| Waiting for the user | The code's expiry passes                 | Fails: "The sign-in code expired before it was entered."                                               |
+| Storing              | The keychain stores it                   | Signed in.                                                                                             |
+| Storing              | The keychain refuses it                  | Fails with `KeychainError`: the user signed in, but the token is lost.                                 |
+
+## MCP sign-in
+
+The MCP server can't prompt, so `tokenOrSignIn` in `auth.ts` turns a missing
+token into a sign-in that finishes between tool calls.
+
+| State           | Event                                              | Next                                                                                                                |
+| --------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Idle            | A call resolves a token                            | Idle; concurrent calls share one lookup, so an expiring token is refreshed once.                                    |
+| Idle            | `NotSignedInError`                                 | A device flow starts, or the running one is reused, and the call fails with its code.                               |
+| Sign-in pending | Another call                                       | The same code again.                                                                                                |
+| Sign-in pending | The flow stores a token                            | Idle; the next call finds the token.                                                                                |
+| Sign-in pending | The flow fails with `KeychainError`                | Keychain failed: every later call without a token fails with that error, since another code would end the same way. |
+| Sign-in pending | The flow fails in another way                      | Idle; the next call starts a new flow and repeats the reason first.                                                 |
+| Any             | The keychain can't be read when a flow would start | The call fails and nothing is remembered, so a passing problem clears itself.                                       |
+
+A token set through `GITHUB_TOKEN` or the GitHub CLI still works in the
+keychain-failed state, because the lookup runs before that state is checked.
+
+## Desktop sign-in
+
+`MainViewModel` picks the page from `repotted status --json`, and
+`SignInViewModel` runs the device flow through `repotted login --json`.
+
+| State    | Event                                               | Next                                                                                                         |
+| -------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Checking | Signed in                                           | The app, which refreshes the repositories and profiles.                                                      |
+| Checking | Signed out or rejected                              | Sign-in, with a notice for a rejected or unusable earlier sign-in.                                           |
+| Checking | The CLI is missing or fails                         | Problem, with a retry that checks again.                                                                     |
+| Sign-in  | Start                                               | Starting, then showing the code once the CLI prints it.                                                      |
+| Sign-in  | The flow ends                                       | Checking.                                                                                                    |
+| Sign-in  | The flow fails                                      | Sign-in, with the error.                                                                                     |
+| Sign-in  | Cancel, or the app closes                           | Sign-in; the CLI process is stopped.                                                                         |
+| Sign-in  | A rejected token variable                           | Sign-in with signing in turned off: the variable comes first, so the user must change it and reopen the app. |
+| The app  | A command fails because the sign-in stopped working | The page that ran it shows the error.                                                                        |
+
+**Failure:** checking runs only at launch and from the problem page. Once the
+app shows, nothing returns to it, so a sign-in that expires, is revoked, or
+loses its keychain entry mid-session leaves every page failing with "Not
+signed in" until the app restarts. Tracked in
+[#45](https://github.com/TheLunchTrae/repotted/issues/45).
+
+## Plan and apply
+
+`createPlan` only reads. `applyPlan` (`packages/core/src/plan.ts`) plans
+again from the reviewed plan's profile and writes only when that yields the
+same changes.
+
+| State    | Event                  | Next                                                                                 |
+| -------- | ---------------------- | ------------------------------------------------------------------------------------ |
+| Reviewed | The new plan differs   | Stale: `StalePlanError` carries the current plan, and nothing is written.            |
+| Reviewed | The new plan matches   | Writing, change by change, from the new plan's requests.                             |
+| Writing  | A request fails        | Partly applied: `ApplyError` lists the changes already made and the one that failed. |
+| Writing  | Every request succeeds | Applied.                                                                             |
+
+Partly applied is a state of the repository, not of the plan: nothing rolls
+back the changes already made. Planning again from the same profile lists
+only what still differs.
+
+The CLI's `apply` needs `--yes` with `--json` or without a terminal. The MCP
+server keeps plans in memory by `plan_id`. An apply takes its plan out before
+it writes, so two calls with one id can't both apply it, and a stale or
+failed apply needs a new plan. A sign-in failure comes before that, so it
+keeps the plan.
+
+## Config repository sync
+
+`syncFolder` (`packages/core/src/sync.ts`) brings a folder and a folder in a
+repository in line, file by file, against the blob ids in
+`.repotted-sync.json`.
+
+### The record
+
+| State   | When                                                                                     | Effect                                                                                |
+| ------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| None    | No record, or the repository has another id than the record names                        | First sync: nothing is deleted on either side, and a file that differs is a conflict. |
+| Kept    | The branch's history holds the recorded commit                                           | Three-way merge against the record.                                                   |
+| Reset   | The history doesn't hold that commit, such as after a force push or a new default branch | The record is cleared and the pass runs as a first sync.                              |
+| Refused | The folder already syncs with another repository or path                                 | `SyncError`; the folder is left alone.                                                |
+
+### Each file
+
+`decide(base, local, remote)` compares blob ids, where a missing file has
+none.
+
+| Local and remote | Local is base | Remote is base | Action                                      |
+| ---------------- | ------------- | -------------- | ------------------------------------------- |
+| Equal            | Any           | Any            | Same; the record takes that id.             |
+| Differ           | Yes           | No             | Pull, including a delete.                   |
+| Differ           | No            | Yes            | Push, including a delete.                   |
+| Differ           | No            | No             | Conflict, unless `prefer` settles the file. |
+
+A pull checks the file again just before it writes. A file that changed since
+the pass read it, such as by a save, stays as it is and joins the conflicts.
+
+### The pass
+
+| State      | Event                                            | Next                                                                |
+| ---------- | ------------------------------------------------ | ------------------------------------------------------------------- |
+| Pass       | Nothing to push                                  | Recorded: the record is written and the result returned.            |
+| Pass       | Files to push, and the branch has commits        | One commit with every push, then a fast-forward of the branch.      |
+| Pass       | Files to push, and the repository has no commits | The first file goes up through the contents API, then another pass. |
+| Committing | The branch moved                                 | Another pass, which starts from both sides as they are now.         |
+| Committing | GitHub refuses, such as for a ruleset            | `SyncError` that says what to change.                               |
+| Pass       | The fourth pass ends without recording           | `SyncError`: the repository kept changing.                          |
+
+The record is written only when a pass records, so a failed sync leaves the
+last good record in place and the next sync starts from it.
+
+## Desktop profiles source
+
+`ProfilesViewModel` keeps the profiles folder, the config repository if there
+is one, and the sync state the page shows.
+
+| State        | Event                                              | Next                                                        |
+| ------------ | -------------------------------------------------- | ----------------------------------------------------------- |
+| Local folder | Refresh                                            | The folder is listed.                                       |
+| Connected    | Refresh                                            | Syncing, then listed.                                       |
+| Connected    | A save                                             | Syncing, then listed again when the sync pulled anything.   |
+| Syncing      | It records                                         | In sync, or conflicts when any file changed on both sides.  |
+| Syncing      | It fails                                           | Not synced: saves stay on this computer until a sync works. |
+| Conflicts    | Keep this computer's or GitHub's version           | Syncing, with `prefer` for those files only.                |
+| Any          | Choose another folder, which leaves any repository | Local folder, listed from the start.                        |
+| Any          | Connect another repository                         | Connecting, through the connect form below.                 |
+
+Saves and syncs share one chain (`ExclusiveAsync` and `SyncAsync`), so a
+sync never reads a file a save is writing.
+
+**Failure:** a capture writes its file outside that chain, and the sync
+covers the whole folder, including the empty file a capture holds. A sync
+during a capture commits the empty file, and the capture's result or its
+removal follows as another commit. Tracked in
+[#46](https://github.com/TheLunchTrae/repotted/issues/46).
+
+## Profile editor
+
+Each open profile is a `ProfileViewModel`, and `ProfilesViewModel` keeps one
+per file in a cache.
+
+### The profile
+
+| State   | Event                     | Next                                                                                                   |
+| ------- | ------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Loading | The CLI resolves the file | Saved.                                                                                                 |
+| Loading | It fails                  | Error.                                                                                                 |
+| Saved   | Any edit                  | Changed.                                                                                               |
+| Changed | Discard                   | Saved.                                                                                                 |
+| Changed | Save                      | Saving: settings through `--set` and `--unset`, entries whole through `--ruleset` and `--environment`. |
+| Saving  | It succeeds               | Saved, then a sync for a config repository.                                                            |
+| Saving  | It fails                  | Changed, with the error.                                                                               |
+
+### Each ruleset or environment
+
+| State            | Event               | Next                                                                           |
+| ---------------- | ------------------- | ------------------------------------------------------------------------------ |
+| Saved            | Edit                | Changed; a changed name on an entry this profile owns is a rename.             |
+| New              | Discard             | Gone from the list.                                                            |
+| Saved or changed | Take out of profile | Dropped.                                                                       |
+| Dropped          | Put back            | Saved, as the profile has it.                                                  |
+| Any              | Save                | Dropped entries go first, then writes, then each rename as a drop and a write. |
+
+An editor builds the entry it saves from the copy it loaded, so saving writes
+the whole entry as that copy plus the edits.
+
+### The cache
+
+| State                | Event                           | Next                                                           |
+| -------------------- | ------------------------------- | -------------------------------------------------------------- |
+| Cached, no changes   | A refresh lists the file        | Dropped from the cache, so the next open loads the file again. |
+| Cached, with changes | A refresh lists the file        | Kept as it is, with its loaded copy.                           |
+| Cached               | A refresh doesn't list the file | Dropped from the cache.                                        |
+
+**Failures:**
+
+- An editor with unsaved changes keeps its loaded copy when a sync pulls a
+  newer version of the file. Saving then writes each edited entry from the
+  old copy, reverts what the sync brought in, and pushes that as a plain
+  update with no conflict. Tracked in
+  [#42](https://github.com/TheLunchTrae/repotted/issues/42).
+- When a sync deletes or renames the open profile's file, the refresh drops
+  its editor with the unsaved changes and doesn't say so. Tracked in
+  [#43](https://github.com/TheLunchTrae/repotted/issues/43).
+- Choosing another folder, connecting a repository, and closing the app all
+  drop unsaved changes without asking. Tracked in
+  [#44](https://github.com/TheLunchTrae/repotted/issues/44).
+
+## New profile form
+
+`NewProfileViewModel` creates the file first and never replaces one already
+in the folder.
+
+| State                      | Event                     | Next                                                                               |
+| -------------------------- | ------------------------- | ---------------------------------------------------------------------------------- |
+| Editing                    | Create                    | Checks the name again, since the folder may have changed.                          |
+| Creating, empty or extends | The file is written       | Created; the list opens it.                                                        |
+| Creating, capture          | The empty file is written | Holding: the list leaves the file out while `repotted capture --output` writes it. |
+| Holding                    | The capture ends          | Created.                                                                           |
+| Holding                    | The capture fails         | Editing, with the error; the file is removed.                                      |
+| Holding                    | The form closes           | The capture is stopped and the file removed.                                       |
+
+The failure in this machine is the sync during a hold, under
+[Desktop profiles source](#desktop-profiles-source).
+
+## Connect form
+
+`ConfigRepositoryViewModel` starts a working copy for a repository and folder.
+
+| State   | Event                        | Next                                                                                                           |
+| ------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Editing | Connect                      | Copies the local profiles over if asked, skipping names already there, then syncs.                             |
+| Syncing | It records                   | Connected; the app remembers the repository.                                                                   |
+| Syncing | It fails, or the form closes | Editing, with the error; a working copy that never synced is removed, and otherwise only the copied files are. |
+
+## CLI runs
+
+`RepottedCli` runs the bundled CLI once per call, with stdin closed so it
+can't wait for input.
+
+| State    | Event                  | Next                                                                                 |
+| -------- | ---------------------- | ------------------------------------------------------------------------------------ |
+| Starting | The CLI can't be found | `CliNotFoundException`.                                                              |
+| Running  | It exits               | Its exit code and output; a failure's JSON `error.message` becomes a `CliException`. |
+| Running  | Cancelled              | The process tree is stopped.                                                         |
+
+Only the sign-in, captures and the connect form pass a cancellation token.
+Other calls run until the CLI exits, which every command does on its own.
+
+## Desktop releases
+
+`.github/workflows/desktop.yml` packages the app.
+
+| State            | Event                   | Next                                                                                                                  |
+| ---------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Manual run       | Package                 | Unsigned packages as artifacts for 3 days, with no release.                                                           |
+| Tag `desktop-v*` | Verify                  | Fails unless the tag is `desktop-vX.Y.Z`, its commit is on `main`, it matches the app's version, and the gate passes. |
+| Verified         | Package                 | Each platform, with macOS signed and notarized in the `macos-release` environment.                                    |
+| Packaged         | Every platform succeeds | Upload to a draft release, created on the first run and refilled on a re-run.                                         |
+| Packaged         | A platform fails        | No upload; re-running the failed job continues the same tag.                                                          |
+| Draft            | The owner publishes     | Released. A published release is immutable, so a fix needs the next version's tag.                                    |
