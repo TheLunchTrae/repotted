@@ -60,6 +60,51 @@ rulesets:
       - type: non_fast_forward
 ```
 
+## Drafts
+
+A draft is part of a profile that you've saved but don't want applied yet. It
+can be unfinished or invalid. Plans leave every draft out, so a draft never
+reaches GitHub, and a plan lists each draft it skipped.
+
+- A ruleset, environment, or autolink becomes a draft with `draft: true`.
+  Only its name, or an autolink's `key_prefix`, has to be valid.
+- Draft settings go in a `drafts` section, which holds the same sections of
+  settings as the profile: `repository`, `merge`, `actions`, `security`,
+  `custom_properties`, and `pages`.
+
+```yaml
+repository:
+  has_wiki: false
+drafts:
+  repository:
+    has_wiki: true # turn on once the docs move
+rulesets:
+  - name: Tags
+    draft: true
+    target: tag
+```
+
+Here the wiki stays off, and the `Tags` ruleset waits until you finish it.
+
+Repotted still reads every draft and checks it against the rules for its
+setting or entry, and warns about what fails, such as a key it doesn't know
+or a value GitHub doesn't take. Rules that tie settings together, such as
+keeping one merge method on, are checked only when you finish the draft.
+To finish a draft, move a setting out of `drafts` into its section, or remove
+an entry's `draft: true`. From then on it's checked like the rest of the
+profile.
+
+Drafts never change what applies. A draft can share a name with an entry in
+the same profile or in a base profile, and a draft setting can sit beside the
+same setting, which applies until you finish the draft. Two drafts in the same
+list can't share a name or prefix, and a draft setting's name can't hold a
+dot, which joins a group to its key. A Pages draft with `absent: true` turns
+the site off, so Repotted warns about any other key beside it.
+
+`draft: true` is separate from a ruleset's `enforcement: disabled`. A disabled
+ruleset is a real state that Repotted applies: GitHub has the ruleset, turned
+off. A draft ruleset isn't sent to GitHub at all.
+
 ## A profile manages only what it names
 
 A setting the profile leaves out keeps its current value on each repository,
@@ -176,6 +221,9 @@ what it sets itself:
   base's `absent`.
 - A ruleset, environment, or autolink replaces the base's entry of the same
   name or prefix whole. Entries with new names go after the base's.
+- Drafts merge the same way, but only with drafts: a draft replaces the base's
+  draft of the same key, name or prefix, and never an entry or setting that
+  applies.
 
 Repotted checks a profile after it merges it with its bases, so a base may
 leave out something that each profile extending it adds.

@@ -31,15 +31,54 @@ base's entry of the same name or prefix whole, and `pages: { absent: true }`
 replaces a base's site. The resolved profile records which file sets each value,
 which `repotted profile --json` reports and the desktop app shows.
 
+### Drafts
+
+A [draft](../user/profiles.md#drafts) is a ruleset, environment or autolink
+with `draft: true`, or a setting under the profile's `drafts` section. Each file
+is split into what applies and its drafts as it is read, and the two merge
+separately. So drafts never change what applies: the resolved `profile` is
+exactly what the files would give with their drafts deleted, and plan, apply,
+compare, and the MCP server never see a draft. Keeping drafts out of the
+profile type, rather than marking them and filtering later, means a new
+section or adapter can't forget to skip them.
+
+A draft keeps any key and value, so `profileFile` only checks that a draft
+entry has a name, or an autolink its prefix. `draftWarnings` checks each
+draft against the schema that would apply to it and reports what fails as
+warnings. A draft setting is checked against its section's field in
+`sectionSchemas`, so a field added to a section is checkable as a draft with
+no other change. Draft settings merge with the same `mergeSettings` as
+settings, so a group such as `selected_actions` merges key by key in drafts
+too. A new settings section goes in `settingsSections` in `profile.ts` and in
+`draftSettings` in `schema.ts`, which a test keeps in step; `skippedDrafts` in
+`plan.ts` follows `sections` in `change.ts`.
+
+A file can hold a draft and an entry of the same name, which is how a change
+to a ruleset is drafted beside the version that applies. An `EntryEdit`
+therefore says which of the two it edits, and writing an entry without
+`draft: true` over a draft finishes it in place. Draft names are unique among
+drafts, as entry names are among entries.
+
+Plans record the drafts they left out in `skipped`. Apply carries `skipped`
+over from the reviewed plan and compares only `changes`.
+
+`draft: true` is not `enforcement: disabled`: a disabled ruleset is GitHub
+state that apply writes, and a draft is never sent.
+
+Sync moves profile files as they are, drafts included, so a draft follows its
+profile to every computer that syncs it.
+
 `editProfile` in the same file edits a profile in place for
 `repotted profile --set`, `--unset`, `--ruleset`, `--environment`, and the
 `--drop-` options. It works on the YAML document rather than the parsed value,
 so an edit changes only what differs and keeps comments, line endings, and
-indent width. The desktop app saves through it, so a profile edited both by
-hand and in the app keeps both sets of changes, except inside an entry the
-app rewrites. An edit writes nothing when the result is not a valid profile,
-and it refuses a list that shares parts through YAML anchors and aliases,
-which an edit could leave dangling or expand.
+indent width. Edits under `drafts` take any key below a settings section,
+and a key inside one of its groups, since a draft may name a key that
+doesn't exist yet. The desktop app saves through it, so a profile edited
+both by hand and in the app keeps both sets of changes, except inside an
+entry the app rewrites. An edit writes nothing when the result is not a
+valid profile, and it refuses a list that shares parts through YAML anchors
+and aliases, which an edit could leave dangling or expand.
 
 ## Plans
 
