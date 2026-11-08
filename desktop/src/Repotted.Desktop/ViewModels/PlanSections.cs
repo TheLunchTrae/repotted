@@ -88,14 +88,12 @@ internal static class PlanSections
         Func<int, string?, RowExclusion?> leaveOut)
     {
         // A section GitHub doesn't offer or show at all, such as Pages, is skipped whole.
-        if (names is [var only]
-            && plan.Warnings.FirstOrDefault(warning => warning.StartsWith($"Skipped {only}: ", StringComparison.Ordinal)) is { } skipped)
+        if (names is [var only] && SectionSkip(plan, only) is { } skipped)
         {
             // A read GitHub refused or doesn't offer says so; anything else is the profile's to fix.
-            var reason = skipped[$"Skipped {only}: ".Length..];
-            var why = reason.StartsWith("GitHub ", StringComparison.Ordinal)
-                ? $"Repotted could not read it: {reason}"
-                : $"Not checked: {reason}";
+            var why = skipped.Unread
+                ? $"Repotted could not read it: {skipped.Message}"
+                : $"Not checked: {skipped.Message}";
             return new CompareSectionViewModel(title, [], [], why, skippedBy: skipped);
         }
         List<CompareRow> differences = [];
@@ -168,9 +166,9 @@ internal static class PlanSections
         Func<int, string?, RowExclusion?> leaveOut,
         string key = "name")
     {
-        if (plan.Warnings.FirstOrDefault(warning => warning.StartsWith($"Skipped {name}: ", StringComparison.Ordinal)) is { } skipped)
+        if (SectionSkip(plan, name) is { } skipped)
         {
-            return new CompareSectionViewModel(title, [], [], $"Repotted could not read the {name}: {skipped[$"Skipped {name}: ".Length..]}", skippedBy: skipped);
+            return new CompareSectionViewModel(title, [], [], $"Repotted could not read the {name}: {skipped.Message}", skippedBy: skipped);
         }
         // Each change names its entry as the profile writes it.
         List<CompareRow> differences = [];
@@ -299,15 +297,22 @@ internal static class PlanSections
         return Enumerable.Range(1, parts.Length).Any(count => changed.Contains($"{section}.{string.Join('.', parts[..count])}"));
     }
 
+    /// <summary>The plan's warning that it left out a whole section, or null when it checked the section.</summary>
+    internal static WarningDocument? SectionSkip(PlanDocument plan, string section) =>
+        plan.Warnings.FirstOrDefault(warning => warning.Cause is not null && warning.Section == section && warning.Key is null);
+
     /// <summary>
     /// Whether the plan skipped a setting, with a warning that names it, the
-    /// object it is part of, or its section.
+    /// object it is part of, or its section. <paramref name="key"/> is the
+    /// setting's key, or an object's key and a field of it, as <c>selected_actions.patterns_allowed</c>.
     /// </summary>
     private static bool Skips(PlanDocument plan, string section, string key)
     {
         var top = key.Split('.')[0];
-        string[] prefixes = [$"Skipped {section}.{key}:", $"Skipped {section}.{top}:", $"Skipped {section}:"];
-        return plan.Warnings.Any(warning => prefixes.Any(prefix => warning.StartsWith(prefix, StringComparison.Ordinal)));
+        return plan.Warnings.Any(warning => warning.Cause is not null
+            && warning.Section == section
+            && (warning.Key is null
+                || (warning.Field is null ? warning.Key == top : $"{warning.Key}.{warning.Field}" == key)));
     }
 
     private static readonly IReadOnlyList<SettingField> Fields =

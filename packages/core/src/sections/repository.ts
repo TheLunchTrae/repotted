@@ -1,4 +1,4 @@
-import type { Change, SectionPlan } from '../change.js';
+import type { Change, SectionPlan, Warning } from '../change.js';
 import { type Endpoint, type EndpointValue, planEndpoint, readEndpoints } from '../endpoints.js';
 import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges, matches } from '../match.js';
@@ -166,7 +166,7 @@ export function planRepository(
     }
   }
   const changes: Change[] = [];
-  const warnings: string[] = [];
+  const warnings: Warning[] = [];
   if (desired.repository !== undefined) {
     const own = settingsChange(
       'repository',
@@ -179,7 +179,7 @@ export function planRepository(
     const visibility = own[0]?.fields.find((field) => field.field === 'visibility');
     const warning = visibility === undefined ? undefined : visibilityWarnings[String(visibility.to)];
     if (warning !== undefined) {
-      warnings.push(warning);
+      warnings.push({ section: 'repository', key: 'visibility', message: warning });
     }
     const { topics } = desired.repository;
     const liveTopics = live.repository['topics'] ?? [];

@@ -175,7 +175,7 @@ internal sealed class RepottedClient(ICli cli)
     {
         var run = await cli.RunAsync(["capture", repository, "--output", file, "--json"], null, cancellationToken)
             .ConfigureAwait(false);
-        return Read(run, CliJson.Default.CaptureDocument).Warnings;
+        return [.. Read(run, CliJson.Default.CaptureDocument).Warnings.Select(warning => warning.Text)];
     }
 
     /// <summary>

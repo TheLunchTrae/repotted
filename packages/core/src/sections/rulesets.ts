@@ -85,7 +85,7 @@ export async function readRulesets(github: GitHub, repo: RepoRef): Promise<LiveR
   } catch (error) {
     // Private repositories on free plans have no rulesets; GitHub answers 403 with an upgrade prompt.
     if (error instanceof GitHubError && error.status === 403 && /upgrade/iu.test(error.message)) {
-      return { available: false, refused: false, reason: 'this repository’s plan does not support rulesets' };
+      return { available: false, cause: 'unavailable', reason: 'this repository’s plan does not support rulesets' };
     }
     throw error;
   }
@@ -152,7 +152,7 @@ function writeRuleset(entry: Ruleset, current: StoredRuleset | undefined): Store
  */
 export function planRulesets(desired: readonly RulesetEntry[], live: LiveRulesets, repo: RepoRef): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [`Skipped rulesets: ${live.reason}`] };
+    return { changes: [], warnings: [{ section: 'rulesets', cause: live.cause, message: live.reason }] };
   }
   const base = `${repoPath(repo)}/rulesets`;
   const byName = new Map(live.rulesets.map((entry) => [entry.ruleset.name, entry]));

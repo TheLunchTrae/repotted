@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
+import type { Warning } from '../src/change.js';
 import { parseRepo, repoPath } from '../src/github.js';
 import { matches } from '../src/match.js';
 import {
@@ -11,6 +12,7 @@ import {
   captureProfile,
   createPlan,
   describeSkipped,
+  describeWarning,
   formatPlan,
   parsePlan,
   skippedDrafts,
@@ -480,9 +482,46 @@ drafts:
 
     expect(plan.changes.some((change) => change.section === 'rulesets')).toBe(false);
     expect(plan.changes.length).toBeGreaterThan(0);
-    expect(plan.warnings).toEqual(['Skipped rulesets: this repository’s plan does not support rulesets']);
+    expect(plan.warnings).toEqual([
+      { section: 'rulesets', cause: 'unavailable', message: 'this repository’s plan does not support rulesets' },
+    ]);
     // A feature the repository lacks is no news to a capture.
     expect((await captureProfile(github, repo)).warnings).toEqual([]);
+  });
+
+  test('prints a warning that left something out by where it applies, and any other as it is', async () => {
+    const plan = await createPlan(new FakeGitHub(), repo, {
+      repository: { visibility: 'private' },
+      actions: { enabled: false, allowed_actions: 'selected' },
+    });
+
+    expect(
+      formatPlan(plan)
+        .split('\n')
+        .filter((line) => line.startsWith('  ! ')),
+    ).toEqual([
+      '  ! Changing visibility to private detaches public forks and drops stars and watchers from people without access',
+      '  ! Skipped actions.allowed_actions: it only applies while Actions is enabled',
+    ]);
+    expect(parsePlan(JSON.parse(JSON.stringify(plan))).warnings).toEqual(plan.warnings);
+    const warnings: Warning[] = [
+      { section: 'pages', cause: 'refused', message: 'GitHub refused to read GitHub Pages' },
+      {
+        section: 'security',
+        key: 'code_quality_setup',
+        field: 'runner_label',
+        cause: 'not_applicable',
+        message: 'why',
+      },
+      { section: 'environments', key: 'slow', cause: 'unloadable', message: 'why' },
+      { exclusion: 'rulesets/Main', message: 'Excluding rulesets/Main leaves nothing out' },
+    ];
+    expect(warnings.map(describeWarning)).toEqual([
+      'Skipped pages: GitHub refused to read GitHub Pages',
+      'Skipped security.code_quality_setup.runner_label: why',
+      'Skipped environment "slow": why',
+      'Excluding rulesets/Main leaves nothing out',
+    ]);
   });
 
   test('sets the Actions policy before its selected-actions list', async () => {
@@ -507,8 +546,18 @@ drafts:
 
     expect(plan.changes.map((change) => change.target)).toEqual(['Actions policy']);
     expect(plan.warnings).toEqual([
-      'Skipped actions.allowed_actions: it only applies while Actions is enabled',
-      'Skipped actions.selected_actions: it only applies while Actions is enabled with allowed_actions: selected',
+      {
+        section: 'actions',
+        key: 'allowed_actions',
+        cause: 'not_applicable',
+        message: 'it only applies while Actions is enabled',
+      },
+      {
+        section: 'actions',
+        key: 'selected_actions',
+        cause: 'not_applicable',
+        message: 'it only applies while Actions is enabled with allowed_actions: selected',
+      },
     ]);
   });
 
@@ -604,7 +653,7 @@ drafts:
     });
 
     expect(plan.changes.map((change) => change.section)).toEqual(['repository']);
-    expect(plan.warnings).toEqual([expect.stringContaining('Skipped environments')]);
+    expect(plan.warnings).toEqual([expect.objectContaining({ section: 'environments', cause: 'refused' })]);
     expect((await captureProfile(github, repo)).warnings).toEqual(plan.warnings);
   });
 
@@ -627,7 +676,7 @@ drafts:
     const plan = await createPlan(github, repo, { environments: [{ name: 'npm', wait_timer: 5 }] });
 
     expect(plan.changes).toEqual([]);
-    expect(plan.warnings).toEqual([expect.stringContaining('Skipped environments')]);
+    expect(plan.warnings).toEqual([expect.objectContaining({ section: 'environments', cause: 'refused' })]);
   });
 
   test('updates an environment named in another case, keeping what the profile leaves out', async () => {

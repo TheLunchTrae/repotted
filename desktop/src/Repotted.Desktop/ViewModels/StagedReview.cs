@@ -35,7 +35,7 @@ internal sealed record StagedReview(
             plan.Staged.Base is null ? null : Path.GetFileNameWithoutExtension(plan.Staged.Base),
             sections,
             new PlanDiffViewModel(PlanDiff.Lines(plan.Plan, Exclusion), DiffFootnote(plan)),
-            [.. plan.Warnings.Where(warning => !sections.Any(section => section.SkippedBy == warning))],
+            [.. plan.Warnings.Where(warning => !sections.Any(section => section.SkippedBy == warning)).Select(warning => warning.Text)],
             [.. plan.Staged.Exclude.Select(key => new ExcludedViewModel(key))],
             accessLabel,
             accessUrl,
@@ -47,8 +47,7 @@ internal sealed record StagedReview(
     private static string? DiffFootnote(StagedPlanDocument plan)
     {
         // An exclusion that leaves nothing out has a warning of its own, so it isn't counted.
-        var count = plan.Staged.Exclude.Count(key =>
-            !plan.Warnings.Contains($"Excluding {key} leaves nothing out, since the profile sets nothing it names", StringComparer.Ordinal));
+        var count = plan.Staged.Exclude.Count(key => !plan.Warnings.Any(warning => warning.Exclusion == key));
         var excluded = count switch
         {
             0 => null,

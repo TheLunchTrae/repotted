@@ -33,7 +33,7 @@ function isAbsent(entry: AutolinkEntry): entry is Extract<AutolinkEntry, { absen
  */
 export function planAutolinks(desired: readonly AutolinkEntry[], live: LiveAutolinks, repo: RepoRef): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [`Skipped autolinks: ${live.reason}`] };
+    return { changes: [], warnings: [{ section: 'autolinks', cause: live.cause, message: live.reason }] };
   }
   const path = `${repoPath(repo)}/autolinks`;
   const deletes: Change[] = [];

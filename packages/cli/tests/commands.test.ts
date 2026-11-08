@@ -131,9 +131,17 @@ describe('--json', () => {
       repository: 'lunch/app',
       profile: { repository: { has_wiki: true } },
       warnings: [
-        'Skipped environments: GitHub refused to read environments (Resource not accessible by integration); reading them needs the Actions read permission',
+        {
+          section: 'environments',
+          cause: 'refused',
+          message:
+            'GitHub refused to read environments (Resource not accessible by integration); reading them needs the Actions read permission',
+        },
       ],
     });
+    expect((await cli(github, 'capture', 'lunch/app')).err).toBe(
+      'warning: Skipped environments: GitHub refused to read environments (Resource not accessible by integration); reading them needs the Actions read permission\n',
+    );
   });
 
   test('captures into a file and prints the same profile', async () => {

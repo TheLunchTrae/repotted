@@ -101,6 +101,42 @@ internal sealed record AccessDocument(string? Role, AppAccessDocument App);
 internal sealed record LockDocument(int Change, string Reason);
 
 /// <summary>
+/// A warning of a plan or capture. One with a <paramref name="Cause"/> left out
+/// what <paramref name="Section"/>, <paramref name="Key"/> and <paramref name="Field"/>
+/// name, and <paramref name="Message"/> says why: the cause is <c>refused</c> when
+/// GitHub refused to show it, <c>unavailable</c> when the repository doesn't offer it,
+/// <c>not_applicable</c> when it doesn't apply with the other settings, and
+/// <c>unloadable</c> when a profile can't hold what GitHub reports. One without a
+/// cause leaves nothing out: it says what a change does beyond its fields, or names
+/// an <paramref name="Exclusion"/> of a staged apply that leaves nothing out, and
+/// <paramref name="Message"/> is the whole warning.
+/// </summary>
+internal sealed record WarningDocument(
+    string Message,
+    string? Section = null,
+    string? Key = null,
+    string? Field = null,
+    string? Cause = null,
+    string? Exclusion = null)
+{
+    /// <summary>Whether Repotted could not read what the warning names, rather than leaving it out.</summary>
+    public bool Unread => Cause is "refused" or "unavailable";
+
+    /// <summary>The warning as the CLI prints it: one that left something out names it before saying why.</summary>
+    public string Text => Cause is null || Section is null ? Message : $"Skipped {Where}: {Message}";
+
+    /// <summary>What a warning that left something out names: an entry by its kind and name, or a setting by its path.</summary>
+    private string Where => (Section, Key) switch
+    {
+        ("autolinks", not null) => $"autolink \"{Key}\"",
+        ("rulesets", not null) => $"ruleset \"{Key}\"",
+        ("environments", not null) => $"environment \"{Key}\"",
+        ("labels", not null) => $"label \"{Key}\"",
+        _ => string.Join('.', new[] { Section, Key, Field }.OfType<string>()),
+    };
+}
+
+/// <summary>
 /// What <c>repotted plan --json</c> prints: the resolved profile, the writes
 /// that bring the repository in line, the writes Repotted cannot make, and
 /// the drafts it leaves out.
@@ -109,7 +145,7 @@ internal sealed record PlanDocument(
     string Repository,
     JsonElement Desired,
     IReadOnlyList<PlanChangeDocument> Changes,
-    IReadOnlyList<string> Warnings,
+    IReadOnlyList<WarningDocument> Warnings,
     AccessDocument Access,
     IReadOnlyList<LockDocument> Locks,
     IReadOnlyList<SkippedDocument> Skipped);
@@ -149,7 +185,7 @@ internal sealed record StagedPlanDocument(
     string Repository,
     JsonElement Desired,
     IReadOnlyList<PlanChangeDocument> Changes,
-    IReadOnlyList<string> Warnings,
+    IReadOnlyList<WarningDocument> Warnings,
     AccessDocument Access,
     IReadOnlyList<LockDocument> Locks,
     StagedSummaryDocument Staged,
@@ -189,7 +225,7 @@ internal sealed record BatchMemberPlanDocument(
     string Repository,
     JsonElement Desired,
     IReadOnlyList<PlanChangeDocument> Changes,
-    IReadOnlyList<string> Warnings,
+    IReadOnlyList<WarningDocument> Warnings,
     AccessDocument Access,
     IReadOnlyList<LockDocument> Locks,
     StagedSummaryDocument Staged,
@@ -261,7 +297,7 @@ internal sealed record ApplyErrorDetail(
 internal sealed record ApplyFailureDocument(ApplyErrorDetail? Error = null);
 
 /// <summary>What <c>repotted capture --json</c> prints: the repository's setup as a profile, and what it could not read.</summary>
-internal sealed record CaptureDocument(string Repository, JsonElement Profile, IReadOnlyList<string> Warnings);
+internal sealed record CaptureDocument(string Repository, JsonElement Profile, IReadOnlyList<WarningDocument> Warnings);
 
 /// <summary>
 /// What <c>repotted sync --json</c> prints: where the folder synced to, and

@@ -2,7 +2,15 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { z } from 'zod';
 
-import { type Change, isListSection, listSections, type Section, sections } from './change.js';
+import {
+  type Change,
+  isListSection,
+  listSections,
+  type Section,
+  sections,
+  skipCauses,
+  type Warning,
+} from './change.js';
 import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadable } from './endpoints.js';
 import { type GitHub, GitHubError, parseRepo, repoPattern, type RepoRef } from './github.js';
 import { type Lock, requiredPermission } from './permissions.js';
@@ -45,7 +53,7 @@ export interface Plan {
   readonly changes: readonly Change[];
   /** The profile's drafts, which the plan leaves out. */
   readonly skipped: readonly Skipped[];
-  readonly warnings: readonly string[];
+  readonly warnings: readonly Warning[];
 }
 
 /** The drafts of one section: settings by key, autolinks by prefix, and other entries by name. */
@@ -77,8 +85,8 @@ export async function createPlan(
   skipped: readonly Skipped[] = [],
 ): Promise<Plan> {
   const changes: Change[] = [];
-  const warnings: string[] = [];
-  const add = (plan: { changes: readonly Change[]; warnings: readonly string[] }): void => {
+  const warnings: Warning[] = [];
+  const add = (plan: { changes: readonly Change[]; warnings: readonly Warning[] }): void => {
     changes.push(...plan.changes);
     warnings.push(...plan.warnings);
   };
@@ -144,7 +152,11 @@ export async function createPlan(
         ),
       );
       if (rename !== undefined) {
-        warnings.push(`Label "${rename.target}" renames "${draft.target}", which the profile skips as a draft`);
+        warnings.push({
+          section: 'labels',
+          key: draft.target,
+          message: `Label "${rename.target}" renames "${draft.target}", which the profile skips as a draft`,
+        });
       }
     }
   }
@@ -159,10 +171,10 @@ export async function createPlan(
  * a ruleset it does not name alone.
  */
 function loadableEntries<Entry extends { readonly name: string }>(
-  kind: string,
+  section: 'rulesets' | 'environments' | 'labels',
   schema: z.ZodType,
   entries: readonly Entry[],
-  warnings: string[],
+  warnings: Warning[],
 ): Entry[] {
   const kept: Entry[] = [];
   for (const entry of entries) {
@@ -170,7 +182,7 @@ function loadableEntries<Entry extends { readonly name: string }>(
     if (problem === undefined) {
       kept.push(entry);
     } else {
-      warnings.push(`Skipped ${kind} "${entry.name}": ${problem}`);
+      warnings.push({ section, key: entry.name, cause: 'unloadable', message: problem });
     }
   }
   return kept;
@@ -181,13 +193,16 @@ function loadableEntries<Entry extends { readonly name: string }>(
  * is. Settings that name the repository, such as its description, stay out,
  * so the profile can describe other repositories too.
  */
-export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ profile: Profile; warnings: string[] }> {
-  const warnings: string[] = [];
+export async function captureProfile(
+  github: GitHub,
+  repo: RepoRef,
+): Promise<{ profile: Profile; warnings: Warning[] }> {
+  const warnings: Warning[] = [];
   const live = await readRepository(github, repo);
   const repositoryEndpointSettings = captureEndpoints('repository', repositoryEndpoints, live.endpoints);
   warnings.push(...repositoryEndpointSettings.warnings);
   const repository = loadable(
-    'repository',
+    { section: 'repository' },
     repositorySettings,
     Object.fromEntries(
       Object.entries({ ...live.repository, ...repositoryEndpointSettings.settings }).filter(
@@ -196,7 +211,7 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     ),
     warnings,
   );
-  const loadableMerge = loadable('merge', mergeSettings, live.merge, warnings);
+  const loadableMerge = loadable({ section: 'merge' }, mergeSettings, live.merge, warnings);
   // GitHub takes a commit message setting only with its title setting, so
   // when one of a pair is left out, the other goes too.
   const merge: Record<string, unknown> = {};
@@ -204,7 +219,12 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     const pair = commitPairs.find(({ title, message }) => key === title || key === message);
     const other = pair === undefined ? undefined : key === pair.title ? pair.message : pair.title;
     if (other !== undefined && other in live.merge && !(other in loadableMerge)) {
-      warnings.push(`Skipped merge.${key}: GitHub takes it only with ${other}, which is left out`);
+      warnings.push({
+        section: 'merge',
+        key,
+        cause: 'unloadable',
+        message: `GitHub takes it only with ${other}, which is left out`,
+      });
     } else {
       merge[key] = value;
     }
@@ -218,9 +238,11 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
   warnings.push(...securityEndpointSettings.warnings);
   const reported = liveSecurityAndAnalysis(live.securityAndAnalysis);
   const securityAndAnalysisSettings =
-    reported === undefined ? {} : loadable('security.security_and_analysis', securityAndAnalysis, reported, warnings);
+    reported === undefined
+      ? {}
+      : loadable({ section: 'security', key: 'security_and_analysis' }, securityAndAnalysis, reported, warnings);
   const security = loadable(
-    'security',
+    { section: 'security' },
     securitySettings,
     {
       ...(Object.keys(securityAndAnalysisSettings).length === 0
@@ -238,7 +260,7 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
   );
   warnings.push(...actionsEndpointSettings.warnings);
   const actions = loadable(
-    'actions',
+    { section: 'actions' },
     actionsSettings,
     { ...(await readActions(github, repo)), ...actionsEndpointSettings.settings },
     warnings,
@@ -259,24 +281,24 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     ['environments', environments],
     ['labels', labels],
   ] as const) {
-    if (!read.available && read.refused) {
-      warnings.push(`Skipped ${section}: ${read.reason}`);
+    if (!read.available && read.cause === 'refused') {
+      warnings.push({ section, cause: read.cause, message: read.reason });
     }
   }
   const customProperties = properties.available ? captureCustomProperties(properties.values) : {};
   const capturedRulesets = rulesets.available
     ? loadableEntries(
-        'ruleset',
+        'rulesets',
         ruleset,
         rulesets.rulesets.map((entry) => entry.ruleset),
         warnings,
       )
     : undefined;
   const capturedEnvironments = environments.available
-    ? loadableEntries('environment', environment, environments.environments.map(describeEnvironment), warnings)
+    ? loadableEntries('environments', environment, environments.environments.map(describeEnvironment), warnings)
     : undefined;
   const capturedLabels = labels.available
-    ? loadableEntries('label', label, labels.labels.map(describeLabel), warnings)
+    ? loadableEntries('labels', label, labels.labels.map(describeLabel), warnings)
     : undefined;
   return {
     profile: {
@@ -334,7 +356,16 @@ const savedPlan = z.object({
   changes: z.array(savedChange),
   // Plans saved before drafts existed have none.
   skipped: z.array(z.object({ section: z.enum(sections), target: z.string() })).default([]),
-  warnings: z.array(z.string()),
+  warnings: z.array(
+    z.object({
+      section: z.enum(sections).exactOptional(),
+      key: z.string().exactOptional(),
+      field: z.string().exactOptional(),
+      cause: z.enum(skipCauses).exactOptional(),
+      exclusion: z.string().exactOptional(),
+      message: z.string(),
+    }),
+  ),
 });
 
 export function parsePlan(data: unknown): Plan {
@@ -425,6 +456,26 @@ export function describeSkipped({ section, target }: Skipped): string {
     : `${section}.${target}`;
 }
 
+const entryNouns: Partial<Record<Section, string>> = {
+  autolinks: 'autolink',
+  rulesets: 'ruleset',
+  environments: 'environment',
+  labels: 'label',
+};
+
+/** A warning as text output prints it: one that left something out names it before saying why. */
+export function describeWarning({ section, key, field, cause, message }: Warning): string {
+  if (cause === undefined || section === undefined) {
+    return message;
+  }
+  const noun = entryNouns[section];
+  const where =
+    noun !== undefined && key !== undefined
+      ? `${noun} "${key}"`
+      : [section, key, field].filter((part) => part !== undefined).join('.');
+  return `Skipped ${where}: ${message}`;
+}
+
 /** The plan as text; a change in `locks` says why Repotted cannot make it. */
 export function formatPlan(plan: Plan, locks: readonly Lock[] = []): string {
   const lines = [
@@ -445,7 +496,7 @@ export function formatPlan(plan: Plan, locks: readonly Lock[] = []): string {
     lines.push(`  · skip draft ${describeSkipped(draft)}`);
   }
   for (const warning of plan.warnings) {
-    lines.push(`  ! ${warning}`);
+    lines.push(`  ! ${describeWarning(warning)}`);
   }
   return lines.join('\n');
 }

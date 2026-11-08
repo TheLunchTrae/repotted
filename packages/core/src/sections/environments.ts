@@ -112,7 +112,7 @@ export async function readEnvironments(github: GitHub, repo: RepoRef): Promise<L
     if (error instanceof GitHubError && error.status === 403) {
       return {
         available: false,
-        refused: true,
+        cause: 'refused',
         reason: `GitHub refused to read environments (${error.message}); reading them needs the Actions read permission`,
       };
     }
@@ -180,7 +180,7 @@ export function planEnvironments(
   repo: RepoRef,
 ): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [`Skipped environments: ${live.reason}`] };
+    return { changes: [], warnings: [{ section: 'environments', cause: live.cause, message: live.reason }] };
   }
   const byName = new Map(live.environments.map((entry) => [environmentKey(entry.name), entry]));
   const writes: Change[] = [];

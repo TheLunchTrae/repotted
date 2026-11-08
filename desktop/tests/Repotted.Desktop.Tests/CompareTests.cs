@@ -363,7 +363,10 @@ public sealed class CompareTests : ViewModelTests
     {
         const string Skipped = "Skipped actions.allowed_actions: it only applies while Actions is enabled";
         var compare = await Compare(Documents.Plan(
-            warnings: $"\"Skipped environments: the sign-in cannot read environments\",\"{Skipped}\""));
+            warnings: """
+                {"section":"environments","cause":"refused","message":"the sign-in cannot read environments"},
+                {"section":"actions","key":"allowed_actions","cause":"not_applicable","message":"it only applies while Actions is enabled"}
+                """));
 
         var environments = compare.Sections.Single(section => section.Title == "Environments");
         Assert.Equal("Not checked", environments.Status);
@@ -432,7 +435,7 @@ public sealed class CompareTests : ViewModelTests
                {"section":"autolinks","action":"create","target":"JIRA-","entry":{"name":"JIRA-"},
                 "fields":[{"field":"url_template","from":"https://old.example.com/<num>","to":"https://jira.example.com/<num>"}],
                 "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/autolinks","body":{} } }],
-             "skipped":[],"warnings":["Skipped security.dependabot_runner_settings.runner_labels: GitHub keeps none with standard runners"],
+             "skipped":[],"warnings":[{"section":"security","key":"dependabot_runner_settings","field":"runner_labels","cause":"not_applicable","message":"GitHub keeps none with standard runners"}],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
@@ -463,7 +466,7 @@ public sealed class CompareTests : ViewModelTests
     {
         const string plan = """
             {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"workflow"}},"changes":[],
-             "skipped":[],"warnings":["Skipped pages: GitHub refused to read GitHub Pages (Forbidden); that needs the Pages read permission"],
+             "skipped":[],"warnings":[{"section":"pages","cause":"refused","message":"GitHub refused to read GitHub Pages (Forbidden); that needs the Pages read permission"}],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
@@ -494,11 +497,31 @@ public sealed class CompareTests : ViewModelTests
     }
 
     [AvaloniaFact]
+    public async Task Whether_a_section_could_not_be_read_or_was_not_checked_goes_by_the_cause_and_not_the_wording()
+    {
+        // Each reason reads like the other cause, so only the cause tells them apart.
+        const string plan = """
+            {"repository":"TheLunchTrae/repotted","desired":{"actions":{"enabled":true},"pages":{"build_type":"legacy"}},"changes":[],
+             "skipped":[],"warnings":[
+               {"section":"actions","cause":"refused","message":"the token can't read Actions"},
+               {"section":"pages","cause":"not_applicable","message":"GitHub builds a new site from a branch only when the profile names one"}],
+             "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
+            """;
+        var compare = await Compare(plan);
+
+        Assert.Equal(
+            ["Repotted could not read it: the token can't read Actions", "Not checked: GitHub builds a new site from a branch only when the profile names one"],
+            compare.Sections.Select(section => section.Summary));
+        // Each says so in its own section, so neither is repeated with the other warnings.
+        Assert.Empty(compare.Warnings);
+    }
+
+    [AvaloniaFact]
     public async Task A_compare_says_when_the_profile_leaves_a_section_unchecked()
     {
         const string plan = """
             {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"legacy"}},"changes":[],
-             "skipped":[],"warnings":["Skipped pages: a new site built from a branch needs source.branch, or build_type: workflow"],
+             "skipped":[],"warnings":[{"section":"pages","cause":"not_applicable","message":"a new site built from a branch needs source.branch, or build_type: workflow"}],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
@@ -511,7 +534,7 @@ public sealed class CompareTests : ViewModelTests
     {
         const string plan = """
             {"repository":"TheLunchTrae/repotted","desired":{"custom_properties":{"rulesets":"strict"}},"changes":[],
-             "skipped":[],"warnings":["Skipped rulesets: GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"],
+             "skipped":[],"warnings":[{"section":"rulesets","cause":"refused","message":"GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"}],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
@@ -527,7 +550,7 @@ public sealed class CompareTests : ViewModelTests
     {
         const string plan = """
             {"repository":"TheLunchTrae/repotted","desired":{"repository":{"has_wiki":false},"rulesets":[{"name":"Main"}]},"changes":[],
-             "skipped":[],"warnings":["Skipped rulesets: GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"],
+             "skipped":[],"warnings":[{"section":"rulesets","cause":"refused","message":"GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"}],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);

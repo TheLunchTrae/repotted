@@ -28,6 +28,7 @@ import {
   currentUser,
   describeFailure,
   describeSkipped,
+  describeWarning,
   editProfile,
   failureReason,
   type EntryEdit,
@@ -186,7 +187,7 @@ async function capture(io: Io, args: string[]): Promise<number> {
   } else {
     io.err(`Wrote ${values.output}\n`);
   }
-  warn(io, result.warnings);
+  warn(io, result.warnings.map(describeWarning));
   return 0;
 }
 

@@ -7,8 +7,9 @@ anything that appears there, such as a deprecation notice from the GitHub client
 diagnostic and not a failure. `--help` and `--version` still print text.
 
 - `capture` prints `{ repository, profile, warnings }`, where `profile` is the
-  profile the YAML holds. With `--output`, it also writes the YAML to that
-  file.
+  profile the YAML holds, and `warnings` lists what it left out, as
+  [warnings](#warnings) describes. With `--output`, it also writes the YAML
+  to that file.
 - `plan` prints the plan, the same document `--out` saves:
   `{ repository, desired, changes, skipped, warnings, access, locks }`.
   Each change is `{ section, action, target, fields, request }`: `action` is
@@ -22,9 +23,11 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   than by `target`, since two targets can read the same. GitHub can't edit an
   autolink, so a plan changes one with a `delete` and a `create` of the same
   `entry`, and the `create`'s `fields` say what differs.
-  `skipped` lists the profile's drafts as `{ section, target }`, where
-  `target` is a draft setting's key, a draft autolink's key prefix, or a
-  draft entry's name. `access` is `{ role, app }`: `role` is your role on the
+  `warnings` lists what the plan left out and what a change does beyond its
+  fields, as [warnings](#warnings) describes. `skipped` lists the profile's
+  drafts as `{ section, target }`, where `target` is a draft setting's key,
+  a draft autolink's key prefix, or a draft entry's name. `access` is
+  `{ role, app }`: `role` is your role on the
   repository (`admin`, `maintain`, `write`, `triage` or `read`), or null when
   GitHub doesn't say. `app` is `{ status: installed, permissions,
   settings_url }` when the Repotted App is installed on the repository, with
@@ -102,9 +105,10 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   profile it starts from, which its plan leaves out, as in `profile`; a
   staged apply holds no drafts of its own. `warnings` also names each
   exclusion that leaves nothing out, as when the profile stops setting what
-  it names, and a staged plan's `warnings` do too. `sources` is as in `profile`,
-  without the excluded values, so a value whose file is `chain[0]` is a
-  one-off edit. With `--discard`, it prints `{ discarded }`, the file's path.
+  it names, and a staged plan's `warnings` do too, each with `exclusion`.
+  `sources` is as in `profile`, without the excluded values, so a value
+  whose file is `chain[0]` is a one-off edit. With `--discard`, it prints
+  `{ discarded }`, the file's path.
   On a batch folder, `stage` prints `{ folder, id, profile, members }`:
   `folder` is the batch's real path, `id` as in its plan, `profile` the
   profile its new repositories start from, or null, and each member is `{ repository, file, left_out, joined }`,
@@ -156,6 +160,37 @@ diagnostic and not a failure. `--help` and `--version` still print text.
 - `logout` prints `{ removed }`, which is false when there was no sign-in to
   remove. It removes only the `repotted login` sign-in, not a token variable
   or the GitHub CLI's sign-in.
+
+## Warnings
+
+`capture` and `plan` give each warning as an object. A warning that left
+something out has `section`, `key` when it is about a setting or an entry,
+by the setting's key or the entry's name, `field` when it is about one
+field of that setting, and `cause`, which says why:
+
+- `refused`: GitHub refused to show it, as for want of a permission or of
+  the admin role.
+- `unavailable`: the repository doesn't offer it, as on a GitHub plan
+  without the feature. `capture` leaves these out without a warning.
+- `not_applicable`: it doesn't apply with the other settings, such as
+  selected actions while Actions is off.
+- `unloadable`: in `capture` only, a profile can't hold the value GitHub
+  reports, such as an option newer than Repotted.
+
+Its `message` gives the reason in words. A warning without `cause` leaves
+nothing out, such as one about what changing visibility does, and its
+`message` is the whole warning; it has `section` and `key` when it is about
+one setting or entry, or, in a staged plan, `exclusion`, an exclusion that
+leaves nothing out, as the staged apply lists it. A member that doesn't
+apply is left out. Text output prints each warning as a line, such as this
+one for a warning with `section: actions`, `key: allowed_actions` and
+`cause: not_applicable`:
+
+```text
+Skipped actions.allowed_actions: it only applies while Actions is enabled
+```
+
+## Failures
 
 A failure prints `{ error: { kind, message } }` and exits 1, or 2 for misuse,
 which has `kind: usage`. A stale plan has `kind: stale_plan` and `current`, the

@@ -127,7 +127,7 @@ public sealed class NewProfileTests : ViewModelTests
             // A command line that finishes anyway, as one that is slow to stop would.
             await finish.Task;
             File.WriteAllText(output, "repository:\n  has_wiki: false\n");
-            return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":["Skipped rulesets"]}""";
+            return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[{"section":"rulesets","cause":"refused","message":"GitHub refused"}]}""";
         });
         profiles.StartNew("TheLunchTrae/repotted");
         var capturing = profiles.Creating!.CreateCommand.ExecuteAsync(null);
@@ -509,7 +509,11 @@ public sealed class NewProfileTests : ViewModelTests
             .OnCapture("TheLunchTrae/repotted", output =>
             {
                 File.WriteAllText(output, "repository:\n  has_wiki: false\n");
-                return """{"repository":"TheLunchTrae/repotted","profile":{"repository":{"has_wiki":false}},"warnings":["Skipped rulesets: this repository’s plan does not support rulesets","Skipped environments: the app cannot read Actions"]}""";
+                return """
+                    {"repository":"TheLunchTrae/repotted","profile":{"repository":{"has_wiki":false}},"warnings":[
+                      {"section":"rulesets","cause":"refused","message":"GitHub refused to read rulesets"},
+                      {"section":"environments","key":"npm","cause":"unloadable","message":"a profile cannot hold 50000 at wait_timer"}]}
+                    """;
             });
         var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => Task.CompletedTask);
         await shell.RefreshAsync();
@@ -534,7 +538,7 @@ public sealed class NewProfileTests : ViewModelTests
         Assert.Empty(Leftovers());
         Assert.Equal("Profiles / repotted", shell.Crumb);
         Assert.Equal(
-            "Repotted could not read all of the repository, so this profile leaves out:\nSkipped rulesets: this repository’s plan does not support rulesets\nSkipped environments: the app cannot read Actions",
+            "Repotted could not read all of the repository, so this profile leaves out:\nSkipped rulesets: GitHub refused to read rulesets\nSkipped environment \"npm\": a profile cannot hold 50000 at wait_timer",
             shell.Profiles.Captured);
 
         // The note is about the captured profile, so it goes once another opens.

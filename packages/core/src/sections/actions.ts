@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { Change, SectionPlan } from '../change.js';
+import type { Change, SectionPlan, Warning } from '../change.js';
 import type { Endpoint } from '../endpoints.js';
 import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
@@ -127,13 +127,18 @@ function only<T extends object, K extends keyof T>(source: T, keys: readonly K[]
 export function planActions(desired: ActionsSettings, live: ActionsSettings, repo: RepoRef): SectionPlan {
   const base = `${repoPath(repo)}/actions/permissions`;
   const changes: Change[] = [];
-  const warnings: string[] = [];
+  const warnings: Warning[] = [];
 
   const enabled = desired.enabled ?? live.enabled ?? true;
   const allowed = desired.allowed_actions ?? live.allowed_actions;
   for (const key of ['allowed_actions', 'sha_pinning_required'] as const) {
     if (!enabled && desired[key] !== undefined) {
-      warnings.push(`Skipped actions.${key}: it only applies while Actions is enabled`);
+      warnings.push({
+        section: 'actions',
+        key,
+        cause: 'not_applicable',
+        message: 'it only applies while Actions is enabled',
+      });
     }
   }
   const shaPinning = desired.sha_pinning_required ?? live.sha_pinning_required;
@@ -159,9 +164,12 @@ export function planActions(desired: ActionsSettings, live: ActionsSettings, rep
 
   if (desired.selected_actions !== undefined) {
     if (!enabled || allowed !== 'selected') {
-      warnings.push(
-        'Skipped actions.selected_actions: it only applies while Actions is enabled with allowed_actions: selected',
-      );
+      warnings.push({
+        section: 'actions',
+        key: 'selected_actions',
+        cause: 'not_applicable',
+        message: 'it only applies while Actions is enabled with allowed_actions: selected',
+      });
     } else {
       const fields = fieldChanges(desired.selected_actions, live.selected_actions);
       if (fields.length > 0) {

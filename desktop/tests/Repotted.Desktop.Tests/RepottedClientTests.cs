@@ -174,6 +174,20 @@ public sealed class RepottedClientTests
         Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("\"Skipped pages: GitHub refused to read GitHub Pages\"")]
+    [InlineData("""{"section":"pages","cause":"refused"}""")]
+    public async Task A_plan_warning_that_is_not_a_warning_with_its_message_is_unreadable(string warning)
+    {
+        var client = new RepottedClient(new FakeCli().On(
+            "plan TheLunchTrae/repotted --profile orgs.yaml --json",
+            Documents.Plan(warnings: warning)));
+
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.PlanAsync("TheLunchTrae/repotted", "orgs.yaml", None));
+
+        Assert.StartsWith("Could not read what the Repotted command line printed", error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task An_install_page_that_is_not_https_is_dropped()
     {
