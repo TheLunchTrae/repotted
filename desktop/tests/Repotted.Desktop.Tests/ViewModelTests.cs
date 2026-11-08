@@ -1143,6 +1143,28 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task The_base_is_resolved_again_only_once_a_file_it_reads_changes()
+    {
+        var (editor, cli, own, resolved) = await OpenOwn("""{"repository":{"has_wiki":false}}""", """{"repository":{"has_wiki":OWN}}""");
+        var @base = Path.Combine(folders.Profiles, "base.yaml");
+        var save = $"profile {own} --set repository.has_wiki=true --json";
+        cli.On(save, resolved);
+        cli.Calls.Clear();
+
+        // A save writes only this profile, so neither it nor a load after resolves the base again.
+        Choose(editor, "has_wiki", "On");
+        await editor.SaveCommand.ExecuteAsync(null);
+        await editor.LoadCommand.ExecuteAsync(null);
+        Assert.Equal([save, $"profile {own} --json"], cli.Calls);
+
+        // Once its file changes, as by a sync, the next load resolves it again.
+        File.WriteAllText(@base, "repository: { has_issues: true }\n");
+        cli.Calls.Clear();
+        await editor.LoadCommand.ExecuteAsync(null);
+        Assert.Equal([$"profile {own} --json", $"profile {@base} --json"], cli.Calls);
+    }
+
+    [AvaloniaFact]
     public async Task Taking_the_Pages_site_down_stands_alone_in_the_profile()
     {
         var (editor, cli, own, resolved) = await OpenOwn("""{"pages":{"absent":true}}""", """{"pages":{"absent":OWN}}""");

@@ -211,6 +211,7 @@ no other change, apply or discard starts until it ends.
 | Planning                                  | `plan --staged` succeeds                      | Reviewing, with each row's exclusion key from the plan.                                                                      |
 | Planning                                  | `plan --staged` fails                         | Failed; Review again plans once more, and Discard apply is offered while the staged file is there.                           |
 | Reviewing                                 | Leave out, Put back, or Save edits to profile | Working, then Planning; a refused change keeps the review as it was and shows why.                                           |
+| Working                                   | The change succeeds                           | Planning, with the one-off edits showing the staged apply the change returns, which is not read again.                       |
 | Reviewing, Confirming, Confirming discard | Save the one-off edits                        | Planning, since the edits change the plan; a plan reviewed before the save is never applied.                                 |
 | Reviewing                                 | One-off edits not saved yet                   | Reviewing, with Apply, leaving out, saving to the profile and leaving the page held until saved or undone.                   |
 | Reviewing                                 | Apply, with a locked change                   | Reviewing: Apply stays held until each change the locks say GitHub refuses is left out or planned again with access.         |
@@ -224,6 +225,12 @@ no other change, apply or discard starts until it ends.
 | Reviewing, Stale, Partly applied, Failed  | Discard apply, with the staged file there     | Confirming discard, which shows the review behind it while it asks. Held while a change runs or the edits are read or saved. |
 | Confirming discard                        | Keep it                                       | The state it came from.                                                                                                      |
 | Confirming discard                        | Discard apply                                 | Discarded: the file and plan are removed and the page closes. A refused discard returns with the error.                      |
+
+For that, the text of each file under the one-off edits is read before the
+change, so a file it doesn't write that changes meanwhile, such as the profile
+under a sync, still stops a save over it. The staged file, which every change
+writes and only the page does, is read after the change, and so is the profile
+that **Save edits to profile** writes, within the write.
 
 Leaving the page, whether by Back to repositories, by choosing Repositories in
 the sidebar again, or by closing the window, signing out or a lost sign-in,
@@ -427,6 +434,21 @@ discarded; a base's shows, read-only.
 | Own draft               | Discard draft                     | No draft, and a base's draft of the setting, if any, shows again, read-only. |
 | Any draft               | Choose, type, or remove the value | The draft stays as it is; only the value changes.                            |
 | Any                     | Undo                              | The value and the draft both as the profile saves them.                      |
+
+### The base
+
+Each editor keeps the base it last resolved alone, the profile its file
+extends, with the text of each file that base resolves from. The text is the
+copy the editor read for its own load or save, so it is what the stale-file
+check compares against too. A change on the Apply page that shows the edits
+it returned counts as a load here.
+
+| State     | Event                                                               | Next                                                                      |
+| --------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| None kept | A load or save of a profile that extends one                        | Kept: `profile <base>` resolves it, with the text of each file it reads.  |
+| Kept      | A load or save, with the same chain and each file reading as it did | Kept, with no run.                                                        |
+| Kept      | A load or save, with another chain or a file that reads otherwise   | Kept again, resolved anew, such as after a sync changed the base.         |
+| Any       | The base is not a valid profile by itself                           | None kept, and the editor shows no base values; the next one tries again. |
 
 ### The cache
 

@@ -359,19 +359,10 @@ internal sealed partial class ProfileViewModel(
         Error = null;
         try
         {
-            // Read the files first, so a change the load misses still counts as
-            // a change since. A file the chain gains, such as a base read for
-            // the first time, can only be read after.
-            var texts = ReadFiles(chain.Count == 0 ? [File] : chain);
+            // Read the files first, so a change the load misses still counts as a change since.
+            var texts = ReadChain();
             var profile = await store.Load(File, CancellationToken.None).ConfigureAwait(true);
-            foreach (var file in ChainOf(profile).Where(file => !texts.ContainsKey(file)))
-            {
-                texts[file] = ReadFile(file);
-            }
-            Show(profile, await BaseAsync(profile).ConfigureAwait(true));
-            Remember(ChainOf(profile), texts);
-            ChangedFile = null;
-            SaveError = null;
+            await ShowAsync(profile, texts).ConfigureAwait(true);
         }
         // A load runs unawaited when a profile opens, so every failure shows here.
         catch (Exception error)
@@ -383,6 +374,30 @@ internal sealed partial class ProfileViewModel(
         {
             Loading = false;
         }
+    }
+
+    /// <summary>The text of each file the editor last read, read now, or null for one that cannot be read.</summary>
+    public Dictionary<string, string?> ReadChain() => ReadFiles(chain.Count == 0 ? [File] : chain);
+
+    /// <summary>
+    /// Shows the file as <paramref name="profile"/> resolves it, such as the
+    /// staged apply a change to it returned, which needs no load.
+    /// <paramref name="texts"/> holds the text of each file from before the
+    /// file was resolved, so a change the resolve missed still counts as a
+    /// change since. A file the chain gains, such as a base read for the
+    /// first time, can only be read after.
+    /// </summary>
+    public async Task ShowAsync(ResolvedProfile profile, Dictionary<string, string?> texts)
+    {
+        foreach (var file in ChainOf(profile).Where(file => !texts.ContainsKey(file)))
+        {
+            texts[file] = ReadFile(file);
+        }
+        Show(profile, await BaseAsync(profile, texts).ConfigureAwait(true));
+        Remember(ChainOf(profile), texts);
+        Error = null;
+        ChangedFile = null;
+        SaveError = null;
     }
 
     [RelayCommand(CanExecute = nameof(CanSave))]
@@ -536,7 +551,7 @@ internal sealed partial class ProfileViewModel(
                 return;
             }
             Removed = false;
-            Show(profile, await BaseAsync(profile).ConfigureAwait(true));
+            Show(profile, await BaseAsync(profile, texts).ConfigureAwait(true));
             Remember(ChainOf(profile), texts);
             ChangedFile = null;
             if (saved is not null)
@@ -574,22 +589,42 @@ internal sealed partial class ProfileViewModel(
     }
 
     /// <summary>
-    /// The profile this one extends, resolved alone, which gives each value a
-    /// setting falls back to when this profile stops setting it. A base that
-    /// is not a valid profile by itself gives none.
+    /// The base as <see cref="BaseAsync"/> last resolved it, with the files it
+    /// resolves from and their text as the editor read them before.
     /// </summary>
-    private async Task<ResolvedProfile?> BaseAsync(ResolvedProfile profile)
+    private (List<string> Files, List<string?> Texts, ResolvedProfile Base)? resolvedBase;
+
+    /// <summary>
+    /// The profile this one extends, resolved alone, which gives each value a
+    /// setting falls back to when this profile stops setting it. It resolves
+    /// from the files after this one in the chain, so while each reads as it
+    /// did, as <paramref name="texts"/> has them, the base resolved last is
+    /// used again. A base that is not a valid profile by itself gives none,
+    /// and the next load or save tries it again.
+    /// </summary>
+    private async Task<ResolvedProfile?> BaseAsync(ResolvedProfile profile, Dictionary<string, string?> texts)
     {
         if (profile.Chain.Count < 2)
         {
             return null;
         }
+        List<string> files = [.. profile.Chain.Skip(1)];
+        List<string?> read = [.. files.Select(file => texts.GetValueOrDefault(file))];
+        if (resolvedBase is { } kept
+            && kept.Files.SequenceEqual(files, StringComparer.Ordinal)
+            && kept.Texts.SequenceEqual(read, StringComparer.Ordinal))
+        {
+            return kept.Base;
+        }
         try
         {
-            return await client.ProfileAsync(profile.Chain[1], CancellationToken.None).ConfigureAwait(true);
+            var @base = await client.ProfileAsync(files[0], CancellationToken.None).ConfigureAwait(true);
+            resolvedBase = (files, read, @base);
+            return @base;
         }
         catch (CliException)
         {
+            resolvedBase = null;
             return null;
         }
     }
@@ -761,7 +796,7 @@ internal sealed partial class ProfileViewModel(
     }
 
     /// <summary>The file's text, or null when it cannot be read, such as once a sync removed it.</summary>
-    private static string? ReadFile(string file)
+    internal static string? ReadFile(string file)
     {
         try
         {
