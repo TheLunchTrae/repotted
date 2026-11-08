@@ -14,8 +14,11 @@ on:
 permissions:
   contents: read
 
+# A newer manual run on the same ref cancels the one before it. The event is
+# in the group, so a manual run on a desktop-v tag never cancels the release.
 concurrency:
-  group: desktop-${{ github.ref }}
+  group: desktop-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 jobs:
   verify:
