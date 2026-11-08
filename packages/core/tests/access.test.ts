@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { Change } from '../src/change.js';
-import { GitHubError } from '../src/github.js';
+import { GitHubError, responseError } from '../src/github.js';
 import { lockChanges } from '../src/permissions.js';
 import { ApplyError, createPlan, failureReason } from '../src/plan.js';
 import { readAccess } from '../src/repositories.js';
@@ -74,7 +74,9 @@ describe('readAccess', () => {
     const limited = withInstallations([]);
     limited.request = (method, path) =>
       path.startsWith('/user/installations')
-        ? Promise.reject(new GitHubError(403, 'API rate limit exceeded for user ID 7.'))
+        ? Promise.reject(
+            responseError(403, { message: 'API rate limit exceeded for user ID 7.' }, { 'x-ratelimit-remaining': '0' }),
+          )
         : FakeGitHub.prototype.request.call(limited, method, path);
     const failure = await readAccess(limited, app).then(
       () => null,
@@ -146,29 +148,41 @@ describe('failureReason', () => {
     expect(failureReason(failed(new GitHubError(403, 'Resource not accessible by integration')))).toBe(
       'Needs Administration write and Pages write',
     );
+    const docs = { documentation_url: 'https://docs.github.com/rest/pages/pages' };
     expect(
       failureReason(
         failed(
-          new GitHubError(
-            422,
-            'Your current plan does not support GitHub Pages for this repository. - https://docs.github.com/rest/pages/pages',
-          ),
+          responseError(422, {
+            message: 'Your current plan does not support GitHub Pages for this repository.',
+            ...docs,
+          }),
         ),
       ),
     ).toBe('Your current plan does not support GitHub Pages for this repository.');
     expect(
       failureReason(
         failed(
-          new GitHubError(
-            422,
-            'Validation Failed: {"resource":"Ruleset","code":"custom","message":"Invalid target patterns"}, {"code":"invalid"}',
-          ),
+          responseError(422, {
+            message: 'Validation Failed',
+            errors: [{ resource: 'Ruleset', code: 'custom', message: 'Invalid target patterns' }, { code: 'invalid' }],
+            ...docs,
+          }),
         ),
       ),
     ).toBe('Validation Failed: Invalid target patterns');
     expect(
       failureReason(
-        failed(new GitHubError(422, 'Validation Failed: {"resource":"Repository","code":"custom","field":"name"}')),
+        failed(responseError(422, { message: 'Validation Failed', errors: ["Invalid rule 'merge_queue': "], ...docs })),
+      ),
+    ).toBe("Validation Failed: Invalid rule 'merge_queue': ");
+    expect(
+      failureReason(
+        failed(
+          responseError(422, {
+            message: 'Validation Failed',
+            errors: [{ resource: 'Repository', code: 'custom', field: 'name' }],
+          }),
+        ),
       ),
     ).toBe('Validation Failed');
     expect(failureReason(failed(new GitHubError(403, 'Organization policy prevents this change')))).toBe(
@@ -178,7 +192,9 @@ describe('failureReason', () => {
 
   test('gives no reason for a failure that says nothing lasting', () => {
     for (const cause of [
-      new GitHubError(403, 'API rate limit exceeded for user ID 7.'),
+      responseError(403, { message: 'API rate limit exceeded for user ID 7.' }, { 'x-ratelimit-remaining': '0' }),
+      responseError(403, { message: 'You have exceeded a secondary rate limit.' }, { 'retry-after': '60' }),
+      responseError(429, { message: 'Too many requests' }),
       new GitHubError(500, 'Server Error'),
       new Error('socket hang up'),
     ]) {

@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from 'vitest';
 
 import { parsePlan } from '@repotted/core';
 
-import { type GitHub, GitHubError } from '../../core/src/github.js';
+import { type GitHub, GitHubError, responseError } from '../../core/src/github.js';
 import { FakeGitRepository } from '../../core/tests/fake-git.js';
 import { FakeGitHub } from '../../core/tests/fake-github.js';
 
@@ -223,12 +223,38 @@ describe('--json', () => {
     refusing.request = (method, requestPath, body) =>
       method === 'GET'
         ? FakeGitHub.prototype.request.call(refusing, method, requestPath, body)
-        : Promise.reject(new GitHubError(403, 'Resource not accessible by integration'));
+        : Promise.reject(
+            responseError(403, {
+              message: 'Resource not accessible by integration',
+              documentation_url: 'https://docs.github.com/rest/repos/repos#update-a-repository',
+            }),
+          );
 
     const result = await cli(refusing, 'apply', file, '--yes', '--json');
 
     expect(document(result)).toMatchObject({
       error: { kind: 'apply_failed', applied: [], reason: 'Needs Administration write' },
+    });
+    // Only text output links GitHub's docs, after the failure.
+    expect(JSON.stringify(document(result))).not.toContain('docs.github.com');
+    expect((await cli(refusing, 'apply', file, '--yes')).err).toMatch(
+      /^Failed to update repository settings after 0 of the plan's changes: Resource not accessible by integration\n.*\nSee https:\/\/docs\.github\.com\/rest\/repos\/repos#update-a-repository\n$/su,
+    );
+  });
+
+  test("links GitHub's docs after a failure in text, and leaves them out of JSON", async () => {
+    const github = new FakeGitHub();
+    github.request = () =>
+      Promise.reject(
+        responseError(404, { message: 'Not Found', documentation_url: 'https://docs.github.com/rest/repos/repos' }),
+      );
+
+    expect(await cli(github, 'capture', 'lunch/app')).toMatchObject({
+      code: 1,
+      err: 'repotted: Not Found\nSee https://docs.github.com/rest/repos/repos\n',
+    });
+    expect(document(await cli(github, 'capture', 'lunch/app', '--json'))).toEqual({
+      error: { kind: 'error', message: 'Not Found' },
     });
   });
 

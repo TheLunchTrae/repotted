@@ -169,6 +169,16 @@ can't make, by index. The CLI adds both to the plan document as `access` and
 Apply checks neither: GitHub decides at the write, and `failureReason` in
 `plan.ts` turns a lasting `403` or `422` into a short reason.
 
+The engine reaches GitHub only through the `GitHub` interface in
+`github.ts`. `createGitHub` turns a refused request into a `GitHubError` read
+from GitHub's response rather than from Octokit's message: GitHub's own
+message followed by the details it lists in `errors`, the link to its docs
+apart in `documentationUrl`, and `rateLimited` from the status and the
+rate-limit headers, as GitHub documents them. Warnings and reasons quote the
+message, so they carry no docs link; the CLI's text output names it after a
+failure. The in-memory GitHub builds its refusals with the same
+`responseError`, from the bodies GitHub sends.
+
 ## Apply
 
 `applyPlan` takes a reviewed plan, plans again from the plan's saved profile,

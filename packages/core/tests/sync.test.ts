@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { GitHubError } from '../src/github.js';
+import { responseError } from '../src/github.js';
 import { listProfiles } from '../src/profile.js';
 import { syncFolder, syncStateFile } from '../src/sync.js';
 import { FakeGitRepository } from './fake-git.js';
@@ -236,12 +236,13 @@ describe('syncFolder', () => {
     await syncFolder(github, local, { repository: 'lunch/config' });
     await writeFile(path.join(local, 'base.yaml'), '# mine\n');
 
-    github.refuseWrites = new GitHubError(
-      422,
-      'Repository rule violations found\n\nChanges must be made through a pull request. - https://docs.github.com/rest',
-    );
+    const docs = { documentation_url: 'https://docs.github.com/rest' };
+    github.refuseWrites = responseError(422, {
+      message: 'Repository rule violations found\n\nChanges must be made through a pull request.\n\n',
+      ...docs,
+    });
     const ruleset = await failure(syncFolder(github, local));
-    github.refuseWrites = new GitHubError(403, 'Resource not accessible by integration - https://docs.github.com/rest');
+    github.refuseWrites = responseError(403, { message: 'Resource not accessible by integration', ...docs });
     const permission = await failure(syncFolder(github, local));
     github.refuseWrites = undefined;
     const missing = await failure(syncFolder(github, await folder(), { repository: 'lunch/missing' }));

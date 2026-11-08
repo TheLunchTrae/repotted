@@ -119,6 +119,11 @@ function json(io: Io, value: unknown): void {
   io.out(`${JSON.stringify(value)}\n`);
 }
 
+/** The page of GitHub's docs that a refusal links to, which text output names after the failure. */
+function docsLink(error: unknown): string {
+  return error instanceof GitHubError && error.documentationUrl !== undefined ? `See ${error.documentationUrl}\n` : '';
+}
+
 function warn(io: Io, lines: readonly string[]): void {
   for (const line of lines) {
     io.err(`warning: ${line}\n`);
@@ -282,7 +287,7 @@ async function apply(io: Io, args: string[]): Promise<number> {
           },
         });
       } else {
-        io.err(`${describeFailure(error)}\n`);
+        io.err(`${describeFailure(error)}\n${docsLink(error.cause)}`);
       }
       return 1;
     }
@@ -769,7 +774,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
     if (argv.some((arg) => /^--json(?:=|$)/.test(arg))) {
       json(io, { error: { kind: failureKind(error, misused), message } });
     } else {
-      io.err(`repotted: ${message}\n`);
+      io.err(`repotted: ${message}\n${docsLink(error)}`);
       if (misused) {
         io.err('Run repotted --help for usage.\n');
       }

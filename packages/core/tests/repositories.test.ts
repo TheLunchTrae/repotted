@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { GitHubError } from '../src/github.js';
+import { GitHubError, responseError } from '../src/github.js';
 import { currentUser, listRepositories } from '../src/repositories.js';
 import { FakeGitHub, type FakeRepository } from './fake-github.js';
 
@@ -55,7 +55,8 @@ describe('listRepositories', () => {
   test('fails rather than switch source on any other error, a rate limit included', async () => {
     for (const error of [
       new GitHubError(401, 'Bad credentials'),
-      new GitHubError(403, 'API rate limit exceeded for user ID 7.'),
+      responseError(403, { message: 'API rate limit exceeded for user ID 7.' }, { 'x-ratelimit-remaining': '0' }),
+      responseError(403, { message: 'You have exceeded a secondary rate limit.' }, { 'retry-after': '60' }),
       new GitHubError(500, 'Server Error'),
     ]) {
       const github = new FakeGitHub();
