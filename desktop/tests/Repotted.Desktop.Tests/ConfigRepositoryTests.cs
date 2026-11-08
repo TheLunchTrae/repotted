@@ -328,6 +328,42 @@ public sealed class ConfigRepositoryTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Discarding_a_removed_profile_lists_again_once_a_running_sync_ends()
+    {
+        var copy = Synced();
+        var file = Path.Combine(copy, "base.yaml");
+        File.WriteAllText(file, "repository:\n  has_issues: true\n");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var cli = new FakeCli()
+            .On(Command(copy), Sync())
+            .On(folders.List(copy), Listing(file))
+            .On($"profile {file} --json", Documents.ResolvedBase(file));
+        var profiles = Profiles(cli);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        var editor = profiles.Current!;
+        editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki")
+            .Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        File.Delete(file);
+        cli.On(Command(copy), Sync(pulled: ["base.yaml"])).On(folders.List(copy), Listing());
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.True(editor.Removed);
+        var slow = new TaskCompletionSource();
+        cli.OnceReady(Command(copy), Sync(), slow.Task);
+        cli.Calls.Clear();
+
+        var refresh = profiles.RefreshAsync();
+        editor.DiscardCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal([Command(copy)], cli.Calls);
+        slow.SetResult();
+        await refresh;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Empty(profiles.Items);
+        Assert.All(cli.Calls.Skip(1), call => Assert.Equal(folders.List(copy), call));
+    }
+
+    [AvaloniaFact]
     public async Task Reconnecting_adds_the_local_profiles_the_repository_does_not_have()
     {
         var copy = Synced();

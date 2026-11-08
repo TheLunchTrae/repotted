@@ -175,6 +175,10 @@ are, and a choice left unset leaves that key to GitHub.
   is inherited. When one differs, the save waits for the user to keep their
   version or reload, as [State machines](state-machines.md#profile-editor)
   describes.
+- When a refresh no longer lists the file of an editor with unsaved changes,
+  the editor stays in the cache as removed and the list shows it. A save
+  writes the text the editor read back as a new file first, then saves the
+  edits over it, and deletes that file again if the save doesn't go through.
 
 A new profile starts empty, extends another profile in the folder, or is
 captured with `repotted capture --output`. The app never replaces a file

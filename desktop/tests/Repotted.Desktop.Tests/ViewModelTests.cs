@@ -12,6 +12,9 @@ public sealed class ViewModelTests : IDisposable
 {
     private readonly Folders folders = new();
 
+    /// <summary>The desktop the profiles page from OpenOrgs uses, whose folder pick a test can set.</summary>
+    private readonly FakeDesktop orgsDesktop = new();
+
     public void Dispose() => folders.Dispose();
 
     private MainViewModel App(FakeCli cli, FakeDesktop? desktop = null) =>
@@ -678,6 +681,310 @@ public sealed class ViewModelTests : IDisposable
         Assert.False(editor.OutOfDate);
     }
 
+    private static string OnlyBase(string @base) =>
+        $$$"""{"profiles":[{"name":"base","file":{{{JsonSerializer.Serialize(@base)}}},"extends":null,"problem":null}]}""";
+
+    [AvaloniaFact]
+    public async Task Edits_to_a_profile_whose_file_is_removed_stay_and_a_save_puts_it_back()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var text = File.ReadAllText(files.Own);
+        Choose(editor, "has_wiki", "On");
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Same(editor, profiles.Current);
+        Assert.True(editor.Removed);
+        Assert.True(editor.HasChanges);
+        Assert.False(editor.ReloadCommand.CanExecute(null));
+        var item = profiles.Items.Single(item => item.Name == "orgs");
+        Assert.Equal("Removed, edits not saved", item.Note);
+        Assert.DoesNotContain(profiles.Usable, usable => usable.Name == "orgs");
+
+        // The save writes the file back as it was read, then applies the edits to it.
+        var save = $"profile {files.Own} --set repository.has_wiki=true --json";
+        string? restored = null;
+        cli.On(save, () =>
+        {
+            restored = File.ReadAllText(files.Own);
+            return Documents.Resolved(files.Own, files.Base, wiki: true);
+        });
+        cli.On(folders.List(), Documents.Profiles(files.Own, files.Base));
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal(text, restored);
+        Assert.Null(editor.SaveError);
+        Assert.False(editor.Removed);
+        Assert.Equal("extends base", profiles.Items.Single(item => item.Name == "orgs").Note);
+    }
+
+    [AvaloniaFact]
+    public async Task Discarding_the_edits_to_a_removed_profile_lets_it_go()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.True(editor.Removed);
+
+        editor.DiscardCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(["base"], profiles.Items.Select(item => item.Name));
+        Assert.NotSame(editor, profiles.Current);
+    }
+
+    [AvaloniaFact]
+    public async Task A_save_to_a_file_removed_since_the_last_refresh_says_so_before_it_puts_it_back()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        cli.Calls.Clear();
+
+        await editor.SaveCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(editor.Removed);
+        Assert.DoesNotContain(cli.Calls, call => call.StartsWith($"profile {files.Own}", StringComparison.Ordinal));
+        Assert.False(File.Exists(files.Own));
+        Assert.Equal("Removed, edits not saved", profiles.Items.Single(item => item.Name == "orgs").Note);
+
+        var save = $"profile {files.Own} --set repository.has_wiki=true --json";
+        cli.On(save, Documents.Resolved(files.Own, files.Base, wiki: true));
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Contains(save, cli.Calls);
+        Assert.True(File.Exists(files.Own));
+        Assert.False(editor.Removed);
+    }
+
+    [AvaloniaFact]
+    public async Task A_save_that_fails_after_putting_a_removed_file_back_takes_it_away_again()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        cli.On(
+            $"profile {files.Own} --set repository.has_wiki=true --json",
+            """{"error":{"kind":"error","message":"The file could not be written"}}""",
+            exitCode: 1);
+
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Contains("could not be written", editor.SaveError, StringComparison.Ordinal);
+        Assert.False(File.Exists(files.Own));
+        Assert.True(editor.Removed);
+    }
+
+    [AvaloniaFact]
+    public async Task A_save_that_fails_keeps_a_removed_file_that_came_back_before_a_refresh()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var text = File.ReadAllText(files.Own);
+        Choose(editor, "has_wiki", "On");
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        File.WriteAllText(files.Own, text);
+        cli.On(
+            $"profile {files.Own} --set repository.has_wiki=true --json",
+            """{"error":{"kind":"error","message":"The file could not be written"}}""",
+            exitCode: 1);
+
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Contains("could not be written", editor.SaveError, StringComparison.Ordinal);
+        Assert.Equal(text, File.ReadAllText(files.Own));
+        Assert.False(editor.Removed);
+    }
+
+    [AvaloniaFact]
+    public async Task A_removed_file_that_came_back_as_something_else_before_a_refresh_asks_before_a_save()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        File.WriteAllText(files.Own, "repository: {}\n");
+        cli.On(folders.List(), Documents.Profiles(files.Own, files.Base));
+        var save = $"profile {files.Own} --set repository.has_wiki=true --json";
+        cli.On(save, Documents.Resolved(files.Own, files.Base, wiki: true));
+
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(save, cli.Calls);
+        Assert.Equal("repository: {}\n", File.ReadAllText(files.Own));
+        Assert.False(editor.Removed);
+        Assert.StartsWith("orgs.yaml is back in the folder, but not as you opened it", editor.OutOfDateMessage, StringComparison.Ordinal);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("extends base", profiles.Items.Single(item => item.Name == "orgs").Note);
+
+        // Keep mine saves over it only once the user has seen the question.
+        await editor.KeepMineCommand.ExecuteAsync(null);
+        Assert.Contains(save, cli.Calls);
+        Assert.False(editor.OutOfDate);
+    }
+
+    [AvaloniaFact]
+    public async Task A_change_to_the_base_stops_a_save_of_a_removed_profile_with_only_keep_mine()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var text = File.ReadAllText(files.Own);
+        var rulesets = editor.Tabs[3];
+        rulesets.Entries[0].OpenCommand.Execute(null);
+        ((RulesetEditorViewModel)rulesets.Entries[0].Editor).Enforcement.Options[1].ChooseCommand.Execute(null);
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        File.AppendAllText(files.Base, "# changed by a sync\n");
+        cli.Calls.Clear();
+
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Empty(cli.Calls);
+        Assert.False(File.Exists(files.Own));
+        Assert.True(editor.Removed);
+        Assert.True(editor.OutOfDate);
+        Assert.False(editor.ReloadCommand.CanExecute(null));
+        Assert.DoesNotContain("Reload", editor.OutOfDateMessage, StringComparison.Ordinal);
+        Assert.True(editor.KeepMineCommand.CanExecute(null));
+
+        // Once the file is listed again, the message offers Reload, and says so to the view.
+        File.WriteAllText(files.Own, text);
+        cli.On(folders.List(), Documents.Profiles(files.Own, files.Base));
+        var told = new List<string?>();
+        editor.PropertyChanged += (_, e) => told.Add(e.PropertyName);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.False(editor.Removed);
+        Assert.Contains(nameof(ProfileViewModel.OutOfDateMessage), told);
+        Assert.Contains("Reload", editor.OutOfDateMessage, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact]
+    public async Task Keep_mine_on_a_removed_profile_asks_again_when_the_file_came_back_as_something_else()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var rulesets = editor.Tabs[3];
+        rulesets.Entries[0].OpenCommand.Execute(null);
+        ((RulesetEditorViewModel)rulesets.Entries[0].Editor).Enforcement.Options[1].ChooseCommand.Execute(null);
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        File.AppendAllText(files.Base, "# changed by a sync\n");
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.True(editor is { Removed: true, OutOfDate: true });
+        File.WriteAllText(files.Own, "repository: {}\n");
+        cli.On(folders.List(), Documents.Profiles(files.Own, files.Base));
+        cli.Calls.Clear();
+
+        await editor.KeepMineCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(cli.Calls, call => call.StartsWith($"profile {files.Own} --", StringComparison.Ordinal));
+        Assert.Equal("repository: {}\n", File.ReadAllText(files.Own));
+        Assert.StartsWith("orgs.yaml is back in the folder, but not as you opened it", editor.OutOfDateMessage, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact]
+    public async Task A_removed_file_that_comes_back_as_something_else_asks_before_any_save()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.True(editor.Removed);
+
+        // Such as a new profile of the same name.
+        File.WriteAllText(files.Own, "repository: {}\n");
+        cli.On(folders.List(), Documents.Profiles(files.Own, files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.False(editor.Removed);
+        Assert.True(editor.OutOfDate);
+        Assert.StartsWith("orgs.yaml is back in the folder, but not as you opened it", editor.OutOfDateMessage, StringComparison.Ordinal);
+
+        var save = $"profile {files.Own} --set repository.has_wiki=true --json";
+        cli.On(save, Documents.Resolved(files.Own, files.Base, wiki: true));
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.DoesNotContain(save, cli.Calls);
+        Assert.True(editor.OutOfDate);
+
+        await editor.KeepMineCommand.ExecuteAsync(null);
+        Assert.Contains(save, cli.Calls);
+        Assert.False(editor.OutOfDate);
+    }
+
+    [AvaloniaFact]
+    public async Task A_removed_file_that_comes_back_as_it_was_keeps_the_edits_without_asking()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var text = File.ReadAllText(files.Own);
+        Choose(editor, "has_wiki", "On");
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        File.WriteAllText(files.Own, text);
+        cli.On(folders.List(), Documents.Profiles(files.Own, files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Same(editor, profiles.Current);
+        Assert.False(editor.Removed);
+        Assert.False(editor.OutOfDate);
+        Assert.True(editor.HasChanges);
+        Assert.Equal("extends base", profiles.Items.Single(item => item.Name == "orgs").Note);
+    }
+
+    [AvaloniaFact]
+    public async Task A_removed_profile_shows_only_that_it_is_removed()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        File.AppendAllText(files.Own, "# pulled by a sync\n");
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.True(editor.OutOfDate);
+
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        Assert.True(editor.Removed);
+        Assert.False(editor.OutOfDate);
+    }
+
+    [AvaloniaFact]
+    public async Task Another_folder_starts_without_the_editors_of_the_last()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        Choose(profiles.Current!, "has_wiki", "On");
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+
+        await profiles.ChangeFolderCommand.ExecuteAsync(null);
+
+        Assert.Empty(profiles.Items);
+        Assert.Null(profiles.Current);
+        Assert.True(File.Exists(files.Own));
+    }
+
     [AvaloniaFact]
     public async Task Discarding_puts_rulesets_and_environments_back()
     {
@@ -1305,7 +1612,7 @@ public sealed class ViewModelTests : IDisposable
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.Resolved(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base));
-        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => repositories);
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), orgsDesktop, folders.Settings, () => repositories);
         await profiles.RefreshCommand.ExecuteAsync(null);
         // The fake answers at once, so selecting a profile has loaded it.
         profiles.Selected = profiles.Items.Single(item => item.Name == "orgs");

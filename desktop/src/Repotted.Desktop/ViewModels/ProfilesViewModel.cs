@@ -6,7 +6,7 @@ using Repotted.Desktop.Services;
 namespace Repotted.Desktop.ViewModels;
 
 /// <summary>A profile in the sidebar list.</summary>
-internal sealed class ProfileItemViewModel(ProfileListingDocument listing, string? baseName)
+internal sealed class ProfileItemViewModel(ProfileListingDocument listing, string? baseName, bool removed = false)
 {
     public ProfileListingDocument Listing => listing;
 
@@ -16,8 +16,11 @@ internal sealed class ProfileItemViewModel(ProfileListingDocument listing, strin
 
     public bool Invalid => Listing.Problem is not null;
 
-    /// <summary>The note beside the name: what it extends, or that it cannot be used.</summary>
-    public string Note => Invalid ? "Has a problem" : BaseName is null ? "" : $"extends {BaseName}";
+    /// <summary>Whether the file is gone, and only an editor's unsaved edits keep the profile in the list.</summary>
+    public bool Removed => removed;
+
+    /// <summary>The note beside the name: that it is gone, what it extends, or that it cannot be used.</summary>
+    public string Note => Removed ? "Removed, edits not saved" : Invalid ? "Has a problem" : BaseName is null ? "" : $"extends {BaseName}";
 }
 
 /// <summary>
@@ -303,7 +306,8 @@ internal sealed partial class ProfilesViewModel(
     /// <summary>Commits a save to the config repository, and shows what the sync brought back from GitHub.</summary>
     private async Task SavedAsync()
     {
-        if (await SyncAsync(null, null).ConfigureAwait(true) is { Pulled.Count: > 0 })
+        // A save that put a removed file back lists it as a profile again.
+        if (await SyncAsync(null, null).ConfigureAwait(true) is { Pulled.Count: > 0 } || all.Any(item => item.Removed))
         {
             await LoadAsync(sync: false).ConfigureAwait(true);
         }
@@ -423,9 +427,59 @@ internal sealed partial class ProfilesViewModel(
         {
             editor = new ProfileViewModel(client, listing, SavedAsync, ExclusiveAsync);
             editors[listing.File] = editor;
+            editor.PropertyChanged += OnEditorChanged;
             _ = editor.LoadCommand.ExecuteAsync(null);
         }
         Current = editor;
+    }
+
+    /// <summary>
+    /// Keeps the list in step with an editor whose file is gone: it shows as
+    /// removed once a save finds the file gone, and leaves the list once its
+    /// edits are discarded.
+    /// </summary>
+    private void OnEditorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (sender is not ProfileViewModel editor
+            || !editors.TryGetValue(editor.File, out var cached)
+            || !ReferenceEquals(cached, editor))
+        {
+            return;
+        }
+        if (e.PropertyName == nameof(ProfileViewModel.HasChanges) && editor is { HasChanges: false, Removed: true })
+        {
+            editor.PropertyChanged -= OnEditorChanged;
+            editors.Remove(editor.File);
+            _ = ListAsync();
+        }
+        else if (!marking
+            && (e.PropertyName == nameof(ProfileViewModel.Removed) && editor.Removed
+                // A save that found the file back as something else, which the list still shows as removed.
+                || e.PropertyName == nameof(ProfileViewModel.OutOfDate) && editor is { OutOfDate: true, Removed: false })
+            && editor.Removed != all.Any(item => item.Removed && item.Listing.File == editor.File))
+        {
+            _ = ListAsync();
+        }
+    }
+
+    /// <summary>Whether a listing is marking editors, which then shows them itself.</summary>
+    private bool marking;
+
+    /// <summary>Lists the profiles again once any sync running ends, so the listing sees what it pulled.</summary>
+    private async Task ListAsync()
+    {
+        await lastSync.ConfigureAwait(true);
+        await LoadAsync(sync: false).ConfigureAwait(true);
+    }
+
+    /// <summary>Editors belong to one folder, so another folder starts without them.</summary>
+    partial void OnFolderChanged(string value)
+    {
+        foreach (var editor in editors.Values)
+        {
+            editor.PropertyChanged -= OnEditorChanged;
+        }
+        editors.Clear();
     }
 
     /// <summary>Lists the profiles again, after a sync with the config repository when they live in one.</summary>
@@ -483,28 +537,40 @@ internal sealed partial class ProfilesViewModel(
             {
                 names.TryAdd(listing.File, listing.Name);
             }
+            // Editors start over from the file, which may have changed outside
+            // the app, unless they hold edits that are not saved yet. Those
+            // check whether saving would undo a change to the file, and one
+            // whose file is gone stays in the list, so its edits can be saved
+            // back or discarded.
+            List<ProfileItemViewModel> removed = [];
+            marking = true;
+            foreach (var (file, editor) in editors.ToList())
+            {
+                if (!editor.HasChanges)
+                {
+                    editor.PropertyChanged -= OnEditorChanged;
+                    editors.Remove(file);
+                }
+                else if (names.ContainsKey(file))
+                {
+                    editor.FileListed();
+                }
+                else
+                {
+                    editor.Removed = true;
+                    removed.Add(new ProfileItemViewModel(new ProfileListingDocument(editor.Name, file, null, null), null, removed: true));
+                }
+            }
+            marking = false;
             all =
             [
                 .. listings.Select(listing => new ProfileItemViewModel(
                     listing,
                     listing.Extends is null ? null : names.GetValueOrDefault(listing.Extends) ?? Path.GetFileNameWithoutExtension(listing.Extends))),
+                .. removed,
             ];
             Count = all.Count;
-            Usable = [.. all.Where(item => !item.Invalid)];
-            // Editors start over from the file, which may have changed outside
-            // the app, unless they hold edits that are not saved yet; those
-            // check whether saving would undo a change to the file.
-            foreach (var (file, editor) in editors.ToList())
-            {
-                if (!editor.HasChanges || !names.ContainsKey(file))
-                {
-                    editors.Remove(file);
-                }
-                else
-                {
-                    editor.CheckFile();
-                }
-            }
+            Usable = [.. all.Where(item => !item.Invalid && !item.Removed)];
             // The CLI lists real paths, and the folder's own path may not be one,
             // so a new file is found by its name in the folder.
             var keep = select is null
