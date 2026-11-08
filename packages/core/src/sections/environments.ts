@@ -1,10 +1,9 @@
-import { isDeepStrictEqual } from 'node:util';
-
 import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
-import { type GitHub, GitHubError, repoPath, type RepoRef } from '../github.js';
-import { type FieldChange, matches } from '../match.js';
+import type { Unavailable } from '../endpoints.js';
+import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../github.js';
+import { bodyChanges, matches } from '../match.js';
 import { type Environment, type EnvironmentEntry, environmentKey } from '../schema.js';
 
 type Reviewer = NonNullable<Environment['reviewers']>[number];
@@ -32,7 +31,7 @@ export interface LiveEnvironment {
 
 export type LiveEnvironments =
   | { readonly available: true; readonly environments: readonly LiveEnvironment[] }
-  | { readonly available: false; readonly reason: string };
+  | Unavailable;
 
 // GitHub reports the settings as protection rules, and leaves a rule out
 // while it holds its default.
@@ -65,25 +64,8 @@ const policyList = z.object({
   ),
 });
 
-const pageSize = 100;
-
 function environmentPath(repo: RepoRef, name: string): string {
   return `${repoPath(repo)}/environments/${encodeURIComponent(name)}`;
-}
-
-/** Fetches pages of a list that reports its total until every item is read. */
-async function readPages<Item>(
-  path: string,
-  fetchPage: (url: string) => Promise<{ total: number; items: Item[] }>,
-): Promise<Item[]> {
-  const items: Item[] = [];
-  for (let page = 1; ; page += 1) {
-    const { total, items: pageItems } = await fetchPage(`${path}?per_page=${pageSize}&page=${page}`);
-    items.push(...pageItems);
-    if (pageItems.length < pageSize || items.length >= total) {
-      return items;
-    }
-  }
 }
 
 function settingsFrom(listed: z.infer<typeof environmentList>['environments'][number]): EnvironmentSettings {
@@ -98,7 +80,7 @@ function settingsFrom(listed: z.infer<typeof environmentList>['environments'][nu
 }
 
 async function readAll(github: GitHub, repo: RepoRef): Promise<LiveEnvironment[]> {
-  const listed = await readPages(`${repoPath(repo)}/environments`, async (url) => {
+  const listed = await readAllPages(`${repoPath(repo)}/environments`, async (url) => {
     const page = environmentList.parse(await github.request('GET', url));
     return { total: page.total_count, items: page.environments };
   });
@@ -107,7 +89,7 @@ async function readAll(github: GitHub, repo: RepoRef): Promise<LiveEnvironment[]
     const settings = settingsFrom(entry);
     const branchPolicies =
       settings.deployment_branch_policy?.custom_branch_policies === true
-        ? await readPages(`${environmentPath(repo, entry.name)}/deployment-branch-policies`, async (url) => {
+        ? await readAllPages(`${environmentPath(repo, entry.name)}/deployment-branch-policies`, async (url) => {
             const page = policyList.parse(await github.request('GET', url));
             return {
               total: page.total_count,
@@ -130,6 +112,7 @@ export async function readEnvironments(github: GitHub, repo: RepoRef): Promise<L
     if (error instanceof GitHubError && error.status === 403) {
       return {
         available: false,
+        refused: true,
         reason: `GitHub refused to read environments (${error.message}); reading them needs the Actions read permission`,
       };
     }
@@ -175,14 +158,6 @@ function writeSettings(entry: Environment, current: EnvironmentSettings | undefi
 function desiredSettings(entry: Environment): Omit<Environment, 'name' | 'branch_policies'> {
   const { name: _name, branch_policies: _policies, ...settings } = entry;
   return settings;
-}
-
-/** Every setting the write changes, so a reviewer sees the whole effect. */
-function bodyChanges(body: EnvironmentSettings, current: EnvironmentSettings | undefined): FieldChange[] {
-  const before = new Map<string, unknown>(Object.entries(current ?? {}));
-  return Object.entries(body)
-    .filter(([field, to]: [string, unknown]) => !isDeepStrictEqual(to, before.get(field)))
-    .map(([field, to]: [string, unknown]) => ({ field, from: before.get(field), to }));
 }
 
 /** Environment settings that GitHub would not keep once the profile is laid over the live ones. */

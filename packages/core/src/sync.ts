@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 import { z } from 'zod';
 
+import { replaceFile } from './files.js';
 import { type GitHub, GitHubError, parseRepo, type RepoRef, repoPath } from './github.js';
 
 /**
@@ -134,19 +135,6 @@ async function readState(folder: string): Promise<SyncState | undefined> {
     throw new SyncError(`${path.join(folder, syncStateFile)} is not a Repotted sync record.`);
   }
   return parsed.data;
-}
-
-/** Writes a file whole: a reader sees the old content or the new, never part of it. */
-async function replaceFile(file: string, content: Uint8Array | string): Promise<void> {
-  await mkdir(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.repotted-tmp`);
-  try {
-    await writeFile(temporary, content);
-    await rename(temporary, file);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
 }
 
 /**
@@ -491,6 +479,7 @@ export async function syncFolder(github: GitHub, directory: string, options: Syn
         await rm(target, { force: true });
         base.delete(file);
       } else {
+        await mkdir(path.dirname(target), { recursive: true });
         await replaceFile(target, content);
         next.set(file, remoteId);
         base.set(file, remoteId);

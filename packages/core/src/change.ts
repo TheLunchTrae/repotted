@@ -7,11 +7,12 @@ export interface Request {
   readonly body?: unknown;
 }
 
+/** The sections in the order a plan applies them. */
 export const sections = [
   'repository',
   'merge',
-  'actions',
   'security',
+  'actions',
   'custom_properties',
   'pages',
   'autolinks',

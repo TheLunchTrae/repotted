@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { type GitHub, GitHubError, repoPath, type RepoRef } from './github.js';
+import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from './github.js';
 import type { Access, AppAccess, Role } from './permissions.js';
 
 /** A repository the signed-in account can manage settings on. */
@@ -46,23 +46,6 @@ const installationRepositoryPage = z.object({
   repositories: z.array(repository),
 });
 
-const pageSize = 100;
-
-async function readPages<Item>(
-  path: string,
-  fetchPage: (url: string) => Promise<{ items: Item[]; total?: number }>,
-): Promise<Item[]> {
-  const items: Item[] = [];
-  const separator = path.includes('?') ? '&' : '?';
-  for (let page = 1; ; page += 1) {
-    const { items: pageItems, total } = await fetchPage(`${path}${separator}per_page=${pageSize}&page=${page}`);
-    items.push(...pageItems);
-    if (pageItems.length < pageSize || (total !== undefined && items.length >= total)) {
-      return items;
-    }
-  }
-}
-
 function describe(entry: z.infer<typeof repository>): Repository {
   return { full_name: entry.full_name, private: entry.private, archived: entry.archived ?? false };
 }
@@ -76,7 +59,7 @@ function byName(left: Repository, right: Repository): number {
 }
 
 async function installationRepositoryList(github: GitHub, id: number): Promise<z.infer<typeof repository>[]> {
-  return readPages(`/user/installations/${id}/repositories`, async (url) => {
+  return readAllPages(`/user/installations/${id}/repositories`, async (url) => {
     const page = installationRepositoryPage.parse(await github.request('GET', url));
     return { items: page.repositories, total: page.total_count };
   });
@@ -99,7 +82,7 @@ async function installationRepositories(
 }
 
 async function adminRepositories(github: GitHub): Promise<Repository[]> {
-  const repositories = await readPages(
+  const repositories = await readAllPages(
     '/user/repos?affiliation=owner,collaborator,organization_member&sort=full_name',
     async (url) => ({ items: z.array(repository).parse(await github.request('GET', url)) }),
   );
@@ -112,7 +95,7 @@ async function adminRepositories(github: GitHub): Promise<Repository[]> {
  */
 async function listInstallations(github: GitHub): Promise<z.infer<typeof installation>[] | undefined> {
   try {
-    return await readPages('/user/installations', async (url) => {
+    return await readAllPages('/user/installations', async (url) => {
       const page = installationPage.parse(await github.request('GET', url));
       return { items: page.installations, total: page.total_count };
     });

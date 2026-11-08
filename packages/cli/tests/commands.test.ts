@@ -120,8 +120,8 @@ describe('--json', () => {
 
   test('captures a repository as its profile and warnings', async () => {
     const github = new FakeGitHub().fail(
-      'GET /repos/lunch/app/rulesets',
-      answered(403, 'Upgrade to GitHub Pro or make this repository public to enable this feature.'),
+      'GET /repos/lunch/app/environments',
+      answered(403, 'Resource not accessible by integration'),
     );
 
     const result = await cli(github, 'capture', 'lunch/app', '--json');
@@ -130,7 +130,9 @@ describe('--json', () => {
     expect(document(result)).toMatchObject({
       repository: 'lunch/app',
       profile: { repository: { has_wiki: true } },
-      warnings: ['Skipped rulesets: this repository’s plan does not support rulesets'],
+      warnings: [
+        'Skipped environments: GitHub refused to read environments (Resource not accessible by integration); reading them needs the Actions read permission',
+      ],
     });
   });
 

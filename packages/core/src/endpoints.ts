@@ -70,13 +70,18 @@ interface ObjectEndpoint {
 }
 
 /**
- * A setting as the repository holds it, or why it cannot be read there:
- * `refused` when GitHub hides it, as from a token without the permission,
- * rather than not offering it on the repository.
+ * Why a setting or a section cannot be read on the repository: `refused`
+ * when GitHub hides it, as from a token without the permission, rather than
+ * not offering it on the repository.
  */
-export type EndpointValue =
-  | { readonly available: true; readonly value: unknown }
-  | { readonly available: false; readonly refused: boolean; readonly reason: string };
+export interface Unavailable {
+  readonly available: false;
+  readonly refused: boolean;
+  readonly reason: string;
+}
+
+/** A setting as the repository holds it, or why it cannot be read there. */
+export type EndpointValue = { readonly available: true; readonly value: unknown } | Unavailable;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

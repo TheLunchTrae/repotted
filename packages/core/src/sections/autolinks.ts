@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
-import { type EndpointValue, readResource } from '../endpoints.js';
+import { readResource, type Unavailable } from '../endpoints.js';
 import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
 import type { AutolinkEntry } from '../schema.js';
@@ -15,9 +15,7 @@ const liveAutolink = z.object({
 
 export type LiveAutolink = z.infer<typeof liveAutolink>;
 
-export type LiveAutolinks =
-  | { readonly available: true; readonly autolinks: readonly LiveAutolink[] }
-  | Extract<EndpointValue, { available: false }>;
+export type LiveAutolinks = { readonly available: true; readonly autolinks: readonly LiveAutolink[] } | Unavailable;
 
 /** Reads the repository's autolinks. GitHub sends them all in one list. */
 export async function readAutolinks(github: GitHub, repo: RepoRef): Promise<LiveAutolinks> {

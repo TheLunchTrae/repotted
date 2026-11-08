@@ -602,15 +602,12 @@ internal sealed partial class CompareViewModel(
 
     /// <summary>
     /// Whether the plan skipped a setting, with a warning that names it, the
-    /// object it is part of, or its section. Actions alone names a setting
-    /// without its section, as in "Skipped allowed_actions:".
+    /// object it is part of, or its section.
     /// </summary>
     private static bool Skips(PlanDocument plan, string section, string key)
     {
         var top = key.Split('.')[0];
-        string[] prefixes = section == "actions"
-            ? [$"Skipped {section}.{key}:", $"Skipped {section}.{top}:", $"Skipped {top}:", $"Skipped {section}:"]
-            : [$"Skipped {section}.{key}:", $"Skipped {section}.{top}:", $"Skipped {section}:"];
+        string[] prefixes = [$"Skipped {section}.{key}:", $"Skipped {section}.{top}:", $"Skipped {section}:"];
         return plan.Warnings.Any(warning => prefixes.Any(prefix => warning.StartsWith(prefix, StringComparison.Ordinal)));
     }
 

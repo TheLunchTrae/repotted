@@ -259,7 +259,7 @@ answered. Opening another apply while one is open does nothing.
 repository in line, file by file, against the blob ids in
 `.repotted-sync.json`. Only `.yaml` and `.yml` files sync, and a file or
 folder whose name starts with a dot stays out on both sides. So the
-temporary files that a pull or a capture writes never reach a commit.
+temporary files that a pull, a save or a capture writes never reach a commit.
 
 ### The record
 

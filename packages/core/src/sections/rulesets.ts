@@ -1,10 +1,9 @@
-import { isDeepStrictEqual } from 'node:util';
-
 import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
-import { type GitHub, GitHubError, repoPath, type RepoRef } from '../github.js';
-import { type FieldChange, matches, overlay } from '../match.js';
+import type { Unavailable } from '../endpoints.js';
+import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../github.js';
+import { bodyChanges, matches, overlay } from '../match.js';
 import type { Ruleset, RulesetEntry } from '../schema.js';
 
 const summary = z.object({ id: z.number().int(), source_type: z.string().optional() });
@@ -50,11 +49,7 @@ export interface LiveRuleset {
   readonly ruleset: StoredRuleset;
 }
 
-export type LiveRulesets =
-  | { readonly available: true; readonly rulesets: readonly LiveRuleset[] }
-  | { readonly available: false; readonly reason: string };
-
-const pageSize = 100;
+export type LiveRulesets = { readonly available: true; readonly rulesets: readonly LiveRuleset[] } | Unavailable;
 
 function normalize(data: unknown): LiveRuleset {
   const live = liveRuleset.parse(data);
@@ -82,24 +77,19 @@ function normalize(data: unknown): LiveRuleset {
 /** Reads the repository's own rulesets, not ones it inherits from an organization. */
 export async function readRulesets(github: GitHub, repo: RepoRef): Promise<LiveRulesets> {
   const base = `${repoPath(repo)}/rulesets`;
-  const ids: number[] = [];
+  let listed: z.infer<typeof summary>[];
   try {
-    for (let page = 1; ; page += 1) {
-      const listed = z
-        .array(summary)
-        .parse(await github.request('GET', `${base}?includes_parents=false&per_page=${pageSize}&page=${page}`));
-      ids.push(...listed.filter((item) => (item.source_type ?? 'Repository') === 'Repository').map((item) => item.id));
-      if (listed.length < pageSize) {
-        break;
-      }
-    }
+    listed = await readAllPages(`${base}?includes_parents=false`, async (url) => ({
+      items: z.array(summary).parse(await github.request('GET', url)),
+    }));
   } catch (error) {
     // Private repositories on free plans have no rulesets; GitHub answers 403 with an upgrade prompt.
     if (error instanceof GitHubError && error.status === 403 && /upgrade/iu.test(error.message)) {
-      return { available: false, reason: 'this repository’s plan does not support rulesets' };
+      return { available: false, refused: false, reason: 'this repository’s plan does not support rulesets' };
     }
     throw error;
   }
+  const ids = listed.filter((item) => (item.source_type ?? 'Repository') === 'Repository').map((item) => item.id);
   const rulesets: LiveRuleset[] = [];
   for (const id of ids) {
     rulesets.push(normalize(await github.request('GET', `${base}/${id}`)));
@@ -154,14 +144,6 @@ function writeRuleset(entry: Ruleset, current: StoredRuleset | undefined): Store
     ...(conditions === undefined ? {} : { conditions: z.record(z.string(), z.unknown()).parse(conditions) }),
     rules: entry.rules === undefined ? (current?.rules ?? []) : writeRules(entry.rules, current?.rules ?? []),
   };
-}
-
-/** Every key the write changes, so a reviewer sees the whole effect. */
-function bodyChanges(body: StoredRuleset, current: StoredRuleset | undefined): FieldChange[] {
-  const before = new Map<string, unknown>(Object.entries(current ?? {}));
-  return Object.entries(body)
-    .filter(([field, to]: [string, unknown]) => !isDeepStrictEqual(to, before.get(field)))
-    .map(([field, to]: [string, unknown]) => ({ field, from: before.get(field), to }));
 }
 
 /**

@@ -69,6 +69,7 @@ rulesets: [{ name: Later, draft: true, rules: [{ type: deletion }] }]
 environments: [{ name: npm, draft: true, wait_timer: -1 }]
 drafts:
   repository: { has_wiki: false }
+  actions: { default_workflow_permissions: read }
   security: { vulnerability_alerts: true }
   pages: { build_type: workflow }
 `,
@@ -83,13 +84,14 @@ drafts:
     expect(plan.skipped).toEqual([
       { section: 'repository', target: 'has_wiki' },
       { section: 'security', target: 'vulnerability_alerts' },
+      { section: 'actions', target: 'default_workflow_permissions' },
       { section: 'pages', target: 'build_type' },
       { section: 'autolinks', target: 'TICKET-' },
       { section: 'rulesets', target: 'Later' },
       { section: 'environments', target: 'npm' },
     ]);
     expect(formatPlan(plan)).toContain(
-      '  · skip draft repository.has_wiki\n  · skip draft security.vulnerability_alerts\n  · skip draft pages.build_type\n  · skip draft autolink TICKET-\n  · skip draft ruleset "Later"\n',
+      '  · skip draft repository.has_wiki\n  · skip draft security.vulnerability_alerts\n  · skip draft actions.default_workflow_permissions\n  · skip draft pages.build_type\n  · skip draft autolink TICKET-\n  · skip draft ruleset "Later"\n',
     );
     expect(parsePlan(JSON.parse(JSON.stringify(plan))).skipped).toEqual(plan.skipped);
     // A plan saved before drafts has no skipped list, and reads as skipping none.
@@ -406,6 +408,8 @@ drafts:
     expect(plan.changes.some((change) => change.section === 'rulesets')).toBe(false);
     expect(plan.changes.length).toBeGreaterThan(0);
     expect(plan.warnings).toEqual(['Skipped rulesets: this repository’s plan does not support rulesets']);
+    // A feature the repository lacks is no news to a capture.
+    expect((await captureProfile(github, repo)).warnings).toEqual([]);
   });
 
   test('sets the Actions policy before its selected-actions list', async () => {
@@ -421,6 +425,18 @@ drafts:
 
     await applyPlan(github, plan);
     expect((await createPlan(github, repo, desired)).changes).toEqual([]);
+  });
+
+  test('skips Actions settings that apply only while Actions allows them, naming each by its section', async () => {
+    const plan = await createPlan(new FakeGitHub(), repo, {
+      actions: { enabled: false, allowed_actions: 'selected', selected_actions: { github_owned_allowed: true } },
+    });
+
+    expect(plan.changes.map((change) => change.target)).toEqual(['Actions policy']);
+    expect(plan.warnings).toEqual([
+      'Skipped actions.allowed_actions: it only applies while Actions is enabled',
+      'Skipped actions.selected_actions: it only applies while Actions is enabled with allowed_actions: selected',
+    ]);
   });
 
   test('keeps the environment settings a profile leaves out', async () => {
@@ -516,6 +532,7 @@ drafts:
 
     expect(plan.changes.map((change) => change.section)).toEqual(['repository']);
     expect(plan.warnings).toEqual([expect.stringContaining('Skipped environments')]);
+    expect((await captureProfile(github, repo)).warnings).toEqual(plan.warnings);
   });
 
   test('skips environments when it cannot read their deployment patterns', async () => {

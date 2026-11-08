@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
-import { type EndpointValue, readResource } from '../endpoints.js';
+import { readResource, type Unavailable } from '../endpoints.js';
 import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
 import type { PagesEntry } from '../schema.js';
@@ -24,9 +24,7 @@ interface LiveSite {
 }
 
 /** The repository's Pages site, or null when it has none. */
-export type LivePages =
-  | { readonly available: true; readonly site: LiveSite | null }
-  | Extract<EndpointValue, { available: false }>;
+export type LivePages = { readonly available: true; readonly site: LiveSite | null } | Unavailable;
 
 export async function readPages(github: GitHub, repo: RepoRef): Promise<LivePages> {
   const read = await readResource(github, repo, '/pages', 'GitHub Pages', null);

@@ -2528,7 +2528,7 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaFact]
     public async Task What_the_plan_skipped_is_not_called_in_line()
     {
-        const string Skipped = "Skipped allowed_actions: it only applies while Actions is enabled";
+        const string Skipped = "Skipped actions.allowed_actions: it only applies while Actions is enabled";
         var compare = await Compare(Documents.Plan(
             warnings: $"\"Skipped environments: the sign-in cannot read environments\",\"{Skipped}\""));
 

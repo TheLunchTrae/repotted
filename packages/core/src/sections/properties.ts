@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { SectionPlan } from '../change.js';
-import { type EndpointValue, readResource } from '../endpoints.js';
+import { readResource, type Unavailable } from '../endpoints.js';
 import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { matches } from '../match.js';
 import type { CustomProperties } from '../schema.js';
@@ -13,9 +13,7 @@ const liveValues = z.array(
   }),
 );
 
-export type LiveProperties =
-  | { readonly available: true; readonly values: CustomProperties }
-  | Extract<EndpointValue, { available: false }>;
+export type LiveProperties = { readonly available: true; readonly values: CustomProperties } | Unavailable;
 
 /**
  * Reads the custom property values the repository has. GitHub defines the
