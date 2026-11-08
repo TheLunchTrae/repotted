@@ -162,8 +162,8 @@ public sealed class ContractTests
         var cancellationToken = TestContext.Current.CancellationToken;
         using var folders = new Folders();
         folders.Write("my base.yaml", "repository: { has_issues: true }\n");
-        // A capture under way writes a hidden file, which is not a profile yet.
-        folders.Write(".captured.yaml.repotted-capture", "repository:\n");
+        // A capture under way writes a dot-prefixed file, which is not a profile yet.
+        folders.Write(".captured.yaml.k2v9x0qa.4fz.repotted-capture", "repository:\n");
         // The folder as the user picked it goes through a link, so its path is not the one the CLI lists.
         var folder = folders.LinkToProfiles();
         var listings = await client.ProfilesAsync(folder, cancellationToken);

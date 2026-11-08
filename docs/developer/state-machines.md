@@ -229,9 +229,9 @@ is one, and the sync state the page shows.
 
 Saves and the page's syncs share one chain (`ExclusiveAsync` and
 `SyncAsync`), so a sync never reads a file a save is writing. The connect
-form's first sync runs outside it. So do captures, which write a hidden file
-that no sync reads until the profile is whole, as the
-[New profile form](#new-profile-form) describes.
+form's first sync runs outside it. So do captures, which write a
+dot-prefixed file that no sync reads; the profile syncs once it is whole, as
+the [New profile form](#new-profile-form) describes.
 
 ## Profile editor
 
@@ -316,23 +316,26 @@ nothing.
 
 ## New profile form
 
-`NewProfileViewModel` never replaces a file already in the folder. A capture
-writes `.<name>.yaml.repotted-capture`, which is hidden and not a `.yaml`
-file, so neither a sync nor the list reads it. The profile takes its name
-only once the capture is whole. `ProfilesViewModel` keeps the files of the
-captures still running, in open and closed forms alike, and those hold
-their names.
+`NewProfileViewModel` never replaces a file already in the folder. It reads
+the name once, when Create is pressed, and the name and what the profile
+starts from can't change while it works. A capture writes a file of its own,
+`.<name>.yaml.<random>.repotted-capture`, which is dot-prefixed and not a
+`.yaml` file, so neither a sync nor the list reads it, and two copies of the
+app capturing one name never share it. The profile takes its name only once
+the capture is whole. `ProfilesViewModel` keeps the names of the captures
+still running, in open and closed forms alike, and those names are held
+until each capture ends.
 
-| State                      | Event                                                       | Next                                                                                                             |
-| -------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Editing                    | Create                                                      | Checks the name again, since the folder may have changed. A file of that name, or a capture running, refuses it. |
-| Creating, empty or extends | The file is written                                         | Created; the list opens it.                                                                                      |
-| Creating, capture          | Start                                                       | Holding: `repotted capture --output` writes the hidden file.                                                     |
-| Holding                    | The capture ends                                            | The hidden file moves to the profile's name: Created.                                                            |
-| Holding                    | The capture ends, and a file of that name came in meanwhile | Editing, with the error; the file that came in stays, and the hidden file is removed.                            |
-| Holding                    | The capture fails                                           | Editing, with the error; the hidden file is removed.                                                             |
-| Holding                    | The form closes                                             | The capture is stopped and the hidden file removed, also when the app is left.                                   |
-| Holding                    | The app quits                                               | The hidden file may stay. It holds no name, and the next capture of that name writes over it.                    |
+| State                      | Event                                                       | Next                                                                                                                      |
+| -------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Editing                    | Create                                                      | Checks the name again, since the folder may have changed. A file of that name, or a capture running, refuses it.          |
+| Creating, empty or extends | The file is written                                         | Created; the list opens it.                                                                                               |
+| Creating, capture          | Start                                                       | Holding: `repotted capture --output` writes the capture's file.                                                           |
+| Holding                    | The capture ends                                            | The capture's file moves to the profile's name: Created, and the name is no longer held.                                  |
+| Holding                    | The capture ends, and a file of that name came in meanwhile | Editing, with "is already in this folder"; the file that came in stays, and the capture's file is removed.                |
+| Holding                    | The capture fails                                           | Editing, with the error; the capture's file is removed.                                                                   |
+| Holding                    | The form closes                                             | The capture is stopped and its file removed, also when the app is left.                                                   |
+| Holding                    | The app quits                                               | The capture's file may stay behind. It holds no name, and no later capture writes to it, so it stays until it is deleted. |
 
 ## Connect form
 

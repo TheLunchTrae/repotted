@@ -482,8 +482,7 @@ public sealed class ConfigRepositoryTests : IDisposable
         var file = Path.Combine(copy, "base.yaml");
         File.WriteAllText(file, "repository: { has_wiki: false }\n");
         folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
-        var hold = Path.Combine(copy, ".app.yaml.repotted-capture");
-        // A sync leaves hidden files out, so these are the files it reads.
+        // A sync leaves out files whose names start with a dot, so these are the files it reads.
         var synced = new List<string[]>();
         var finish = new TaskCompletionSource();
         var cli = new FakeCli()
@@ -494,9 +493,9 @@ public sealed class ConfigRepositoryTests : IDisposable
             })
             .On(folders.List(copy), Listing(file))
             .On($"profile {file} --json", Documents.ResolvedBase(file))
-            .On($"capture lunch/app --output {hold} --json", async _ =>
+            .OnCapture("lunch/app", async (output, _) =>
             {
-                File.WriteAllText(hold, "repository:\n");
+                File.WriteAllText(output, "repository:\n");
                 await finish.Task;
                 return """{"error":{"kind":"error","message":"Not Found"}}""";
             });

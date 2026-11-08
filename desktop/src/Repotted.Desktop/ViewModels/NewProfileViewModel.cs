@@ -54,7 +54,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     /// <param name="created">Runs with the new file and what a capture could not read.</param>
     /// <param name="cancel">Closes the form.</param>
     /// <param name="released">Runs once the form gives up a name it held, so another form can take it.</param>
-    /// <param name="captures">The files that captures still running write, which every form shares.</param>
+    /// <param name="captures">The profile files that captures still running will make, which every form shares.</param>
     public NewProfileViewModel(
         RepottedClient client,
         string folder,
@@ -156,8 +156,12 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     public string CreateLabel => Captures ? "Capture" : "Create";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Editable))]
     [NotifyCanExecuteChangedFor(nameof(CreateCommand))]
     public partial bool Working { get; private set; }
+
+    /// <summary>Whether the name and what the profile starts from can change: not while it is being made.</summary>
+    public bool Editable => !Working;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]
@@ -192,7 +196,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     /// <summary>Why the folder has no room for <paramref name="name"/>: a file of that name, or a capture making one.</summary>
     private string? InUse(string name) =>
         Taken(name) is { } taken ? $"{taken} is already in this folder."
-        : captures.Contains(Hold($"{name}.yaml")) ? $"Another capture is making {name}.yaml."
+        : captures.Contains(Path.Combine(folder, $"{name}.yaml")) ? $"Another capture is making {name}.yaml."
         : null;
 
     public bool HasProblem => Problem is not null;
@@ -201,13 +205,13 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     public void Recheck() => Problem = Check(Name.Trim());
 
     /// <summary>
-    /// The file a capture writes before it takes <paramref name="fileName"/>.
-    /// It is hidden and not a .yaml file, so neither a sync nor the list reads
-    /// it. Only a capture still running holds the name: one the app never saw
-    /// end, such as when the app quit, leaves a file that the next capture of
-    /// the name writes over.
+    /// A file of its own for a capture to write before it takes
+    /// <paramref name="fileName"/>. It starts with a dot and is not a .yaml
+    /// file, so neither a sync nor the list reads it. Only a capture still
+    /// running holds the name, through <see cref="captures"/>, and another
+    /// copy of the app capturing the same name writes a file of its own.
     /// </summary>
-    private string Hold(string fileName) => Path.Combine(folder, $".{fileName}.repotted-capture");
+    private string Hold(string fileName) => Path.Combine(folder, $".{fileName}.{Path.GetRandomFileName()}.repotted-capture");
 
     /// <summary>The file already in the folder under this name, as a .yaml or .yml file in any case.</summary>
     private string? Taken(string name) =>
@@ -243,13 +247,15 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     {
         Working = true;
         Error = null;
-        var file = Path.Combine(folder, FileName);
-        var hold = Hold(FileName);
-        var holding = false;
+        // The name as it was when Create was pressed, which the whole capture keeps.
+        var name = Name.Trim();
+        var fileName = $"{name}.yaml";
+        var file = Path.Combine(folder, fileName);
+        string? hold = null;
         try
         {
             // The name was free when it was typed; the folder may have changed since.
-            if (InUse(Name.Trim()) is { } problem)
+            if (InUse(name) is { } problem)
             {
                 Error = problem;
                 return;
@@ -260,22 +266,30 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
                 case NewProfileStart.Capture:
                     // The profile takes its name only once it is whole, so no sync
                     // commits, and no list shows, a capture still under way.
-                    captures.Add(hold);
-                    holding = true;
+                    hold = Hold(fileName);
+                    captures.Add(file);
                     warnings = await client.CaptureAsync(Repository!, hold, closed.Token).ConfigureAwait(true);
                     if (disposed)
                     {
                         return;
                     }
-                    // A sync may have brought in a file of this name while GitHub was read.
-                    if (Taken(Name.Trim()) is { } taken)
+                    // A sync may have brought in a file of this name while GitHub was
+                    // read. One of the same name makes the move fail; one that differs
+                    // only in case would not on every disk, so it is checked first.
+                    if (Taken(name) is { } other && other != fileName)
+                    {
+                        Error = $"{other} is already in this folder.";
+                        return;
+                    }
+                    try
+                    {
+                        File.Move(hold, file, overwrite: false);
+                    }
+                    catch (IOException) when (Taken(name) is { } taken)
                     {
                         Error = $"{taken} is already in this folder.";
                         return;
                     }
-                    File.Move(hold, file, overwrite: false);
-                    captures.Remove(hold);
-                    holding = false;
                     break;
                 case NewProfileStart.Extends:
                     // The base's own name in the folder: the CLI follows it from the
@@ -299,11 +313,12 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         }
         finally
         {
-            if (holding)
+            if (hold is not null)
             {
-                // A capture that failed or was stopped leaves nothing behind.
+                // A capture that failed or was stopped leaves nothing behind, and
+                // any capture gives up the name once it ends.
                 File.Delete(hold);
-                captures.Remove(hold);
+                captures.Remove(file);
                 released();
             }
             Working = false;

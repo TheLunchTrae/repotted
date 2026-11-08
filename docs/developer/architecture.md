@@ -237,7 +237,7 @@ are, and a choice left unset leaves that key to GitHub.
 
 A new profile starts empty, extends another profile in the folder, or is
 captured with `repotted capture --output`. The app never replaces a file
-already in the folder. A capture writes a hidden file and gives it the
+already in the folder. A capture writes a dot-prefixed file and gives it the
 profile's name only once it is whole, so neither the profiles list nor a sync
 reads a capture under way, and one that fails or is cancelled leaves nothing
 behind; [State machines](state-machines.md#new-profile-form) has the details.

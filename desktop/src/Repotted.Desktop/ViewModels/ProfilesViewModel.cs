@@ -45,7 +45,7 @@ internal sealed partial class ProfilesViewModel(
 {
     private readonly Dictionary<string, ProfileViewModel> editors = [];
 
-    /// <summary>The files that captures still running write, by path, whether their forms are open or closed.</summary>
+    /// <summary>The profile files that captures still running will make, by path, whether their forms are open or closed.</summary>
     private readonly HashSet<string> captures = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The file a refresh selects, such as a profile just made.</summary>
