@@ -87,7 +87,8 @@ tab. The run uses no Developer ID, notarizes nothing, attests nothing, and
 makes no release, so a test build has no record that could pass for a
 release's. It checks that the packages build, that the CLI starts under the
 hardened runtime, and that the macOS app launches, then keeps the packages as
-run artifacts for 3 days. The macOS app in such a package is signed ad hoc, so
+run artifacts for 3 days. A newer test build of the same branch cancels the
+one still running. The macOS app in such a package is signed ad hoc, so
 Gatekeeper refuses it until it is allowed in System Settings. Pull requests
 don't run Build Desktop. Quality builds and tests the app on each one, on
 Linux, macOS and Windows, and builds and checks the compiled CLI on Linux, but
