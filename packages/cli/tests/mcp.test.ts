@@ -75,6 +75,16 @@ describe('MCP server', () => {
     expect(planned.text).toContain('has_wiki: true -> false');
   });
 
+  test('lists the drafts a plan leaves out', async () => {
+    const client = await connect(new FakeGitHub());
+    const planned = await call(client, 'plan', {
+      repository: 'lunch/app',
+      profile: 'repository: { has_wiki: false }\nrulesets: [{ name: Later, draft: true }]',
+    });
+
+    expect(planned.text).toContain('· skip draft ruleset "Later"');
+  });
+
   test('refuses a plan_id it did not hand out', async () => {
     const github = new FakeGitHub();
     const client = await connect(github);

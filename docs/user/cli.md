@@ -100,13 +100,20 @@ profiles it extends. With these options, it edits the file instead:
   that name, or goes after the others when the file has none.
 - `--drop-ruleset name` and `--drop-environment name` remove the file's own
   entry, so an entry of that name in a base profile applies again.
+- `--set drafts.section.key=value` and `--unset drafts.section.key` set and
+  remove a [draft](profiles.md#drafts) setting. A draft value is saved even
+  when it wouldn't apply, and its problems print as warnings.
+- `--ruleset` or `--environment` with `"draft": true` in the JSON writes a
+  draft, and `--drop-draft-ruleset name` and `--drop-draft-environment name`
+  remove one.
 
 You can give several options at once; they apply in order. A write right after
 a drop from the same list renames the dropped entry in place, which can also
-change only the case of an environment's name. GitHub knows
-rulesets and environments by name, so applying a renamed entry creates a new
-one and leaves the old one on the repository, unless an `absent: true` entry
-removes it.
+change only the case of an environment's name. Dropping a draft and then
+writing the entry without `"draft": true` finishes the draft in place.
+GitHub knows rulesets and environments by name, so applying a renamed entry
+creates a new one and leaves the old one on the repository, unless an
+`absent: true` entry removes it.
 
 An edit changes only what differs and keeps the rest of the file, including
 comments, line endings, and indent width, though YAML quoting and list

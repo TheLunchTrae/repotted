@@ -10,10 +10,11 @@ import {
   createPlan,
   formatPlan,
   type GitHub,
-  loadProfile,
   parseProfile,
   parseRepo,
   type Plan,
+  resolveProfile,
+  skippedDrafts,
   StalePlanError,
   stringifyProfile,
 } from '@repotted/core';
@@ -105,8 +106,8 @@ export function createServer(options: ServerOptions): McpServer {
         const desired =
           profilePath === undefined
             ? await parseProfile(profile ?? '', options.cwd)
-            : await loadProfile(path.resolve(options.cwd, profilePath));
-        const plan = await createPlan(await client(), parseRepo(name), desired);
+            : await resolveProfile(path.resolve(options.cwd, profilePath));
+        const plan = await createPlan(await client(), parseRepo(name), desired.profile, skippedDrafts(desired.drafts));
         if (plan.changes.length === 0) {
           return text(formatPlan(plan));
         }
