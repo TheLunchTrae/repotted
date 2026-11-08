@@ -14,9 +14,9 @@
     "packages/cli": {
       "entry": ["src/main.ts", "build.ts", "sea.ts", "tests/**/*.test.ts", "tests/*.mjs"],
       "project": ["src/**/*.ts", "tests/**/*.{ts,mjs}"],
-      // The build bundles @repotted/core and leaves these to npm, so the
-      // published package needs them although no file in cli imports them.
-      "ignoreDependencies": ["@octokit/core", "yaml"],
+      // The build bundles @repotted/core and leaves this to npm, so the
+      // published package needs it although no file in cli imports it.
+      "ignoreDependencies": ["@octokit/core"],
     },
   },
 }

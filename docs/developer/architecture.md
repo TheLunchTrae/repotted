@@ -30,6 +30,13 @@ profile file, by `draft`, with zod's discriminated unions, so an error names
 the field that fails rather than the whole entry. Every branch but the one a
 key marks has that key as `undefined`, which a discriminated union needs.
 
+`profileFileJsonSchema` turns `profileFile` into a Draft 7 JSON Schema for
+editors, which `repotted schema` prints. JSON Schema has no `undefined`, so
+there a marking key that a branch leaves out becomes `not: {}`, a key the
+branch rules out; any other type JSON Schema can't hold still throws. The
+refinements that span keys, such as `mergeSettingsProblems` and repeated
+names, have no JSON Schema form and stay out of it.
+
 `packages/core/src/profile.ts` loads a profile and the chain of profiles it
 `extends`, merges them, and only then validates the result. Validating after
 the merge lets a base profile rely on what the profiles that extend it add.
@@ -268,12 +275,17 @@ prints for the commands that need no GitHub: signed-out `status`, `profiles`,
 `profile`, profile saves through `--set`, `--ruleset`, and `--environment`,
 drafts included, and a staged apply through `stage` from `--new` to
 `--discard`. A change to those documents that the app doesn't expect fails the
-gate. The `capture`, `plan`, `repos`, and `login` documents need GitHub, and
-`logout` would remove a real sign-in, so the app's tests read hand-written
-examples of them, and only the strict parsing guards them against the real
-CLI. The app ships its own CLI, so every member that CLI always prints is
-required, and a hand-written example that leaves one out fails to parse
-rather than reading as empty.
+gate. It also reads `schema`, the profile file's JSON Schema, and checks the
+settings the app edits in `ViewModels/ProfileFields.cs` against it: every
+setting in the schema is a field there or on the test's list of settings left
+to the YAML, and each field with choices offers exactly the values the schema
+allows. Labels, groups and notes stay in `ProfileFields.cs`, since they are
+the app's own words. The `capture`, `plan`, `repos`, and `login` documents
+need GitHub, and `logout` would remove a real sign-in, so the app's tests
+read hand-written examples of them, and only the strict parsing guards them
+against the real CLI. The app ships its own CLI, so every member that CLI
+always prints is required, and a hand-written example that leaves one out
+fails to parse rather than reading as empty.
 
 Each package ships the CLI beside the app as `repotted-cli`, a Node single
 executable application that `packages/cli/sea.ts` builds: the CLI and its

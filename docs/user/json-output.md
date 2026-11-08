@@ -1,6 +1,6 @@
 # JSON output
 
-`--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `stage`, `sync`,
+`--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `schema`, `stage`, `sync`,
 `repos`, `status` and `logout` prints exactly one JSON document on stdout, for scripts
 and programs such as the desktop app. Repotted writes nothing to stderr in this mode;
 anything that appears there, such as a deprecation notice from the GitHub client, is
@@ -71,6 +71,10 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `file` is a real path, with links resolved, as in `profile`'s `chain`.
   `extends` is the real path of the profile it extends, or null, and
   `problem` says why the profile cannot be used, or is null.
+- `schema` prints the JSON Schema of a profile file, in Draft 7: the same
+  document as without `--json`, on one line.
+  [The command line](cli.md#edit-profiles-with-completion) says how an editor
+  uses it.
 - `sync` prints `{ repository, path, branch, commit, pulled, pushed,
   conflicts }`, where the last three list files by their path in the folder,
   and `commit` is the branch's commit after the sync, or null for an empty

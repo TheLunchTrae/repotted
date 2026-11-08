@@ -12,13 +12,134 @@ namespace Repotted.Desktop.Tests;
 /// </summary>
 public sealed class ContractTests
 {
-    private static RepottedClient Client()
+    /// <summary>The top-level keys of a profile file that hold no settings, or entries that editors of their own edit.</summary>
+    private static readonly HashSet<string> NotSettings = ["extends", "drafts", "rulesets", "environments"];
+
+    /// <summary>
+    /// The settings the app leaves to the YAML, each with everything under it.
+    /// The app notes each where its group shows, except the last four.
+    /// </summary>
+    private static readonly HashSet<string> YamlOnly =
+    [
+        "repository.topics",
+        "custom_properties",
+        "autolinks",
+        "actions.selected_actions.patterns_allowed",
+        "actions.oidc_customization_sub.include_claim_keys",
+        "security.security_and_analysis.secret_scanning_delegated_bypass_options",
+        "security.code_scanning_default_setup.languages",
+        "security.code_quality_setup.languages",
+        "security.dependabot_runner_settings.runner_labels",
+        // Neither shown in the app nor noted as edited in the YAML.
+        "security.code_scanning_default_setup.runner_label",
+        "security.code_quality_setup.runner_type",
+        "security.code_quality_setup.runner_label",
+        "security.dependabot_runner_settings.runner_group",
+    ];
+
+    private static RepottedCli Cli()
     {
         Assert.SkipWhen(
             string.IsNullOrEmpty(Environment.GetEnvironmentVariable("REPOTTED_CLI")),
             "Set REPOTTED_CLI to the CLI to check the app against it.");
-        return new RepottedClient(RepottedCli.Locate());
+        return RepottedCli.Locate();
     }
+
+    private static RepottedClient Client() => new(Cli());
+
+    [Fact]
+    public async Task The_app_shows_or_leaves_to_the_yaml_every_setting_the_schema_has()
+    {
+        var run = await Cli().RunAsync(["schema", "--json"], null, TestContext.Current.CancellationToken);
+        Assert.Equal((0, ""), (run.ExitCode, run.Error));
+        var schema = JsonNode.Parse(run.Output)!.AsObject();
+        var fields = ProfileFields.Sections.SelectMany(tab => tab.Groups).SelectMany(group => group.Fields).ToList();
+        var named = fields.Select(field => field.Path).Concat(YamlOnly).ToHashSet(StringComparer.Ordinal);
+
+        var settings = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        foreach (var (key, section) in Properties(schema).Where(property => !NotSettings.Contains(property.Key)))
+        {
+            Walk(key, section, named, settings);
+        }
+
+        // A setting the app neither shows nor leaves to the YAML, and a name the schema doesn't have.
+        Assert.Empty(settings.Keys.Except(named));
+        Assert.Empty(named.Except(settings.Keys));
+        var choices = fields.Where(field => field.Kind == SettingKind.Choice).ToList();
+        Assert.Equal(
+            choices.Select(field => Describe(field.Path, Values(settings[field.Path]) ?? [])),
+            choices.Select(field => Describe(field.Path, field.Options.Select(option => option.Value))));
+    }
+
+    /// <summary>
+    /// Adds each setting under <paramref name="path"/> to <paramref name="settings"/>
+    /// with its schema: a key that holds no object of settings, or one that
+    /// <paramref name="named"/> holds, which stands for everything under it.
+    /// </summary>
+    private static void Walk(string path, JsonObject schema, HashSet<string> named, Dictionary<string, JsonObject> settings)
+    {
+        var properties = Properties(schema).ToList();
+        if (properties.Count == 0 || named.Contains(path))
+        {
+            settings.TryAdd(path, schema);
+            return;
+        }
+        foreach (var (key, property) in properties)
+        {
+            Walk($"{path}.{key}", property, named, settings);
+        }
+    }
+
+    /// <summary>The keys an object's schema allows, in any branch of a union.</summary>
+    private static IEnumerable<KeyValuePair<string, JsonObject>> Properties(JsonObject schema)
+    {
+        if (schema["properties"] is JsonObject properties)
+        {
+            foreach (var (key, value) in properties)
+            {
+                // `not` rules a key out, as each branch of an entry union does the others' marking key.
+                if (value is JsonObject property && !property.ContainsKey("not"))
+                {
+                    yield return new(key, property);
+                }
+            }
+        }
+        var branches = (schema["oneOf"] as JsonArray ?? []).Concat(schema["anyOf"] as JsonArray ?? []);
+        foreach (var branch in branches.OfType<JsonObject>())
+        {
+            foreach (var nested in Properties(branch))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    /// <summary>The values a setting's schema allows, when it names them, or null.</summary>
+    private static List<JsonNode>? Values(JsonObject schema)
+    {
+        if (schema["enum"] is JsonArray values)
+        {
+            return [.. values.OfType<JsonNode>().Select(item => item.DeepClone())];
+        }
+        if (schema["const"] is { } value)
+        {
+            return [value.DeepClone()];
+        }
+        if (JsonNode.DeepEquals(schema["type"], JsonValue.Create("boolean")))
+        {
+            return [true, false];
+        }
+        // A security feature, which GitHub writes as { status: enabled }.
+        if (schema["properties"] is JsonObject { Count: 1 } properties)
+        {
+            var (key, property) = properties.Single();
+            return Values(property!.AsObject())?.Select(inner => (JsonNode)new JsonObject { [key] = inner }).ToList();
+        }
+        return null;
+    }
+
+    private static string Describe(string path, IEnumerable<JsonNode> values) =>
+        $"{path}: {string.Join(", ", values.Select(value => value.ToJsonString()).Order(StringComparer.Ordinal))}";
 
     [Fact]
     public async Task The_app_reads_what_status_prints()

@@ -10,7 +10,9 @@ and GitHub Enterprise Cloud, in
 [github/rest-api-description](https://github.com/github/rest-api-description),
 and GitHub's docs. When GitHub adds a setting, add it to
 `schema.ts`, the adapter for its section, `permissions.ts` when it needs a
-permission other than Administration, and this page.
+permission other than Administration, the desktop app's
+`ViewModels/ProfileFields.cs` (or, for a setting the app leaves to the YAML,
+the list of those in its `ContractTests.cs`), and this page.
 
 ## How a setting is wired
 

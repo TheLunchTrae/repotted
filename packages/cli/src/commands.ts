@@ -24,6 +24,7 @@ import {
   parsePlan,
   parseRepo,
   type ProfileEdit,
+  profileFileJsonSchema,
   readAccess,
   resolveProfile,
   skippedDrafts,
@@ -89,6 +90,7 @@ Commands:
   stage <file> [--set key=json] [--unset key]    Show a staged apply resolved; edit it as profile does, and
         [--exclude key] [--include key]              exclude values of its profile, as repository.has_wiki or
         [--save-to-profile] [--discard]          rulesets/Main; save its edits to its profile; or remove it
+  schema                                         Print the JSON Schema of a profile file, for editors
   mcp [--read-only]                              Run the MCP server over stdio
   repos                                          List the repositories Repotted can manage
   status                                         Show which GitHub account Repotted signs in as
@@ -562,6 +564,16 @@ async function stage(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
+function schema(io: Io, args: string[]): Promise<number> {
+  const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } });
+  if (values.json === true) {
+    json(io, profileFileJsonSchema());
+  } else {
+    io.out(`${JSON.stringify(profileFileJsonSchema(), null, 2)}\n`);
+  }
+  return Promise.resolve(0);
+}
+
 async function repos(io: Io, args: string[]): Promise<number> {
   const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } });
   const list = await listRepositories(await io.github());
@@ -727,6 +739,7 @@ const commands: Record<string, (io: Io, args: string[]) => Promise<number>> = {
   profiles,
   profile,
   stage,
+  schema,
   sync,
   mcp,
   repos,
