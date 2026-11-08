@@ -162,6 +162,24 @@ version-numbered names.
   examples. Keep test setup smaller than the behavior it protects.
 - Test counts and coverage percentages are not goals.
 
+## State machines
+
+[State machines](docs/developer/state-machines.md) lists the implicit state in
+the CLI and the app: sign-in, sync, the profile editor and its cache,
+captures, and the rest. Each flow has a table of states, events, and next
+states, and the failure states it can reach.
+
+- When a change adds, removes, or changes a state or a transition, update the
+  owning table in the same change. Implicit state includes flags, nullable
+  fields, caches, files on disk, and the order of asynchronous work. A new
+  flow gets its own section.
+- Test each transition and each failure state at the narrowest interface that
+  drives it, such as a view model over the fake CLI. A transition that needs
+  overlapping work, like a save queued behind a sync or a command pressed
+  while a load runs, needs a test that holds that work open.
+- A failure state the change leaves in place stays on the page with a link to
+  the issue that tracks it; one the change fixes leaves the page.
+
 ## TypeScript and Bun
 
 `package.json`, `bun.lock`, and the mise tasks own the tested versions and
