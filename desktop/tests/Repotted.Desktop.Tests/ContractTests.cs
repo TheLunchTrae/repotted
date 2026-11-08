@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Headless.XUnit;
 using Repotted.Desktop.Services;
@@ -17,7 +18,7 @@ public sealed class ContractTests
 
     /// <summary>
     /// The settings the app leaves to the YAML, each with everything under it.
-    /// The app notes each where its group shows, except the last four.
+    /// The app notes each where its group shows.
     /// </summary>
     private static readonly HashSet<string> YamlOnly =
     [
@@ -30,11 +31,6 @@ public sealed class ContractTests
         "security.code_scanning_default_setup.languages",
         "security.code_quality_setup.languages",
         "security.dependabot_runner_settings.runner_labels",
-        // Neither shown in the app nor noted as edited in the YAML.
-        "security.code_scanning_default_setup.runner_label",
-        "security.code_quality_setup.runner_type",
-        "security.code_quality_setup.runner_label",
-        "security.dependabot_runner_settings.runner_group",
     ];
 
     private static RepottedCli Cli()
@@ -255,6 +251,45 @@ public sealed class ContractTests
         Assert.Equal(3, SettingViewModel.Find(values.GetProperty("repository"), "pull_request_creation_cap.max_open_pull_requests")!.GetValue<int>());
         Assert.Equal("main", SettingViewModel.Find(values.GetProperty("pages"), "source.branch")!.GetValue<string>());
         Assert.Equal("", SettingViewModel.Find(values.GetProperty("repository"), "description")!.GetValue<string>());
+    }
+
+    [AvaloniaFact]
+    public async Task The_cli_saves_an_empty_runner_label_as_null_and_an_empty_runner_group_as_empty()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        var orgs = folders.Write(
+            "orgs.yaml",
+            """
+            security:
+              code_scanning_default_setup:
+                runner_type: labeled
+                runner_label: gpu
+              code_quality_setup:
+                runner_label: null
+              dependabot_runner_settings:
+                runner_type: labeled
+                runner_group: builders
+
+            """.ReplaceLineEndings("\n"));
+        var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken));
+        var editor = Editor(client, listing, folders);
+        await editor.LoadCommand.ExecuteAsync(null);
+        var settings = editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).ToList();
+        SettingViewModel Setting(string key) => settings.Single(setting => setting.Key == key);
+
+        // A null label reads as an empty box, which left empty is no change.
+        var quality = Setting("code_quality_setup.runner_label");
+        Assert.Equal(("", true, false), (quality.Typed, quality.Managed, editor.HasChanges));
+        Setting("code_scanning_default_setup.runner_label").Typed = "";
+        Setting("dependabot_runner_settings.runner_group").Typed = "";
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null(editor.SaveError);
+        var saved = (await client.ProfileAsync(orgs, cancellationToken)).Values.GetProperty("security");
+        Assert.Equal(JsonValueKind.Null, saved.GetProperty("code_scanning_default_setup").GetProperty("runner_label").ValueKind);
+        Assert.Equal("", saved.GetProperty("dependabot_runner_settings").GetProperty("runner_group").GetString());
     }
 
     [AvaloniaFact]

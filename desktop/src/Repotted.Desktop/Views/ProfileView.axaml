@@ -9,7 +9,8 @@
       One setting: where its value comes from, its choices or a box to type it
       in, a way back, and any draft of it. A sub-option sits indented under its setting, and a
       note says what the setting can't do here. Choices too long to sit beside
-      the label go under it.
+      the label go under it. A setting that another one turns off, such as a
+      runner label with standard runners, keeps its value but can't be edited.
     -->
     <DataTemplate x:Key="SettingRow" x:DataType="vm:SettingViewModel">
       <Border Classes="field" Classes.nested="{Binding Nested}">
@@ -24,14 +25,15 @@
                        TextWrapping="Wrap" Margin="0,2,0,0" />
           </StackPanel>
           <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4" IsVisible="{Binding IsTyped}">
-            <TextBox Classes="setting" Text="{Binding Typed}" Classes.number="{Binding IsNumber}"
+            <TextBox Classes="setting" Text="{Binding Typed}" Classes.number="{Binding IsNumber}" IsEnabled="{Binding Enabled}"
                      AutomationProperties.Name="{Binding TypedName}"
                      AutomationProperties.HelpText="{Binding TypedHelp}" />
             <TextBlock Classes="problem small" Text="{Binding TypedProblem}" IsVisible="{Binding HasTypedProblem}"
                        TextWrapping="Wrap" MaxWidth="240" />
           </StackPanel>
           <Border Grid.Row="{Binding OptionsRow}" Grid.Column="{Binding OptionsColumn}" Grid.ColumnSpan="{Binding OptionsSpan}"
-                  Classes="seg" Classes.wide="{Binding Wide}" Classes.nested="{Binding Nested}" IsVisible="{Binding IsChoice}">
+                  Classes="seg" Classes.wide="{Binding Wide}" Classes.nested="{Binding Nested}" IsVisible="{Binding IsChoice}"
+                  IsEnabled="{Binding Enabled}">
             <ItemsControl ItemsSource="{Binding Options}">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>

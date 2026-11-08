@@ -670,6 +670,15 @@ internal sealed partial class ProfileViewModel(
                         ])),
                 ]));
         }
+        // A row that another setting can turn off follows that setting's row.
+        var rows = Settings.ToList();
+        foreach (var row in rows)
+        {
+            if (row.Field.OffWhen is { } off)
+            {
+                row.ControlledBy = rows.Single(other => other.Field.Section == row.Field.Section && other.Field.Key == off.Key);
+            }
+        }
         Tabs.Add(EntriesTab("Rulesets", "rulesets"));
         Tabs.Add(EntriesTab("Environments", "environments"));
         SelectedTab = Tabs.FirstOrDefault(tab => tab.Name == selected) ?? Tabs[0];
@@ -747,9 +756,14 @@ internal sealed partial class ProfileViewModel(
     /// A setting that must stand alone in its section, such as Pages'
     /// <c>absent</c>, can't be saved beside the others there: setting one
     /// leaves the others out of this profile's file, and the other way round.
+    /// A row that the changed setting can turn off shows it again.
     /// </summary>
     private void OnRowChanged(SettingViewModel row)
     {
+        foreach (var other in Settings.Where(other => other.ControlledBy == row))
+        {
+            other.Refresh();
+        }
         if (row.OwnAfterSave)
         {
             foreach (var other in Settings.Where(other => other != row

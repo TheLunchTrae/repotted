@@ -43,6 +43,19 @@ internal sealed record SettingField(string Section, string Key, string Label, IR
     public bool AllowsEmpty { get; init; }
 
     /// <summary>
+    /// Whether an empty <see cref="SettingKind.Text"/> is saved as JSON <c>null</c>,
+    /// as a runner label is when there is none, and a <c>null</c> shows as an empty box.
+    /// </summary>
+    public bool EmptyIsNull { get; init; }
+
+    /// <summary>
+    /// The value of another setting in the section that turns this one off,
+    /// as standard runners do a runner label, which only labeled runners use.
+    /// The setting stays on while the other has no value.
+    /// </summary>
+    public SettingCondition? OffWhen { get; init; }
+
+    /// <summary>
     /// Whether a profile that sets it can set nothing else in its section, as
     /// Pages' <c>absent</c>, which takes the site down whatever else is said.
     /// </summary>
@@ -60,7 +73,13 @@ internal sealed record SettingField(string Section, string Key, string Label, IR
     public SettingField Noted(string note) => this with { Note = note };
 
     public SettingField Also(params string[] synonyms) => this with { Synonyms = synonyms };
+
+    /// <summary>The setting, turned off while the setting at <paramref name="key"/> in the section has <paramref name="value"/>.</summary>
+    public SettingField OffWhile(string key, string value) => this with { OffWhen = new(key, value) };
 }
+
+/// <summary>A setting in the same section, by its <paramref name="Key"/>, holding the text <paramref name="Value"/>.</summary>
+internal sealed record SettingCondition(string Key, string Value);
 
 internal sealed record SettingGroup(string Title, string Description, IReadOnlyList<SettingField> Fields);
 
@@ -96,8 +115,18 @@ internal static class ProfileFields
     private static SettingField Number(string section, string key, string label) =>
         new(section, key, label, []) { Kind = SettingKind.Number };
 
-    private static SettingField Text(string section, string key, string label, bool allowsEmpty = false) =>
-        new(section, key, label, []) { Kind = SettingKind.Text, AllowsEmpty = allowsEmpty };
+    private static SettingField Text(string section, string key, string label, bool allowsEmpty = false, bool emptyIsNull = false) =>
+        new(section, key, label, []) { Kind = SettingKind.Text, AllowsEmpty = allowsEmpty, EmptyIsNull = emptyIsNull };
+
+    /// <summary>
+    /// The runner label of a code scanning or code quality setup, under its
+    /// runner type: off with standard runners, and null when there is none.
+    /// </summary>
+    private static SettingField RunnerLabel(string setup) =>
+        Text("security", $"{setup}.runner_label", "Runner label", emptyIsNull: true).Under()
+            .OffWhile($"{setup}.runner_type", "standard")
+            .Noted("Used only with labeled runners. Leave it empty for no label.")
+            .Also("self-hosted", "runner");
 
     public static IReadOnlyList<SettingSection> Sections { get; } =
     [
@@ -253,6 +282,10 @@ internal static class ProfileFields
                 Choice("security", "dependabot_runner_settings.runner_type", "Dependabot runners",
                     ("Standard", "standard"), ("Labeled", "labeled")).Noted("Runner labels are edited in the YAML.")
                     .Also("self-hosted"),
+                Text("security", "dependabot_runner_settings.runner_group", "Runner group", allowsEmpty: true).Under()
+                    .OffWhile("dependabot_runner_settings.runner_type", "standard")
+                    .Noted("Used only with labeled runners. Leave it empty for no group.")
+                    .Also("self-hosted", "runner"),
             ]),
             new("Code scanning", "Finds problems in the code with CodeQL. Languages are edited in the YAML.",
             [
@@ -268,6 +301,7 @@ internal static class ProfileFields
                 Choice("security", "code_scanning_default_setup.runner_type", "Runner type",
                     ("Standard", "standard"), ("Labeled", "labeled")).Under()
                     .Also("self-hosted"),
+                RunnerLabel("code_scanning_default_setup"),
                 Choice("security", "code_scanning_ai_scan.pr_scan", "AI Scan on pull requests",
                     ("On", "enabled"), ("Off", "disabled")),
             ]),
@@ -277,6 +311,10 @@ internal static class ProfileFields
                     ("Configured", "configured"), ("Not configured", "not-configured")),
                 Choice("security", "code_quality_setup.ai_findings_option", "AI findings",
                     ("Off", "disabled"), ("On push", "on_push")).Under(),
+                Choice("security", "code_quality_setup.runner_type", "Runner type",
+                    ("Standard", "standard"), ("Labeled", "labeled")).Under()
+                    .Also("self-hosted"),
+                RunnerLabel("code_quality_setup"),
             ]),
             new("Secret scanning", "Finds secrets pushed to the repository.",
             [
