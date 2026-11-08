@@ -88,7 +88,8 @@ internal sealed partial class BatchViewModel(
     [NotifyPropertyChangedFor(nameof(CanLeave), nameof(CanEdit))]
     [NotifyCanExecuteChangedFor(
         nameof(LeaveOutCommand), nameof(PutBackCommand), nameof(LeaveOutEverywhereCommand), nameof(PutBackEverywhereCommand),
-        nameof(IncludeCommand), nameof(ApplyCommand), nameof(DiscardCommand), nameof(ReviewAgainCommand), nameof(CloseCommand))]
+        nameof(IncludeCommand), nameof(ApplyCommand), nameof(DiscardCommand), nameof(ReviewAgainCommand), nameof(CloseCommand),
+        nameof(KeepCommand), nameof(ConfirmDiscardCommand))]
     public partial bool Working { get; private set; }
 
     /// <summary>The step to go back to when a discard is not confirmed.</summary>
@@ -124,13 +125,21 @@ internal sealed partial class BatchViewModel(
     public string Summary => Step switch
     {
         BatchStep.Applying => "Applying to GitHub, one repository at a time.",
-        BatchStep.Done => Unfinished.Count == 0
-            ? "The batch is finished."
-            : "Some repositories didn't finish. Their staged applies stay, to review again.",
-        _ => ProfileName is null
-            ? "Nothing changes on GitHub until you apply."
-            : $"Starts each repository from {ProfileName}. Nothing changes on GitHub until you apply.",
+        BatchStep.Done when !BatchRemains => "The batch is finished.",
+        BatchStep.Done when HasUnfinished => "Some repositories didn't finish. Their staged applies stay, to review again.",
+        BatchStep.Done => "The repositories that weren't in this apply stay in the batch, to review again.",
+        _ when ProfileName is null => "Nothing changes on GitHub until you apply.",
+        // A staged apply that joined the batch keeps what it started from.
+        _ when Members.Any(member => member.Joined) =>
+            $"Starts each new repository from {ProfileName}. Nothing changes on GitHub until you apply.",
+        _ => $"Starts each repository from {ProfileName}. Nothing changes on GitHub until you apply.",
     };
+
+    /// <summary>Whether the batch is still there after an apply, with repositories that didn't finish or weren't in it.</summary>
+    public bool BatchRemains => settings.HasBatch;
+
+    /// <summary>Whether, after an apply, only repositories that weren't in it stay in the batch.</summary>
+    public bool OnlyNotAppliedRemain => BatchRemains && !HasUnfinished;
 
     /// <summary>What the unfinished batch holds, for the question whether to resume it.</summary>
     [ObservableProperty]
@@ -309,17 +318,17 @@ internal sealed partial class BatchViewModel(
     private async Task StartOverAsync()
     {
         Step = BatchStep.Starting;
+        string? note;
         try
         {
-            await client.DiscardBatchAsync(Folder, CancellationToken.None).ConfigureAwait(true);
-            File.Delete(PlanFile);
+            note = await DiscardBatchAsync().ConfigureAwait(true);
         }
         catch (Exception error) when (error is CliException or CliNotFoundException or IOException or UnauthorizedAccessException)
         {
             Fail(error.Message);
             return;
         }
-        await StartAsync().ConfigureAwait(true);
+        await StartAsync(note).ConfigureAwait(true);
     }
 
     private bool CanChooseUnfinished() => Step == BatchStep.Unfinished;
@@ -328,7 +337,7 @@ internal sealed partial class BatchViewModel(
     /// Starts the batch: a new staged apply for each repository, and each
     /// repository's unfinished apply as it is, since a repository has one apply at a time.
     /// </summary>
-    private async Task StartAsync()
+    private async Task StartAsync(string? note = null)
     {
         var join = repositories.Where(repository => File.Exists(settings.StagedFile(repository))).ToList();
         var fresh = repositories.Except(join, StringComparer.Ordinal).ToList();
@@ -336,6 +345,8 @@ internal sealed partial class BatchViewModel(
         {
             Directory.CreateDirectory(settings.StagedFolder);
             File.Delete(PlanFile);
+            // A joined apply is planned with the batch from now on, so its own plan is never applied.
+            join.ForEach(repository => File.Delete(AppSettings.PlanFile(settings.StagedFile(repository))));
             await client.StartBatchAsync(
                 Folder, settings.StagedFolder, fresh, [.. join.Select(settings.StagedFile)], profile?.File, CancellationToken.None)
                 .ConfigureAwait(true);
@@ -345,12 +356,13 @@ internal sealed partial class BatchViewModel(
             Fail(error.Message);
             return;
         }
-        if (join.Count > 0)
+        var joined = join.Count switch
         {
-            Notice = join.Count == 1
-                ? $"{join[0]} had an apply that wasn't finished, so it joined the batch as it was."
-                : $"{string.Join(", ", join)} had applies that weren't finished, so they joined the batch as they were.";
-        }
+            0 => null,
+            1 => $"{join[0]} had an apply that wasn't finished, so it joined the batch as it was.",
+            _ => $"{string.Join(", ", join)} had applies that weren't finished, so they joined the batch as they were.",
+        };
+        Notice = string.Join(" ", new[] { note, joined }.OfType<string>()) is { Length: > 0 } notice ? notice : null;
         await ReviewAsync(keepNotice: true).ConfigureAwait(true);
     }
 
@@ -360,7 +372,7 @@ internal sealed partial class BatchViewModel(
 
     private bool CanReviewAgain() =>
         !Working && !EditsBusy && !EditsUnsaved
-        && (Step is BatchStep.Reviewing or BatchStep.Failed || (Step == BatchStep.Done && HasUnfinished))
+        && (Step is BatchStep.Reviewing or BatchStep.Failed or BatchStep.Done)
         && settings.HasBatch;
 
     private async Task ReviewAsync(bool keepNotice = false)
@@ -435,22 +447,36 @@ internal sealed partial class BatchViewModel(
             }
             members.Add(member);
         }
-        Members.Clear();
-        Entries.Clear();
-        Entries.Add(All);
-        foreach (var member in members)
+        var tab = Tab;
+        showing = true;
+        try
         {
-            Members.Add(member);
-            Entries.Add(member);
+            Members.Clear();
+            Entries.Clear();
+            Entries.Add(All);
+            foreach (var member in members)
+            {
+                Members.Add(member);
+                Entries.Add(member);
+            }
+            All.Show(members, plan.Plans);
+            Selected = selected switch
+            {
+                BatchMemberViewModel member when members.Contains(member) => member,
+                _ => All,
+            };
         }
-        All.Show(members, plan.Plans);
-        Selected = selected switch
+        finally
         {
-            BatchMemberViewModel member when members.Contains(member) => member,
-            _ => All,
-        };
+            showing = false;
+        }
+        Tab = Selected is BatchMemberViewModel ? tab : 0;
+        OnPropertyChanged(nameof(Summary));
         NotifyCounts();
     }
+
+    /// <summary>Whether the list is being rebuilt from a new plan, which moves the selection on its way.</summary>
+    private bool showing;
 
     private void NotifyCounts()
     {
@@ -471,6 +497,11 @@ internal sealed partial class BatchViewModel(
 
     partial void OnSelectedChanged(BatchEntry? value)
     {
+        // Rebuilding the list clears the selection on the way; the entry it had comes back with its tab.
+        if (showing)
+        {
+            return;
+        }
         if (value is not BatchMemberViewModel)
         {
             Tab = 0;
@@ -481,7 +512,7 @@ internal sealed partial class BatchViewModel(
     /// <summary>Opens the one-off edits of the repository on screen, the first time it shows with a plan.</summary>
     private async Task OpenEditsAsync()
     {
-        if (Step != BatchStep.Reviewing || Member is not { IsPlanned: true, Edits: null, Review: { } review } member)
+        if (Step != BatchStep.Reviewing || showing || Member is not { IsPlanned: true, Edits: null, Review: { } review } member)
         {
             return;
         }
@@ -638,6 +669,12 @@ internal sealed partial class BatchViewModel(
             Members.ToList().ForEach(member => member.RefreshIncluded());
             return;
         }
+        // The change rewrote staged files under any open one-off edits, which hold none unsaved
+        // while a change runs, so each is read again the next time it shows.
+        foreach (var member in Members)
+        {
+            member.Edits = null;
+        }
         // The plan starts at once, so the old plan is never there to act on between the two.
         Working = false;
         Notice = note;
@@ -661,7 +698,11 @@ internal sealed partial class BatchViewModel(
     private bool CanApply() => CanChange() && ApplyCount > 0;
 
     [RelayCommand(CanExecute = nameof(IsConfirming))]
-    private void CancelApply() => Step = BatchStep.Reviewing;
+    private void CancelApply()
+    {
+        Step = BatchStep.Reviewing;
+        _ = OpenEditsAsync();
+    }
 
     private bool IsConfirming() => Step == BatchStep.Confirming;
 
@@ -700,6 +741,12 @@ internal sealed partial class BatchViewModel(
                 var result = await client.ApplyBatchMemberAsync(PlanFile, member.Repository, CancellationToken.None).ConfigureAwait(true);
                 Record(member, result);
             }
+            catch (SignInLostException error)
+            {
+                // Every repository after it would fail the same way, so the apply stops here.
+                member.Finish(MemberOutcome.Unfinished, $"{error.Message} Sign in again and review it, since some changes may already be on GitHub.");
+                Stopping = true;
+            }
             catch (Exception error) when (error is CliException or CliNotFoundException)
             {
                 // The run may have written some changes before it failed.
@@ -714,6 +761,7 @@ internal sealed partial class BatchViewModel(
         {
             TryDelete(PlanFile);
         }
+        PruneStagedFolder();
         Stopping = false;
         OnPropertyChanged(nameof(Unfinished));
         OnPropertyChanged(nameof(Finished));
@@ -721,6 +769,8 @@ internal sealed partial class BatchViewModel(
         OnPropertyChanged(nameof(HasUnfinished));
         OnPropertyChanged(nameof(HasFinished));
         OnPropertyChanged(nameof(HasNotApplied));
+        OnPropertyChanged(nameof(BatchRemains));
+        OnPropertyChanged(nameof(OnlyNotAppliedRemain));
         Step = BatchStep.Done;
         OnPropertyChanged(nameof(Summary));
     }
@@ -730,6 +780,11 @@ internal sealed partial class BatchViewModel(
         var first = result.Message?.Split('\n')[0].TrimEnd('.');
         var (outcome, text) = result.Status switch
         {
+            // Ended says the batch let the repository go; if it couldn't, its staged apply stays.
+            "applied" when !result.Ended => (MemberOutcome.Unfinished,
+                $"Applied {Count(result.Applied?.Count ?? 0, "change")}, but its staged apply stays in the batch, so review it again."),
+            "in_line" when !result.Ended => (MemberOutcome.Unfinished,
+                "Already in line, but its staged apply stays in the batch, so review it again."),
             "applied" => (MemberOutcome.Finished, $"Applied {Count(result.Applied?.Count ?? 0, "change")}."),
             "in_line" => (MemberOutcome.Finished, "Already in line, so nothing was written."),
             "locked" => (MemberOutcome.Unfinished, "Waits for access GitHub would refuse, so nothing was written."),
@@ -763,9 +818,13 @@ internal sealed partial class BatchViewModel(
         && Step is BatchStep.Reviewing or BatchStep.Done or BatchStep.Failed;
 
     [RelayCommand(CanExecute = nameof(IsConfirmingDiscard))]
-    private void Keep() => Step = beforeDiscard;
+    private void Keep()
+    {
+        Step = beforeDiscard;
+        _ = OpenEditsAsync();
+    }
 
-    private bool IsConfirmingDiscard() => Step == BatchStep.ConfirmingDiscard;
+    private bool IsConfirmingDiscard() => Step == BatchStep.ConfirmingDiscard && !Working;
 
     /// <summary>Removes the batch and the staged applies it started, then leaves; one that joined it stays, as do the profiles.</summary>
     [RelayCommand(CanExecute = nameof(IsConfirmingDiscard))]
@@ -774,11 +833,7 @@ internal sealed partial class BatchViewModel(
         Working = true;
         try
         {
-            if (settings.HasBatch)
-            {
-                await client.DiscardBatchAsync(Folder, CancellationToken.None).ConfigureAwait(true);
-            }
-            File.Delete(PlanFile);
+            await DiscardBatchAsync().ConfigureAwait(true);
         }
         catch (Exception error) when (error is CliException or CliNotFoundException or IOException or UnauthorizedAccessException)
         {
@@ -790,6 +845,47 @@ internal sealed partial class BatchViewModel(
         Working = false;
         Step = BatchStep.Discarded;
         close();
+    }
+
+    /// <summary>
+    /// Discards the batch and its plan, keeping staged applies that joined it.
+    /// A batch the CLI cannot read is removed as it is, and the note says that
+    /// staged applies it started stay, to resume or discard one at a time.
+    /// </summary>
+    private async Task<string?> DiscardBatchAsync()
+    {
+        string? note = null;
+        if (settings.HasBatch)
+        {
+            try
+            {
+                await client.DiscardBatchAsync(Folder, CancellationToken.None).ConfigureAwait(true);
+            }
+            catch (CliException error) when (error is not SignInLostException)
+            {
+                if (await CanReadBatchAsync().ConfigureAwait(true))
+                {
+                    throw;
+                }
+                Directory.Delete(Folder, recursive: true);
+                note = "Repotted couldn't read the batch, so it removed it as it was. Any apply it started stays on its own, to resume or discard.";
+            }
+        }
+        File.Delete(PlanFile);
+        return note;
+    }
+
+    private async Task<bool> CanReadBatchAsync()
+    {
+        try
+        {
+            await client.BatchAsync(Folder, CancellationToken.None).ConfigureAwait(true);
+            return true;
+        }
+        catch (CliException error) when (error is not SignInLostException)
+        {
+            return false;
+        }
     }
 
     /// <summary>Leaves the page; an unfinished batch stays to resume.</summary>
@@ -865,6 +961,29 @@ internal sealed partial class BatchViewModel(
     {
         Outcome = message;
         Step = BatchStep.Failed;
+    }
+
+    /// <summary>Removes the owner folders that ended staged applies left empty in the staged folder.</summary>
+    private void PruneStagedFolder()
+    {
+        try
+        {
+            if (!Directory.Exists(settings.StagedFolder))
+            {
+                return;
+            }
+            foreach (var owner in Directory.EnumerateDirectories(settings.StagedFolder))
+            {
+                if (!Directory.EnumerateFileSystemEntries(owner).Any())
+                {
+                    Directory.Delete(owner);
+                }
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            // An empty folder left behind holds nothing to resume.
+        }
     }
 
     private static void TryDelete(string path)

@@ -341,12 +341,14 @@ will refuse waits, as do those you left out. **Stop after this repository**
 finishes the one it writes to and leaves the rest.
 
 Then the page lists the repositories that didn't finish first, with why, and
-**Review again** plans them again. Those that finished, or needed nothing, have
-left the batch, and the batch ends with the last of them. A batch you leave
+**Review again** plans them again, along with any you left out. Those that
+finished, or needed nothing, have left the batch, and the batch ends with the
+last of them. If you lose your sign-in partway, the apply stops there. A batch you leave
 before it finishes is kept: the **Repositories** page shows "A batch apply is
 not finished." with **Resume**, and starting an apply to one of its
 repositories opens the batch. **Discard batch** throws it away; a staged apply
-that joined it stays, to resume on its own.
+that joined it stays, to resume on its own. A batch Repotted can't read can
+still be discarded or started over; any apply it started then stays on its own.
 
 The command line does the same with
 [`repotted stage --batch`](cli.md#apply-a-profile-to-several-repositories).

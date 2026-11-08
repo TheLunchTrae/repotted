@@ -704,6 +704,12 @@ public sealed class ContractTests
         Assert.False(settings.HasBatch);
         Assert.False(File.Exists(settings.StagedFile("TheLunchTrae/repotted")));
         Assert.True(File.Exists(joined));
+
+        // A batch of only joined staged applies starts too, with nowhere new to put any.
+        var only = await client.StartBatchAsync(settings.BatchFolder, settings.StagedFolder, [], [joined], orgs, cancellationToken);
+        Assert.Equal([("TheLunchTrae/test-repo", true)], only.Members.Select(member => (member.Repository, member.Joined)));
+        await client.DiscardBatchAsync(settings.BatchFolder, cancellationToken);
+        Assert.True(File.Exists(joined));
     }
 
     /// <summary>Two reads of a batch match when they list the same members the same way.</summary>

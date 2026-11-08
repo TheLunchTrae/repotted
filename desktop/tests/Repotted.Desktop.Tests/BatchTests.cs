@@ -53,6 +53,9 @@ public sealed class BatchTests : IDisposable
 
         /// <summary>How its apply comes out, as <c>apply --only</c> prints the status.</summary>
         public string Result { get; set; } = "applied";
+
+        /// <summary>Whether a finished apply lets it go from the batch, which can fail after the writes.</summary>
+        public bool Ends { get; set; } = true;
     }
 
     /// <summary>The batch as the fake CLI keeps it, with the answers to every command that reads or changes it.</summary>
@@ -105,7 +108,8 @@ public sealed class BatchTests : IDisposable
         public string? Refuses { get; set; }
 
         public string StartCommand(IEnumerable<string> fresh, IEnumerable<string> join) =>
-            string.Join(' ', new[] { "stage", Folder, "--batch", $"--staged-dir={tests.Settings.StagedFolder}" }
+            string.Join(' ', new[] { "stage", Folder, "--batch" }
+                .Concat(fresh.Any() ? [$"--staged-dir={tests.Settings.StagedFolder}"] : [])
                 .Concat(fresh.Select(repository => $"--new={repository}"))
                 .Concat(join.Select(repository => $"--join={tests.Settings.StagedFile(repository)}"))
                 .Append($"--profile={tests.@base}")
@@ -157,7 +161,7 @@ public sealed class BatchTests : IDisposable
         {
             var member = Find(repository);
             var status = member.Result;
-            var ended = status is "applied" or "in_line";
+            var ended = status is "applied" or "in_line" && member.Ends;
             if (ended)
             {
                 System.IO.File.Delete(member.File);
@@ -548,6 +552,135 @@ public sealed class BatchTests : IDisposable
         Assert.False(Settings.HasBatch);
         Assert.False(File.Exists(Settings.BatchPlanFile));
         Assert.False(batch.ReviewAgainCommand.CanExecute(null));
+        Assert.False(batch.BatchRemains);
+        // The staged applies it ended left no empty folder behind.
+        Assert.Empty(Directory.EnumerateFileSystemEntries(Settings.StagedFolder));
+    }
+
+    [AvaloniaFact]
+    public async Task A_batch_where_every_repository_joins_starts_without_new_staged_applies()
+    {
+        var world = new World(this, Repotted, TestRepo);
+        foreach (var repository in new[] { Repotted, TestRepo })
+        {
+            var file = Settings.StagedFile(repository);
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, $"apply_to: {repository}\n");
+            File.WriteAllText(AppSettings.PlanFile(file), "{}");
+        }
+        world.OnStart([], [Repotted, TestRepo]);
+        var page = Open(world);
+
+        await page.Batch.OpenAsync();
+        await Until(() => page.Batch.Step == BatchStep.Reviewing);
+
+        var start = Assert.Single(world.Cli.Calls, call => call.Contains("--batch", StringComparison.Ordinal));
+        Assert.DoesNotContain("--staged-dir", start, StringComparison.Ordinal);
+        Assert.All(page.Batch.Members, member => Assert.True(member.Joined));
+        // Each joined apply's own plan goes, since the batch plans it from now on.
+        Assert.All([Repotted, TestRepo], repository => Assert.False(File.Exists(AppSettings.PlanFile(Settings.StagedFile(repository)))));
+        Assert.Equal("Starts each new repository from orgs. Nothing changes on GitHub until you apply.", page.Batch.Summary);
+    }
+
+    [AvaloniaFact]
+    public async Task Repositories_not_in_the_apply_keep_the_batch_to_review_again()
+    {
+        var (world, page) = await Reviewing();
+        var batch = page.Batch;
+        await batch.IncludeCommand.ExecuteAsync(MemberOf(batch, TestRepo));
+
+        batch.ApplyCommand.Execute(null);
+        await batch.ConfirmApplyCommand.ExecuteAsync(null);
+
+        Assert.Equal(BatchStep.Done, batch.Step);
+        Assert.False(batch.HasUnfinished);
+        Assert.Equal(TestRepo, Assert.Single(batch.NotApplied).Repository);
+        Assert.True(batch.BatchRemains);
+        Assert.True(batch.OnlyNotAppliedRemain);
+        Assert.Equal("The repositories that weren't in this apply stay in the batch, to review again.", batch.Summary);
+        Assert.True(batch.ReviewAgainCommand.CanExecute(null));
+        Assert.True(batch.DiscardCommand.CanExecute(null));
+
+        await batch.ReviewAgainCommand.ExecuteAsync(null);
+        Assert.Equal(BatchStep.Reviewing, batch.Step);
+        Assert.Equal("Left out", Assert.Single(batch.Members).Status);
+    }
+
+    [AvaloniaFact]
+    public async Task An_applied_repository_the_batch_could_not_let_go_stays_to_review_again()
+    {
+        var (world, page) = await Reviewing();
+        var batch = page.Batch;
+        world.Find(Repotted).Ends = false;
+
+        batch.ApplyCommand.Execute(null);
+        await batch.ConfirmApplyCommand.ExecuteAsync(null);
+
+        var repotted = MemberOf(batch, Repotted);
+        Assert.Equal(MemberOutcome.Unfinished, repotted.Outcome);
+        Assert.Equal("Applied 1 change, but its staged apply stays in the batch, so review it again.", repotted.Result);
+        Assert.Equal(MemberOutcome.Finished, MemberOf(batch, TestRepo).Outcome);
+    }
+
+    [AvaloniaFact]
+    public async Task A_lost_sign_in_stops_the_apply_at_the_repository_it_reached()
+    {
+        var (world, page) = await Reviewing();
+        var batch = page.Batch;
+        world.Cli.On($"apply {world.PlanFile} --only={Repotted} --yes --json",
+            $$"""{"batch":{{Json(world.Folder)}},"results":[{"repository":"{{Repotted}}","status":"failed","ended":false,"error":{"kind":"signed_out","message":"GitHub no longer accepts the sign-in.","status":401} }]}""");
+
+        batch.ApplyCommand.Execute(null);
+        await batch.ConfirmApplyCommand.ExecuteAsync(null);
+
+        Assert.StartsWith("GitHub no longer accepts the sign-in.", MemberOf(batch, Repotted).Result, StringComparison.Ordinal);
+        Assert.Equal("Not applied, since the apply stopped before it.", MemberOf(batch, TestRepo).Result);
+        Assert.DoesNotContain($"apply {world.PlanFile} --only={TestRepo} --yes --json", world.Cli.Calls);
+    }
+
+    [AvaloniaFact]
+    public async Task A_change_reads_the_open_one_off_edits_again_and_keeps_the_tab()
+    {
+        var (_, page) = await Reviewing();
+        var batch = page.Batch;
+        var repotted = MemberOf(batch, Repotted);
+        batch.Selected = repotted;
+        await Until(() => repotted.Edits is { Loading: false });
+        var before = repotted.Edits;
+
+        await batch.LeaveOutCommand.ExecuteAsync(Row(repotted, "rulesets/Main"));
+        await Until(() => repotted.Edits is { Loading: false });
+        Assert.NotSame(before, repotted.Edits);
+
+        // A plan again, such as after saving the edits, keeps the repository's tab.
+        batch.Tab = 1;
+        await batch.ReviewAgainCommand.ExecuteAsync(null);
+        Assert.Same(repotted, batch.Selected);
+        Assert.Equal(1, batch.Tab);
+    }
+
+    [AvaloniaFact]
+    public async Task A_batch_the_cli_cannot_read_can_still_be_started_over()
+    {
+        var world = new World(this, Repotted);
+        Directory.CreateDirectory(world.Folder);
+        File.WriteAllText(Path.Combine(world.Folder, "batch.yaml"), "not: [a batch\n");
+        const string Unreadable = """{"error":{"kind":"error","message":"Cannot read the batch."}}""";
+        // The batch reads again once a new one starts in its place.
+        var broken = true;
+        world.AfterStart = () => broken = false;
+        world.Cli.On($"stage {world.Folder} --json", () => broken ? Unreadable : world.BatchDocument())
+            .On($"stage {world.Folder} --discard --json", Unreadable, exitCode: 1);
+        var page = Open(world, [Repotted]);
+
+        await page.Batch.OpenAsync();
+        Assert.Equal(BatchStep.Unfinished, page.Batch.Step);
+        world.OnStart([Repotted], []);
+        await page.Batch.StartOverCommand.ExecuteAsync(null);
+        await Until(() => page.Batch.Step == BatchStep.Reviewing);
+
+        Assert.StartsWith("Repotted couldn't read the batch, so it removed it as it was.", page.Batch.Notice, StringComparison.Ordinal);
+        Assert.Equal([Repotted], page.Batch.Members.Select(member => member.Repository));
     }
 
     [AvaloniaFact]
@@ -596,7 +729,9 @@ public sealed class BatchTests : IDisposable
         Assert.Equal(BatchStep.Reviewing, batch.Step);
 
         batch.DiscardCommand.Execute(null);
-        await batch.ConfirmDiscardCommand.ExecuteAsync(null);
+        var discarding = batch.ConfirmDiscardCommand.ExecuteAsync(null);
+        Assert.False(batch.KeepCommand.CanExecute(null));
+        await discarding;
         Assert.Equal(BatchStep.Discarded, batch.Step);
         Assert.Equal(1, page.Closed);
         Assert.False(Settings.HasBatch);

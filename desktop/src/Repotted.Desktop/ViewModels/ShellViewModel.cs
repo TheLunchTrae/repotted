@@ -78,7 +78,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
     /// <summary>Where you are, for the header.</summary>
     public string Crumb => (ShowingProfiles, Profiles.Current, Compare, Apply) switch
     {
-        (false, _, _, null) when Batch is not null => "Repositories / Batch apply",
+        (false, _, _, null) when Batch is not null => $"Repositories / {ControlLabel.For("Batch apply")}",
         (true, _, _, _) when Profiles.ShowCreating => $"Profiles / {ControlLabel.For("New profile")}",
         (true, { } profile, _, _) => $"Profiles / {profile.Name}",
         (true, null, _, _) => "Profiles",

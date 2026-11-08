@@ -363,7 +363,9 @@ internal sealed class RepottedClient(ICli cli)
         CancellationToken cancellationToken) =>
         BatchAsync(
             [
-                "stage", folder, "--batch", $"--staged-dir={stagedFolder}",
+                "stage", folder, "--batch",
+                // Only new staged applies need a place; the CLI refuses one for a batch that only joins.
+                .. repositories.Count == 0 ? Array.Empty<string>() : [$"--staged-dir={stagedFolder}"],
                 .. repositories.Select(repository => $"--new={repository}"),
                 .. join.Select(file => $"--join={file}"),
                 .. profile is null ? Array.Empty<string>() : [$"--profile={profile}"],
@@ -413,6 +415,11 @@ internal sealed class RepottedClient(ICli cli)
         {
             throw Unreadable(run, "a repository's plan has no profile.");
         }
+        // A lost sign-in fails every repository alike, so it is the app's to handle, not one repository's.
+        if (plan.Failures.FirstOrDefault(failure => failure.Error.Kind == "signed_out") is { } signedOut)
+        {
+            throw Raise(new ErrorDetail(signedOut.Error.Kind, signedOut.Error.Message));
+        }
         return plan;
     }
 
@@ -427,7 +434,13 @@ internal sealed class RepottedClient(ICli cli)
         var run = await cli.RunAsync(["apply", planFile, $"--only={repository}", "--yes", "--json"], null, cancellationToken)
             .ConfigureAwait(false);
         var results = Read(run, CliJson.Default.BatchApplyDocument).Results;
-        return results.Count == 1 ? results[0] : throw Unreadable(run, $"it did not say how {repository} went.");
+        if (results.Count != 1)
+        {
+            throw Unreadable(run, $"it did not say how {repository} went.");
+        }
+        return results[0].Error is { Kind: "signed_out" } signedOut
+            ? throw Raise(new ErrorDetail(signedOut.Kind, signedOut.Message))
+            : results[0];
     }
 
     /// <summary>Ends the batch: discards the staged applies it started; one that joined it stays, as do the profiles.</summary>
