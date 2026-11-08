@@ -236,7 +236,9 @@ the token on every tool call, since a user token expires and refreshing it
 ends the old one; [The GitHub App](github-app.md) describes the sign-in.
 
 The CLI ships to npm as one file bundled for Node, so shipped code uses only
-`node:` APIs. AGENTS.md lists the checks that enforce this.
+`node:` APIs. AGENTS.md lists the checks that enforce this. `repotted mcp`
+imports the server and the MCP SDK when it runs, so the other commands, each
+a short process, start without loading the SDK and its JSON Schema validator.
 
 ## The desktop app
 
@@ -274,6 +276,44 @@ file names, where `repotted` would collide with the app. It ignores
 that holds the token.
 [Development](development.md#run-the-desktop-app) describes how the app finds
 the CLI.
+
+The app starts the CLI for every read and save, so the executable starts from a
+V8 startup snapshot: `sea.ts` has Node evaluate the bundle once at build time
+and store the resulting heap, and each run starts from that heap and calls
+`main` through `v8.startupSnapshot.setDeserializeMainFunction`. That skips
+evaluating the bundle, about half the time a short command takes. The snapshot
+sets how the code is built:
+
+- Node builds a snapshot only from a CommonJS main script, which can't
+  `import()`, so the executable's bundle is CommonJS and turns each `import()`
+  of a built-in module into a `require`. The npm bundle stays an ES module.
+  esbuild only warns about code that breaks in CommonJS, such as
+  `import.meta`, which it leaves empty, so `sea.ts` fails the build on any
+  esbuild warning.
+- The snapshot freezes whatever the bundle computes at load time, so code reads
+  the environment, the working directory, the arguments, and the time when it
+  runs, not at module scope.
+- A snapshot can't hold a native module, so the keychain module loads on first
+  use, after the snapshot.
+- Node hasn't verified some built-in modules, such as `child_process` and
+  `readline`, in snapshots, so the code that uses them loads them on use, and
+  `sea.ts` fails the build when Node warns that the bundle loaded one.
+- A snapshot runs only on the platform that built it, so each package builds
+  its CLI on a runner of its own platform.
+
+The snapshot makes the executable about 9 MB larger. The MCP server is in the
+executable's bundle, but it loads on use, so the snapshot holds it unevaluated
+and `repotted mcp` evaluates it when it runs.
+
+Releases build the executable only in the desktop packaging, so
+`ts:sea:check`, part of the gate on every pull request, also builds it, on
+Linux in CI, with fake `GITHUB_TOKEN` and `REPOTTED_GITHUB_CLIENT_ID` values.
+It fails when the executable holds either value, then runs `node-smoke.mjs`
+and a relative `profile` from the examples folder, and `status --json` without
+those values. A CLI or core change that reads those variables or the working
+directory at load time, or that breaks the snapshot, fails before a release.
+Other variables aren't checked, so code reads the environment only when a
+command runs.
 
 ### Applying from the app
 

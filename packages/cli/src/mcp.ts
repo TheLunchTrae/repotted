@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   ApplyError,
   applyPlan,
@@ -67,7 +67,10 @@ const instructions = [
  * takes nothing but the id of a plan this server made, so an agent can only
  * apply changes that were shown as a plan first.
  */
-export function createServer(options: ServerOptions): McpServer {
+export async function createServer(options: ServerOptions): Promise<McpServer> {
+  // The published package leaves the SDK to npm, so a static import would
+  // load it, and its JSON Schema validator, for every command.
+  const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
   const server = new McpServer({ name: 'repotted', version: options.version }, { instructions });
   const plans = new Map<string, Plan>();
   const client = (): Promise<GitHub> => options.github();
