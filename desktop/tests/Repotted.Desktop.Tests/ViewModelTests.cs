@@ -247,6 +247,34 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_lost_sign_in_read_on_another_thread_changes_the_page_on_this_one()
+    {
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories);
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        var changedOnThisThread = new List<bool>();
+        main.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.Page))
+            {
+                changedOnThisThread.Add(Dispatcher.UIThread.CheckAccess());
+            }
+        };
+
+        cli.On("status --json", Documents.Rejected, exitCode: 1)
+            .OnPoolThread("repos --json", Documents.SignedOutFailure, exitCode: 1);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.IsType<SignInViewModel>(main.Page);
+        Assert.NotEmpty(changedOnThisThread);
+        Assert.All(changedOnThisThread, Assert.True);
+    }
+
+    [AvaloniaFact]
     public async Task Sign_out_removes_the_sign_in_and_goes_back_to_the_sign_in()
     {
         var cli = new FakeCli()

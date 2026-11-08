@@ -23,6 +23,13 @@ internal sealed class FakeCli : ICli
         return this;
     }
 
+    /// <summary>Answers <paramref name="command"/> from a pool thread, as the real command line does once its process exits.</summary>
+    public FakeCli OnPoolThread(string command, string output, int exitCode = 0)
+    {
+        answers[command] = (_, _) => Task.Run(() => new CliRun(exitCode, output, ""));
+        return this;
+    }
+
     /// <summary>Answers <paramref name="command"/> with what <paramref name="run"/> returns, which may do what the command would, such as write a file.</summary>
     public FakeCli On(string command, Func<string> run)
     {
