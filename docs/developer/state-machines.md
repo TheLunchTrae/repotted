@@ -80,35 +80,40 @@ while the check runs, and pages that fail meanwhile check nothing more, so
 a run that loses a race to refresh the token, while another run stores the
 new one, leaves the app and what it holds in place.
 
-| State                                  | Event                                   | Next                                                                                           |
-| -------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Checking                               | Signed in                               | The app, which refreshes the repositories and profiles.                                        |
-| Checking                               | Signed out or rejected                  | Sign-in, with a notice for a rejected or unusable earlier sign-in.                             |
-| Checking                               | The CLI is missing or fails             | Problem, with a retry that checks again.                                                       |
-| Sign-in                                | Start                                   | Starting, then showing the code once the CLI prints it.                                        |
-| Sign-in                                | The flow ends                           | Checking.                                                                                      |
-| Sign-in                                | The flow fails                          | Sign-in, with the error.                                                                       |
-| Sign-in                                | Cancel, or the app closes               | Sign-in; the CLI process is stopped.                                                           |
-| Sign-in, for a rejected token variable | Any                                     | Signing in stays off: the variable comes first, so the user must change it and reopen the app. |
-| The app                                | A command fails with `kind: signed_out` | Checking the sign-in, with the app still showing.                                              |
-| Checking the sign-in                   | A command fails with `kind: signed_out` | Nothing more: the check already running answers for it.                                        |
-| Checking the sign-in                   | Signed in as the same account           | The app, as it was; the page that failed shows its error.                                      |
-| Checking the sign-in                   | Signed out or rejected                  | Sign-in, as from Checking.                                                                     |
-| Checking the sign-in                   | Signed in as another account            | The app for that account, as from Checking.                                                    |
-| Checking the sign-in                   | The CLI is missing or fails             | The app, as it was; the page that failed shows its error.                                      |
-| An app already replaced                | A command fails with `kind: signed_out` | Nothing: the app showing now stays.                                                            |
-| The app                                | Sign out, while no save or sync runs    | Signing out: `repotted logout --json` removes the keychain sign-in.                            |
-| The app                                | Replaced, or the app closes             | A running capture and a connect's first sync stop, and clean up as when their form closes.     |
-| The app                                | Replaced, while a save or sync runs     | The save or sync finishes and no sync follows it; the next app syncs only once it ends.        |
-| Signing out                            | It succeeds                             | Checking.                                                                                      |
-| Signing out                            | It fails                                | Problem, with a retry that checks again.                                                       |
+| State                                  | Event                                      | Next                                                                                                                             |
+| -------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Checking                               | Signed in                                  | The app, which refreshes the repositories and profiles.                                                                          |
+| Checking                               | Signed out or rejected                     | Sign-in, with a notice for a rejected or unusable earlier sign-in.                                                               |
+| Checking                               | The CLI is missing or fails                | Problem, with a retry that checks again.                                                                                         |
+| Sign-in                                | Start                                      | Starting, then showing the code once the CLI prints it.                                                                          |
+| Sign-in                                | The flow ends                              | Checking.                                                                                                                        |
+| Sign-in                                | The flow fails                             | Sign-in, with the error.                                                                                                         |
+| Sign-in                                | Cancel, or the app closes                  | Sign-in; the CLI process is stopped.                                                                                             |
+| Sign-in, for a rejected token variable | Any                                        | Signing in stays off: the variable comes first, so the user must change it and reopen the app.                                   |
+| The app                                | A command fails with `kind: signed_out`    | Checking the sign-in, with the app still showing.                                                                                |
+| Checking the sign-in                   | A command fails with `kind: signed_out`    | Nothing more: the check already running answers for it.                                                                          |
+| Checking the sign-in                   | Signed in as the same account              | The app, as it was; the page that failed shows its error.                                                                        |
+| Checking the sign-in                   | The CLI is missing or fails                | The app, as it was; the page that failed shows its error.                                                                        |
+| Checking the sign-in                   | Signed out or rejected                     | Asking to leave, to sign in again.                                                                                               |
+| Checking the sign-in                   | Signed in as another account               | Asking to leave, to continue as that account.                                                                                    |
+| Asking to leave                        | It goes on, or nothing is unsaved          | Sign-in, or the app for the other account, as from Checking.                                                                     |
+| Asking to leave                        | Cancel, a failed save, or a newer question | The app, as it was; the next failure checks again.                                                                               |
+| An app already replaced                | A command fails with `kind: signed_out`    | Nothing: the app showing now stays.                                                                                              |
+| The app                                | Sign out, while no save or sync runs       | Asking to sign out, when a profile has unsaved changes; then Signing out: `repotted logout --json` removes the keychain sign-in. |
+| Asking to sign out                     | Cancel, a failed save, or a newer question | The app, as it was.                                                                                                              |
+| The app                                | Replaced, or the app closes                | A running capture and a connect's first sync stop, and clean up as when their form closes.                                       |
+| The app                                | Replaced, while a save or sync runs        | The save or sync finishes and no sync follows it; the next app syncs only once it ends.                                          |
+| Signing out                            | It succeeds                                | Checking.                                                                                                                        |
+| Signing out                            | It fails                                   | Problem, with a retry that checks again.                                                                                         |
 
 The app offers **Sign out** only for the Repotted sign-in: the list comes from
 the App's installations and no token variable is set. A token variable or the
 GitHub CLI's sign-in would still apply after signing out, so checking would
 lead straight back to the app. **Sign out** is off while a save or a sync
 runs, including the sync a save starts, since neither can be stopped
-partway.
+partway. Asking to leave and Asking to sign out are the question in
+[Leaving with unsaved changes](#leaving-with-unsaved-changes), on the
+**Profiles** page.
 
 ## Plan and apply
 
@@ -266,19 +271,22 @@ save brings the old name back beside the new one.
 
 ### Leaving with unsaved changes
 
-Changing the folder, connecting or changing the repository, and closing the
-window go through `ProfilesViewModel.ConfirmLeaveAsync`, which asks only when
-a cached editor has unsaved changes. Closing the window cancels the close,
-shows the **Profiles** page, and closes again once the question settles.
+Changing the folder, connecting or changing the repository, closing the
+window, signing out, and a lost sign-in that would replace the app go through
+`ProfilesViewModel.ConfirmLeaveAsync`, which asks only when a cached editor
+has unsaved changes. Closing the window, signing out, and a lost sign-in show
+the **Profiles** page first, through `ShellViewModel.ConfirmLeaveAsync`.
+Closing the window cancels the close and closes again once the question
+settles.
 
-| State  | Event                                                    | Next                                                                                                                                                                                              |
-| ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Idle   | Change folder, connect a repository, or close the window | Asking, when any editor has unsaved changes. Otherwise it goes on. The question names the profiles that had unsaved changes when it was asked.                                                    |
-| Asking | Save                                                     | Saving: each changed editor saves in turn, and Save, Discard and Cancel wait until the saves end.                                                                                                 |
-| Saving | Every save ends                                          | It goes on when no editor has changes left; otherwise it opens the first one that does, with its error, its Out of date choice, or that its file is gone, even when a search hides it, and stays. |
-| Asking | Discard                                                  | Every changed editor that can discard does. It goes on when none has changes left; an editor still loading keeps its changes, opens, and it stays.                                                |
-| Asking | Cancel                                                   | Idle, with nothing changed. A new profile form that was open stays open.                                                                                                                          |
-| Asking | Another change of folder, connect, or close              | Asking, about the new act. The earlier one stays where it was, as if cancelled.                                                                                                                   |
+| State  | Event                                                                              | Next                                                                                                                                                                                              |
+| ------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idle   | Change folder, connect a repository, close the window, sign out, or a lost sign-in | Asking, when any editor has unsaved changes. Otherwise it goes on. The question names the profiles that had unsaved changes when it was asked.                                                    |
+| Asking | Save                                                                               | Saving: each changed editor saves in turn, and Save, Discard and Cancel wait until the saves end.                                                                                                 |
+| Saving | Every save ends                                                                    | It goes on when no editor has changes left; otherwise it opens the first one that does, with its error, its Out of date choice, or that its file is gone, even when a search hides it, and stays. |
+| Asking | Discard                                                                            | Every changed editor that can discard does. It goes on when none has changes left; an editor still loading keeps its changes, opens, and it stays.                                                |
+| Asking | Cancel                                                                             | Idle, with nothing changed. A new profile form that was open stays open.                                                                                                                          |
+| Asking | Another change of folder, connect, or close                                        | Asking, about the new act. The earlier one stays where it was, as if cancelled.                                                                                                                   |
 
 The folder is picked before the question, so cancelling the folder picker asks
 nothing.

@@ -89,6 +89,9 @@ internal sealed partial class MainViewModel : ViewModelBase
     /// the token first, so a compare, a capture and unsaved edits stay too.
     /// Otherwise the page the check finds replaces the app. Pages that fail
     /// together check once, and an app already replaced checks nothing.
+    /// Before the app is replaced, unsaved profile changes are saved or
+    /// discarded, since a local save needs no sign-in; cancelling keeps the
+    /// app.
     /// </summary>
     private async Task CheckSignInAsync(ShellViewModel shell)
     {
@@ -100,7 +103,11 @@ internal sealed partial class MainViewModel : ViewModelBase
         try
         {
             var account = await client.StatusAsync(CancellationToken.None).ConfigureAwait(true);
-            if (Page == shell && !account.Equals(shell.Account))
+            if (Page == shell
+                && !account.Equals(shell.Account)
+                && await shell.ConfirmLeaveAsync(account is Account.SignedIn other ? $"continue as {other.Login}" : "sign in again").ConfigureAwait(true)
+                // The question may have given way to closing the app.
+                && Page == shell)
             {
                 Page = new LoadingViewModel("Checking your GitHub sign-in");
                 await ShowAsync(account).ConfigureAwait(true);

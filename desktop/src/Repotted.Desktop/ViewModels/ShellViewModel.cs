@@ -104,19 +104,23 @@ internal sealed partial class ShellViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Whether the app may quit, as <see cref="ConfirmLeaveAsync"/> answers.</summary>
+    public Task<bool> ConfirmQuitAsync() => ConfirmLeaveAsync("quit");
+
     /// <summary>
-    /// Whether the app may quit: at once when nothing is unsaved, and
-    /// otherwise once the profiles page has asked and the changes are saved or
+    /// Whether the app may be left to <paramref name="act"/>, such as "sign
+    /// out": at once when nothing is unsaved, and otherwise once the profiles
+    /// page, brought into view, has asked and the changes are saved or
     /// discarded.
     /// </summary>
-    public Task<bool> ConfirmQuitAsync()
+    public Task<bool> ConfirmLeaveAsync(string act)
     {
         if (!Profiles.HasUnsaved)
         {
             return Task.FromResult(true);
         }
         Page = 1;
-        return Profiles.ConfirmLeaveAsync("quit");
+        return Profiles.ConfirmLeaveAsync(act);
     }
 
     public string SearchHint => ShowingProfiles ? "Find a profile" : "Find a repository";
@@ -158,9 +162,19 @@ internal sealed partial class ShellViewModel : ViewModelBase
     /// </summary>
     public bool ShowSignOut => Account.TokenVariable is null && Repositories.FromInstallations is true;
 
-    /// <summary>Signing out waits for a sync, and for a save and the sync after it, which can't be stopped partway.</summary>
+    /// <summary>
+    /// Signs out once unsaved changes are saved or discarded, since signing
+    /// out leaves the app. It waits for a sync, and for a save and the sync
+    /// after it, which can't be stopped partway.
+    /// </summary>
     [RelayCommand(CanExecute = nameof(CanSignOut))]
-    private Task SignOutAsync() => signOut();
+    private async Task SignOutAsync()
+    {
+        if (await ConfirmLeaveAsync("sign out").ConfigureAwait(true))
+        {
+            await signOut().ConfigureAwait(true);
+        }
+    }
 
     private bool CanSignOut() => !Profiles.Busy;
 

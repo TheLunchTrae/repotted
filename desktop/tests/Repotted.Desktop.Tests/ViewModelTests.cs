@@ -397,6 +397,113 @@ public sealed class ViewModelTests : IDisposable
         Assert.Equal(3, cli.Calls.Count(call => call == sync));
     }
 
+    /// <summary>The app signed in, with an unsaved edit to its one profile.</summary>
+    private async Task<(MainViewModel Main, ShellViewModel Shell, FakeCli Cli, string File)> SignedInWithAnEdit()
+    {
+        var file = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{JsonSerializer.Serialize(file)}},"extends":null,"problem":null}]}""")
+            .On($"profile {file} --json", Documents.ResolvedBase(file))
+            .On("logout --json", """{"removed":true}""");
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        shell.Profiles.Selected = shell.Profiles.Items.Single();
+        Choose(shell.Profiles.Current!, "has_wiki", "Off");
+        return (main, shell, cli, file);
+    }
+
+    /// <summary>Runs the UI thread's work until <paramref name="done"/>, for work that ends off the test's own awaits.</summary>
+    private static async Task Until(Func<bool> done)
+    {
+        for (var tries = 0; tries < 500 && !done(); tries++)
+        {
+            await Task.Delay(10);
+            Dispatcher.UIThread.RunJobs();
+        }
+        Assert.True(done());
+    }
+
+    [AvaloniaTheory]
+    [InlineData("cancel")]
+    [InlineData("discard")]
+    [InlineData("failed save")]
+    public async Task Sign_out_asks_about_unsaved_changes_first(string answer)
+    {
+        var (main, shell, cli, file) = await SignedInWithAnEdit();
+        var editor = shell.Profiles.Current!;
+        cli.On("status --json", Documents.SignedOut, exitCode: 1)
+            .On($"profile {file} --set repository.has_wiki=false --json", """{"error":{"kind":"error","message":"The disk is full."}}""", exitCode: 1);
+
+        var signingOut = shell.SignOutCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, shell.Page);
+        Assert.Equal("base has unsaved changes. Save them before you sign out?", shell.Profiles.LeavingMessage);
+        Assert.DoesNotContain("logout --json", cli.Calls);
+        switch (answer)
+        {
+            case "cancel":
+                shell.Profiles.StayHereCommand.Execute(null);
+                break;
+            case "discard":
+                shell.Profiles.DiscardAndLeaveCommand.Execute(null);
+                break;
+            default:
+                await shell.Profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+                break;
+        }
+        await signingOut.WaitAsync(TimeSpan.FromSeconds(5));
+
+        if (answer == "discard")
+        {
+            Assert.Contains("logout --json", cli.Calls);
+            Assert.IsType<SignInViewModel>(main.Page);
+            return;
+        }
+        Assert.DoesNotContain("logout --json", cli.Calls);
+        Assert.Same(shell, main.Page);
+        Assert.True(editor.HasChanges);
+        Assert.Equal(answer == "failed save", editor.SaveError is not null);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_lost_sign_in_asks_about_unsaved_changes_before_the_app_goes(bool save)
+    {
+        var (main, shell, cli, file) = await SignedInWithAnEdit();
+        var editor = shell.Profiles.Current!;
+        shell.Page = 0;
+        cli.On("status --json", Documents.SignedOut, exitCode: 1)
+            .On("repos --json", Documents.SignedOutFailure, exitCode: 1)
+            .On($"profile {file} --set repository.has_wiki=false --json", Documents.ResolvedBase(file));
+
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        await Until(() => shell.Profiles.HasLeaving);
+
+        Assert.Same(shell, main.Page);
+        Assert.Equal(1, shell.Page);
+        Assert.Equal("base has unsaved changes. Save them before you sign in again?", shell.Profiles.LeavingMessage);
+        if (!save)
+        {
+            shell.Profiles.StayHereCommand.Execute(null);
+            await Until(() => !shell.Profiles.HasLeaving);
+            Assert.Same(shell, main.Page);
+            Assert.True(editor.HasChanges);
+            // The check ended with the question, so the next failure asks again.
+            await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+            await Until(() => shell.Profiles.HasLeaving);
+            shell.Profiles.StayHereCommand.Execute(null);
+            return;
+        }
+        // A local save needs no sign-in, so the edits keep.
+        await shell.Profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await Until(() => main.Page is SignInViewModel);
+        Assert.Contains($"profile {file} --set repository.has_wiki=false --json", cli.Calls);
+    }
+
     [AvaloniaFact]
     public async Task Sign_out_waits_for_a_save_and_the_sync_after_it()
     {

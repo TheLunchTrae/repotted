@@ -50,8 +50,9 @@ The first time the app opens, click **Sign in with GitHub** and enter the code
 it shows on GitHub. If the sign-in stops working while the app is open, the app
 returns to this page. To sign out, click **Sign out** under your account in the
 sidebar. If the GitHub CLI is also signed in on your computer, signing out
-keeps you in the app, signed in with the GitHub CLI's token. [Sign in](sign-in.md) explains the steps, the permissions the
-Repotted App asks for, and how to use a token instead.
+keeps you in the app, signed in with the GitHub CLI's token.
+[Sign in](sign-in.md) explains the steps, the permissions the Repotted App asks
+for, and how to use a token instead.
 
 ## Repositories
 
@@ -151,11 +152,13 @@ saved**. **Save profile** puts the file back with your changes, and
 brings it back under its old name, beside the renamed one.
 
 Unsaved changes stay with the app until you save or discard them. If you
-click **Change folder**, **Use a GitHub repository** or **Change repository**,
-or quit, while a profile has unsaved changes, a banner on the **Profiles** page
-asks first: **Save** saves them and goes on, **Discard** drops them and goes
-on, and **Cancel** stays where you are. If a save fails, the profile opens with
-the error and nothing else changes.
+click **Change folder**, **Use a GitHub repository**, **Change repository** or
+**Sign out**, or quit, while a profile has unsaved changes, a banner on the
+**Profiles** page asks first: **Save** saves them and goes on, **Discard**
+drops them and goes on, and **Cancel** stays where you are. If a save fails,
+the profile opens with the error and nothing else changes. The banner also asks
+before a sign-in that stopped working takes you back to the sign-in page, since
+saving needs no sign-in.
 
 ## Compare a repository with a profile
 
