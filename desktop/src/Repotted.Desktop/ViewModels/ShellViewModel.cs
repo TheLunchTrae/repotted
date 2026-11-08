@@ -156,10 +156,16 @@ internal sealed partial class ShellViewModel : ViewModelBase
     /// Whether the token is the Repotted sign-in, which signing out removes.
     /// A variable or the GitHub CLI's sign-in would still apply afterwards.
     /// </summary>
-    public bool CanSignOut => Account.TokenVariable is null && Repositories.FromInstallations is true;
+    public bool ShowSignOut => Account.TokenVariable is null && Repositories.FromInstallations is true;
 
-    [RelayCommand]
+    /// <summary>Signing out waits for a sync, which can't be stopped partway.</summary>
+    [RelayCommand(CanExecute = nameof(CanSignOut))]
     private Task SignOutAsync() => signOut();
+
+    private bool CanSignOut() => !Profiles.Syncing;
+
+    /// <summary>Stops the work the app started that can be stopped: a capture, and a connect's first sync.</summary>
+    public void Stop() => Profiles.Stop();
 
     [ObservableProperty]
     public partial string Search { get; set; } = "";
@@ -176,6 +182,10 @@ internal sealed partial class ShellViewModel : ViewModelBase
         {
             OnPropertyChanged(nameof(Crumb));
         }
+        else if (e.PropertyName == nameof(ProfilesViewModel.Syncing))
+        {
+            SignOutCommand.NotifyCanExecuteChanged();
+        }
     }
 
     private void OnRepositoriesChanged(object? sender, PropertyChangedEventArgs e)
@@ -183,7 +193,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         if (e.PropertyName == nameof(RepositoriesViewModel.FromInstallations))
         {
             OnPropertyChanged(nameof(SignedInWith));
-            OnPropertyChanged(nameof(CanSignOut));
+            OnPropertyChanged(nameof(ShowSignOut));
         }
     }
 }

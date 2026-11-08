@@ -10,7 +10,6 @@ using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using Repotted.Desktop.Services;
 using Repotted.Desktop.Theme;
 using Repotted.Desktop.ViewModels;
 using Repotted.Desktop.Views;
@@ -727,7 +726,7 @@ public sealed class ViewTests : IDisposable
         {
             cli.On(folders.List(), Documents.NoProfiles);
         }
-        var main = new MainViewModel(new RepottedClient(cli), desktop ?? new FakeDesktop(), folders.Settings);
+        var main = new MainViewModel(cli, desktop ?? new FakeDesktop(), folders.Settings);
         var window = new MainWindow { DataContext = main, Width = 1280, Height = 800 };
         window.Show();
         await main.StartAsync();

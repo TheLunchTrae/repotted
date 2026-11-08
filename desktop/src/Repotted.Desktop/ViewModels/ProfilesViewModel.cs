@@ -353,6 +353,13 @@ internal sealed partial class ProfilesViewModel(
         forms.Add(Creating);
     }
 
+    /// <summary>Closes the new profile form and the repository form, which stops a capture or a first sync they run.</summary>
+    public void Stop()
+    {
+        Creating = null;
+        Connecting = null;
+    }
+
     /// <summary>Closes the new profile form, back to the profile that was open.</summary>
     public void CancelNew()
     {

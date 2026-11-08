@@ -46,7 +46,7 @@
                     IsVisible="{Binding Repositories.CanAddRepositories}"
                     Command="{Binding Repositories.AddRepositoriesCommand}" />
             <Button Classes="link" Content="Sign out" HorizontalAlignment="Left"
-                    IsVisible="{Binding CanSignOut}" Command="{Binding SignOutCommand}" />
+                    IsVisible="{Binding ShowSignOut}" Command="{Binding SignOutCommand}" />
           </StackPanel>
         </Border>
         <DockPanel>

@@ -17,7 +17,7 @@ internal sealed partial class App : Application
         {
             var window = new MainWindow();
             var main = new MainViewModel(
-                new RepottedClient(RepottedCli.Locate()),
+                RepottedCli.Locate(),
                 new SystemDesktop(() => window),
                 AppSettings.ForUser());
             window.DataContext = main;

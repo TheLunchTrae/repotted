@@ -6,22 +6,30 @@ namespace Repotted.Desktop.ViewModels;
 /// <summary>Chooses the page: the sign-in until GitHub knows the account, then the app.</summary>
 internal sealed partial class MainViewModel : ViewModelBase
 {
+    private readonly ICli cli;
     private readonly RepottedClient client;
     private readonly IDesktop desktop;
     private readonly AppSettings settings;
 
-    public MainViewModel(RepottedClient client, IDesktop desktop, AppSettings settings)
+    public MainViewModel(ICli cli, IDesktop desktop, AppSettings settings)
     {
-        this.client = client;
+        this.cli = cli;
+        client = new RepottedClient(cli);
         this.desktop = desktop;
         this.settings = settings;
-        // The client reports a lost sign-in from the thread that read it.
-        var signInLost = OnContext<EventArgs>(_ => OnSignInLost());
-        client.SignInLost += (_, e) => signInLost(e);
     }
 
     [ObservableProperty]
     public partial ViewModelBase? Page { get; set; }
+
+    // Whatever replaces the signed-in app, its captures and connects stop with it.
+    partial void OnPageChanged(ViewModelBase? oldValue, ViewModelBase? newValue)
+    {
+        if (oldValue is ShellViewModel shell)
+        {
+            shell.Stop();
+        }
+    }
 
     /// <summary>Asks the CLI who is signed in, and shows the page that fits.</summary>
     public async Task StartAsync()
@@ -32,7 +40,12 @@ internal sealed partial class MainViewModel : ViewModelBase
             switch (await client.StatusAsync(CancellationToken.None).ConfigureAwait(true))
             {
                 case Account.SignedIn account:
-                    var shell = new ShellViewModel(account, client, desktop, settings, SignOutAsync);
+                    // Each app gets a client of its own, so a lost sign-in that an app
+                    // replaced since then reports can't replace the app showing now.
+                    var shellClient = new RepottedClient(cli);
+                    var shell = new ShellViewModel(account, shellClient, desktop, settings, SignOutAsync);
+                    var signInLost = OnContext<EventArgs>(_ => OnSignInLost(shell));
+                    shellClient.SignInLost += (_, e) => signInLost(e);
                     Page = shell;
                     await shell.RefreshAsync().ConfigureAwait(true);
                     break;
@@ -54,13 +67,14 @@ internal sealed partial class MainViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// A page of the signed-in app found the sign-in missing or rejected, so
-    /// the app checks again, which leads to the sign-in page. The check
-    /// replaces the app, so pages that fail together check once.
+    /// A page of <paramref name="shell"/> found the sign-in missing or
+    /// rejected, so the app checks again, which leads to the sign-in page. The
+    /// check replaces the app, so pages that fail together check once, and
+    /// an app already replaced checks nothing.
     /// </summary>
-    private void OnSignInLost()
+    private void OnSignInLost(ShellViewModel shell)
     {
-        if (Page is ShellViewModel)
+        if (Page == shell)
         {
             _ = StartAsync();
         }
@@ -82,12 +96,17 @@ internal sealed partial class MainViewModel : ViewModelBase
         await StartAsync().ConfigureAwait(true);
     }
 
-    /// <summary>Stops what still runs as the app closes, so no sign-in outlives it.</summary>
+    /// <summary>Stops what still runs as the app closes, so no sign-in or capture outlives it.</summary>
     public void Stop()
     {
-        if (Page is SignInViewModel signIn)
+        switch (Page)
         {
-            signIn.Stop();
+            case SignInViewModel signIn:
+                signIn.Stop();
+                break;
+            case ShellViewModel shell:
+                shell.Stop();
+                break;
         }
     }
 }

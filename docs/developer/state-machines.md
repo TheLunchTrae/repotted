@@ -73,8 +73,9 @@ keychain-failed state, because the lookup runs before that state is checked.
 
 `MainViewModel` picks the page from `repotted status --json`, and
 `SignInViewModel` runs the device flow through `repotted login --json`.
-`RepottedClient` raises `SignInLost` when any command fails with
-`kind: signed_out`, and `MainViewModel` checks again in response.
+Each app gets a `RepottedClient` of its own, which raises `SignInLost` when
+any command fails with `kind: signed_out`. `MainViewModel` checks again in
+response, on the UI thread, if that app is still the page.
 
 | State                                  | Event                                   | Next                                                                                           |
 | -------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -87,14 +88,17 @@ keychain-failed state, because the lookup runs before that state is checked.
 | Sign-in                                | Cancel, or the app closes               | Sign-in; the CLI process is stopped.                                                           |
 | Sign-in, for a rejected token variable | Any                                     | Signing in stays off: the variable comes first, so the user must change it and reopen the app. |
 | The app                                | A command fails with `kind: signed_out` | Checking. The check replaces the app, so other pages that fail with it check nothing more.     |
-| The app                                | Sign out                                | Signing out: `repotted logout --json` removes the keychain sign-in.                            |
+| An app already replaced                | A command fails with `kind: signed_out` | Nothing: the app showing now stays.                                                            |
+| The app                                | Sign out, while no sync runs            | Signing out: `repotted logout --json` removes the keychain sign-in.                            |
+| The app                                | Replaced, or the app closes             | A running capture and a connect's first sync stop, and clean up as when their form closes.     |
 | Signing out                            | It succeeds                             | Checking.                                                                                      |
 | Signing out                            | It fails                                | Problem, with a retry that checks again.                                                       |
 
 The app offers **Sign out** only for the Repotted sign-in: the list comes from
 the App's installations and no token variable is set. A token variable or the
 GitHub CLI's sign-in would still apply after signing out, so checking would
-lead straight back to the app.
+lead straight back to the app. **Sign out** is off while a sync runs, since a
+sync can't be stopped partway.
 
 ## Plan and apply
 
@@ -280,7 +284,7 @@ in the folder.
 | Creating, capture          | The empty file is written | Holding: the list leaves the file out while `repotted capture --output` writes it. |
 | Holding                    | The capture ends          | Created.                                                                           |
 | Holding                    | The capture fails         | Editing, with the error; the file is removed.                                      |
-| Holding                    | The form closes           | The capture is stopped and the file removed.                                       |
+| Holding                    | The form closes           | The capture is stopped and the file removed, also when the app is left.            |
 
 The failure in this machine is the sync during a hold, under
 [Desktop profiles source](#desktop-profiles-source).
@@ -294,7 +298,7 @@ The failure in this machine is the sync during a hold, under
 | Editing | Connect         | Copies the local profiles over if asked, skipping names already there, then syncs.                             |
 | Syncing | It records      | Connected; the app remembers the repository.                                                                   |
 | Syncing | It fails        | Editing, with the error; a working copy that never synced is removed, and otherwise only the copied files are. |
-| Syncing | The form closes | The sync is stopped and cleaned up the same way, with no error shown.                                          |
+| Syncing | The form closes | The sync is stopped and cleaned up the same way, with no error shown; also when the app is left.               |
 
 ## CLI runs
 

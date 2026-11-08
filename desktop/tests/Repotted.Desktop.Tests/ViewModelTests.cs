@@ -18,7 +18,7 @@ public sealed class ViewModelTests : IDisposable
     public void Dispose() => folders.Dispose();
 
     private MainViewModel App(FakeCli cli, FakeDesktop? desktop = null) =>
-        new(new RepottedClient(cli.Answers(folders.List()) ? cli : cli.On(folders.List(), Documents.NoProfiles)),
+        new(cli.Answers(folders.List()) ? cli : cli.On(folders.List(), Documents.NoProfiles),
             desktop ?? new FakeDesktop(),
             folders.Settings);
 
@@ -256,13 +256,103 @@ public sealed class ViewModelTests : IDisposable
         var main = App(cli);
         await main.StartAsync();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
-        Assert.True(shell.CanSignOut);
+        Assert.True(shell.ShowSignOut);
 
         cli.On("status --json", Documents.SignedOut, exitCode: 1);
         await shell.SignOutCommand.ExecuteAsync(null);
 
         Assert.Contains("logout --json", cli.Calls);
         Assert.False(Assert.IsType<SignInViewModel>(main.Page).HasNotice);
+    }
+
+    [AvaloniaFact]
+    public async Task Signing_out_stops_a_capture_and_removes_its_file()
+    {
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        var stopped = false;
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On("logout --json", """{"removed":true}""")
+            .On($"capture TheLunchTrae/repotted --output {made} --json", async cancellationToken =>
+            {
+                cancellationToken.Register(() => stopped = true);
+                // A command line that finishes anyway, as one that is slow to stop would.
+                await finish.Task;
+                return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
+            });
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        shell.Profiles.StartNew("TheLunchTrae/repotted");
+        var capturing = shell.Profiles.Creating!.CreateCommand.ExecuteAsync(null);
+        Assert.True(File.Exists(made));
+
+        cli.On("status --json", Documents.SignedOut, exitCode: 1);
+        await shell.SignOutCommand.ExecuteAsync(null);
+        finish.SetResult();
+        await capturing;
+
+        Assert.IsType<SignInViewModel>(main.Page);
+        Assert.True(stopped);
+        Assert.False(File.Exists(made));
+    }
+
+    [AvaloniaFact]
+    public async Task Sign_out_waits_for_a_sync_to_finish()
+    {
+        var copy = folders.Settings.ConfigFolder("lunch/config", "");
+        Directory.CreateDirectory(copy);
+        File.WriteAllText(Path.Combine(copy, ".repotted-sync.json"), "{}");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var synced = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .On("repos --json", Documents.Repositories)
+            .OnceReady(
+                $"sync {copy} --json",
+                """{"repository":"lunch/config","path":"","branch":"main","commit":"abc123","pulled":[],"pushed":[],"conflicts":[]}""",
+                synced.Task)
+            .On(folders.List(copy), Documents.NoProfiles);
+        var shell = new ShellViewModel(
+            new Account.SignedIn("TheLunchTrae", null, null, Documents.InstallUrl),
+            new RepottedClient(cli),
+            new FakeDesktop(),
+            folders.Settings,
+            () => Task.CompletedTask);
+
+        var refreshing = shell.RefreshAsync();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(shell.Profiles.Syncing);
+        Assert.False(shell.SignOutCommand.CanExecute(null));
+        synced.SetResult();
+        await refreshing;
+        Assert.True(shell.SignOutCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
+    public async Task A_lost_sign_in_from_an_app_already_replaced_changes_nothing()
+    {
+        var late = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .OnceReady("repos --json", Documents.SignedOutFailure, late.Task)
+            .On("logout --json", """{"removed":true}""");
+        var main = App(cli);
+        var starting = main.StartAsync();
+        var first = Assert.IsType<ShellViewModel>(main.Page);
+
+        // Signing out lands straight back in a new app, as with a GitHub CLI sign-in.
+        cli.On("repos --json", Documents.Repositories);
+        await first.SignOutCommand.ExecuteAsync(null);
+        var second = Assert.IsType<ShellViewModel>(main.Page);
+        late.SetResult();
+        await starting;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(second, main.Page);
+        Assert.Equal(2, cli.Calls.Count(call => call == "status --json"));
     }
 
     [AvaloniaFact]
@@ -379,14 +469,14 @@ public sealed class ViewModelTests : IDisposable
         var shell = Shell("lunch", null, variable, source);
         // Without a variable, only the list tells an App sign-in from another token.
         Assert.Equal(variable is null ? null : expected, shell.SignedInWith);
-        Assert.False(shell.CanSignOut);
+        Assert.False(shell.ShowSignOut);
 
         await shell.Repositories.RefreshCommand.ExecuteAsync(null);
 
         Assert.Equal(expected, shell.SignedInWith);
         // Only the Repotted sign-in goes away on signing out; a variable or
         // the GitHub CLI's sign-in would still apply.
-        Assert.Equal(canSignOut, shell.CanSignOut);
+        Assert.Equal(canSignOut, shell.ShowSignOut);
     }
 
     [AvaloniaFact]
