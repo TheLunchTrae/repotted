@@ -65,10 +65,13 @@ smoke() {
     exit 1
   fi
   node "$root/packages/cli/tests/node-smoke.mjs" "$1"
-  # Without a token variable, status reads the keychain. Signed out, it exits 1
-  # either way, so a keychain that fails to load shows only in problems.
-  local status=0 answer
-  answer="$(env -u GITHUB_TOKEN -u GH_TOKEN "$1" status --json)" || status=$?
+  # Without a token variable or a GitHub CLI sign-in, status reads the keychain.
+  # Signed out, it exits 1 either way, so a keychain that fails to load shows
+  # only in problems.
+  local status=0 answer no_gh
+  no_gh="$(mktemp -d)"
+  answer="$(env -u GITHUB_TOKEN -u GH_TOKEN GH_CONFIG_DIR="$no_gh" "$1" status --json)" || status=$?
+  rm -rf "$no_gh"
   if ((status > 1)) || [[ $answer == *'"problems":["'* ]]; then
     echo "$1 status --json exited $status with: $answer" >&2
     exit 1

@@ -163,10 +163,10 @@ them against the real CLI.
 
 Each package ships the CLI beside the app as `repotted-cli`, a Node single
 executable application that `packages/cli/sea.ts` builds: the CLI and its
-dependencies in one bundle, run by the pinned Node with no Node installed. The
-keychain module is native code, which Node loads only from a real file, so it
-ships beside the CLI as `repotted-keyring.node` and is signed with the app on
-macOS. The CLI has a name of its own because macOS and Windows ignore case in
+dependencies in one bundle inside the pinned Node, so it needs no Node on the
+machine. The keychain module is native code, which Node loads only from a real
+file, so it ships beside the CLI as `repotted-keyring.node` and is signed with
+the app on macOS. The CLI has a name of its own because macOS and Windows ignore case in
 file names, where `repotted` would collide with the app. It ignores
 `NODE_OPTIONS`, so nothing in the environment can add Node flags to the process
 that holds the token.

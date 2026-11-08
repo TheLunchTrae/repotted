@@ -75,8 +75,9 @@ file belongs to the release, `SHA256SUMS.txt` included, but a file uploaded by
 hand passes it too.
 
 Each build ships the CLI beside the app as `repotted-cli`, a Node single
-executable, with its keychain module as `repotted-keyring.node`. `mise run desktop:package` makes the same package on a Mac or
-in Git Bash on Windows, in `artifacts/desktop`.
+executable, with its keychain module as `repotted-keyring.node`.
+`mise run desktop:package` makes the same package on a Mac or in Git Bash on
+Windows, in `artifacts/desktop`.
 
 To build test installers from any branch, run Build Desktop from the Actions
 tab. The run uses no Developer ID, notarizes nothing, attests nothing, and

@@ -9,8 +9,9 @@ pmOnFail: error
 saveExact: true
 
 # Delay newly resolved versions for three days; OpenSSF reports that most
-# malicious packages are classified by OSV.dev within that window. Locked
-# versions are not revalidated, and registry removal is not guaranteed.
+# malicious packages are classified by OSV.dev within that window. A frozen
+# install checks locked versions against it too. Registry removal is not
+# guaranteed.
 minimumReleaseAge: 4320
 
 # eslint, which the regexp lint plugin needs, still asks for minimatch 10, and

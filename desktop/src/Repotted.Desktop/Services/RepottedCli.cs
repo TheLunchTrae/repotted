@@ -23,8 +23,8 @@ internal sealed class CliNotFoundException(string message, Exception? inner = nu
 /// <summary>
 /// Starts the CLI as a child process. REPOTTED_CLI names it: a .js or .mjs
 /// file, such as the built packages/cli/dist/repotted.js, runs with node, and
-/// anything else directly. Without it, the
-/// app runs the repotted-cli that ships beside it, then repotted on the PATH.
+/// anything else directly. Without it, the app runs the repotted-cli that ships
+/// beside it, then repotted on the PATH.
 /// </summary>
 internal sealed class RepottedCli(string fileName, IReadOnlyList<string> prefix) : ICli
 {
