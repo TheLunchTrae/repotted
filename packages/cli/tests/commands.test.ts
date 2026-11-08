@@ -1,9 +1,11 @@
 import { copyFile, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
 import { afterAll, describe, expect, test } from 'vitest';
+import { parse } from 'yaml';
 
-import { parsePlan } from '@repotted/core';
+import { parsePlan, profileFileJsonSchema } from '@repotted/core';
 
 import { type GitHub, GitHubError } from '../../core/src/github.js';
 import { FakeGitRepository } from '../../core/tests/fake-git.js';
@@ -644,6 +646,40 @@ describe('profile commands', () => {
         },
       ],
     });
+  });
+});
+
+describe('schema', () => {
+  test('prints a JSON Schema that accepts the profiles Repotted reads and refuses others', async () => {
+    const schema = profileFileJsonSchema();
+    const result = await cli(new FakeGitHub(), 'schema', '--json');
+    expect(result).toMatchObject({ code: 0, err: '' });
+    expect(document(result)).toEqual(schema);
+    expect(JSON.parse((await cli(new FakeGitHub(), 'schema')).out)).toEqual(schema);
+
+    const validator = new AjvJsonSchemaValidator();
+    expect(validator.getValidator({ $ref: 'http://json-schema.org/draft-07/schema#' })(schema).valid).toBe(true);
+    const accepts = (profile: unknown): boolean => validator.getValidator(schema)(profile).valid;
+    for (const name of ['base.yaml', 'repotted.yaml']) {
+      expect(accepts(parse(await readFile(path.join(examples, name), 'utf8'))), name).toBe(true);
+    }
+    // Each entry branch leaves out the marking key of the others.
+    expect(
+      accepts({
+        pages: { absent: true },
+        rulesets: [
+          { name: 'Old', absent: true },
+          { name: 'Later', draft: true, enforcement: 'maybe' },
+          { name: 'Main' },
+        ],
+      }),
+    ).toBe(true);
+    expect(accepts({ rulesets: [{ name: 'Old', absent: true, enforcement: 'active' }] })).toBe(false);
+    expect(accepts({ pages: { absent: true, cname: 'docs.example.com' } })).toBe(false);
+    expect(accepts({ environments: [{ name: 'npm', draft: false }] })).toBe(false);
+    expect(accepts({ repository: { has_wiki: 'yes' } })).toBe(false);
+    expect(accepts({ security: { code_quality_setup: { runner_type: 'large' } } })).toBe(false);
+    expect(accepts({ autolinks: [{ key_prefix: 'JIRA-', url_template: 'https://jira.example.com/' }] })).toBe(false);
   });
 });
 

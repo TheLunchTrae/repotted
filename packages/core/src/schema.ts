@@ -631,6 +631,21 @@ export const profileFile = z
   })
   .strict();
 
+/**
+ * The JSON Schema of a profile file, for editors and other tools that read
+ * profiles. It holds each key and the values it takes, but not the checks
+ * that span keys, such as merge commit pairs and repeated names, which only
+ * Repotted makes. It is Draft 7, which editors' YAML support reads.
+ */
+export function profileFileJsonSchema(): Record<string, unknown> {
+  return z.toJSONSchema(profileFile, {
+    target: 'draft-07',
+    io: 'input',
+    // `undefined` is `unmarked`: an entry branch that leaves a marking key out.
+    unrepresentable: ({ zodSchema }) => (zodSchema._zod.def.type === 'undefined' ? { not: {} } : 'throw'),
+  });
+}
+
 export type RepositorySettings = z.infer<typeof repositorySettings>;
 export type MergeSettings = z.infer<typeof mergeSettings>;
 export type ActionsSettings = z.infer<typeof actionsSettings>;

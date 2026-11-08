@@ -190,6 +190,37 @@ any comment above it. It writes nothing when the result would not be a valid
 profile, and it refuses to edit a list that shares parts through YAML anchors
 and aliases.
 
+## Edit profiles with completion
+
+`npx repotted schema` prints the JSON Schema of a profile file. Save it next
+to your profiles:
+
+```sh
+npx repotted schema > profile.schema.json
+```
+
+An editor that uses the YAML language server, such as Visual Studio Code with
+the Red Hat YAML extension, then completes keys and values in a profile and
+marks the ones Repotted rejects. Point a profile at the schema with a comment
+on its first line, as a path from the profile's folder, and a blank line after
+it:
+
+```yaml
+# yaml-language-server: $schema=profile.schema.json
+
+repository:
+  delete_branch_on_merge: true
+```
+
+The blank line keeps the comment apart from the first section, so it stays
+when an edit removes that section, as it would a comment above it.
+
+The schema checks each key and its values, but not the rules that span keys,
+such as the commit title and message pairs GitHub allows or two rulesets with
+the same name; Repotted reports those when it reads the profile. Save the
+schema again after you update Repotted. `sync` leaves the schema file out,
+since only `.yaml` and `.yml` files sync, so save it on each machine.
+
 ## Sync profiles with a GitHub repository
 
 A folder of profiles can live in a GitHub repository, the **config
@@ -261,5 +292,6 @@ enter on GitHub. Once you have entered it, the agent's next call works.
 ## Output for scripts
 
 `--json` makes `capture`, `plan`, `apply`, `profile`, `profiles`, `sync`,
-`repos`, and `status` print one JSON document instead of text. The
-[JSON output reference](json-output.md) describes each document.
+`repos`, and `status` print one JSON document instead of text, and `schema`
+print its schema on one line. The [JSON output reference](json-output.md)
+describes each document.
