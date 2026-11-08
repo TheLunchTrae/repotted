@@ -3,8 +3,9 @@
 // stop the CLI from starting, serving MCP and loading its keychain module. The
 // build runs with fake GITHUB_TOKEN and REPOTTED_GITHUB_CLIENT_ID values, which
 // a module-scope read would store in the snapshot, and the executable runs
-// without them, where such a read would still use them. node-smoke.mjs runs from
-// the examples folder, so a working directory frozen at build time fails it too.
+// without them, where such a read would still use them. node-smoke.mjs and a
+// relative `profile` run from the examples folder, so a working directory frozen
+// at build time fails them too.
 //
 // Usage: node packages/cli/tests/sea-check.mjs
 import { spawnSync } from 'node:child_process';
@@ -47,6 +48,19 @@ try {
   }
 
   runChecked(execPath, [fileURLToPath(new URL('node-smoke.mjs', import.meta.url)), executable]);
+
+  // A relative profile path resolves against the working directory the command
+  // runs in, not the one the snapshot was built in.
+  const profile = spawnSync(executable, ['profile', 'repotted.yaml', '--json'], {
+    cwd: fileURLToPath(new URL('../../../examples/', import.meta.url)),
+    encoding: 'utf8',
+  });
+  if (profile.error !== undefined) {
+    throw profile.error;
+  }
+  if (profile.status !== 0) {
+    throw new Error(`profile repotted.yaml --json exited ${profile.status} with: ${profile.stdout}${profile.stderr}`);
+  }
 
   // Without a token variable, a GitHub CLI sign-in or a client ID, status is
   // signed out with the Repotted App. A keychain that has no Secret Service to

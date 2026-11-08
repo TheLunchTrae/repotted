@@ -299,9 +299,11 @@ Releases build the executable only in the desktop packaging, so
 `ts:sea:check`, part of the gate on every pull request, also builds it, on
 Linux in CI, with fake `GITHUB_TOKEN` and `REPOTTED_GITHUB_CLIENT_ID` values.
 It fails when the executable holds either value, then runs `node-smoke.mjs`
-from the examples folder and `status --json` against it without them, so a CLI
-or core change that reads the environment or the working directory at load
-time, or that breaks the snapshot, fails before a release.
+and a relative `profile` from the examples folder, and `status --json` without
+those values. A CLI or core change that reads those variables or the working
+directory at load time, or that breaks the snapshot, fails before a release.
+Other variables aren't checked, so code reads the environment only when a
+command runs.
 
 ### Applying from the app
 
