@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
-import { type GitHub, GitHubError, repoPath, type RepoRef } from '../github.js';
+import { type GitHub, GitHubError, readPages, repoPath, type RepoRef } from '../github.js';
 import { bodyChanges, matches } from '../match.js';
 import { type Environment, type EnvironmentEntry, environmentKey } from '../schema.js';
 
@@ -63,25 +63,8 @@ const policyList = z.object({
   ),
 });
 
-const pageSize = 100;
-
 function environmentPath(repo: RepoRef, name: string): string {
   return `${repoPath(repo)}/environments/${encodeURIComponent(name)}`;
-}
-
-/** Fetches pages of a list that reports its total until every item is read. */
-async function readPages<Item>(
-  path: string,
-  fetchPage: (url: string) => Promise<{ total: number; items: Item[] }>,
-): Promise<Item[]> {
-  const items: Item[] = [];
-  for (let page = 1; ; page += 1) {
-    const { total, items: pageItems } = await fetchPage(`${path}?per_page=${pageSize}&page=${page}`);
-    items.push(...pageItems);
-    if (pageItems.length < pageSize || items.length >= total) {
-      return items;
-    }
-  }
 }
 
 function settingsFrom(listed: z.infer<typeof environmentList>['environments'][number]): EnvironmentSettings {

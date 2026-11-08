@@ -149,3 +149,24 @@ export function createGitHub(token: string): GitHub {
     },
   };
 }
+
+const pageSize = 100;
+
+/**
+ * Reads a list GitHub serves in pages, a page at a time, until a page comes
+ * back short or the items reach the `total` a page reports.
+ */
+export async function readPages<Item>(
+  path: string,
+  fetchPage: (url: string) => Promise<{ readonly items: readonly Item[]; readonly total?: number }>,
+): Promise<Item[]> {
+  const items: Item[] = [];
+  const separator = path.includes('?') ? '&' : '?';
+  for (let page = 1; ; page += 1) {
+    const { items: pageItems, total } = await fetchPage(`${path}${separator}per_page=${pageSize}&page=${page}`);
+    items.push(...pageItems);
+    if (pageItems.length < pageSize || (total !== undefined && items.length >= total)) {
+      return items;
+    }
+  }
+}

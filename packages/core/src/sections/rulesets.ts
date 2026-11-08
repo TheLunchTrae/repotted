@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
-import { type GitHub, GitHubError, repoPath, type RepoRef } from '../github.js';
+import { type GitHub, GitHubError, readPages, repoPath, type RepoRef } from '../github.js';
 import { bodyChanges, matches, overlay } from '../match.js';
 import type { Ruleset, RulesetEntry } from '../schema.js';
 
@@ -52,8 +52,6 @@ export type LiveRulesets =
   | { readonly available: true; readonly rulesets: readonly LiveRuleset[] }
   | { readonly available: false; readonly reason: string };
 
-const pageSize = 100;
-
 function normalize(data: unknown): LiveRuleset {
   const live = liveRuleset.parse(data);
   const conditions = live.conditions ?? undefined;
@@ -80,17 +78,11 @@ function normalize(data: unknown): LiveRuleset {
 /** Reads the repository's own rulesets, not ones it inherits from an organization. */
 export async function readRulesets(github: GitHub, repo: RepoRef): Promise<LiveRulesets> {
   const base = `${repoPath(repo)}/rulesets`;
-  const ids: number[] = [];
+  let listed: z.infer<typeof summary>[];
   try {
-    for (let page = 1; ; page += 1) {
-      const listed = z
-        .array(summary)
-        .parse(await github.request('GET', `${base}?includes_parents=false&per_page=${pageSize}&page=${page}`));
-      ids.push(...listed.filter((item) => (item.source_type ?? 'Repository') === 'Repository').map((item) => item.id));
-      if (listed.length < pageSize) {
-        break;
-      }
-    }
+    listed = await readPages(`${base}?includes_parents=false`, async (url) => ({
+      items: z.array(summary).parse(await github.request('GET', url)),
+    }));
   } catch (error) {
     // Private repositories on free plans have no rulesets; GitHub answers 403 with an upgrade prompt.
     if (error instanceof GitHubError && error.status === 403 && /upgrade/iu.test(error.message)) {
@@ -98,6 +90,7 @@ export async function readRulesets(github: GitHub, repo: RepoRef): Promise<LiveR
     }
     throw error;
   }
+  const ids = listed.filter((item) => (item.source_type ?? 'Repository') === 'Repository').map((item) => item.id);
   const rulesets: LiveRuleset[] = [];
   for (const id of ids) {
     rulesets.push(normalize(await github.request('GET', `${base}/${id}`)));
