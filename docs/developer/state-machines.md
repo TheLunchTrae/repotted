@@ -242,11 +242,24 @@ again, and the choice offers only Keep mine, since there is no file to reload.
 A rename by a sync shows as the old file removed and the new one listed, so a
 save brings the old name back beside the new one.
 
-**Failures:**
+### Leaving with unsaved changes
 
-- Choosing another folder, connecting a repository, and closing the app all
-  drop unsaved changes without asking. Tracked in
-  [#44](https://github.com/TheLunchTrae/repotted/issues/44).
+Changing the folder, connecting or changing the repository, and closing the
+window go through `ProfilesViewModel.ConfirmLeaveAsync`, which asks only when
+a cached editor has unsaved changes. Closing the window cancels the close,
+shows the **Profiles** page, and closes again once the question settles.
+
+| State  | Event                                                    | Next                                                                                                                                                                                              |
+| ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idle   | Change folder, connect a repository, or close the window | Asking, when any editor has unsaved changes. Otherwise it goes on. The question names the profiles that had unsaved changes when it was asked.                                                    |
+| Asking | Save                                                     | Saving: each changed editor saves in turn, and Save, Discard and Cancel wait until the saves end.                                                                                                 |
+| Saving | Every save ends                                          | It goes on when no editor has changes left; otherwise it opens the first one that does, with its error, its Out of date choice, or that its file is gone, even when a search hides it, and stays. |
+| Asking | Discard                                                  | Every changed editor that can discard does. It goes on when none has changes left; an editor still loading keeps its changes, opens, and it stays.                                                |
+| Asking | Cancel                                                   | Idle, with nothing changed. A new profile form that was open stays open.                                                                                                                          |
+| Asking | Another change of folder, connect, or close              | Asking, about the new act. The earlier one stays where it was, as if cancelled.                                                                                                                   |
+
+The folder is picked before the question, so cancelling the folder picker asks
+nothing.
 
 ## New profile form
 

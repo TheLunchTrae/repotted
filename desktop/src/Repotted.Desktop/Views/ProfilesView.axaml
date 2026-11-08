@@ -33,6 +33,19 @@
             Padding="32,10" IsVisible="{Binding HasNotice}">
       <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Notice}" />
     </Border>
+    <!-- Changing the folder, connecting a repository, or quitting waits until unsaved changes are saved or discarded -->
+    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+            Padding="32,10" IsVisible="{Binding HasLeaving}">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Classes="small" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource DriftBrush}"
+                   Text="{Binding LeavingMessage}" AutomationProperties.LiveSetting="Assertive" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0">
+          <Button Classes="quiet" Content="Save" Command="{Binding SaveAndLeaveCommand}" />
+          <Button Classes="quiet" Content="Discard" Command="{Binding DiscardAndLeaveCommand}" />
+          <Button Classes="quiet" Content="Cancel" Command="{Binding StayHereCommand}" />
+        </StackPanel>
+      </Grid>
+    </Border>
     <!-- A file changed both here and on GitHub waits for a side -->
     <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
             Padding="32,10" IsVisible="{Binding HasConflicts}">
