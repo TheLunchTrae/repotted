@@ -149,6 +149,24 @@ rulesets:
     expect((await loadProfile(file)).environments).toEqual([{ name: 'NPM', wait_timer: 10 }]);
   });
 
+  test('names the field that fails in a ruleset, environment, autolink or Pages entry', async () => {
+    const problems = {
+      'rulesets: [{ name: Main, enforcement: on }]':
+        'expected one of "active"|"evaluate"|"disabled"\n  → at rulesets[0].enforcement',
+      'environments: [{ name: npm, wait_timer: soon }]':
+        'expected number, received string\n  → at environments[0].wait_timer',
+      'autolinks: [{ key_prefix: X-, absent: true, url_template: "x/<num>" }]':
+        'Unrecognized key: "url_template"\n  → at autolinks[0]',
+      'pages: { build_type: sometimes }': 'expected one of "legacy"|"workflow"\n  → at pages.build_type',
+      'rulesets: [{ name: Main, absent: false }]': 'absent is true or left out\n  → at rulesets[0].absent',
+      'rulesets: [{ name: Main, draft: false }]': 'draft is true or left out\n  → at rulesets[0].draft',
+    };
+    for (const [text, problem] of Object.entries(problems)) {
+      const file = await write('entry-field.yaml', `${text}\n`);
+      expect(String(await rejection(loadProfile(file)))).toContain(problem);
+    }
+  });
+
   test('rejects a profile that turns off every merge method', async () => {
     const file = await write(
       'no-merge.yaml',

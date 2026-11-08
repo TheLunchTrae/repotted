@@ -149,7 +149,7 @@ export function describeEnvironment(live: LiveEnvironment): Environment {
 }
 
 function isAbsent(entry: EnvironmentEntry): entry is Extract<EnvironmentEntry, { absent: true }> {
-  return 'absent' in entry;
+  return entry.absent === true;
 }
 
 /**
