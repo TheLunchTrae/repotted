@@ -2322,7 +2322,7 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaTheory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Changing_the_folder_during_a_capture_waits_on_the_question_and_leaves_no_file(bool endsFirst)
+    public async Task Changing_the_folder_during_a_capture_waits_on_the_question_and_leaves_no_capture_file(bool endsFirst)
     {
         var (profiles, cli, files) = await OpenOrgs("TheLunchTrae/repotted");
         var made = Path.Combine(folders.Profiles, "repotted.yaml");
@@ -2361,6 +2361,80 @@ public sealed class ViewModelTests : IDisposable
         Assert.Equal(other, profiles.Folder);
         Assert.Equal(endsFirst, File.Exists(made));
         Assert.Empty(Leftovers());
+    }
+
+    [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_question_that_cannot_settle_keeps_a_running_capture_and_says_why(bool save)
+    {
+        var (profiles, cli, files) = await OpenOrgs("TheLunchTrae/repotted");
+        var editor = profiles.Current!;
+        var reload = Task.CompletedTask;
+        var resolve = new TaskCompletionSource<string>();
+        if (save)
+        {
+            Choose(editor, "has_wiki", "On");
+            cli.On($"profile {files.Own} --set repository.has_wiki=true --json", """{"error":{"kind":"error","message":"The file could not be written"}}""", exitCode: 1);
+        }
+        else
+        {
+            // An editor reloading its file can't discard its changes yet.
+            editor.Tabs[4].Entries[0].Editor.Name = "pages";
+            File.AppendAllText(files.Own, "# pulled by a sync\n");
+            await editor.SaveCommand.ExecuteAsync(null);
+            cli.On($"profile {files.Own} --json", _ => resolve.Task);
+            reload = editor.ReloadCommand.ExecuteAsync(null);
+        }
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        var stopped = false;
+        cli.OnCapture("TheLunchTrae/repotted", async (output, cancellationToken) =>
+        {
+            cancellationToken.Register(() => stopped = true);
+            await finish.Task.WaitAsync(cancellationToken);
+            File.WriteAllText(output, "repository:\n  has_wiki: false\n");
+            return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
+        });
+        cli.On(folders.List(), Listing(("base", files.Base, null), ("orgs", files.Own, files.Base), ("repotted", made, null)))
+            .On($"profile {made} --json", Documents.ResolvedBase(made));
+        profiles.StartNew("TheLunchTrae/repotted");
+        var form = profiles.Creating!;
+        var capturing = form.CreateCommand.ExecuteAsync(null);
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        if (save)
+        {
+            await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        }
+        else
+        {
+            profiles.DiscardAndLeaveCommand.Execute(null);
+        }
+        await change.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Opening the profile would close the form and stop the capture, so the notice says why instead.
+        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Same(form, profiles.Creating);
+        Assert.True(form.Working);
+        Assert.False(stopped);
+        Assert.Equal(
+            save ? "orgs couldn't be saved, so Repotted didn't change the folder." : "orgs is still loading, so Repotted didn't change the folder.",
+            profiles.Notice);
+        resolve.SetResult(Documents.Resolved(files.Own, files.Base));
+        await reload.WaitAsync(TimeSpan.FromSeconds(5));
+        finish.SetResult();
+        await capturing.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(File.Exists(made));
+        Assert.NotNull(profiles.Notice);
+
+        // The notice goes once the profile it names opens.
+        profiles.Selected = profiles.Items.Single(item => item.Name == "orgs");
+        Assert.Null(profiles.Notice);
     }
 
     [AvaloniaFact]

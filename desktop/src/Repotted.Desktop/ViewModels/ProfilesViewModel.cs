@@ -159,6 +159,22 @@ internal sealed partial class ProfilesViewModel(
     /// <summary>The answer to the question about unsaved changes: true to go on, false to stay.</summary>
     private TaskCompletionSource<bool>? leave;
 
+    /// <summary>
+    /// The notice that names a profile whose changes kept the app where it is
+    /// while a capture ran, and that profile's file; it goes once the profile
+    /// opens or the question is asked again.
+    /// </summary>
+    private (string Notice, string File)? leaveNotice;
+
+    private void ClearLeaveNotice()
+    {
+        if (leaveNotice is { } shown && Notice == shown.Notice)
+        {
+            Notice = null;
+        }
+        leaveNotice = null;
+    }
+
     /// <summary>The profiles whose editors hold unsaved changes.</summary>
     private List<ProfileViewModel> Unsaved => [.. editors.Values.Where(editor => editor.HasChanges)];
 
@@ -188,6 +204,7 @@ internal sealed partial class ProfilesViewModel(
     /// </summary>
     public async Task<bool> ConfirmLeaveAsync(string act)
     {
+        ClearLeaveNotice();
         if (!HasUnsaved)
         {
             return true;
@@ -279,6 +296,16 @@ internal sealed partial class ProfilesViewModel(
         if (Unsaved.FirstOrDefault() is not { } left)
         {
             answer.TrySetResult(true);
+            return;
+        }
+        if (Creating is { Working: true })
+        {
+            // Opening the profile would close the form and stop its capture, so
+            // both stay as they are, and the notice names the profile instead.
+            var why = left.Loading ? "is still loading" : left.Saving ? "is still saving" : "couldn't be saved";
+            Notice = $"{left.Name} {why}, so Repotted didn't {Leaving}.";
+            leaveNotice = (Notice, left.File);
+            answer.TrySetResult(false);
             return;
         }
         if (Items.FirstOrDefault(item => item.Listing.File == left.File) is { } shown)
@@ -587,6 +614,10 @@ internal sealed partial class ProfilesViewModel(
     {
         if (value is not null)
         {
+            if (leaveNotice is { } shown && shown.File == value.Listing.File)
+            {
+                ClearLeaveNotice();
+            }
             Creating = null;
             if (value.Listing.File != Current?.File)
             {
