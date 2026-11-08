@@ -195,14 +195,15 @@ async function plan(io: Io, args: string[]): Promise<number> {
     if (positionals.length > 1) {
       throw new UsageError('Expected at most one repository.');
     }
-    const staged = await resolveStagedApply(values.staged);
-    const [named] = positionals;
-    if (named !== undefined && named.toLowerCase() !== staged.repository.toLowerCase()) {
-      throw new UsageError(`${values.staged} applies to ${staged.repository}, not ${named}.`);
-    }
-    repo = parseRepo(staged.repository);
+    // One read of the staged file gives both the repository and the plan.
     github = await io.github();
     stagedPlan = await planStagedApply(github, values.staged);
+    const { repository } = stagedPlan.staged;
+    const [named] = positionals;
+    if (named !== undefined && named.toLowerCase() !== repository.toLowerCase()) {
+      throw new UsageError(`${values.staged} applies to ${repository}, not ${named}.`);
+    }
+    repo = parseRepo(repository);
     result = stagedPlan.plan;
   }
   // Apply checks neither: GitHub decides at the write.
@@ -524,10 +525,9 @@ async function stage(io: Io, args: string[]): Promise<number> {
     }
     return 0;
   }
-  let result: StagedApply =
-    values.new === undefined
-      ? await resolveStagedApply(file)
-      : await createStagedApply(file, values.new, values.profile);
+  // Each step returns the staged apply as it leaves it, so the file is read again only when nothing else read it.
+  let result: StagedApply | undefined =
+    values.new === undefined ? undefined : await createStagedApply(file, values.new, values.profile);
   try {
     if (edits.length > 0) {
       result = await editStagedApply(file, edits);
@@ -543,6 +543,7 @@ async function stage(io: Io, args: string[]): Promise<number> {
     }
     throw error;
   }
+  result ??= await resolveStagedApply(file);
   if (values.json === true) {
     json(io, result);
     return 0;

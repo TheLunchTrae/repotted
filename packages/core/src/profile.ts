@@ -121,28 +121,67 @@ function duplicateKeys<Entry>(
 }
 
 /**
+ * Changes a chain's merged profile before it is checked, as a staged apply
+ * leaves out what it excludes, so only the result has to be a valid profile.
+ * It names, as `unmatched`, each part of the change that changed nothing.
+ */
+export type Adjust = (data: unknown) => { readonly data: unknown; readonly unmatched: readonly string[] };
+
+/** What one parse of a chain's first file yields: its profile layer, and what changes the merged profile. */
+export interface LayerRead {
+  readonly layer: ProfileFile;
+  readonly adjust?: Adjust | undefined;
+}
+
+/**
  * How a chain's first file reads: a profile file, or a file that carries a
  * profile layer with keys of its own, such as a staged apply. The schema
- * checks the whole file and yields the layer as a profile file.
+ * checks the whole file and yields its layer, its adjust, and anything else
+ * the file says, from one parse.
  */
-export type LayerSchema = z.ZodType<ProfileFile>;
+export type LayerSchema<Read extends LayerRead> = z.ZodType<Read>;
 
-function parseProfileFile(
-  text: string,
-  source: string,
-  schema: LayerSchema = profileFile,
-): { own: OwnProfile; drafts: Drafts; extends?: string } {
+/**
+ * A kind of file a chain starts with: what it is called, how it reads, keys
+ * of its own that an edit may set, and a last check before an edit is saved.
+ */
+export interface Layer<Read extends LayerRead> {
+  /** What the file is called in errors, as `profile` or `staged apply`. */
+  readonly noun: string;
+  readonly schema: LayerSchema<Read>;
+  /** Top-level keys of the file's own, which a setting edit may set or remove whole. */
+  readonly paths: ReadonlySet<string>;
+  /** Throws when the edited file, resolved, is not one to save. */
+  readonly check: (edited: ResolvedLayer<Read>) => void;
+}
+
+const profileLayer: Layer<LayerRead> = {
+  noun: 'profile',
+  schema: profileFile.transform((layer) => ({ layer })),
+  paths: new Set(),
+  check: () => undefined,
+};
+
+/** A file's layer read and split into what applies and its drafts. */
+interface ParsedLayer<Read extends LayerRead> {
+  readonly read: Read;
+  readonly own: OwnProfile;
+  readonly drafts: Drafts;
+  readonly extends: string | undefined;
+}
+
+function parseLayer<Read extends LayerRead>(text: string, source: string, kind: Layer<Read>): ParsedLayer<Read> {
   let data: unknown;
   try {
     data = parse(text) ?? {};
   } catch (error) {
     throw new ProfileError(`${source} is not valid YAML`, { cause: error });
   }
-  const result = schema.safeParse(data);
+  const result = kind.schema.safeParse(data);
   if (!result.success) {
-    throw new ProfileError(`${source} is not a valid profile:\n${describe(result.error)}`);
+    throw new ProfileError(`${source} is not a valid ${kind.noun}:\n${describe(result.error)}`);
   }
-  const { autolinks, rulesets, environments, drafts, ...settings } = result.data;
+  const { autolinks, rulesets, environments, drafts, ...settings } = result.data.layer;
   const [ownAutolinks, draftAutolinks] = partition<AutolinkEntry, DraftAutolink>(autolinks, isDraftAutolink);
   const [ownRulesets, draftRulesets] = partition<RulesetEntry, DraftEntry>(rulesets, isDraftEntry);
   const [ownEnvironments, draftEnvironments] = partition<EnvironmentEntry, DraftEntry>(environments, isDraftEntry);
@@ -165,12 +204,13 @@ function parseProfileFile(
     ),
   ];
   if (problems.length > 0) {
-    throw new ProfileError(`${source} is not a valid profile:\n${problems.map((line) => `✖ ${line}`).join('\n')}`);
+    throw new ProfileError(`${source} is not a valid ${kind.noun}:\n${problems.map((line) => `✖ ${line}`).join('\n')}`);
   }
   return {
+    read: result.data,
     own: { ...settings, autolinks: ownAutolinks, rulesets: ownRulesets, environments: ownEnvironments },
     drafts: { ...drafts, autolinks: draftAutolinks, rulesets: draftRulesets, environments: draftEnvironments },
-    ...(settings.extends === undefined ? {} : { extends: settings.extends }),
+    extends: settings.extends,
   };
 }
 
@@ -244,8 +284,46 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** A section's settings by path, as `has_wiki` or `selected_actions.verified_allowed`. */
-type SourcedSettings = Map<string, Sourced<unknown>>;
+/**
+ * Where a setting is in its section: `[key]`, or `[group, key]` inside a
+ * group such as `selected_actions`, which an override can change one key of
+ * and keep the rest.
+ */
+type SettingPath = readonly [string] | readonly [string, string];
+
+/** A section's settings, each with its path. */
+export function flattenSettings(
+  section: SettingsSection,
+  settings: Readonly<Record<string, unknown>>,
+): [SettingPath, unknown][] {
+  return Object.entries(settings).flatMap(([key, value]): [SettingPath, unknown][] =>
+    groupKeys[section].has(key) && isRecord(value)
+      ? Object.entries(value).map(([inner, setting]) => [[key, inner], setting])
+      : [[[key], value]],
+  );
+}
+
+/** A section's settings from their paths, as `flattenSettings` gives them. */
+function unflattenSettings(settings: Iterable<readonly [SettingPath, unknown]>): Settings {
+  const result: Settings = {};
+  for (const [[key, inner], value] of settings) {
+    if (inner === undefined) {
+      result[key] = value;
+    } else {
+      const current = result[key];
+      result[key] = { ...(isRecord(current) ? current : {}), [inner]: value };
+    }
+  }
+  return result;
+}
+
+/** A setting of a merge, with its path as `flattenSettings` gives it and the file that sets it. */
+interface SourcedSetting extends Sourced<unknown> {
+  readonly path: SettingPath;
+}
+
+/** A section's settings by their path joined with dots, as `has_wiki` or `selected_actions.verified_allowed`. */
+type SourcedSettings = Map<string, SourcedSetting>;
 
 /**
  * A profile or its drafts mid-merge: each setting and entry carries the file
@@ -274,26 +352,24 @@ function mergeSettings(
   // `absent: true` turns the Pages site off whatever the base sets, and a
   // site the override describes replaces a base's `absent`.
   if (section === 'pages' && override['absent'] === true) {
-    return new Map([['absent', { entry: true, file }]]);
+    return new Map([['absent', { entry: true, file, path: ['absent'] }]]);
   }
   const merged = new Map(base);
   merged.delete('absent');
-  for (const [key, entry] of Object.entries(override)) {
-    if (groupKeys[section].has(key) && isRecord(entry)) {
-      // A group replaces a base's value that was not one, as a draft's may be.
+  for (const [path, entry] of flattenSettings(section, override)) {
+    const [key] = path;
+    if (path.length > 1) {
+      // A setting in a group replaces a base's value for the whole group, as a draft's may be.
       merged.delete(key);
-      for (const [inner, value] of Object.entries(entry)) {
-        merged.set(`${key}.${inner}`, { entry: value, file });
-      }
     } else {
-      // A value that is not a group replaces each of a base's keys inside one.
-      for (const path of merged.keys()) {
-        if (path.startsWith(`${key}.`)) {
-          merged.delete(path);
+      // A value for a group key that is not a group replaces each of a base's settings in it.
+      for (const [joined, item] of merged) {
+        if (item.path.length > 1 && item.path[0] === key) {
+          merged.delete(joined);
         }
       }
-      merged.set(key, { entry, file });
     }
+    merged.set(path.join('.'), { entry, file, path });
   }
   return merged;
 }
@@ -351,20 +427,9 @@ function mergeLayers<
 }
 
 function values(settings: SourcedSettings | undefined): Settings | undefined {
-  if (settings === undefined) {
-    return undefined;
-  }
-  const result: Record<string, unknown> = {};
-  for (const [key, item] of settings) {
-    const [group, inner] = key.split('.', 2);
-    if (inner === undefined || group === undefined) {
-      result[key] = item.entry;
-    } else {
-      const current = result[group];
-      result[group] = { ...(isRecord(current) ? current : {}), [inner]: item.entry };
-    }
-  }
-  return result;
+  return settings === undefined
+    ? undefined
+    : unflattenSettings([...settings.values()].map((item) => [item.path, item.entry] as const));
 }
 
 function files(settings: SourcedSettings | undefined): Record<string, string> {
@@ -514,32 +579,40 @@ interface Link {
   readonly drafts: Drafts;
 }
 
-async function readChain(file: string, head: LayerSchema = profileFile): Promise<[Link, ...Link[]]> {
-  const chain: Link[] = [];
-  const seen = new Set<string>();
-  let next: string | undefined = path.resolve(file);
+/** A chain as read: each file read once, its first file's text, and what one parse of that text yields. */
+interface Chain<Read extends LayerRead> {
+  readonly head: Read;
+  /** The first file's text, which an edit changes. */
+  readonly text: string;
+  readonly links: readonly [Link, ...Link[]];
+}
+
+async function readText(file: string, noun: string): Promise<{ file: string; text: string }> {
+  try {
+    const resolved = await realpath(file);
+    return { file: resolved, text: await readFile(resolved, 'utf8') };
+  } catch (error) {
+    throw new ProfileError(`Cannot read ${noun} ${file}`, { cause: error });
+  }
+}
+
+async function readChain<Read extends LayerRead>(file: string, kind: Layer<Read>): Promise<Chain<Read>> {
+  const first = await readText(path.resolve(file), kind.noun);
+  const head = parseLayer(first.text, first.file, kind);
+  const links: [Link, ...Link[]] = [{ file: first.file, parsed: head.own, drafts: head.drafts }];
+  const seen = new Set([first.file]);
+  let next = head.extends === undefined ? undefined : path.resolve(path.dirname(first.file), head.extends);
   while (next !== undefined) {
-    let resolved: string;
-    let text: string;
-    try {
-      resolved = await realpath(next);
-      text = await readFile(resolved, 'utf8');
-    } catch (error) {
-      throw new ProfileError(`Cannot read profile ${next}`, { cause: error });
-    }
+    const { file: resolved, text } = await readText(next, profileLayer.noun);
     if (seen.has(resolved)) {
       throw new ProfileError(`Profile ${resolved} extends itself`);
     }
     seen.add(resolved);
-    const parsed = parseProfileFile(text, resolved, chain.length === 0 ? head : profileFile);
-    chain.push({ file: resolved, parsed: parsed.own, drafts: parsed.drafts });
+    const parsed = parseLayer(text, resolved, profileLayer);
+    links.push({ file: resolved, parsed: parsed.own, drafts: parsed.drafts });
     next = parsed.extends === undefined ? undefined : path.resolve(path.dirname(resolved), parsed.extends);
   }
-  const [own, ...base] = chain;
-  if (own === undefined) {
-    throw new ProfileError(`Cannot read profile ${file}`);
-  }
-  return [own, ...base];
+  return { head: head.read, text: first.text, links };
 }
 
 /** The file that sets each setting and entry of a merge, by section. */
@@ -559,13 +632,19 @@ function sourcesOf(
   };
 }
 
-/**
- * Changes a chain's merged profile before it is checked, as a staged apply
- * leaves out what it excludes, so only the result has to be a valid profile.
- */
-export type Adjust = (data: unknown) => unknown;
+/** A chain resolved from what one read of its first file yields. */
+export interface ResolvedLayer<Read extends LayerRead> {
+  readonly head: Read;
+  readonly resolved: ResolvedProfile;
+  /** Each part of the first file's adjust that changed nothing. */
+  readonly unmatched: readonly string[];
+}
 
-function resolveChain(chain: readonly Link[], source: string, adjust?: Adjust): ResolvedProfile {
+function resolveChain(
+  chain: readonly Link[],
+  source: string,
+  adjust?: Adjust,
+): { resolved: ResolvedProfile; unmatched: readonly string[] } {
   const merged = chain
     .toReversed()
     .reduce<SourcedProfile>((base, { file, parsed }) => mergeLayers(base, parsed, file), { settings: {} });
@@ -573,22 +652,31 @@ function resolveChain(chain: readonly Link[], source: string, adjust?: Adjust): 
     .toReversed()
     .reduce<SourcedDrafts>((base, { file, drafts }) => mergeLayers(base, drafts, file), { settings: {} });
   const drafts = toDrafts(mergedDrafts);
+  const adjusted = adjust === undefined ? { data: toProfile(merged), unmatched: [] } : adjust(toProfile(merged));
   return {
-    chain: chain.map((link) => link.file),
-    profile: validate(adjust === undefined ? toProfile(merged) : adjust(toProfile(merged)), source),
-    drafts,
-    warnings: [...chain.flatMap((link) => fileDraftWarnings(link.drafts, link.file)), ...draftWarnings(drafts)],
-    sources: { ...sourcesOf(merged), drafts: sourcesOf(mergedDrafts) },
+    resolved: {
+      chain: chain.map((link) => link.file),
+      profile: validate(adjusted.data, source),
+      drafts,
+      warnings: [...chain.flatMap((link) => fileDraftWarnings(link.drafts, link.file)), ...draftWarnings(drafts)],
+      sources: { ...sourcesOf(merged), drafts: sourcesOf(mergedDrafts) },
+    },
+    unmatched: adjusted.unmatched,
   };
 }
 
-/** Reads a profile file and every profile it extends, and says which file sets each value. */
-export async function resolveProfile(
+/** Reads a chain whose first file is of `kind`, reading each file once, and resolves it. */
+export async function resolveLayer<Read extends LayerRead>(
   file: string,
-  head: LayerSchema = profileFile,
-  adjust?: Adjust,
-): Promise<ResolvedProfile> {
-  return resolveChain(await readChain(file, head), path.resolve(file), adjust);
+  kind: Layer<Read>,
+): Promise<ResolvedLayer<Read>> {
+  const { head, links } = await readChain(file, kind);
+  return { head, ...resolveChain(links, path.resolve(file), head.adjust) };
+}
+
+/** Reads a profile file and every profile it extends, and says which file sets each value. */
+export async function resolveProfile(file: string): Promise<ResolvedProfile> {
+  return (await resolveLayer(file, profileLayer)).resolved;
 }
 
 /**
@@ -596,9 +684,11 @@ export async function resolveProfile(
  * `extends` resolves from `directory`.
  */
 export async function parseProfile(text: string, directory: string): Promise<ResolvedProfile> {
-  const parsed = parseProfileFile(text, 'The profile');
-  const base = parsed.extends === undefined ? [] : await readChain(path.resolve(directory, parsed.extends));
-  return resolveChain([{ file: 'The profile', parsed: parsed.own, drafts: parsed.drafts }, ...base], 'The profile');
+  const parsed = parseLayer(text, 'The profile', profileLayer);
+  const base =
+    parsed.extends === undefined ? [] : (await readChain(path.resolve(directory, parsed.extends), profileLayer)).links;
+  return resolveChain([{ file: 'The profile', parsed: parsed.own, drafts: parsed.drafts }, ...base], 'The profile')
+    .resolved;
 }
 
 /** A profile file in a folder of profiles, for the desktop app's list. */
@@ -628,10 +718,10 @@ export async function listProfiles(directory: string): Promise<ProfileListing[]>
     let base: string | null = null;
     let problem: string | null = null;
     try {
-      const chain = await readChain(file);
-      file = chain[0].file;
-      base = chain[1]?.file ?? null;
-      resolveChain(chain, file);
+      const { links } = await readChain(file, profileLayer);
+      file = links[0].file;
+      base = links[1]?.file ?? null;
+      resolveChain(links, file);
     } catch (error) {
       problem = error instanceof Error ? error.message : String(error);
     }
@@ -862,26 +952,24 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
   }
 }
 
-/** A kind of file whose first layer `editLayer` edits: its schema, keys of its own, and a last check. */
-export interface Layer {
-  readonly schema: LayerSchema;
-  /** Top-level keys of the file's own, which a setting edit may set or remove whole. */
-  readonly paths: ReadonlySet<string>;
-  /** What changes the edited file's merged profile before it is checked, from the edited text. */
-  readonly adjust?: (text: string) => Adjust;
-  /** Throws when the edited file, resolved, is not one to save. */
-  readonly check: (resolved: ResolvedProfile, text: string) => void;
-}
-
-const profileLayer: Layer = { schema: profileFile, paths: new Set(), check: () => undefined };
-
-/** Edits the first file of a chain, as `editProfile` does, for any kind of layer. */
-export async function editLayer(file: string, edits: readonly ProfileEdit[], layer: Layer): Promise<ResolvedProfile> {
-  const [own, ...base] = await readChain(file, layer.schema);
-  const original = await readFile(own.file, 'utf8');
+/**
+ * Edits the first file of a chain, as `editProfile` does, for any kind of
+ * layer. The file is read once, and `edits` says what to change from what
+ * that read yields, so the edits and the text they change agree.
+ */
+export async function editLayer<Read extends LayerRead>(
+  file: string,
+  edits: (head: Read) => readonly ProfileEdit[],
+  layer: Layer<Read>,
+): Promise<ResolvedLayer<Read>> {
+  const {
+    head,
+    text: original,
+    links: [own, ...base],
+  } = await readChain(file, layer);
   const document = parseDocument(original);
   const seen = new Set<string>();
-  for (const edit of edits) {
+  for (const edit of edits(head)) {
     if ('list' in edit) {
       editEntry(document, edit, seen);
       continue;
@@ -916,21 +1004,24 @@ export async function editLayer(file: string, edits: readonly ProfileEdit[], lay
   }
   const indent = /^( +)\S/mu.exec(original)?.[1]?.length ?? 2;
   const text = document.toString({ lineWidth: 0, indent });
-  const edited = parseProfileFile(text, own.file, layer.schema);
-  const resolved = resolveChain(
-    [{ file: own.file, parsed: edited.own, drafts: edited.drafts }, ...base],
-    own.file,
-    layer.adjust?.(text),
-  );
-  layer.check(resolved, text);
+  const edited = parseLayer(text, own.file, layer);
+  const result = {
+    head: edited.read,
+    ...resolveChain(
+      [{ file: own.file, parsed: edited.own, drafts: edited.drafts }, ...base],
+      own.file,
+      edited.read.adjust,
+    ),
+  };
+  layer.check(result);
   try {
     await replaceFile(own.file, original.includes('\r\n') ? text.replaceAll('\n', '\r\n') : text, {
       create: false,
     });
   } catch (error) {
-    throw new ProfileError(`Cannot save profile ${own.file}`, { cause: error });
+    throw new ProfileError(`Cannot save ${layer.noun} ${own.file}`, { cause: error });
   }
-  return resolved;
+  return result;
 }
 
 /**
@@ -940,7 +1031,7 @@ export async function editLayer(file: string, edits: readonly ProfileEdit[], lay
  * it extends, is a valid profile.
  */
 export async function editProfile(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
-  return editLayer(file, edits, profileLayer);
+  return (await editLayer(file, () => edits, profileLayer)).resolved;
 }
 
 export function stringifyProfile(value: Profile): string {

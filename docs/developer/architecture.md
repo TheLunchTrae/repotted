@@ -42,7 +42,10 @@ names, have no JSON Schema form and stay out of it.
 `extends`, merges them, and only then validates the result. Validating after
 the merge lets a base profile rely on what the profiles that extend it add.
 Settings merge key by key, and so do the keys inside an object of settings,
-such as `selected_actions`. A ruleset, environment, or autolink replaces the
+such as `selected_actions`. `flattenSettings` gives each setting its path, as
+`has_wiki` or `selected_actions.verified_allowed`, and `unflattenSettings`
+turns paths back into settings, so merging, the sources the resolved profile
+records, and saving a staged apply's edits all read a group the same way. A ruleset, environment, or autolink replaces the
 base's entry of the same name or prefix whole, and `pages: { absent: true }`
 replaces a base's site. The resolved profile records which file sets each value,
 which `repotted profile --json` reports and the desktop app shows.
@@ -217,13 +220,18 @@ applying use the engine unchanged, so a staged apply keeps every property of
 [Apply](#apply): the saved plan holds the profile it was made from, and apply
 plans again from that.
 
-The profile chain reads the staged file through a `LayerSchema`: a schema
-that checks the whole file, its own keys included, and yields the profile
-layer. `editLayer` edits it the way `editProfile` edits a profile, with
-`exclude` as a key of its own and a last check that the exclusions still leave a
-valid profile, so a failed edit leaves the file as it was. An exclusion and an edit
-of the same value are refused, since the result would depend on which one
-wins.
+The profile chain reads the staged file as a `Layer`, whose `LayerSchema`
+checks the whole file, its own keys included, and yields from one parse the
+profile layer, the file's own keys, and the `Adjust` that leaves its
+exclusions out of the merged profile and names each one that leaves nothing
+out. Showing, planning, and editing each read the staged file once, so what
+they report comes from one version of it even when another program changes
+the file meanwhile. `editLayer` edits it the way `editProfile` edits a
+profile: it works out the edits from that one read, with `exclude` as a key of
+its own, and runs a last check that the exclusions still leave a valid
+profile before it writes, so a failed edit leaves the file as it was. An
+exclusion and an edit of the same value are refused, since the result would
+depend on which one wins.
 
 Saving edits to the profile writes the layer's settings and entries into the
 profile with `editProfile`, then clears them from the staged file. Between the
