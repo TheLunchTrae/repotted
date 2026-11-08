@@ -2658,7 +2658,7 @@ public sealed class ViewModelTests : IDisposable
         else
         {
             // An editor reloading its file can't discard its changes yet.
-            editor.Tabs[4].Entries[0].Editor.Name = "pages";
+            editor.Tab("Environments").Entries[0].Editor.Name = "pages";
             File.AppendAllText(files.Own, "# pulled by a sync\n");
             await editor.SaveCommand.ExecuteAsync(null);
             cli.On($"profile {files.Own} --json", _ => resolve.Task);
