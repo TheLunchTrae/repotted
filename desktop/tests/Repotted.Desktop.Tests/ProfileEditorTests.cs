@@ -500,7 +500,8 @@ public sealed class ProfileEditorTests : ViewModelTests
         first.PropertyChanged += (_, e) => told.Add(e.PropertyName);
         second.Editor.Name = "Other";
         Assert.Equal("New, not saved yet", first.Note);
-        Assert.Contains(nameof(EntryViewModel.Note), told);
+        // The entry tells its view that everything changed, its note included.
+        Assert.Contains(string.Empty, told);
         first.DropCommand.Execute(null);
         second.DropCommand.Execute(null);
 

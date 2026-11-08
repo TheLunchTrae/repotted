@@ -48,14 +48,11 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
         get => name;
         set
         {
-            if (name == value)
+            if (SetProperty(ref name, value))
             {
-                return;
+                OnPropertyChanged(nameof(RenameNote));
+                Touched();
             }
-            name = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(RenameNote));
-            Touched();
         }
     }
 
@@ -67,15 +64,12 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
         get => removes;
         set
         {
-            if (removes == value)
+            if (SetProperty(ref removes, value))
             {
-                return;
+                OnPropertyChanged(nameof(Manages));
+                OnPropertyChanged(nameof(RenameNote));
+                Touched();
             }
-            removes = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(Manages));
-            OnPropertyChanged(nameof(RenameNote));
-            Touched();
         }
     }
 
@@ -90,14 +84,11 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
         get => draft;
         set
         {
-            if (draft == value)
+            if (SetProperty(ref draft, value))
             {
-                return;
+                OnPropertyChanged(nameof(DraftNote));
+                Touched();
             }
-            draft = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(DraftNote));
-            Touched();
         }
     }
 
