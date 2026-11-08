@@ -11,23 +11,27 @@ links to the issue that tracks it.
 Every command that talks to GitHub resolves a token in `resolveToken`
 (`packages/cli/src/auth.ts`). The first source that yields a token wins.
 
-| Step                                                                       | Outcome                                                                                                                                     | Next                                                           |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `GITHUB_TOKEN` or `GH_TOKEN` is set                                        | That token is used, unchecked.                                                                                                              | Done.                                                          |
-| The keychain holds no sign-in                                              | No token from the keychain.                                                                                                                 | The GitHub CLI.                                                |
-| The keychain sign-in expires in more than 5 minutes, or never              | Its access token is used.                                                                                                                   | Done.                                                          |
-| The sign-in is close to expiry and its refresh token is missing or expired | The problem "The Repotted sign-in expired." is kept.                                                                                        | The GitHub CLI.                                                |
-| The sign-in is close to expiry and its refresh token is usable             | The token is refreshed and the result is stored.                                                                                            | Done.                                                          |
-| The refresh fails                                                          | The keychain is read again: another run may have used the refresh token first. A newer usable token there is used.                          | Done, or the GitHub CLI with the problem kept.                 |
-| The refresh succeeds but the keychain refuses the new token                | The refresh token is spent, so the sign-in is lost although a valid token was in hand. The problem says the sign-in could not be refreshed. | The GitHub CLI with the problem kept; the user signs in again. |
-| The keychain can't be read                                                 | The problem is kept.                                                                                                                        | The GitHub CLI.                                                |
-| `gh auth token` prints a token                                             | That token is used.                                                                                                                         | Done.                                                          |
-| Nothing yields a token                                                     | `NotSignedInError` with the kept problems.                                                                                                  | `status` reports `not_signed_in`.                              |
+| Step                                                                       | Outcome                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Next                                                           |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `GITHUB_TOKEN` or `GH_TOKEN` is set                                        | That token is used, unchecked.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Done.                                                          |
+| The keychain holds no sign-in                                              | No token from the keychain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | The GitHub CLI.                                                |
+| The keychain sign-in expires in more than 5 minutes, or never              | Its access token is used.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Done.                                                          |
+| The sign-in is close to expiry and its refresh token is missing or expired | The problem "The Repotted sign-in expired." is kept. The sign-in is lost.                                                                                                                                                                                                                                                                                                                                                                                                                                      | The GitHub CLI.                                                |
+| The sign-in is close to expiry and its refresh token is usable             | The token is refreshed and the result is stored.                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Done.                                                          |
+| The refresh fails                                                          | The keychain is read again: another run may have used the refresh token first. A newer usable token there is used. When GitHub answered with an OAuth error, such as `bad_refresh_token`, the keychain is read once more after a second, since that run may still be storing its token, and otherwise the sign-in is lost. When GitHub was out of reach or failed on its side, the sign-in is kept for the next try. A keychain that can't be read for these looks leaves the refresh's own failure to report. | Done, or the GitHub CLI with the problem kept.                 |
+| The refresh succeeds but the keychain refuses the new token                | The refresh token is spent, so the sign-in is lost although a valid token was in hand. The problem says the sign-in could not be refreshed.                                                                                                                                                                                                                                                                                                                                                                    | The GitHub CLI with the problem kept; the user signs in again. |
+| The keychain can't be read                                                 | The problem is kept, and the sign-in with it for the next try, since the cause may pass, such as a dismissed unlock prompt.                                                                                                                                                                                                                                                                                                                                                                                    | The GitHub CLI.                                                |
+| `gh auth token` prints a token                                             | That token is used.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Done.                                                          |
+| Nothing yields a token                                                     | `NotSignedInError` with the kept problems. Its `lost` is false when a kept problem may pass.                                                                                                                                                                                                                                                                                                                                                                                                                   | `status` reports `not_signed_in`; other commands fail.         |
 
 A token that resolves can still be refused: `status` reports a 401 from
-GitHub as `rejected`, and names the token variable when one was used. Each
-CLI the desktop app starts inherits the app's environment, which is fixed at
-launch, so the app sees a changed variable only after it restarts.
+GitHub as `rejected`, and names the token variable when one was used. With
+`--json`, any other command that meets a 401, or a `NotSignedInError` whose
+sign-in is lost, fails with `kind: signed_out`. One whose problem may pass
+fails with `kind: error`, so the desktop app shows it on the page and stays
+open. Each CLI the desktop app starts inherits the app's
+environment, which is fixed at launch, so the app sees a changed variable only
+after it restarts.
 
 ## Device flow
 
@@ -69,25 +73,51 @@ keychain-failed state, because the lookup runs before that state is checked.
 
 `MainViewModel` picks the page from `repotted status --json`, and
 `SignInViewModel` runs the device flow through `repotted login --json`.
+Each app gets a `RepottedClient` of its own, which raises `SignInLost` when
+any command fails with `kind: signed_out`. `MainViewModel` checks again in
+response, on the UI thread, if that app is still the page. The app stays
+while the check runs, and pages that fail meanwhile check nothing more, so
+a run that loses a race to refresh the token, while another run stores the
+new one, leaves the app and what it holds in place.
 
-| State                                  | Event                                               | Next                                                                                           |
-| -------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Checking                               | Signed in                                           | The app, which refreshes the repositories and profiles.                                        |
-| Checking                               | Signed out or rejected                              | Sign-in, with a notice for a rejected or unusable earlier sign-in.                             |
-| Checking                               | The CLI is missing or fails                         | Problem, with a retry that checks again.                                                       |
-| Sign-in                                | Start                                               | Starting, then showing the code once the CLI prints it.                                        |
-| Sign-in                                | The flow ends                                       | Checking.                                                                                      |
-| Sign-in                                | The flow fails                                      | Sign-in, with the error.                                                                       |
-| Sign-in                                | Cancel, or the app closes                           | Sign-in; the CLI process is stopped.                                                           |
-| Sign-in, for a rejected token variable | Any                                                 | Signing in stays off: the variable comes first, so the user must change it and reopen the app. |
-| The app                                | A command fails because the sign-in stopped working | The page that ran it shows the error.                                                          |
+| State                                  | Event                                      | Next                                                                                                                             |
+| -------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Checking                               | Signed in                                  | The app, which refreshes the repositories and profiles.                                                                          |
+| Checking                               | Signed out or rejected                     | Sign-in, with a notice for a rejected or unusable earlier sign-in.                                                               |
+| Checking                               | The CLI is missing or fails                | Problem, with a retry that checks again.                                                                                         |
+| Sign-in                                | Start                                      | Starting, then showing the code once the CLI prints it.                                                                          |
+| Sign-in                                | The flow ends                              | Checking.                                                                                                                        |
+| Sign-in                                | The flow fails                             | Sign-in, with the error.                                                                                                         |
+| Sign-in                                | Cancel, or the app closes                  | Sign-in; the CLI process is stopped.                                                                                             |
+| Sign-in, for a rejected token variable | Any                                        | Signing in stays off: the variable comes first, so the user must change it and reopen the app.                                   |
+| The app                                | A command fails with `kind: signed_out`    | Checking the sign-in, with the app still showing.                                                                                |
+| Checking the sign-in                   | A command fails with `kind: signed_out`    | Nothing more: the check already running answers for it.                                                                          |
+| Checking the sign-in                   | Signed in as the same account              | The app, as it was; the page that failed shows its error.                                                                        |
+| Checking the sign-in                   | The CLI is missing or fails                | The app, as it was; the page that failed shows its error.                                                                        |
+| Checking the sign-in                   | Signed out or rejected                     | Asking to leave, to sign in again.                                                                                               |
+| Checking the sign-in                   | Signed in as another account               | Asking to leave, to continue as that account.                                                                                    |
+| Asking to leave                        | Nothing is unsaved                         | Sign-in, or the app for the other account, as from Checking.                                                                     |
+| Asking to leave                        | Save or Discard goes on                    | Checking, again, since the answer can come long after the check.                                                                 |
+| Asking to leave                        | Cancel, a failed save, or a newer question | The app, as it was; the next failure checks again.                                                                               |
+| An app already replaced                | A command fails with `kind: signed_out`    | Nothing: the app showing now stays.                                                                                              |
+| The app                                | Sign out, while no save or sync runs       | Asking to sign out, when a profile has unsaved changes; then Signing out: `repotted logout --json` removes the keychain sign-in. |
+| Asking to sign out                     | Cancel, a failed save, or a newer question | The app, as it was.                                                                                                              |
+| The app                                | Replaced, or the app closes                | A running capture and a connect's first sync stop, and clean up as when their form closes.                                       |
+| The app                                | Replaced, while a save or sync runs        | The save or sync finishes and no sync follows it; the next app syncs only once it ends.                                          |
+| Signing out                            | It succeeds                                | Checking.                                                                                                                        |
+| Signing out                            | It fails                                   | Problem, with a retry that checks again.                                                                                         |
 
-**Failure:** checking runs only at launch and from the problem page. Once the
-app shows, nothing returns to it. A sign-in that expires, is revoked, or loses
-its keychain entry mid-session leaves every page failing with "Not signed in"
-or GitHub's own refusal. The app offers no way back to the sign-in page, so
-the user must restart it or sign in from a terminal. Tracked in
-[#45](https://github.com/TheLunchTrae/repotted/issues/45).
+The app offers **Sign out** only for the Repotted sign-in: the list comes from
+the App's installations and no token variable is set. A token variable or the
+GitHub CLI's sign-in would still apply after signing out, so checking would
+lead straight back to the app. **Sign out** is off while a save or a sync
+runs, including the sync a save starts, since neither can be stopped
+partway. A saved editor that a listing drops from the cache while the sync
+after its save runs, such as when that sync pulled a file, no longer counts,
+so **Sign out** comes back once that sync ends. Asking to leave and Asking to
+sign out are the question in
+[Leaving with unsaved changes](#leaving-with-unsaved-changes), on the
+**Profiles** page.
 
 ## Plan and apply
 
@@ -172,6 +202,7 @@ is one, and the sync state the page shows.
 | Conflicts    | Keep this computer's or GitHub's version           | Syncing, with `prefer` for those files only.                |
 | Any          | Choose another folder, which leaves any repository | Local folder, listed from the start.                        |
 | Any          | Connect another repository                         | Connecting, through the connect form below.                 |
+| Any          | The app is replaced                                | Stopped: a save under way finishes, and no sync starts.     |
 
 Saves and the page's syncs share one chain (`ExclusiveAsync` and
 `SyncAsync`), so a sync never reads a file a save is writing. The connect
@@ -244,19 +275,22 @@ save brings the old name back beside the new one.
 
 ### Leaving with unsaved changes
 
-Changing the folder, connecting or changing the repository, and closing the
-window go through `ProfilesViewModel.ConfirmLeaveAsync`, which asks only when
-a cached editor has unsaved changes. Closing the window cancels the close,
-shows the **Profiles** page, and closes again once the question settles.
+Changing the folder, connecting or changing the repository, closing the
+window, signing out, and a lost sign-in that would replace the app go through
+`ProfilesViewModel.ConfirmLeaveAsync`, which asks only when a cached editor
+has unsaved changes. Closing the window, signing out, and a lost sign-in show
+the **Profiles** page first, through `ShellViewModel.ConfirmLeaveAsync`.
+Closing the window cancels the close and closes again once the question
+settles.
 
-| State  | Event                                                    | Next                                                                                                                                                                                              |
-| ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Idle   | Change folder, connect a repository, or close the window | Asking, when any editor has unsaved changes. Otherwise it goes on. The question names the profiles that had unsaved changes when it was asked.                                                    |
-| Asking | Save                                                     | Saving: each changed editor saves in turn, and Save, Discard and Cancel wait until the saves end.                                                                                                 |
-| Saving | Every save ends                                          | It goes on when no editor has changes left; otherwise it opens the first one that does, with its error, its Out of date choice, or that its file is gone, even when a search hides it, and stays. |
-| Asking | Discard                                                  | Every changed editor that can discard does. It goes on when none has changes left; an editor still loading keeps its changes, opens, and it stays.                                                |
-| Asking | Cancel                                                   | Idle, with nothing changed. A new profile form that was open stays open.                                                                                                                          |
-| Asking | Another change of folder, connect, or close              | Asking, about the new act. The earlier one stays where it was, as if cancelled.                                                                                                                   |
+| State  | Event                                                                              | Next                                                                                                                                                                                              |
+| ------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idle   | Change folder, connect a repository, close the window, sign out, or a lost sign-in | Asking, when any editor has unsaved changes. Otherwise it goes on. The question names the profiles that had unsaved changes when it was asked.                                                    |
+| Asking | Save                                                                               | Saving: each changed editor saves in turn, and Save, Discard and Cancel wait until the saves end.                                                                                                 |
+| Saving | Every save ends                                                                    | It goes on when no editor has changes left; otherwise it opens the first one that does, with its error, its Out of date choice, or that its file is gone, even when a search hides it, and stays. |
+| Asking | Discard                                                                            | Every changed editor that can discard does. It goes on when none has changes left; an editor still loading keeps its changes, opens, and it stays.                                                |
+| Asking | Cancel                                                                             | Idle, with nothing changed. A new profile form that was open stays open.                                                                                                                          |
+| Asking | Another change of folder, connect, or close                                        | Asking, about the new act. The earlier one stays where it was, as if cancelled.                                                                                                                   |
 
 The folder is picked before the question, so cancelling the folder picker asks
 nothing.
@@ -273,7 +307,7 @@ in the folder.
 | Creating, capture          | The empty file is written | Holding: the list leaves the file out while `repotted capture --output` writes it. |
 | Holding                    | The capture ends          | Created.                                                                           |
 | Holding                    | The capture fails         | Editing, with the error; the file is removed.                                      |
-| Holding                    | The form closes           | The capture is stopped and the file removed.                                       |
+| Holding                    | The form closes           | The capture is stopped and the file removed, also when the app is left.            |
 
 The failure in this machine is the sync during a hold, under
 [Desktop profiles source](#desktop-profiles-source).
@@ -287,18 +321,18 @@ The failure in this machine is the sync during a hold, under
 | Editing | Connect         | Copies the local profiles over if asked, skipping names already there, then syncs.                             |
 | Syncing | It records      | Connected; the app remembers the repository.                                                                   |
 | Syncing | It fails        | Editing, with the error; a working copy that never synced is removed, and otherwise only the copied files are. |
-| Syncing | The form closes | The sync is stopped and cleaned up the same way, with no error shown.                                          |
+| Syncing | The form closes | The sync is stopped and cleaned up the same way, with no error shown; also when the app is left.               |
 
 ## CLI runs
 
 `RepottedCli` runs the bundled CLI once per call, with stdin closed so it
 can't wait for input.
 
-| State    | Event                  | Next                                                                                 |
-| -------- | ---------------------- | ------------------------------------------------------------------------------------ |
-| Starting | The CLI can't be found | `CliNotFoundException`.                                                              |
-| Running  | It exits               | Its exit code and output; a failure's JSON `error.message` becomes a `CliException`. |
-| Running  | Cancelled              | The process tree is stopped.                                                         |
+| State    | Event                  | Next                                                                                                                                                       |
+| -------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Starting | The CLI can't be found | `CliNotFoundException`.                                                                                                                                    |
+| Running  | It exits               | Its exit code and output; a failure's JSON `error.message` becomes a `CliException`, or a `SignInLostException` after `SignInLost` for `kind: signed_out`. |
+| Running  | Cancelled              | The process tree is stopped.                                                                                                                               |
 
 Only the sign-in, captures and the connect form pass a cancellation token.
 Other calls run until the CLI exits, which every command does on its own.

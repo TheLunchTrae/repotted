@@ -23,6 +23,13 @@ internal sealed class FakeCli : ICli
         return this;
     }
 
+    /// <summary>Answers <paramref name="command"/> from a pool thread, as the real command line does once its process exits.</summary>
+    public FakeCli OnPoolThread(string command, string output, int exitCode = 0)
+    {
+        answers[command] = (_, _) => Task.Run(() => new CliRun(exitCode, output, ""));
+        return this;
+    }
+
     /// <summary>Answers <paramref name="command"/> with what <paramref name="run"/> returns, which may do what the command would, such as write a file.</summary>
     public FakeCli On(string command, Func<string> run)
     {
@@ -255,6 +262,13 @@ internal static class Documents
 
     public const string Rejected =
         """{"signed_in":false,"reason":"rejected","message":"GitHub rejected the sign-in. Run repotted login again.","problems":[],"token_variable":null,"install_url":"https://github.com/apps/repotted-app/installations/new"}""";
+
+    /// <summary>Signed in as another account, such as the GitHub CLI's once the Repotted sign-in is gone.</summary>
+    public const string SignedInAsOther =
+        """{"signed_in":true,"login":"other","name":null,"token_variable":null,"install_url":"https://github.com/apps/repotted-app/installations/new"}""";
+
+    public const string SignedOutFailure =
+        """{"error":{"kind":"signed_out","message":"Bad credentials"}}""";
 
     public const string Repositories =
         """

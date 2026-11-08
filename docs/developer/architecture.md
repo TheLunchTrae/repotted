@@ -147,15 +147,19 @@ and exist once. `Services/RepottedCli.cs` runs the CLI as a child process,
 streams its JSON Lines, and kills the run whenever whatever started it ends.
 `Services/RepottedClient.cs` reads each document strictly with source-generated
 System.Text.Json, so a renamed or missing member is an error rather than a
-null.
+null. A failure with `kind: signed_out`, from any command, raises
+`SignInLost`, and `MainViewModel` then checks the sign-in again, so a sign-in
+that stops working mid-session leads back to the sign-in page, while one that
+still works keeps the app.
 
 `ContractTests.cs` in `csharp:test` runs the CLI from source and reads what it
-prints for the commands that need no GitHub: signed-out `status`, `profiles`,
-`profile`, and profile saves through `--set`, `--ruleset`, and
-`--environment`. A change to those documents that the app doesn't expect
-fails the gate. The `capture`, `plan`, `repos`, and `login` documents
-need GitHub, so the app's tests read hand-written examples of them, and only the
-strict parsing guards them against the real CLI.
+prints for the commands that need no GitHub: signed-out `status`,
+`profiles`, `profile`, and profile saves through `--set`, `--ruleset`, and
+`--environment`. A change to those documents that the app
+doesn't expect fails the gate. The `capture`, `plan`, `repos`, and `login`
+documents need GitHub, and `logout` would remove a real sign-in, so the app's
+tests read hand-written examples of them, and only the strict parsing guards
+them against the real CLI.
 
 Each package ships the CLI compiled with `bun build --compile` beside the app
 as `repotted-cli`. It has a name of its own because macOS and Windows ignore

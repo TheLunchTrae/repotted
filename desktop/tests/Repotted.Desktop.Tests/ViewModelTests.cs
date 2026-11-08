@@ -18,7 +18,7 @@ public sealed class ViewModelTests : IDisposable
     public void Dispose() => folders.Dispose();
 
     private MainViewModel App(FakeCli cli, FakeDesktop? desktop = null) =>
-        new(new RepottedClient(cli.Answers(folders.List()) ? cli : cli.On(folders.List(), Documents.NoProfiles)),
+        new(cli.Answers(folders.List()) ? cli : cli.On(folders.List(), Documents.NoProfiles),
             desktop ?? new FakeDesktop(),
             folders.Settings);
 
@@ -225,6 +225,475 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_lost_sign_in_goes_back_to_the_sign_in_once()
+    {
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories);
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+
+        cli.On("status --json", Documents.Rejected, exitCode: 1)
+            .On("repos --json", Documents.SignedOutFailure, exitCode: 1);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        var signIn = Assert.IsType<SignInViewModel>(main.Page);
+        Assert.Equal("GitHub no longer accepts your last sign-in. Sign in again.", signIn.Notice);
+        // Two failures, one check.
+        Assert.Equal(2, cli.Calls.Count(call => call == "status --json"));
+    }
+
+    [AvaloniaFact]
+    public async Task A_lost_sign_in_read_on_another_thread_changes_the_page_on_this_one()
+    {
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories);
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        var changedOnThisThread = new List<bool>();
+        main.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.Page))
+            {
+                changedOnThisThread.Add(Dispatcher.UIThread.CheckAccess());
+            }
+        };
+
+        cli.On("status --json", Documents.Rejected, exitCode: 1)
+            .OnPoolThread("repos --json", Documents.SignedOutFailure, exitCode: 1);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.IsType<SignInViewModel>(main.Page);
+        Assert.NotEmpty(changedOnThisThread);
+        Assert.All(changedOnThisThread, Assert.True);
+    }
+
+    [AvaloniaFact]
+    public async Task Sign_out_removes_the_sign_in_and_goes_back_to_the_sign_in()
+    {
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On("logout --json", """{"removed":true}""");
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        Assert.True(shell.ShowSignOut);
+
+        cli.On("status --json", Documents.SignedOut, exitCode: 1);
+        await shell.SignOutCommand.ExecuteAsync(null);
+
+        Assert.Contains("logout --json", cli.Calls);
+        Assert.False(Assert.IsType<SignInViewModel>(main.Page).HasNotice);
+    }
+
+    [AvaloniaFact]
+    public async Task A_lost_sign_in_that_still_works_keeps_the_app_and_what_it_holds()
+    {
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories);
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        shell.Search = "repotted";
+
+        // Another run refreshed the token first, so the sign-in still works.
+        cli.On("repos --json", Documents.SignedOutFailure, exitCode: 1);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        cli.On("repos --json", Documents.Repositories);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(2, cli.Calls.Count(call => call == "status --json"));
+        Assert.Same(shell, main.Page);
+        Assert.Equal("repotted", shell.Search);
+        Assert.Equal("Bad credentials", shell.Repositories.Error);
+    }
+
+    [AvaloniaFact]
+    public async Task Pages_that_lose_the_sign_in_together_check_it_once_and_keep_the_app_meanwhile()
+    {
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories);
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        var checkedAgain = new TaskCompletionSource();
+        cli.OnceReady("status --json", Documents.SignedOut, checkedAgain.Task)
+            .On("repos --json", Documents.SignedOutFailure, exitCode: 1);
+
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(shell, main.Page);
+        Assert.Equal(2, cli.Calls.Count(call => call == "status --json"));
+        checkedAgain.SetResult();
+    }
+
+    [AvaloniaFact]
+    public async Task A_lost_sign_in_that_finds_another_account_opens_the_app_for_it()
+    {
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories);
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+
+        cli.On("status --json", Documents.SignedInAsOther)
+            .On("repos --json", Documents.SignedOutFailure, exitCode: 1);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        cli.On("repos --json", Documents.Repositories);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("other", Assert.IsType<ShellViewModel>(main.Page).Account.Login);
+    }
+
+    [AvaloniaFact]
+    public async Task The_next_app_waits_for_the_last_ones_sync_before_its_own()
+    {
+        var copy = folders.Settings.ConfigFolder("lunch/config", "");
+        Directory.CreateDirectory(copy);
+        File.WriteAllText(Path.Combine(copy, ".repotted-sync.json"), "{}");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var sync = $"sync {copy} --json";
+        const string synced = """{"repository":"lunch/config","path":"","branch":"main","commit":"abc123","pulled":[],"pushed":[],"conflicts":[]}""";
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(sync, synced)
+            .On(folders.List(copy), Documents.NoProfiles);
+        var main = App(cli);
+        await main.StartAsync();
+        var first = Assert.IsType<ShellViewModel>(main.Page);
+        var slow = new TaskCompletionSource();
+        cli.OnceReady(sync, synced, slow.Task);
+        var syncing = first.Profiles.RefreshCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(first.Profiles.Syncing);
+
+        cli.On("status --json", Documents.SignedInAsOther)
+            .On("repos --json", Documents.SignedOutFailure, exitCode: 1);
+        await first.Repositories.RefreshCommand.ExecuteAsync(null);
+        cli.On("repos --json", Documents.Repositories).On(sync, synced);
+        Dispatcher.UIThread.RunJobs();
+
+        // The old app's sync still runs, so the new one has not started its own.
+        Assert.IsType<LoadingViewModel>(main.Page);
+        Assert.Equal(2, cli.Calls.Count(call => call == sync));
+        slow.SetResult();
+        await syncing;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("other", Assert.IsType<ShellViewModel>(main.Page).Account.Login);
+        Assert.Equal(3, cli.Calls.Count(call => call == sync));
+    }
+
+    /// <summary>The app signed in, with an unsaved edit to its one profile.</summary>
+    private async Task<(MainViewModel Main, ShellViewModel Shell, FakeCli Cli, string File)> SignedInWithAnEdit()
+    {
+        var file = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{JsonSerializer.Serialize(file)}},"extends":null,"problem":null}]}""")
+            .On($"profile {file} --json", Documents.ResolvedBase(file))
+            .On("logout --json", """{"removed":true}""");
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        shell.Profiles.Selected = shell.Profiles.Items.Single();
+        Choose(shell.Profiles.Current!, "has_wiki", "Off");
+        return (main, shell, cli, file);
+    }
+
+    /// <summary>Runs the UI thread's work until <paramref name="done"/>, for work that ends off the test's own awaits.</summary>
+    private static async Task Until(Func<bool> done)
+    {
+        for (var tries = 0; tries < 500 && !done(); tries++)
+        {
+            await Task.Delay(10);
+            Dispatcher.UIThread.RunJobs();
+        }
+        Assert.True(done());
+    }
+
+    [AvaloniaTheory]
+    [InlineData("cancel")]
+    [InlineData("discard")]
+    [InlineData("failed save")]
+    public async Task Sign_out_asks_about_unsaved_changes_first(string answer)
+    {
+        var (main, shell, cli, file) = await SignedInWithAnEdit();
+        var editor = shell.Profiles.Current!;
+        cli.On("status --json", Documents.SignedOut, exitCode: 1)
+            .On($"profile {file} --set repository.has_wiki=false --json", """{"error":{"kind":"error","message":"The disk is full."}}""", exitCode: 1);
+
+        var signingOut = shell.SignOutCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, shell.Page);
+        Assert.Equal("base has unsaved changes. Save them before you sign out?", shell.Profiles.LeavingMessage);
+        Assert.DoesNotContain("logout --json", cli.Calls);
+        switch (answer)
+        {
+            case "cancel":
+                shell.Profiles.StayHereCommand.Execute(null);
+                break;
+            case "discard":
+                shell.Profiles.DiscardAndLeaveCommand.Execute(null);
+                break;
+            default:
+                await shell.Profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+                break;
+        }
+        await signingOut.WaitAsync(TimeSpan.FromSeconds(5));
+
+        if (answer == "discard")
+        {
+            Assert.Contains("logout --json", cli.Calls);
+            Assert.IsType<SignInViewModel>(main.Page);
+            return;
+        }
+        Assert.DoesNotContain("logout --json", cli.Calls);
+        Assert.Same(shell, main.Page);
+        Assert.True(editor.HasChanges);
+        Assert.Equal(answer == "failed save", editor.SaveError is not null);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_lost_sign_in_asks_about_unsaved_changes_before_the_app_goes(bool save)
+    {
+        var (main, shell, cli, file) = await SignedInWithAnEdit();
+        var editor = shell.Profiles.Current!;
+        shell.Page = 0;
+        cli.On("status --json", Documents.SignedOut, exitCode: 1)
+            .On("repos --json", Documents.SignedOutFailure, exitCode: 1)
+            .On($"profile {file} --set repository.has_wiki=false --json", Documents.ResolvedBase(file));
+
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        await Until(() => shell.Profiles.HasLeaving);
+
+        Assert.Same(shell, main.Page);
+        Assert.Equal(1, shell.Page);
+        Assert.Equal("base has unsaved changes. Save them before you sign in again?", shell.Profiles.LeavingMessage);
+        if (!save)
+        {
+            shell.Profiles.StayHereCommand.Execute(null);
+            await Until(() => !shell.Profiles.HasLeaving);
+            Assert.Same(shell, main.Page);
+            Assert.True(editor.HasChanges);
+            // The check ended with the question, so the next failure asks again.
+            await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+            await Until(() => shell.Profiles.HasLeaving);
+            shell.Profiles.StayHereCommand.Execute(null);
+            return;
+        }
+        // A local save needs no sign-in, so the edits keep.
+        await shell.Profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await Until(() => main.Page is SignInViewModel);
+        Assert.Contains($"profile {file} --set repository.has_wiki=false --json", cli.Calls);
+    }
+
+    [AvaloniaFact]
+    public async Task A_lost_sign_in_checks_again_once_the_question_goes_on()
+    {
+        var (main, shell, cli, _) = await SignedInWithAnEdit();
+        cli.On("status --json", Documents.SignedOut, exitCode: 1)
+            .On("repos --json", Documents.SignedOutFailure, exitCode: 1);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        await Until(() => shell.Profiles.HasLeaving);
+
+        // While the question waits, the GitHub CLI signs in.
+        cli.On("status --json", Documents.SignedInAsOther)
+            .On("repos --json", Documents.Repositories);
+        shell.Profiles.DiscardAndLeaveCommand.Execute(null);
+        await Until(() => main.Page is ShellViewModel { Account.Login: "other" });
+    }
+
+    [AvaloniaFact]
+    public async Task Sign_out_waits_for_a_save_and_the_sync_after_it()
+    {
+        var file = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var written = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{JsonSerializer.Serialize(file)}},"extends":null,"problem":null}]}""")
+            .On($"profile {file} --json", Documents.ResolvedBase(file))
+            .OnceReady($"profile {file} --set repository.has_wiki=false --json", Documents.ResolvedBase(file), written.Task);
+        var shell = new ShellViewModel(
+            new Account.SignedIn("TheLunchTrae", null, null, Documents.InstallUrl),
+            new RepottedClient(cli),
+            new FakeDesktop(),
+            folders.Settings,
+            () => Task.CompletedTask);
+        await shell.RefreshAsync();
+        shell.Profiles.Selected = shell.Profiles.Items.Single();
+        var editor = shell.Profiles.Current!;
+        editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki")
+            .Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+
+        var changes = 0;
+        shell.SignOutCommand.CanExecuteChanged += (_, _) => changes++;
+
+        var saving = editor.SaveCommand.ExecuteAsync(null);
+
+        // The button reads the command again whenever a save starts or ends.
+        Assert.Equal(1, changes);
+        Assert.False(shell.SignOutCommand.CanExecute(null));
+        written.SetResult();
+        await saving;
+        Assert.Equal(2, changes);
+        Assert.True(shell.SignOutCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
+    public async Task Closing_the_app_stops_a_capture_and_removes_its_file()
+    {
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        var stopped = false;
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On($"capture TheLunchTrae/repotted --output {made} --json", async cancellationToken =>
+            {
+                cancellationToken.Register(() => stopped = true);
+                await finish.Task;
+                return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
+            });
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        shell.Profiles.StartNew("TheLunchTrae/repotted");
+        var capturing = shell.Profiles.Creating!.CreateCommand.ExecuteAsync(null);
+
+        main.Stop();
+        finish.SetResult();
+        await capturing;
+
+        Assert.True(stopped);
+        Assert.False(File.Exists(made));
+    }
+
+    [AvaloniaFact]
+    public async Task Signing_out_stops_a_capture_and_removes_its_file()
+    {
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        var stopped = false;
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On("logout --json", """{"removed":true}""")
+            .On($"capture TheLunchTrae/repotted --output {made} --json", async cancellationToken =>
+            {
+                cancellationToken.Register(() => stopped = true);
+                // A command line that finishes anyway, as one that is slow to stop would.
+                await finish.Task;
+                return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
+            });
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        shell.Profiles.StartNew("TheLunchTrae/repotted");
+        var capturing = shell.Profiles.Creating!.CreateCommand.ExecuteAsync(null);
+        Assert.True(File.Exists(made));
+
+        cli.On("status --json", Documents.SignedOut, exitCode: 1);
+        await shell.SignOutCommand.ExecuteAsync(null);
+        finish.SetResult();
+        await capturing;
+
+        Assert.IsType<SignInViewModel>(main.Page);
+        Assert.True(stopped);
+        Assert.False(File.Exists(made));
+    }
+
+    [AvaloniaFact]
+    public async Task Sign_out_waits_for_a_sync_to_finish()
+    {
+        var copy = folders.Settings.ConfigFolder("lunch/config", "");
+        Directory.CreateDirectory(copy);
+        File.WriteAllText(Path.Combine(copy, ".repotted-sync.json"), "{}");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var synced = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .On("repos --json", Documents.Repositories)
+            .OnceReady(
+                $"sync {copy} --json",
+                """{"repository":"lunch/config","path":"","branch":"main","commit":"abc123","pulled":[],"pushed":[],"conflicts":[]}""",
+                synced.Task)
+            .On(folders.List(copy), Documents.NoProfiles);
+        var shell = new ShellViewModel(
+            new Account.SignedIn("TheLunchTrae", null, null, Documents.InstallUrl),
+            new RepottedClient(cli),
+            new FakeDesktop(),
+            folders.Settings,
+            () => Task.CompletedTask);
+
+        var refreshing = shell.RefreshAsync();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(shell.Profiles.Syncing);
+        Assert.False(shell.SignOutCommand.CanExecute(null));
+        synced.SetResult();
+        await refreshing;
+        Assert.True(shell.SignOutCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
+    public async Task A_lost_sign_in_from_an_app_already_replaced_changes_nothing()
+    {
+        var late = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .OnceReady("repos --json", Documents.SignedOutFailure, late.Task)
+            .On("logout --json", """{"removed":true}""");
+        var main = App(cli);
+        var starting = main.StartAsync();
+        var first = Assert.IsType<ShellViewModel>(main.Page);
+
+        // Signing out lands straight back in a new app, as with a GitHub CLI sign-in.
+        cli.On("repos --json", Documents.Repositories);
+        await first.SignOutCommand.ExecuteAsync(null);
+        var second = Assert.IsType<ShellViewModel>(main.Page);
+        late.SetResult();
+        await starting;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(second, main.Page);
+        Assert.Equal(2, cli.Calls.Count(call => call == "status --json"));
+    }
+
+    [AvaloniaFact]
+    public async Task A_failed_sign_out_says_why_and_checks_again()
+    {
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On("logout --json", """{"error":{"kind":"error","message":"Could not reach the OS keychain."}}""", exitCode: 1);
+        var main = App(cli);
+        await main.StartAsync();
+
+        await Assert.IsType<ShellViewModel>(main.Page).SignOutCommand.ExecuteAsync(null);
+
+        var problem = Assert.IsType<ProblemViewModel>(main.Page);
+        Assert.Equal("Could not reach the OS keychain.", problem.Message);
+        await problem.TryAgainCommand.ExecuteAsync(null);
+        Assert.IsType<ShellViewModel>(main.Page);
+    }
+
+    [AvaloniaFact]
     public async Task Search_filters_the_list_and_keeps_the_selection()
     {
         var main = App(new FakeCli()
@@ -311,18 +780,23 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaTheory]
-    [InlineData("installations", null, "Signed in with the Repotted App.")]
-    [InlineData("admin", null, "Signed in with a GitHub token.")]
-    [InlineData("admin", "GITHUB_TOKEN", "Signed in with GITHUB_TOKEN.")]
-    public async Task Signed_in_with_says_what_the_token_is(string source, string? variable, string expected)
+    [InlineData("installations", null, "Signed in with the Repotted App.", true)]
+    [InlineData("admin", null, "Signed in with a GitHub token.", false)]
+    [InlineData("admin", "GITHUB_TOKEN", "Signed in with GITHUB_TOKEN.", false)]
+    [InlineData("installations", "GITHUB_TOKEN", "Signed in with GITHUB_TOKEN.", false)]
+    public async Task Signed_in_with_says_what_the_token_is(string source, string? variable, string expected, bool canSignOut)
     {
         var shell = Shell("lunch", null, variable, source);
         // Without a variable, only the list tells an App sign-in from another token.
         Assert.Equal(variable is null ? null : expected, shell.SignedInWith);
+        Assert.False(shell.ShowSignOut);
 
         await shell.Repositories.RefreshCommand.ExecuteAsync(null);
 
         Assert.Equal(expected, shell.SignedInWith);
+        // Only the Repotted sign-in goes away on signing out; a variable or
+        // the GitHub CLI's sign-in would still apply.
+        Assert.Equal(canSignOut, shell.ShowSignOut);
     }
 
     [AvaloniaFact]
@@ -332,7 +806,8 @@ public sealed class ViewModelTests : IDisposable
             new Account.SignedIn("lunch", null, null, null),
             new RepottedClient(new FakeCli().On("repos --json", """{"source":"installations","repositories":[]}""")),
             new FakeDesktop(),
-            folders.Settings);
+            folders.Settings,
+            () => Task.CompletedTask);
 
         await shell.Repositories.RefreshCommand.ExecuteAsync(null);
 
@@ -1226,7 +1701,7 @@ public sealed class ViewModelTests : IDisposable
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.Resolved(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base));
-        var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings);
+        var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => Task.CompletedTask);
         await shell.RefreshAsync();
         shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
         Choose(shell.Profiles.Current!, "has_wiki", "On");
@@ -1537,7 +2012,7 @@ public sealed class ViewModelTests : IDisposable
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base))
             .On($"plan TheLunchTrae/repotted --profile {own} --json", Documents.Plan());
-        var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings);
+        var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => Task.CompletedTask);
         await shell.RefreshAsync();
         var repositories = shell.Repositories;
         Assert.Equal("base", repositories.CompareWith?.Name);
@@ -1829,7 +2304,7 @@ public sealed class ViewModelTests : IDisposable
                 File.WriteAllText(made, "repository:\n  has_wiki: false\n");
                 return """{"repository":"TheLunchTrae/repotted","profile":{"repository":{"has_wiki":false}},"warnings":["Skipped rulesets: this repository’s plan does not support rulesets","Skipped environments: the app cannot read Actions"]}""";
             });
-        var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings);
+        var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => Task.CompletedTask);
         await shell.RefreshAsync();
         shell.Repositories.Selected = shell.Repositories.Rows.Single(row => row.Name == "repotted");
 
@@ -1899,5 +2374,6 @@ public sealed class ViewModelTests : IDisposable
             new Account.SignedIn(login, name, variable, Documents.InstallUrl),
             new RepottedClient(new FakeCli().On("repos --json", $$"""{"source":"{{source}}","repositories":[]}""")),
             new FakeDesktop(),
-            folders.Settings);
+            folders.Settings,
+            () => Task.CompletedTask);
 }

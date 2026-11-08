@@ -13,11 +13,19 @@ namespace Repotted.Desktop.ViewModels;
 internal sealed partial class ShellViewModel : ViewModelBase
 {
     private readonly RepottedClient client;
+    private readonly Func<Task> signOut;
 
-    public ShellViewModel(Account.SignedIn account, RepottedClient client, IDesktop desktop, AppSettings settings)
+    /// <summary><paramref name="signOut"/> removes the sign-in and leaves the app.</summary>
+    public ShellViewModel(
+        Account.SignedIn account,
+        RepottedClient client,
+        IDesktop desktop,
+        AppSettings settings,
+        Func<Task> signOut)
     {
         Account = account;
         this.client = client;
+        this.signOut = signOut;
         // Each list reaches the other: a new profile is captured from a listed repository.
         RepositoriesViewModel? repositories = null;
         Profiles = new ProfilesViewModel(client, desktop, settings, () => repositories?.Names ?? []);
@@ -96,19 +104,23 @@ internal sealed partial class ShellViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Whether the app may quit, as <see cref="ConfirmLeaveAsync"/> answers.</summary>
+    public Task<bool> ConfirmQuitAsync() => ConfirmLeaveAsync("quit");
+
     /// <summary>
-    /// Whether the app may quit: at once when nothing is unsaved, and
-    /// otherwise once the profiles page has asked and the changes are saved or
+    /// Whether the app may be left to <paramref name="act"/>, such as "sign
+    /// out": at once when nothing is unsaved, and otherwise once the profiles
+    /// page, brought into view, has asked and the changes are saved or
     /// discarded.
     /// </summary>
-    public Task<bool> ConfirmQuitAsync()
+    public Task<bool> ConfirmLeaveAsync(string act)
     {
         if (!Profiles.HasUnsaved)
         {
             return Task.FromResult(true);
         }
         Page = 1;
-        return Profiles.ConfirmLeaveAsync("quit");
+        return Profiles.ConfirmLeaveAsync(act);
     }
 
     public string SearchHint => ShowingProfiles ? "Find a profile" : "Find a repository";
@@ -144,6 +156,35 @@ internal sealed partial class ShellViewModel : ViewModelBase
         (null, null) => null,
     };
 
+    /// <summary>
+    /// Whether the token is the Repotted sign-in, which signing out removes.
+    /// A variable or the GitHub CLI's sign-in would still apply afterwards.
+    /// </summary>
+    public bool ShowSignOut => Account.TokenVariable is null && Repositories.FromInstallations is true;
+
+    /// <summary>
+    /// Signs out once unsaved changes are saved or discarded, since signing
+    /// out leaves the app. It waits for a sync, and for a save and the sync
+    /// after it, which can't be stopped partway.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSignOut))]
+    private async Task SignOutAsync()
+    {
+        if (await ConfirmLeaveAsync("sign out").ConfigureAwait(true))
+        {
+            await signOut().ConfigureAwait(true);
+        }
+    }
+
+    private bool CanSignOut() => !Profiles.Busy;
+
+    /// <summary>
+    /// Stops the work the app started that can be stopped, a capture and a
+    /// connect's first sync, and any sync not yet started. The task ends once
+    /// a save or sync already running ends.
+    /// </summary>
+    public Task Stop() => Profiles.Stop();
+
     [ObservableProperty]
     public partial string Search { get; set; } = "";
 
@@ -159,6 +200,10 @@ internal sealed partial class ShellViewModel : ViewModelBase
         {
             OnPropertyChanged(nameof(Crumb));
         }
+        else if (e.PropertyName == nameof(ProfilesViewModel.Busy))
+        {
+            SignOutCommand.NotifyCanExecuteChanged();
+        }
     }
 
     private void OnRepositoriesChanged(object? sender, PropertyChangedEventArgs e)
@@ -166,6 +211,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         if (e.PropertyName == nameof(RepositoriesViewModel.FromInstallations))
         {
             OnPropertyChanged(nameof(SignedInWith));
+            OnPropertyChanged(nameof(ShowSignOut));
         }
     }
 }

@@ -43,6 +43,26 @@ public sealed class RepottedClientTests
     }
 
     [Fact]
+    public async Task A_lost_sign_in_is_its_own_failure_and_says_so_first()
+    {
+        var cli = new FakeCli().On("repos --json", Documents.SignedOutFailure, exitCode: 1);
+        var client = new RepottedClient(cli);
+        var lost = 0;
+        client.SignInLost += (_, _) => lost++;
+
+        var error = await Assert.ThrowsAsync<SignInLostException>(() => client.RepositoriesAsync(None));
+
+        Assert.Equal("Bad credentials", error.Message);
+        Assert.Equal(1, lost);
+
+        // Any other failure says nothing about the sign-in.
+        cli.On("repos --json", """{"error":{"kind":"error","message":"fetch failed"}}""", exitCode: 1);
+        var other = await Assert.ThrowsAsync<CliException>(() => client.RepositoriesAsync(None));
+        Assert.IsNotType<SignInLostException>(other);
+        Assert.Equal(1, lost);
+    }
+
+    [Fact]
     public async Task Output_that_is_not_json_says_so()
     {
         var client = new RepottedClient(new FakeCli().On("status --json", "Usage: repotted <command>", exitCode: 2));

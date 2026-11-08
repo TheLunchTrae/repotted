@@ -1,8 +1,8 @@
 # JSON output
 
-`--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `sync`, `repos`
-and `status` prints exactly one JSON document on stdout, for scripts and programs
-such as the desktop app. Repotted writes nothing to stderr in this mode;
+`--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `sync`, `repos`,
+`status` and `logout` prints exactly one JSON document on stdout, for scripts
+and programs such as the desktop app. Repotted writes nothing to stderr in this mode;
 anything that appears there, such as a deprecation notice from the GitHub client, is
 diagnostic and not a failure. `--help` and `--version` still print text.
 
@@ -52,10 +52,15 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   have. `install_url` is null when another App's client ID is in use. If the
   sign-in fails after the code, such as when the code expires, the second line
   is `{ event: error, error: { kind, message } }` and `login` exits 1.
+- `logout` prints `{ removed }`, which is false when there was no sign-in to
+  remove. It removes only the `repotted login` sign-in, not a token variable
+  or the GitHub CLI's sign-in.
 
 A failure prints `{ error: { kind, message } }` and exits 1, or 2 for misuse,
 which has `kind: usage`. A stale plan has `kind: stale_plan` and `current`, the
 plan the repository needs now. A write that fails partway has
 `kind: apply_failed`, with the changes in `applied` and the one in `failed`.
-Anything else, such as a missing token, an invalid profile or a network error,
-has `kind: error`.
+A command that finds no sign-in, or whose sign-in or token GitHub rejects,
+has `kind: signed_out`; `status` says which. Anything else, such as an invalid
+profile, a network error, or a keychain that would not open, has
+`kind: error`.
