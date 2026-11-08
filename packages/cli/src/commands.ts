@@ -119,9 +119,18 @@ function json(io: Io, value: unknown): void {
   io.out(`${JSON.stringify(value)}\n`);
 }
 
-/** The page of GitHub's docs that a refusal links to, which text output names after the failure. */
+/**
+ * The page of GitHub's docs that a refusal links to, which text output names
+ * after the failure. The refusal may be the cause of the failure, as of a
+ * sync GitHub refused.
+ */
 function docsLink(error: unknown): string {
-  return error instanceof GitHubError && error.documentationUrl !== undefined ? `See ${error.documentationUrl}\n` : '';
+  for (let current = error; current instanceof Error; current = current.cause) {
+    if (current instanceof GitHubError) {
+      return current.documentationUrl === undefined ? '' : `See ${current.documentationUrl}\n`;
+    }
+  }
+  return '';
 }
 
 function warn(io: Io, lines: readonly string[]): void {

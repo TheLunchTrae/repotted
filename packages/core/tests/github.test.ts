@@ -43,11 +43,50 @@ describe('createGitHub', () => {
     });
   });
 
-  test('reads a rate limit from the headers GitHub sends with it', async () => {
-    answer(403, { message: 'API rate limit exceeded for user ID 7.' }, { 'x-ratelimit-remaining': '0' });
-    expect(await failure()).toMatchObject({ status: 403, rateLimited: true });
+  test("keeps GitHub's message when its other fields come in an unexpected form", async () => {
+    answer(422, { message: 'Update is not a fast forward', errors: 'not a list', documentation_url: null });
+    expect(await failure()).toMatchObject({
+      status: 422,
+      message: 'Update is not a fast forward',
+      documentationUrl: undefined,
+    });
 
+    answer(403, { message: 'Upgrade to GitHub Pro', errors: { message: 'an object' }, documentation_url: 7 });
+    expect(await failure()).toMatchObject({
+      status: 403,
+      message: 'Upgrade to GitHub Pro',
+      documentationUrl: undefined,
+    });
+  });
+
+  test('reads a rate limit from the status and the headers GitHub sends with it', async () => {
+    for (const [status, headers] of [
+      [403, { 'x-ratelimit-remaining': '0' }],
+      [403, { 'retry-after': '60' }],
+      [429, {}],
+    ] as const) {
+      answer(status, { message: 'Forbidden' }, headers);
+      expect(await failure(), `${status} ${JSON.stringify(headers)}`).toMatchObject({ status, rateLimited: true });
+    }
+
+    answer(403, { message: 'Forbidden' });
+    expect(await failure()).toMatchObject({ status: 403, rateLimited: false });
     answer(403, { message: 'Resource not accessible by integration' }, { 'x-ratelimit-remaining': '4999' });
     expect(await failure()).toMatchObject({ status: 403, rateLimited: false });
+  });
+
+  test("keeps Octokit's status and message for a request that never reached GitHub", async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.reject(new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND') })),
+    );
+
+    const error = await failure();
+    expect(error).toBeInstanceOf(GitHubError);
+    expect(error).toMatchObject({
+      status: 500,
+      message: 'getaddrinfo ENOTFOUND',
+      documentationUrl: undefined,
+      rateLimited: false,
+    });
   });
 });

@@ -33,10 +33,11 @@ export class GitHubError extends Error {
   }
 }
 
+// A field in an unexpected form is left out, so GitHub's message survives it.
 const errorBody = z.object({
   message: z.string(),
-  errors: z.array(z.unknown()).optional(),
-  documentation_url: z.string().optional(),
+  errors: z.array(z.unknown()).optional().catch(undefined),
+  documentation_url: z.string().optional().catch(undefined),
 });
 
 /** One of GitHub's `errors`: a string as it is, or an object's `message`; one without a message says nothing. */

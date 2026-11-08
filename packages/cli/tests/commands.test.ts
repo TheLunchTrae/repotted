@@ -694,6 +694,24 @@ describe('sync', () => {
     expect(github.files()).toEqual({ 'base.yaml': '# mine\n' });
   });
 
+  test("links GitHub's docs after a sync GitHub refused", async () => {
+    const github = new FakeGitRepository();
+    github.write({ 'base.yaml': '# base\n' });
+    const folder = await mkdtemp(path.join(directory, 'sync-'));
+    await cliWith(github, {}, 'sync', folder, '--repository', 'lunch/config', '--json');
+    await writeFile(path.join(folder, 'base.yaml'), '# mine\n');
+    github.refuseWrites = responseError(403, {
+      message: 'Resource not accessible by integration',
+      documentation_url: 'https://docs.github.com/rest/git/refs',
+    });
+
+    const result = await cliWith(github, {}, 'sync', folder);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toMatch(/^repotted: Repotted cannot reach the profiles in lunch\/config: .*\n/u);
+    expect(result.err).toMatch(/\nSee https:\/\/docs\.github\.com\/rest\/git\/refs\n$/u);
+  });
+
   test('refuses a side other than local or remote, as misuse', async () => {
     const result = await cliWith(new FakeGitRepository(), {}, 'sync', directory, '--prefer', 'mine', '--json');
 
