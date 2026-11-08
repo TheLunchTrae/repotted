@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -56,6 +58,19 @@ export function fieldChanges(
   return Object.entries(desired)
     .filter(([field, to]) => !matches(to, live?.[field]))
     .map(([field, to]) => ({ field, from: live?.[field], to }));
+}
+
+/**
+ * Every top-level field of `body` that differs from `current`, for a write
+ * that replaces the whole value, so a reviewer sees its whole effect. Fields
+ * compare exactly rather than as `matches` does, since the write sends each
+ * one as it is.
+ */
+export function bodyChanges(body: object, current: object | undefined): FieldChange[] {
+  const before = new Map<string, unknown>(Object.entries(current ?? {}));
+  return Object.entries(body)
+    .filter(([field, to]: [string, unknown]) => !isDeepStrictEqual(to, before.get(field)))
+    .map(([field, to]: [string, unknown]) => ({ field, from: before.get(field), to }));
 }
 
 /**

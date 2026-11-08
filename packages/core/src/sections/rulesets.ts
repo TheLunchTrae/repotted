@@ -1,10 +1,8 @@
-import { isDeepStrictEqual } from 'node:util';
-
 import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
 import { type GitHub, GitHubError, repoPath, type RepoRef } from '../github.js';
-import { type FieldChange, matches, overlay } from '../match.js';
+import { bodyChanges, matches, overlay } from '../match.js';
 import type { Ruleset, RulesetEntry } from '../schema.js';
 
 const summary = z.object({ id: z.number().int(), source_type: z.string().optional() });
@@ -154,14 +152,6 @@ function writeRuleset(entry: Ruleset, current: StoredRuleset | undefined): Store
     ...(conditions === undefined ? {} : { conditions: z.record(z.string(), z.unknown()).parse(conditions) }),
     rules: entry.rules === undefined ? (current?.rules ?? []) : writeRules(entry.rules, current?.rules ?? []),
   };
-}
-
-/** Every key the write changes, so a reviewer sees the whole effect. */
-function bodyChanges(body: StoredRuleset, current: StoredRuleset | undefined): FieldChange[] {
-  const before = new Map<string, unknown>(Object.entries(current ?? {}));
-  return Object.entries(body)
-    .filter(([field, to]: [string, unknown]) => !isDeepStrictEqual(to, before.get(field)))
-    .map(([field, to]: [string, unknown]) => ({ field, from: before.get(field), to }));
 }
 
 /**
