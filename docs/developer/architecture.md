@@ -403,7 +403,10 @@ in the app data folder, one per repository and folder in it, which the app
 edits like any profiles folder and keeps in line with `repotted sync`: once
 before the repository is remembered, on every refresh, and after every save.
 Saves and syncs run one at a time, so a sync never reads a file a save is
-writing. The sync itself is a three-way merge per file against the record it
+writing. A save and a pull both write through `replaceFile` in `files.ts`,
+which keeps the file's permissions and tries the move again while Windows
+holds the file, as antivirus and the search indexer do just after a write.
+The sync itself is a three-way merge per file against the record it
 keeps in `.repotted-sync.json`, and it starts over as a first sync, deleting
 nothing, whenever the branch no longer holds the commit that record names.
 

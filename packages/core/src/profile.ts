@@ -1,4 +1,4 @@
-import { chmod, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -18,6 +18,7 @@ import {
 } from 'yaml';
 import { z } from 'zod';
 
+import { replaceFile } from './files.js';
 import {
   actionsSettings,
   type AutolinkEntry,
@@ -718,37 +719,6 @@ function isEditable(path: readonly string[]): boolean {
   return path[0] === 'drafts' ? isDraftPath(path.slice(1)) : settingPath(path) === 'setting';
 }
 
-const retriedCodes = new Set(['EPERM', 'EBUSY', 'EACCES']);
-
-/**
- * Replaces a file through a temporary file beside it, so a failure never
- * leaves half a profile, and keeps the file's permissions. On Windows another
- * program reading the file can hold the move up briefly, so it is tried again.
- */
-async function replaceFile(file: string, text: string): Promise<void> {
-  const temporary = `${file}.${process.pid}.tmp`;
-  try {
-    await writeFile(temporary, text);
-    // Set after writing, since the mode a write asks for passes through the umask.
-    await chmod(temporary, (await stat(file)).mode);
-    for (let attempt = 1; ; attempt += 1) {
-      try {
-        await rename(temporary, file);
-        return;
-      } catch (error) {
-        const code = error instanceof Error && 'code' in error ? String(error.code) : '';
-        if (attempt === 5 || !retriedCodes.has(code)) {
-          throw error;
-        }
-        await new Promise((done) => setTimeout(done, attempt * 50));
-      }
-    }
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw new ProfileError(`Cannot save profile ${file}`, { cause: error });
-  }
-}
-
 /**
  * What a list item is known by: a pattern's name and type, a status check's
  * context, a reviewer's id and type, or a rule's type.
@@ -953,7 +923,11 @@ export async function editLayer(file: string, edits: readonly ProfileEdit[], lay
     layer.adjust?.(text),
   );
   layer.check(resolved, text);
-  await replaceFile(own.file, original.includes('\r\n') ? text.replaceAll('\n', '\r\n') : text);
+  try {
+    await replaceFile(own.file, original.includes('\r\n') ? text.replaceAll('\n', '\r\n') : text);
+  } catch (error) {
+    throw new ProfileError(`Cannot save profile ${own.file}`, { cause: error });
+  }
   return resolved;
 }
 
