@@ -369,6 +369,17 @@ plan into those sections and rows, and `Views/PlanTable.axaml` shows them on
 both pages; Apply adds **Leave out**, or the **One-off edit** chip, to each
 row it can leave out.
 
+Beside the one-off edits, the Apply page shows the plan as a diff of profile
+YAML, which `PlanDiff` builds in the app from the plan's `desired` and
+`changes`. Both sides start from the resolved profile, and each field a change
+writes takes GitHub's value on one side and the written value on the other.
+GitHub's value is cut down to the keys the profile sets, and a list follows
+the profile's order, matching items by the keys that name them, such as a
+rule's `type`, so the diff shows what the plan compares and not GitHub's
+defaults, nor the defaults the API body adds for a new rule, which the
+comparison lists. It only shapes what the page shows: the plan decides what
+differs, and the diff is rebuilt from each plan the page shows.
+
 ### Profiles in the app
 
 The app edits a folder of YAML files. Settings change through

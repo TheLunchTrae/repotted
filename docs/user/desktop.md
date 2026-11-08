@@ -265,6 +265,15 @@ what it will have after the apply. From there you can:
 - Click **Save edits to profile** to write the one-off edits into the profile,
   which then sets them itself.
 
+Beside the one-off edits, **Diff** shows the whole apply as the profile's YAML:
+each line GitHub loses is red and struck through, and each line it gets is
+green, under what GitHub has now. Runs of unchanged lines fold away behind a
+link that counts them, such as **Show 4 unchanged lines**. A line from a
+one-off edit is marked **One-off edit**, a change GitHub will refuse has a
+padlock under it, and a setting Repotted couldn't check says why. Left-out
+changes and drafts are not in the diff; a note under it counts them. The diff
+shows saved edits, so save to see the rest. **File** shows the file as saved.
+
 A padlock marks each change GitHub will refuse, with what it needs, as on the
 comparison. **Apply** waits until no such change is left: leave it out, or
 click **Review App access**, grant what it needs, and click **Review again**.
