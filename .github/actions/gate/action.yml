@@ -7,9 +7,9 @@ description: >-
 
 inputs:
   cache:
-    # A release builds only from the locked, checksummed tools, so it keeps
-    # the default.
-    description: Restore and save mise's tool cache, as true or false.
+    # A release builds only from the locked, checksummed downloads, so it
+    # keeps the default.
+    description: Restore and save the cache of mise's tools, and on Windows NuGet's packages, as true or false.
     required: false
     default: 'false'
   task:
@@ -26,6 +26,20 @@ runs:
         version: '2026.10.19'
         install: true
         cache: ${{ inputs.cache }}
+    # Only on Windows does restoring NuGet's cache (about 1 GB) clearly beat a
+    # cold restore; it's slower on Linux and barely faster on macOS, and the
+    # pnpm store's is slower on every OS. This step only caches: given no
+    # version, it installs nothing while the repository root has no
+    # global.json, so .NET stays mise's. The SDK version is in the key, since
+    # restore can fetch packs that follow it and aren't in the lockfiles.
+    - name: Cache NuGet packages
+      if: inputs.cache == 'true' && runner.os == 'Windows'
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        cache: true
+        cache-dependency-path: |
+          desktop/**/packages.lock.json
+          .config/mise/conf.d/csharp.toml
     - name: Install locked dependencies
       shell: bash
       run: mise run ts:install

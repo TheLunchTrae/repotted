@@ -43,7 +43,7 @@ jobs:
         run: git merge-base --is-ancestor HEAD refs/remotes/origin/main
       - name: Require the tag to match the package version
         run: test "v$(node -p "require('./packages/cli/package.json').version")" = "$RELEASE_TAG"
-      # No cache: a release builds only from the locked, checksummed tools.
+      # No cache: a release builds only from the locked, checksummed downloads.
       - name: Run the mandatory gate
         uses: ./.github/actions/gate
         with:
