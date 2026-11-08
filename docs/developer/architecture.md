@@ -203,7 +203,7 @@ still works keeps the app.
 `ContractTests.cs` in `csharp:test` runs the built CLI and reads what it
 prints for the commands that need no GitHub: signed-out `status`,
 `profiles`, `profile`, and profile saves through `--set`, `--ruleset`, and
-`--environment`. A change to those documents that the app
+`--environment`, drafts included. A change to those documents that the app
 doesn't expect fails the gate. The `capture`, `plan`, `repos`, and `login`
 documents need GitHub, and `logout` would remove a real sign-in, so the app's
 tests read hand-written examples of them, and only the strict parsing guards

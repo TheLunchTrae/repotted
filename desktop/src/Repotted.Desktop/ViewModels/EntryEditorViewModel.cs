@@ -5,21 +5,24 @@ namespace Repotted.Desktop.ViewModels;
 /// <summary>
 /// The editor for one ruleset or environment. It starts from the entry as the
 /// profile resolves it and changes only what is edited here, so keys the
-/// editor does not show stay as they are.
+/// editor does not show stay as they are. A draft is saved with
+/// <c>draft: true</c>: its fields may be unfinished, and plans leave it out.
 /// </summary>
 internal abstract partial class EntryEditorViewModel : ViewModelBase
 {
-    private readonly Func<string, bool> taken;
+    private readonly Func<string, bool, bool> taken;
     private readonly Action changed;
 
-    protected EntryEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool> taken, Action changed)
+    /// <summary><c>taken</c> says whether another entry has a name, as a draft or not.</summary>
+    protected EntryEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool, bool> taken, Action changed)
     {
         Saved = saved;
         Renamable = renamable;
         this.taken = taken;
         this.changed = changed;
-        name = saved?["name"]?.GetValue<string>() ?? "";
-        removes = saved?["absent"]?.GetValue<bool>() == true;
+        name = saved?["name"].AsText() ?? "";
+        removes = saved?["absent"].AsFlag() == true;
+        draft = saved?["draft"].AsFlag() == true;
     }
 
     /// <summary>The entry the editor started from, or null for a new one.</summary>
@@ -76,13 +79,56 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
         }
     }
 
+    private bool draft;
+
+    /// <summary>
+    /// Whether the entry is saved as a draft, which plans leave out. Turning it
+    /// off finishes the draft, which must then be valid.
+    /// </summary>
+    public bool IsDraft
+    {
+        get => draft;
+        set
+        {
+            if (draft == value)
+            {
+                return;
+            }
+            draft = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DraftNote));
+            Touched();
+        }
+    }
+
+    /// <summary>
+    /// Whether the entry can be made a draft or finished here: only one this
+    /// profile's file names, since a base's draft or entry is that file's.
+    /// </summary>
+    public bool CanDraft { get; init; } = true;
+
+    /// <summary>
+    /// Whether a base profile names the entry too, and not as a draft, so its
+    /// entry applies while this one is a draft.
+    /// </summary>
+    public bool BaseApplies { get; init; }
+
+    public string DraftNote => (CanDraft, IsDraft) switch
+    {
+        (false, true) => "A draft in a base profile, so it can be finished only there.",
+        (false, false) => "Set in a base profile, so it can be saved as a draft only there.",
+        (true, true) when BaseApplies => $"Saved as a draft: compare and apply leave it out, so the base profile's {Kind} applies until you finish it.",
+        (true, true) => "Saved as a draft: compare and apply leave it out, and it may be unfinished. Turn this off to finish it, once it is valid.",
+        _ => "Applies once saved.",
+    };
+
     /// <summary>How names compare: GitHub's environment names ignore case.</summary>
     protected virtual StringComparison NameComparison => StringComparison.Ordinal;
 
     /// <summary>What a rename does on GitHub, which knows each entry by its name.</summary>
     public string? RenameNote =>
         !Removes
-        && Saved?["name"]?.GetValue<string>() is { } old
+        && Saved?["name"].AsText() is { } old
         && Name.Trim() is { Length: > 0 } renamed
         && !string.Equals(old, renamed, NameComparison)
             ? $"GitHub knows each {Kind} by its name, so applying this profile creates {renamed} and leaves {old} on each repository as it is."
@@ -101,9 +147,23 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
         {
             if (Removes)
             {
-                return new JsonObject { ["name"] = Name.Trim(), ["absent"] = true };
+                var removed = new JsonObject { ["name"] = Name.Trim(), ["absent"] = true };
+                if (IsDraft)
+                {
+                    removed["draft"] = true;
+                }
+                return removed;
             }
-            var entry = Ordered(Build(), Saved);
+            var built = Build();
+            if (IsDraft)
+            {
+                built["draft"] = true;
+            }
+            else
+            {
+                built.Remove("draft");
+            }
+            var entry = Ordered(built, Saved);
             entry.Remove("name");
             entry.Remove("absent");
             // The name leads, as it does in a profile written by hand.
@@ -124,11 +184,14 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
             {
                 return $"{char.ToUpperInvariant(Article[0])}{Article[1..]} {Kind} needs a name.";
             }
-            if (taken(trimmed))
+            if (taken(trimmed, IsDraft))
             {
-                return $"The profile already has {Article} {Kind} named {trimmed}.";
+                return IsDraft
+                    ? $"The profile already has a draft {Kind} named {trimmed}."
+                    : $"The profile already has {Article} {Kind} named {trimmed}.";
             }
-            return Removes ? null : FieldProblem;
+            // A draft may be unfinished: what would stop it applying waits until it is finished.
+            return Removes || IsDraft ? null : FieldProblem;
         }
     }
 
@@ -168,5 +231,5 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
 
     /// <summary>A list of strings as text, one per line.</summary>
     protected static string Text(JsonNode? list) =>
-        list is JsonArray items ? string.Join('\n', items.Select(item => item?.GetValue<string>()).OfType<string>()) : "";
+        list is JsonArray items ? string.Join('\n', items.Select(item => item.AsText()).OfType<string>()) : "";
 }

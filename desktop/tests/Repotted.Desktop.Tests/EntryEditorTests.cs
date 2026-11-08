@@ -8,10 +8,10 @@ public sealed class EntryEditorTests
     private static JsonObject Json(string text) => JsonNode.Parse(text)!.AsObject();
 
     private static RulesetEditorViewModel Ruleset(string? saved, Func<string, bool>? taken = null) =>
-        new(saved is null ? null : Json(saved), renamable: true, taken ?? (_ => false), () => { });
+        new(saved is null ? null : Json(saved), renamable: true, (name, _) => taken?.Invoke(name) == true, () => { });
 
     private static EnvironmentEditorViewModel Environment(string? saved) =>
-        new(saved is null ? null : Json(saved), renamable: true, _ => false, () => { });
+        new(saved is null ? null : Json(saved), renamable: true, (_, _) => false, () => { });
 
     private static RuleViewModel Rule(RulesetEditorViewModel editor, string type) =>
         editor.Rules.Single(rule => rule.Kind.Type == type);
