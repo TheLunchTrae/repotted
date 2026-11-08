@@ -333,14 +333,14 @@ public sealed class ProfilesTests : ViewModelTests
         profiles.StayHereCommand.Execute(null);
         await change;
         Assert.False(profiles.HasLeaving);
-        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Equal(folders.Profiles, profiles.Folder.Path);
         Assert.True(editor.HasChanges);
 
         // Discard drops the change and goes on.
         change = profiles.ChangeFolderCommand.ExecuteAsync(null);
         profiles.DiscardAndLeaveCommand.Execute(null);
         await change;
-        Assert.Equal(other, profiles.Folder);
+        Assert.Equal(other, profiles.Folder.Path);
         Assert.False(editor.HasChanges);
         Assert.Equal("extends: base.yaml\nrepository: { has_wiki: false }\n", File.ReadAllText(files.Own));
     }
@@ -361,7 +361,7 @@ public sealed class ProfilesTests : ViewModelTests
         var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
         await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
         await change;
-        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Equal(folders.Profiles, profiles.Folder.Path);
         Assert.Contains("could not be written", editor.SaveError, StringComparison.Ordinal);
         Assert.Same(editor, profiles.Current);
 
@@ -370,7 +370,7 @@ public sealed class ProfilesTests : ViewModelTests
         await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
         await change;
         Assert.Contains(save, cli.Calls);
-        Assert.Equal(other, profiles.Folder);
+        Assert.Equal(other, profiles.Folder.Path);
     }
 
     [AvaloniaFact]
@@ -406,12 +406,12 @@ public sealed class ProfilesTests : ViewModelTests
         var start = profiles.StartConnectCommand.ExecuteAsync(null);
 
         await change.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Equal(folders.Profiles, profiles.Folder.Path);
         Assert.Equal("orgs has unsaved changes. Save them before you connect a repository?", profiles.LeavingMessage);
         profiles.DiscardAndLeaveCommand.Execute(null);
         await start;
         Assert.NotNull(profiles.Connecting);
-        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Equal(folders.Profiles, profiles.Folder.Path);
     }
 
     [AvaloniaTheory]
@@ -444,7 +444,7 @@ public sealed class ProfilesTests : ViewModelTests
         }
         await change.WaitAsync(TimeSpan.FromSeconds(5));
 
-        Assert.Equal(other, profiles.Folder);
+        Assert.Equal(other, profiles.Folder.Path);
         // Save puts the file back with the edits; Discard lets it go.
         Assert.Equal(save, File.Exists(files.Own));
     }
@@ -470,7 +470,7 @@ public sealed class ProfilesTests : ViewModelTests
         written.SetResult(Documents.Resolved(files.Own, files.Base, wiki: true));
         await save;
         await change;
-        Assert.Equal(other, profiles.Folder);
+        Assert.Equal(other, profiles.Folder.Path);
         Assert.True(profiles.StayHereCommand.CanExecute(null));
     }
 
@@ -505,7 +505,7 @@ public sealed class ProfilesTests : ViewModelTests
         await change;
         Assert.Same(editor, profiles.Current);
         Assert.True(profiles.ShowProfile);
-        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Equal(folders.Profiles, profiles.Folder.Path);
 
         // Over a new profile form, it still comes into view.
         profiles.Selected = profiles.Items.Single(item => item.Name == "base");
@@ -539,7 +539,7 @@ public sealed class ProfilesTests : ViewModelTests
         profiles.DiscardAndLeaveCommand.Execute(null);
 
         await change;
-        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Equal(folders.Profiles, profiles.Folder.Path);
         resolve.SetResult(Documents.Resolved(files.Own, files.Base));
         await reload;
     }
@@ -643,10 +643,10 @@ public sealed class ProfilesTests : ViewModelTests
 
         await profiles.ChangeFolderCommand.ExecuteAsync(null);
 
-        Assert.Equal(other, profiles.Folder);
+        Assert.Equal(other, profiles.Folder.Path);
         Assert.Equal(other, folders.Settings.Load().ProfilesFolder);
         Assert.True(profiles.ShowEmpty);
-        Assert.Equal($"No profiles in {other} yet.", profiles.EmptyMessage);
+        Assert.Equal($"No profiles in {other} yet.", profiles.Folder.EmptyMessage);
     }
 
     [AvaloniaFact]
@@ -663,8 +663,9 @@ public sealed class ProfilesTests : ViewModelTests
 
         wiki.Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
 
-        Assert.Contains(nameof(SettingViewModel.Note), raised);
-        Assert.Contains(nameof(SettingViewModel.OwnAfterSave), raised);
+        // The row tells its view that everything changed, its note and where its value comes from included.
+        Assert.Contains(string.Empty, raised);
+        Assert.True(wiki.OwnAfterSave);
         Assert.Equal("Changed", wiki.Note);
     }
 
@@ -700,7 +701,7 @@ public sealed class ProfilesTests : ViewModelTests
         slow.SetResult();
         await first;
 
-        Assert.Equal(other, profiles.Folder);
+        Assert.Equal(other, profiles.Folder.Path);
         Assert.Empty(profiles.Items);
         Assert.False(profiles.Loading);
     }

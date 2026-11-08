@@ -2,6 +2,7 @@ using System.Text.Json;
 using Avalonia;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -191,15 +192,17 @@ public sealed class ApplyTests : IDisposable
         public int ProfilesSaved { get; set; }
     }
 
-    private Page Open(FakeCli cli, bool fromProfile = true, IDesktop? desktop = null)
+    private Page Open(FakeCli cli, bool fromProfile = true, IDesktop? desktop = null, ProfileFolder? profiles = null)
     {
         Page? page = null;
+        var client = new RepottedClient(cli);
         var apply = new ApplyViewModel(
-            new RepottedClient(cli),
+            client,
             folders.Settings,
             Repository,
             fromProfile ? Orgs : null,
             () => page!.Closed++,
+            profiles ?? new ProfileFolder(client, folders.Settings),
             () =>
             {
                 page!.ProfilesSaved++;
@@ -398,10 +401,18 @@ public sealed class ApplyTests : IDisposable
     {
         var (page, cli) = await Reviewing();
         var apply = page.Apply;
+        static bool LosesWiki(PlanDiffViewModel? diff) =>
+            diff!.Items.OfType<DiffLine>().Any(line => line.IsRemoved && line.Text == "  has_wiki: true");
+        Assert.True(LosesWiki(apply.Edits!.Diff));
+        Assert.Null(apply.Edits.Diff!.Footnote);
         cli.On($"stage {file} --exclude=repository.has_wiki --json", Staged(true, "repository.has_wiki"))
             .On(Planned, () => Plan(wikiLeftOut: true));
 
         await apply.LeaveOutCommand.ExecuteAsync(Row(apply, "repository.has_wiki"));
+
+        // Each plan shown replaces the diff beside the one-off edits.
+        Assert.False(LosesWiki(apply.Edits.Diff));
+        Assert.Equal("1 setting or entry is left out of this apply, so GitHub keeps it as it is.", apply.Edits.Diff!.Footnote);
 
         Assert.Equal(ApplyStep.Reviewing, apply.Step);
         Assert.Equal(2, apply.ChangeCount);
@@ -416,6 +427,7 @@ public sealed class ApplyTests : IDisposable
 
         Assert.Equal(3, apply.ChangeCount);
         Assert.Empty(apply.Excluded);
+        Assert.True(LosesWiki(apply.Edits.Diff));
     }
 
     [AvaloniaFact]
@@ -801,6 +813,37 @@ public sealed class ApplyTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Saving_edits_to_the_profile_waits_for_a_sync_of_the_profiles_folder()
+    {
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var cli = Cli();
+        var profiles = new ProfileFolder(new RepottedClient(cli), folders.Settings);
+        var page = Open(cli, profiles: profiles);
+        await page.Apply.OpenAsync();
+        var sync = $"sync {profiles.Path} --json";
+        var syncing = new TaskCompletionSource();
+        cli.OnceReady(
+            sync,
+            """{"repository":"lunch/config","path":"","branch":"main","commit":"abc123","pulled":[],"pushed":[],"conflicts":[]}""",
+            syncing.Task);
+        var save = $"stage {file} --save-to-profile --json";
+        cli.On(save, Staged());
+        cli.Calls.Clear();
+
+        var synced = profiles.SyncAsync(null, null);
+        var saved = page.Apply.SaveToProfileCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        // The save takes its turn after the sync, so the sync never reads the profile half written.
+        Assert.Equal([sync], cli.Calls);
+        syncing.SetResult();
+        Assert.NotNull(await synced);
+        await saved;
+        Assert.Equal([sync, save], cli.Calls.GetRange(0, 2));
+        Assert.Equal(1, page.ProfilesSaved);
+    }
+
+    [AvaloniaFact]
     public async Task Cancelling_the_confirmation_writes_nothing()
     {
         var (page, cli) = await Reviewing();
@@ -1058,7 +1101,7 @@ public sealed class ApplyTests : IDisposable
             """,
             CliJson.Default.PlanDocument)!;
 
-        var sections = CompareViewModel.Build(plan, (change, field) => (change, field) switch
+        var sections = PlanSections.Build(plan, (change, field) => (change, field) switch
         {
             (0, null) => new RowExclusion("pages", false),
             (1, null) => new RowExclusion("autolinks/JIRA-", false),
@@ -1254,6 +1297,40 @@ public sealed class ApplyTests : IDisposable
         apply.CancelApplyCommand.Execute(null);
 
         apply.Tab = 1;
+        // The sidebar shows the plan as a diff of the profile's YAML first.
+        text = Texts(window);
+        Assert.Contains(ControlLabel.For("Diff"), text);
+        Assert.Contains(ControlLabel.For("File"), text);
+        Assert.Contains("GitHub now", text);
+        Assert.Contains("allow_squash_merge: true", text);
+        Assert.Contains("allow_squash_merge: false", text);
+        Assert.Contains("- name: Main", text);
+        Assert.Contains("One-off edit", text);
+        Save(window, $"apply-diff-{theme}");
+
+        // Screen readers hear each line once, as what it does to GitHub.
+        var heard = window.GetVisualDescendants().OfType<Border>()
+            .Where(border => border.DataContext is DiffLine && border.Classes.Contains("diffline"))
+            .Select(border => ControlAutomationPeer.CreatePeerForElement(border))
+            .Where(peer => peer.IsControlElement())
+            .Select(peer => peer.GetName())
+            .ToList();
+        Assert.Contains("GitHub loses: allow_squash_merge: true", heard);
+        Assert.Contains("GitHub gets: allow_squash_merge: false, one-off edit", heard);
+        Assert.Contains("Stays: merge:", heard);
+
+        // Clicking the view already shown keeps it chosen; File shows the saved file.
+        var segments = window.GetVisualDescendants().OfType<ToggleButton>().Where(button => button.Classes.Contains("seg")).ToList();
+        var diffButton = segments.Single(button => (string?)button.Content == "Diff");
+        // A click toggles the button, as ToggleButton does, then runs its command.
+        diffButton.SetCurrentValue(ToggleButton.IsCheckedProperty, false);
+        diffButton.Command!.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(diffButton.IsChecked);
+        apply.Edits!.ShowFileCommand.Execute(null);
+        Assert.DoesNotContain("GitHub now", Texts(window));
+        apply.Edits.ShowDiffCommand.Execute(null);
+
         Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
         text = Texts(window);
         Assert.Contains("For this apply only, over orgs, which stays as it is unless you save these edits to it.", text);
@@ -1364,7 +1441,7 @@ public sealed class ApplyTests : IDisposable
         Dispatcher.UIThread.RunJobs();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
         shell.Repositories.Selected = shell.Repositories.Rows.Single(row => row.FullName == Repository);
-        await Until(() => shell.Profiles.Usable.Any() && !shell.Profiles.Loading && !shell.Profiles.Syncing);
+        await Until(() => shell.Profiles.Usable.Any() && !shell.Profiles.Loading && !shell.Profiles.Folder.Syncing);
         Dispatcher.UIThread.RunJobs();
         return (window, shell, cli);
     }

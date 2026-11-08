@@ -119,9 +119,13 @@ rulesets, and environments. A setting's own options sit indented under it,
 such as who can create pull requests under **Pull requests**. Names and
 numbers, such as a branch or a pull request limit, are typed in a box. Until
 what you type is valid, the app says what's wrong and won't save the profile;
-**Undo** puts the box back.
-Topics, custom properties, autolinks, and a few lists, such as the actions a
-repository allows, are edited in the YAML.
+**Undo** puts the box back. A box that goes with one choice of the setting
+above it, such as **Runner label** with a **Runner type** of **Labeled**, is
+off while another choice applies, and keeps its value. Leave a runner label
+empty for no label.
+Topics, custom properties, autolinks, labels, and a few lists, such as the
+actions a repository allows, are edited in the YAML. Compare shows label
+changes with the rest.
 
 Some options on GitHub's settings pages have no API, so no profile can set
 them. Where one belongs to a setting, a note under that setting says so, such
@@ -264,6 +268,15 @@ what it will have after the apply. From there you can:
   One-off edits can't be drafts, since they are for this apply only.
 - Click **Save edits to profile** to write the one-off edits into the profile,
   which then sets them itself.
+
+Beside the one-off edits, **Diff** shows the whole apply as the profile's YAML:
+each line GitHub loses is red and struck through, and each line it gets is
+green, under what GitHub has now. Runs of unchanged lines fold away behind a
+link that counts them, such as **Show 4 unchanged lines**. A line from a
+one-off edit is marked **One-off edit**, a change GitHub will refuse has a
+padlock under it, and a setting Repotted couldn't check says why. Left-out
+changes and drafts are not in the diff; a note under it counts them. The diff
+shows saved edits, so save to see the rest. **File** shows the file as saved.
 
 A padlock marks each change GitHub will refuse, with what it needs, as on the
 comparison. **Apply** waits until no such change is left: leave it out, or

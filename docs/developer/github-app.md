@@ -57,8 +57,8 @@ settings, GitHub Apps, New GitHub App, uses too:
   installation** off, turn on **Enable Device Flow**, and leave **Expire user
   authorization tokens** on.
 - Webhook: clear **Active**.
-- Repository permissions: Administration, Actions, Contents, Pages and
-  Custom properties, read and write; Code scanning alerts, read; and
+- Repository permissions: Administration, Actions, Contents, Pages,
+  Custom properties and Issues, read and write; Code scanning alerts, read; and
   Metadata, read, which GitHub requires. No other permissions and no events.
   [Settings coverage](settings-coverage.md#permissions-the-repotted-app-needs)
   says what needs each one.

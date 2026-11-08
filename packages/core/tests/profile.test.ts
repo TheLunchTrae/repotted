@@ -327,6 +327,7 @@ environments: [{ name: NPM, wait_timer: 5 }]
       autolinks: {},
       rulesets: { Keep: base, Replace: own },
       environments: { NPM: own },
+      labels: {},
       drafts: {
         repository: {},
         merge: {},
@@ -337,6 +338,7 @@ environments: [{ name: NPM, wait_timer: 5 }]
         autolinks: {},
         rulesets: {},
         environments: {},
+        labels: {},
       },
     });
   });
@@ -661,6 +663,7 @@ drafts:
       autolinks: {},
       rulesets: { Unfinished: file },
       environments: { npm: file },
+      labels: {},
     });
   });
 
@@ -894,7 +897,7 @@ drafts:
   test('cover every settings section', () => {
     // Every section of a profile holds settings, except its lists of entries.
     const sections = Object.keys(profile.shape).filter(
-      (key) => !['autolinks', 'rulesets', 'environments'].includes(key),
+      (key) => !['autolinks', 'rulesets', 'environments', 'labels'].includes(key),
     );
     expect(Object.keys(draftSettings.shape).toSorted()).toEqual(sections.toSorted());
   });

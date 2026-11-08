@@ -99,8 +99,7 @@ internal sealed partial class ChoiceViewModel : ViewModelBase
 
     private void Refresh()
     {
-        OnPropertyChanged(nameof(IsSet));
-        OnPropertyChanged(nameof(Note));
+        OnAllPropertiesChanged();
         foreach (var option in Options)
         {
             option.Refresh();
@@ -128,13 +127,7 @@ internal sealed partial class ChoiceOptionViewModel(ChoiceViewModel choice, int 
     [RelayCommand]
     private void Choose() => choice.Choose(index);
 
-    public void Refresh()
-    {
-        OnPropertyChanged(nameof(Selected));
-        OnPropertyChanged(nameof(Dim));
-        OnPropertyChanged(nameof(Shown));
-        OnPropertyChanged(nameof(Note));
-    }
+    public void Refresh() => OnAllPropertiesChanged();
 }
 
 /// <summary>
@@ -186,20 +179,12 @@ internal abstract class ParameterViewModel<T> : ViewModelBase
             }
             current = value;
             IsSet = true;
-            OnPropertyChanged(nameof(Value));
-            OnValueChanged();
-            OnPropertyChanged(nameof(IsSet));
-            OnPropertyChanged(nameof(Dim));
-            OnPropertyChanged(nameof(HelpText));
+            OnAllPropertiesChanged();
             changed();
         }
     }
 
     public T Default => @default;
-
-    protected virtual void OnValueChanged()
-    {
-    }
 
     public void WriteTo(JsonObject parameters)
     {
@@ -225,8 +210,6 @@ internal sealed class CountViewModel(string label, string key, JsonObject? param
         get => Value;
         set => Value = (int)(value ?? 0);
     }
-
-    protected override void OnValueChanged() => OnPropertyChanged(nameof(Number));
 }
 
 /// <summary>The merge methods a pull request rule allows, written as one list.</summary>
@@ -281,12 +264,7 @@ internal sealed partial class MergeMethodsViewModel : ViewModelBase
         }
         field = value;
         IsSet = true;
-        OnPropertyChanged(nameof(Merge));
-        OnPropertyChanged(nameof(Squash));
-        OnPropertyChanged(nameof(Rebase));
-        OnPropertyChanged(nameof(IsSet));
-        OnPropertyChanged(nameof(Dim));
-        OnPropertyChanged(nameof(HelpText));
+        OnAllPropertiesChanged();
         changed();
     }
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Headless.XUnit;
 using Repotted.Desktop.Services;
@@ -17,24 +18,20 @@ public sealed class ContractTests
 
     /// <summary>
     /// The settings the app leaves to the YAML, each with everything under it.
-    /// The app notes each where its group shows, except the last four.
+    /// The app notes each where its group shows.
     /// </summary>
     private static readonly HashSet<string> YamlOnly =
     [
         "repository.topics",
         "custom_properties",
         "autolinks",
+        "labels",
         "actions.selected_actions.patterns_allowed",
         "actions.oidc_customization_sub.include_claim_keys",
         "security.security_and_analysis.secret_scanning_delegated_bypass_options",
         "security.code_scanning_default_setup.languages",
         "security.code_quality_setup.languages",
         "security.dependabot_runner_settings.runner_labels",
-        // Neither shown in the app nor noted as edited in the YAML.
-        "security.code_scanning_default_setup.runner_label",
-        "security.code_quality_setup.runner_type",
-        "security.code_quality_setup.runner_label",
-        "security.dependabot_runner_settings.runner_group",
     ];
 
     private static RepottedCli Cli()
@@ -140,6 +137,10 @@ public sealed class ContractTests
 
     private static string Describe(string path, IEnumerable<JsonNode> values) =>
         $"{path}: {string.Join(", ", values.Select(value => value.ToJsonString()).Order(StringComparer.Ordinal))}";
+
+    /// <summary>An editor of <paramref name="listing"/>, a profile in the profiles folder of <paramref name="folders"/>.</summary>
+    private static ProfileViewModel Editor(RepottedClient client, ProfileListingDocument listing, Folders folders) =>
+        new(client, listing, ProfileStore.Profile(client, new ProfileFolder(client, folders.Settings)));
 
     [Fact]
     public async Task The_app_reads_what_status_prints()
@@ -254,6 +255,45 @@ public sealed class ContractTests
     }
 
     [AvaloniaFact]
+    public async Task The_cli_saves_an_empty_runner_label_as_null_and_an_empty_runner_group_as_empty()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        var orgs = folders.Write(
+            "orgs.yaml",
+            """
+            security:
+              code_scanning_default_setup:
+                runner_type: labeled
+                runner_label: gpu
+              code_quality_setup:
+                runner_label: null
+              dependabot_runner_settings:
+                runner_type: labeled
+                runner_group: builders
+
+            """.ReplaceLineEndings("\n"));
+        var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken));
+        var editor = Editor(client, listing, folders);
+        await editor.LoadCommand.ExecuteAsync(null);
+        var settings = editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).ToList();
+        SettingViewModel Setting(string key) => settings.Single(setting => setting.Key == key);
+
+        // A null label reads as an empty box, which left empty is no change.
+        var quality = Setting("code_quality_setup.runner_label");
+        Assert.Equal(("", true, false), (quality.Typed, quality.Managed, editor.HasChanges));
+        Setting("code_scanning_default_setup.runner_label").Typed = "";
+        Setting("dependabot_runner_settings.runner_group").Typed = "";
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null(editor.SaveError);
+        var saved = (await client.ProfileAsync(orgs, cancellationToken)).Values.GetProperty("security");
+        Assert.Equal(JsonValueKind.Null, saved.GetProperty("code_scanning_default_setup").GetProperty("runner_label").ValueKind);
+        Assert.Equal("", saved.GetProperty("dependabot_runner_settings").GetProperty("runner_group").GetString());
+    }
+
+    [AvaloniaFact]
     public async Task The_cli_saves_the_rulesets_and_environments_the_app_edits()
     {
         var client = Client();
@@ -264,7 +304,7 @@ public sealed class ContractTests
             "orgs.yaml",
             "extends: base.yaml\nenvironments:\n  - name: legacy\n  - name: npm\n    wait_timer: 5 # minutes\n  - name: review # apps\n  - name: -old\n");
         var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken), item => item.Name == "orgs");
-        var editor = new ProfileViewModel(client, listing);
+        var editor = Editor(client, listing, folders);
         await editor.LoadCommand.ExecuteAsync(null);
         var (rulesets, environments) = (editor.Tabs.Single(tab => tab.List == "rulesets"), editor.Tabs.Single(tab => tab.List == "environments"));
 
@@ -339,7 +379,7 @@ public sealed class ContractTests
 
             """.ReplaceLineEndings("\n"));
         var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken));
-        var editor = new ProfileViewModel(client, listing);
+        var editor = Editor(client, listing, folders);
         await editor.LoadCommand.ExecuteAsync(null);
         var settings = editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).ToList();
         var (wiki, issues) = (settings.Single(setting => setting.Key == "has_wiki"), settings.Single(setting => setting.Key == "has_issues"));
@@ -410,7 +450,7 @@ public sealed class ContractTests
 
             """.ReplaceLineEndings("\n"));
         var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken));
-        var editor = new ProfileViewModel(client, listing);
+        var editor = Editor(client, listing, folders);
         await editor.LoadCommand.ExecuteAsync(null);
         var rulesets = editor.Tabs.Single(tab => tab.List == "rulesets");
 
@@ -482,7 +522,7 @@ public sealed class ContractTests
 
             """.ReplaceLineEndings("\n"));
         var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken), item => item.Name == "orgs");
-        var editor = new ProfileViewModel(client, listing);
+        var editor = Editor(client, listing, folders);
         await editor.LoadCommand.ExecuteAsync(null);
         Assert.Null(editor.Error);
         var rulesets = editor.Tabs.Single(tab => tab.List == "rulesets");
@@ -551,8 +591,10 @@ public sealed class ContractTests
         var listings = await client.ProfilesAsync(folder, cancellationToken);
         var @base = new ProfileItemViewModel(Assert.Single(listings), null);
         string? made = null;
+        folders.Settings.Save(folders.Settings.Load() with { ProfilesFolder = folder });
+        var profileFolder = new ProfileFolder(client, folders.Settings);
         NewProfileViewModel Form(string name) =>
-            new(client, folder, [@base], [], null, (file, _) => Task.FromResult(made = file), () => { }, () => { }, new HashSet<string>(), work => work()) { Name = name };
+            new(client, profileFolder, [@base], [], null, (file, _) => Task.FromResult(made = file), () => { }, () => { }, new HashSet<string>()) { Name = name };
 
         var extending = Form("extending");
         extending.Extends = true;

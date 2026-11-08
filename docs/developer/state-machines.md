@@ -238,7 +238,7 @@ no other change, apply or discard starts until it ends.
 | Starting                                  | `stage --new` fails                           | Failed, with the CLI's message; with no staged file there is nothing to review or discard.                                   |
 | Unfinished                                | Resume                                        | Planning, from the file as it is.                                                                                            |
 | Unfinished                                | Start over                                    | Starting: the file and its plan are removed, and a new one starts from the chosen profile.                                   |
-| Planning                                  | `plan --staged` succeeds                      | Reviewing, with each row's exclusion key from the plan.                                                                      |
+| Planning                                  | `plan --staged` succeeds                      | Reviewing, with each row's exclusion key, and the one-off edits' diff rebuilt from this plan with its folds closed.          |
 | Planning                                  | `plan --staged` fails                         | Failed; Review again plans once more, and Discard apply is offered while the staged file is there.                           |
 | Reviewing                                 | Leave out, Put back, or Save edits to profile | Working, then Planning; a refused change keeps the review as it was and shows why.                                           |
 | Working                                   | The change succeeds                           | Planning, with the one-off edits showing the staged apply the change returns, which is not read again.                       |
@@ -332,8 +332,9 @@ last good record in place and the next sync starts from it.
 
 ## Desktop profiles source
 
-`ProfilesViewModel` keeps the profiles folder, the config repository if there
-is one, and the sync state the page shows.
+`ProfileFolder` keeps the profiles folder, the config repository if there is
+one, and the sync state the page shows. `ProfilesViewModel` holds one, and the
+Apply page and the new profile form write through the same one.
 
 | State        | Event                                              | Next                                                        |
 | ------------ | -------------------------------------------------- | ----------------------------------------------------------- |
@@ -347,12 +348,21 @@ is one, and the sync state the page shows.
 | Any          | Connect another repository                         | Connecting, through the connect form below.                 |
 | Any          | The app is replaced                                | Stopped: a save under way finishes, and no sync starts.     |
 
-Saves and the page's syncs share one chain (`ExclusiveAsync` and
-`SyncAsync`), so a sync never reads a file a save is writing. The connect
-form's first sync runs outside it. So does a capture's read of GitHub, which
-writes a dot-prefixed file that no sync reads; only the move of the finished
-capture to the profile's name joins the chain, and the profile syncs once it
-is whole, as the [New profile form](#new-profile-form) describes.
+Saves to the folder and syncs of it take turns in one `SerialQueue` in
+`ProfileFolder` (`WriteAsync` and `SyncAsync`), so a sync never reads a file a
+save is writing. A profile editor's save writes through its `ProfileStore`,
+which `ProfileStore.Profile` gives the folder's `WriteAsync`; saving one-off
+edits to the profile on the Apply page and the new profile form's move of a
+capture write through the folder itself. Some writes and syncs run outside the
+queue:
+
+- The connect form's first sync.
+- The new profile form's empty start and its start that extends another
+  profile, which create the file only if no file has that name.
+- A capture's read of GitHub, which writes a dot-prefixed file that no sync
+  reads. Only the move of the finished capture to the profile's name joins the
+  queue, and the profile syncs once it is whole, as the
+  [New profile form](#new-profile-form) describes.
 
 ## Profile editor
 
@@ -382,7 +392,8 @@ per file in a cache.
 
 A `SettingViewModel` is one row of a settings tab. Its value comes from the
 profile, a base profile, or neither; a change waits until the profile is
-saved.
+saved. A field marked `EmptyIsNull`, a runner label, saves an empty box as
+`null` and shows a `null` as an empty box, so leaving it empty is no change.
 
 | State              | Event                                               | Next                                                                                                                                                               |
 | ------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -393,6 +404,7 @@ saved.
 | Changed or invalid | Undo, or Discard on the profile                     | Saved, with the box showing the saved value.                                                                                                                       |
 | Any, in a section  | A setting that must stand alone there is set        | Each other setting this profile's file would hold there is left out: removed when set here, undone when only changed. Pages' `absent` is such a setting.           |
 | Any, in a section  | Another setting is set beside one that stands alone | The setting that stands alone is left out the same way, since the CLI refuses a file that holds both. Undoing one side doesn't bring the other back; Discard does. |
+| Any                | The setting that turns it off shows that value      | Off, as a runner label is with standard runners: the box can't be typed in but keeps its value, rail and way back. On once that setting has another value or none. |
 
 ### Settings search
 
@@ -531,7 +543,7 @@ the capture is whole. `ProfilesViewModel` keeps the names of the captures
 still running, in open and closed forms alike, and those names are held
 against every other form until each capture ends.
 
-The move to the profile's name runs in the chain that keeps saves and syncs
+The move to the profile's name runs in the queue that keeps saves and syncs
 apart, after any sync under way, so a pull can't write that name between the
 check and the move. On macOS and Linux, .NET's move that doesn't overwrite
 checks for the file and then renames, so it can still replace a file of that

@@ -196,21 +196,13 @@ internal sealed partial class EntryViewModel : ViewModelBase
     {
         Dropped = false;
         editor = null;
-        OnPropertyChanged(nameof(Editor));
         Refresh();
     }
 
-    /// <summary>Called by the editor on every edit.</summary>
+    /// <summary>Called by the editor on every edit, and once the editor is dropped, so it is made again.</summary>
     public void Refresh()
     {
-        OnPropertyChanged(nameof(Name));
-        OnPropertyChanged(nameof(IsDraft));
-        OnPropertyChanged(nameof(Absent));
-        OnPropertyChanged(nameof(Changed));
-        OnPropertyChanged(nameof(Unchanged));
-        OnPropertyChanged(nameof(Problem));
-        OnPropertyChanged(nameof(Note));
-        OnPropertyChanged(nameof(AccessibleName));
+        OnAllPropertiesChanged();
         DropCommand.NotifyCanExecuteChanged();
     }
 

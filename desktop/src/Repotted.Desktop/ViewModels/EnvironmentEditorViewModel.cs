@@ -51,13 +51,10 @@ internal sealed partial class EnvironmentEditorViewModel : EntryEditorViewModel
         get => waitTimer;
         set
         {
-            if (waitTimer == value)
+            if (SetProperty(ref waitTimer, value))
             {
-                return;
+                Touched();
             }
-            waitTimer = value;
-            OnPropertyChanged();
-            Touched();
         }
     }
 
@@ -78,13 +75,10 @@ internal sealed partial class EnvironmentEditorViewModel : EntryEditorViewModel
         get => branches;
         set
         {
-            if (branches == value)
+            if (SetProperty(ref branches, value))
             {
-                return;
+                Touched();
             }
-            branches = value;
-            OnPropertyChanged();
-            Touched();
         }
     }
 
@@ -95,13 +89,10 @@ internal sealed partial class EnvironmentEditorViewModel : EntryEditorViewModel
         get => tags;
         set
         {
-            if (tags == value)
+            if (SetProperty(ref tags, value))
             {
-                return;
+                Touched();
             }
-            tags = value;
-            OnPropertyChanged();
-            Touched();
         }
     }
 

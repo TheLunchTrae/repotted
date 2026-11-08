@@ -59,8 +59,8 @@ internal sealed record ExcludedViewModel(string Key);
 /// <param name="repository">The repository, as owner/name.</param>
 /// <param name="profile">The profile to start from, or null to start from the repository as it is.</param>
 /// <param name="close">Leaves the page.</param>
+/// <param name="folder">The profiles folder, where saving one-off edits to the profile writes in its turn with the folder's syncs.</param>
 /// <param name="profileSaved">Runs after one-off edits are saved to the profile, such as to list and sync the profiles again.</param>
-/// <param name="exclusive">Runs a write to the profiles folder, such as saving one-off edits to a profile, where no sync runs meanwhile.</param>
 /// <param name="desktop">Opens the App's installation settings, to grant what a locked change needs.</param>
 /// <param name="installUrl">Where the App is installed, for a repository it isn't installed on.</param>
 internal sealed partial class ApplyViewModel(
@@ -69,8 +69,8 @@ internal sealed partial class ApplyViewModel(
     string repository,
     ProfileListingDocument? profile,
     Action close,
+    ProfileFolder folder,
     Func<Task>? profileSaved = null,
-    Func<Func<Task>, Task>? exclusive = null,
     IDesktop? desktop = null,
     Uri? installUrl = null) : ViewModelBase
 {
@@ -155,17 +155,25 @@ internal sealed partial class ApplyViewModel(
     [ObservableProperty]
     public partial string UnfinishedMessage { get; private set; } = "";
 
-    public IReadOnlyList<CompareSectionViewModel> Sections { get; private set; } = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Locked), nameof(HasLocks), nameof(LockSummary), nameof(HasAccessUrl), nameof(ReviewSummary))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyCommand))]
+    public partial IReadOnlyList<CompareSectionViewModel> Sections { get; private set; } = [];
 
-    public IReadOnlyList<string> Warnings { get; private set; } = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasWarnings))]
+    public partial IReadOnlyList<string> Warnings { get; private set; } = [];
 
     public bool HasWarnings => Warnings.Count > 0;
 
     /// <summary>The drafts of the profile the apply starts from, which it leaves out, or null for none.</summary>
-    public string? DraftsNote { get; private set; }
+    [ObservableProperty]
+    public partial string? DraftsNote { get; private set; }
 
     /// <summary>What the staged apply leaves out of the profile it starts from.</summary>
-    public IReadOnlyList<ExcludedViewModel> Excluded { get; private set; } = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasExcluded))]
+    public partial IReadOnlyList<ExcludedViewModel> Excluded { get; private set; } = [];
 
     public bool HasExcluded => Excluded.Count > 0;
 
@@ -190,9 +198,12 @@ internal sealed partial class ApplyViewModel(
         : $"GitHub will refuse {Locked} of the changes below, each marked with what it needs. Apply waits until you leave them out, or give the App that access and review again.";
 
     /// <summary>Where to grant what the locks need, as the compare has it.</summary>
-    public Uri? AccessUrl { get; private set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAccessUrl))]
+    public partial Uri? AccessUrl { get; private set; }
 
-    public string AccessLabel { get; private set; } = "Review App access";
+    [ObservableProperty]
+    public partial string AccessLabel { get; private set; } = "Review App access";
 
     public bool HasAccessUrl => HasLocks && AccessUrl is not null && desktop is not null;
 
@@ -212,6 +223,9 @@ internal sealed partial class ApplyViewModel(
     /// <summary>The one-off edits, in the profile editor, over the profile the staged apply starts from.</summary>
     [ObservableProperty]
     public partial ProfileViewModel? Edits { get; private set; }
+
+    /// <summary>The last plan as a diff, which the one-off edits' YAML panel shows.</summary>
+    private PlanDiffViewModel? diff;
 
     /// <summary>The tab on screen: 0 for the changes, 1 for the one-off edits.</summary>
     [ObservableProperty]
@@ -335,7 +349,7 @@ internal sealed partial class ApplyViewModel(
             Show(plan);
             if (Edits is null)
             {
-                Edits = new ProfileViewModel(client, Listing(), EditsSavedAsync, store: Store());
+                Edits = new ProfileViewModel(client, Listing(), Store(), EditsSavedAsync);
                 Edits.PropertyChanged += (_, e) =>
                 {
                     if (e.PropertyName is nameof(ProfileViewModel.ChangeCount) or nameof(ProfileViewModel.Saving)
@@ -344,6 +358,7 @@ internal sealed partial class ApplyViewModel(
                         OnEditsChanged();
                     }
                 };
+                Edits.Diff = diff;
                 await Edits.LoadAsync().ConfigureAwait(true);
                 OnEditsChanged();
             }
@@ -359,27 +374,35 @@ internal sealed partial class ApplyViewModel(
     {
         BaseName = plan.Staged.Base is null ? null : Path.GetFileNameWithoutExtension(plan.Staged.Base);
         var exclusions = plan.Exclusions.ToDictionary(exclusion => (exclusion.Change, exclusion.Field));
-        Sections = CompareViewModel.Build(plan.Plan, (change, field) =>
-            exclusions.TryGetValue((change, field), out var found) ? new RowExclusion(found.Key, found.Edited) : null);
+        RowExclusion? Exclusion(int change, string? field) =>
+            exclusions.TryGetValue((change, field), out var found) ? new RowExclusion(found.Key, found.Edited) : null;
+        Sections = PlanSections.Build(plan.Plan, Exclusion);
+        diff = new PlanDiffViewModel(PlanDiff.Lines(plan.Plan, Exclusion), DiffFootnote(plan));
+        if (Edits is not null)
+        {
+            Edits.Diff = diff;
+        }
         Warnings = [.. plan.Warnings.Where(warning => !Sections.Any(section => section.SkippedBy == warning))];
         Excluded = [.. plan.Staged.Exclude.Select(key => new ExcludedViewModel(key))];
-        (AccessLabel, AccessUrl) = CompareViewModel.Access(plan.Plan, installUrl);
-        DraftsNote = CompareViewModel.Drafts(plan.Plan);
+        (AccessLabel, AccessUrl) = PlanSections.Access(plan.Plan, installUrl);
+        DraftsNote = PlanSections.Drafts(plan.Plan);
         ChangeCount = plan.Changes.Count;
-        OnPropertyChanged(nameof(Sections));
-        OnPropertyChanged(nameof(Locked));
-        OnPropertyChanged(nameof(HasLocks));
-        OnPropertyChanged(nameof(LockSummary));
-        OnPropertyChanged(nameof(AccessUrl));
-        OnPropertyChanged(nameof(AccessLabel));
-        OnPropertyChanged(nameof(HasAccessUrl));
-        ApplyCommand.NotifyCanExecuteChanged();
-        OnPropertyChanged(nameof(Warnings));
-        OnPropertyChanged(nameof(HasWarnings));
-        OnPropertyChanged(nameof(DraftsNote));
-        OnPropertyChanged(nameof(Excluded));
-        OnPropertyChanged(nameof(HasExcluded));
-        OnPropertyChanged(nameof(ReviewSummary));
+    }
+
+    /// <summary>What the diff leaves out: the drafts, and what this apply leaves as GitHub has it.</summary>
+    private static string? DiffFootnote(StagedPlanDocument plan)
+    {
+        // An exclusion that leaves nothing out has a warning of its own, so it isn't counted.
+        var count = plan.Staged.Exclude.Count(key =>
+            !plan.Warnings.Contains($"Excluding {key} leaves nothing out, since the profile sets nothing it names", StringComparer.Ordinal));
+        var excluded = count switch
+        {
+            0 => null,
+            1 => "1 setting or entry is left out of this apply, so GitHub keeps it as it is.",
+            _ => $"{count} settings or entries are left out of this apply, so GitHub keeps them as they are.",
+        };
+        string[] notes = [.. new[] { PlanSections.Drafts(plan.Plan), excluded }.OfType<string>()];
+        return notes.Length == 0 ? null : string.Join(" ", notes);
     }
 
     /// <summary>The staged file as the profile editor lists it.</summary>
@@ -389,6 +412,8 @@ internal sealed partial class ApplyViewModel(
     private ProfileStore Store() => new(
         async (path, cancellationToken) => (await client.StagedAsync(path, cancellationToken).ConfigureAwait(true)).Layers,
         client.SaveStagedEditsAsync,
+        // Only the app writes the staged file, which is not in the profiles folder, so a save waits for no sync.
+        write => write(),
         "Save edits",
         "One-off edit",
         (@base, _) => @base is null
@@ -482,7 +507,7 @@ internal sealed partial class ApplyViewModel(
             }
             staged = saved;
         }
-        await (exclusive is null ? Save() : exclusive(Save)).ConfigureAwait(true);
+        await folder.WriteAsync(Save).ConfigureAwait(true);
         if (profileSaved is not null)
         {
             await profileSaved().ConfigureAwait(true);

@@ -212,14 +212,16 @@ public sealed class ViewTests : IDisposable
             {"chain":[{{{Json(own)}}},{{{Json(@base)}}}],
              "profile":{
                "repository":{"has_wiki":true,"pull_request_creation_cap":{"enabled":true,"max_open_pull_requests":3}},
-               "security":{"vulnerability_alerts":true,"security_and_analysis":{"secret_scanning":{"status":"enabled"} } },
+               "security":{"vulnerability_alerts":true,"security_and_analysis":{"secret_scanning":{"status":"enabled"} },
+                 "code_scanning_default_setup":{"runner_type":"standard","runner_label":null} },
                "pages":{"build_type":"legacy","source":{"branch":"main"} } },
              {{{Documents.NoDrafts}}},
              "sources":{
                "repository":{"has_wiki":{{{Json(own)}}},"pull_request_creation_cap.enabled":{{{Json(own)}}},
                  "pull_request_creation_cap.max_open_pull_requests":{{{Json(own)}}} },
                "merge":{},"actions":{},
-               "security":{"vulnerability_alerts":{{{Json(@base)}}},"security_and_analysis.secret_scanning":{{{Json(own)}}} },
+               "security":{"vulnerability_alerts":{{{Json(@base)}}},"security_and_analysis.secret_scanning":{{{Json(own)}}},
+                 "code_scanning_default_setup.runner_type":{{{Json(own)}}},"code_scanning_default_setup.runner_label":{{{Json(own)}}} },
                "custom_properties":{},
                "pages":{"build_type":{{{Json(own)}}},"source.branch":{{{Json(own)}}} },
                "autolinks":{},"rulesets":{},"environments":{},
@@ -247,6 +249,12 @@ public sealed class ViewTests : IDisposable
         text = Texts(window);
         Assert.Contains("Malware alerts, Dependabot rules, and preventing direct dismissals have no API here, so they are set on GitHub or in a security configuration.", text);
         Assert.Contains("From base", text);
+        Assert.Contains("Used only with labeled runners. Leave it empty for no label.", text);
+        // Standard runners use no label, so the box is off.
+        var label = window.GetVisualDescendants().OfType<TextBox>()
+            .Single(box => box.DataContext is SettingViewModel { Key: "code_scanning_default_setup.runner_label" });
+        Assert.False(label.IsEnabled);
+        Assert.True(string.IsNullOrEmpty(label.Text));
         Save(window, $"settings-security-{theme}");
 
         editor.SelectedTab = editor.Tab("Actions");
@@ -727,7 +735,14 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("Repotted can't change 2 differences below. Each says what it needs.", text);
         Assert.Contains(ControlLabel.For("Review App access"), text);
         Assert.Contains("Needs Actions write", text);
+        // A compare's rows offer nothing to leave out; that is the apply's.
+        Assert.DoesNotContain(ControlLabel.For("Leave out"), text);
         Save(window, $"compare-locked-{theme}");
+
+        // The count of what Repotted can't change is read out when it changes, as after granting access and comparing again.
+        var locks = window.GetVisualDescendants().OfType<TextBlock>()
+            .Single(block => block.IsEffectivelyVisible && block.Text == "Repotted can't change 2 differences below. Each says what it needs.");
+        Assert.Equal(AutomationLiveSetting.Polite, AutomationProperties.GetLiveSetting(locks));
 
         // The filter for what Repotted can't change shows only the locked rows.
         Assert.Contains(ControlLabel.For("Can't change"), text);

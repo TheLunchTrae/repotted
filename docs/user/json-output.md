@@ -30,7 +30,7 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `exclusions`, which says what leaves each change out of the staged apply.
   Each exclusion is `{ change, field, key, edited }`: `change` is the
   change's index in `changes`, `field` is the field it leaves out, or
-  null for a whole ruleset, environment, autolink or Pages site, and `key`
+  null for a whole ruleset, environment, label, autolink or Pages site, and `key`
   is what `stage --exclude` takes. A field inside an object of settings gives
   the whole object, which GitHub writes at once. `edited` is true when the
   value is a one-off edit, which you undo rather than exclude. The file
@@ -70,15 +70,15 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   resolved. `profile` is the resolved profile without its
   [drafts](profiles.md#drafts): what a plan applies. `drafts` holds them, as
   `repository`, `merge`, `actions`, `security`, `custom_properties` and
-  `pages` objects of draft settings and `autolinks`, `rulesets` and
-  `environments` lists of draft entries, each with `draft: true`; a member
+  `pages` objects of draft settings and `autolinks`, `rulesets`,
+  `environments` and `labels` lists of draft entries, each with `draft: true`; a member
   with no drafts is left out. `warnings` says what stops each draft from
   applying as it stands. `sources` names the file that sets each value:
   `repository`, `merge`, `actions`, `security`, `custom_properties` and
   `pages` by key, with the keys inside an object of settings as
   `<object>.<key>`, such as `selected_actions.verified_allowed` under
-  `actions`, `autolinks` by key prefix, `rulesets` and `environments` by
-  name, and `drafts` the same way for drafts. A value whose file is
+  `actions`, `autolinks` by key prefix, `rulesets`, `environments` and
+  `labels` by name, and `drafts` the same way for drafts. A value whose file is
   `chain[0]` is set in the profile itself.
 - `stage` prints
   `{ file, repository, base, exclude, chain, profile, drafts, warnings, sources }`.

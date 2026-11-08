@@ -9,7 +9,8 @@
       One setting: where its value comes from, its choices or a box to type it
       in, a way back, and any draft of it. A sub-option sits indented under its setting, and a
       note says what the setting can't do here. Choices too long to sit beside
-      the label go under it.
+      the label go under it. A setting that another one turns off, such as a
+      runner label with standard runners, keeps its value but can't be edited.
     -->
     <DataTemplate x:Key="SettingRow" x:DataType="vm:SettingViewModel">
       <Border Classes="field" Classes.nested="{Binding Nested}">
@@ -24,14 +25,15 @@
                        TextWrapping="Wrap" Margin="0,2,0,0" />
           </StackPanel>
           <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4" IsVisible="{Binding IsTyped}">
-            <TextBox Classes="setting" Text="{Binding Typed}" Classes.number="{Binding IsNumber}"
+            <TextBox Classes="setting" Text="{Binding Typed}" Classes.number="{Binding IsNumber}" IsEnabled="{Binding Enabled}"
                      AutomationProperties.Name="{Binding TypedName}"
                      AutomationProperties.HelpText="{Binding TypedHelp}" />
             <TextBlock Classes="problem small" Text="{Binding TypedProblem}" IsVisible="{Binding HasTypedProblem}"
                        TextWrapping="Wrap" MaxWidth="240" />
           </StackPanel>
           <Border Grid.Row="{Binding OptionsRow}" Grid.Column="{Binding OptionsColumn}" Grid.ColumnSpan="{Binding OptionsSpan}"
-                  Classes="seg" Classes.wide="{Binding Wide}" Classes.nested="{Binding Nested}" IsVisible="{Binding IsChoice}">
+                  Classes="seg" Classes.wide="{Binding Wide}" Classes.nested="{Binding Nested}" IsVisible="{Binding IsChoice}"
+                  IsEnabled="{Binding Enabled}">
             <ItemsControl ItemsSource="{Binding Options}">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
@@ -586,18 +588,85 @@
           </ScrollViewer>
         </DockPanel>
 
-        <!-- The file as saved -->
-        <Border Grid.Column="1" Classes="panel" Width="360" Margin="24,0,0,0" VerticalAlignment="Stretch"
+        <!-- The file as saved, or what the last plan changes, as a diff of the same YAML -->
+        <Border Grid.Column="1" Classes="panel" Width="{Binding YamlWidth}" Margin="24,0,0,0" VerticalAlignment="Stretch"
                 IsVisible="{Binding ShowYaml}">
           <DockPanel>
-            <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,12">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="0,0,0,10" IsVisible="{Binding HasDiff}">
+              <Border Classes="seg">
+                <StackPanel Orientation="Horizontal">
+                  <ToggleButton Classes="seg" Classes.on="{Binding ShowingDiff}" IsChecked="{Binding ShowingDiff, Mode=OneWay}"
+                                Content="Diff" Command="{Binding ShowDiffCommand}"
+                                AutomationProperties.HelpText="Shows what GitHub has now against what it has after this apply." />
+                  <ToggleButton Classes="seg" Classes.on="{Binding ShowingFile}" IsChecked="{Binding ShowingFile, Mode=OneWay}"
+                                Content="File" Command="{Binding ShowFileCommand}"
+                                AutomationProperties.HelpText="Shows the file as saved." />
+                </StackPanel>
+              </Border>
+              <TextBlock Grid.Column="1" Classes="mono muted small" HorizontalAlignment="Right" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" Margin="12,0,0,0" Text="{Binding FileName}" IsVisible="{Binding ShowingDiff}" />
+            </Grid>
+
+            <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,12" IsVisible="{Binding ShowingFile}">
               <TextBlock Classes="mono" FontWeight="SemiBold" Text="{Binding FileName}" />
               <TextBlock Classes="muted small" Text="As saved. Save to see your changes here." TextWrapping="Wrap"
                          IsVisible="{Binding HasChanges}" />
             </StackPanel>
-            <ScrollViewer HorizontalScrollBarVisibility="Auto">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" IsVisible="{Binding ShowingFile}">
               <SelectableTextBlock Classes="yaml" Text="{Binding Yaml}" />
             </ScrollViewer>
+
+            <DockPanel IsVisible="{Binding ShowingDiff}">
+              <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,12">
+                <TextBlock Classes="small" TextWrapping="Wrap">
+                  <Run FontWeight="SemiBold" Text="GitHub now" />
+                  <Run Foreground="{DynamicResource MutedBrush}" Text="against" />
+                  <Run FontWeight="SemiBold" Text="after this apply" />
+                </TextBlock>
+                <TextBlock Classes="muted small" TextWrapping="Wrap" Text="Shows saved edits. Save to see the rest here."
+                           IsVisible="{Binding HasChanges}" />
+                <TextBlock Classes="muted small" TextWrapping="Wrap" Text="GitHub already has everything here."
+                           IsVisible="{Binding Diff.Matches, FallbackValue=False}" />
+              </StackPanel>
+              <TextBlock DockPanel.Dock="Bottom" Classes="muted small" Margin="0,10,0,0" TextWrapping="Wrap"
+                         Text="{Binding Diff.Footnote, FallbackValue={x:Null}}" IsVisible="{Binding Diff.HasFootnote, FallbackValue=False}" />
+              <Border Classes="diff">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto">
+                  <ItemsControl ItemsSource="{Binding Diff.Items, FallbackValue={x:Null}}" Tag="{Binding Diff}" AutomationProperties.Name="Diff">
+                    <ItemsControl.DataTemplates>
+                      <DataTemplate DataType="vm:DiffLine">
+                        <Border Classes="diffline" Classes.added="{Binding IsAdded}" Classes.removed="{Binding IsRemoved}"
+                                AutomationProperties.AccessibilityView="Content" AutomationProperties.Name="{Binding AccessibleName}">
+                          <Panel>
+                            <Grid ColumnDefinitions="22,*,Auto" IsVisible="{Binding !IsNote}">
+                              <TextBlock Classes="sign" Text="{Binding Sign}" AutomationProperties.AccessibilityView="Raw" />
+                              <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <TextBlock Classes="line indent" xml:space="preserve" Text="{Binding Indent}" AutomationProperties.AccessibilityView="Raw" />
+                                <TextBlock Classes="line" Classes.removed="{Binding IsRemoved}" Text="{Binding Value}" AutomationProperties.AccessibilityView="Raw" />
+                              </StackPanel>
+                              <Border Grid.Column="2" Classes="chip" Margin="12,0,8,0" Padding="6,0" VerticalAlignment="Center" IsVisible="{Binding HasTag}">
+                                <TextBlock FontSize="12" Text="{Binding Tag}" AutomationProperties.AccessibilityView="Raw" />
+                              </Border>
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="22,3,10,3" IsVisible="{Binding IsNote}">
+                              <Path Classes="lock" VerticalAlignment="Center" IsVisible="{Binding Locked}" />
+                              <TextBlock Classes="muted small" FontSize="12.5" TextWrapping="Wrap" Text="{Binding Text}" AutomationProperties.AccessibilityView="Raw" />
+                            </StackPanel>
+                          </Panel>
+                        </Border>
+                      </DataTemplate>
+                      <DataTemplate DataType="vm:DiffFold">
+                        <Border Classes="difffold">
+                          <Button Classes="link" Margin="22,0,0,0" FontSize="13" Content="{Binding Label}"
+                                  Command="{Binding $parent[ItemsControl].((vm:PlanDiffViewModel)Tag).UnfoldCommand, FallbackValue={x:Null}}"
+                                  CommandParameter="{Binding}" />
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.DataTemplates>
+                  </ItemsControl>
+                </ScrollViewer>
+              </Border>
+            </DockPanel>
           </DockPanel>
         </Border>
       </Grid>
