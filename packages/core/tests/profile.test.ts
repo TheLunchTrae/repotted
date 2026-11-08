@@ -602,13 +602,17 @@ describe('listProfiles', () => {
   });
 
   test('reports real paths, matching the chain that resolveProfile reports for the same file', async () => {
-    const linked = path.join(directory, 'listing-link');
-    await symlink(path.join(directory, 'listing'), linked);
+    const folder = path.join(directory, 'real-paths');
+    await mkdir(folder);
+    await writeFile(path.join(folder, 'base.yaml'), 'repository: { has_wiki: false }\n');
+    await writeFile(path.join(folder, 'app.yml'), 'extends: base.yaml\n');
+    const linked = path.join(directory, 'real-paths-link');
+    await symlink(folder, linked);
 
     const [app] = await listProfiles(linked);
 
-    expect(app?.file).toBe(path.join(directory, 'listing', 'app.yml'));
-    expect(app?.extends).toBe(path.join(directory, 'listing', 'base.yaml'));
+    expect(app?.file).toBe(path.join(folder, 'app.yml'));
+    expect(app?.extends).toBe(path.join(folder, 'base.yaml'));
     expect((await resolveProfile(path.join(linked, 'app.yml'))).chain[0]).toBe(app?.file);
   });
 });
