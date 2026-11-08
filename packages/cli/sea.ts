@@ -44,7 +44,7 @@ const native = keyring.resolve(`@napi-rs/keyring-${platform}/keyring.${platform}
 const work = await mkdtemp(path.join(tmpdir(), 'repotted-sea-'));
 try {
   const main = path.join(work, 'main.cjs');
-  await build({
+  const bundled = await build({
     entryPoints: [fileURLToPath(new URL('src/main.ts', import.meta.url))],
     outfile: main,
     bundle: true,
@@ -73,6 +73,11 @@ try {
       },
     ],
   });
+  // esbuild only warns about some code that fails at run time in a CommonJS
+  // bundle, such as import.meta, which it leaves empty.
+  if (bundled.warnings.length > 0) {
+    throw new Error('Bundling the single executable warned.');
+  }
 
   const config = path.join(work, 'sea-config.json');
   await writeFile(
@@ -96,6 +101,9 @@ try {
     encoding: 'utf8',
     stdio: ['ignore', 'inherit', 'pipe'],
   });
+  if (sea.error !== undefined) {
+    throw sea.error;
+  }
   process.stderr.write(sea.stderr);
   if (sea.status !== 0 || sea.stderr.includes('Warning:')) {
     await rm(executable, { force: true });

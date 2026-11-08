@@ -277,6 +277,9 @@ sets how the code is built:
 - Node builds a snapshot only from a CommonJS main script, which can't
   `import()`, so the executable's bundle is CommonJS and turns each `import()`
   of a built-in module into a `require`. The npm bundle stays an ES module.
+  esbuild only warns about code that breaks in CommonJS, such as
+  `import.meta`, which it leaves empty, so `sea.ts` fails the build on any
+  esbuild warning.
 - The snapshot freezes whatever the bundle computes at load time, so code reads
   the environment, the working directory, the arguments, and the time when it
   runs, not at module scope.
@@ -288,8 +291,9 @@ sets how the code is built:
 - A snapshot runs only on the platform that built it, so each package builds
   its CLI on a runner of its own platform.
 
-The snapshot makes the executable about 9 MB larger, and the MCP server, which
-loads on use, isn't in it.
+The snapshot makes the executable about 9 MB larger. The MCP server is in the
+executable's bundle, but it loads on use, so the snapshot holds it unevaluated
+and `repotted mcp` evaluates it when it runs.
 
 ### Applying from the app
 
