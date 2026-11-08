@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { z } from 'zod';
 
-import { type Change, type Section, sections } from './change.js';
+import { type Change, isListSection, listSections, type Section, sections } from './change.js';
 import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadable } from './endpoints.js';
 import { type GitHub, GitHubError, parseRepo, repoPattern, type RepoRef } from './github.js';
 import { type Lock, requiredPermission } from './permissions.js';
@@ -299,8 +299,9 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
 
 // A saved plan's changes are never executed: apply re-plans from `desired`
 // and only compares, so a hand-edited file cannot smuggle in other requests.
-const savedChange = z.object({
-  section: z.enum(sections),
+// It compares each change whole, and an object drops keys it doesn't name,
+// so every member of a change must be named here.
+const savedWrite = {
   action: z.enum(['create', 'update', 'delete']),
   target: z.string(),
   fields: z.array(z.object({ field: z.string(), from: z.unknown().optional(), to: z.unknown().optional() })),
@@ -309,7 +310,23 @@ const savedChange = z.object({
     path: z.string(),
     body: z.unknown().optional(),
   }),
-});
+};
+
+const savedChange = z.union([
+  z.object({
+    section: z.enum(sections).extract(listSections),
+    // Plans saved before changes named their entry have none. No entry has
+    // an empty name, so such a plan never matches a new one and reads as stale.
+    entry: z
+      .object({
+        name: z.string(),
+        branch_policy: z.object({ name: z.string(), type: z.enum(['branch', 'tag']) }).exactOptional(),
+      })
+      .default({ name: '' }),
+    ...savedWrite,
+  }),
+  z.object({ section: z.enum(sections).exclude(listSections), ...savedWrite }),
+]);
 
 const savedPlan = z.object({
   repository: z.string().regex(repoPattern),
@@ -400,7 +417,7 @@ function describeTarget(section: Section, target: string): string {
 
 /** A draft a plan leaves out, as plan output names it. */
 export function describeSkipped({ section, target }: Skipped): string {
-  if (section === 'autolinks' || section === 'rulesets' || section === 'environments' || section === 'labels') {
+  if (isListSection(section)) {
     return describeTarget(section, target);
   }
   return section === 'pages' && target === 'absent'

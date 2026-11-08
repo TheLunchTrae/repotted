@@ -417,14 +417,27 @@ merge: { allow_rebase_merge: false }
     expect(included.profile.environments?.map((entry) => entry.name)).toEqual(['Prod']);
   });
 
-  test('leaves an environment out by its own name when another name starts with it', async () => {
-    const files = await folder(`environments: [{ name: Prod }, { name: 'Prod: EU' }]
+  test("leaves a change out with its own environment, though its target reads as another's", async () => {
+    // The branch policy's target, "Prod: branch main", is also the second environment's name.
+    const files = await folder(`environments:
+  - name: Prod
+    deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
+    branch_policies: [{ name: main }]
+  - name: 'Prod: branch main'
 `);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     const { plan, exclusions } = await planStagedApply(new FakeGitHub(), files.staged);
 
-    expect(plan.changes.map((change) => change.target)).toEqual(['Prod', 'Prod: EU']);
-    expect(exclusions.map((exclusion) => exclusion.key)).toEqual(['environments/Prod', 'environments/Prod: EU']);
+    expect(plan.changes.map((change) => `${change.action} ${change.target}`)).toEqual([
+      'create Prod',
+      'create Prod: branch main',
+      'create Prod: branch main',
+    ]);
+    expect(exclusions.map((exclusion) => exclusion.key)).toEqual([
+      'environments/Prod',
+      'environments/Prod: branch main',
+      'environments/Prod',
+    ]);
   });
 
   test('warns when its profile changes so that an exclusion leaves nothing out', async () => {

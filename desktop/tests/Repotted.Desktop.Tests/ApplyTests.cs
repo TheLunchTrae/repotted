@@ -89,7 +89,7 @@ public sealed class ApplyTests : IDisposable
 
     private const string MainChange =
         """
-        {"section":"rulesets","action":"create","target":"Main",
+        {"section":"rulesets","action":"create","target":"Main","entry":{"name":"Main"},
          "fields":[{"field":"name","to":"Main"},{"field":"target","to":"branch"},{"field":"enforcement","to":"active"},
            {"field":"bypass_actors","to":[]},{"field":"rules","to":[{"type":"deletion"}]}],
          "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/rulesets","body":{}}}
@@ -1094,7 +1094,7 @@ public sealed class ApplyTests : IDisposable
             {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"workflow"},"autolinks":[]},"skipped":[],"warnings":[],"changes":[
               {"section":"pages","action":"create","target":"GitHub Pages","fields":[{"field":"build_type","to":"workflow"}],
                "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/pages","body":{}}},
-              {"section":"autolinks","action":"delete","target":"JIRA-","fields":[],
+              {"section":"autolinks","action":"delete","target":"JIRA-","entry":{"name":"JIRA-"},"fields":[],
                "request":{"method":"DELETE","path":"/repos/TheLunchTrae/repotted/autolinks/3"}}],
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[{"change":0,"reason":"Needs Pages write"}]}
             """,

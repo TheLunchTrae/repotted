@@ -99,6 +99,7 @@ export function planLabels(desired: readonly LabelEntry[], live: LiveLabels, rep
           section: 'labels',
           action: 'delete',
           target: entry.name,
+          entry: { name: entry.name },
           fields: [],
           request: { method: 'DELETE', path: labelPath(current.name) },
         });
@@ -124,6 +125,7 @@ export function planLabels(desired: readonly LabelEntry[], live: LiveLabels, rep
         section: 'labels',
         action: 'create',
         target: entry.name,
+        entry: { name: entry.name },
         fields: [],
         request: {
           method: 'POST',
@@ -145,6 +147,7 @@ export function planLabels(desired: readonly LabelEntry[], live: LiveLabels, rep
       section: 'labels',
       action: 'update',
       target: entry.name,
+      entry: { name: entry.name },
       fields,
       request: { method: 'PATCH', path: labelPath(source.name), body: bodyOf(fields) },
     });

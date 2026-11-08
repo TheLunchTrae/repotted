@@ -241,7 +241,7 @@ public sealed class BatchTests : IDisposable
 
     private const string MainChange =
         """
-        {"section":"rulesets","action":"create","target":"Main",
+        {"section":"rulesets","action":"create","target":"Main","entry":{"name":"Main"},
          "fields":[{"field":"name","to":"Main"}],
          "request":{"method":"POST","path":"/repos/o/r/rulesets","body":{}}}
         """;

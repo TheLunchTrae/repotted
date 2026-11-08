@@ -90,9 +90,9 @@ public sealed class PlanDiffTests
         var plan = Plan(
             """{"rulesets":[{"name":"Main","enforcement":"active","rules":[{"type":"deletion"}]},{"name":"Old","absent":true}]}""",
             """
-            {"section":"rulesets","action":"create","target":"Main","fields":[{"field":"name","to":"Main"},{"field":"enforcement","to":"active"},
+            {"section":"rulesets","action":"create","target":"Main","entry":{"name":"Main"},"fields":[{"field":"name","to":"Main"},{"field":"enforcement","to":"active"},
               {"field":"rules","to":[{"type":"deletion"}]}]},
-            {"section":"rulesets","action":"delete","target":"Old","fields":[]}
+            {"section":"rulesets","action":"delete","target":"Old","entry":{"name":"Old"},"fields":[]}
             """);
 
         Assert.Equal(
@@ -114,8 +114,8 @@ public sealed class PlanDiffTests
         var plan = Plan(
             """{"environments":[{"name":"production","branch_policies":[{"name":"main","type":"branch"}]}]}""",
             """
-            {"section":"environments","action":"create","target":"production: branch main","fields":[]},
-            {"section":"environments","action":"delete","target":"production: tag v*","fields":[]}
+            {"section":"environments","action":"create","target":"production: branch main","entry":{"name":"production","branch_policy":{"name":"main","type":"branch"}},"fields":[]},
+            {"section":"environments","action":"delete","target":"production: tag v*","entry":{"name":"production","branch_policy":{"name":"v*","type":"tag"}},"fields":[]}
             """);
 
         Assert.Equal(
@@ -141,9 +141,9 @@ public sealed class PlanDiffTests
               {"name":"priority: high","color":"d93f0b"},{"name":"wontfix","absent":true}]}
             """,
             """
-            {"section":"labels","action":"delete","target":"wontfix","fields":[]},
-            {"section":"labels","action":"update","target":"Type: feature","fields":[{"field":"name","from":"enhancement","to":"Type: feature"}]},
-            {"section":"labels","action":"create","target":"priority: high","fields":[]}
+            {"section":"labels","action":"delete","target":"wontfix","entry":{"name":"wontfix"},"fields":[]},
+            {"section":"labels","action":"update","target":"Type: feature","entry":{"name":"Type: feature"},"fields":[{"field":"name","from":"enhancement","to":"Type: feature"}]},
+            {"section":"labels","action":"create","target":"priority: high","entry":{"name":"priority: high"},"fields":[]}
             """);
 
         Assert.Equal(
@@ -170,7 +170,7 @@ public sealed class PlanDiffTests
             """{"repository":{"has_wiki":false},"rulesets":[{"name":"Main"}]}""",
             """
             {"section":"repository","action":"update","target":"repository settings","fields":[{"field":"has_wiki","from":true,"to":false}]},
-            {"section":"rulesets","action":"create","target":"Main","fields":[{"field":"name","to":"Main"}]}
+            {"section":"rulesets","action":"create","target":"Main","entry":{"name":"Main"},"fields":[{"field":"name","to":"Main"}]}
             """,
             locks: """{"change":1,"reason":"Needs Administration write"}""");
 
@@ -213,7 +213,7 @@ public sealed class PlanDiffTests
               {"type":"pull_request","parameters":{"required_approving_review_count":2}}]}]}
             """,
             """
-            {"section":"rulesets","action":"update","target":"Main","fields":[{"field":"rules",
+            {"section":"rulesets","action":"update","target":"Main","entry":{"name":"Main"},"fields":[{"field":"rules",
               "from":[{"type":"pull_request","parameters":{"required_approving_review_count":1,"dismiss_stale_reviews_on_push":false}},
                 {"type":"deletion"},{"type":"non_fast_forward"}],
               "to":[{"type":"deletion"},
@@ -256,7 +256,7 @@ public sealed class PlanDiffTests
               "reviewers":[{"type":"User","id":1},{"type":"Team","id":2}]}]}
             """,
             """
-            {"section":"environments","action":"update","target":"production","fields":[
+            {"section":"environments","action":"update","target":"production","entry":{"name":"production"},"fields":[
               {"field":"wait_timer","from":0,"to":5},
               {"field":"reviewers","from":[{"type":"Team","id":2},{"type":"User","id":1}],"to":[{"type":"User","id":1},{"type":"Team","id":2}]}]}
             """);
@@ -285,7 +285,7 @@ public sealed class PlanDiffTests
         var plan = Plan(
             """{"rulesets":[{"name":"Main","rules":[{"type":"deletion"}]}]}""",
             """
-            {"section":"rulesets","action":"update","target":"Main","fields":[{"field":"rules",
+            {"section":"rulesets","action":"update","target":"Main","entry":{"name":"Main"},"fields":[{"field":"rules",
               "from":[{"type":"deletion"},{"type":"non_fast_forward"}],"to":[{"type":"deletion"}]}]}
             """);
 
@@ -314,14 +314,32 @@ public sealed class PlanDiffTests
     }
 
     [Fact]
-    public void A_branch_policy_belongs_to_the_environment_with_the_longest_name_it_starts_with()
+    public void A_change_shows_under_the_environment_its_entry_names_though_its_target_reads_as_another()
     {
+        // Both changes have the target "prod: tag v1": one of prod's branch policies, and the environment of that name.
         var plan = Plan(
-            """{"environments":[{"name":"prod"},{"name":"prod: tag v1","absent":true}]}""",
-            """{"section":"environments","action":"delete","target":"prod: tag v1","fields":[]}""");
+            """
+            {"environments":[{"name":"prod","branch_policies":[{"name":"main","type":"branch"}]},
+              {"name":"prod: tag v1","absent":true}]}
+            """,
+            """
+            {"section":"environments","action":"delete","target":"prod: tag v1",
+             "entry":{"name":"prod","branch_policy":{"name":"v1","type":"tag"}},"fields":[]},
+            {"section":"environments","action":"delete","target":"prod: tag v1","entry":{"name":"prod: tag v1"},"fields":[]}
+            """);
 
         Assert.Equal(
-            ["  environments:", "    - name: prod", "    - name: 'prod: tag v1'", "+     absent: true"],
+            [
+                "  environments:",
+                "    - name: prod",
+                "      branch_policies:",
+                "        - name: main",
+                "          type: branch",
+                "-       - name: v1",
+                "-         type: tag",
+                "    - name: 'prod: tag v1'",
+                "+     absent: true",
+            ],
             Drawn(PlanDiff.Lines(plan)));
     }
 

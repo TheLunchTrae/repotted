@@ -533,26 +533,6 @@ function settingKey(section: string, field: string): string | undefined {
   return key !== undefined && settingPath([section, key]) !== undefined ? `${section}.${key}` : undefined;
 }
 
-/** The exclusion that leaves out a change to a list entry: the entry its target names. */
-function entryKey(change: Plan['changes'][number], desired: Profile): string | undefined {
-  if (change.section === 'rulesets' || change.section === 'autolinks' || change.section === 'labels') {
-    return `${change.section}/${change.target}`;
-  }
-  if (change.section !== 'environments') {
-    return undefined;
-  }
-  // A branch policy's target is its environment's name, then ": " and the policy,
-  // so the longest name that fits wins when one name starts with another.
-  const target = environmentKey(change.target);
-  const entry = (desired.environments ?? [])
-    .filter((environment) => {
-      const name = environmentKey(environment.name);
-      return target === name || target.startsWith(`${name}: `);
-    })
-    .toSorted((left, right) => right.name.length - left.name.length)[0];
-  return entry === undefined ? undefined : `environments/${entry.name}`;
-}
-
 /** What leaves each change of `plan`, or each field of a settings change, out of the staged apply `own`. */
 function planExclusions(plan: Plan, own: StagedFile): PlanExclusion[] {
   const exclusion = (change: number, field: string | null, key: string | undefined): PlanExclusion[] => {
@@ -560,13 +540,9 @@ function planExclusions(plan: Plan, own: StagedFile): PlanExclusion[] {
     return key === undefined || parsed === undefined ? [] : [{ change, field, key, edited: sets(own, parsed) }];
   };
   return plan.changes.flatMap((change, index) => {
-    if (
-      change.section === 'rulesets' ||
-      change.section === 'environments' ||
-      change.section === 'autolinks' ||
-      change.section === 'labels'
-    ) {
-      return exclusion(index, null, entryKey(change, plan.desired));
+    // A branch policy leaves out with its environment.
+    if (change.entry !== undefined) {
+      return exclusion(index, null, `${change.section}/${change.entry.name}`);
     }
     if (change.section === 'pages') {
       return exclusion(index, null, 'pages');

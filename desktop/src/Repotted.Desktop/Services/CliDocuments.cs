@@ -66,12 +66,26 @@ internal sealed record ResolvedProfileDocument(
 /// </summary>
 internal sealed record FieldChangeDocument(string Field, JsonElement From = default, JsonElement To = default);
 
-/// <summary>One write of a plan. The app shows it and never sends it.</summary>
+/// <summary>One of an environment's branch policies: its pattern and whether it is a <c>branch</c> or a <c>tag</c> one.</summary>
+internal sealed record BranchPolicyDocument(string Name, string Type);
+
+/// <summary>
+/// The list entry a change acts on, by the key its list knows it by, as the
+/// profile writes it: a name, or an autolink's key prefix. A change to a
+/// branch policy also names the policy.
+/// </summary>
+internal sealed record ChangeEntryDocument(string Name, BranchPolicyDocument? BranchPolicy = null);
+
+/// <summary>
+/// One write of a plan. The app shows it and never sends it. A change to a
+/// list entry has its <paramref name="Entry"/>; a settings change has none.
+/// </summary>
 internal sealed record PlanChangeDocument(
     string Section,
     string Action,
     string Target,
-    IReadOnlyList<FieldChangeDocument> Fields);
+    IReadOnlyList<FieldChangeDocument> Fields,
+    ChangeEntryDocument? Entry = null);
 
 /// <summary>
 /// What the GitHub App may do on the repository: <paramref name="Status"/> is

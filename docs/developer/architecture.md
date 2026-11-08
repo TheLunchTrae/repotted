@@ -106,7 +106,22 @@ and aliases, which an edit could leave dangling or expand.
 names. Each section has an adapter in `packages/core/src/sections/` that reads
 the repository's live state and returns the changes that bring it in line. A
 change, defined in `change.ts`, is one create, update, or delete of one
-target, with the fields it changes and the request that makes it.
+target, with the fields it changes and the request that makes it. A change to
+a list entry also has `entry`, which names that entry as the profile writes
+it, with the branch policy for a change to one of an environment's policies.
+Programs find a change's entry by `entry`, never by parsing `target`: the
+target only names the change for people, and two can read the same, as for an
+environment named `Prod: branch main` and the `main` branch policy of `Prod`.
+GitHub can't edit an autolink, so the autolinks adapter remakes one that
+differs as a delete and a create of the same entry, and the create's fields
+say what differs. Each request stays one change, which apply makes and
+reports on its own.
+
+Apply compares a saved plan's changes whole with a new plan's, and
+`savedChange` in `plan.ts` reads them with a schema that drops any member it
+doesn't name. A new member of a change goes into `savedChange` in the same
+change, or every saved plan reads as stale; a test applies a saved plan with a
+change to each list to hold that.
 
 ### Only what the profile names
 
@@ -250,9 +265,9 @@ starts from the repository has no profile to save to.
 
 `planStagedApply` also names the exclusion that leaves out each change of the
 plan, so a program can offer to leave out a row without knowing how plan
-fields map to profile keys. A change to a list entry maps to the entry by its
-target; a settings field maps to its setting, or to the group it is in, since
-GitHub writes a group at once and may tie its fields together. A test excludes
+fields map to profile keys. A change to a list entry maps to the entry its
+`entry` names; a settings field maps to its setting, or to the group it is
+in, since GitHub writes a group at once and may tie its fields together. A test excludes
 every key a wide plan names and checks that its change leaves the plan.
 
 ## Batches
@@ -393,8 +408,9 @@ Compare and Apply list every section a plan changes. Sections the profile
 editor has no tab for, such as security, Pages, autolinks and custom
 properties, show as a row per change. `ViewModels/PlanSections.cs` turns a
 plan into those sections and rows, and `Views/PlanTable.axaml` shows them on
-both pages; Apply adds **Leave out**, or the **One-off edit** chip, to each
-row it can leave out.
+both pages. A list's rows, and its lines in the diff below, belong to the
+entry each change's `entry` names, and `target` only labels them. Apply adds
+**Leave out**, or the **One-off edit** chip, to each row it can leave out.
 
 Beside the one-off edits, the Apply page shows the plan as a diff of profile
 YAML, which `PlanDiff` builds in the app from the plan's `desired` and
