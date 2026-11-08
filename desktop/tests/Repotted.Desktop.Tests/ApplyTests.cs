@@ -2,6 +2,7 @@ using System.Text.Json;
 using Avalonia;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -398,10 +399,18 @@ public sealed class ApplyTests : IDisposable
     {
         var (page, cli) = await Reviewing();
         var apply = page.Apply;
+        static bool LosesWiki(PlanDiffViewModel? diff) =>
+            diff!.Items.OfType<DiffLine>().Any(line => line.IsRemoved && line.Text == "  has_wiki: true");
+        Assert.True(LosesWiki(apply.Edits!.Diff));
+        Assert.Null(apply.Edits.Diff!.Footnote);
         cli.On($"stage {file} --exclude=repository.has_wiki --json", Staged(true, "repository.has_wiki"))
             .On(Planned, () => Plan(wikiLeftOut: true));
 
         await apply.LeaveOutCommand.ExecuteAsync(Row(apply, "repository.has_wiki"));
+
+        // Each plan shown replaces the diff beside the one-off edits.
+        Assert.False(LosesWiki(apply.Edits.Diff));
+        Assert.Equal("1 setting or entry is left out of this apply, so GitHub keeps it as it is.", apply.Edits.Diff!.Footnote);
 
         Assert.Equal(ApplyStep.Reviewing, apply.Step);
         Assert.Equal(2, apply.ChangeCount);
@@ -416,6 +425,7 @@ public sealed class ApplyTests : IDisposable
 
         Assert.Equal(3, apply.ChangeCount);
         Assert.Empty(apply.Excluded);
+        Assert.True(LosesWiki(apply.Edits.Diff));
     }
 
     [AvaloniaFact]
@@ -1254,6 +1264,40 @@ public sealed class ApplyTests : IDisposable
         apply.CancelApplyCommand.Execute(null);
 
         apply.Tab = 1;
+        // The sidebar shows the plan as a diff of the profile's YAML first.
+        text = Texts(window);
+        Assert.Contains(ControlLabel.For("Diff"), text);
+        Assert.Contains(ControlLabel.For("File"), text);
+        Assert.Contains("GitHub now", text);
+        Assert.Contains("allow_squash_merge: true", text);
+        Assert.Contains("allow_squash_merge: false", text);
+        Assert.Contains("- name: Main", text);
+        Assert.Contains("One-off edit", text);
+        Save(window, $"apply-diff-{theme}");
+
+        // Screen readers hear each line once, as what it does to GitHub.
+        var heard = window.GetVisualDescendants().OfType<Border>()
+            .Where(border => border.DataContext is DiffLine && border.Classes.Contains("diffline"))
+            .Select(border => ControlAutomationPeer.CreatePeerForElement(border))
+            .Where(peer => peer.IsControlElement())
+            .Select(peer => peer.GetName())
+            .ToList();
+        Assert.Contains("GitHub loses: allow_squash_merge: true", heard);
+        Assert.Contains("GitHub gets: allow_squash_merge: false, one-off edit", heard);
+        Assert.Contains("Stays: merge:", heard);
+
+        // Clicking the view already shown keeps it chosen; File shows the saved file.
+        var segments = window.GetVisualDescendants().OfType<ToggleButton>().Where(button => button.Classes.Contains("seg")).ToList();
+        var diffButton = segments.Single(button => (string?)button.Content == "Diff");
+        // A click toggles the button, as ToggleButton does, then runs its command.
+        diffButton.SetCurrentValue(ToggleButton.IsCheckedProperty, false);
+        diffButton.Command!.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(diffButton.IsChecked);
+        apply.Edits!.ShowFileCommand.Execute(null);
+        Assert.DoesNotContain("GitHub now", Texts(window));
+        apply.Edits.ShowDiffCommand.Execute(null);
+
         Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
         text = Texts(window);
         Assert.Contains("For this apply only, over orgs, which stays as it is unless you save these edits to it.", text);

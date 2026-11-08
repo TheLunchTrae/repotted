@@ -224,6 +224,9 @@ internal sealed partial class ApplyViewModel(
     [ObservableProperty]
     public partial ProfileViewModel? Edits { get; private set; }
 
+    /// <summary>The last plan as a diff, which the one-off edits' YAML panel shows.</summary>
+    private PlanDiffViewModel? diff;
+
     /// <summary>The tab on screen: 0 for the changes, 1 for the one-off edits.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowingChanges), nameof(ShowingEdits))]
@@ -355,6 +358,7 @@ internal sealed partial class ApplyViewModel(
                         OnEditsChanged();
                     }
                 };
+                Edits.Diff = diff;
                 await Edits.LoadAsync().ConfigureAwait(true);
                 OnEditsChanged();
             }
@@ -370,13 +374,35 @@ internal sealed partial class ApplyViewModel(
     {
         BaseName = plan.Staged.Base is null ? null : Path.GetFileNameWithoutExtension(plan.Staged.Base);
         var exclusions = plan.Exclusions.ToDictionary(exclusion => (exclusion.Change, exclusion.Field));
-        Sections = PlanSections.Build(plan.Plan, (change, field) =>
-            exclusions.TryGetValue((change, field), out var found) ? new RowExclusion(found.Key, found.Edited) : null);
+        RowExclusion? Exclusion(int change, string? field) =>
+            exclusions.TryGetValue((change, field), out var found) ? new RowExclusion(found.Key, found.Edited) : null;
+        Sections = PlanSections.Build(plan.Plan, Exclusion);
+        diff = new PlanDiffViewModel(PlanDiff.Lines(plan.Plan, Exclusion), DiffFootnote(plan));
+        if (Edits is not null)
+        {
+            Edits.Diff = diff;
+        }
         Warnings = [.. plan.Warnings.Where(warning => !Sections.Any(section => section.SkippedBy == warning))];
         Excluded = [.. plan.Staged.Exclude.Select(key => new ExcludedViewModel(key))];
         (AccessLabel, AccessUrl) = PlanSections.Access(plan.Plan, installUrl);
         DraftsNote = PlanSections.Drafts(plan.Plan);
         ChangeCount = plan.Changes.Count;
+    }
+
+    /// <summary>What the diff leaves out: the drafts, and what this apply leaves as GitHub has it.</summary>
+    private static string? DiffFootnote(StagedPlanDocument plan)
+    {
+        // An exclusion that leaves nothing out has a warning of its own, so it isn't counted.
+        var count = plan.Staged.Exclude.Count(key =>
+            !plan.Warnings.Contains($"Excluding {key} leaves nothing out, since the profile sets nothing it names", StringComparer.Ordinal));
+        var excluded = count switch
+        {
+            0 => null,
+            1 => "1 setting or entry is left out of this apply, so GitHub keeps it as it is.",
+            _ => $"{count} settings or entries are left out of this apply, so GitHub keeps them as they are.",
+        };
+        string[] notes = [.. new[] { PlanSections.Drafts(plan.Plan), excluded }.OfType<string>()];
+        return notes.Length == 0 ? null : string.Join(" ", notes);
     }
 
     /// <summary>The staged file as the profile editor lists it.</summary>

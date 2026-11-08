@@ -211,6 +211,28 @@ internal sealed partial class ProfileViewModel(
 
     public string YamlLabel => ShowYaml ? "Hide YAML" : "Show YAML";
 
+    /// <summary>
+    /// What the last plan of this profile changes, as a diff the YAML panel
+    /// shows beside the file, or null where nothing plans it, as outside an apply.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDiff), nameof(ShowingDiff), nameof(ShowingFile), nameof(YamlWidth))]
+    public partial PlanDiffViewModel? Diff { get; set; }
+
+    /// <summary>Whether the YAML panel shows the diff rather than the file, when there is one.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowingDiff), nameof(ShowingFile))]
+    public partial bool DiffChosen { get; set; } = true;
+
+    public bool HasDiff => Diff is not null;
+
+    public bool ShowingDiff => Diff is not null && DiffChosen;
+
+    public bool ShowingFile => !ShowingDiff;
+
+    /// <summary>The YAML panel is wider with a diff, whose lines carry a sign and tags.</summary>
+    public double YamlWidth => Diff is null ? 360 : 400;
+
     /// <summary>The legend's name for inherited values.</summary>
     public string InheritedLabel => BaseName is null ? "From a base profile" : $"From {BaseName}";
 
@@ -631,6 +653,23 @@ internal sealed partial class ProfileViewModel(
 
     [RelayCommand]
     private void ToggleYaml() => ShowYaml = !ShowYaml;
+
+    [RelayCommand]
+    private void ShowDiff() => Choose(diff: true);
+
+    [RelayCommand]
+    private void ShowFile() => Choose(diff: false);
+
+    /// <summary>
+    /// Shows the diff or the file. A click on the segment already chosen
+    /// unchecks its toggle, so both are told again even when nothing changed.
+    /// </summary>
+    private void Choose(bool diff)
+    {
+        DiffChosen = diff;
+        OnPropertyChanged(nameof(ShowingDiff));
+        OnPropertyChanged(nameof(ShowingFile));
+    }
 
     private void Show(ResolvedProfile profile, ResolvedProfile? @base)
     {

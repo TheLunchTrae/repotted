@@ -593,4 +593,58 @@
     <Setter Property="LineHeight" Value="21" />
     <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
   </Style>
+
+  <!-- A plan as a diff of profile YAML: GitHub loses red lines and gets green ones. -->
+  <Style Selector="Border.diff">
+    <Setter Property="Background" Value="{DynamicResource CodeBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="ClipToBounds" Value="True" />
+    <Setter Property="Padding" Value="0,6" />
+  </Style>
+  <Style Selector="Border.diffline">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="3,0,0,0" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="Border.diffline.added">
+    <Setter Property="Background" Value="{DynamicResource AddBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AddBrush}" />
+  </Style>
+  <Style Selector="Border.diffline.removed">
+    <Setter Property="Background" Value="{DynamicResource RemoveBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource RemoveBrush}" />
+  </Style>
+  <Style Selector="Border.diffline TextBlock.sign, Border.diffline TextBlock.line">
+    <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="LineHeight" Value="21" />
+    <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.diffline TextBlock.sign">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+  </Style>
+  <Style Selector="Border.diffline TextBlock.line">
+    <Setter Property="Margin" Value="0,0,12,0" />
+  </Style>
+  <Style Selector="Border.diffline TextBlock.line.indent">
+    <Setter Property="Margin" Value="0" />
+  </Style>
+  <Style Selector="Border.diffline.added TextBlock.sign">
+    <Setter Property="Foreground" Value="{DynamicResource AddBrush}" />
+  </Style>
+  <Style Selector="Border.diffline.removed TextBlock.sign">
+    <Setter Property="Foreground" Value="{DynamicResource RemoveBrush}" />
+  </Style>
+  <Style Selector="Border.diffline TextBlock.line.removed">
+    <Setter Property="TextDecorations" Value="Strikethrough" />
+  </Style>
+  <Style Selector="Border.difffold">
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+    <Setter Property="Padding" Value="0,2" />
+    <Setter Property="Margin" Value="0,2" />
+  </Style>
 </Styles>
