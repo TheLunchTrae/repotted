@@ -510,8 +510,9 @@ async function stage(io: Io, args: string[]): Promise<number> {
     }
   } catch (error) {
     // A start whose edits fail leaves no file behind, so it can be run again.
+    // The edits' failure is the one to report, even if the cleanup fails too.
     if (values.new !== undefined) {
-      await discardStagedApply(file);
+      await discardStagedApply(file).catch(() => undefined);
     }
     throw error;
   }

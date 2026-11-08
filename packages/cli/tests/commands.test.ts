@@ -691,6 +691,15 @@ describe('stage', () => {
     expect(result.err).toContain('applies to lunch/app');
   });
 
+  test('plans a staged apply for its repository named in any case', async () => {
+    const file = path.join(directory, 'staged-case.yaml');
+    await cli(new FakeGitHub(), 'stage', file, '--new', 'lunch/app');
+
+    const result = await cli(new FakeGitHub(), 'plan', 'Lunch/App', '--staged', file, '--json');
+    expect(result.code).toBe(0);
+    expect(document(result)).toMatchObject({ repository: 'lunch/app' });
+  });
+
   test('leaves no file behind when the edits of a start fail, so it can start again', async () => {
     const file = path.join(directory, 'staged-failed-start.yaml');
 

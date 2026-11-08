@@ -109,9 +109,10 @@ for this apply, so give the whole entry. It also takes:
   entry of a list, as `rulesets/Main`, `environments/production`, or
   `autolinks/JIRA-`. `--include key` takes it back. A value can't be both
   excluded and edited, and an exclusion has to name something the profile
-  sets, so a mistyped name is refused. An environment's name matches in any
-  case, as GitHub's does; a ruleset's name and an autolink's prefix match as
-  written. The profile is checked once the exclusions are out, so an edit
+  sets, so a mistyped name is refused, as is one already left out by a wider
+  exclusion, or one the profile no longer sets. An environment's name matches
+  in any case, as GitHub's does; a ruleset's name and an autolink's prefix
+  match as written. The profile is checked once the exclusions are out, so an edit
   that only fits without an excluded value is fine.
 - `--save-to-profile` writes the one-off edits into the profile the staged
   apply starts from and clears them from the staged apply, which then
