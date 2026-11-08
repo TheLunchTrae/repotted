@@ -96,7 +96,9 @@ public sealed class ViewTests : IDisposable
         _ = signIn.SignInCommand.ExecuteAsync(null);
         Dispatcher.UIThread.RunJobs();
 
-        Assert.Contains("ABCD-1234", Texts(window));
+        var text = Texts(window);
+        Assert.Contains("ABCD-1234", text);
+        Assert.Contains("Copy", text);
         Save(window, $"sign-in-code-{theme}");
         signIn.SignInCancelCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
