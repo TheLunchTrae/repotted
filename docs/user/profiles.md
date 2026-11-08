@@ -191,9 +191,15 @@ updates on with the alerts off.
 Some settings only hold together. With standard Dependabot runners, GitHub
 keeps no runner labels or group, so a plan skips them with a warning. Code
 scanning and code quality use a `runner_label` only with labeled runners, and
-`runner_label: null` means no label. Naming OIDC `include_claim_keys` stops
-using the default subject, and claim keys next to `use_default: true` are
-skipped, since GitHub ignores them.
+`runner_label: null` means no label. A configured setup runs on standard
+runners unless the profile names another type, so a label there is skipped
+with a warning, as is a labeled runner type, or a `null` label, that would
+leave labeled runners without a label. A setup that is not configured keeps no
+runner at all. To move a base profile's labeled runners to standard ones, set
+`runner_label: null` next to `runner_type: standard`, since the base's label
+is kept otherwise. Naming OIDC `include_claim_keys` stops using the default
+subject, and claim keys next to `use_default: true` are skipped, since GitHub
+ignores them.
 
 ## Autolinks and Pages
 

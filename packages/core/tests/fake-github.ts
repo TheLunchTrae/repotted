@@ -461,7 +461,25 @@ export class FakeGitHub implements GitHub {
       throw new GitHubError(422, 'runner_labels and runner_group are only for self-hosted and labeled runners');
     }
     // A PUT replaces the settings; a PATCH changes the fields it sends.
-    settings[relative] = method === 'PUT' ? next : { ...record(settings[relative]), ...next };
+    const written = method === 'PUT' ? { ...next } : { ...record(settings[relative]), ...next };
+    if (relative === '/code-scanning/default-setup' || relative === '/code-quality/setup') {
+      if (written['state'] === 'not-configured') {
+        // GitHub reports no runner while the setup is not configured.
+        written['runner_type'] = null;
+        written['runner_label'] = null;
+      } else {
+        // A configured setup runs on standard runners unless told otherwise.
+        written['runner_type'] ??= 'standard';
+        if (written['runner_type'] === 'labeled' && typeof written['runner_label'] !== 'string') {
+          throw new GitHubError(422, 'labeled runners need a runner label');
+        }
+        // GitHub keeps no runner label with standard runners, reporting it as null.
+        if (written['runner_type'] === 'standard') {
+          written['runner_label'] = null;
+        }
+      }
+    }
+    settings[relative] = written;
     if (relative === '/dependabot/runner-settings') {
       // GitHub always reports the labels and group, empty when there are none.
       settings[relative] = { runner_labels: [], runner_group: '', ...record(settings[relative]) };
