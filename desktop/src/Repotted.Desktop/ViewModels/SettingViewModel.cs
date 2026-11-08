@@ -326,13 +326,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
 
     private void RefreshDraft()
     {
-        foreach (var name in (string[])[
-            nameof(DraftChanged), nameof(HasChanges), nameof(Draft), nameof(HasDraft), nameof(OwnDraft),
-            nameof(DraftLabel), nameof(DraftNote), nameof(DraftName), nameof(CanReset), nameof(ResetLabel), nameof(ResetName),
-        ])
-        {
-            OnPropertyChanged(name);
-        }
+        OnAllPropertiesChanged();
         FinishDraftCommand.NotifyCanExecuteChanged();
         DiscardDraftCommand.NotifyCanExecuteChanged();
         changed();
@@ -406,14 +400,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
             typed = null;
             TypedProblem = null;
         }
-        foreach (var name in (string[])[
-            nameof(Typed), nameof(TypedProblem), nameof(HasTypedProblem), nameof(TypedHelp), nameof(Invalid), nameof(Pending),
-            nameof(Changed), nameof(Value), nameof(Managed), nameof(OwnAfterSave), nameof(InheritedAfterSave),
-            nameof(Note), nameof(CanReset), nameof(ResetLabel), nameof(ResetName), nameof(HasChanges), nameof(CanSaveAsDraft),
-        ])
-        {
-            OnPropertyChanged(name);
-        }
+        OnAllPropertiesChanged();
         foreach (var option in Options)
         {
             option.Refresh();
@@ -455,10 +442,5 @@ internal sealed partial class OptionViewModel(SettingViewModel setting, SettingO
     [RelayCommand]
     private void Choose() => setting.Choose(option);
 
-    public void Refresh()
-    {
-        OnPropertyChanged(nameof(Selected));
-        OnPropertyChanged(nameof(Dim));
-        OnPropertyChanged(nameof(Note));
-    }
+    public void Refresh() => OnAllPropertiesChanged();
 }

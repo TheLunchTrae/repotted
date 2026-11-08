@@ -442,7 +442,9 @@ counted and shown on request. The app doesn't apply plans.
 - `src/Repotted.Desktop/Services`: runs the CLI (`RepottedCli`) and reads its
   JSON (`RepottedClient`).
 - `src/Repotted.Desktop/ViewModels`: one view model per page, with
-  CommunityToolkit.Mvvm.
+  CommunityToolkit.Mvvm. A row that only bindings listen to tells them
+  everything changed at once, with `OnAllPropertiesChanged`; a page view
+  model that other code listens to raises each name.
 - `src/Repotted.Desktop/Views`: the pages in XAML, bound with compiled
   bindings.
 - `src/Repotted.Desktop/Theme`: the custom theme. `Colors.axaml` holds the

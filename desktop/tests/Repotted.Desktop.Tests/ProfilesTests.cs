@@ -663,8 +663,9 @@ public sealed class ProfilesTests : ViewModelTests
 
         wiki.Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
 
-        Assert.Contains(nameof(SettingViewModel.Note), raised);
-        Assert.Contains(nameof(SettingViewModel.OwnAfterSave), raised);
+        // The row tells its view that everything changed, its note and where its value comes from included.
+        Assert.Contains(string.Empty, raised);
+        Assert.True(wiki.OwnAfterSave);
         Assert.Equal("Changed", wiki.Note);
     }
 
