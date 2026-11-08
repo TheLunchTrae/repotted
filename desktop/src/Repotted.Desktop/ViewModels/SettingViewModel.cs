@@ -155,8 +155,10 @@ internal sealed partial class SettingViewModel : ViewModelBase
             }
             typed = value;
             TypedProblem = Parse(value, out var parsed);
-            if (TypedProblem is not null)
+            if (TypedProblem is not null
+                || (Origin == SettingOrigin.Own && JsonNode.DeepEquals(parsed, Saved)))
             {
+                // Text that isn't a value, or that spells the saved value another way, changes nothing.
                 Set(changed: false, null, keepTyped: true);
             }
             else if (!Changed || !JsonNode.DeepEquals(parsed, pending))

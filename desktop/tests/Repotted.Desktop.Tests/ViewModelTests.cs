@@ -933,6 +933,17 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task The_saved_number_spelled_another_way_is_no_change()
+    {
+        var (editor, _, _, _) = await OpenOwn("""{"actions":{"max_cache_size_gb":30}}""", """{"actions":{"max_cache_size_gb":OWN}}""");
+        var size = Find(editor, "max_cache_size_gb");
+
+        size.Typed = "030";
+        Assert.False(size.Pending);
+        Assert.False(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
     public async Task Undo_and_discard_put_a_typed_value_back()
     {
         var (profiles, _, _) = await OpenOrgs();
@@ -974,6 +985,16 @@ public sealed class ViewModelTests : IDisposable
         Choose(editor, "absent", "Yes");
         Assert.False(absent.Pending);
         Assert.False(Find(editor, "build_type").Pending);
+        Assert.False(editor.HasChanges);
+
+        // Text that would never be saved goes too, so it doesn't hold back the save.
+        Find(editor, "cname").Typed = "x";
+        Assert.True(editor.HasChanges);
+        Find(editor, "cname").Typed = "";
+        Find(editor, "cname").Typed = "x";
+        Choose(editor, "absent", "Yes");
+        Assert.True(absent.OwnAfterSave);
+        Assert.False(Find(editor, "cname").Pending);
         Assert.False(editor.HasChanges);
 
         Choose(editor, "build_type", "GitHub Actions");

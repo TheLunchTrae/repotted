@@ -483,7 +483,7 @@ internal sealed partial class ProfileViewModel(
             foreach (var other in Settings.Where(other => other != row
                 && other.Field.Section == row.Field.Section
                 && (row.Field.Alone || other.Field.Alone)
-                && other.OwnAfterSave))
+                && (other.OwnAfterSave || other.Pending)))
             {
                 other.Clear();
             }
