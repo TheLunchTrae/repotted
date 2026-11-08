@@ -334,12 +334,59 @@ export const bypassActor = z
   })
   .strict();
 
+const patternParameters = z
+  .looseObject({ operator: z.enum(['starts_with', 'ends_with', 'contains', 'regex']) })
+  .partial();
+
+/**
+ * The parameter values GitHub's REST description allows for known rule types.
+ * Each parameter is optional, since a rule keeps the live parameters the
+ * profile leaves out. Other parameters, and other rule types, stay open.
+ */
+const ruleParameters: ReadonlyMap<string, z.ZodType> = new Map(
+  Object.entries({
+    pull_request: z
+      .looseObject({
+        allowed_merge_methods: z
+          .array(z.enum(['merge', 'squash', 'rebase']))
+          .min(1, { message: 'allowed_merge_methods needs at least one merge method' }),
+        required_approving_review_count: z.number().int().min(0).max(10),
+      })
+      .partial(),
+    merge_queue: z
+      .looseObject({
+        check_response_timeout_minutes: z.number().int().min(1).max(360),
+        grouping_strategy: z.enum(['ALLGREEN', 'HEADGREEN']),
+        max_entries_to_build: z.number().int().min(0).max(100),
+        max_entries_to_merge: z.number().int().min(0).max(100),
+        merge_method: z.enum(['MERGE', 'SQUASH', 'REBASE']),
+        min_entries_to_merge: z.number().int().min(0).max(100),
+        min_entries_to_merge_wait_minutes: z.number().int().min(0).max(360),
+      })
+      .partial(),
+    commit_message_pattern: patternParameters,
+    commit_author_email_pattern: patternParameters,
+    committer_email_pattern: patternParameters,
+    branch_name_pattern: patternParameters,
+    tag_name_pattern: patternParameters,
+    code_quality: z.looseObject({ severity: z.enum(['errors', 'warnings', 'notes', 'all']) }).partial(),
+    max_file_path_length: z.looseObject({ max_file_path_length: z.number().int().min(1).max(32_767) }).partial(),
+    max_file_size: z.looseObject({ max_file_size: z.number().int().min(1).max(100) }).partial(),
+  }),
+);
+
 export const rule = z
   .object({
     type: z.string(),
     parameters: z.record(z.string(), z.unknown()).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const result = ruleParameters.get(value.type)?.safeParse(value.parameters ?? {});
+    for (const issue of result?.error?.issues ?? []) {
+      context.addIssue({ code: 'custom', message: issue.message, path: ['parameters', ...issue.path] });
+    }
+  });
 
 export const ruleset = z
   .object({
