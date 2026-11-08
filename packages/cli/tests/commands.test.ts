@@ -62,6 +62,7 @@ async function cliWith(github: GitHub, overrides: Partial<Io>, ...argv: string[]
     interactive: false,
     confirm: () => Promise.resolve(false),
     signIn: () => Promise.reject(new Error('no sign-in in this test')),
+    signOut: () => Promise.reject(new Error('no sign-out in this test')),
     ...overrides,
   };
   const code = await run(argv, io);
@@ -238,6 +239,38 @@ describe('account commands', () => {
     expect(admin.err).toBe('This token administers no repositories.\n');
   });
 
+  test('a missing or rejected sign-in fails with its own kind', async () => {
+    const missing = await cliWith(new FakeGitHub(), signedOut, 'repos', '--json');
+    expect(missing).toMatchObject({ code: 1, err: '' });
+    expect(document(missing)).toEqual({
+      error: { kind: 'signed_out', message: 'Not signed in to GitHub. Run repotted login.' },
+    });
+
+    const github = new FakeGitHub({ account });
+    github.request = () => Promise.reject(new GitHubError(401, 'Bad credentials'));
+    const rejected = await cli(github, 'repos', '--json');
+    expect(rejected.code).toBe(1);
+    expect(document(rejected)).toEqual({ error: { kind: 'signed_out', message: 'Bad credentials' } });
+
+    // Other refusals from GitHub say nothing about the sign-in.
+    github.request = () => Promise.reject(new GitHubError(403, 'Resource not accessible by integration'));
+    expect(document(await cli(github, 'repos', '--json'))).toMatchObject({ error: { kind: 'error' } });
+  });
+
+  test('logout removes the sign-in and says whether there was one', async () => {
+    const removed = await cliWith(new FakeGitHub(), { signOut: () => Promise.resolve(true) }, 'logout', '--json');
+    expect(removed).toMatchObject({ code: 0, err: '' });
+    expect(document(removed)).toEqual({ removed: true });
+
+    const none = await cliWith(new FakeGitHub(), { signOut: () => Promise.resolve(false) }, 'logout', '--json');
+    expect(document(none)).toEqual({ removed: false });
+
+    expect(await cliWith(new FakeGitHub(), { signOut: () => Promise.resolve(true) }, 'logout')).toMatchObject({
+      code: 0,
+      out: 'Signed out.\n',
+    });
+  });
+
   test('status treats a token GitHub rejects as signed out', async () => {
     const github = new FakeGitHub({ account });
     github.request = (_method, path) =>
@@ -338,6 +371,7 @@ describe('account commands', () => {
       interactive: false,
       confirm: () => Promise.resolve(false),
       signIn: () => Promise.resolve({ code, finished }),
+      signOut: () => Promise.reject(new Error('not used')),
     });
 
     expect(await running).toBe(0);

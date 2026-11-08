@@ -44,6 +44,18 @@ public sealed class ContractTests
     }
 
     [Fact]
+    public async Task The_app_tells_a_lost_sign_in_from_other_failures()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        Assert.SkipUnless(
+            await client.StatusAsync(cancellationToken) is Account.SignedOut,
+            "Signed in here, so no command fails for want of a sign-in.");
+
+        await Assert.ThrowsAsync<SignInLostException>(() => client.RepositoriesAsync(cancellationToken));
+    }
+
+    [Fact]
     public async Task The_app_lists_reads_and_saves_profiles()
     {
         var client = Client();

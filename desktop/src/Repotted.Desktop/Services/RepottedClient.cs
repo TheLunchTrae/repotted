@@ -5,7 +5,10 @@ using System.Text.Json.Serialization.Metadata;
 namespace Repotted.Desktop.Services;
 
 /// <summary>The CLI ran but reported a failure, or printed something the app cannot read.</summary>
-internal sealed class CliException(string message) : Exception(message);
+internal class CliException(string message) : Exception(message);
+
+/// <summary>A command failed because there is no sign-in, or GitHub rejected it.</summary>
+internal sealed class SignInLostException(string message) : CliException(message);
 
 /// <summary>Who Repotted signs in as, or why it is signed out.</summary>
 internal abstract record Account
@@ -62,6 +65,13 @@ internal sealed record ResolvedProfile(
 /// <summary>Reads the CLI's JSON output into what the views show.</summary>
 internal sealed class RepottedClient(ICli cli)
 {
+    /// <summary>
+    /// Raised, on the thread that read the failure, just before a command
+    /// throws <see cref="SignInLostException"/>, so the app can return to the
+    /// sign-in whichever page ran it.
+    /// </summary>
+    public event EventHandler? SignInLost;
+
     public async Task<Account> StatusAsync(CancellationToken cancellationToken)
     {
         var run = await cli.RunAsync(["status", "--json"], null, cancellationToken).ConfigureAwait(false);
@@ -208,6 +218,13 @@ internal sealed class RepottedClient(ICli cli)
             });
     }
 
+    /// <summary>Removes the Repotted sign-in from the keychain, if there is one.</summary>
+    public async Task SignOutAsync(CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["logout", "--json"], null, cancellationToken).ConfigureAwait(false);
+        Read(run, CliJson.Default.LogoutDocument);
+    }
+
     /// <summary>
     /// Starts the device flow. <paramref name="onCode"/> gets the code to show as
     /// soon as the CLI prints it; the task finishes once the user has entered it.
@@ -224,9 +241,9 @@ internal sealed class RepottedClient(ICli cli)
                     return;
                 }
                 // A failure before the code is a failure document, not an event.
-                if (FailureMessage(line) is { } failure)
+                if (Failure(line) is { } failure)
                 {
-                    throw new CliException(failure);
+                    throw Raise(failure);
                 }
                 var parsed = Parse(line, CliJson.Default.LoginEvent);
                 last = parsed;
@@ -245,7 +262,9 @@ internal sealed class RepottedClient(ICli cli)
             case { Event: "signed_in" }:
                 return;
             case null:
-                throw new CliException(FailureMessage(run.Output) ?? Crash(run) ?? "The sign-in did not start.");
+                throw Failure(run.Output) is { } failure
+                    ? Raise(failure)
+                    : new CliException(Crash(run) ?? "The sign-in did not start.");
             default:
                 throw new CliException("The sign-in ended without signing in.");
         }
@@ -257,14 +276,15 @@ internal sealed class RepottedClient(ICli cli)
 
     /// <summary>
     /// Reads one document. A failure document becomes a <see cref="CliException"/>
-    /// with its message; so does output the app cannot read.
+    /// with its message, or a <see cref="SignInLostException"/> for a lost
+    /// sign-in; output the app cannot read becomes a <see cref="CliException"/>.
     /// </summary>
-    private static T Read<T>(CliRun run, JsonTypeInfo<T> type)
+    private T Read<T>(CliRun run, JsonTypeInfo<T> type)
         where T : class
     {
-        if (FailureMessage(run.Output) is { } message)
+        if (Failure(run.Output) is { } failure)
         {
-            throw new CliException(message);
+            throw Raise(failure);
         }
         try
         {
@@ -276,16 +296,27 @@ internal sealed class RepottedClient(ICli cli)
         }
     }
 
-    private static string? FailureMessage(string output)
+    private static ErrorDetail? Failure(string output)
     {
         try
         {
-            return JsonSerializer.Deserialize(output, CliJson.Default.FailureDocument)?.Error?.Message;
+            return JsonSerializer.Deserialize(output, CliJson.Default.FailureDocument)?.Error;
         }
         catch (JsonException)
         {
             return null;
         }
+    }
+
+    /// <summary>The exception a failure document stands for; a lost sign-in raises <see cref="SignInLost"/> first.</summary>
+    private CliException Raise(ErrorDetail failure)
+    {
+        if (failure.Kind != "signed_out")
+        {
+            return new CliException(failure.Message);
+        }
+        SignInLost?.Invoke(this, EventArgs.Empty);
+        return new SignInLostException(failure.Message);
     }
 
     private static T Parse<T>(string json, JsonTypeInfo<T> type)

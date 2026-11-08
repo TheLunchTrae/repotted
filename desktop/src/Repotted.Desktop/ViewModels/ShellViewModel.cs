@@ -13,11 +13,19 @@ namespace Repotted.Desktop.ViewModels;
 internal sealed partial class ShellViewModel : ViewModelBase
 {
     private readonly RepottedClient client;
+    private readonly Func<Task> signOut;
 
-    public ShellViewModel(Account.SignedIn account, RepottedClient client, IDesktop desktop, AppSettings settings)
+    /// <summary><paramref name="signOut"/> removes the sign-in and leaves the app.</summary>
+    public ShellViewModel(
+        Account.SignedIn account,
+        RepottedClient client,
+        IDesktop desktop,
+        AppSettings settings,
+        Func<Task> signOut)
     {
         Account = account;
         this.client = client;
+        this.signOut = signOut;
         // Each list reaches the other: a new profile is captured from a listed repository.
         RepositoriesViewModel? repositories = null;
         Profiles = new ProfilesViewModel(client, desktop, settings, () => repositories?.Names ?? []);
@@ -144,6 +152,15 @@ internal sealed partial class ShellViewModel : ViewModelBase
         (null, null) => null,
     };
 
+    /// <summary>
+    /// Whether the token is the Repotted sign-in, which signing out removes.
+    /// A variable or the GitHub CLI's sign-in would still apply afterwards.
+    /// </summary>
+    public bool CanSignOut => Account.TokenVariable is null && Repositories.FromInstallations is true;
+
+    [RelayCommand]
+    private Task SignOutAsync() => signOut();
+
     [ObservableProperty]
     public partial string Search { get; set; } = "";
 
@@ -166,6 +183,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         if (e.PropertyName == nameof(RepositoriesViewModel.FromInstallations))
         {
             OnPropertyChanged(nameof(SignedInWith));
+            OnPropertyChanged(nameof(CanSignOut));
         }
     }
 }

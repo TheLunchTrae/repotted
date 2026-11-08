@@ -47,8 +47,10 @@ npm to use it.
 ## Sign in
 
 The first time the app opens, click **Sign in with GitHub** and enter the code
-it shows on GitHub. [Sign in](sign-in.md) explains the steps, the permissions
-the Repotted App asks for, and how to use a token instead.
+it shows on GitHub. If the sign-in stops working while the app is open, the app
+returns to this page. To sign out, click **Sign out** under your account in the
+sidebar. [Sign in](sign-in.md) explains the steps, the permissions the
+Repotted App asks for, and how to use a token instead.
 
 ## Repositories
 

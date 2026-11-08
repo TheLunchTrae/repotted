@@ -256,6 +256,9 @@ internal static class Documents
     public const string Rejected =
         """{"signed_in":false,"reason":"rejected","message":"GitHub rejected the sign-in. Run repotted login again.","problems":[],"token_variable":null,"install_url":"https://github.com/apps/repotted-app/installations/new"}""";
 
+    public const string SignedOutFailure =
+        """{"error":{"kind":"signed_out","message":"Bad credentials"}}""";
+
     public const string Repositories =
         """
         {"source":"installations","repositories":[

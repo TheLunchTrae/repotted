@@ -22,12 +22,14 @@ Every command that talks to GitHub resolves a token in `resolveToken`
 | The refresh succeeds but the keychain refuses the new token                | The refresh token is spent, so the sign-in is lost although a valid token was in hand. The problem says the sign-in could not be refreshed. | The GitHub CLI with the problem kept; the user signs in again. |
 | The keychain can't be read                                                 | The problem is kept.                                                                                                                        | The GitHub CLI.                                                |
 | `gh auth token` prints a token                                             | That token is used.                                                                                                                         | Done.                                                          |
-| Nothing yields a token                                                     | `NotSignedInError` with the kept problems.                                                                                                  | `status` reports `not_signed_in`.                              |
+| Nothing yields a token                                                     | `NotSignedInError` with the kept problems.                                                                                                  | `status` reports `not_signed_in`; other commands fail.         |
 
 A token that resolves can still be refused: `status` reports a 401 from
-GitHub as `rejected`, and names the token variable when one was used. Each
-CLI the desktop app starts inherits the app's environment, which is fixed at
-launch, so the app sees a changed variable only after it restarts.
+GitHub as `rejected`, and names the token variable when one was used. With
+`--json`, any other command that meets `NotSignedInError` or a 401 fails with
+`kind: signed_out`. Each CLI the desktop app starts inherits the app's
+environment, which is fixed at launch, so the app sees a changed variable only
+after it restarts.
 
 ## Device flow
 
@@ -69,25 +71,28 @@ keychain-failed state, because the lookup runs before that state is checked.
 
 `MainViewModel` picks the page from `repotted status --json`, and
 `SignInViewModel` runs the device flow through `repotted login --json`.
+`RepottedClient` raises `SignInLost` when any command fails with
+`kind: signed_out`, and `MainViewModel` checks again in response.
 
-| State                                  | Event                                               | Next                                                                                           |
-| -------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Checking                               | Signed in                                           | The app, which refreshes the repositories and profiles.                                        |
-| Checking                               | Signed out or rejected                              | Sign-in, with a notice for a rejected or unusable earlier sign-in.                             |
-| Checking                               | The CLI is missing or fails                         | Problem, with a retry that checks again.                                                       |
-| Sign-in                                | Start                                               | Starting, then showing the code once the CLI prints it.                                        |
-| Sign-in                                | The flow ends                                       | Checking.                                                                                      |
-| Sign-in                                | The flow fails                                      | Sign-in, with the error.                                                                       |
-| Sign-in                                | Cancel, or the app closes                           | Sign-in; the CLI process is stopped.                                                           |
-| Sign-in, for a rejected token variable | Any                                                 | Signing in stays off: the variable comes first, so the user must change it and reopen the app. |
-| The app                                | A command fails because the sign-in stopped working | The page that ran it shows the error.                                                          |
+| State                                  | Event                                   | Next                                                                                           |
+| -------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Checking                               | Signed in                               | The app, which refreshes the repositories and profiles.                                        |
+| Checking                               | Signed out or rejected                  | Sign-in, with a notice for a rejected or unusable earlier sign-in.                             |
+| Checking                               | The CLI is missing or fails             | Problem, with a retry that checks again.                                                       |
+| Sign-in                                | Start                                   | Starting, then showing the code once the CLI prints it.                                        |
+| Sign-in                                | The flow ends                           | Checking.                                                                                      |
+| Sign-in                                | The flow fails                          | Sign-in, with the error.                                                                       |
+| Sign-in                                | Cancel, or the app closes               | Sign-in; the CLI process is stopped.                                                           |
+| Sign-in, for a rejected token variable | Any                                     | Signing in stays off: the variable comes first, so the user must change it and reopen the app. |
+| The app                                | A command fails with `kind: signed_out` | Checking. The check replaces the app, so other pages that fail with it check nothing more.     |
+| The app                                | Sign out                                | Signing out: `repotted logout --json` removes the keychain sign-in.                            |
+| Signing out                            | It succeeds                             | Checking.                                                                                      |
+| Signing out                            | It fails                                | Problem, with a retry that checks again.                                                       |
 
-**Failure:** checking runs only at launch and from the problem page. Once the
-app shows, nothing returns to it. A sign-in that expires, is revoked, or loses
-its keychain entry mid-session leaves every page failing with "Not signed in"
-or GitHub's own refusal. The app offers no way back to the sign-in page, so
-the user must restart it or sign in from a terminal. Tracked in
-[#45](https://github.com/TheLunchTrae/repotted/issues/45).
+The app offers **Sign out** only for the Repotted sign-in: the list comes from
+the App's installations and no token variable is set. A token variable or the
+GitHub CLI's sign-in would still apply after signing out, so checking would
+lead straight back to the app.
 
 ## Plan and apply
 
@@ -294,11 +299,11 @@ The failure in this machine is the sync during a hold, under
 `RepottedCli` runs the bundled CLI once per call, with stdin closed so it
 can't wait for input.
 
-| State    | Event                  | Next                                                                                 |
-| -------- | ---------------------- | ------------------------------------------------------------------------------------ |
-| Starting | The CLI can't be found | `CliNotFoundException`.                                                              |
-| Running  | It exits               | Its exit code and output; a failure's JSON `error.message` becomes a `CliException`. |
-| Running  | Cancelled              | The process tree is stopped.                                                         |
+| State    | Event                  | Next                                                                                                                                                       |
+| -------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Starting | The CLI can't be found | `CliNotFoundException`.                                                                                                                                    |
+| Running  | It exits               | Its exit code and output; a failure's JSON `error.message` becomes a `CliException`, or a `SignInLostException` after `SignInLost` for `kind: signed_out`. |
+| Running  | Cancelled              | The process tree is stopped.                                                                                                                               |
 
 Only the sign-in, captures and the connect form pass a cancellation token.
 Other calls run until the CLI exits, which every command does on its own.

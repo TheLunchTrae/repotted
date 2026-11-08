@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises';
 import { createGitHub } from '@repotted/core';
 
 import manifest from '../package.json' with { type: 'json' };
-import { resolveToken, startSignIn } from './auth.js';
+import { keychain, resolveToken, startSignIn } from './auth.js';
 import { run } from './commands.js';
 
 // The build inlines the version, so the npm bundle and the desktop app's
@@ -14,6 +14,7 @@ process.exitCode = await run(process.argv.slice(2), {
   env: process.env,
   github: async () => createGitHub(await resolveToken()),
   signIn: () => startSignIn(),
+  signOut: () => keychain.clear(),
   out: (text) => process.stdout.write(text),
   err: (text) => process.stderr.write(text),
   interactive: process.stdin.isTTY,

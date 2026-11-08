@@ -32,7 +32,6 @@ import { z } from 'zod';
 import {
   enterCode,
   installUrl,
-  keychain,
   NotSignedInError,
   type SignIn,
   tokenOrSignIn,
@@ -54,6 +53,8 @@ export interface Io {
   confirm(question: string): Promise<boolean>;
   /** Starts the device flow; the token is stored once the user enters the code. */
   signIn(): Promise<SignIn>;
+  /** Removes the stored sign-in; returns whether there was one. */
+  signOut(): Promise<boolean>;
 }
 
 const usage = `Usage: repotted <command> [options]
@@ -504,8 +505,13 @@ async function login(io: Io, args: string[]): Promise<number> {
 }
 
 async function logout(io: Io, args: string[]): Promise<number> {
-  parseArgs({ args, options: {} });
-  io.out((await keychain.clear()) ? 'Signed out.\n' : 'Not signed in.\n');
+  const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } });
+  const removed = await io.signOut();
+  if (values.json === true) {
+    json(io, { removed });
+  } else {
+    io.out(removed ? 'Signed out.\n' : 'Not signed in.\n');
+  }
   return 0;
 }
 
@@ -558,6 +564,16 @@ async function dispatch(io: Io, argv: string[]): Promise<number> {
   return handler(io, rest);
 }
 
+/** The JSON failure kind: misuse, a sign-in that is missing or that GitHub rejects, or anything else. */
+function failureKind(error: unknown, misused: boolean): 'usage' | 'signed_out' | 'error' {
+  if (misused) {
+    return 'usage';
+  }
+  return error instanceof NotSignedInError || (error instanceof GitHubError && error.status === 401)
+    ? 'signed_out'
+    : 'error';
+}
+
 /**
  * Runs one command and returns its exit code: 1 when it fails, 2 when it was
  * misused. With `--json`, a failure is a JSON document on stdout as well.
@@ -573,7 +589,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
     const message = error instanceof Error ? error.message : String(error);
     // Also --json=true, which parseArgs rejects, so the rejection is JSON too.
     if (argv.some((arg) => /^--json(?:=|$)/.test(arg))) {
-      json(io, { error: { kind: misused ? 'usage' : 'error', message } });
+      json(io, { error: { kind: failureKind(error, misused), message } });
     } else {
       io.err(`repotted: ${message}\n`);
       if (misused) {

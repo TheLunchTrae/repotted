@@ -44,6 +44,7 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("TheLunchTrae/github-setup", text);
         Assert.Contains("No profile", text);
         Assert.Contains(Label("Add repositories"), text);
+        Assert.Contains(Label("Sign out"), text);
         Save(window, $"repositories-{theme}");
     }
 
