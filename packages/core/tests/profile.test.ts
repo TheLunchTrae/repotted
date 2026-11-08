@@ -167,6 +167,13 @@ rulesets:
     }
   });
 
+  test('rejects a custom property name GitHub does not allow, such as one with a dot', async () => {
+    const file = await write('property-dot.yaml', 'custom_properties: { "team.name": platform }\n');
+    const error = await rejection(resolveProfile(file));
+    expect(error).toBeInstanceOf(ProfileError);
+    expect(String(error)).toContain('A custom property name is 1 to 75 letters, digits, _, -, $ or #');
+  });
+
   test('rejects a profile that turns off every merge method', async () => {
     const file = await write(
       'no-merge.yaml',
@@ -791,6 +798,17 @@ drafts:
     expect(resolved.sources.drafts.actions).toEqual({ selected_actions: own });
     expect(resolved.sources.drafts.pages).toEqual({ 'source.branch': own });
     expect(base).not.toBe(own);
+  });
+
+  test('replace a base draft value that is not a group with a group that sets nothing', async () => {
+    await write('drafts-empty-group-base.yaml', 'drafts:\n  security: { code_scanning_default_setup: oops }\n');
+    const own = await write(
+      'drafts-empty-group-own.yaml',
+      'extends: drafts-empty-group-base.yaml\ndrafts:\n  security: { code_scanning_default_setup: {} }\n',
+    );
+    const resolved = await resolveProfile(own);
+    expect(resolved.drafts.security).toBeUndefined();
+    expect(resolved.sources.drafts.security).toEqual({});
   });
 
   test('refuse a draft setting whose name holds a dot', async () => {

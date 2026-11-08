@@ -291,13 +291,18 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
  */
 type SettingPath = readonly [string] | readonly [string, string];
 
+/** Whether `value` is a group of settings at `key`, such as `selected_actions`. */
+function isGroup(section: SettingsSection, key: string, value: unknown): value is Readonly<Record<string, unknown>> {
+  return groupKeys[section].has(key) && isRecord(value);
+}
+
 /** A section's settings, each with its path. */
 export function flattenSettings(
   section: SettingsSection,
   settings: Readonly<Record<string, unknown>>,
 ): [SettingPath, unknown][] {
   return Object.entries(settings).flatMap(([key, value]): [SettingPath, unknown][] =>
-    groupKeys[section].has(key) && isRecord(value)
+    isGroup(section, key, value)
       ? Object.entries(value).map(([inner, setting]) => [[key, inner], setting])
       : [[[key], value]],
   );
@@ -356,13 +361,16 @@ function mergeSettings(
   }
   const merged = new Map(base);
   merged.delete('absent');
+  // A group replaces a base's value that was not one, as a draft's may be, even a group that sets nothing.
+  for (const [key, value] of Object.entries(override)) {
+    if (isGroup(section, key, value)) {
+      merged.delete(key);
+    }
+  }
   for (const [path, entry] of flattenSettings(section, override)) {
     const [key] = path;
-    if (path.length > 1) {
-      // A setting in a group replaces a base's value for the whole group, as a draft's may be.
-      merged.delete(key);
-    } else {
-      // A value for a group key that is not a group replaces each of a base's settings in it.
+    // A value for a group key that is not a group replaces each of a base's settings in it.
+    if (path.length === 1) {
       for (const [joined, item] of merged) {
         if (item.path.length > 1 && item.path[0] === key) {
           merged.delete(joined);
