@@ -153,7 +153,12 @@ describe('settings at their own endpoints', () => {
 
     expect(plan.changes).toEqual([]);
     expect(plan.warnings).toEqual([
-      'Skipped security.automated_security_fixes: it needs Dependabot alerts, which are off',
+      {
+        section: 'security',
+        key: 'automated_security_fixes',
+        cause: 'not_applicable',
+        message: 'it needs Dependabot alerts, which are off',
+      },
     ]);
   });
 
@@ -210,7 +215,12 @@ describe('settings at their own endpoints', () => {
 
     expect(plan.changes).toEqual([]);
     expect(plan.warnings).toEqual([
-      'Skipped security.security_and_analysis: GitHub did not report it; it reports it only to repository admins',
+      {
+        section: 'security',
+        key: 'security_and_analysis',
+        cause: 'refused',
+        message: 'GitHub did not report it; it reports it only to repository admins',
+      },
     ]);
   });
 
@@ -219,7 +229,12 @@ describe('settings at their own endpoints', () => {
 
     expect(plan.changes).toHaveLength(1);
     expect(plan.warnings).toEqual([
-      'Changing visibility to private detaches public forks and drops stars and watchers from people without access',
+      {
+        section: 'repository',
+        key: 'visibility',
+        message:
+          'Changing visibility to private detaches public forks and drops stars and watchers from people without access',
+      },
     ]);
   });
 });
@@ -230,7 +245,13 @@ describe('settings GitHub does not offer or refuses', () => {
 
     expect(plan.changes).toEqual([]);
     expect(plan.warnings).toEqual([
-      'Skipped security.private_vulnerability_reporting: GitHub does not offer private vulnerability reporting on this repository (Not Found: GET /private-vulnerability-reporting)',
+      {
+        section: 'security',
+        key: 'private_vulnerability_reporting',
+        cause: 'unavailable',
+        message:
+          'GitHub does not offer private vulnerability reporting on this repository (Not Found: GET /private-vulnerability-reporting)',
+      },
     ]);
   });
 
@@ -248,8 +269,19 @@ describe('settings GitHub does not offer or refuses', () => {
     });
     expect(plan.changes).toEqual([]);
     expect(plan.warnings).toEqual([
-      'Skipped actions.oidc_customization_sub: GitHub refused to read OIDC subject claim (Resource not accessible by integration); that needs the Actions read permission',
-      'Skipped pages: GitHub refused to read GitHub Pages (Resource not accessible by integration); that needs the Pages read permission',
+      {
+        section: 'actions',
+        key: 'oidc_customization_sub',
+        cause: 'refused',
+        message:
+          'GitHub refused to read OIDC subject claim (Resource not accessible by integration); that needs the Actions read permission',
+      },
+      {
+        section: 'pages',
+        cause: 'refused',
+        message:
+          'GitHub refused to read GitHub Pages (Resource not accessible by integration); that needs the Pages read permission',
+      },
     ]);
 
     const { warnings } = await captureProfile(github, repo);
@@ -362,12 +394,46 @@ describe('capture of every section', () => {
 
     const { profile, warnings } = await captureProfile(github, repo);
     expect(warnings).toEqual([
-      'Skipped repository.pull_request_creation_policy: a profile cannot hold "maintainers_only" (Invalid option: expected one of "all"|"collaborators_only")',
-      'Skipped merge.merge_commit_title: a profile cannot hold "COMMIT_TITLE" (Invalid option: expected one of "PR_TITLE"|"MERGE_MESSAGE")',
-      'Skipped merge.merge_commit_message: GitHub takes it only with merge_commit_title, which is left out',
-      'Skipped security.code_scanning_default_setup.query_suite: a profile cannot hold "security-and-quality" (Invalid option: expected one of "default"|"extended")',
-      'Skipped security.security_and_analysis.secret_scanning_push_protection: a profile cannot hold "paused" at status (Invalid option: expected one of "enabled"|"disabled")',
-      'Skipped actions.approval_policy: a profile cannot hold "everyone_new" (Invalid option: expected one of "first_time_contributors_new_to_github"|"first_time_contributors"|"all_external_contributors")',
+      {
+        section: 'repository',
+        key: 'pull_request_creation_policy',
+        cause: 'unloadable',
+        message:
+          'a profile cannot hold "maintainers_only" (Invalid option: expected one of "all"|"collaborators_only")',
+      },
+      {
+        section: 'merge',
+        key: 'merge_commit_title',
+        cause: 'unloadable',
+        message: 'a profile cannot hold "COMMIT_TITLE" (Invalid option: expected one of "PR_TITLE"|"MERGE_MESSAGE")',
+      },
+      {
+        section: 'merge',
+        key: 'merge_commit_message',
+        cause: 'unloadable',
+        message: 'GitHub takes it only with merge_commit_title, which is left out',
+      },
+      {
+        section: 'security',
+        key: 'code_scanning_default_setup',
+        field: 'query_suite',
+        cause: 'unloadable',
+        message: 'a profile cannot hold "security-and-quality" (Invalid option: expected one of "default"|"extended")',
+      },
+      {
+        section: 'security',
+        key: 'security_and_analysis',
+        field: 'secret_scanning_push_protection',
+        cause: 'unloadable',
+        message: 'a profile cannot hold "paused" at status (Invalid option: expected one of "enabled"|"disabled")',
+      },
+      {
+        section: 'actions',
+        key: 'approval_policy',
+        cause: 'unloadable',
+        message:
+          'a profile cannot hold "everyone_new" (Invalid option: expected one of "first_time_contributors_new_to_github"|"first_time_contributors"|"all_external_contributors")',
+      },
     ]);
     expect(profile.repository).not.toHaveProperty('pull_request_creation_policy');
     expect(profile.merge).not.toHaveProperty('merge_commit_title');
@@ -416,8 +482,19 @@ describe('capture of every section', () => {
 
     const { profile, warnings } = await captureProfile(github, repo);
     expect(warnings).toEqual([
-      'Skipped ruleset "Queue": a profile cannot hold "FAST_FORWARD" at rules[1].parameters.merge_method (Invalid option: expected one of "MERGE"|"SQUASH"|"REBASE")',
-      'Skipped environment "slow": a profile cannot hold 50000 at wait_timer (Too big: expected number to be <=43200)',
+      {
+        section: 'rulesets',
+        key: 'Queue',
+        cause: 'unloadable',
+        message:
+          'a profile cannot hold "FAST_FORWARD" at rules[1].parameters.merge_method (Invalid option: expected one of "MERGE"|"SQUASH"|"REBASE")',
+      },
+      {
+        section: 'environments',
+        key: 'slow',
+        cause: 'unloadable',
+        message: 'a profile cannot hold 50000 at wait_timer (Too big: expected number to be <=43200)',
+      },
     ]);
     expect(profile.rulesets?.map((entry) => entry.name)).toEqual(['Keep']);
     expect(profile.environments).toEqual([]);
@@ -456,7 +533,13 @@ describe('capture of every section', () => {
 
     const { profile, warnings } = await captureProfile(github, repo);
     expect(warnings).toEqual([
-      'Skipped security.security_and_analysis.secret_scanning: a profile cannot hold "paused" at status (Invalid option: expected one of "enabled"|"disabled")',
+      {
+        section: 'security',
+        key: 'security_and_analysis',
+        field: 'secret_scanning',
+        cause: 'unloadable',
+        message: 'a profile cannot hold "paused" at status (Invalid option: expected one of "enabled"|"disabled")',
+      },
     ]);
     expect(profile.security).not.toHaveProperty('security_and_analysis');
     expect(profile.security?.code_scanning_default_setup).toEqual({
@@ -583,8 +666,13 @@ describe('settings GitHub ties together', () => {
     const profile: Profile = {
       security: { dependabot_runner_settings: { runner_type: 'standard', runner_labels: ['x'] } },
     };
-    const warning =
-      'Skipped security.dependabot_runner_settings.runner_labels: GitHub keeps none with standard runners';
+    const warning = {
+      section: 'security',
+      key: 'dependabot_runner_settings',
+      field: 'runner_labels',
+      cause: 'not_applicable',
+      message: 'GitHub keeps none with standard runners',
+    };
 
     const plan = await createPlan(github, repo, profile);
     expect(plan.warnings).toEqual([warning]);
@@ -612,8 +700,20 @@ describe('settings GitHub ties together', () => {
       },
     };
     const warnings = [
-      'Skipped security.code_scanning_default_setup.runner_label: GitHub keeps none with standard runners',
-      'Skipped security.code_quality_setup.runner_label: GitHub keeps none with standard runners',
+      {
+        section: 'security',
+        key: 'code_scanning_default_setup',
+        field: 'runner_label',
+        cause: 'not_applicable',
+        message: 'GitHub keeps none with standard runners',
+      },
+      {
+        section: 'security',
+        key: 'code_quality_setup',
+        field: 'runner_label',
+        cause: 'not_applicable',
+        message: 'GitHub keeps none with standard runners',
+      },
     ];
 
     const plan = await createPlan(github, repo, profile);
@@ -638,8 +738,20 @@ describe('settings GitHub ties together', () => {
 
     const plan = await createPlan(github, repo, profile);
     expect(plan.warnings).toEqual([
-      'Skipped security.code_scanning_default_setup.runner_type: labeled runners need a runner label',
-      'Skipped security.code_quality_setup.runner_label: labeled runners need a runner label',
+      {
+        section: 'security',
+        key: 'code_scanning_default_setup',
+        field: 'runner_type',
+        cause: 'not_applicable',
+        message: 'labeled runners need a runner label',
+      },
+      {
+        section: 'security',
+        key: 'code_quality_setup',
+        field: 'runner_label',
+        cause: 'not_applicable',
+        message: 'labeled runners need a runner label',
+      },
     ]);
     expect(plan.changes.map((change) => change.request.body)).toEqual([{ state: 'configured' }]);
     await applyPlan(github, plan);
@@ -667,8 +779,13 @@ describe('settings GitHub ties together', () => {
     const profile: Profile = {
       security: { code_scanning_default_setup: { state: 'configured', runner_label: 'big' } },
     };
-    const warning =
-      'Skipped security.code_scanning_default_setup.runner_label: GitHub keeps none with standard runners';
+    const warning = {
+      section: 'security',
+      key: 'code_scanning_default_setup',
+      field: 'runner_label',
+      cause: 'not_applicable',
+      message: 'GitHub keeps none with standard runners',
+    };
 
     const plan = await createPlan(github, repo, profile);
     expect(plan.warnings).toEqual([warning]);
@@ -737,9 +854,22 @@ describe('settings GitHub ties together', () => {
     });
     const reason = 'GitHub keeps no runner while the setup is not configured';
     expect(plan.changes).toEqual([]);
+    // GitHub's reason, though the setting is the profile's to fix.
     expect(plan.warnings).toEqual([
-      `Skipped security.code_scanning_default_setup.runner_type: ${reason}`,
-      `Skipped security.code_scanning_default_setup.runner_label: ${reason}`,
+      {
+        section: 'security',
+        key: 'code_scanning_default_setup',
+        field: 'runner_type',
+        cause: 'not_applicable',
+        message: reason,
+      },
+      {
+        section: 'security',
+        key: 'code_scanning_default_setup',
+        field: 'runner_label',
+        cause: 'not_applicable',
+        message: reason,
+      },
     ]);
   });
 
@@ -752,7 +882,13 @@ describe('settings GitHub ties together', () => {
     });
     expect(plan.changes).toEqual([]);
     expect(plan.warnings).toEqual([
-      'Skipped security.code_quality_setup.runner_label: labeled runners need a runner label',
+      {
+        section: 'security',
+        key: 'code_quality_setup',
+        field: 'runner_label',
+        cause: 'not_applicable',
+        message: 'labeled runners need a runner label',
+      },
     ]);
   });
 
@@ -789,7 +925,13 @@ describe('settings GitHub ties together', () => {
 
     expect(plan.changes).toEqual([]);
     expect(plan.warnings).toEqual([
-      'Skipped security.dependabot_runner_settings.runner_type: labeled runners need exactly one runner label',
+      {
+        section: 'security',
+        key: 'dependabot_runner_settings',
+        field: 'runner_type',
+        cause: 'not_applicable',
+        message: 'labeled runners need exactly one runner label',
+      },
     ]);
   });
 
@@ -820,7 +962,13 @@ describe('settings GitHub ties together', () => {
       actions: { oidc_customization_sub: { use_default: true, include_claim_keys: ['repo'] } },
     });
     expect(ignored.warnings).toEqual([
-      'Skipped actions.oidc_customization_sub.include_claim_keys: GitHub ignores claim keys while use_default is true',
+      {
+        section: 'actions',
+        key: 'oidc_customization_sub',
+        field: 'include_claim_keys',
+        cause: 'not_applicable',
+        message: 'GitHub ignores claim keys while use_default is true',
+      },
     ]);
     expect(ignored.changes.map((change) => change.request.body)).toEqual([
       { use_default: true, include_claim_keys: ['repo'] },
@@ -864,7 +1012,11 @@ describe('settings GitHub ties together', () => {
 
     expect(plan.changes).toEqual([]);
     expect(plan.warnings).toEqual([
-      'Skipped pages: a new site built from a branch needs source.branch, or build_type: workflow',
+      {
+        section: 'pages',
+        cause: 'not_applicable',
+        message: 'a new site built from a branch needs source.branch, or build_type: workflow',
+      },
     ]);
   });
 });

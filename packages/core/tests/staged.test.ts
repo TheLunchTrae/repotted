@@ -448,7 +448,10 @@ merge: { allow_rebase_merge: false }
 
     const warning = 'Excluding rulesets/Main leaves nothing out, since the profile sets nothing it names';
     expect((await resolveStagedApply(files.staged)).warnings).toEqual([warning]);
-    expect((await planStagedApply(new FakeGitHub(), files.staged)).plan.warnings).toContain(warning);
+    expect((await planStagedApply(new FakeGitHub(), files.staged)).plan.warnings).toContainEqual({
+      exclusion: 'rulesets/Main',
+      message: warning,
+    });
   });
 
   test('names what leaves out every change and field of its plan, each of which then leaves the plan', async () => {

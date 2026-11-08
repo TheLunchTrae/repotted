@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { Change, SectionPlan } from '../change.js';
+import type { Change, SectionPlan, Warning } from '../change.js';
 import { refusal, type Unavailable } from '../endpoints.js';
 import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../github.js';
 import type { FieldChange } from '../match.js';
@@ -30,7 +30,7 @@ export async function readLabels(github: GitHub, repo: RepoRef): Promise<LiveLab
     };
   } catch (error) {
     if (error instanceof GitHubError && error.status === 403) {
-      return { available: false, refused: true, reason: refusal(error, 'GET', path, 'labels') };
+      return { available: false, cause: 'refused', reason: refusal(error, 'GET', path, 'labels') };
     }
     throw error;
   }
@@ -80,7 +80,7 @@ function bodyOf(fields: readonly FieldChange[]): Record<string, unknown> {
  */
 export function planLabels(desired: readonly LabelEntry[], live: LiveLabels, repo: RepoRef): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [`Skipped labels: ${live.reason}`] };
+    return { changes: [], warnings: [{ section: 'labels', cause: live.cause, message: live.reason }] };
   }
   const path = `${repoPath(repo)}/labels`;
   const labelPath = (name: string): string => `${path}/${encodeURIComponent(name)}`;
@@ -90,7 +90,7 @@ export function planLabels(desired: readonly LabelEntry[], live: LiveLabels, rep
   const renames: Change[] = [];
   const updates: Change[] = [];
   const creates: Change[] = [];
-  const warnings: string[] = [];
+  const warnings: Warning[] = [];
   for (const entry of desired) {
     const current = find(entry.name);
     if (isAbsent(entry)) {
@@ -108,16 +108,20 @@ export function planLabels(desired: readonly LabelEntry[], live: LiveLabels, rep
     }
     const old = (entry.renamed_from ?? []).flatMap((name) => find(name) ?? []);
     if (current !== undefined && old.length > 0) {
-      warnings.push(
-        `Label "${entry.name}": left ${old.map((item) => `"${item.name}"`).join(' and ')} as ${old.length === 1 ? 'it is' : 'they are'}, since the repository has "${current.name}" too; move issues to it and remove the old label by hand`,
-      );
+      warnings.push({
+        section: 'labels',
+        key: entry.name,
+        message: `Label "${entry.name}": left ${old.map((item) => `"${item.name}"`).join(' and ')} as ${old.length === 1 ? 'it is' : 'they are'}, since the repository has "${current.name}" too; move issues to it and remove the old label by hand`,
+      });
     } else if (old.length > 1) {
-      warnings.push(
-        `Label "${entry.name}": renames "${old[0]?.name ?? ''}" and leaves ${old
+      warnings.push({
+        section: 'labels',
+        key: entry.name,
+        message: `Label "${entry.name}": renames "${old[0]?.name ?? ''}" and leaves ${old
           .slice(1)
           .map((item) => `"${item.name}"`)
           .join(' and ')}, which the repository has too`,
-      );
+      });
     }
     const source = current ?? old[0];
     if (source === undefined) {

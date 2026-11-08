@@ -571,7 +571,13 @@ export async function planStagedApply(
     resolved.profile,
     skippedDrafts(resolved.drafts),
   );
-  const plan = { ...created, warnings: [...created.warnings, ...read.unmatched.map(unmatchedWarning)] };
+  const plan = {
+    ...created,
+    warnings: [
+      ...created.warnings,
+      ...read.unmatched.map((exclusion) => ({ exclusion, message: unmatchedWarning(exclusion) })),
+    ],
+  };
   return { staged: resolved, plan, exclusions: planExclusions(plan, read.head.own) };
 }
 

@@ -64,7 +64,7 @@ function isAbsent(entry: PagesEntry): entry is Extract<PagesEntry, { absent: tru
  */
 export function planPages(desired: PagesEntry, live: LivePages, repo: RepoRef): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [`Skipped pages: ${live.reason}`] };
+    return { changes: [], warnings: [{ section: 'pages', cause: live.cause, message: live.reason }] };
   }
   const path = `${repoPath(repo)}/pages`;
   const target = 'GitHub Pages site';
@@ -85,7 +85,13 @@ export function planPages(desired: PagesEntry, live: LivePages, repo: RepoRef): 
     if (created.build_type !== 'workflow' && created.source?.branch === undefined) {
       return {
         changes: [],
-        warnings: ['Skipped pages: a new site built from a branch needs source.branch, or build_type: workflow'],
+        warnings: [
+          {
+            section: 'pages',
+            cause: 'not_applicable',
+            message: 'a new site built from a branch needs source.branch, or build_type: workflow',
+          },
+        ],
       };
     }
     changes.push({

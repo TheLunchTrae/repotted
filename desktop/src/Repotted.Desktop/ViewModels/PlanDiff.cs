@@ -81,10 +81,10 @@ internal static class PlanDiff
         List<DiffLine> lines = [];
         foreach (var (name, value) in desired)
         {
-            if (plan.Warnings.FirstOrDefault(warning => warning.StartsWith($"Skipped {name}: ", StringComparison.Ordinal)) is { } skipped)
+            if (PlanSections.SectionSkip(plan, name) is { } skipped)
             {
                 lines.AddRange(Yaml.Lines(name, value).Select(text => new DiffLine(DiffKind.Same, text)));
-                lines.Add(new DiffLine(DiffKind.Note, $"Not checked: {skipped[$"Skipped {name}: ".Length..]}"));
+                lines.Add(new DiffLine(DiffKind.Note, $"Not checked: {skipped.Message}"));
                 continue;
             }
             var section = changes.Where(item => item.Change.Section == name).ToList();
@@ -92,8 +92,8 @@ internal static class PlanDiff
             {
                 _ when SettingsSections.Contains(name) && value is JsonObject settings => SettingsUnits(name, settings, section, plan.Warnings),
                 ("rulesets" or "environments" or "labels", JsonArray entries) =>
-                    EntryUnits(entries, section, "name", plan.Warnings, $"Skipped {name[..^1]}"),
-                ("autolinks", JsonArray entries) => EntryUnits(entries, section, "key_prefix", plan.Warnings, null),
+                    EntryUnits(entries, section, "name"),
+                ("autolinks", JsonArray entries) => EntryUnits(entries, section, "key_prefix"),
                 _ => null,
             };
             if (units is null)
@@ -125,7 +125,7 @@ internal static class PlanDiff
         string? Skipped = null);
 
     /// <summary>The settings of a section, one unit for each key the profile or a change names.</summary>
-    private static List<Unit> SettingsUnits(string section, JsonObject desired, IReadOnlyList<IndexedChange> changes, IReadOnlyList<string> warnings)
+    private static List<Unit> SettingsUnits(string section, JsonObject desired, IReadOnlyList<IndexedChange> changes, IReadOnlyList<WarningDocument> warnings)
     {
         var now = (JsonObject)desired.DeepClone();
         var after = (JsonObject)desired.DeepClone();
@@ -162,31 +162,21 @@ internal static class PlanDiff
             after.ContainsKey(key) ? Wrap(key, after[key]) : null,
             owners.GetValueOrDefault(key) ?? [],
             key,
-            SkipReason(warnings, $"Skipped {section}.{key}")))];
+            SkipReason(warnings, section, key)))];
     }
 
     /// <summary>
-    /// Why the plan didn't check something, from the warnings that name it or
-    /// a part of it, such as <c>Skipped security.security_and_analysis: why</c>.
+    /// Why the plan didn't check a setting, from the warnings that name it or
+    /// a field of it, which goes before its reason.
     /// </summary>
-    private static string? SkipReason(IReadOnlyList<string> warnings, string? prefix)
+    private static string? SkipReason(IReadOnlyList<WarningDocument> warnings, string section, string key)
     {
-        if (prefix is null)
-        {
-            return null;
-        }
-        List<string> reasons = [];
-        foreach (var warning in warnings)
-        {
-            if (warning.StartsWith($"{prefix}: ", StringComparison.Ordinal))
-            {
-                reasons.Add(warning[(prefix.Length + 2)..]);
-            }
-            else if (warning.StartsWith($"{prefix}.", StringComparison.Ordinal))
-            {
-                reasons.Add(warning[(prefix.Length + 1)..]);
-            }
-        }
+        List<string> reasons =
+        [
+            .. warnings
+                .Where(warning => warning.Cause is not null && warning.Section == section && warning.Key == key)
+                .Select(warning => warning.Field is null ? warning.Message : $"{warning.Field}: {warning.Message}"),
+        ];
         return reasons.Count == 0 ? null : string.Join("; ", reasons);
     }
 
@@ -210,9 +200,7 @@ internal static class PlanDiff
     private static List<Unit> EntryUnits(
         JsonArray entries,
         IReadOnlyList<IndexedChange> changes,
-        string key,
-        IReadOnlyList<string> warnings,
-        string? skipped)
+        string key)
     {
         List<Unit> units = [];
         foreach (var entry in entries.OfType<JsonObject>())
@@ -281,11 +269,7 @@ internal static class PlanDiff
             {
                 now.Remove("branch_policies");
             }
-            units.Add(new Unit(
-                now,
-                after,
-                [.. own.Concat(branchPolicies).Select(item => (item, (string?)null))],
-                Skipped: SkipReason(warnings, skipped is null ? null : $"{skipped} \"{name}\"")));
+            units.Add(new Unit(now, after, [.. own.Concat(branchPolicies).Select(item => (item, (string?)null))]));
         }
         return units;
     }

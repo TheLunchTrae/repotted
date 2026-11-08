@@ -11,7 +11,7 @@ internal sealed partial class CompareSectionViewModel : ViewModelBase
 
     private readonly IReadOnlyList<CompareRow> matching;
 
-    private readonly string? skippedBy;
+    private readonly WarningDocument? skippedBy;
 
     /// <summary>The text each row is found by, as <see cref="SettingSearch"/> compares it.</summary>
     private readonly Dictionary<CompareRow, string> terms = new(ReferenceEqualityComparer.Instance);
@@ -36,7 +36,7 @@ internal sealed partial class CompareSectionViewModel : ViewModelBase
         IReadOnlyList<CompareRow> differences,
         IReadOnlyList<CompareRow> matching,
         string summary,
-        string? skippedBy = null,
+        WarningDocument? skippedBy = null,
         Func<CompareRow, string>? terms = null)
     {
         Title = title;
@@ -62,7 +62,7 @@ internal sealed partial class CompareSectionViewModel : ViewModelBase
     public bool Skipped => skippedBy is not null;
 
     /// <summary>The plan's warning that says why this section was not read, which shows here and not with the other warnings.</summary>
-    public string? SkippedBy => skippedBy;
+    public WarningDocument? SkippedBy => skippedBy;
 
     public bool HasChanges => differences.Count > 0;
 
@@ -281,7 +281,7 @@ internal sealed partial class CompareViewModel(
             var plan = await client.PlanAsync(repository, profile.File, CancellationToken.None).ConfigureAwait(true);
             Sections = PlanSections.Build(plan);
             // A section the plan could not read says so in its own place.
-            Warnings = [.. plan.Warnings.Where(warning => !Sections.Any(section => section.SkippedBy == warning))];
+            Warnings = [.. plan.Warnings.Where(warning => !Sections.Any(section => section.SkippedBy == warning)).Select(warning => warning.Text)];
             (AccessLabel, AccessUrl) = PlanSections.Access(plan, installUrl);
             // The locked filter is only offered while something is locked, so a compare with nothing locked shows everything again.
             if (!HasLocks && LockedOnly)

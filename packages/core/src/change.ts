@@ -60,8 +60,38 @@ export type Change =
   | (Write & { readonly section: (typeof listSections)[number]; readonly entry: ChangeEntry })
   | (Write & { readonly section: SettingsSection; readonly entry?: never });
 
+/**
+ * Why a plan or capture leaves something out: GitHub `refused` to show it,
+ * as for want of a permission or a role; the repository does not offer it
+ * (`unavailable`); it does not apply with the other settings
+ * (`not_applicable`); or, in a capture, a profile cannot hold what GitHub
+ * reports (`unloadable`).
+ */
+export const skipCauses = ['refused', 'unavailable', 'not_applicable', 'unloadable'] as const;
+
+export type SkipCause = (typeof skipCauses)[number];
+
+/**
+ * What a plan or capture says beside its changes. A warning with a `cause`
+ * left out what `section`, `key` and `field` name, and its `message` says
+ * why. One without a cause leaves nothing out: it says what a change does
+ * beyond its fields, or names a staged apply's `exclusion` that leaves
+ * nothing out, and its `message` is the whole warning.
+ */
+export interface Warning {
+  readonly section?: Section;
+  /** A setting's key, or an entry's name. */
+  readonly key?: string;
+  /** A field of that setting. */
+  readonly field?: string;
+  readonly cause?: SkipCause;
+  /** An exclusion as the staged apply file lists it. */
+  readonly exclusion?: string;
+  readonly message: string;
+}
+
 /** What a section's plan step returns. */
 export interface SectionPlan {
   readonly changes: readonly Change[];
-  readonly warnings: readonly string[];
+  readonly warnings: readonly Warning[];
 }

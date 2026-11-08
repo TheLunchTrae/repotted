@@ -34,7 +34,7 @@ export async function readCustomProperties(github: GitHub, repo: RepoRef): Promi
 /** Sets the values the profile names in one write; properties it leaves out keep theirs. */
 export function planCustomProperties(desired: CustomProperties, live: LiveProperties, repo: RepoRef): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [`Skipped custom_properties: ${live.reason}`] };
+    return { changes: [], warnings: [{ section: 'custom_properties', cause: live.cause, message: live.reason }] };
   }
   const current = live.values;
   const fields = Object.entries(desired)

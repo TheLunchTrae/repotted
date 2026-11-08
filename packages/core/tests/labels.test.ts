@@ -134,7 +134,8 @@ describe('label plans', () => {
     expect(result.changes.map((change) => change.request)).toEqual([
       { method: 'PATCH', path: '/repos/lunch/app/labels/Feature', body: { new_name: 'feature', color: 'a2eeef' } },
     ]);
-    expect(result.warnings).toEqual([expect.stringContaining('left "enhancement" as it is')]);
+    expect(result.warnings).toMatchObject([{ section: 'labels', key: 'feature' }]);
+    expect(result.warnings[0]?.message).toContain('left "enhancement" as it is');
   });
 
   test('rename the first old name the repository has and warn about the rest', async () => {
@@ -143,7 +144,8 @@ describe('label plans', () => {
     const result = await plan(github, [{ name: 'status: doing', renamed_from: ['in progress', 'wip'] }]);
 
     expect(result.changes.map((change) => change.request.path)).toEqual(['/repos/lunch/app/labels/in%20progress']);
-    expect(result.warnings).toEqual([expect.stringContaining('leaves "wip"')]);
+    expect(result.warnings).toMatchObject([{ section: 'labels', key: 'status: doing' }]);
+    expect(result.warnings[0]?.message).toContain('leaves "wip"');
   });
 
   test('order deletes, then renames, then updates, then creates', async () => {
@@ -207,7 +209,7 @@ describe('label plans', () => {
     const result = await createPlan(github, repo, { repository: { has_wiki: false }, labels: [{ name: 'bug' }] });
 
     expect(result.changes.map((change) => change.section)).toEqual(['repository']);
-    expect(result.warnings).toEqual([expect.stringContaining('Skipped labels')]);
+    expect(result.warnings).toEqual([expect.objectContaining({ section: 'labels', cause: 'refused' })]);
     expect((await captureProfile(github, repo)).warnings).toEqual(result.warnings);
   });
 
@@ -323,7 +325,13 @@ describe('labels in profile files', () => {
       expect.stringContaining('Draft label "triage": label "needs-triage" is renamed from it'),
     ]);
     expect(result.changes.map((change) => change.request.path)).toEqual(['/repos/lunch/app/labels/triage']);
-    expect(result.warnings).toEqual(['Label "needs-triage" renames "triage", which the profile skips as a draft']);
+    expect(result.warnings).toEqual([
+      {
+        section: 'labels',
+        key: 'triage',
+        message: 'Label "needs-triage" renames "triage", which the profile skips as a draft',
+      },
+    ]);
   });
 
   test('replace a base label named in any case across extends, as rulesets are replaced', async () => {

@@ -196,7 +196,7 @@ public sealed class PlanDiffTests
     {
         var plan = Plan(
             """{"pages":{"build_type":"workflow"}}""",
-            warnings: "\"Skipped pages: the token can't read Pages\"");
+            warnings: """{"section":"pages","cause":"refused","message":"the token can't read Pages"}""");
 
         Assert.Equal(
             ["  pages:", "    build_type: workflow", "! Not checked: the token can't read Pages"],
@@ -295,11 +295,30 @@ public sealed class PlanDiffTests
     }
 
     [Fact]
+    public void An_exclusion_that_leaves_nothing_out_is_a_warning_and_not_counted_as_left_out()
+    {
+        const string Unmatched = "Excluding rulesets/Gone leaves nothing out, since the profile sets nothing it names";
+        var plan = JsonSerializer.Deserialize(
+            $$"""
+            {"repository":"TheLunchTrae/repotted","desired":{"repository":{"has_wiki":false} },"changes":[],
+             "warnings":[{"exclusion":"rulesets/Gone","message":"{{Unmatched}}"}],"access":{{Documents.Unknown}},"locks":[],
+             "staged":{"file":"/staged.yaml","repository":"TheLunchTrae/repotted","base":null,"exclude":["rulesets/Gone","repository.has_issues"]},
+             "exclusions":[],"skipped":[]}
+            """,
+            CliJson.Default.StagedPlanDocument)!;
+
+        var review = StagedReview.Of(plan, installUrl: null);
+
+        Assert.Equal("1 setting or entry is left out of this apply, so GitHub keeps it as it is.", review.Diff.Footnote);
+        Assert.Equal([Unmatched], review.Warnings);
+    }
+
+    [Fact]
     public void A_setting_the_plan_did_not_check_says_why_and_does_not_match()
     {
         var plan = Plan(
             """{"security":{"security_and_analysis":{"secret_scanning":{"status":"enabled"}}}}""",
-            warnings: "\"Skipped security.security_and_analysis.secret_scanning: GitHub did not report it\"");
+            warnings: """{"section":"security","key":"security_and_analysis","field":"secret_scanning","cause":"refused","message":"GitHub did not report it"}""");
 
         Assert.Equal(
             [

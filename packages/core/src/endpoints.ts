@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { Change, Section, SectionPlan, SettingsSection } from './change.js';
+import type { Change, Section, SectionPlan, SettingsSection, SkipCause, Warning } from './change.js';
 import { type GitHub, GitHubError, type Method, repoPath, type RepoRef } from './github.js';
 import { fieldChanges } from './match.js';
 import { requiredPermission } from './permissions.js';
@@ -71,12 +71,12 @@ interface ObjectEndpoint {
 
 /**
  * Why a setting or a section cannot be read on the repository: `refused`
- * when GitHub hides it, as from a token without the permission, rather than
- * not offering it on the repository.
+ * when GitHub hides it, as from a token without the permission, and
+ * `unavailable` when GitHub does not offer it on the repository.
  */
 export interface Unavailable {
   readonly available: false;
-  readonly refused: boolean;
+  readonly cause: Extract<SkipCause, 'refused' | 'unavailable'>;
   readonly reason: string;
 }
 
@@ -118,7 +118,7 @@ export async function readResource(
       return { available: true, value: missing };
     }
     if (error.status === 403) {
-      return { available: false, refused: true, reason: refusal(error, 'GET', path, target) };
+      return { available: false, cause: 'refused', reason: refusal(error, 'GET', path, target) };
     }
     // 404 for a feature the repository's plan or owner lacks; 405, 409 and
     // 422 for one that does not apply to it, such as fork settings on a
@@ -126,7 +126,7 @@ export async function readResource(
     if ([404, 405, 409, 422].includes(error.status)) {
       return {
         available: false,
-        refused: false,
+        cause: 'unavailable',
         reason: `GitHub does not offer ${target} on this repository (${error.message})`,
       };
     }
@@ -154,7 +154,7 @@ export async function readEndpoint(github: GitHub, repo: RepoRef, endpoint: Endp
     return { available: true, value: on };
   }
   if (!isRecord(data)) {
-    return { available: false, refused: false, reason: `GitHub sent no ${endpoint.target} settings` };
+    return { available: false, cause: 'unavailable', reason: `GitHub sent no ${endpoint.target} settings` };
   }
   if (endpoint.kind === 'field') {
     return { available: true, value: data[endpoint.key] };
@@ -195,11 +195,11 @@ export function planEndpoint(
   repo: RepoRef,
 ): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [`Skipped ${section}.${endpoint.key}: ${live.reason}`] };
+    return { changes: [], warnings: [{ section, key: endpoint.key, cause: live.cause, message: live.reason }] };
   }
   const path = `${repoPath(repo)}${endpoint.path}`;
   const changes: Change[] = [];
-  const warnings: string[] = [];
+  const warnings: Warning[] = [];
   if (endpoint.kind === 'toggle') {
     if (desired !== live.value) {
       changes.push({
@@ -226,7 +226,13 @@ export function planEndpoint(
     const adjusted = endpoint.adjust?.(desired, current) ?? { desired };
     if (adjusted.dropped !== undefined) {
       for (const field of adjusted.dropped.fields) {
-        warnings.push(`Skipped ${section}.${endpoint.key}.${field}: ${adjusted.dropped.reason}`);
+        warnings.push({
+          section,
+          key: endpoint.key,
+          field,
+          cause: 'not_applicable',
+          message: adjusted.dropped.reason,
+        });
       }
     }
     const wanted = adjusted.desired;
@@ -276,13 +282,14 @@ export function unloadable(schema: z.ZodType, value: unknown): string | undefine
  * The captured settings that a profile can hold. GitHub may report a value
  * that no profile takes, such as an option newer than the schema, so a
  * setting that fails its schema is left out with a warning, and the capture
- * still loads.
+ * still loads. The settings are a section's, or with `key`, the fields of
+ * that setting.
  */
 export function loadable(
-  name: string,
+  at: { readonly section: Section; readonly key?: string },
   schema: z.ZodObject,
   settings: Readonly<Record<string, unknown>>,
-  warnings: string[],
+  warnings: Warning[],
 ): Record<string, unknown> {
   const kept: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(settings)) {
@@ -291,7 +298,12 @@ export function loadable(
     if (problem === undefined) {
       kept[key] = value;
     } else {
-      warnings.push(`Skipped ${name}.${key}: ${problem}`);
+      warnings.push({
+        section: at.section,
+        ...(at.key === undefined ? { key } : { key: at.key, field: key }),
+        cause: 'unloadable',
+        message: problem,
+      });
     }
   }
   return kept;
@@ -302,9 +314,9 @@ export function captureEndpoints(
   section: Section,
   endpoints: readonly Endpoint[],
   values: ReadonlyMap<string, EndpointValue>,
-): { settings: Record<string, unknown>; warnings: string[] } {
+): { settings: Record<string, unknown>; warnings: Warning[] } {
   const settings: Record<string, unknown> = {};
-  const warnings: string[] = [];
+  const warnings: Warning[] = [];
   for (const endpoint of endpoints) {
     const value = values.get(endpoint.key);
     if (value === undefined) {
@@ -317,7 +329,7 @@ export function captureEndpoints(
       const kept =
         endpoint.kind === 'object' && isRecord(value.value)
           ? loadable(
-              `${section}.${endpoint.key}`,
+              { section, key: endpoint.key },
               endpoint.schema,
               Object.fromEntries(Object.entries(value.value).filter(([field]) => !identifying.includes(field))),
               warnings,
@@ -327,9 +339,9 @@ export function captureEndpoints(
       if (kept !== undefined && !(isRecord(kept) && Object.keys(kept).length === 0)) {
         settings[endpoint.key] = kept;
       }
-    } else if (value.refused) {
+    } else if (value.cause === 'refused') {
       // A setting the repository does not have is no news; one GitHub hides is.
-      warnings.push(`Skipped ${section}.${endpoint.key}: ${value.reason}`);
+      warnings.push({ section, key: endpoint.key, cause: value.cause, message: value.reason });
     }
   }
   return { settings, warnings };

@@ -6,6 +6,7 @@ import {
   ApplyError,
   applyPlan,
   describeFailure,
+  describeWarning,
   captureProfile,
   createPlan,
   formatPlan,
@@ -86,7 +87,11 @@ export async function createServer(options: ServerOptions): Promise<McpServer> {
     ({ repository: name }) =>
       attempt(async () => {
         const result = await captureProfile(await client(), parseRepo(name));
-        return text([stringifyProfile(result.profile), ...result.warnings.map((line) => `# ${line}`)].join('\n'));
+        return text(
+          [stringifyProfile(result.profile), ...result.warnings.map((warning) => `# ${describeWarning(warning)}`)].join(
+            '\n',
+          ),
+        );
       }),
   );
 

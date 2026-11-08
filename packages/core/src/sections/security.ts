@@ -1,4 +1,4 @@
-import type { Change, SectionPlan } from '../change.js';
+import type { Change, SectionPlan, Warning } from '../change.js';
 import { type Endpoint, type EndpointValue, planEndpoint } from '../endpoints.js';
 import { repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
@@ -197,12 +197,15 @@ export function planSecurity(
   repo: RepoRef,
 ): SectionPlan {
   const changes: Change[] = [];
-  const warnings: string[] = [];
+  const warnings: Warning[] = [];
   if (desired.security_and_analysis !== undefined) {
     if (securityAndAnalysisLive === undefined) {
-      warnings.push(
-        'Skipped security.security_and_analysis: GitHub did not report it; it reports it only to repository admins',
-      );
+      warnings.push({
+        section: 'security',
+        key: 'security_and_analysis',
+        cause: 'refused',
+        message: 'GitHub did not report it; it reports it only to repository admins',
+      });
     } else {
       const fields = fieldChanges(desired.security_and_analysis, securityAndAnalysisLive);
       if (fields.length > 0) {
@@ -230,7 +233,12 @@ export function planSecurity(
       continue;
     }
     if (endpoint.key === 'automated_security_fixes' && value === true && alertsOn === false) {
-      warnings.push('Skipped security.automated_security_fixes: it needs Dependabot alerts, which are off');
+      warnings.push({
+        section: 'security',
+        key: 'automated_security_fixes',
+        cause: 'not_applicable',
+        message: 'it needs Dependabot alerts, which are off',
+      });
       continue;
     }
     const plan = planEndpoint('security', endpoint, value, live, repo);

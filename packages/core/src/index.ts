@@ -7,6 +7,7 @@ export {
   createPlan,
   describeFailure,
   describeSkipped,
+  describeWarning,
   failureReason,
   formatPlan,
   parsePlan,

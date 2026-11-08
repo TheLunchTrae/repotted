@@ -182,7 +182,7 @@ a warning with GitHub's reason, and one GitHub refuses with a `403` gives a
 warning that names the permission it needs, from `permissions.ts`. `capture`
 warns only about the refused settings and sections, since a feature the
 repository lacks is no news: every reader returns the same `Unavailable` from
-`endpoints.ts`, whose `refused` says which it is. A `403` on a write stops
+`endpoints.ts`, whose `cause` says which it is. A `403` on a write stops
 apply, and the failure names the permission too. `captureProfile` also parses
 each setting it captures with that setting's schema, and leaves out, with a
 warning, one that fails, such as an option GitHub added after `schema.ts`, so
@@ -193,6 +193,19 @@ way round, since GitHub takes them only as a pair. A ruleset or environment
 that fails its schema is left out whole, with a warning, and so is a label: without one of its
 rules, a ruleset would have that rule removed on apply, while a profile leaves
 alone a ruleset it doesn't name.
+
+Each warning is a `Warning` from `change.ts`, data rather than text. One that
+skips something names where, by section, key and field, and why, by `cause`:
+`refused` and `unavailable` mostly come from `Unavailable`, `not_applicable`
+from a plan step that sees a setting doesn't apply with the others, and
+`unloadable` from a capture that can't hold what GitHub reports, as when a
+setting fails its schema. Its `message` is the reason
+alone. A warning without a cause skips nothing, such as the note on a change
+of visibility, and its `message` is the whole text. Readers go by these
+members, never by the wording, since a reason that GitHub words, such as
+"GitHub keeps none with standard runners", can explain a setting that simply
+doesn't apply. `describeWarning` in `plan.ts` builds the line that text
+output and the MCP server print, as `Skipped <where>: <message>`.
 
 Before anything is written, `readAccess` in `repositories.ts` reads the
 account's role from the repository and, with a Repotted App token, the
@@ -336,9 +349,12 @@ allows. Labels, groups and notes stay in `ProfileFields.cs`, since they are
 the app's own words. The `capture`, `plan`, `repos`, and `login` documents
 need GitHub, and `logout` would remove a real sign-in, so the app's tests
 read hand-written examples of them, and only the strict parsing guards them
-against the real CLI. The app ships its own CLI, so every member that CLI
-always prints is required, and a hand-written example that leaves one out
-fails to parse rather than reading as empty.
+against the real CLI. The app reads a warning's `cause`, `section`, `key`,
+`field` and `exclusion` to place it, and `WarningDocument.Text` in
+`Services/CliDocuments.cs` builds the line it lists the way `describeWarning`
+does, so a change to that line changes both. The app ships its own CLI, so
+every member that CLI always prints is required, and a hand-written example
+that leaves one out fails to parse rather than reading as empty.
 
 Each package ships the CLI beside the app as `repotted-cli`, a Node single
 executable application that `packages/cli/sea.ts` builds: the CLI and its
