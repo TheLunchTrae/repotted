@@ -505,6 +505,22 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_lost_sign_in_checks_again_once_the_question_goes_on()
+    {
+        var (main, shell, cli, _) = await SignedInWithAnEdit();
+        cli.On("status --json", Documents.SignedOut, exitCode: 1)
+            .On("repos --json", Documents.SignedOutFailure, exitCode: 1);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        await Until(() => shell.Profiles.HasLeaving);
+
+        // While the question waits, the GitHub CLI signs in.
+        cli.On("status --json", Documents.SignedInAsOther)
+            .On("repos --json", Documents.Repositories);
+        shell.Profiles.DiscardAndLeaveCommand.Execute(null);
+        await Until(() => main.Page is ShellViewModel { Account.Login: "other" });
+    }
+
+    [AvaloniaFact]
     public async Task Sign_out_waits_for_a_save_and_the_sync_after_it()
     {
         var file = folders.Write("base.yaml", "repository: { has_issues: true }\n");

@@ -91,7 +91,7 @@ internal sealed partial class MainViewModel : ViewModelBase
     /// together check once, and an app already replaced checks nothing.
     /// Before the app is replaced, unsaved profile changes are saved or
     /// discarded, since a local save needs no sign-in; cancelling keeps the
-    /// app.
+    /// app. Once that question goes on, the sign-in is checked again.
     /// </summary>
     private async Task CheckSignInAsync(ShellViewModel shell)
     {
@@ -103,15 +103,25 @@ internal sealed partial class MainViewModel : ViewModelBase
         try
         {
             var account = await client.StatusAsync(CancellationToken.None).ConfigureAwait(true);
-            if (Page == shell
-                && !account.Equals(shell.Account)
-                && await shell.ConfirmLeaveAsync(account is Account.SignedIn other ? $"continue as {other.Login}" : "sign in again").ConfigureAwait(true)
-                // The question may have given way to closing the app.
-                && Page == shell)
+            if (Page != shell || account.Equals(shell.Account))
             {
-                Page = new LoadingViewModel("Checking your GitHub sign-in");
-                await ShowAsync(account).ConfigureAwait(true);
+                return;
             }
+            var asked = shell.Profiles.HasUnsaved;
+            if (!await shell.ConfirmLeaveAsync(account is Account.SignedIn other ? $"continue as {other.Login}" : "sign in again").ConfigureAwait(true)
+                // The question may have given way to closing the app.
+                || Page != shell)
+            {
+                return;
+            }
+            if (asked)
+            {
+                // The answer may come long after the check, so check again.
+                await StartAsync().ConfigureAwait(true);
+                return;
+            }
+            Page = new LoadingViewModel("Checking your GitHub sign-in");
+            await ShowAsync(account).ConfigureAwait(true);
         }
         // The check itself failed, so nothing says the sign-in is gone; the
         // page that met the failure shows it.
