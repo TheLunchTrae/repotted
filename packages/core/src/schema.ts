@@ -259,7 +259,8 @@ export const securityFields = {
     .object({
       runner_type: z.enum(['standard', 'labeled']),
       runner_labels: z.array(z.string().min(1)).max(1),
-      runner_group: z.string().nullable(),
+      // GitHub reports no group as an empty one.
+      runner_group: z.string(),
     })
     .partial()
     .strict(),

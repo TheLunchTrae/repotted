@@ -6,7 +6,7 @@ import path from 'node:path';
 import { GitHubError, parseRepo } from '../src/github.js';
 import { ApplyError, applyPlan, captureProfile, createPlan, describeFailure } from '../src/plan.js';
 import { editProfile, resolveProfile } from '../src/profile.js';
-import type { Profile } from '../src/schema.js';
+import { profile as profileSchema, type Profile } from '../src/schema.js';
 import { FakeGitHub, type FakeState } from './fake-github.js';
 
 const repo = parseRepo('lunch/app');
@@ -444,6 +444,18 @@ describe('settings GitHub ties together', () => {
     const plan = await createPlan(github, repo, captured);
     expect(plan.changes).toEqual([]);
     expect(plan.warnings).toEqual([]);
+  });
+
+  test('writes no Dependabot runner group as an empty one, as GitHub reports it', async () => {
+    const github = new FakeGitHub(offered());
+    github.state.settings['/dependabot/runner-settings'] = { runner_type: 'standard', runner_group: null };
+
+    const { profile: captured } = await captureProfile(github, repo);
+    expect(captured.security?.dependabot_runner_settings).toEqual({ runner_type: 'standard', runner_group: '' });
+    expect(profileSchema.safeParse(captured).success).toBe(true);
+    expect(profileSchema.safeParse({ security: { dependabot_runner_settings: { runner_group: null } } }).success).toBe(
+      false,
+    );
   });
 
   test('skips labeled Dependabot runners without exactly one label', async () => {

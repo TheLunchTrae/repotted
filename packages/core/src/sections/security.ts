@@ -87,6 +87,8 @@ export const securityEndpoints: readonly Endpoint[] = [
     method: 'PUT',
     fields: ['runner_type', 'runner_labels', 'runner_group'],
     carries: ['runner_type', 'runner_labels', 'runner_group'],
+    // No group reads as an empty one, the way GitHub reports it.
+    fromGitHub: (value) => (value['runner_group'] === null ? { ...value, runner_group: '' } : value),
     // GitHub keeps no runner labels or group with standard runners, and
     // refuses them in the write; labeled runners take exactly one label.
     adjust: (desired, live) => {
