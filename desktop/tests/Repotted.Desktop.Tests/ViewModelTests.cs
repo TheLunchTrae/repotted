@@ -613,7 +613,51 @@ public sealed class ViewModelTests : IDisposable
         cli.On(second, () => Saved("staging"));
         await editor.SaveCommand.ExecuteAsync(null);
         Assert.Contains(second, cli.Calls);
-        Assert.Contains(second, cli.Calls);
+        Assert.False(editor.OutOfDate);
+    }
+
+    [AvaloniaFact]
+    public async Task Nothing_saves_or_discards_while_a_reload_runs()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        File.AppendAllText(files.Own, "# pulled by a sync\n");
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.True(editor.OutOfDate);
+        var resolve = new TaskCompletionSource<string>();
+        cli.On($"profile {files.Own} --json", _ => resolve.Task);
+
+        var reload = editor.ReloadCommand.ExecuteAsync(null);
+
+        Assert.True(editor.Loading);
+        Assert.False(editor.SaveCommand.CanExecute(null));
+        Assert.False(editor.KeepMineCommand.CanExecute(null));
+        Assert.False(editor.DiscardCommand.CanExecute(null));
+        Assert.False(editor.ReloadCommand.CanExecute(null));
+        resolve.SetResult(Documents.Resolved(files.Own, files.Base));
+        await reload;
+        Assert.False(editor.HasChanges);
+        Assert.False(editor.OutOfDate);
+    }
+
+    [AvaloniaFact]
+    public async Task A_reload_that_fails_shows_the_error_without_the_choice()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        File.AppendAllText(files.Own, "# pulled by a sync\n");
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.True(editor.OutOfDate);
+        cli.On(
+            $"profile {files.Own} --json",
+            """{"error":{"kind":"error","message":"orgs.yaml is not valid YAML"}}""",
+            exitCode: 1);
+
+        await editor.ReloadCommand.ExecuteAsync(null);
+
+        Assert.Contains("not valid YAML", editor.Error, StringComparison.Ordinal);
         Assert.False(editor.OutOfDate);
     }
 
