@@ -457,7 +457,9 @@ function layerEdits(layer: ProfileFile, clear: boolean): ProfileEdit[] {
  * Exclusions stay in the staged apply: they say what this apply leaves out, which
  * a profile cannot say. When the second write fails, the profile already
  * holds the edits and the staged apply still sets the same values, so it
- * resolves the same either way.
+ * resolves the same either way. The second write is refused, as a failed
+ * one, when another program changed the staged apply's edits after the
+ * first read, since clearing them would lose a change no profile holds.
  */
 export async function saveStagedEdits(file: string): Promise<StagedApply> {
   const read = await resolveLayer(file, stagedLayer);
@@ -478,7 +480,19 @@ export async function saveStagedEdits(file: string): Promise<StagedApply> {
     );
   }
   await editProfile(before.base, edits);
-  return editStagedApply(file, layerEdits(layer, true));
+  const cleared = await editLayer(
+    file,
+    (head) => {
+      if (!isDeepStrictEqual(head.layer, read.head.layer)) {
+        throw new ProfileError(
+          `${file} changed after its edits were read, so they are saved to ${before.base} but not cleared from it`,
+        );
+      }
+      return layerEdits(layer, true);
+    },
+    stagedLayer,
+  );
+  return staged(cleared);
 }
 
 /**

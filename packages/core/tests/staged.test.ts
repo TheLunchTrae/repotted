@@ -315,6 +315,21 @@ merge: { allow_rebase_merge: false }
     expect(profile).toContain('delete_branch_on_merge: true');
   });
 
+  test('keeps a change made while its edits are saved, and says the edits were not cleared', async () => {
+    const files = await folder(base);
+    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
+    const changed = `apply_to: lunch/app\nextends: ${path.basename(files.profile)}\nrepository: { has_wiki: false }\n`;
+    await replacedAfterNextRead(files.staged, changed);
+
+    const error = await rejection(saveStagedEdits(files.staged));
+
+    expect(error).toBeInstanceOf(ProfileError);
+    expect(String(error)).toContain('not cleared');
+    expect(await readFile(files.profile, 'utf8')).toContain('has_wiki: true');
+    expect(await readFile(files.staged, 'utf8')).toBe(changed);
+  });
+
   test('has no profile to save edits to when it starts from the repository', async () => {
     const files = await folder(base);
     await createStagedApply(files.staged, 'lunch/app', undefined);

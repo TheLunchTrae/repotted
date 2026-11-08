@@ -45,10 +45,11 @@ Settings merge key by key, and so do the keys inside an object of settings,
 such as `selected_actions`. `flattenSettings` gives each setting its path, as
 `has_wiki` or `selected_actions.verified_allowed`, and `unflattenSettings`
 turns paths back into settings, so merging, the sources the resolved profile
-records, and saving a staged apply's edits all read a group the same way. A ruleset, environment, or autolink replaces the
-base's entry of the same name or prefix whole, and `pages: { absent: true }`
-replaces a base's site. The resolved profile records which file sets each value,
-which `repotted profile --json` reports and the desktop app shows.
+records, and saving a staged apply's edits all read a group the same way. A
+ruleset, environment, or autolink replaces the base's entry of the same name
+or prefix whole, and `pages: { absent: true }` replaces a base's site. The
+resolved profile records which file sets each value, which
+`repotted profile --json` reports and the desktop app shows.
 
 ### Drafts
 
@@ -236,8 +237,10 @@ depend on which one wins.
 Saving edits to the profile writes the layer's settings and entries into the
 profile with `editProfile`, then clears them from the staged file. Between the
 two writes, both files set the same values, so the staged apply resolves the
-same whichever write fails. A staged apply that starts from the repository has
-no profile to save to.
+same whichever write fails. The clear refuses, as a failed write, when another
+program changed the staged file's edits after the save read them, since
+clearing them would lose a change no profile holds. A staged apply that
+starts from the repository has no profile to save to.
 
 `planStagedApply` also names the exclusion that leaves out each change of the
 plan, so a program can offer to leave out a row without knowing how plan
