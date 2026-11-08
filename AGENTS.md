@@ -137,6 +137,7 @@ version-numbered names.
   when the contract changes. State each policy once and link to it elsewhere.
 - Executable config is the source of truth; docs point at it rather than
   restate it.
+- Quote a desktop app label in bold, exactly as the app shows it.
 - Keep the workflows, contracts, and current state discoverable from local
   files, so a fresh agent can find them.
 - Write in the present tense. Do not date text or narrate history, as in "now
@@ -222,6 +223,24 @@ builds outside mise.
   run must not outlive what started it.
 - View tests draw pages headlessly in light and dark. Set
   `REPOTTED_SCREENSHOTS` to a folder to save them for review.
+- All text the app shows or reads aloud uses sentence case: capitalize the
+  first word and proper names, and nothing else. That covers buttons, links,
+  menu items, tabs, segmented options, window and page titles, headings,
+  field labels, placeholders, tooltips, accessible names, and messages:
+  "Keep mine" and "Back to rulesets", not "Keep Mine".
+  - The proper names are product and brand names: Repotted, Repotted App,
+    GitHub, GitHub App, macOS, and Windows, plus GitHub's own names for its
+    features and permissions, such as Actions and Contents. Acronyms,
+    identifiers, and key names keep their own form, such as YAML, SHA,
+    `GITHUB_TOKEN`, and Ctrl.
+  - App concepts stay lowercase, however central they are: repository,
+    profile, ruleset, environment, and the other terms in `CONTEXT.md`.
+    Write "New profile" and "New ruleset", not "New Profile". This is
+    deliberate, so that no one has to judge which nouns are important
+    enough.
+  - A word inserted into a label stays lowercase unless it is a proper name.
+    Text that names another control uses that control's label as the app
+    shows it, as in "Reload discards your unsaved changes."
 
 ## Git
 

@@ -123,7 +123,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
     public string? SignedInWith => (Account.TokenVariable, Repositories.FromInstallations) switch
     {
         ({ } variable, _) => $"Signed in with {variable}.",
-        (null, true) => Account.InstallUrl is null ? "Signed in with your GitHub App." : "Signed in with Repotted App.",
+        (null, true) => Account.InstallUrl is null ? "Signed in with your GitHub App." : "Signed in with the Repotted App.",
         (null, false) => "Signed in with a GitHub token.",
         (null, null) => null,
     };

@@ -292,7 +292,7 @@ public sealed class ViewTests : IDisposable
         window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
         Dispatcher.UIThread.RunJobs();
         var main = (RulesetEditorViewModel)editor.Tabs[3].Editing!.Editor;
-        var nameBox = window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "ruleset name");
+        var nameBox = window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "Ruleset name");
         Assert.Same(nameBox, window.FocusManager?.GetFocusedElement());
 
         // Moving between tabs shows the open editor again, and leaves focus on the tabs.
@@ -323,7 +323,7 @@ public sealed class ViewTests : IDisposable
         Assert.Equal("Main: Changed, not saved yet", AutomationProperties.GetName((Control)window.FocusManager!.GetFocusedElement()!));
         editor.Tabs[3].Entries[1].OpenCommand.Execute(null);
         Assert.Contains("A base profile names this one, so this profile keeps its name and sets the rest.", Texts(window));
-        Assert.True(window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "ruleset name").IsReadOnly);
+        Assert.True(window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "Ruleset name").IsReadOnly);
 
         editor.SelectedTab = editor.Tabs[4];
         editor.Tabs[4].Entries[0].OpenCommand.Execute(null);

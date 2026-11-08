@@ -88,7 +88,7 @@
               <StackPanel Grid.Column="1" Spacing="4">
                 <TextBox Classes="entryName" Text="{Binding Name}" IsReadOnly="{Binding !Renamable}" MaxWidth="420"
                          HorizontalAlignment="Left" MinWidth="320" AttachedToVisualTree="OnEntryNameAttached"
-                         AutomationProperties.Name="{Binding Kind, StringFormat='{}{0} name'}" />
+                         AutomationProperties.Name="{Binding NameLabel}" />
                 <TextBlock Classes="muted small" TextWrapping="Wrap" IsVisible="{Binding !Renamable}"
                            Text="A base profile names this one, so this profile keeps its name and sets the rest." />
                 <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding RenameNote}"
