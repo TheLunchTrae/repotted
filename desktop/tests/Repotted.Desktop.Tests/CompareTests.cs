@@ -279,6 +279,34 @@ public sealed class CompareTests : ViewModelTests
     }
 
     [AvaloniaFact]
+    public async Task Labels_show_each_rename_change_creation_and_deletion()
+    {
+        var compare = await Compare(Plan(
+            """
+            {"labels":[{"name":"type: feature","color":"a2eeef","renamed_from":["enhancement"]},
+              {"name":"priority: high","color":"b60205"},{"name":"wontfix","absent":true},{"name":"bug"}]}
+            """,
+            """
+            {"section":"labels","action":"delete","target":"wontfix","fields":[],
+             "request":{"method":"DELETE","path":"/repos/TheLunchTrae/repotted/labels/wontfix"}},
+            {"section":"labels","action":"update","target":"type: feature",
+             "fields":[{"field":"name","from":"enhancement","to":"type: feature"}],
+             "request":{"method":"PATCH","path":"/repos/TheLunchTrae/repotted/labels/enhancement","body":{"new_name":"type: feature"}}},
+            {"section":"labels","action":"create","target":"priority: high","fields":[],
+             "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/labels","body":{"name":"priority: high","color":"b60205"}}}
+            """));
+
+        var labels = compare.Sections.Single();
+        Assert.Equal("Labels", labels.Title);
+        Assert.Equal(
+            [new CompareRow(CompareKind.Removes, "wontfix", "absent: true", "On GitHub", "Deleted"),
+             new CompareRow(CompareKind.Changes, "type: feature", "name", "enhancement", "type: feature"),
+             new CompareRow(CompareKind.Adds, "priority: high", "new label", "Not on GitHub", "Created")],
+            labels.Rows);
+        Assert.Equal("1 label matches.", labels.Summary);
+    }
+
+    [AvaloniaFact]
     public async Task What_matches_shows_by_name()
     {
         var compare = await Compare(Plan(

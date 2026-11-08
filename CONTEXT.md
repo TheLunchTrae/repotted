@@ -6,8 +6,8 @@
   that extends it is an **override**.
 - **Section**: one area of a repository's setup that a profile can manage:
   repository settings, merge methods, Actions settings, security settings,
-  custom properties, GitHub Pages, autolinks, rulesets, or deployment
-  environments. Each section has one adapter that reads it and plans its
+  custom properties, GitHub Pages, autolinks, rulesets, deployment
+  environments, or labels. Each section has one adapter that reads it and plans its
   writes.
 - **Config repository**: a GitHub repository that holds a folder of profiles.
   **Sync** brings a local folder and the config repository in line.
@@ -26,6 +26,6 @@
   leaves out. Its plan is reviewed and applied like any other, and the
   profile changes only when its edits are saved to it.
 - **Drift**: a difference between a repository and its profile.
-- **Draft**: an autolink, ruleset, environment, or setting saved in a
+- **Draft**: an autolink, ruleset, environment, label, or setting saved in a
   profile but left out of plans until it is finished. It may be unfinished
   or invalid.

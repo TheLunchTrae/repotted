@@ -57,7 +57,7 @@ async function attempt(work: () => Promise<ToolResult>): Promise<ToolResult> {
 const repository = z.string().describe('The repository as owner/name, for example octo-org/app');
 
 const instructions = [
-  'Repotted reads and changes GitHub repository settings, merge methods, Actions settings, security settings, custom properties, GitHub Pages, autolinks, rulesets and deployment environments.',
+  'Repotted reads and changes GitHub repository settings, merge methods, Actions settings, security settings, custom properties, GitHub Pages, autolinks, rulesets, deployment environments and labels.',
   'capture describes a repository as a profile. plan compares a repository with a profile and lists the changes, without writing anything.',
   'apply makes the changes of one earlier plan, by its plan_id, and only if the repository has not changed since. Show the user the plan and get their agreement before calling apply.',
 ].join(' ');

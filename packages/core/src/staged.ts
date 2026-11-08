@@ -23,7 +23,7 @@ import {
   settingPath,
   settingsSections,
 } from './profile.js';
-import { environmentKey, type Profile, profileFile, type ProfileFile } from './schema.js';
+import { environmentKey, labelKey, type Profile, profileFile, type ProfileFile } from './schema.js';
 
 // A staged apply is a profile layer of its own: a file that names the
 // repository it applies to, extends the profile it starts from, if any, and
@@ -36,6 +36,7 @@ const lists = {
   autolinks: (entry: Record<string, unknown>) => String(entry['key_prefix']),
   rulesets: (entry: Record<string, unknown>) => String(entry['name']),
   environments: (entry: Record<string, unknown>) => environmentKey(String(entry['name'])),
+  labels: (entry: Record<string, unknown>) => labelKey(String(entry['name'])),
 } as const;
 
 type List = keyof typeof lists;
@@ -73,7 +74,7 @@ function parseExclusion(key: string): Exclusion | undefined {
   return settingPath(parts) === undefined ? undefined : { kind: 'setting', path: parts };
 }
 
-/** The key an exclusion is known by, so two spellings of one environment's name are one exclusion. */
+/** The key an exclusion is known by, so two spellings of one environment's or label's name are one exclusion. */
 function exclusionKey(key: string): string {
   const exclusion = parseExclusion(key);
   if (exclusion?.kind !== 'entry') {
@@ -115,7 +116,7 @@ const stagedFile = profileFile
     if (value.drafts !== undefined) {
       context.addIssue({ code: 'custom', message: 'A staged apply cannot hold drafts', path: ['drafts'] });
     }
-    for (const list of ['autolinks', 'rulesets', 'environments'] as const) {
+    for (const list of ['autolinks', 'rulesets', 'environments', 'labels'] as const) {
       for (const [index, entry] of (value[list] ?? []).entries()) {
         if ('draft' in entry) {
           context.addIssue({ code: 'custom', message: 'A staged apply cannot hold drafts', path: [list, index] });
@@ -274,6 +275,7 @@ function sourcesWithoutExclusions(sources: Sources, exclusions: readonly Exclusi
     autolinks: keep('autolinks'),
     rulesets: keep('rulesets'),
     environments: keep('environments'),
+    labels: keep('labels'),
   };
 }
 
@@ -443,7 +445,7 @@ function layerEdits(layer: ProfileFile, clear: boolean): ProfileEdit[] {
   if (layer.autolinks !== undefined) {
     throw new ProfileError('Cannot save autolinks to a profile from a staged apply; copy them into the profile file');
   }
-  for (const list of ['rulesets', 'environments'] as const) {
+  for (const list of ['rulesets', 'environments', 'labels'] as const) {
     for (const entry of layer[list] ?? []) {
       edits.push({ list, name: entry.name, entry: clear ? undefined : entry });
     }
@@ -533,7 +535,7 @@ function settingKey(section: string, field: string): string | undefined {
 
 /** The exclusion that leaves out a change to a list entry: the entry its target names. */
 function entryKey(change: Plan['changes'][number], desired: Profile): string | undefined {
-  if (change.section === 'rulesets' || change.section === 'autolinks') {
+  if (change.section === 'rulesets' || change.section === 'autolinks' || change.section === 'labels') {
     return `${change.section}/${change.target}`;
   }
   if (change.section !== 'environments') {
@@ -558,7 +560,12 @@ function planExclusions(plan: Plan, own: StagedFile): PlanExclusion[] {
     return key === undefined || parsed === undefined ? [] : [{ change, field, key, edited: sets(own, parsed) }];
   };
   return plan.changes.flatMap((change, index) => {
-    if (change.section === 'rulesets' || change.section === 'environments' || change.section === 'autolinks') {
+    if (
+      change.section === 'rulesets' ||
+      change.section === 'environments' ||
+      change.section === 'autolinks' ||
+      change.section === 'labels'
+    ) {
       return exclusion(index, null, entryKey(change, plan.desired));
     }
     if (change.section === 'pages') {

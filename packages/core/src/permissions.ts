@@ -8,7 +8,8 @@ type AppPermission =
   | 'actions'
   | 'pages'
   | 'repository_custom_properties'
-  | 'security_events';
+  | 'security_events'
+  | 'issues';
 
 /** One App permission at the level a request needs. */
 interface Permission {
@@ -24,6 +25,7 @@ const labels: Readonly<Record<AppPermission, string>> = {
   pages: 'Pages',
   repository_custom_properties: 'Custom properties',
   security_events: 'Code scanning alerts',
+  issues: 'Issues',
 };
 
 const read = (name: AppPermission): Permission => ({ name, level: 'read' });
@@ -42,6 +44,7 @@ const reads: readonly (readonly [RegExp, readonly Permission[]])[] = [
   [/^\/actions\/oidc\/customization\/sub$/u, [read('actions')]],
   [/^\/code-scanning\/ai-scan$/u, [read('security_events')]],
   [/^\/pages$/u, [read('pages')]],
+  [/^\/labels(\/.*)?$/u, [read('issues')]],
   // GitHub asks for write access to read these.
   [/^\/code-quality\/setup$/u, [write('administration')]],
   [/^\/interaction-limits\/pulls\/creation-cap$/u, [write('administration')]],
@@ -51,6 +54,7 @@ const writes: readonly (readonly [RegExp, readonly Permission[]])[] = [
   [/^\/actions\/oidc\/customization\/sub$/u, [write('actions')]],
   [/^\/properties\/values$/u, [write('repository_custom_properties')]],
   [/^\/pages$/u, [write('administration'), write('pages')]],
+  [/^\/labels(\/.*)?$/u, [write('issues')]],
 ];
 
 /**

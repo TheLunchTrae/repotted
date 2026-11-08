@@ -96,7 +96,7 @@ except those at endpoints of their own, which `repositoryEndpoints` in
 settings outside the policy. The adapters in that folder read and write the
 rest: the Actions policy (`/actions/permissions`, its `/selected-actions`
 list and `/workflow` token permissions), topics, custom properties, Pages,
-autolinks, rulesets and environments. `permissions.ts` gives the permission
+autolinks, rulesets, environments and labels. `permissions.ts` gives the permission
 each endpoint needs. The notes below are what the code doesn't say.
 
 ### `repository` and `merge`
@@ -142,6 +142,14 @@ the plan deletes and makes again one that differs.
 Rulesets cover branch, tag and push protection. Environments include their
 deployment branch policies.
 
+### `labels`
+
+`/labels` lists, creates, renames and deletes the repository's issue and pull
+request labels, by name. A rename is a `PATCH` with `new_name`, which keeps the
+label on its issues; `renamed_from` in a profile is how Repotted knows to make
+one. GitHub can't merge two labels, so where a repository has the new name and
+an old one, the plan leaves the old one and warns.
+
 ## Permissions the Repotted App needs
 
 The Repotted App asks for Administration read and write, which most settings
@@ -156,6 +164,8 @@ permission the App doesn't have yet needs it added to the App and to
 - Pages: read and write.
 - Custom properties: read and write.
 - Code scanning alerts: read, to read the code scanning AI Scan setting.
+- Issues: read and write, for labels. GitHub also takes Pull requests for the
+  labels endpoints, but Issues is the one `permissions.ts` names.
 
 Without one, Repotted still plans everything else, and says which permission
 the skipped setting needs.

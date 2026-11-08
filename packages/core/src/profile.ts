@@ -29,6 +29,9 @@ import {
   environmentEntry,
   environmentKey,
   type EnvironmentEntry,
+  labelEntry,
+  type LabelEntry,
+  labelKey,
   mergeSettings as mergeSettingsSchema,
   pagesSite,
   profile,
@@ -53,21 +56,23 @@ function describe(error: z.ZodError): string {
 }
 
 /** A profile file without its drafts: what it adds to the profile that applies. */
-type OwnProfile = Omit<ProfileFile, 'autolinks' | 'rulesets' | 'environments' | 'drafts'> & {
+type OwnProfile = Omit<ProfileFile, 'autolinks' | 'rulesets' | 'environments' | 'labels' | 'drafts'> & {
   autolinks?: AutolinkEntry[] | undefined;
   rulesets?: RulesetEntry[] | undefined;
   environments?: EnvironmentEntry[] | undefined;
+  labels?: LabelEntry[] | undefined;
 };
 
 /**
  * A profile's drafts: settings by section, as the profile's `drafts` holds
- * them, and the autolinks, rulesets and environments marked `draft: true`.
+ * them, and the autolinks, rulesets, environments and labels marked `draft: true`.
  * Plan and apply leave every draft out.
  */
 export interface Drafts extends Partial<Record<SettingsSection, Readonly<Record<string, unknown>> | undefined>> {
   autolinks?: DraftAutolink[] | undefined;
   rulesets?: DraftEntry[] | undefined;
   environments?: DraftEntry[] | undefined;
+  labels?: DraftEntry[] | undefined;
 }
 
 function isDraft(entry: object): boolean {
@@ -181,10 +186,11 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
   if (!result.success) {
     throw new ProfileError(`${source} is not a valid ${kind.noun}:\n${describe(result.error)}`);
   }
-  const { autolinks, rulesets, environments, drafts, ...settings } = result.data.layer;
+  const { autolinks, rulesets, environments, labels, drafts, ...settings } = result.data.layer;
   const [ownAutolinks, draftAutolinks] = partition<AutolinkEntry, DraftAutolink>(autolinks, isDraftAutolink);
   const [ownRulesets, draftRulesets] = partition<RulesetEntry, DraftEntry>(rulesets, isDraftEntry);
   const [ownEnvironments, draftEnvironments] = partition<EnvironmentEntry, DraftEntry>(environments, isDraftEntry);
+  const [ownLabels, draftLabels] = partition<LabelEntry, DraftEntry>(labels, isDraftEntry);
   // Checked in each file, since a merge pairs entries by name and would keep only the last of two.
   const problems = [
     ...duplicateKeys(
@@ -202,14 +208,31 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
       (entry) => `Draft environment "${entry.name}"`,
       (entry) => environmentKey(entry.name),
     ),
+    ...duplicateKeys(
+      draftLabels,
+      (entry) => `Draft label "${entry.name}"`,
+      (entry) => labelKey(entry.name),
+    ),
   ];
   if (problems.length > 0) {
     throw new ProfileError(`${source} is not a valid ${kind.noun}:\n${problems.map((line) => `✖ ${line}`).join('\n')}`);
   }
   return {
     read: result.data,
-    own: { ...settings, autolinks: ownAutolinks, rulesets: ownRulesets, environments: ownEnvironments },
-    drafts: { ...drafts, autolinks: draftAutolinks, rulesets: draftRulesets, environments: draftEnvironments },
+    own: {
+      ...settings,
+      autolinks: ownAutolinks,
+      rulesets: ownRulesets,
+      environments: ownEnvironments,
+      labels: ownLabels,
+    },
+    drafts: {
+      ...drafts,
+      autolinks: draftAutolinks,
+      rulesets: draftRulesets,
+      environments: draftEnvironments,
+      labels: draftLabels,
+    },
     extends: settings.extends,
   };
 }
@@ -235,6 +258,9 @@ function mergeByKey<Entry>(
 }
 
 type Settings = Record<string, unknown>;
+
+/** The lists of entries a profile holds, each known by its prefix or name. */
+type EntryList = 'autolinks' | 'rulesets' | 'environments' | 'labels';
 
 /** The sections that hold settings, which merge key by key. */
 export const settingsSections = ['repository', 'merge', 'actions', 'security', 'custom_properties', 'pages'] as const;
@@ -334,16 +360,17 @@ type SourcedSettings = Map<string, SourcedSetting>;
  * A profile or its drafts mid-merge: each setting and entry carries the file
  * that sets it.
  */
-interface SourcedLayer<Autolink, Ruleset, Environment> {
+interface SourcedLayer<Autolink, Ruleset, Environment, Label> {
   settings: Partial<Record<SettingsSection, SourcedSettings>>;
   autolinks?: Sourced<Autolink>[] | undefined;
   rulesets?: Sourced<Ruleset>[] | undefined;
   environments?: Sourced<Environment>[] | undefined;
+  labels?: Sourced<Label>[] | undefined;
 }
 
-type SourcedProfile = SourcedLayer<AutolinkEntry, RulesetEntry, EnvironmentEntry>;
+type SourcedProfile = SourcedLayer<AutolinkEntry, RulesetEntry, EnvironmentEntry, LabelEntry>;
 
-type SourcedDrafts = SourcedLayer<DraftAutolink, DraftEntry, DraftEntry>;
+type SourcedDrafts = SourcedLayer<DraftAutolink, DraftEntry, DraftEntry, DraftEntry>;
 
 function mergeSettings(
   section: SettingsSection,
@@ -389,6 +416,7 @@ function sourced<Entry>(entries: Entry[] | undefined, file: string): Sourced<Ent
 const autolinkKey = (entry: { key_prefix: string }): string => entry.key_prefix;
 const rulesetKey = (entry: { name: string }): string => entry.name;
 const environmentEntryKey = (entry: { name: string }): string => environmentKey(entry.name);
+const labelEntryKey = (entry: { name: string }): string => labelKey(entry.name);
 
 /** Lays each section's settings in `override` over `base`'s. */
 function mergeSections(
@@ -409,7 +437,7 @@ function mergeSections(
 /**
  * Lays `override` over `base`, a profile over a profile or drafts over
  * drafts. Settings merge key by key, and so do the settings inside a group
- * such as `selected_actions`; an autolink, ruleset or environment in the
+ * such as `selected_actions`; an autolink, ruleset, environment or label in the
  * override replaces the base entry of the same name whole. Drafts never
  * merge with what applies.
  */
@@ -417,20 +445,23 @@ function mergeLayers<
   Autolink extends { key_prefix: string },
   Ruleset extends { name: string },
   Environment extends { name: string },
+  Label extends { name: string },
 >(
-  base: SourcedLayer<Autolink, Ruleset, Environment>,
+  base: SourcedLayer<Autolink, Ruleset, Environment, Label>,
   override: Readonly<Partial<Record<SettingsSection, Settings | undefined>>> & {
     readonly autolinks?: Autolink[] | undefined;
     readonly rulesets?: Ruleset[] | undefined;
     readonly environments?: Environment[] | undefined;
+    readonly labels?: Label[] | undefined;
   },
   file: string,
-): SourcedLayer<Autolink, Ruleset, Environment> {
+): SourcedLayer<Autolink, Ruleset, Environment, Label> {
   return {
     settings: mergeSections(base.settings, override, file),
     autolinks: mergeByKey(base.autolinks, sourced(override.autolinks, file), autolinkKey),
     rulesets: mergeByKey(base.rulesets, sourced(override.rulesets, file), rulesetKey),
     environments: mergeByKey(base.environments, sourced(override.environments, file), environmentEntryKey),
+    labels: mergeByKey(base.labels, sourced(override.labels, file), labelEntryKey),
   };
 }
 
@@ -458,6 +489,7 @@ function toProfile(merged: SourcedProfile): unknown {
     autolinks: entries(merged.autolinks),
     rulesets: entries(merged.rulesets),
     environments: entries(merged.environments),
+    labels: entries(merged.labels),
   };
   return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
 }
@@ -483,6 +515,7 @@ function toDrafts(merged: SourcedDrafts): Drafts {
     autolinks: entries(merged.autolinks),
     rulesets: entries(merged.rulesets),
     environments: entries(merged.environments),
+    labels: entries(merged.labels),
   };
   // A section or list with no drafts is left out.
   return Object.fromEntries(
@@ -510,6 +543,25 @@ function entryProblems(schema: z.ZodType, { draft: _draft, ...entry }: Readonly<
 }
 
 /**
+ * A draft label that a label of the profile renames from: the rename applies,
+ * since drafts never change what applies, so the draft's label is renamed
+ * away, and finishing the draft would be refused.
+ */
+function renamedDraftWarnings(applied: Profile, drafts: Drafts): string[] {
+  return (drafts.labels ?? []).flatMap((draft) => {
+    const renaming = (applied.labels ?? []).find(
+      (entry) =>
+        entry.absent !== true && (entry.renamed_from ?? []).some((old) => labelKey(old) === labelKey(draft.name)),
+    );
+    return renaming === undefined
+      ? []
+      : [
+          `Draft label "${draft.name}": label "${renaming.name}" is renamed from it, so applying renames "${draft.name}" and finishing this draft would be refused`,
+        ];
+  });
+}
+
+/**
  * What stops each draft from applying as it stands: a key the section does
  * not have, or a value or entry the profile would reject. A draft may be
  * unfinished, so these are warnings; finishing a draft makes them errors.
@@ -533,6 +585,9 @@ function draftWarnings(drafts: Drafts): string[] {
     warnings.push(
       ...entryProblems(environmentEntry, entry).map((line) => `Draft environment "${entry.name}": ${line}`),
     );
+  }
+  for (const entry of drafts.labels ?? []) {
+    warnings.push(...entryProblems(labelEntry, entry).map((line) => `Draft label "${entry.name}": ${line}`));
   }
   return warnings;
 }
@@ -559,12 +614,12 @@ function fileDraftWarnings(drafts: Drafts, file: string): string[] {
  * The file that sets each value of a resolved profile. Settings go by key,
  * and a setting inside a group by `<group>.<key>`, as
  * `selected_actions.verified_allowed` under `actions`. Autolinks go by
- * prefix, and rulesets and environments by name.
+ * prefix, and rulesets, environments and labels by name.
  */
 export type ProfileSources = Readonly<
-  Record<SettingsSection | 'autolinks' | 'rulesets' | 'environments', Record<string, string>> & {
+  Record<SettingsSection | EntryList, Record<string, string>> & {
     /** The same for drafts, by section and then key, prefix or name. */
-    drafts: Readonly<Record<SettingsSection | 'autolinks' | 'rulesets' | 'environments', Record<string, string>>>;
+    drafts: Readonly<Record<SettingsSection | EntryList, Record<string, string>>>;
   }
 >;
 
@@ -626,7 +681,7 @@ async function readChain<Read extends LayerRead>(file: string, kind: Layer<Read>
 /** The file that sets each setting and entry of a merge, by section. */
 function sourcesOf(
   merged: SourcedProfile | SourcedDrafts,
-): Record<SettingsSection | 'autolinks' | 'rulesets' | 'environments', Record<string, string>> {
+): Record<SettingsSection | EntryList, Record<string, string>> {
   return {
     repository: files(merged.settings.repository),
     merge: files(merged.settings.merge),
@@ -637,6 +692,7 @@ function sourcesOf(
     autolinks: entryFiles<{ key_prefix: string }>(merged.autolinks, (entry) => entry.key_prefix),
     rulesets: entryFiles<{ name: string }>(merged.rulesets, (entry) => entry.name),
     environments: entryFiles<{ name: string }>(merged.environments, (entry) => entry.name),
+    labels: entryFiles<{ name: string }>(merged.labels, (entry) => entry.name),
   };
 }
 
@@ -661,12 +717,17 @@ function resolveChain(
     .reduce<SourcedDrafts>((base, { file, drafts }) => mergeLayers(base, drafts, file), { settings: {} });
   const drafts = toDrafts(mergedDrafts);
   const adjusted = adjust === undefined ? { data: toProfile(merged), unmatched: [] } : adjust(toProfile(merged));
+  const applied = validate(adjusted.data, source);
   return {
     resolved: {
       chain: chain.map((link) => link.file),
-      profile: validate(adjusted.data, source),
+      profile: applied,
       drafts,
-      warnings: [...chain.flatMap((link) => fileDraftWarnings(link.drafts, link.file)), ...draftWarnings(drafts)],
+      warnings: [
+        ...chain.flatMap((link) => fileDraftWarnings(link.drafts, link.file)),
+        ...draftWarnings(drafts),
+        ...renamedDraftWarnings(applied, drafts),
+      ],
       sources: { ...sourcesOf(merged), drafts: sourcesOf(mergedDrafts) },
     },
     unmatched: adjusted.unmatched,
@@ -746,7 +807,7 @@ export interface SettingEdit {
 }
 
 /**
- * One ruleset or environment to change in a profile file, by name: the entry
+ * One ruleset, environment or label to change in a profile file, by name: the entry
  * to write, or undefined to stop naming it here, so the entry of that name in
  * a base profile, if any, applies again. An entry with another name renames
  * the file's entry in place.
@@ -757,7 +818,7 @@ export interface SettingEdit {
  * draft in place.
  */
 export interface EntryEdit {
-  readonly list: 'rulesets' | 'environments';
+  readonly list: 'rulesets' | 'environments' | 'labels';
   readonly name: string;
   readonly draft?: boolean;
   readonly entry: Readonly<Record<string, unknown>> | undefined;
@@ -899,10 +960,10 @@ function sharesNodes(node: YAMLSeq): boolean {
  * at the end.
  */
 function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void {
-  const key = edit.list === 'environments' ? environmentKey : (name: string) => name;
+  const key = { rulesets: (name: string) => name, environments: environmentKey, labels: labelKey }[edit.list];
   const from = edit.draft === true;
   const to = edit.entry === undefined ? from : edit.entry['draft'] === true;
-  const kind = edit.list === 'rulesets' ? 'ruleset' : 'environment';
+  const kind = { rulesets: 'ruleset', environments: 'environment', labels: 'label' }[edit.list];
   const noun = (draft: boolean): string => (draft ? `draft ${kind}` : kind);
   const name = edit.entry === undefined ? edit.name : edit.entry['name'];
   if (typeof name !== 'string') {
