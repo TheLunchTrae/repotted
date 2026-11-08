@@ -1,4 +1,3 @@
-using System.Globalization;
 using Avalonia.Data.Converters;
 using Avalonia.Markup.Xaml;
 
@@ -7,17 +6,18 @@ namespace Repotted.Desktop.Theme;
 /// <summary>
 /// Shows a control's label in the platform's own casing. Labels are written
 /// once, in sentence case. macOS shows buttons, segmented options, tabs, and
-/// page titles in Apple's title-style capitalization, as in "Sign In with
-/// GitHub"; Windows shows them as written. Body text, headings, field labels,
-/// checkboxes, radio buttons, and messages stay in sentence case everywhere.
+/// page titles in Apple's title style, as in "Sign In with GitHub"; Windows
+/// shows them as written. Body text, headings, field labels, checkboxes, radio
+/// buttons, and messages stay in sentence case everywhere.
 /// </summary>
-internal sealed class ControlLabel(bool titleStyle) : IValueConverter
+internal static class ControlLabel
 {
-    /// <summary>The casing of the platform the app runs on.</summary>
-    public static ControlLabel Native { get; } = new(OperatingSystem.IsMacOS());
+    private static readonly bool UsesTitleStyle = OperatingSystem.IsMacOS();
 
     // Articles, coordinating conjunctions, and prepositions of four letters or
-    // fewer, which title style leaves lowercase unless they start or end a label.
+    // fewer, which title style leaves lowercase unless they start or end a
+    // label. The lists cover the app's labels, not every word Apple's guide
+    // names: add to them when a new label needs it.
     private static readonly HashSet<string> Minor = new(StringComparer.Ordinal)
     {
         "a", "an", "the", "and", "but", "or", "nor", "as", "at", "by", "for", "from", "in", "into", "of", "off",
@@ -31,13 +31,12 @@ internal sealed class ControlLabel(bool titleStyle) : IValueConverter
         "take out", "turn off", "turn on",
     };
 
-    public string For(string label) => titleStyle ? TitleStyle(label) : label;
+    /// <summary>Converts a bound label to the platform's casing.</summary>
+    public static IValueConverter Converter { get; } =
+        new FuncValueConverter<object?, object?>(value => value is string label ? For(label) : value);
 
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is string label ? For(label) : value;
-
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
+    /// <summary>A label in the casing of the platform the app runs on.</summary>
+    public static string For(string label) => UsesTitleStyle ? TitleStyle(label) : label;
 
     /// <summary>
     /// Apple's title style: every word capitalized except minor words in the
@@ -71,9 +70,9 @@ internal sealed class ControlLabel(bool titleStyle) : IValueConverter
 
 /// <summary>
 /// A fixed label in the platform's casing, for a title or label that is not a
-/// button's text: <c>Text="{theme:Label New profile}"</c>.
+/// button's text: <c>Text="{theme:Label 'New profile'}"</c>.
 /// </summary>
 internal sealed class LabelExtension(string text) : MarkupExtension
 {
-    public override object ProvideValue(IServiceProvider serviceProvider) => ControlLabel.Native.For(text);
+    public override object ProvideValue(IServiceProvider serviceProvider) => ControlLabel.For(text);
 }

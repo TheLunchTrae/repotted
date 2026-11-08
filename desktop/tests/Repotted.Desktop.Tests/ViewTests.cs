@@ -6,7 +6,6 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
-using Avalonia.LogicalTree;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -582,6 +581,23 @@ public sealed class ViewTests : IDisposable
         Assert.Empty(Directory.GetFiles(folders.SettingsFolder));
     }
 
+    [AvaloniaFact]
+    public void Buttons_show_their_label_in_the_platform_casing_and_checkboxes_do_not()
+    {
+        var button = new Button { Content = "Keep mine" };
+        var option = new ToggleButton { Content = "Pull request title", Classes = { "seg" } };
+        var box = new CheckBox { Content = "Keep mine" };
+        var radio = new RadioButton { Content = "Keep mine" };
+        var window = new Window { Content = new StackPanel { Children = { button, option, box, radio } } };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(Label("Keep mine"), Assert.IsType<AccessText>(button.Presenter?.Child).Text);
+        Assert.Equal(Label("Pull request title"), Assert.IsType<AccessText>(option.Presenter?.Child).Text);
+        Assert.Null(box.ContentTemplate);
+        Assert.Null(radio.ContentTemplate);
+    }
+
     private async Task<Window> Show(string theme, FakeCli cli, FakeDesktop? desktop = null)
     {
         Application.Current!.RequestedThemeVariant = theme == "dark" ? ThemeVariant.Dark : ThemeVariant.Light;
@@ -597,8 +613,8 @@ public sealed class ViewTests : IDisposable
         return window;
     }
 
-    /// <summary>A control's label as this platform shows it: Title Case on macOS.</summary>
-    private static string Label(string text) => ControlLabel.Native.For(text);
+    /// <summary>A control's label as this platform shows it: title style on macOS.</summary>
+    private static string Label(string text) => ControlLabel.For(text);
 
     /// <summary>Every piece of text the window shows, runs included.</summary>
     private static HashSet<string> Texts(Window window)
@@ -617,13 +633,6 @@ public sealed class ViewTests : IDisposable
                 {
                     texts.Add(runText);
                 }
-            }
-        }
-        foreach (var button in window.GetLogicalDescendants().OfType<Button>().Where(button => button.IsEffectivelyVisible))
-        {
-            if (button.Content is string label)
-            {
-                texts.Add(label);
             }
         }
         return texts;

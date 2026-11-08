@@ -51,7 +51,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
     /// <summary>Where you are, for the header.</summary>
     public string Crumb => (ShowingProfiles, Profiles.Current, Compare) switch
     {
-        (true, _, _) when Profiles.ShowCreating => $"Profiles / {ControlLabel.Native.For("New profile")}",
+        (true, _, _) when Profiles.ShowCreating => $"Profiles / {ControlLabel.For("New profile")}",
         (true, { } profile, _) => $"Profiles / {profile.Name}",
         (true, null, _) => "Profiles",
         (false, _, { } compare) => $"Repositories / {compare.Repository} / Compare",

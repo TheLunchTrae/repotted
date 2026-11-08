@@ -15,9 +15,9 @@ public sealed class ControlLabelTests
     [InlineData("Use GitHub's", "Use GitHub's")]
     [InlineData("Commit or pull request title", "Commit or Pull Request Title")]
     [InlineData("This owner's", "This Owner's")]
-    [InlineData("Show YAML", "Show YAML")]
     [InlineData("Open the macOS settings", "Open the macOS Settings")]
-    [InlineData("Log in", "Log In")]
+    [InlineData("Save as", "Save As")]
+    [InlineData("A ruleset to start from", "A Ruleset to Start From")]
     public void TitleStyleCapitalizesAsAppleDoes(string label, string expected) =>
         Assert.Equal(expected, ControlLabel.TitleStyle(label));
 }
