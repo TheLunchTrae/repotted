@@ -29,8 +29,8 @@ runs:
     - name: Install locked dependencies
       shell: bash
       run: mise run ts:install
-    - name: Run the mandatory gate
+    - name: Run the gate task
       shell: bash
       env:
-        TASK: ${{ inputs.task }}
-      run: mise run "$TASK"
+        GATE_TASK: ${{ inputs.task }}
+      run: mise run "$GATE_TASK"

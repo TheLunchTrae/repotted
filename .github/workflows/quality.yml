@@ -41,9 +41,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos
+          - os: macOS
             runner: macos-26
-          - os: windows
+          - os: Windows
             runner: windows-2025
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
