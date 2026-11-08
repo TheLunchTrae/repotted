@@ -26,7 +26,8 @@ use Repotted, see the [user guide](../user/README.md).
 - `packages/core`: the engine, private to the workspace. `schema.ts` defines
   profiles, `sections/` holds one adapter per section, `endpoints.ts`
   reads and plans the settings at endpoints of their own, `permissions.ts`
-  names the permission each request needs, `profile.ts` loads, merges, and
+  names the permission each request needs and locks the changes an account
+  can't make, `profile.ts` loads, merges, and
   edits profiles, and `plan.ts` plans and applies.
 - `packages/cli`: the published `repotted` package: the CLI and the MCP
   server over the engine. Its build bundles core into one file, since core is

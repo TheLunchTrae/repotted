@@ -107,12 +107,14 @@ public sealed class ApplyTests : IDisposable
             changes.RemoveAt(0);
         }
         var exclusions = changes.Select((change, index) => change.Exclusion.Replace("{", $$"""{"change":{{index}},""", StringComparison.Ordinal));
+        // The ruleset needs a permission the App lacks, which the review shows as a lock.
+        var locks = $$"""{"change":{{changes.Count - 1}},"reason":"Needs Administration write"}""";
         return $$"""
             {"repository":"{{Repository}}",
              "desired":{"repository":{"has_issues":true,"has_wiki":false},"merge":{"allow_squash_merge":false},
                "rulesets":[{"name":"Main","target":"branch","enforcement":"active","bypass_actors":[],"rules":[{"type":"deletion"}]}]},
              "changes":[{{string.Join(',', changes.Select(change => change.Change))}}],
-             "warnings":[],
+             "warnings":[],"access":{{Documents.Unknown}},"locks":[{{locks}}],
              "staged":{"file":{{Json(file)}},"repository":"{{Repository}}","base":{{(fromProfile ? Json(@base) : "null")}},
                "exclude":{{(wikiLeftOut ? """["repository.has_wiki"]""" : "[]")}} },
              "exclusions":[{{string.Join(',', exclusions)}}]}
@@ -818,7 +820,7 @@ public sealed class ApplyTests : IDisposable
     {
         var cli = Cli().On(Planned, () =>
             $$"""
-            {"repository":"{{Repository}}","desired":{},"changes":[],"warnings":[],
+            {"repository":"{{Repository}}","desired":{},"changes":[],"warnings":[],"access":{{Documents.Unknown}},"locks":[],
              "staged":{"file":{{Json(file)}},"repository":"{{Repository}}","base":{{Json(@base)}},"exclude":[]},"exclusions":[]}
             """);
         var page = Open(cli);
@@ -849,24 +851,34 @@ public sealed class ApplyTests : IDisposable
     }
 
     [Fact]
-    public void Sections_the_editor_does_not_show_still_list_their_changes()
+    public void Pages_and_autolinks_changes_can_be_left_out_and_show_their_locks()
     {
         var plan = JsonSerializer.Deserialize(
             """
-            {"repository":"TheLunchTrae/repotted","desired":{},"warnings":[],"changes":[
+            {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"workflow"},"autolinks":[]},"warnings":[],"changes":[
               {"section":"pages","action":"create","target":"GitHub Pages","fields":[{"field":"build_type","to":"workflow"}],
                "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/pages","body":{}}},
               {"section":"autolinks","action":"delete","target":"JIRA-","fields":[],
-               "request":{"method":"DELETE","path":"/repos/TheLunchTrae/repotted/autolinks/3"}}]}
+               "request":{"method":"DELETE","path":"/repos/TheLunchTrae/repotted/autolinks/3"}}],
+             "access":{"role":"admin","app":{"status":"unknown"}},"locks":[{"change":0,"reason":"Needs Pages write"}]}
             """,
             CliJson.Default.PlanDocument)!;
 
-        var sections = CompareViewModel.Build(plan);
+        var sections = CompareViewModel.Build(plan, (change, field) => (change, field) switch
+        {
+            (0, null) => new RowExclusion("pages", false),
+            (1, null) => new RowExclusion("autolinks/JIRA-", false),
+            _ => null,
+        });
 
-        var pages = Assert.Single(sections, section => section.Title == "GitHub Pages");
-        Assert.True(pages.HasChanges);
-        var autolinks = Assert.Single(sections, section => section.Title == "Autolinks");
-        Assert.Equal(CompareKind.Removes, Assert.Single(autolinks.Differences).Kind);
+        // A Pages site leaves out whole, so each of its fields leaves out the site.
+        var pages = Assert.Single(Assert.Single(sections, section => section.Title == "GitHub Pages").Differences);
+        Assert.Equal("pages", pages.LeaveOut?.Key);
+        Assert.Equal("Needs Pages write", pages.Lock);
+        var autolink = Assert.Single(Assert.Single(sections, section => section.Title == "Autolinks").Differences);
+        Assert.Equal(CompareKind.Removes, autolink.Kind);
+        Assert.Equal("autolinks/JIRA-", autolink.LeaveOut?.Key);
+        Assert.False(autolink.IsLocked);
     }
 
     [AvaloniaFact]

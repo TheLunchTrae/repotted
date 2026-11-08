@@ -190,8 +190,10 @@ internal sealed partial class ProfileViewModel(
 
     private IEnumerable<EntryViewModel> Entries => Tabs.SelectMany(tab => tab.Entries);
 
-    /// <summary>Why the edits cannot be saved yet, such as a ruleset with no name.</summary>
-    public string? Problem => Entries.Select(entry => entry.Problem).FirstOrDefault(problem => problem is not null);
+    /// <summary>Why the edits cannot be saved yet, such as a ruleset with no name or a number that isn't one.</summary>
+    public string? Problem =>
+        Settings.Where(setting => setting.Invalid).Select(setting => $"{setting.Label}: {setting.TypedProblem}").FirstOrDefault()
+        ?? Entries.Select(entry => entry.Problem).FirstOrDefault(problem => problem is not null);
 
     [RelayCommand]
     public async Task LoadAsync()
@@ -393,7 +395,7 @@ internal sealed partial class ProfileViewModel(
     [RelayCommand(CanExecute = nameof(CanDiscard))]
     private void Discard()
     {
-        foreach (var setting in Settings.Where(setting => setting.Changed))
+        foreach (var setting in Settings.Where(setting => setting.Pending))
         {
             setting.Undo();
         }
@@ -457,7 +459,9 @@ internal sealed partial class ProfileViewModel(
                                 var inherited = origin == SettingOrigin.Inherited
                                     ? new InheritedValue(saved!, Base(sources[field.Key])!)
                                     : Inherit(@base, section.Section, field.Key);
-                                return new SettingViewModel(field, saved, origin, inherited, OnSettingChanged);
+                                SettingViewModel? row = null;
+                                row = new SettingViewModel(field, saved, origin, inherited, () => OnRowChanged(row!));
+                                return row;
                             }),
                         ])),
                 ]));
@@ -503,9 +507,29 @@ internal sealed partial class ProfileViewModel(
         return new InheritedValue(value, Path.GetFileNameWithoutExtension(file));
     }
 
+    /// <summary>
+    /// A setting that must stand alone in its section, such as Pages'
+    /// <c>absent</c>, can't be saved beside the others there: setting one
+    /// leaves the others out of this profile's file, and the other way round.
+    /// </summary>
+    private void OnRowChanged(SettingViewModel row)
+    {
+        if (row.OwnAfterSave)
+        {
+            foreach (var other in Settings.Where(other => other != row
+                && other.Field.Section == row.Field.Section
+                && (row.Field.Alone || other.Field.Alone)
+                && (other.OwnAfterSave || other.Pending)))
+            {
+                other.Clear();
+            }
+        }
+        OnSettingChanged();
+    }
+
     private void OnSettingChanged()
     {
-        ChangeCount = Settings.Count(setting => setting.Changed) + Entries.Count(entry => entry.Changed);
+        ChangeCount = Settings.Count(setting => setting.Pending) + Entries.Count(entry => entry.Changed);
         foreach (var tab in Tabs)
         {
             tab.RefreshCount();

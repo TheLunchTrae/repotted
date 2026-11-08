@@ -340,6 +340,10 @@ internal sealed class RepottedClient(ICli cli)
                 ["repository"] = sources.Repository,
                 ["merge"] = sources.Merge,
                 ["actions"] = sources.Actions,
+                ["security"] = sources.Security,
+                ["custom_properties"] = sources.CustomProperties,
+                ["pages"] = sources.Pages,
+                ["autolinks"] = sources.Autolinks,
                 ["rulesets"] = sources.Rulesets,
                 ["environments"] = sources.Environments,
             });

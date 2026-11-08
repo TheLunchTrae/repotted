@@ -340,6 +340,22 @@ per file in a cache.
 | Removed     | Discard, or every edit undone | Gone from the cache and the list.                                                                                                                                                                                                                                                          |
 | Removed     | A refresh lists the file      | Changed, when the file is back as the editor read it. Out of date for any edit, settings too, when it came back as something else, such as a new profile of the same name.                                                                                                                 |
 
+### Each setting
+
+A `SettingViewModel` is one row of a settings tab. Its value comes from the
+profile, a base profile, or neither; a change waits until the profile is
+saved.
+
+| State              | Event                                               | Next                                                                                                                                                               |
+| ------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Saved              | Choose a value, or type a valid one                 | Changed. Typing back the text the box started with, or choosing the value this profile itself saved, is Saved instead.                                             |
+| Saved, set here    | Remove                                              | Changed, to leave the value out; a base profile's value then applies.                                                                                              |
+| Saved or changed   | Type text that isn't a valid value                  | Invalid: the value is as saved, the box keeps the text and says why. It counts as an unsaved change, and the profile can't be saved until it is fixed.             |
+| Invalid            | Type a valid value                                  | Changed, or Saved when it is the value the row started with.                                                                                                       |
+| Changed or invalid | Undo, or Discard on the profile                     | Saved, with the box showing the saved value.                                                                                                                       |
+| Any, in a section  | A setting that must stand alone there is set        | Each other setting this profile's file would hold there is left out: removed when set here, undone when only changed. Pages' `absent` is such a setting.           |
+| Any, in a section  | Another setting is set beside one that stands alone | The setting that stands alone is left out the same way, since the CLI refuses a file that holds both. Undoing one side doesn't bring the other back; Discard does. |
+
 ### Each ruleset or environment
 
 | State                                     | Event               | Next                                                                                                                                   |

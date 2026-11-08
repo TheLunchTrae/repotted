@@ -20,6 +20,8 @@ public sealed class ControlLabelTests
     [InlineData("_Save as", "_Save As")]
     [InlineData("_save _as", "_Save _As")]
     [InlineData("A ruleset to start from", "A Ruleset to Start From")]
+    [InlineData("/ (root)", "/ (root)")]
+    [InlineData("/docs", "/docs")]
     public void TitleStyleCapitalizesAsAppleDoes(string label, string expected) =>
         Assert.Equal(expected, ControlLabel.TitleStyle(label));
 }

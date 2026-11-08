@@ -78,6 +78,15 @@ on a GitHub plan that lacks them, `plan` warns you and still plans the rest.
 When GitHub refuses to read or change a setting, the warning or error names
 the GitHub App permission it needs.
 
+`plan` also marks each change Repotted can't make, as in
+`(locked: Needs Pages write)`. With a Repotted App sign-in, it checks the
+permissions the App's installation was granted and your role on the
+repository. Repotted treats every change as needing admin on the repository.
+Another token, such as the GitHub CLI's or Actions' `GITHUB_TOKEN`, can't see
+the App, so `plan` marks only what your role rules out. Limits of the repository's GitHub plan or its
+owner's policies show only when `apply` fails. `apply` still tries every
+change; the marks only tell you ahead of time.
+
 ## Stage an apply
 
 A staged apply is one apply to one repository, prepared in a file of its own.
@@ -109,9 +118,10 @@ for this apply, so give the whole entry. It also takes:
   entry of a list, as `rulesets/Main`, `environments/production`, or
   `autolinks/JIRA-`. `--include key` takes it back. A value can't be both
   excluded and edited, and an exclusion has to name something the profile
-  sets, so a mistyped name is refused. An environment's name matches in any
-  case, as GitHub's does; a ruleset's name and an autolink's prefix match as
-  written. The profile is checked once the exclusions are out, so an edit
+  sets, so a mistyped name is refused, as is one already left out by a wider
+  exclusion, or one the profile no longer sets. An environment's name matches
+  in any case, as GitHub's does; a ruleset's name and an autolink's prefix
+  match as written. The profile is checked once the exclusions are out, so an edit
   that only fits without an excluded value is fine.
 - `--save-to-profile` writes the one-off edits into the profile the staged
   apply starts from and clears them from the staged apply, which then

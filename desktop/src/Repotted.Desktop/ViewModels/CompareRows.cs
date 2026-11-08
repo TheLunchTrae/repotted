@@ -22,9 +22,10 @@ internal enum CompareKind
 /// <summary>
 /// One row of a compare: a value the profile names, what GitHub has now, and
 /// what the profile wants. <see cref="Key"/> is the value's path in the
-/// profile, or a note such as <c>new ruleset</c>.
+/// profile, or a note such as <c>new ruleset</c>. <see cref="Lock"/> says why
+/// Repotted cannot make the change, such as <c>Needs Pages write</c>, or is null.
 /// </summary>
-internal sealed record CompareRow(CompareKind Kind, string Label, string Key, string Now, string Wanted)
+internal sealed record CompareRow(CompareKind Kind, string Label, string Key, string Now, string Wanted, string? Lock = null)
 {
     /// <summary>What leaves this row out of a staged apply, when it is a change one can leave out.</summary>
     public RowExclusion? LeaveOut { get; init; }
@@ -54,11 +55,15 @@ internal sealed record CompareRow(CompareKind Kind, string Label, string Key, st
 
     public bool IsMatch => Kind == CompareKind.Matches;
 
+    public bool IsLocked => Lock is not null;
+
     /// <summary>Whether GitHub's value goes away, so the row strikes it out.</summary>
     public bool NowGoes => Kind is CompareKind.Changes or CompareKind.Removes;
 
-    /// <summary>The row as one sentence, which screen readers hear in place of the struck-out text and the colors.</summary>
-    public string AccessibleName => Kind switch
+    /// <summary>The row as one sentence, which screen readers hear in place of the struck-out text, the colors and the lock.</summary>
+    public string AccessibleName => Lock is null ? Said : $"{Said}. Repotted can't change it: {Lock}";
+
+    private string Said => Kind switch
     {
         CompareKind.Changes => $"{Label}, {Key}: GitHub has {Now}, the profile sets {Wanted}",
         CompareKind.Adds when Wanted == Created => $"{Label}, {Key}: not on GitHub, the profile creates it",

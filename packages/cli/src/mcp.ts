@@ -10,9 +10,11 @@ import {
   createPlan,
   formatPlan,
   type GitHub,
+  lockChanges,
   parseProfile,
   parseRepo,
   type Plan,
+  readAccess,
   resolveProfile,
   skippedDrafts,
   StalePlanError,
@@ -107,13 +109,16 @@ export function createServer(options: ServerOptions): McpServer {
           profilePath === undefined
             ? await parseProfile(profile ?? '', options.cwd)
             : await resolveProfile(path.resolve(options.cwd, profilePath));
-        const plan = await createPlan(await client(), parseRepo(name), desired.profile, skippedDrafts(desired.drafts));
+        const github = await client();
+        const repo = parseRepo(name);
+        const plan = await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts));
         if (plan.changes.length === 0) {
           return text(formatPlan(plan));
         }
+        const locks = lockChanges(await readAccess(github, repo), plan.changes);
         const id = randomUUID();
         plans.set(id, plan);
-        return text(`${formatPlan(plan)}\n\nplan_id: ${id}`);
+        return text(`${formatPlan(plan, locks)}\n\nplan_id: ${id}`);
       }),
   );
 

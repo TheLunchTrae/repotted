@@ -34,6 +34,10 @@ internal sealed record ProfileSourcesDocument(
     IReadOnlyDictionary<string, string> Repository,
     IReadOnlyDictionary<string, string> Merge,
     IReadOnlyDictionary<string, string> Actions,
+    IReadOnlyDictionary<string, string> Security,
+    IReadOnlyDictionary<string, string> CustomProperties,
+    IReadOnlyDictionary<string, string> Pages,
+    IReadOnlyDictionary<string, string> Autolinks,
     IReadOnlyDictionary<string, string> Rulesets,
     IReadOnlyDictionary<string, string> Environments);
 
@@ -60,12 +64,30 @@ internal sealed record PlanChangeDocument(
     string Target,
     IReadOnlyList<FieldChangeDocument> Fields);
 
-/// <summary>What <c>repotted plan --json</c> prints: the resolved profile and the writes that bring the repository in line.</summary>
+/// <summary>
+/// What the GitHub App may do on the repository: <paramref name="Status"/> is
+/// <c>installed</c>, <c>not_installed</c> or <c>unknown</c>, and
+/// <paramref name="SettingsUrl"/> is the installation's settings page, when installed.
+/// </summary>
+internal sealed record AppAccessDocument(string Status, string? SettingsUrl = null);
+
+/// <summary>What the account and its App may change on the repository; a null role is one GitHub did not report.</summary>
+internal sealed record AccessDocument(string? Role, AppAccessDocument App);
+
+/// <summary>A change Repotted cannot make, by its index in the plan's changes, and why.</summary>
+internal sealed record LockDocument(int Change, string Reason);
+
+/// <summary>
+/// What <c>repotted plan --json</c> prints: the resolved profile, the writes
+/// that bring the repository in line, and the writes Repotted cannot make.
+/// </summary>
 internal sealed record PlanDocument(
     string Repository,
     JsonElement Desired,
     IReadOnlyList<PlanChangeDocument> Changes,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    AccessDocument Access,
+    IReadOnlyList<LockDocument> Locks);
 
 /// <summary>
 /// What a staged apply holds, from <c>repotted stage --json</c>: the repository
@@ -100,11 +122,13 @@ internal sealed record StagedPlanDocument(
     JsonElement Desired,
     IReadOnlyList<PlanChangeDocument> Changes,
     IReadOnlyList<string> Warnings,
+    AccessDocument Access,
+    IReadOnlyList<LockDocument> Locks,
     StagedSummaryDocument Staged,
     IReadOnlyList<PlanExclusionDocument> Exclusions)
 {
-    /// <summary>The plan alone, as a compare shows it.</summary>
-    public PlanDocument Plan => new(Repository, Desired, Changes, Warnings);
+    /// <summary>The plan alone, as a compare shows it, with what Repotted can't change.</summary>
+    public PlanDocument Plan => new(Repository, Desired, Changes, Warnings, Access, Locks);
 }
 
 /// <summary>What <c>repotted apply --json</c> prints once every change is written.</summary>

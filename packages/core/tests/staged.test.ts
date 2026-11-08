@@ -388,6 +388,16 @@ merge: { allow_rebase_merge: false }
     expect(included.profile.environments?.map((entry) => entry.name)).toEqual(['Prod']);
   });
 
+  test('leaves an environment out by its own name when another name starts with it', async () => {
+    const files = await folder(`environments: [{ name: Prod }, { name: 'Prod: EU' }]
+`);
+    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    const { plan, exclusions } = await planStagedApply(new FakeGitHub(), files.staged);
+
+    expect(plan.changes.map((change) => change.target)).toEqual(['Prod', 'Prod: EU']);
+    expect(exclusions.map((exclusion) => exclusion.key)).toEqual(['environments/Prod', 'environments/Prod: EU']);
+  });
+
   test('warns when its profile changes so that an exclusion leaves nothing out', async () => {
     const files = await folder(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);

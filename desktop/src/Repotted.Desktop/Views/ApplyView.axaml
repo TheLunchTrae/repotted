@@ -191,6 +191,10 @@
                                     <StackPanel Grid.Column="1" Margin="16,10" VerticalAlignment="Center" Spacing="2">
                                       <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="14.5" TextWrapping="Wrap" />
                                       <TextBlock Classes="mono muted" FontSize="12.5" Text="{Binding Key}" TextWrapping="Wrap" />
+                                      <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0" IsVisible="{Binding IsLocked}">
+                                        <Path Classes="lock" VerticalAlignment="Center" />
+                                        <TextBlock Classes="muted small" Text="{Binding Lock}" TextWrapping="Wrap" />
+                                      </StackPanel>
                                     </StackPanel>
                                     <TextBlock Grid.Column="2" Margin="16,10" VerticalAlignment="Center" TextWrapping="Wrap"
                                                Classes.gone="{Binding NowGoes}" Text="{Binding Now}" />
