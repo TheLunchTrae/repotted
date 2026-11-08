@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using Repotted.Desktop.Services;
 using Repotted.Desktop.Theme;
 using Repotted.Desktop.ViewModels;
+using static Repotted.Desktop.Tests.Helpers;
 
 namespace Repotted.Desktop.Tests;
 
@@ -25,9 +26,7 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaFact]
     public async Task Signed_in_opens_the_repository_list()
     {
-        var main = App(new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories));
+        var main = App(FakeCli.SignedIn());
 
         await main.StartAsync();
 
@@ -227,9 +226,7 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaFact]
     public async Task A_lost_sign_in_goes_back_to_the_sign_in_once()
     {
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories);
+        var cli = FakeCli.SignedIn();
         var main = App(cli);
         await main.StartAsync();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
@@ -249,9 +246,7 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaFact]
     public async Task A_lost_sign_in_read_on_another_thread_changes_the_page_on_this_one()
     {
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories);
+        var cli = FakeCli.SignedIn();
         var main = App(cli);
         await main.StartAsync();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
@@ -277,9 +272,7 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaFact]
     public async Task Sign_out_removes_the_sign_in_and_goes_back_to_the_sign_in()
     {
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var cli = FakeCli.SignedIn()
             .On("logout --json", """{"removed":true}""");
         var main = App(cli);
         await main.StartAsync();
@@ -296,9 +289,7 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaFact]
     public async Task A_lost_sign_in_that_still_works_keeps_the_app_and_what_it_holds()
     {
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories);
+        var cli = FakeCli.SignedIn();
         var main = App(cli);
         await main.StartAsync();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
@@ -319,9 +310,7 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaFact]
     public async Task Pages_that_lose_the_sign_in_together_check_it_once_and_keep_the_app_meanwhile()
     {
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories);
+        var cli = FakeCli.SignedIn();
         var main = App(cli);
         await main.StartAsync();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
@@ -341,9 +330,7 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaFact]
     public async Task A_lost_sign_in_that_finds_another_account_opens_the_app_for_it()
     {
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories);
+        var cli = FakeCli.SignedIn();
         var main = App(cli);
         await main.StartAsync();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
@@ -366,9 +353,7 @@ public sealed class ViewModelTests : IDisposable
         folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
         var sync = $"sync {copy} --json";
         const string synced = """{"repository":"lunch/config","path":"","branch":"main","commit":"abc123","pulled":[],"pushed":[],"conflicts":[]}""";
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var cli = FakeCli.SignedIn()
             .On(sync, synced)
             .On(folders.List(copy), Documents.NoProfiles);
         var main = App(cli);
@@ -401,10 +386,8 @@ public sealed class ViewModelTests : IDisposable
     private async Task<(MainViewModel Main, ShellViewModel Shell, FakeCli Cli, string File)> SignedInWithAnEdit()
     {
         var file = folders.Write("base.yaml", "repository: { has_issues: true }\n");
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
-            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{JsonSerializer.Serialize(file)}},"extends":null,"problem":null}]}""")
+        var cli = FakeCli.SignedIn()
+            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Json(file)}},"extends":null,"problem":null}]}""")
             .On($"profile {file} --json", Documents.ResolvedBase(file))
             .On("logout --json", """{"removed":true}""");
         var main = App(cli);
@@ -415,16 +398,6 @@ public sealed class ViewModelTests : IDisposable
         return (main, shell, cli, file);
     }
 
-    /// <summary>Runs the UI thread's work until <paramref name="done"/>, for work that ends off the test's own awaits.</summary>
-    private static async Task Until(Func<bool> done)
-    {
-        for (var tries = 0; tries < 500 && !done(); tries++)
-        {
-            await Task.Delay(10);
-            Dispatcher.UIThread.RunJobs();
-        }
-        Assert.True(done());
-    }
 
     [AvaloniaTheory]
     [InlineData("cancel")]
@@ -527,7 +500,7 @@ public sealed class ViewModelTests : IDisposable
         var written = new TaskCompletionSource();
         var cli = new FakeCli()
             .On("repos --json", Documents.Repositories)
-            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{JsonSerializer.Serialize(file)}},"extends":null,"problem":null}]}""")
+            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Json(file)}},"extends":null,"problem":null}]}""")
             .On($"profile {file} --json", Documents.ResolvedBase(file))
             .OnceReady($"profile {file} --set repository.has_wiki=false --json", Documents.ResolvedBase(file), written.Task);
         var shell = new ShellViewModel(
@@ -562,9 +535,7 @@ public sealed class ViewModelTests : IDisposable
         var made = Path.Combine(folders.Profiles, "repotted.yaml");
         var finish = new TaskCompletionSource();
         var stopped = false;
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var cli = FakeCli.SignedIn()
             .OnCapture("TheLunchTrae/repotted", async (output, cancellationToken) =>
             {
                 cancellationToken.Register(() => stopped = true);
@@ -594,9 +565,7 @@ public sealed class ViewModelTests : IDisposable
         var made = Path.Combine(folders.Profiles, "repotted.yaml");
         var finish = new TaskCompletionSource();
         var stopped = false;
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var cli = FakeCli.SignedIn()
             .On("logout --json", """{"removed":true}""")
             .OnCapture("TheLunchTrae/repotted", async (output, cancellationToken) =>
             {
@@ -683,9 +652,7 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaFact]
     public async Task A_failed_sign_out_says_why_and_checks_again()
     {
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var cli = FakeCli.SignedIn()
             .On("logout --json", """{"error":{"kind":"error","message":"Could not reach the OS keychain."}}""", exitCode: 1);
         var main = App(cli);
         await main.StartAsync();
@@ -701,9 +668,7 @@ public sealed class ViewModelTests : IDisposable
     [AvaloniaFact]
     public async Task Search_filters_the_list_and_keeps_the_selection()
     {
-        var main = App(new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories));
+        var main = App(FakeCli.SignedIn());
         await main.StartAsync();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
         shell.Repositories.Selected = shell.Repositories.Rows[1];
@@ -1525,7 +1490,7 @@ public sealed class ViewModelTests : IDisposable
     }
 
     private static string OnlyBase(string @base) =>
-        $$$"""{"profiles":[{"name":"base","file":{{{JsonSerializer.Serialize(@base)}}},"extends":null,"problem":null}]}""";
+        $$$"""{"profiles":[{"name":"base","file":{{{Json(@base)}}},"extends":null,"problem":null}]}""";
 
     [AvaloniaFact]
     public async Task Edits_to_a_profile_whose_file_is_removed_stay_and_a_save_puts_it_back()
@@ -2187,7 +2152,7 @@ public sealed class ViewModelTests : IDisposable
     public async Task A_file_listed_under_two_names_opens_once()
     {
         var file = folders.Write("base.yaml", "repository: { has_issues: true }\n");
-        var listing = $$"""{"profiles":[{"name":"alias","file":{{Quote(file)}},"extends":null,"problem":null},{"name":"base","file":{{Quote(file)}},"extends":null,"problem":null}]}""";
+        var listing = $$"""{"profiles":[{"name":"alias","file":{{Json(file)}},"extends":null,"problem":null},{"name":"base","file":{{Json(file)}},"extends":null,"problem":null}]}""";
         var cli = new FakeCli().On(folders.List(), listing).On($"profile {file} --json", Documents.ResolvedBase(file));
         var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
 
@@ -2206,7 +2171,7 @@ public sealed class ViewModelTests : IDisposable
         Directory.CreateDirectory(other);
         var slow = new TaskCompletionSource();
         var cli = new FakeCli()
-            .OnceReady(folders.List(), $$"""{"profiles":[{"name":"orgs","file":{{Quote(own)}},"extends":null,"problem":null}]}""", slow.Task)
+            .OnceReady(folders.List(), $$"""{"profiles":[{"name":"orgs","file":{{Json(own)}},"extends":null,"problem":null}]}""", slow.Task)
             .On(folders.List(other), Documents.NoProfiles);
         var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop { Folder = other }, folders.Settings, () => []);
 
@@ -2220,7 +2185,6 @@ public sealed class ViewModelTests : IDisposable
         Assert.False(profiles.Loading);
     }
 
-    private static string Quote(string text) => $"\"{System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(text)}\"";
 
     [AvaloniaFact]
     public async Task A_compare_shows_each_difference_and_counts_what_matches()
@@ -3292,7 +3256,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var @base = folders.Write("base.yaml", "repository: {}\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
-        var given = JsonNode.Parse(sources.Replace("OWN", JsonSerializer.Serialize(own), StringComparison.Ordinal))!.AsObject();
+        var given = JsonNode.Parse(sources.Replace("OWN", Json(own), StringComparison.Ordinal))!.AsObject();
         var all = new JsonObject();
         var drafts = new JsonObject();
         foreach (var section in (string[])["repository", "merge", "actions", "security", "custom_properties", "pages", "autolinks", "rulesets", "environments"])

@@ -1,4 +1,5 @@
 using Repotted.Desktop.Services;
+using static Repotted.Desktop.Tests.Helpers;
 
 namespace Repotted.Desktop.Tests;
 
@@ -11,6 +12,11 @@ internal sealed class FakeCli : ICli
     private readonly Dictionary<string, Func<string, CancellationToken, Task<string>>> captures = [];
 
     public List<string> Calls { get; } = [];
+
+    /// <summary>A CLI that is signed in and lists the canned repositories.</summary>
+    public static FakeCli SignedIn() => new FakeCli()
+        .On("status --json", Documents.SignedIn)
+        .On("repos --json", Documents.Repositories);
 
     /// <summary>Answers <paramref name="command"/> with one document, an exit code, and what it said on stderr.</summary>
     public FakeCli On(string command, string output, int exitCode = 0, string error = "")
@@ -348,8 +354,6 @@ internal static class Documents
 
     /// <summary>Access read with a token that can't see the App, which locks nothing.</summary>
     public const string Unknown = """{"role":"admin","app":{"status":"unknown"}}""";
-
-    private static string Json(string text) => $"\"{System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(text)}\"";
 
     public static readonly Uri InstallUrl = new("https://github.com/apps/repotted-app/installations/new");
 
