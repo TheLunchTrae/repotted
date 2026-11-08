@@ -1,81 +1,85 @@
+# Node runs the workspace, the tests, the build and the desktop app's CLI;
+# pnpm installs the workspace. package.json's packageManager names the same pnpm.
 [tools]
-bun = "1.4.4"
+node = "26.13.0"
+pnpm = "12.18.0"
 
 [tasks."ts:install"]
-description = "Install Bun-managed TypeScript dependencies"
+description = "Install the locked TypeScript dependencies with pnpm"
 depends = ["ts:lock:check"]
-run = "bun install --frozen-lockfile"
+run = "pnpm install --frozen-lockfile"
 
 [tasks."ts:lock"]
-description = "Refresh the Bun lockfile"
-run = "bun install"
+description = "Refresh the pnpm lockfile"
+run = "pnpm install"
 
 [tasks."ts:lock:check"]
-description = "Ensure the Bun lockfile is present"
+description = "Ensure the pnpm lockfile is present"
 run = """
-if [ ! -f bun.lock ]; then
-  echo "bun.lock is required for TypeScript CI. Run mise run ts:lock and commit the generated lockfile." >&2
+if [ ! -f pnpm-lock.yaml ]; then
+  echo "pnpm-lock.yaml is required for TypeScript CI. Run mise run ts:lock and commit the generated lockfile." >&2
   exit 1
 fi
 """
 # mise runs inline tasks with cmd on Windows, so the POSIX check needs its own form.
-run_windows = "if not exist bun.lock (echo bun.lock is required for TypeScript CI. Run mise run ts:lock and commit the generated lockfile. 1>&2 & exit /b 1)"
+run_windows = "if not exist pnpm-lock.yaml (echo pnpm-lock.yaml is required for TypeScript CI. Run mise run ts:lock and commit the generated lockfile. 1>&2 & exit /b 1)"
 
 [tasks."ts:fmt"]
 description = "Format TypeScript"
 depends = ["ts:install"]
-run = "bun run format"
+run = "pnpm run format"
 
 [tasks."ts:fmt:check"]
 description = "Check TypeScript formatting"
 depends = ["ts:install"]
-run = "bun run format:check"
+run = "pnpm run format:check"
 
 [tasks."ts:lint"]
 description = "Lint TypeScript"
 depends = ["ts:install"]
-run = "bun run lint"
+run = "pnpm run lint"
 
 [tasks."ts:type"]
 description = "Run TypeScript type checks"
 depends = ["ts:install"]
-run = "bun run typecheck"
+run = "pnpm run typecheck"
 
 [tasks."ts:audit"]
 description = "Audit dependencies"
 depends = ["ts:install"]
-run = "bun run audit"
+run = "pnpm run audit"
 
 [tasks."ts:knip"]
 description = "Fail on unused dependencies, exports, and files"
 depends = ["ts:install"]
-run = "bun run knip"
+run = "pnpm run knip"
 
 [tasks."ts:test"]
-description = "Run the Bun tests"
+description = "Run the Vitest tests"
 depends = ["ts:install"]
-run = "bun run test"
+run = "pnpm run test"
 
 [tasks."ts:build"]
 description = "Build the repotted CLI into packages/cli/dist"
 depends = ["ts:install"]
-run = "bun run build"
+run = "pnpm run build"
 
 [tasks."ts:node:check"]
-description = "Run the built CLI under Node, as npx does"
+description = "Run the built CLI under the oldest supported Node, as npx does"
 depends = ["ts:build"]
-# bunfig.toml routes `node` through Bun inside `bun run`, so this task calls
-# `node` itself and first confirms that it is Node, not Bun.
+# mise's Node is the newest, so CI points SMOKE_NODE at the oldest one the
+# package supports. Without it, the check runs under mise's Node.
 run = """
 set -eu
-node -e "if (typeof Bun !== 'undefined') { console.error('ts:node:check needs Node on PATH, not Bun'); process.exit(1); }"
-node packages/cli/tests/node-smoke.mjs
+smoke_node="${SMOKE_NODE:-node}"
+echo "Running the built CLI under Node $("$smoke_node" --version)"
+"$smoke_node" packages/cli/tests/node-smoke.mjs
 """
 
 [tasks."ts:standards"]
 description = "Run the TypeScript standards workflow with autofixes"
 depends = ["ts:install"]
-run = "bun run standards"
+run = "pnpm run standards"
 
 [tasks."ts:standards:check"]
 description = "Run the TypeScript standards CI gate"

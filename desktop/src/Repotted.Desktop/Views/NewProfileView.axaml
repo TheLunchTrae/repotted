@@ -14,7 +14,7 @@
 
       <StackPanel Spacing="6">
         <TextBlock Classes="small" FontWeight="SemiBold" Text="Name" />
-        <TextBox x:Name="NameBox" Text="{Binding Name}" AutomationProperties.Name="Profile name"
+        <TextBox x:Name="NameBox" Text="{Binding Name}" IsEnabled="{Binding Editable}" AutomationProperties.Name="Profile name"
                  AutomationProperties.HelpText="{Binding Problem}" PlaceholderText="For example, libraries" />
         <TextBlock Classes="muted small" IsVisible="{Binding ShowFileName}">
           <Run Text="Saved as" /> <Run Classes="mono" Text="{Binding FileName}" /> <Run Text="in the profiles folder." />
@@ -23,7 +23,7 @@
                    IsVisible="{Binding HasProblem}" AutomationProperties.LiveSetting="Assertive" />
       </StackPanel>
 
-      <StackPanel Spacing="10">
+      <StackPanel Spacing="10" IsEnabled="{Binding Editable}">
         <TextBlock Classes="small" FontWeight="SemiBold" Text="Start from" />
         <RadioButton GroupName="start" IsChecked="{Binding StartsEmpty}"
                      AutomationProperties.HelpText="An empty profile, which manages nothing until you set something.">

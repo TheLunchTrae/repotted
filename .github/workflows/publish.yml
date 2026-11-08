@@ -43,6 +43,10 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
+          package-manager-cache: false
+      # mise puts its newer Node first on the PATH; ts:node:check runs this one.
+      - name: Point the npx smoke check at it
+        run: echo "SMOKE_NODE=$(command -v node)" >>"$GITHUB_ENV"
       # No cache: a release builds only from the locked, checksummed tools.
       - name: Install pinned tools
         uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
@@ -54,11 +58,11 @@ jobs:
         run: mise run ts:install
       - name: Run the mandatory gate
         run: mise run standards:check
-      # bun pm pack runs prepack, which builds, and replaces workspace: ranges.
+      # pnpm pack runs prepack, which builds, and replaces workspace: ranges.
       - name: Pack the verified build
         run: |
           mkdir release
-          (cd packages/cli && bun pm pack --destination ../../release)
+          (cd packages/cli && pnpm pack --pack-destination ../../release)
       - name: Upload the verified package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

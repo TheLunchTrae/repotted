@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, test } from 'bun:test';
 import { writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { afterEach, describe, expect, test } from 'vitest';
 
 import { GitHubError } from '../src/github.js';
 import { listProfiles } from '../src/profile.js';

@@ -200,7 +200,7 @@ null. A failure with `kind: signed_out`, from any command, raises
 that stops working mid-session leads back to the sign-in page, while one that
 still works keeps the app.
 
-`ContractTests.cs` in `csharp:test` runs the CLI from source and reads what it
+`ContractTests.cs` in `csharp:test` runs the built CLI and reads what it
 prints for the commands that need no GitHub: signed-out `status`,
 `profiles`, `profile`, and profile saves through `--set`, `--ruleset`, and
 `--environment`. A change to those documents that the app
@@ -209,9 +209,15 @@ documents need GitHub, and `logout` would remove a real sign-in, so the app's
 tests read hand-written examples of them, and only the strict parsing guards
 them against the real CLI.
 
-Each package ships the CLI compiled with `bun build --compile` beside the app
-as `repotted-cli`. It has a name of its own because macOS and Windows ignore
-case in file names, where `repotted` would collide with the app.
+Each package ships the CLI beside the app as `repotted-cli`, a Node single
+executable application that `packages/cli/sea.ts` builds: the CLI and its
+dependencies in one bundle inside the pinned Node, so it needs no Node on the
+machine. The keychain module is native code, which Node loads only from a real
+file, so it ships beside the CLI as `repotted-keyring.node` and is signed with
+the app on macOS. The CLI has a name of its own because macOS and Windows ignore case in
+file names, where `repotted` would collide with the app. It ignores
+`NODE_OPTIONS`, so nothing in the environment can add Node flags to the process
+that holds the token.
 [Development](development.md#run-the-desktop-app) describes how the app finds
 the CLI.
 
@@ -246,11 +252,12 @@ are, and a choice left unset leaves that key to GitHub.
 
 A new profile starts empty, extends another profile in the folder, or is
 captured with `repotted capture --output`. The app never replaces a file
-already in the folder: it creates the new file first, and a capture that
-fails or is cancelled removes it. While a capture runs, the profiles list
-leaves out the file it holds. A profile that extends another names that file
-as the folder lists it, so the reference still works when the folder is
-reached through a link.
+already in the folder. A capture writes a dot-prefixed file and gives it the
+profile's name only once it is whole, so neither the profiles list nor a sync
+reads a capture under way, and one that fails or is cancelled leaves nothing
+behind; [State machines](state-machines.md#new-profile-form) has the details.
+A profile that extends another names that file as the folder lists it, so the
+reference still works when the folder is reached through a link.
 
 Profiles kept in a config repository live in a working copy under `config`
 in the app data folder, one per repository and folder in it, which the app

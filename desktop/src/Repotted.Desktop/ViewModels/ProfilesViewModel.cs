@@ -45,8 +45,8 @@ internal sealed partial class ProfilesViewModel(
 {
     private readonly Dictionary<string, ProfileViewModel> editors = [];
 
-    /// <summary>New profile forms that may still hold a file while they capture, open or closed.</summary>
-    private readonly List<NewProfileViewModel> forms = [];
+    /// <summary>The profile files that captures still running will make, by path, whether their forms are open or closed.</summary>
+    private readonly HashSet<string> captures = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The file a refresh selects, such as a profile just made.</summary>
     private string? select;
@@ -159,6 +159,24 @@ internal sealed partial class ProfilesViewModel(
     /// <summary>The answer to the question about unsaved changes: true to go on, false to stay.</summary>
     private TaskCompletionSource<bool>? leave;
 
+    /// <summary>
+    /// The notice that names a profile whose changes kept the app where it is
+    /// while a capture ran, that profile's file, and the notice it covers. It
+    /// goes once the profile opens or the question is asked again, and the
+    /// notice it covered shows again.
+    /// </summary>
+    private (string Shown, string File, string? Covered)? leaveNotice;
+
+    private void ClearLeaveNotice()
+    {
+        // A notice set since then is newer than the one covered, so it stays.
+        if (leaveNotice is { } shown && Notice == shown.Shown)
+        {
+            Notice = shown.Covered;
+        }
+        leaveNotice = null;
+    }
+
     /// <summary>The profiles whose editors hold unsaved changes.</summary>
     private List<ProfileViewModel> Unsaved => [.. editors.Values.Where(editor => editor.HasChanges)];
 
@@ -188,6 +206,7 @@ internal sealed partial class ProfilesViewModel(
     /// </summary>
     public async Task<bool> ConfirmLeaveAsync(string act)
     {
+        ClearLeaveNotice();
         if (!HasUnsaved)
         {
             return true;
@@ -281,6 +300,17 @@ internal sealed partial class ProfilesViewModel(
             answer.TrySetResult(true);
             return;
         }
+        if (Creating is { Working: true })
+        {
+            // Opening the profile would close the form and stop its capture, so
+            // both stay as they are, and the notice names the profile instead.
+            var why = left.Loading ? "is still loading" : left.Saving ? "is still saving" : "could not be saved";
+            var covered = leaveNotice is { } earlier && Notice == earlier.Shown ? earlier.Covered : Notice;
+            Notice = $"{left.Name} {why}, so you cannot {Leaving} yet.";
+            leaveNotice = (Notice, left.File, covered);
+            answer.TrySetResult(false);
+            return;
+        }
         if (Items.FirstOrDefault(item => item.Listing.File == left.File) is { } shown)
         {
             Selected = shown;
@@ -356,9 +386,7 @@ internal sealed partial class ProfilesViewModel(
         Connecting = null;
         // Nothing stays selected, so choosing any profile in the list leaves the form.
         Selected = null;
-        forms.RemoveAll(form => form.Holding is null);
-        Creating = new NewProfileViewModel(client, Folder, Usable, repositories(), repository, CreatedAsync, CancelNew, Released);
-        forms.Add(Creating);
+        Creating = new NewProfileViewModel(client, Folder, Usable, repositories(), repository, CreatedAsync, CancelNew, Released, captures, ExclusiveAsync);
     }
 
     /// <summary>
@@ -385,9 +413,6 @@ internal sealed partial class ProfilesViewModel(
         Creating = null;
         Selected = Items.FirstOrDefault(item => item.Listing.File == Current?.File);
     }
-
-    /// <summary>A folder's path in one form, with no separator at its end, as a picker may give one.</summary>
-    private static string SameFolder(string folder) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
 
     /// <summary>A closed form gave up the name it held, so the open one may now take it.</summary>
     private void Released() => Creating?.Recheck();
@@ -493,8 +518,10 @@ internal sealed partial class ProfilesViewModel(
     }
 
     /// <summary>
-    /// Runs a save once the sync before it ends, and holds the next sync until
-    /// it ends, so a sync never reads a file a save is writing.
+    /// Runs work that writes the folder, such as a save or the move of a
+    /// finished capture to its profile's name, once the sync before it ends,
+    /// and holds the next sync until it ends. So a sync never reads a file
+    /// being written, and never pulls a file over one being moved into place.
     /// </summary>
     private async Task ExclusiveAsync(Func<Task> work)
     {
@@ -579,7 +606,12 @@ internal sealed partial class ProfilesViewModel(
 
     partial void OnFilterChanged(string value) => ApplyFilter();
 
-    /// <summary>Why the app could not remember the folder; the folder is still used until the app closes.</summary>
+    /// <summary>
+    /// A note over the page: why the app could not remember the folder or the
+    /// repository, which are still used until the app closes; which profiles
+    /// connecting left out; or which profile kept the app where it was while a
+    /// capture ran.
+    /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasNotice))]
     public partial string? Notice { get; set; }
@@ -590,6 +622,10 @@ internal sealed partial class ProfilesViewModel(
     {
         if (value is not null)
         {
+            if (leaveNotice is { } shown && shown.File == value.Listing.File)
+            {
+                ClearLeaveNotice();
+            }
             Creating = null;
             if (value.Listing.File != Current?.File)
             {
@@ -716,20 +752,11 @@ internal sealed partial class ProfilesViewModel(
             {
                 Directory.CreateDirectory(folder);
             }
-            var listed = await client.ProfilesAsync(folder, CancellationToken.None).ConfigureAwait(true);
+            var listings = await client.ProfilesAsync(folder, CancellationToken.None).ConfigureAwait(true);
             if (refresh != refreshes)
             {
                 return;
             }
-            // A capture still running holds its file empty, so the file is not a
-            // profile yet; one that runs on in a folder left behind holds nothing here.
-            var held = forms
-                .Select(form => form.Holding)
-                .OfType<string>()
-                .Where(file => string.Equals(SameFolder(Path.GetDirectoryName(file)!), SameFolder(folder), StringComparison.Ordinal))
-                .Select(Path.GetFileNameWithoutExtension)
-                .ToHashSet(StringComparer.Ordinal);
-            var listings = listed.Where(listing => !held.Contains(listing.Name)).ToList();
             // A linked file is listed under its real path, so two names can share one file.
             var names = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var listing in listings)

@@ -1,7 +1,7 @@
-import { afterAll, describe, expect, test } from 'bun:test';
 import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { afterAll, describe, expect, test } from 'vitest';
 
 import {
   editProfile,
@@ -192,7 +192,7 @@ rulesets:
   });
 
   test('loads the example profiles', async () => {
-    const examples = path.join(import.meta.dir, '../../../examples');
+    const examples = path.join(import.meta.dirname, '../../../examples');
     const profile = await loadProfile(path.join(examples, 'repotted.yaml'));
 
     expect(profile.merge).toEqual({ allow_merge_commit: false, allow_squash_merge: false, allow_rebase_merge: true });
@@ -761,7 +761,7 @@ drafts:
     const file = await write('drafts-empty-key.yaml', 'drafts:\n  custom_properties: { "": x }\n');
     const { warnings } = await resolveProfile(file);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).not.toEndWith(' at ');
+    expect(warnings[0]).not.toMatch(/ at $/u);
   });
 
   test('warn with the field of a draft ruleset that would not apply', async () => {
@@ -772,7 +772,7 @@ drafts:
     const { warnings } = await resolveProfile(file);
     expect(warnings).toHaveLength(2);
     expect(warnings[0]).toMatch(/^Draft ruleset "Main": .* at enforcement$/u);
-    expect(warnings[1]).toStartWith('Draft ruleset "Gone": ');
+    expect(warnings[1]).toMatch(/^Draft ruleset "Gone": /u);
     expect(warnings[1]).toContain('target');
   });
 
