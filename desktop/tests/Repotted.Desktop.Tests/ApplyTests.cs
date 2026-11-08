@@ -500,6 +500,7 @@ public sealed class ApplyTests : IDisposable
         Assert.False(rulesets.Drafts);
         rulesets.NewCommand.Execute(null);
         Assert.False(rulesets.Editing!.Editor.Drafts);
+        Assert.False(editor.HoldsDrafts);
     }
 
     [AvaloniaFact]

@@ -91,6 +91,9 @@ internal sealed partial class ProfileViewModel(
 
     public string OwnLabel => store.OwnLabel;
 
+    /// <summary>Whether the file can hold drafts, so the Drafts filter is offered; a staged apply's one-off edits can't.</summary>
+    public bool HoldsDrafts => store.Drafts;
+
     public string Name => listing.Name;
 
     public string File => listing.File;

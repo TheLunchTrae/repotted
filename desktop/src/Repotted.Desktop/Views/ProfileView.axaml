@@ -240,7 +240,7 @@
                             AutomationProperties.HelpText="Shows only settings this profile or a profile it extends sets." />
               <ToggleButton Classes="chip" Content="Not saved yet" IsChecked="{Binding OnlyUnsaved}"
                             AutomationProperties.HelpText="Shows only settings with a change waiting to be saved." />
-              <ToggleButton Classes="chip" Content="Drafts" IsChecked="{Binding OnlyDrafts}"
+              <ToggleButton Classes="chip" Content="Drafts" IsChecked="{Binding OnlyDrafts}" IsVisible="{Binding HoldsDrafts}"
                             AutomationProperties.HelpText="Shows only settings with a draft, saved in this profile or a profile it extends." />
               <Button Classes="link" Margin="4,0,0,0" Content="Clear" IsVisible="{Binding Filtering}"
                       Command="{Binding ClearFiltersCommand}" AutomationProperties.Name="Clear the search and filters" />
