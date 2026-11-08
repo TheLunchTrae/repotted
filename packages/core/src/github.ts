@@ -40,13 +40,26 @@ const errorBody = z.object({
   documentation_url: z.string().optional().catch(undefined),
 });
 
-/** One of GitHub's `errors`: a string as it is, or an object's `message`; one without a message says nothing. */
+/**
+ * One of GitHub's `errors` as text: a string as it is, an object by its
+ * `message`, and one without a message, such as GitHub's standard validation
+ * errors, by its field, or else its resource, and its code, as
+ * `key_prefix already_exists`.
+ */
 function errorDetail(item: unknown): string[] {
   if (typeof item === 'string') {
     return [item];
   }
-  const message: unknown = typeof item === 'object' && item !== null ? Reflect.get(item, 'message') : undefined;
-  return typeof message === 'string' ? [message] : [];
+  const field = (key: string): string | undefined => {
+    const value: unknown = typeof item === 'object' && item !== null ? Reflect.get(item, key) : undefined;
+    return typeof value === 'string' && value !== '' ? value : undefined;
+  };
+  const message = field('message');
+  if (message !== undefined) {
+    return [message];
+  }
+  const named = [field('field') ?? field('resource'), field('code')].filter((part) => part !== undefined);
+  return named.length === 0 ? [] : [named.join(' ')];
 }
 
 /**

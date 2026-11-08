@@ -164,7 +164,7 @@ describe('failureReason', () => {
         failed(
           responseError(422, {
             message: 'Validation Failed',
-            errors: [{ resource: 'Ruleset', code: 'custom', message: 'Invalid target patterns' }, { code: 'invalid' }],
+            errors: [{ resource: 'Ruleset', code: 'custom', message: 'Invalid target patterns' }, {}],
             ...docs,
           }),
         ),
@@ -180,11 +180,14 @@ describe('failureReason', () => {
         failed(
           responseError(422, {
             message: 'Validation Failed',
-            errors: [{ resource: 'Repository', code: 'custom', field: 'name' }],
+            errors: [
+              { resource: 'Autolink', code: 'already_exists', field: 'key_prefix' },
+              { resource: 'Repository', code: 'invalid' },
+            ],
           }),
         ),
       ),
-    ).toBe('Validation Failed');
+    ).toBe('Validation Failed: key_prefix already_exists: Repository invalid');
     expect(failureReason(failed(new GitHubError(403, 'Organization policy prevents this change')))).toBe(
       'Organization policy prevents this change',
     );
