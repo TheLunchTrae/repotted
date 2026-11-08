@@ -210,6 +210,37 @@ public sealed class ViewTests : IDisposable
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
+    public async Task A_save_over_a_changed_file_asks_which_version_to_keep(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrulesets:\n  - name: Old tags\n    absent: true\nenvironments:\n  - name: npm\n");
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base));
+        var window = await Show(theme, cli);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        editor.ShowYaml = false;
+        editor.SelectedTab = editor.Tabs[4];
+        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        File.AppendAllText(own, "# pulled by a sync\n");
+
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        var text = Texts(window);
+        Assert.Contains(editor.OutOfDateMessage, text);
+        Assert.Contains("Keep mine", text);
+        Assert.Contains("Reload", text);
+        Save(window, $"profile-out-of-date-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
     public async Task Rulesets_and_environments_open_in_an_editor(string theme)
     {
         var @base = folders.Write("base.yaml", "rulesets:\n  - name: Tags\n");

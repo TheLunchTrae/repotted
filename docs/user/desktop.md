@@ -110,9 +110,15 @@ entry that this profile names on its own; one from a base profile keeps its
 name.
 
 Click **Save profile** to write your changes to the file. Saving writes each
-edited ruleset or environment whole, so if you edited the same entry in the
-YAML file in another editor since you opened it in the app, the app's version
-replaces yours.
+edited ruleset or environment whole. So when you edited one and the file
+changed since you opened it, such as in another editor or by a sync with
+GitHub, the app doesn't save over that change. The same goes for a change to
+the profile it extends when you edited a ruleset or environment that comes
+from there. A banner asks what to do, when you save or as soon as a sync
+brings the change in: **Keep mine** saves your version over the change, and
+**Reload** shows the new version and discards your unsaved changes. Edits to
+settings alone save over a change to the file, since only the settings you
+changed are written.
 
 ## Compare a repository with a profile
 

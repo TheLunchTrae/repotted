@@ -38,11 +38,12 @@ internal sealed partial class ProfileViewModel(
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowEditor))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand))]
     public partial bool Loading { get; set; }
 
     /// <summary>Whether a save is running; the editor stays on screen, and nothing else can change it.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(DiscardCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand))]
     public partial bool Saving { get; set; }
 
     [ObservableProperty]
@@ -57,6 +58,27 @@ internal sealed partial class ProfileViewModel(
     public partial string? SaveError { get; set; }
 
     public bool HasSaveError => SaveError is not null;
+
+    /// <summary>The profile's file and the files it extends, own file first, as the editor last loaded or saved them.</summary>
+    private List<string> chain = [];
+
+    /// <summary>The text of each file in the chain when the editor last loaded or saved it; null when it could not be read.</summary>
+    private Dictionary<string, string?> loaded = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The file whose change since the editor read it stopped a save, such as
+    /// by a sync: saving writes each edited entry whole, from the copy the
+    /// editor read, so it would undo that change. Null when nothing stops it.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OutOfDate), nameof(OutOfDateMessage))]
+    public partial string? ChangedFile { get; private set; }
+
+    public bool OutOfDate => ChangedFile is not null;
+
+    public string OutOfDateMessage => ChangedFile is null || ChangedFile == File
+        ? $"{FileName} changed since you opened it, so saving would undo that change to the rulesets and environments you edited. Reload discards your unsaved changes."
+        : $"{Path.GetFileName(ChangedFile)} changed since you opened this profile, so saving would set the old copy of the inherited rulesets and environments you edited. Reload discards your unsaved changes.";
 
     public bool ShowEditor => !Loading && Error is null && Tabs.Count > 0;
 
@@ -84,7 +106,7 @@ internal sealed partial class ProfileViewModel(
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasChanges), nameof(ChangesLabel))]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(DiscardCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand))]
     public partial int ChangeCount { get; set; }
 
     public bool HasChanges => ChangeCount > 0;
@@ -106,13 +128,25 @@ internal sealed partial class ProfileViewModel(
         Error = null;
         try
         {
+            // Read the files first, so a change the load misses still counts as
+            // a change since. A file the chain gains, such as a base read for
+            // the first time, can only be read after.
+            var texts = ReadFiles(chain.Count == 0 ? [File] : chain);
             var profile = await client.ProfileAsync(File, CancellationToken.None).ConfigureAwait(true);
+            foreach (var file in ChainOf(profile).Where(file => !texts.ContainsKey(file)))
+            {
+                texts[file] = ReadFile(file);
+            }
             Show(profile, await BaseAsync(profile).ConfigureAwait(true));
+            Remember(ChainOf(profile), texts);
+            ChangedFile = null;
+            SaveError = null;
         }
         // A load runs unawaited when a profile opens, so every failure shows here.
         catch (Exception error)
         {
             Error = error.Message;
+            ChangedFile = null;
         }
         finally
         {
@@ -121,7 +155,58 @@ internal sealed partial class ProfileViewModel(
     }
 
     [RelayCommand(CanExecute = nameof(CanSave))]
-    private async Task SaveAsync()
+    private Task SaveAsync() => SaveAsync(overwrite: false);
+
+    /// <summary>Saves over a change to the file since the editor read it.</summary>
+    [RelayCommand(CanExecute = nameof(CanSave))]
+    private Task KeepMineAsync() => SaveAsync(overwrite: true);
+
+    /// <summary>Starts over from the file as it is now, without the unsaved edits.</summary>
+    [RelayCommand(CanExecute = nameof(CanDiscard))]
+    private Task ReloadAsync() => LoadAsync();
+
+    /// <summary>
+    /// Asks whether saving would undo a change to the file since the editor
+    /// read it, and shows the choice when it would. Saving settings writes
+    /// only the keys edited, so only edited rulesets and environments count.
+    /// </summary>
+    public void CheckFile()
+    {
+        if (StaleFile() is { } file)
+        {
+            ChangedFile = file;
+        }
+    }
+
+    /// <summary>
+    /// The first file that changed since the editor read it under an edited
+    /// entry: the profile's own file for any edited entry, and a file it
+    /// extends for an edited entry this profile inherits, which a save writes
+    /// whole into this profile as an override.
+    /// </summary>
+    private string? StaleFile()
+    {
+        var edited = Entries.Where(entry => entry.Changed).ToList();
+        if (edited.Count == 0)
+        {
+            return null;
+        }
+        var inherited = edited.Any(entry => !entry.Own);
+        var files = chain.Count == 0 ? [File] : inherited ? chain : chain.Take(1);
+        return files.FirstOrDefault(file =>
+            !string.Equals(ReadFile(file), loaded.GetValueOrDefault(file), StringComparison.Ordinal));
+    }
+
+    /// <summary>The profile's chain with this editor's own path first, so each file has one key.</summary>
+    private List<string> ChainOf(ResolvedProfile profile) => [File, .. profile.Chain.Skip(1)];
+
+    private void Remember(IEnumerable<string> files, Dictionary<string, string?> texts)
+    {
+        chain = files.Distinct(StringComparer.Ordinal).ToList();
+        loaded = chain.ToDictionary(file => file, file => texts.GetValueOrDefault(file), StringComparer.Ordinal);
+    }
+
+    private async Task SaveAsync(bool overwrite)
     {
         var changes = Settings.Select(setting => setting.Change).OfType<ProfileChange>().ToList();
         // The CLI takes a write right after a drop as a rename, so plain writes
@@ -134,9 +219,26 @@ internal sealed partial class ProfileViewModel(
         try
         {
             ResolvedProfile? profile = null;
-            async Task Write() => profile = await client.SaveProfileAsync(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
+            Dictionary<string, string?> texts = [];
+            async Task Write()
+            {
+                // Checked here, after any sync before the save, so a file that sync changed counts.
+                if (!overwrite && StaleFile() is { } file)
+                {
+                    ChangedFile = file;
+                    return;
+                }
+                profile = await client.SaveProfileAsync(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
+                texts = ReadFiles(ChainOf(profile));
+            }
             await (exclusive is null ? Write() : exclusive(Write)).ConfigureAwait(true);
-            Show(profile!, await BaseAsync(profile!).ConfigureAwait(true));
+            if (profile is null)
+            {
+                return;
+            }
+            Show(profile, await BaseAsync(profile).ConfigureAwait(true));
+            Remember(ChainOf(profile), texts);
+            ChangedFile = null;
             if (saved is not null)
             {
                 await saved().ConfigureAwait(true);
@@ -152,9 +254,9 @@ internal sealed partial class ProfileViewModel(
         }
     }
 
-    private bool CanSave() => HasChanges && !Saving && Problem is null;
+    private bool CanSave() => HasChanges && !Saving && !Loading && Problem is null;
 
-    private bool CanDiscard() => HasChanges && !Saving;
+    private bool CanDiscard() => HasChanges && !Saving && !Loading;
 
     [RelayCommand(CanExecute = nameof(CanDiscard))]
     private void Discard()
@@ -168,6 +270,7 @@ internal sealed partial class ProfileViewModel(
             tab.Undo();
         }
         SaveError = null;
+        ChangedFile = null;
     }
 
     /// <summary>
@@ -278,9 +381,27 @@ internal sealed partial class ProfileViewModel(
         OnPropertyChanged(nameof(Problem));
         OnPropertyChanged(nameof(HasProblem));
         SaveCommand.NotifyCanExecuteChanged();
+        KeepMineCommand.NotifyCanExecuteChanged();
     }
 
     public bool HasProblem => Problem is not null;
+
+    /// <summary>Each file's text, keyed by its path, or null for a file that cannot be read.</summary>
+    private static Dictionary<string, string?> ReadFiles(IEnumerable<string> files) =>
+        files.Distinct(StringComparer.Ordinal).ToDictionary(file => file, ReadFile, StringComparer.Ordinal);
+
+    /// <summary>The file's text, or null when it cannot be read, such as once a sync removed it.</summary>
+    private static string? ReadFile(string file)
+    {
+        try
+        {
+            return System.IO.File.ReadAllText(file);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
 
     private static string ReadText(string file)
     {
