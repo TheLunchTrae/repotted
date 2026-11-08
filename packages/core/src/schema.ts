@@ -545,7 +545,8 @@ const labelColor = z
   .string({
     error: (issue) => (issue.input === undefined ? undefined : "color is six hex digits in quotes, as '000000'"),
   })
-  .regex(/^#?[\da-f]{6}$/iu, 'color is six hex digits, as d73a4a');
+  // eslint-disable-next-line regexp/use-ignore-case -- JSON Schema patterns carry no flags, so editors would refuse uppercase
+  .regex(/^#?[\dA-Fa-f]{6}$/u, 'color is six hex digits, as d73a4a');
 
 export const label = z
   .object({
@@ -586,12 +587,18 @@ export function labelKey(name: string): string {
  */
 function addRenameIssues(entries: readonly z.infer<typeof labelEntry>[], context: z.RefinementCtx): void {
   const names = new Set(entries.map((entry) => labelKey(entry.name)));
-  const claimed = new Map<string, string>();
+  const claimed = new Map<string, number>();
   for (const [index, entry] of entries.entries()) {
     for (const [at, old] of (('renamed_from' in entry ? entry.renamed_from : undefined) ?? []).entries()) {
       const path = ['labels', index, 'renamed_from', at];
       const owner = claimed.get(labelKey(old));
-      if (names.has(labelKey(old))) {
+      if (owner === index) {
+        context.addIssue({
+          code: 'custom',
+          message: `Label "${entry.name}" lists "${old}" in renamed_from twice`,
+          path,
+        });
+      } else if (names.has(labelKey(old))) {
         context.addIssue({
           code: 'custom',
           message: `Label "${entry.name}" is renamed from "${old}", which the profile also lists as a label`,
@@ -600,11 +607,11 @@ function addRenameIssues(entries: readonly z.infer<typeof labelEntry>[], context
       } else if (owner !== undefined) {
         context.addIssue({
           code: 'custom',
-          message: `"${old}" is renamed to both "${owner}" and "${entry.name}"`,
+          message: `"${old}" is renamed to both "${entries[owner]?.name ?? ''}" and "${entry.name}"`,
           path,
         });
       }
-      claimed.set(labelKey(old), entry.name);
+      claimed.set(labelKey(old), index);
     }
   }
 }

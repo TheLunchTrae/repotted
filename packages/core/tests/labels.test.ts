@@ -7,9 +7,9 @@ import { afterAll, describe, expect, test } from 'vitest';
 
 import { parseRepo } from '../src/github.js';
 import { lockChanges } from '../src/permissions.js';
-import { applyPlan, captureProfile, createPlan, formatPlan, skippedDrafts } from '../src/plan.js';
+import { applyPlan, captureProfile, createPlan, formatPlan, skippedDrafts, StalePlanError } from '../src/plan.js';
 import { editProfile, resolveProfile } from '../src/profile.js';
-import type { LabelEntry } from '../src/schema.js';
+import { type LabelEntry, profileFileJsonSchema } from '../src/schema.js';
 import { createStagedApply, editStagedApply, planStagedApply } from '../src/staged.js';
 import { answered, FakeGitHub } from './fake-github.js';
 
@@ -210,6 +210,30 @@ describe('label plans', () => {
   });
 });
 
+describe('label plans that GitHub has moved on from', () => {
+  test('find an old name in any case', async () => {
+    const github = new FakeGitHub({ labels: [stored('enhancement')] });
+
+    const result = await plan(github, [{ name: 'feature', renamed_from: ['Enhancement'] }]);
+
+    expect(result.changes.map((change) => change.request)).toEqual([
+      { method: 'PATCH', path: '/repos/lunch/app/labels/enhancement', body: { new_name: 'feature' } },
+    ]);
+  });
+
+  test('refuse a plan whose label was renamed or deleted on GitHub since, without writing', async () => {
+    const github = new FakeGitHub({ labels: [stored('enhancement'), stored('wontfix')] });
+    const renamed = await plan(github, [{ name: 'feature', renamed_from: ['enhancement'] }]);
+    const deleted = await plan(github, [{ name: 'wontfix', absent: true }]);
+    github.state.labels = [stored('feature')];
+
+    for (const stale of [renamed, deleted]) {
+      await expect(applyPlan(github, stale)).rejects.toBeInstanceOf(StalePlanError);
+    }
+    expect(github.writes).toEqual([]);
+  });
+});
+
 describe('label capture', () => {
   test('capture every label, with colors as six lowercase digits, so the same repository matches', async () => {
     const github = new FakeGitHub({ labels: [stored('Bug', 'D73A4A', 'Broken'), stored('question')] });
@@ -251,6 +275,40 @@ describe('labels in profile files', () => {
       expect(await rejection(resolveProfile(file))).toContain('renamed_from');
     }
     expect(await rejection(resolveProfile(absentRename))).toContain('renamed_from');
+  });
+
+  test('say when one label lists an old name twice', async () => {
+    const file = await write('labels: [{ name: x, renamed_from: [a, A] }]\n');
+
+    expect(await rejection(resolveProfile(file))).toContain('Label "x" lists "A" in renamed_from twice');
+  });
+
+  test('take a color in any case in the JSON Schema too', () => {
+    // JSON Schema patterns carry no flags, so the pattern itself has to take either case.
+    const pattern = /"pattern":"(\^#\?[^"]*)"/u.exec(JSON.stringify(profileFileJsonSchema()))?.[1];
+
+    expect(pattern).toBeDefined();
+    const color = new RegExp(String(JSON.parse(`"${pattern ?? ''}"`)), 'u');
+    expect(['D73A4A', '#d73a4a', 'a2EEef'].every((value) => color.test(value))).toBe(true);
+    expect(color.test('d73a4')).toBe(false);
+  });
+
+  test('warn about a draft label that another label renames, and still apply the rename', async () => {
+    const file = await write(
+      'labels: [{ name: triage, draft: true }, { name: needs-triage, renamed_from: [Triage] }]\n',
+    );
+    const resolved = await resolveProfile(file);
+    const result = await createPlan(
+      new FakeGitHub({ labels: [stored('triage')] }),
+      repo,
+      resolved.profile,
+      skippedDrafts(resolved.drafts),
+    );
+
+    expect(resolved.warnings).toEqual([
+      expect.stringContaining('Draft label "triage": label "needs-triage" is renamed from it'),
+    ]);
+    expect(result.changes.map((change) => change.request.path)).toEqual(['/repos/lunch/app/labels/triage']);
   });
 
   test('replace a base label named in any case across extends, as rulesets are replaced', async () => {

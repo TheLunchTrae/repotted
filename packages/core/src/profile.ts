@@ -547,6 +547,25 @@ function entryProblems(schema: z.ZodType, { draft: _draft, ...entry }: Readonly<
  * not have, or a value or entry the profile would reject. A draft may be
  * unfinished, so these are warnings; finishing a draft makes them errors.
  */
+/**
+ * A draft label that a label of the profile renames from: the rename applies,
+ * since drafts never change what applies, so the draft's label is renamed
+ * away, and finishing the draft would be refused.
+ */
+function renamedDraftWarnings(applied: Profile, drafts: Drafts): string[] {
+  return (drafts.labels ?? []).flatMap((draft) => {
+    const renaming = (applied.labels ?? []).find(
+      (entry) =>
+        entry.absent !== true && (entry.renamed_from ?? []).some((old) => labelKey(old) === labelKey(draft.name)),
+    );
+    return renaming === undefined
+      ? []
+      : [
+          `Draft label "${draft.name}": label "${renaming.name}" is renamed from it, so applying renames "${draft.name}" and finishing this draft would be refused`,
+        ];
+  });
+}
+
 function draftWarnings(drafts: Drafts): string[] {
   const warnings: string[] = [];
   for (const section of settingsSections) {
@@ -698,12 +717,17 @@ function resolveChain(
     .reduce<SourcedDrafts>((base, { file, drafts }) => mergeLayers(base, drafts, file), { settings: {} });
   const drafts = toDrafts(mergedDrafts);
   const adjusted = adjust === undefined ? { data: toProfile(merged), unmatched: [] } : adjust(toProfile(merged));
+  const applied = validate(adjusted.data, source);
   return {
     resolved: {
       chain: chain.map((link) => link.file),
-      profile: validate(adjusted.data, source),
+      profile: applied,
       drafts,
-      warnings: [...chain.flatMap((link) => fileDraftWarnings(link.drafts, link.file)), ...draftWarnings(drafts)],
+      warnings: [
+        ...chain.flatMap((link) => fileDraftWarnings(link.drafts, link.file)),
+        ...draftWarnings(drafts),
+        ...renamedDraftWarnings(applied, drafts),
+      ],
       sources: { ...sourcesOf(merged), drafts: sourcesOf(mergedDrafts) },
     },
     unmatched: adjusted.unmatched,

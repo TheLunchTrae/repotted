@@ -229,8 +229,11 @@ When a repository has both the new name and an old one, Repotted updates the
 new label, leaves the old one as it is and warns: GitHub can't merge two
 labels, and deleting the old one would take it off its issues. When it has
 several old names, the first one listed is renamed and the plan warns about
-the rest. An old name can't be a label the profile lists, and two labels can't
-claim the same old name.
+the rest. An old name can't be a label the profile lists, including one it
+gets from a base profile, so rename a base's label in the base. Two labels
+can't claim the same old name. A draft label that another label renames from
+gets a warning: the rename still applies, since drafts never change what
+applies.
 
 ## Autolinks and Pages
 
