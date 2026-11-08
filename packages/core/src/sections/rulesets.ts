@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
+import type { Unavailable } from '../endpoints.js';
 import { type GitHub, GitHubError, readPages, repoPath, type RepoRef } from '../github.js';
 import { bodyChanges, matches, overlay } from '../match.js';
 import type { Ruleset, RulesetEntry } from '../schema.js';
@@ -48,9 +49,7 @@ export interface LiveRuleset {
   readonly ruleset: StoredRuleset;
 }
 
-export type LiveRulesets =
-  | { readonly available: true; readonly rulesets: readonly LiveRuleset[] }
-  | { readonly available: false; readonly reason: string };
+export type LiveRulesets = { readonly available: true; readonly rulesets: readonly LiveRuleset[] } | Unavailable;
 
 function normalize(data: unknown): LiveRuleset {
   const live = liveRuleset.parse(data);
@@ -86,7 +85,7 @@ export async function readRulesets(github: GitHub, repo: RepoRef): Promise<LiveR
   } catch (error) {
     // Private repositories on free plans have no rulesets; GitHub answers 403 with an upgrade prompt.
     if (error instanceof GitHubError && error.status === 403 && /upgrade/iu.test(error.message)) {
-      return { available: false, reason: 'this repository’s plan does not support rulesets' };
+      return { available: false, refused: false, reason: 'this repository’s plan does not support rulesets' };
     }
     throw error;
   }

@@ -231,20 +231,17 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
   const autolinks = await readAutolinks(github, repo);
   const rulesets = await readRulesets(github, repo);
   const environments = await readEnvironments(github, repo);
+  // A section the repository does not have is no news; one GitHub hides is.
   for (const [section, read] of [
     ['custom_properties', properties],
     ['pages', pages],
     ['autolinks', autolinks],
+    ['rulesets', rulesets],
+    ['environments', environments],
   ] as const) {
     if (!read.available && read.refused) {
       warnings.push(`Skipped ${section}: ${read.reason}`);
     }
-  }
-  if (!rulesets.available) {
-    warnings.push(`Skipped rulesets: ${rulesets.reason}`);
-  }
-  if (!environments.available) {
-    warnings.push(`Skipped environments: ${environments.reason}`);
   }
   const customProperties = properties.available ? captureCustomProperties(properties.values) : {};
   const capturedRulesets = rulesets.available

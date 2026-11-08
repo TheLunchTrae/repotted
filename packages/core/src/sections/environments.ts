@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
+import type { Unavailable } from '../endpoints.js';
 import { type GitHub, GitHubError, readPages, repoPath, type RepoRef } from '../github.js';
 import { bodyChanges, matches } from '../match.js';
 import { type Environment, type EnvironmentEntry, environmentKey } from '../schema.js';
@@ -30,7 +31,7 @@ export interface LiveEnvironment {
 
 export type LiveEnvironments =
   | { readonly available: true; readonly environments: readonly LiveEnvironment[] }
-  | { readonly available: false; readonly reason: string };
+  | Unavailable;
 
 // GitHub reports the settings as protection rules, and leaves a rule out
 // while it holds its default.
@@ -111,6 +112,7 @@ export async function readEnvironments(github: GitHub, repo: RepoRef): Promise<L
     if (error instanceof GitHubError && error.status === 403) {
       return {
         available: false,
+        refused: true,
         reason: `GitHub refused to read environments (${error.message}); reading them needs the Actions read permission`,
       };
     }

@@ -406,6 +406,8 @@ drafts:
     expect(plan.changes.some((change) => change.section === 'rulesets')).toBe(false);
     expect(plan.changes.length).toBeGreaterThan(0);
     expect(plan.warnings).toEqual(['Skipped rulesets: this repository’s plan does not support rulesets']);
+    // A feature the repository lacks is no news to a capture.
+    expect((await captureProfile(github, repo)).warnings).toEqual([]);
   });
 
   test('sets the Actions policy before its selected-actions list', async () => {
@@ -516,6 +518,7 @@ drafts:
 
     expect(plan.changes.map((change) => change.section)).toEqual(['repository']);
     expect(plan.warnings).toEqual([expect.stringContaining('Skipped environments')]);
+    expect((await captureProfile(github, repo)).warnings).toEqual(plan.warnings);
   });
 
   test('skips environments when it cannot read their deployment patterns', async () => {
