@@ -951,6 +951,16 @@ public sealed class ApplyTests : IDisposable
         Assert.Contains("For this apply only, over orgs, which stays as it is unless you save these edits to it.", text);
         Assert.Contains(Label("Save edits"), text);
         Save(window, $"apply-edits-{theme}");
+
+        // Quitting with the edits unsaved asks about them, on the edits.
+        var quit = shell.ConfirmQuitAsync();
+        text = Texts(window);
+        Assert.Contains("To quit, save or undo your one-off edits first.", text);
+        Assert.Contains("Saved edits stay in this apply, to resume later. The profile and GitHub stay as they are.", text);
+        Assert.Contains(Label("Stay here"), text);
+        Save(window, $"apply-leave-{theme}");
+        apply.StayHereCommand.Execute(null);
+        Assert.False(await quit);
         apply.Edits!.DiscardCommand.Execute(null);
         apply.Tab = 0;
 
