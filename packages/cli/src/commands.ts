@@ -2,7 +2,6 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   ApplyError,
   applyPlan,
@@ -52,7 +51,6 @@ import {
   tokenVariables,
   usesRepottedApp,
 } from './auth.js';
-import { createServer } from './mcp.js';
 
 /** What the CLI reaches outside itself: GitHub, the terminal, and its own version. */
 export interface Io {
@@ -691,7 +689,13 @@ async function logout(io: Io, args: string[]): Promise<number> {
 async function mcp(io: Io, args: string[]): Promise<number> {
   const mcpToken = tokenOrSignIn();
   const { values } = parseArgs({ args, options: { 'read-only': { type: 'boolean' } } });
-  const server = createServer({
+  // The server and its SDK load only for this command, so the others start
+  // without evaluating them.
+  const [{ createServer }, { StdioServerTransport }] = await Promise.all([
+    import('./mcp.js'),
+    import('@modelcontextprotocol/sdk/server/stdio.js'),
+  ]);
+  const server = await createServer({
     version: io.version,
     github: async () => createGitHub(await mcpToken()),
     cwd: process.cwd(),

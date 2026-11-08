@@ -10,7 +10,7 @@ import { createServer } from '../src/mcp.js';
 const examples = path.join(import.meta.dirname, '../../../examples');
 
 async function connect(github: FakeGitHub, readOnly = false, onClient: () => void = () => undefined): Promise<Client> {
-  const server = createServer({
+  const server = await createServer({
     version: '0.0.0',
     github: () => {
       onClient();

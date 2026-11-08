@@ -226,7 +226,9 @@ the token on every tool call, since a user token expires and refreshing it
 ends the old one; [The GitHub App](github-app.md) describes the sign-in.
 
 The CLI ships to npm as one file bundled for Node, so shipped code uses only
-`node:` APIs. AGENTS.md lists the checks that enforce this.
+`node:` APIs. AGENTS.md lists the checks that enforce this. `repotted mcp`
+imports the server and the MCP SDK when it runs, so the other commands, each
+a short process, start without loading the SDK and its JSON Schema validator.
 
 ## The desktop app
 
