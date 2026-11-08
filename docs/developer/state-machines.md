@@ -547,6 +547,24 @@ can't wait for input.
 Only the sign-in, captures and the connect form pass a cancellation token.
 Other calls run until the CLI exits, which every command does on its own.
 
+## CLI releases
+
+`.github/workflows/publish.yml` publishes the CLI, as
+[Releasing](releasing.md#the-cli) describes. Every published release starts a
+run, and every run joins one concurrency group, so a run holds the group from
+its start to its end, including the wait for the `npm` approval. Runs for
+desktop releases and prereleases wait their turn too, then skip every job.
+
+| State                | Event                               | Next                                                                    |
+| -------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
+| Queued               | The run before it ends              | Verifying, in the order the releases were published.                    |
+| Queued               | 100 runs are already waiting        | The new run is cancelled, and its version isn't published.              |
+| Verifying            | A check of the release fails        | Failed. Nothing is published, and the next queued run starts.           |
+| Waiting for approval | The owner approves                  | Publishing.                                                             |
+| Waiting for approval | The owner rejects, or the wait ends | Failed. Nothing is published, and the next queued run starts.           |
+| Publishing           | npm accepts the tarball             | Published.                                                              |
+| Publishing           | npm refuses it                      | Failed. Re-running the failed job joins the queue again and retries it. |
+
 ## Desktop releases
 
 `.github/workflows/desktop.yml` packages the app, as
