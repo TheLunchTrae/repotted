@@ -2,9 +2,7 @@ using System.Text.Json;
 using Avalonia;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
-using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
-using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -12,6 +10,7 @@ using Repotted.Desktop.Services;
 using Repotted.Desktop.Theme;
 using Repotted.Desktop.ViewModels;
 using Repotted.Desktop.Views;
+using static Repotted.Desktop.Tests.Helpers;
 
 namespace Repotted.Desktop.Tests;
 
@@ -40,8 +39,6 @@ public sealed class ApplyTests : IDisposable
     }
 
     public void Dispose() => folders.Dispose();
-
-    private static string Json(string? text) => JsonSerializer.Serialize(text);
 
     private static string List(IEnumerable<string> keys) => $"[{string.Join(',', keys.Select(key => Json(key)))}]";
 
@@ -754,7 +751,7 @@ public sealed class ApplyTests : IDisposable
         cli.On(Planned, _ => planned.Task);
         cli.Calls.Clear();
         var saving = editor.SaveCommand.ExecuteAsync(null);
-        await WaitFor(() => apply.Step == ApplyStep.Planning);
+        await Until(() => apply.Step == ApplyStep.Planning);
         // The saved edits are planned before the page may go, so it never stays behind with an old plan.
         Assert.False(leaving.IsCompleted);
 
@@ -1095,7 +1092,7 @@ public sealed class ApplyTests : IDisposable
         Assert.False(shell.Repositories.HasUnfinishedApply);
 
         shell.Repositories.ChangeSettingsCommand.Execute(null);
-        await WaitFor(() => shell.Apply?.Step == ApplyStep.Reviewing);
+        await Until(() => shell.Apply?.Step == ApplyStep.Reviewing);
 
         Assert.True(shell.ShowingApply);
         Assert.False(shell.ShowingRepositories);
@@ -1135,7 +1132,7 @@ public sealed class ApplyTests : IDisposable
     {
         var (window, shell, _) = await ShowList("light");
         shell.Repositories.ChangeSettingsCommand.Execute(null);
-        await WaitFor(() => shell.Apply?.Step == ApplyStep.Reviewing);
+        await Until(() => shell.Apply?.Step == ApplyStep.Reviewing);
         var apply = shell.Apply!;
         Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
 
@@ -1152,7 +1149,7 @@ public sealed class ApplyTests : IDisposable
 
         window.Close();
         apply.Edits!.DiscardCommand.Execute(null);
-        await WaitFor(() => !window.IsVisible);
+        await Until(() => !window.IsVisible);
     }
 
     [AvaloniaFact]
@@ -1160,7 +1157,7 @@ public sealed class ApplyTests : IDisposable
     {
         var (window, shell, cli) = await ShowList("light");
         shell.Repositories.ChangeSettingsCommand.Execute(null);
-        await WaitFor(() => shell.Apply?.Step == ApplyStep.Reviewing);
+        await Until(() => shell.Apply?.Step == ApplyStep.Reviewing);
         var apply = shell.Apply!;
         var written = new TaskCompletionSource();
         cli.OnceReady($"apply {plan} --yes --json", Applied, written.Task);
@@ -1181,14 +1178,6 @@ public sealed class ApplyTests : IDisposable
         Assert.False(window.IsVisible);
     }
 
-    private static async Task WaitFor(Func<bool> condition)
-    {
-        for (var attempt = 0; attempt < 100 && !condition(); attempt++)
-        {
-            await Task.Delay(10, TestContext.Current.CancellationToken);
-        }
-        Assert.True(condition());
-    }
     public static TheoryData<string> Themes => ["light", "dark"];
 
     [AvaloniaTheory]
@@ -1202,22 +1191,22 @@ public sealed class ApplyTests : IDisposable
         Assert.Same(repositories.CompareWith, window.GetVisualDescendants().OfType<ComboBox>().Single().SelectedItem);
 
         var panel = Texts(window);
-        Assert.Contains(Label("Apply"), panel);
-        Assert.Contains(Label("Change settings once"), panel);
+        Assert.Contains(ControlLabel.For("Apply"), panel);
+        Assert.Contains(ControlLabel.For("Change settings once"), panel);
         Assert.Contains("Comparing and capturing only read from GitHub. An apply shows its changes first, and writes nothing until you confirm.", panel);
         Save(window, $"repository-panel-{theme}");
 
         repositories.ApplyProfileCommand.Execute(null);
-        await WaitFor(() => shell.Apply?.Step == ApplyStep.Reviewing);
+        await Until(() => shell.Apply?.Step == ApplyStep.Reviewing);
         var apply = shell.Apply!;
 
         var text = Texts(window);
         Assert.Contains($"Apply to {Repository}", text);
         Assert.Contains("Starts from orgs. Nothing changes on GitHub until you apply.", text);
-        Assert.Contains(Label("Apply 3 changes"), text);
-        Assert.Contains(Label("Leave out"), text);
+        Assert.Contains(ControlLabel.For("Apply 3 changes"), text);
+        Assert.Contains(ControlLabel.For("Leave out"), text);
         Assert.Contains("One-off edit", text);
-        Assert.Contains(Label("Discard apply"), text);
+        Assert.Contains(ControlLabel.For("Discard apply"), text);
         Assert.Contains($"Repositories / {Repository} / Apply", text);
         Save(window, $"apply-review-{theme}");
 
@@ -1225,7 +1214,7 @@ public sealed class ApplyTests : IDisposable
         var names = window.GetVisualDescendants().OfType<Button>()
             .Select(button => ControlAutomationPeer.CreatePeerForElement(button).GetName())
             .ToList();
-        Assert.Contains(names, name => name.StartsWith(Label("Leave out"), StringComparison.Ordinal));
+        Assert.Contains(names, name => name.StartsWith(ControlLabel.For("Leave out"), StringComparison.Ordinal));
 
         // A change GitHub will refuse holds the apply, and the review says why and where to grant it.
         cli.On(Planned, () => Plan(locked: true));
@@ -1233,7 +1222,7 @@ public sealed class ApplyTests : IDisposable
         text = Texts(window);
         Assert.Contains(apply.LockSummary, text);
         Assert.Contains("Needs Administration write", text);
-        Assert.Contains(Label("Review App access"), text);
+        Assert.Contains(ControlLabel.For("Review App access"), text);
         Assert.False(apply.ApplyCommand.CanExecute(null));
         Save(window, $"apply-locked-{theme}");
 
@@ -1241,7 +1230,7 @@ public sealed class ApplyTests : IDisposable
         cli.On(Planned, () => Plan());
         var again = window.GetVisualDescendants().OfType<Button>()
             .Single(button => button.IsEffectivelyVisible && button.Command == apply.ReviewAgainCommand);
-        Assert.Equal(Label("Review again"), ControlAutomationPeer.CreatePeerForElement(again).GetName());
+        Assert.Equal(ControlLabel.For("Review again"), ControlAutomationPeer.CreatePeerForElement(again).GetName());
         await apply.ReviewAgainCommand.ExecuteAsync(null);
         Assert.False(apply.HasLocks);
         Assert.True(apply.ApplyCommand.CanExecute(null));
@@ -1252,15 +1241,15 @@ public sealed class ApplyTests : IDisposable
         text = Texts(window);
         Assert.Contains("Left out of this apply", text);
         Assert.Contains("repository.has_wiki", text);
-        Assert.Contains(Label("Put back"), text);
-        Assert.Contains(Label("Apply 2 changes"), text);
+        Assert.Contains(ControlLabel.For("Put back"), text);
+        Assert.Contains(ControlLabel.For("Apply 2 changes"), text);
         Save(window, $"apply-left-out-{theme}");
 
         apply.ApplyCommand.Execute(null);
         text = Texts(window);
         Assert.Contains($"Write 2 changes to {Repository} on GitHub now?", text);
-        Assert.Contains(Label("Apply now"), text);
-        Assert.Contains(Label("Cancel"), text);
+        Assert.Contains(ControlLabel.For("Apply now"), text);
+        Assert.Contains(ControlLabel.For("Cancel"), text);
         Save(window, $"apply-confirm-{theme}");
         apply.CancelApplyCommand.Execute(null);
 
@@ -1268,7 +1257,7 @@ public sealed class ApplyTests : IDisposable
         Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
         text = Texts(window);
         Assert.Contains("For this apply only, over orgs, which stays as it is unless you save these edits to it.", text);
-        Assert.Contains(Label("Save edits"), text);
+        Assert.Contains(ControlLabel.For("Save edits"), text);
         Save(window, $"apply-edits-{theme}");
 
         // Quitting with the edits unsaved asks about them, on the edits.
@@ -1276,7 +1265,7 @@ public sealed class ApplyTests : IDisposable
         text = Texts(window);
         Assert.Contains("To quit, save or undo your one-off edits first.", text);
         Assert.Contains("Saved edits stay in this apply, to resume later. The profile and GitHub stay as they are.", text);
-        Assert.Contains(Label("Stay here"), text);
+        Assert.Contains(ControlLabel.For("Stay here"), text);
         Save(window, $"apply-leave-{theme}");
         apply.StayHereCommand.Execute(null);
         Assert.False(await quit);
@@ -1291,7 +1280,7 @@ public sealed class ApplyTests : IDisposable
         await apply.ConfirmApplyCommand.ExecuteAsync(null);
         text = Texts(window);
         Assert.Contains("Starts from orgs. Some of its changes are on GitHub.", text);
-        Assert.Contains(Label("Review again"), text);
+        Assert.Contains(ControlLabel.For("Review again"), text);
         Save(window, $"apply-partly-applied-{theme}");
 
         cli.On($"apply {plan} --yes --json", Stale, exitCode: 1);
@@ -1306,7 +1295,7 @@ public sealed class ApplyTests : IDisposable
         await apply.ConfirmApplyCommand.ExecuteAsync(null);
         text = Texts(window);
         Assert.Contains($"Applied 3 changes to {Repository}.", text);
-        Assert.Contains(Label("Back to repositories"), text);
+        Assert.Contains(ControlLabel.For("Back to repositories"), text);
         Save(window, $"apply-applied-{theme}");
 
         apply.CloseCommand.Execute(null);
@@ -1326,15 +1315,15 @@ public sealed class ApplyTests : IDisposable
         Assert.True(shell.Repositories.HasUnfinishedApply);
         var text = Texts(window);
         Assert.Contains("An apply here is not finished.", text);
-        Assert.Contains(Label("Resume"), text);
+        Assert.Contains(ControlLabel.For("Resume"), text);
         Save(window, $"repository-unfinished-{theme}");
 
         shell.Repositories.ResumeApplyCommand.Execute(null);
-        await WaitFor(() => shell.Apply?.Step == ApplyStep.Unfinished);
+        await Until(() => shell.Apply?.Step == ApplyStep.Unfinished);
 
         text = Texts(window);
         Assert.Contains($"An apply to {Repository} from orgs is not finished. Resume it, or start over from orgs?", text);
-        Assert.Contains(Label("Start over"), text);
+        Assert.Contains(ControlLabel.For("Start over"), text);
         Assert.Contains("Starts from orgs. Nothing changes on GitHub until you apply.", text);
         Save(window, $"apply-unfinished-{theme}");
     }
@@ -1345,13 +1334,13 @@ public sealed class ApplyTests : IDisposable
     {
         var (window, shell, _) = await ShowList(theme);
         shell.Repositories.ChangeSettingsCommand.Execute(null);
-        await WaitFor(() => shell.Apply?.Step == ApplyStep.Reviewing);
+        await Until(() => shell.Apply?.Step == ApplyStep.Reviewing);
 
         shell.Apply!.DiscardCommand.Execute(null);
 
         var text = Texts(window);
-        Assert.Contains(Label("Discard apply"), text);
-        Assert.Contains(Label("Keep it"), text);
+        Assert.Contains(ControlLabel.For("Discard apply"), text);
+        Assert.Contains(ControlLabel.For("Keep it"), text);
         Save(window, $"apply-discard-{theme}");
     }
 
@@ -1375,44 +1364,8 @@ public sealed class ApplyTests : IDisposable
         Dispatcher.UIThread.RunJobs();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
         shell.Repositories.Selected = shell.Repositories.Rows.Single(row => row.FullName == Repository);
-        await WaitFor(() => shell.Profiles.Usable.Any() && !shell.Profiles.Loading && !shell.Profiles.Syncing);
+        await Until(() => shell.Profiles.Usable.Any() && !shell.Profiles.Loading && !shell.Profiles.Syncing);
         Dispatcher.UIThread.RunJobs();
         return (window, shell, cli);
-    }
-
-    private static string Label(string text) => ControlLabel.For(text);
-
-    private static HashSet<string> Texts(Window window)
-    {
-        Dispatcher.UIThread.RunJobs();
-        var texts = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var block in window.GetVisualDescendants().OfType<TextBlock>().Where(block => block.IsEffectivelyVisible))
-        {
-            if (block.Text is { Length: > 0 } text)
-            {
-                texts.Add(text);
-            }
-            foreach (var run in block.Inlines?.OfType<Avalonia.Controls.Documents.Run>() ?? [])
-            {
-                if (run.Text is { Length: > 0 } runText)
-                {
-                    texts.Add(runText);
-                }
-            }
-        }
-        return texts;
-    }
-
-    private static void Save(Window window, string name)
-    {
-        var folder = Environment.GetEnvironmentVariable("REPOTTED_SCREENSHOTS");
-        Dispatcher.UIThread.RunJobs();
-        using var frame = window.CaptureRenderedFrame();
-        Assert.NotNull(frame);
-        if (!string.IsNullOrEmpty(folder))
-        {
-            Directory.CreateDirectory(folder);
-            frame.Save(Path.Combine(folder, $"{name}.png"), new PngBitmapEncoderOptions());
-        }
     }
 }

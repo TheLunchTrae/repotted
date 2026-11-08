@@ -6,13 +6,13 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
-using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Repotted.Desktop.Theme;
 using Repotted.Desktop.ViewModels;
 using Repotted.Desktop.Views;
+using static Repotted.Desktop.Tests.Helpers;
 
 namespace Repotted.Desktop.Tests;
 
@@ -32,9 +32,7 @@ public sealed class ViewTests : IDisposable
     [MemberData(nameof(Themes))]
     public async Task The_repository_list_shows_each_repository_and_the_selected_one(string theme)
     {
-        var window = await Show(theme, new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories));
+        var window = await Show(theme, FakeCli.SignedIn());
 
         var text = Texts(window);
         Assert.Contains("Repositories", text);
@@ -42,17 +40,15 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("test-repo", text);
         Assert.Contains("TheLunchTrae/github-setup", text);
         Assert.Contains("No profile", text);
-        Assert.Contains(Label("Add repositories"), text);
-        Assert.Contains(Label("Sign out"), text);
+        Assert.Contains(ControlLabel.For("Add repositories"), text);
+        Assert.Contains(ControlLabel.For("Sign out"), text);
         Save(window, $"repositories-{theme}");
     }
 
     [AvaloniaFact]
     public async Task Screen_readers_hear_each_repository_by_name()
     {
-        var window = await Show("light", new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories));
+        var window = await Show("light", FakeCli.SignedIn());
 
         var names = window.GetVisualDescendants().OfType<ListBoxItem>()
             .Where(item => item.DataContext is RepositoryRowViewModel)
@@ -70,9 +66,7 @@ public sealed class ViewTests : IDisposable
     [AvaloniaFact]
     public async Task The_search_shortcut_works_before_anything_has_focus()
     {
-        var window = await Show("light", new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories));
+        var window = await Show("light", FakeCli.SignedIn());
         var search = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "SearchBox");
         Assert.Null(window.FocusManager?.GetFocusedElement());
 
@@ -128,8 +122,8 @@ public sealed class ViewTests : IDisposable
 
         var text = Texts(window);
         Assert.Contains("Asking GitHub for a code", text);
-        Assert.Contains(Label("Cancel"), text);
-        Assert.DoesNotContain(Label("Sign in with GitHub"), text);
+        Assert.Contains(ControlLabel.For("Cancel"), text);
+        Assert.DoesNotContain(ControlLabel.For("Sign in with GitHub"), text);
         Save(window, $"sign-in-starting-{theme}");
         signIn.SignInCancelCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
@@ -146,7 +140,7 @@ public sealed class ViewTests : IDisposable
 
         var text = Texts(window);
         Assert.Contains(text, line => line.EndsWith("then reopen Repotted.", StringComparison.Ordinal));
-        Assert.DoesNotContain(Label("Sign in with GitHub"), text);
+        Assert.DoesNotContain(ControlLabel.For("Sign in with GitHub"), text);
         Save(window, $"sign-in-variable-{theme}");
     }
 
@@ -180,9 +174,7 @@ public sealed class ViewTests : IDisposable
         var own = folders.Write(
             "orgs.yaml",
             "# Repositories in our organizations\nextends: base.yaml\nrepository:\n  has_wiki: false\nmerge:\n  allow_squash_merge: false\nrulesets:\n  - name: Old tags\n    absent: true\nenvironments:\n  - name: npm\n");
-        var window = await Show(theme, new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var window = await Show(theme, FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.Resolved(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
@@ -200,7 +192,7 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("From base", text);
         Assert.Contains("Not managed", text);
         Assert.Contains("1 unsaved change", text);
-        Assert.Contains(Label("Save profile"), text);
+        Assert.Contains(ControlLabel.For("Save profile"), text);
         Save(window, $"profile-{theme}");
 
         // Screen readers hear which option is chosen, and where the value comes from.
@@ -216,27 +208,24 @@ public sealed class ViewTests : IDisposable
     {
         var @base = folders.Write("base.yaml", "security:\n  vulnerability_alerts: true\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository:\n  has_wiki: true\n  pull_request_creation_cap:\n    enabled: true\n    max_open_pull_requests: 3\npages:\n  build_type: legacy\n  source:\n    branch: main\n");
-        string Path(string file) => System.Text.Json.JsonSerializer.Serialize(file);
         var resolved = $$$"""
-            {"chain":[{{{Path(own)}}},{{{Path(@base)}}}],
+            {"chain":[{{{Json(own)}}},{{{Json(@base)}}}],
              "profile":{
                "repository":{"has_wiki":true,"pull_request_creation_cap":{"enabled":true,"max_open_pull_requests":3}},
                "security":{"vulnerability_alerts":true,"security_and_analysis":{"secret_scanning":{"status":"enabled"} } },
                "pages":{"build_type":"legacy","source":{"branch":"main"} } },
              {{{Documents.NoDrafts}}},
              "sources":{
-               "repository":{"has_wiki":{{{Path(own)}}},"pull_request_creation_cap.enabled":{{{Path(own)}}},
-                 "pull_request_creation_cap.max_open_pull_requests":{{{Path(own)}}} },
+               "repository":{"has_wiki":{{{Json(own)}}},"pull_request_creation_cap.enabled":{{{Json(own)}}},
+                 "pull_request_creation_cap.max_open_pull_requests":{{{Json(own)}}} },
                "merge":{},"actions":{},
-               "security":{"vulnerability_alerts":{{{Path(@base)}}},"security_and_analysis.secret_scanning":{{{Path(own)}}} },
+               "security":{"vulnerability_alerts":{{{Json(@base)}}},"security_and_analysis.secret_scanning":{{{Json(own)}}} },
                "custom_properties":{},
-               "pages":{"build_type":{{{Path(own)}}},"source.branch":{{{Path(own)}}} },
+               "pages":{"build_type":{{{Json(own)}}},"source.branch":{{{Json(own)}}} },
                "autolinks":{},"rulesets":{},"environments":{},
                {{{Documents.NoDraftSources}}} } }
             """;
-        var window = await Show(theme, new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var window = await Show(theme, FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", resolved)
             .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
@@ -277,9 +266,7 @@ public sealed class ViewTests : IDisposable
     {
         var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\nmerge:\n  allow_rebase_merge: true\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository:\n  has_wiki: false\nmerge:\n  allow_squash_merge: false\n");
-        var window = await Show(theme, new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var window = await Show(theme, FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.Resolved(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
@@ -302,14 +289,14 @@ public sealed class ViewTests : IDisposable
         var text = Texts(window);
         Assert.Contains("Merge methods", text);
         Assert.Contains("Delete head branches after merge", text);
-        Assert.DoesNotContain(Label("Rulesets"), text);
-        Assert.Contains(Label("Clear"), text);
+        Assert.DoesNotContain(ControlLabel.For("Rulesets"), text);
+        Assert.Contains(ControlLabel.For("Clear"), text);
         Save(window, $"settings-search-{theme}");
 
         window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
         Dispatcher.UIThread.RunJobs();
         Assert.Equal("", editor.Query);
-        Assert.Contains(Label("Rulesets"), Texts(window));
+        Assert.Contains(ControlLabel.For("Rulesets"), Texts(window));
 
         editor.OnlyManaged = true;
         text = Texts(window);
@@ -330,9 +317,7 @@ public sealed class ViewTests : IDisposable
     {
         var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\nrulesets:\n  - name: Old tags\n    absent: true\nenvironments:\n  - name: npm\n");
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var cli = FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.Resolved(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base));
@@ -350,8 +335,8 @@ public sealed class ViewTests : IDisposable
 
         var text = Texts(window);
         Assert.Contains(editor.OutOfDateMessage, text);
-        Assert.Contains(Label("Keep mine"), text);
-        Assert.Contains(Label("Reload"), text);
+        Assert.Contains(ControlLabel.For("Keep mine"), text);
+        Assert.Contains(ControlLabel.For("Reload"), text);
         Save(window, $"profile-out-of-date-{theme}");
     }
 
@@ -361,9 +346,7 @@ public sealed class ViewTests : IDisposable
     {
         var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository:\n  has_wiki: false\n");
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var cli = FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.Resolved(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base));
@@ -376,7 +359,7 @@ public sealed class ViewTests : IDisposable
         editor.Tabs[0].Groups.SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki")
             .Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
         File.Delete(own);
-        cli.On(folders.List(), $$$"""{"profiles":[{"name":"base","file":{{{System.Text.Json.JsonSerializer.Serialize(@base)}}},"extends":null,"problem":null}]}""");
+        cli.On(folders.List(), $$$"""{"profiles":[{"name":"base","file":{{{Json(@base)}}},"extends":null,"problem":null}]}""");
 
         await shell.Profiles.RefreshCommand.ExecuteAsync(null);
 
@@ -392,9 +375,7 @@ public sealed class ViewTests : IDisposable
     {
         var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\nrulesets:\n  - name: Old tags\n    absent: true\nenvironments:\n  - name: npm\n");
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var cli = FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.Resolved(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base));
@@ -430,9 +411,7 @@ public sealed class ViewTests : IDisposable
     {
         var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\nrulesets:\n  - name: Old tags\n    absent: true\nenvironments:\n  - name: npm\n");
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var cli = FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.Resolved(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base));
@@ -479,9 +458,8 @@ public sealed class ViewTests : IDisposable
     {
         var @base = folders.Write("base.yaml", "rulesets:\n  - name: Tags\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
-        string Path(string file) => System.Text.Json.JsonSerializer.Serialize(file);
         var resolved = $$$"""
-            {"chain":[{{{Path(own)}}},{{{Path(@base)}}}],
+            {"chain":[{{{Json(own)}}},{{{Json(@base)}}}],
              "profile":{
                "rulesets":[
                  {"name":"Main","enforcement":"active",
@@ -497,13 +475,11 @@ public sealed class ViewTests : IDisposable
                   "branch_policies":[{"name":"main"},{"name":"v*","type":"tag"}]}]},
              {{{Documents.NoDrafts}}},
              "sources":{"repository":{},"merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
-               "rulesets":{"Main":{{{Path(own)}}},"Tags":{{{Path(@base)}}} },
-               "environments":{"npm":{{{Path(own)}}} },
+               "rulesets":{"Main":{{{Json(own)}}},"Tags":{{{Json(@base)}}} },
+               "environments":{"npm":{{{Json(own)}}} },
                {{{Documents.NoDraftSources}}} } }
             """;
-        var window = await Show(theme, new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var window = await Show(theme, FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", resolved)
             .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
@@ -515,7 +491,7 @@ public sealed class ViewTests : IDisposable
         editor.SelectedTab = editor.Tab("Rulesets");
 
         var text = Texts(window);
-        Assert.Contains(Label("New ruleset"), text);
+        Assert.Contains(ControlLabel.For("New ruleset"), text);
         var rows = window.GetVisualDescendants().OfType<Button>()
             .Where(button => button.Classes.Contains("entry"))
             .Select(button => AutomationProperties.GetName(button))
@@ -543,7 +519,7 @@ public sealed class ViewTests : IDisposable
         Assert.IsType<ListBoxItem>(window.FocusManager?.GetFocusedElement());
         main.Enforcement.Options[1].ChooseCommand.Execute(null);
         text = Texts(window);
-        Assert.Contains(Label("Back to rulesets"), text);
+        Assert.Contains(ControlLabel.For("Back to rulesets"), text);
         Assert.Contains("Require a pull request before merging", text);
         Assert.Contains("Changed, not saved yet", text);
         Assert.Contains("Not set here, so the repository keeps its own, or Branches when it is new", text);
@@ -566,7 +542,7 @@ public sealed class ViewTests : IDisposable
         editor.SelectedTab = editor.Tab("Environments");
         editor.Tab("Environments").Entries[0].OpenCommand.Execute(null);
         text = Texts(window);
-        Assert.Contains(Label("Back to environments"), text);
+        Assert.Contains(ControlLabel.For("Back to environments"), text);
         Assert.Contains("Which ones", text);
         Assert.Equal(
             "main",
@@ -580,9 +556,7 @@ public sealed class ViewTests : IDisposable
     {
         var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
-        var window = await Show(theme, new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var window = await Show(theme, FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.ResolvedWithDrafts(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
@@ -597,14 +571,14 @@ public sealed class ViewTests : IDisposable
         var text = Texts(window);
         Assert.Contains("What the drafts still need", text);
         Assert.Contains("Draft environment \"NPM\": Invalid input at wait_timer", text);
-        Assert.Contains(Label("Save as draft"), text);
+        Assert.Contains(ControlLabel.For("Save as draft"), text);
         Assert.Contains("Draft", text);
         Assert.Contains(" · Saved in base, not applied.", text);
-        Assert.DoesNotContain(Label("Finish draft"), text);
+        Assert.DoesNotContain(ControlLabel.For("Finish draft"), text);
         wiki.SaveAsDraftCommand.Execute(null);
         text = Texts(window);
-        Assert.Contains(Label("Finish draft"), text);
-        Assert.Contains(Label("Discard draft"), text);
+        Assert.Contains(ControlLabel.For("Finish draft"), text);
+        Assert.Contains(ControlLabel.For("Discard draft"), text);
         var drafts = window.GetVisualDescendants().OfType<TextBlock>()
             .Select(block => AutomationProperties.GetName(block))
             .Where(name => name?.Contains(" draft: ", StringComparison.Ordinal) == true);
@@ -643,16 +617,14 @@ public sealed class ViewTests : IDisposable
     [MemberData(nameof(Themes))]
     public async Task An_empty_profiles_folder_says_what_a_profile_is(string theme)
     {
-        var window = await Show(theme, new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories));
+        var window = await Show(theme, FakeCli.SignedIn());
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
 
         shell.Page = 1;
 
         var text = Texts(window);
         Assert.Contains($"No profiles in {folders.Profiles} yet.", text);
-        Assert.Contains(Label("Choose a folder"), text);
+        Assert.Contains(ControlLabel.For("Choose a folder"), text);
         Save(window, $"profiles-empty-{theme}");
     }
 
@@ -662,9 +634,7 @@ public sealed class ViewTests : IDisposable
     {
         var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
-        var window = await Show(theme, new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var window = await Show(theme, FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base))
             .On($"plan TheLunchTrae/repotted --profile {own} --json", Documents.Plan()));
@@ -684,10 +654,10 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("orgs compared with TheLunchTrae/repotted", text);
         Assert.Contains("rules[pull_request].parameters.allowed_merge_methods", text);
         Assert.Contains("merge, squash, rebase", text);
-        Assert.Contains(Label("Back to repositories"), text);
+        Assert.Contains(ControlLabel.For("Back to repositories"), text);
         Assert.DoesNotContain("Issues", text);
         // Nothing is locked, so the filter for what Repotted can't change isn't offered.
-        Assert.DoesNotContain(Label("Can't change"), text);
+        Assert.DoesNotContain(ControlLabel.For("Can't change"), text);
         Save(window, $"compare-{theme}");
 
         // The find shortcut goes to this page's search, not the profile editor's, which the shell also keeps.
@@ -739,9 +709,7 @@ public sealed class ViewTests : IDisposable
         var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
         var desktop = new FakeDesktop();
-        var window = await Show(theme, new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var window = await Show(theme, FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base))
             .On($"plan TheLunchTrae/repotted --profile {own} --json", Documents.Plan(
@@ -757,12 +725,12 @@ public sealed class ViewTests : IDisposable
 
         var text = Texts(window);
         Assert.Contains("Repotted can't change 2 differences below. Each says what it needs.", text);
-        Assert.Contains(Label("Review App access"), text);
+        Assert.Contains(ControlLabel.For("Review App access"), text);
         Assert.Contains("Needs Actions write", text);
         Save(window, $"compare-locked-{theme}");
 
         // The filter for what Repotted can't change shows only the locked rows.
-        Assert.Contains(Label("Can't change"), text);
+        Assert.Contains(ControlLabel.For("Can't change"), text);
         shell.Compare!.LockedOnly = true;
         text = Texts(window);
         Assert.Contains("Use the default subject claim", text);
@@ -782,9 +750,7 @@ public sealed class ViewTests : IDisposable
     {
         var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
-        var window = await Show(theme, new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var window = await Show(theme, FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
@@ -804,10 +770,10 @@ public sealed class ViewTests : IDisposable
         Dispatcher.UIThread.RunJobs();
 
         var text = Texts(window);
-        Assert.Contains($"Profiles / {Label("New profile")}", text);
+        Assert.Contains($"Profiles / {ControlLabel.For("New profile")}", text);
         Assert.Contains("libraries.yaml", text);
-        Assert.Contains(Label("Capture"), text);
-        Assert.DoesNotContain(Label("Save profile"), text);
+        Assert.Contains(ControlLabel.For("Capture"), text);
+        Assert.DoesNotContain(ControlLabel.For("Save profile"), text);
         var extends = window.GetVisualDescendants().OfType<RadioButton>()
             .Single(radio => radio.IsChecked != true && ControlAutomationPeer.CreatePeerForElement(radio).GetName() == "Another profile");
         Assert.Equal(
@@ -850,9 +816,7 @@ public sealed class ViewTests : IDisposable
     public async Task A_capture_under_way_locks_the_name_and_where_it_starts_from()
     {
         var finish = new TaskCompletionSource();
-        var window = await Show("light", new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var window = await Show("light", FakeCli.SignedIn()
             .On(folders.List(), Documents.NoProfiles)
             .OnCapture("TheLunchTrae/repotted", async (_, _) =>
             {
@@ -885,10 +849,8 @@ public sealed class ViewTests : IDisposable
     {
         folders.Write("base.yaml", "repository:\n  has_issues: true\n");
         var file = Path.Combine(folders.Profiles, "base.yaml");
-        var window = await Show(theme, new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
-            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{System.Text.Json.JsonSerializer.Serialize(file)}},"extends":null,"problem":null}]}""")
+        var window = await Show(theme, FakeCli.SignedIn()
+            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Json(file)}},"extends":null,"problem":null}]}""")
             .On($"profile {file} --json", Documents.ResolvedBase(file)));
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
         shell.Page = 1;
@@ -897,9 +859,9 @@ public sealed class ViewTests : IDisposable
         shell.Profiles.Connecting!.Repository = "TheLunchTrae/repotted-config";
 
         var text = Texts(window);
-        Assert.Contains(Label("Keep profiles on GitHub"), text);
+        Assert.Contains(ControlLabel.For("Keep profiles on GitHub"), text);
         Assert.Contains($"Add the profiles from {folders.Profiles}", text);
-        Assert.Contains(Label("Use this repository"), text);
+        Assert.Contains(ControlLabel.For("Use this repository"), text);
         Save(window, $"config-repository-form-{theme}");
     }
 
@@ -915,9 +877,7 @@ public sealed class ViewTests : IDisposable
         File.WriteAllText(@base, "repository:\n  has_issues: true\nmerge:\n  allow_rebase_merge: true\n");
         File.WriteAllText(own, "extends: base.yaml\nrepository:\n  has_wiki: false\n");
         folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "TheLunchTrae/repotted-config", ConfigPath = "" });
-        var cli = new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var cli = FakeCli.SignedIn()
             .On($"sync {copy} --json", """{"repository":"TheLunchTrae/repotted-config","path":"","branch":"main","commit":"abc","pulled":[],"pushed":[],"conflicts":["orgs.yaml"]}""", exitCode: 1)
             .On(folders.List(copy), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.Resolved(own, @base))
@@ -932,9 +892,9 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("GitHub repository:", text);
         Assert.Contains("TheLunchTrae/repotted-config", text);
         Assert.Contains("orgs.yaml changed here and on GitHub since the last sync. Keep which version?", text);
-        Assert.Contains(Label("Keep mine"), text);
-        Assert.Contains(Label("Use GitHub's"), text);
-        Assert.Contains(Label("Sync now"), text);
+        Assert.Contains(ControlLabel.For("Keep mine"), text);
+        Assert.Contains(ControlLabel.For("Use GitHub's"), text);
+        Assert.Contains(ControlLabel.For("Sync now"), text);
         Assert.Contains("In this repository", text);
         Assert.Contains("Everything else is in sync with main.", text);
         Save(window, $"config-repository-conflict-{theme}");
@@ -968,9 +928,7 @@ public sealed class ViewTests : IDisposable
     {
         var other = Path.Combine(folders.Profiles, "other");
         Directory.CreateDirectory(other);
-        var window = await Show("light", new FakeCli()
-            .On("status --json", Documents.SignedIn)
-            .On("repos --json", Documents.Repositories)
+        var window = await Show("light", FakeCli.SignedIn()
             .On(folders.List(other), Documents.NoProfiles), new FakeDesktop { Folder = other });
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
         shell.Page = 1;
@@ -1002,8 +960,8 @@ public sealed class ViewTests : IDisposable
         // The theme's template; without it Fluent shows the text as written.
         Assert.NotNull(button.ContentTemplate);
         Assert.NotNull(option.ContentTemplate);
-        Assert.Equal(Label("Keep mine"), Assert.IsType<AccessText>(button.Presenter?.Child).Text);
-        Assert.Equal(Label("Pull request title"), Assert.IsType<AccessText>(option.Presenter?.Child).Text);
+        Assert.Equal(ControlLabel.For("Keep mine"), Assert.IsType<AccessText>(button.Presenter?.Child).Text);
+        Assert.Equal(ControlLabel.For("Pull request title"), Assert.IsType<AccessText>(option.Presenter?.Child).Text);
         Assert.Null(box.ContentTemplate);
         Assert.Null(radio.ContentTemplate);
 
@@ -1026,43 +984,5 @@ public sealed class ViewTests : IDisposable
         await main.StartAsync();
         Dispatcher.UIThread.RunJobs();
         return window;
-    }
-
-    /// <summary>A control's label as this platform shows it: title style on macOS.</summary>
-    private static string Label(string text) => ControlLabel.For(text);
-
-    /// <summary>Every piece of text the window shows, runs included.</summary>
-    private static HashSet<string> Texts(Window window)
-    {
-        Dispatcher.UIThread.RunJobs();
-        var texts = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var block in window.GetVisualDescendants().OfType<TextBlock>().Where(block => block.IsEffectivelyVisible))
-        {
-            if (block.Text is { Length: > 0 } text)
-            {
-                texts.Add(text);
-            }
-            foreach (var run in block.Inlines?.OfType<Avalonia.Controls.Documents.Run>() ?? [])
-            {
-                if (run.Text is { Length: > 0 } runText)
-                {
-                    texts.Add(runText);
-                }
-            }
-        }
-        return texts;
-    }
-
-    private static void Save(Window window, string name)
-    {
-        var folder = Environment.GetEnvironmentVariable("REPOTTED_SCREENSHOTS");
-        Dispatcher.UIThread.RunJobs();
-        using var frame = window.CaptureRenderedFrame();
-        Assert.NotNull(frame);
-        if (!string.IsNullOrEmpty(folder))
-        {
-            Directory.CreateDirectory(folder);
-            frame.Save(Path.Combine(folder, $"{name}.png"), new PngBitmapEncoderOptions());
-        }
     }
 }
