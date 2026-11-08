@@ -14,6 +14,10 @@ public sealed class CliFixtureTests
 {
     private static readonly string Folder = Path.Combine(AppContext.BaseDirectory, "Fixtures");
 
+    /// <summary>A failed apply, which the app reads for its error. It comes before <see cref="Readers"/>, which uses it.</summary>
+    private static readonly Func<string, object?> Failure =
+        json => JsonSerializer.Deserialize(json, CliJson.Default.ApplyFailureDocument)?.Error;
+
     /// <summary>Each fixture, by its file name, and how the app reads it.</summary>
     private static readonly Dictionary<string, Func<string, object?>> Readers = new(StringComparer.Ordinal)
     {
@@ -38,9 +42,6 @@ public sealed class CliFixtureTests
     public static TheoryData<string> Names => [.. Readers.Keys];
 
     private static Func<string, object?> Reader<T>(JsonTypeInfo<T> type) => json => JsonSerializer.Deserialize(json, type);
-
-    /// <summary>A failed apply, which the app reads for its error.</summary>
-    private static object? Failure(string json) => JsonSerializer.Deserialize(json, CliJson.Default.ApplyFailureDocument)?.Error;
 
     [Fact]
     public void Every_fixture_has_a_reader_and_every_reader_a_fixture()
