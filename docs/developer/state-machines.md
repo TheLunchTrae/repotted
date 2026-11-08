@@ -190,18 +190,18 @@ per file in a cache.
 
 ### The profile
 
-| State       | Event                     | Next                                                                                                                                                                                                                                                                                            |
-| ----------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Loading     | The CLI resolves the file | Saved.                                                                                                                                                                                                                                                                                          |
-| Loading     | It fails                  | Error.                                                                                                                                                                                                                                                                                          |
-| Saved       | Any edit                  | Changed.                                                                                                                                                                                                                                                                                        |
-| Changed     | Discard                   | Saved.                                                                                                                                                                                                                                                                                          |
-| Changed     | Save                      | Out of date when an edited ruleset or environment is in a file that changed since the editor read it. Otherwise saving: settings through `--set` and `--unset`, entries whole through `--ruleset` and `--environment`, and taken-out entries through `--drop-ruleset` and `--drop-environment`. |
-| Saving      | It succeeds               | Saved, then a sync for a config repository.                                                                                                                                                                                                                                                     |
-| Saving      | It fails                  | Changed, with the error.                                                                                                                                                                                                                                                                        |
-| Out of date | Keep mine                 | Saving, over the change to the file.                                                                                                                                                                                                                                                            |
-| Out of date | Reload                    | Loading, without the unsaved edits.                                                                                                                                                                                                                                                             |
-| Out of date | Discard                   | Saved, as the editor read the file; the next refresh loads the file again.                                                                                                                                                                                                                      |
+| State       | Event                     | Next                                                                                                                                                                                                                                                                                       |
+| ----------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Loading     | The CLI resolves the file | Saved.                                                                                                                                                                                                                                                                                     |
+| Loading     | It fails                  | Error.                                                                                                                                                                                                                                                                                     |
+| Saved       | Any edit                  | Changed.                                                                                                                                                                                                                                                                                   |
+| Changed     | Discard                   | Saved.                                                                                                                                                                                                                                                                                     |
+| Changed     | Save                      | Out of date when a file changed since the editor read it under an edited ruleset or environment. Otherwise saving: settings through `--set` and `--unset`, entries whole through `--ruleset` and `--environment`, and taken-out entries through `--drop-ruleset` and `--drop-environment`. |
+| Saving      | It succeeds               | Saved, then a sync for a config repository.                                                                                                                                                                                                                                                |
+| Saving      | It fails                  | Changed, with the error.                                                                                                                                                                                                                                                                   |
+| Out of date | Keep mine                 | Saving, over the change to the file.                                                                                                                                                                                                                                                       |
+| Out of date | Reload                    | Loading, without the unsaved edits.                                                                                                                                                                                                                                                        |
+| Out of date | Discard                   | Saved, as the editor read the file; the next refresh loads the file again.                                                                                                                                                                                                                 |
 
 ### Each ruleset or environment
 
@@ -215,16 +215,20 @@ per file in a cache.
 
 An editor builds the entry it saves from the copy it loaded, so saving writes
 the whole entry as that copy plus the edits. That is why a save checks the
-file first: it compares the file with the text the editor read when it loaded
-or last saved, and stops at Out of date when they differ.
+files first: it compares each with the text the editor read when it loaded or
+last saved, and stops at Out of date when one differs. The profile's own file
+counts for any edited entry, and each file it extends counts for an edited
+entry it inherits, which the save writes whole as an override. The check runs
+in the save's turn after any sync ahead of it, and Save, Keep mine, Reload,
+and Discard wait while the editor loads.
 
 ### The cache
 
-| State                | Event                           | Next                                                                                      |
-| -------------------- | ------------------------------- | ----------------------------------------------------------------------------------------- |
-| Cached, no changes   | A refresh lists the file        | Dropped from the cache, so the next open loads the file again.                            |
-| Cached, with changes | A refresh lists the file        | Kept as it is, with its loaded copy, and Out of date when an edited entry's file changed. |
-| Cached               | A refresh doesn't list the file | Dropped from the cache.                                                                   |
+| State                | Event                           | Next                                                                                            |
+| -------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Cached, no changes   | A refresh lists the file        | Dropped from the cache, so the next open loads the file again.                                  |
+| Cached, with changes | A refresh lists the file        | Kept as it is, with its loaded copy, and Out of date when a file under an edited entry changed. |
+| Cached               | A refresh doesn't list the file | Dropped from the cache.                                                                         |
 
 **Failures:**
 

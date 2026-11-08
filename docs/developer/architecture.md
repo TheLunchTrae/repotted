@@ -167,10 +167,14 @@ are, and a choice left unset leaves that key to GitHub.
   once the profile is saved.
 - Saving writes each edited entry whole through `--ruleset` or
   `--environment`, so it would undo a change to that entry made since the
-  editor read the file, such as by a sync. The editor keeps the file's text as
-  it read it, and a save with an edited entry first compares the file with
-  it. When they differ, the save waits for the user to keep their version or
-  reload, as [State machines](state-machines.md#profile-editor) describes.
+  editor read the file, such as by a sync. An edited inherited entry is
+  written whole as an override, so it would hide a change to the base's copy
+  too. The editor keeps the text of the profile's file and of each file it
+  extends as it read them. A save with an edited entry compares the profile's
+  own file with that text, and the files it extends too when an edited entry
+  is inherited. When one differs, the save waits for the user to keep their
+  version or reload, as [State machines](state-machines.md#profile-editor)
+  describes.
 
 A new profile starts empty, extends another profile in the folder, or is
 captured with `repotted capture --output`. The app never replaces a file
