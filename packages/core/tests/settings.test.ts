@@ -23,7 +23,7 @@ function offered(): Partial<FakeState> {
       '/code-scanning/default-setup': { state: 'not-configured', query_suite: 'default', languages: [] },
       '/code-scanning/ai-scan': { pr_scan: 'disabled' },
       '/code-quality/setup': { state: 'not-configured' },
-      '/dependabot/runner-settings': { runner_type: 'standard' },
+      '/dependabot/runner-settings': { runner_type: 'standard', runner_labels: [], runner_group: '' },
       '/actions/permissions/access': { access_level: 'none' },
       '/actions/permissions/fork-pr-contributor-approval': { approval_policy: 'first_time_contributors' },
       '/actions/permissions/artifact-and-log-retention': { days: 90, maximum_allowed_days: 400 },
@@ -430,6 +430,31 @@ describe('settings GitHub ties together', () => {
     const next = await createPlan(github, repo, profile);
     expect(next.changes).toEqual([]);
     expect(next.warnings).toEqual([warning]);
+  });
+
+  test('plans nothing for a captured repository on standard Dependabot runners', async () => {
+    const github = new FakeGitHub(offered());
+
+    const { profile: captured } = await captureProfile(github, repo);
+    expect(captured.security?.dependabot_runner_settings).toEqual({
+      runner_type: 'standard',
+      runner_labels: [],
+      runner_group: '',
+    });
+    const plan = await createPlan(github, repo, captured);
+    expect(plan.changes).toEqual([]);
+    expect(plan.warnings).toEqual([]);
+  });
+
+  test('skips labeled Dependabot runners without exactly one label', async () => {
+    const plan = await createPlan(new FakeGitHub(offered()), repo, {
+      security: { dependabot_runner_settings: { runner_type: 'labeled' } },
+    });
+
+    expect(plan.changes).toEqual([]);
+    expect(plan.warnings).toEqual([
+      'Skipped security.dependabot_runner_settings.runner_type: labeled runners need exactly one runner label',
+    ]);
   });
 
   test('sends no null a live setting holds', async () => {

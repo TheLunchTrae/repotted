@@ -88,19 +88,38 @@ export const securityEndpoints: readonly Endpoint[] = [
     fields: ['runner_type', 'runner_labels', 'runner_group'],
     carries: ['runner_type', 'runner_labels', 'runner_group'],
     // GitHub keeps no runner labels or group with standard runners, and
-    // refuses them in the write.
+    // refuses them in the write; labeled runners take exactly one label.
     adjust: (desired, live) => {
-      const { runner_labels: labels, runner_group: group, ...rest } = desired;
-      const standard = (desired['runner_type'] ?? live['runner_type']) === 'standard';
-      const dropped = [
-        ...(labels === undefined ? [] : ['runner_labels']),
-        ...(group === undefined ? [] : ['runner_group']),
-      ];
-      return standard && dropped.length > 0
-        ? { desired: rest, dropped: { fields: dropped, reason: 'GitHub keeps none with standard runners' } }
-        : { desired };
+      const { runner_labels: labels, runner_group: group } = desired;
+      const type = desired['runner_type'] ?? live['runner_type'];
+      if (type === 'standard') {
+        // GitHub reports an empty list and group with standard runners, which already match.
+        const dropped = [
+          ...(Array.isArray(labels) && labels.length > 0 ? ['runner_labels'] : []),
+          ...(typeof group === 'string' && group !== '' ? ['runner_group'] : []),
+        ];
+        const kept = Object.fromEntries(Object.entries(desired).filter(([field]) => !dropped.includes(field)));
+        return dropped.length > 0
+          ? { desired: kept, dropped: { fields: dropped, reason: 'GitHub keeps none with standard runners' } }
+          : { desired };
+      }
+      const inEffect = labels ?? live['runner_labels'];
+      if (type === 'labeled' && !(Array.isArray(inEffect) && inEffect.length === 1)) {
+        return {
+          desired: {},
+          dropped: { fields: Object.keys(desired), reason: 'labeled runners need exactly one runner label' },
+        };
+      }
+      return { desired };
     },
-    body: (body) => (body['runner_type'] === 'standard' ? { runner_type: 'standard' } : body),
+    body: (body) => {
+      if (body['runner_type'] === 'standard') {
+        return { runner_type: 'standard' };
+      }
+      // GitHub reports no group as an empty one, which it doesn't take back.
+      const { runner_group: group, ...rest } = body;
+      return group === '' ? rest : body;
+    },
   },
 ];
 

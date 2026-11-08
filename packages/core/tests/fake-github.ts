@@ -413,6 +413,10 @@ export class FakeGitHub implements GitHub {
     }
     // A PUT replaces the settings; a PATCH changes the fields it sends.
     settings[relative] = method === 'PUT' ? next : { ...record(settings[relative]), ...next };
+    if (relative === '/dependabot/runner-settings') {
+      // GitHub always reports the labels and group, empty when there are none.
+      settings[relative] = { runner_labels: [], runner_group: '', ...record(settings[relative]) };
+    }
     return undefined;
   }
 

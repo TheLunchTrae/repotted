@@ -39,7 +39,12 @@ reads and plans them all the same way:
 These hooks are why a plan settles after one apply:
 
 - Dependabot runner labels and a runner group are dropped with standard
-  runners.
+  runners, except the empty ones GitHub reports there, and labeled runners
+  without exactly one label are skipped. An empty runner group stays out of
+  a write.
+- Code quality can report `rust`, which its write doesn't take, so a profile
+  that names code quality `languages` on such a repository keeps showing the
+  difference.
 - Naming `include_claim_keys` for the OIDC subject claim sets
   `use_default: false`, and claim keys alongside `use_default: true` are
   dropped, because GitHub ignores them then.
