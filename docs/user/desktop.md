@@ -161,10 +161,10 @@ click **Change folder**, **Use a GitHub repository**, **Change repository** or
 **Profiles** page asks first: **Save** saves them and goes on, **Discard**
 drops them and goes on, and **Cancel** stays where you are. If a save fails,
 the profile opens with the error and nothing else changes. While a new profile
-is being captured, the profile doesn't open, since that would stop the
-capture: a note names it instead, and you can open it once the capture
-finishes. The banner also asks before a sign-in that stopped working takes you
-back to the sign-in page, since saving needs no sign-in.
+is being captured, the profile that could not be saved stays closed, since
+opening it would stop the capture. A note names it instead, and you can open it
+once the capture finishes. The banner also asks before a sign-in that stopped
+working takes you back to the sign-in page, since saving needs no sign-in.
 
 ## Compare a repository with a profile
 

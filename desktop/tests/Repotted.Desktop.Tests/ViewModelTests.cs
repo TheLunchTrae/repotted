@@ -2405,26 +2405,44 @@ public sealed class ViewModelTests : IDisposable
         Directory.CreateDirectory(other);
         orgsDesktop.Folder = other;
         cli.On(folders.List(other), Documents.NoProfiles);
+        // A notice already showing, which the one about the question covers for a while.
+        const string Earlier = "Repotted could not remember this folder for next time: the disk is full";
+        profiles.Notice = Earlier;
+        var notice = save
+            ? "orgs could not be saved, so Repotted did not change the folder."
+            : "orgs is still loading, so Repotted did not change the folder.";
+        async Task Answer()
+        {
+            var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+            Assert.True(profiles.HasLeaving);
+            if (save)
+            {
+                await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+            }
+            else
+            {
+                profiles.DiscardAndLeaveCommand.Execute(null);
+            }
+            await change.WaitAsync(TimeSpan.FromSeconds(5));
+        }
 
-        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
-        if (save)
-        {
-            await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
-        }
-        else
-        {
-            profiles.DiscardAndLeaveCommand.Execute(null);
-        }
-        await change.WaitAsync(TimeSpan.FromSeconds(5));
+        await Answer();
 
         // Opening the profile would close the form and stop the capture, so the notice says why instead.
         Assert.Equal(folders.Profiles, profiles.Folder);
         Assert.Same(form, profiles.Creating);
         Assert.True(form.Working);
         Assert.False(stopped);
-        Assert.Equal(
-            save ? "orgs couldn't be saved, so Repotted didn't change the folder." : "orgs is still loading, so Repotted didn't change the folder.",
-            profiles.Notice);
+        Assert.Equal(notice, profiles.Notice);
+
+        // Asking again takes it away, and the notice it covered shows again.
+        var asking = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        Assert.True(profiles.HasLeaving);
+        Assert.Equal(Earlier, profiles.Notice);
+        profiles.StayHereCommand.Execute(null);
+        await asking.WaitAsync(TimeSpan.FromSeconds(5));
+        await Answer();
+        Assert.Equal(notice, profiles.Notice);
         resolve.SetResult(Documents.Resolved(files.Own, files.Base));
         await reload.WaitAsync(TimeSpan.FromSeconds(5));
         finish.SetResult();
@@ -2434,7 +2452,7 @@ public sealed class ViewModelTests : IDisposable
 
         // The notice goes once the profile it names opens.
         profiles.Selected = profiles.Items.Single(item => item.Name == "orgs");
-        Assert.Null(profiles.Notice);
+        Assert.Equal(Earlier, profiles.Notice);
     }
 
     [AvaloniaFact]

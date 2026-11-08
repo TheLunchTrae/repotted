@@ -161,16 +161,18 @@ internal sealed partial class ProfilesViewModel(
 
     /// <summary>
     /// The notice that names a profile whose changes kept the app where it is
-    /// while a capture ran, and that profile's file; it goes once the profile
-    /// opens or the question is asked again.
+    /// while a capture ran, that profile's file, and the notice it covers. It
+    /// goes once the profile opens or the question is asked again, and the
+    /// notice it covered shows again.
     /// </summary>
-    private (string Notice, string File)? leaveNotice;
+    private (string Shown, string File, string? Covered)? leaveNotice;
 
     private void ClearLeaveNotice()
     {
-        if (leaveNotice is { } shown && Notice == shown.Notice)
+        // A notice set since then is newer than the one covered, so it stays.
+        if (leaveNotice is { } shown && Notice == shown.Shown)
         {
-            Notice = null;
+            Notice = shown.Covered;
         }
         leaveNotice = null;
     }
@@ -302,9 +304,10 @@ internal sealed partial class ProfilesViewModel(
         {
             // Opening the profile would close the form and stop its capture, so
             // both stay as they are, and the notice names the profile instead.
-            var why = left.Loading ? "is still loading" : left.Saving ? "is still saving" : "couldn't be saved";
-            Notice = $"{left.Name} {why}, so Repotted didn't {Leaving}.";
-            leaveNotice = (Notice, left.File);
+            var why = left.Loading ? "is still loading" : left.Saving ? "is still saving" : "could not be saved";
+            var covered = leaveNotice is { } earlier && Notice == earlier.Shown ? earlier.Covered : Notice;
+            Notice = $"{left.Name} {why}, so Repotted did not {Leaving}.";
+            leaveNotice = (Notice, left.File, covered);
             answer.TrySetResult(false);
             return;
         }
@@ -603,7 +606,12 @@ internal sealed partial class ProfilesViewModel(
 
     partial void OnFilterChanged(string value) => ApplyFilter();
 
-    /// <summary>Why the app could not remember the folder; the folder is still used until the app closes.</summary>
+    /// <summary>
+    /// A note over the page: why the app could not remember the folder or the
+    /// repository, which are still used until the app closes; which profiles
+    /// connecting left out; or which profile kept the app where it was while a
+    /// capture ran.
+    /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasNotice))]
     public partial string? Notice { get; set; }
