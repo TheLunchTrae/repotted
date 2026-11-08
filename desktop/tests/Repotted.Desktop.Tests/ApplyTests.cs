@@ -439,6 +439,23 @@ public sealed class ApplyTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_change_that_shows_the_edits_clears_an_earlier_load_error()
+    {
+        var (page, cli) = await Reviewing();
+        var apply = page.Apply;
+        var editor = apply.Edits!;
+        // An earlier load of the edits failed, so the editor shows the error in place of the tabs.
+        editor.Error = "Could not read the profile.";
+        cli.On($"stage {file} --exclude=repository.has_wiki --json", Staged(true, "repository.has_wiki"))
+            .On(Planned, () => Plan(wikiLeftOut: true));
+
+        await apply.LeaveOutCommand.ExecuteAsync(Row(apply, "repository.has_wiki"));
+
+        Assert.Null(editor.Error);
+        Assert.True(editor.ShowEditor);
+    }
+
+    [AvaloniaFact]
     public async Task A_profile_that_changes_while_a_change_runs_still_stops_a_save_over_it()
     {
         var (page, cli) = await Reviewing();

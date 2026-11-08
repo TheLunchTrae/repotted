@@ -395,6 +395,7 @@ internal sealed partial class ProfileViewModel(
         }
         Show(profile, await BaseAsync(profile, texts).ConfigureAwait(true));
         Remember(ChainOf(profile), texts);
+        Error = null;
         ChangedFile = null;
         SaveError = null;
     }

@@ -440,7 +440,8 @@ discarded; a base's shows, read-only.
 Each editor keeps the base it last resolved alone, the profile its file
 extends, with the text of each file that base resolves from. The text is the
 copy the editor read for its own load or save, so it is what the stale-file
-check compares against too.
+check compares against too. A change on the Apply page that shows the edits
+it returned counts as a load here.
 
 | State     | Event                                                               | Next                                                                      |
 | --------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------- |
