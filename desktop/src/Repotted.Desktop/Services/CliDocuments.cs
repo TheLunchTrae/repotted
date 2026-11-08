@@ -145,6 +145,89 @@ internal sealed record StagedPlanDocument(
     public PlanDocument Plan => new(Repository, Desired, Changes, Warnings, Access, Locks, Skipped);
 }
 
+/// <summary>One repository of a batch, as <c>repotted stage &lt;folder&gt; --json</c> lists it.</summary>
+internal sealed record BatchMemberDocument(string Repository, string File, bool LeftOut, bool Joined);
+
+/// <summary>
+/// What <c>repotted stage &lt;folder&gt; --json</c> prints for a batch: its
+/// folder, the profile new repositories start from, or null, and its members.
+/// </summary>
+internal sealed record BatchDocument(string Folder, string Id, string? Profile, IReadOnlyList<BatchMemberDocument> Members);
+
+/// <summary>A repository whose staged apply refused a change made to every repository of a batch, and why.</summary>
+internal sealed record RefusedDocument(string Repository, string Message);
+
+/// <summary>What <c>repotted stage &lt;folder&gt; --exclude key --everywhere --json</c> prints: the batch, and what changed in each repository.</summary>
+internal sealed record EverywhereDocument(
+    string Folder,
+    string Id,
+    string? Profile,
+    IReadOnlyList<BatchMemberDocument> Members,
+    IReadOnlyList<string> Changed,
+    IReadOnlyList<RefusedDocument> Refused);
+
+/// <summary>
+/// One repository's plan in a batch plan: a staged plan, as <c>plan --staged</c>
+/// prints one, with the staged apply file and its digest.
+/// </summary>
+internal sealed record BatchMemberPlanDocument(
+    string Repository,
+    JsonElement Desired,
+    IReadOnlyList<PlanChangeDocument> Changes,
+    IReadOnlyList<string> Warnings,
+    AccessDocument Access,
+    IReadOnlyList<LockDocument> Locks,
+    StagedSummaryDocument Staged,
+    IReadOnlyList<PlanExclusionDocument> Exclusions,
+    IReadOnlyList<SkippedDocument> Skipped,
+    string File,
+    string Digest)
+{
+    /// <summary>The repository's plan as one staged apply's, which the review shows the same way.</summary>
+    public StagedPlanDocument AsStaged => new(Repository, Desired, Changes, Warnings, Access, Locks, Staged, Exclusions, Skipped);
+}
+
+/// <summary>Why one repository of a batch could not be planned or applied; <paramref name="Status"/> is GitHub's answer, or null.</summary>
+internal sealed record MemberErrorDocument(string Kind, string Message, int? Status);
+
+/// <summary>A repository of a batch, by its staged apply.</summary>
+internal sealed record BatchFileDocument(string Repository, string File);
+
+/// <summary>A repository of a batch that could not be planned.</summary>
+internal sealed record BatchFailureDocument(string Repository, string File, MemberErrorDocument Error);
+
+/// <summary>
+/// What <c>repotted plan --staged &lt;folder&gt; --json</c> prints: a plan for
+/// each repository of the batch, those left out, and those that could not be planned.
+/// </summary>
+internal sealed record BatchPlanDocument(
+    string Batch,
+    string Id,
+    string? Profile,
+    IReadOnlyList<BatchMemberPlanDocument> Plans,
+    IReadOnlyList<BatchFileDocument> LeftOut,
+    IReadOnlyList<BatchFailureDocument> Failures);
+
+/// <summary>
+/// How applying one repository of a batch ended: <paramref name="Status"/> is
+/// <c>applied</c>, <c>in_line</c>, <c>locked</c>, <c>left_out</c>, <c>changed</c>,
+/// <c>stopped</c>, <c>stale</c>, <c>apply_failed</c> or <c>failed</c>, each with
+/// the members it carries.
+/// </summary>
+internal sealed record MemberResultDocument(
+    string Repository,
+    string Status,
+    bool Ended,
+    IReadOnlyList<PlanChangeDocument>? Applied = null,
+    IReadOnlyList<LockDocument>? Locks = null,
+    string? Message = null,
+    PlanChangeDocument? Failed = null,
+    string? Reason = null,
+    MemberErrorDocument? Error = null);
+
+/// <summary>What <c>repotted apply --json</c> prints for a batch's plan: one result for each repository it applied.</summary>
+internal sealed record BatchApplyDocument(string Batch, IReadOnlyList<MemberResultDocument> Results);
+
 /// <summary>What <c>repotted apply --json</c> prints once every change is written.</summary>
 internal sealed record ApplyDocument(string Repository, IReadOnlyList<PlanChangeDocument> Applied);
 
@@ -211,6 +294,10 @@ internal sealed record LoginEvent(
 [JsonSerializable(typeof(StagedApplyDocument))]
 [JsonSerializable(typeof(StagedPlanDocument))]
 [JsonSerializable(typeof(ApplyDocument))]
+[JsonSerializable(typeof(BatchDocument))]
+[JsonSerializable(typeof(EverywhereDocument))]
+[JsonSerializable(typeof(BatchPlanDocument))]
+[JsonSerializable(typeof(BatchApplyDocument))]
 [JsonSerializable(typeof(ApplyFailureDocument))]
 [JsonSerializable(typeof(SyncDocument))]
 [JsonSerializable(typeof(FailureDocument))]

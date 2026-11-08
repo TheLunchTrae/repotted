@@ -1198,7 +1198,7 @@ public sealed class ApplyTests : IDisposable
         var repositories = shell.Repositories;
         // The only profile is picked already, and its box shows it.
         Assert.Equal("orgs", repositories.CompareWith?.Name);
-        Assert.Same(repositories.CompareWith, window.GetVisualDescendants().OfType<ComboBox>().Single().SelectedItem);
+        Assert.Same(repositories.CompareWith, window.GetVisualDescendants().OfType<ComboBox>().Single(box => box.IsEffectivelyVisible).SelectedItem);
 
         var panel = Texts(window);
         Assert.Contains(ControlLabel.For("Apply"), panel);

@@ -19,6 +19,8 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     private readonly Action<string> capture;
     private readonly Action<string, ProfileListingDocument?>? apply;
     private readonly Func<string, bool> unfinished;
+    private readonly Action<IReadOnlyList<string>, ProfileListingDocument?>? batch;
+    private readonly Func<bool> batchUnfinished;
 
     private IReadOnlyList<RepositoryRowViewModel> all = [];
 
@@ -30,6 +32,8 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     /// <param name="capture">Opens a new profile captured from a repository, by full name.</param>
     /// <param name="apply">Opens an apply to a repository, from a profile or from the repository as it is.</param>
     /// <param name="unfinished">Whether an apply to a repository waits to be resumed.</param>
+    /// <param name="batch">Opens a batch apply of a profile to several repositories, or resumes the one there when none are given.</param>
+    /// <param name="batchUnfinished">Whether a batch apply waits to be resumed.</param>
     public RepositoriesViewModel(
         RepottedClient client,
         IDesktop desktop,
@@ -38,8 +42,12 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
         Action<string, ProfileListingDocument> compare,
         Action<string> capture,
         Action<string, ProfileListingDocument?>? apply = null,
-        Func<string, bool>? unfinished = null)
+        Func<string, bool>? unfinished = null,
+        Action<IReadOnlyList<string>, ProfileListingDocument?>? batch = null,
+        Func<bool>? batchUnfinished = null)
     {
+        this.batch = batch;
+        this.batchUnfinished = batchUnfinished ?? (() => false);
         this.capture = capture;
         this.apply = apply;
         this.unfinished = unfinished ?? (_ => false);
@@ -73,7 +81,7 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
 
     /// <summary>The profile to compare the selected repository with.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(CompareCommand), nameof(ApplyProfileCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CompareCommand), nameof(ApplyProfileCommand), nameof(ReviewBatchCommand))]
     public partial ProfileItemViewModel? CompareWith { get; set; }
 
     /// <summary>Whether this window can apply, as it can once signed in.</summary>
@@ -82,8 +90,35 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     /// <summary>Whether an apply to the selected repository was left unfinished, to resume.</summary>
     public bool HasUnfinishedApply => CanApply && Selected is { } row && unfinished(row.FullName);
 
-    /// <summary>Checks again whether the selected repository has an unfinished apply, such as after one closes.</summary>
-    public void RefreshUnfinished() => OnPropertyChanged(nameof(HasUnfinishedApply));
+    /// <summary>Whether a batch apply was left unfinished, to resume.</summary>
+    public bool HasUnfinishedBatch => CanBatch && batchUnfinished();
+
+    /// <summary>Whether this window can apply to several repositories at once.</summary>
+    public bool CanBatch => batch is not null;
+
+    /// <summary>Checks again whether an apply was left unfinished, such as after one closes.</summary>
+    public void RefreshUnfinished()
+    {
+        OnPropertyChanged(nameof(HasUnfinishedApply));
+        OnPropertyChanged(nameof(HasUnfinishedBatch));
+        ReviewBatchCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// The repositories chosen in the list, which with more than one stand
+    /// for a batch apply in place of the selected repository's details.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Choosing), nameof(HasSelection), nameof(ChosenLabel), nameof(HasUnfinishedApply))]
+    [NotifyCanExecuteChangedFor(
+        nameof(ReviewBatchCommand), nameof(CompareCommand), nameof(CaptureCommand), nameof(ApplyProfileCommand),
+        nameof(ChangeSettingsCommand), nameof(ResumeApplyCommand))]
+    public partial IReadOnlyList<RepositoryRowViewModel> Chosen { get; set; } = [];
+
+    /// <summary>Whether several repositories are chosen, for a batch apply.</summary>
+    public bool Choosing => Chosen.Count > 1;
+
+    public string ChosenLabel => $"{Chosen.Count} repositories selected";
 
     public ObservableCollection<RepositoryRowViewModel> Rows { get; } = [];
 
@@ -95,7 +130,8 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     /// <summary>Every repository in the list, whatever the search, by full name.</summary>
     public IReadOnlyList<string> Names => [.. all.Select(row => row.FullName)];
 
-    public bool HasSelection => Selected is not null;
+    /// <summary>Whether one repository is selected, whose details show.</summary>
+    public bool HasSelection => Selected is not null && !Choosing;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(ShowAddInHeading))]
@@ -190,7 +226,7 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
         }
     }
 
-    private bool CanCompare() => Selected is not null && CompareWith is not null;
+    private bool CanCompare() => HasSelection && CompareWith is not null;
 
     /// <summary>Starts an apply of the chosen profile, or resumes the unfinished one, which shows the diff to edit before anything is written.</summary>
     [RelayCommand(CanExecute = nameof(CanCompare))]
@@ -230,6 +266,25 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
             capture(row.FullName);
         }
     }
+
+    /// <summary>
+    /// Starts a batch apply of the chosen profile to the chosen repositories,
+    /// which shows each repository's changes to edit before anything is written.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanReviewBatch))]
+    private void ReviewBatch()
+    {
+        if (CompareWith is { } profile)
+        {
+            batch?.Invoke([.. Chosen.Select(row => row.FullName)], profile.Listing);
+        }
+    }
+
+    private bool CanReviewBatch() => Choosing && CompareWith is not null;
+
+    /// <summary>Opens the unfinished batch apply, to resume it.</summary>
+    [RelayCommand]
+    private void ResumeBatch() => batch?.Invoke([], null);
 
     [RelayCommand]
     private Task OpenOnGitHubAsync() => Selected is { } row ? desktop.OpenUrlAsync(row.GitHubUrl) : Task.CompletedTask;

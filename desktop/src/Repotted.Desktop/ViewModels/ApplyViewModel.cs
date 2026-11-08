@@ -349,7 +349,7 @@ internal sealed partial class ApplyViewModel(
             Show(plan);
             if (Edits is null)
             {
-                Edits = new ProfileViewModel(client, Listing(), EditsSavedAsync, store: Store());
+                Edits = new ProfileViewModel(client, StagedReview.Listing(file, profile?.File), EditsSavedAsync, store: StagedReview.Store(client));
                 Edits.PropertyChanged += (_, e) =>
                 {
                     if (e.PropertyName is nameof(ProfileViewModel.ChangeCount) or nameof(ProfileViewModel.Saving)
@@ -372,52 +372,20 @@ internal sealed partial class ApplyViewModel(
 
     private void Show(StagedPlanDocument plan)
     {
-        BaseName = plan.Staged.Base is null ? null : Path.GetFileNameWithoutExtension(plan.Staged.Base);
-        var exclusions = plan.Exclusions.ToDictionary(exclusion => (exclusion.Change, exclusion.Field));
-        RowExclusion? Exclusion(int change, string? field) =>
-            exclusions.TryGetValue((change, field), out var found) ? new RowExclusion(found.Key, found.Edited) : null;
-        Sections = PlanSections.Build(plan.Plan, Exclusion);
-        diff = new PlanDiffViewModel(PlanDiff.Lines(plan.Plan, Exclusion), DiffFootnote(plan));
+        var review = StagedReview.Of(plan, installUrl);
+        BaseName = review.BaseName;
+        Sections = review.Sections;
+        diff = review.Diff;
         if (Edits is not null)
         {
             Edits.Diff = diff;
         }
-        Warnings = [.. plan.Warnings.Where(warning => !Sections.Any(section => section.SkippedBy == warning))];
-        Excluded = [.. plan.Staged.Exclude.Select(key => new ExcludedViewModel(key))];
-        (AccessLabel, AccessUrl) = PlanSections.Access(plan.Plan, installUrl);
-        DraftsNote = PlanSections.Drafts(plan.Plan);
-        ChangeCount = plan.Changes.Count;
+        Warnings = review.Warnings;
+        Excluded = review.Excluded;
+        (AccessLabel, AccessUrl) = (review.AccessLabel, review.AccessUrl);
+        DraftsNote = review.DraftsNote;
+        ChangeCount = review.ChangeCount;
     }
-
-    /// <summary>What the diff leaves out: the drafts, and what this apply leaves as GitHub has it.</summary>
-    private static string? DiffFootnote(StagedPlanDocument plan)
-    {
-        // An exclusion that leaves nothing out has a warning of its own, so it isn't counted.
-        var count = plan.Staged.Exclude.Count(key =>
-            !plan.Warnings.Contains($"Excluding {key} leaves nothing out, since the profile sets nothing it names", StringComparer.Ordinal));
-        var excluded = count switch
-        {
-            0 => null,
-            1 => "1 setting or entry is left out of this apply, so GitHub keeps it as it is.",
-            _ => $"{count} settings or entries are left out of this apply, so GitHub keeps them as they are.",
-        };
-        string[] notes = [.. new[] { PlanSections.Drafts(plan.Plan), excluded }.OfType<string>()];
-        return notes.Length == 0 ? null : string.Join(" ", notes);
-    }
-
-    /// <summary>The staged file as the profile editor lists it.</summary>
-    private ProfileListingDocument Listing() => new("One-off edits", file, profile?.File, null);
-
-    /// <summary>The editor reads and saves the staged file through <c>stage</c>, which takes the same edits as <c>profile</c>.</summary>
-    private ProfileStore Store() => new(
-        async (path, cancellationToken) => (await client.StagedAsync(path, cancellationToken).ConfigureAwait(true)).Layers,
-        client.SaveStagedEditsAsync,
-        "Save edits",
-        "One-off edit",
-        (@base, _) => @base is null
-            ? "For this apply only, over the repository as it is."
-            : $"For this apply only, over {@base}, which stays as it is unless you save these edits to it.",
-        Drafts: false);
 
     /// <summary>
     /// Saved one-off edits change the plan, so it is made again; a plan
