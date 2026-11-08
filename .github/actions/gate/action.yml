@@ -1,9 +1,9 @@
 name: Run the mandatory gate
 description: >-
-  Installs the pinned tools and the locked dependencies, then runs
-  mise run standards:check, or the part of it a job names. Check out the
-  repository first, and set MISE_LOCKED and MISE_TRUSTED_CONFIG_PATHS on the
-  job.
+  Installs the pinned tools, then runs mise run standards:check, or the part
+  of it a job names; the task graph installs the locked dependencies where a
+  task first needs them. Check out the repository first, and set MISE_LOCKED
+  and MISE_TRUSTED_CONFIG_PATHS on the job.
 
 inputs:
   cache:
@@ -40,9 +40,8 @@ runs:
         cache-dependency-path: |
           desktop/**/packages.lock.json
           .config/mise/conf.d/csharp.toml
-    - name: Install locked dependencies
-      shell: bash
-      run: mise run ts:install
+    # Every task the gate runs that needs node_modules depends on ts:install,
+    # so the install overlaps csharp:restore instead of running before it.
     - name: Run the gate task
       shell: bash
       env:
