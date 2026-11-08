@@ -476,6 +476,49 @@ public sealed class ConfigRepositoryTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_sync_during_a_capture_finds_nothing_of_it_to_commit()
+    {
+        var copy = Synced();
+        var file = Path.Combine(copy, "base.yaml");
+        File.WriteAllText(file, "repository: { has_wiki: false }\n");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var hold = Path.Combine(copy, ".app.yaml.repotted-capture");
+        // A sync leaves hidden files out, so these are the files it reads.
+        var synced = new List<string[]>();
+        var finish = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .On(Command(copy), () =>
+            {
+                synced.Add([.. Directory.EnumerateFiles(copy).Select(Path.GetFileName).OfType<string>().Where(name => !name.StartsWith('.')).Order()]);
+                return Sync();
+            })
+            .On(folders.List(copy), Listing(file))
+            .On($"profile {file} --json", Documents.ResolvedBase(file))
+            .On($"capture lunch/app --output {hold} --json", async _ =>
+            {
+                File.WriteAllText(hold, "repository:\n");
+                await finish.Task;
+                return """{"error":{"kind":"error","message":"Not Found"}}""";
+            });
+        var profiles = Profiles(cli);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        var before = Directory.EnumerateFileSystemEntries(copy).Order().ToList();
+        profiles.StartNew("lunch/app");
+        var form = profiles.Creating!;
+        var capturing = form.CreateCommand.ExecuteAsync(null);
+
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        finish.SetResult();
+        await capturing;
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal("Not Found", form.Error);
+        Assert.Equal([["base.yaml"], ["base.yaml"], ["base.yaml"]], synced);
+        // The failed capture leaves the copy as it found it, so the next sync has nothing to delete.
+        Assert.Equal(before, Directory.EnumerateFileSystemEntries(copy).Order());
+    }
+
+    [AvaloniaFact]
     public async Task Reconnecting_adds_the_local_profiles_the_repository_does_not_have()
     {
         var copy = Synced();

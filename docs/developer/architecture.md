@@ -237,11 +237,12 @@ are, and a choice left unset leaves that key to GitHub.
 
 A new profile starts empty, extends another profile in the folder, or is
 captured with `repotted capture --output`. The app never replaces a file
-already in the folder: it creates the new file first, and a capture that
-fails or is cancelled removes it. While a capture runs, the profiles list
-leaves out the file it holds. A profile that extends another names that file
-as the folder lists it, so the reference still works when the folder is
-reached through a link.
+already in the folder. A capture writes a hidden file and gives it the
+profile's name only once it is whole, so neither the profiles list nor a sync
+reads a capture under way, and one that fails or is cancelled leaves nothing
+behind; [State machines](state-machines.md#new-profile-form) has the details.
+A profile that extends another names that file as the folder lists it, so the
+reference still works when the folder is reached through a link.
 
 Profiles kept in a config repository live in a working copy under `config`
 in the app data folder, one per repository and folder in it, which the app

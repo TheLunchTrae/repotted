@@ -39,6 +39,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     private readonly Func<string, IReadOnlyList<string>, Task> created;
     private readonly Action cancel;
     private readonly Action released;
+    private readonly ISet<string> captures;
 
     /// <summary>Stops a capture once the form closes, however it closes.</summary>
     private readonly CancellationTokenSource closed = new();
@@ -52,7 +53,8 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     /// <param name="repository">A repository to capture, when the form opens for one.</param>
     /// <param name="created">Runs with the new file and what a capture could not read.</param>
     /// <param name="cancel">Closes the form.</param>
-    /// <param name="released">Runs once the form gives up a file it held, so another form can take its name.</param>
+    /// <param name="released">Runs once the form gives up a name it held, so another form can take it.</param>
+    /// <param name="captures">The files that captures still running write, which every form shares.</param>
     public NewProfileViewModel(
         RepottedClient client,
         string folder,
@@ -61,13 +63,15 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         string? repository,
         Func<string, IReadOnlyList<string>, Task> created,
         Action cancel,
-        Action released)
+        Action released,
+        ISet<string> captures)
     {
         this.client = client;
         this.folder = folder;
         this.created = created;
         this.cancel = cancel;
         this.released = released;
+        this.captures = captures;
         Bases = bases;
         Repositories = repositories;
         Base = bases.Count > 0 ? bases[0] : null;
@@ -182,17 +186,28 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         {
             return $"Windows keeps the name {name} for itself, so it cannot be a file there.";
         }
-        return Taken(name) is { } taken ? $"{taken} is already in this folder." : null;
+        return InUse(name);
     }
+
+    /// <summary>Why the folder has no room for <paramref name="name"/>: a file of that name, or a capture making one.</summary>
+    private string? InUse(string name) =>
+        Taken(name) is { } taken ? $"{taken} is already in this folder."
+        : captures.Contains(Hold($"{name}.yaml")) ? $"Another capture is making {name}.yaml."
+        : null;
 
     public bool HasProblem => Problem is not null;
 
     /// <summary>Checks the name again, since the folder may have changed under it.</summary>
     public void Recheck() => Problem = Check(Name.Trim());
 
-    /// <summary>The file the form holds while it captures, which the list leaves out.</summary>
-    [ObservableProperty]
-    public partial string? Holding { get; private set; }
+    /// <summary>
+    /// The file a capture writes before it takes <paramref name="fileName"/>.
+    /// It is hidden and not a .yaml file, so neither a sync nor the list reads
+    /// it. Only a capture still running holds the name: one the app never saw
+    /// end, such as when the app quit, leaves a file that the next capture of
+    /// the name writes over.
+    /// </summary>
+    private string Hold(string fileName) => Path.Combine(folder, $".{fileName}.repotted-capture");
 
     /// <summary>The file already in the folder under this name, as a .yaml or .yml file in any case.</summary>
     private string? Taken(string name) =>
@@ -229,44 +244,49 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         Working = true;
         Error = null;
         var file = Path.Combine(folder, FileName);
-        var made = false;
+        var hold = Hold(FileName);
+        var holding = false;
         try
         {
             // The name was free when it was typed; the folder may have changed since.
-            if (Taken(Name.Trim()) is { } taken)
+            if (InUse(Name.Trim()) is { } problem)
             {
-                Error = $"{taken} is already in this folder.";
+                Error = problem;
                 return;
             }
             IReadOnlyList<string> warnings = [];
             switch (Start)
             {
                 case NewProfileStart.Capture:
-                    // Holds the name while GitHub is read, since the CLI then writes over the file.
-                    Write(file, "");
-                    made = true;
-                    Holding = file;
-                    warnings = await client.CaptureAsync(Repository!, file, closed.Token).ConfigureAwait(true);
+                    // The profile takes its name only once it is whole, so no sync
+                    // commits, and no list shows, a capture still under way.
+                    captures.Add(hold);
+                    holding = true;
+                    warnings = await client.CaptureAsync(Repository!, hold, closed.Token).ConfigureAwait(true);
+                    if (disposed)
+                    {
+                        return;
+                    }
+                    // A sync may have brought in a file of this name while GitHub was read.
+                    if (Taken(Name.Trim()) is { } taken)
+                    {
+                        Error = $"{taken} is already in this folder.";
+                        return;
+                    }
+                    File.Move(hold, file, overwrite: false);
+                    captures.Remove(hold);
+                    holding = false;
                     break;
                 case NewProfileStart.Extends:
                     // The base's own name in the folder: the CLI follows it from the
                     // new file's real folder, which a path from the folder as picked may not reach.
                     var entry = Entry(Base!.Name) ?? throw new FileNotFoundException($"{Base.Name} is no longer in this folder.");
                     Write(file, $"extends: {Quoted(entry)}\n");
-                    made = true;
                     break;
                 default:
                     Write(file, "");
-                    made = true;
                     break;
             }
-            if (disposed)
-            {
-                return;
-            }
-            made = false;
-            // The file is a profile now, so the list shows it.
-            Holding = null;
             await created(file, warnings).ConfigureAwait(true);
         }
         catch (OperationCanceledException) when (disposed)
@@ -279,13 +299,13 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         }
         finally
         {
-            if (made)
+            if (holding)
             {
                 // A capture that failed or was stopped leaves nothing behind.
-                File.Delete(file);
+                File.Delete(hold);
+                captures.Remove(hold);
                 released();
             }
-            Holding = null;
             Working = false;
         }
     }

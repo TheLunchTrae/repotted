@@ -45,8 +45,8 @@ internal sealed partial class ProfilesViewModel(
 {
     private readonly Dictionary<string, ProfileViewModel> editors = [];
 
-    /// <summary>New profile forms that may still hold a file while they capture, open or closed.</summary>
-    private readonly List<NewProfileViewModel> forms = [];
+    /// <summary>The files that captures still running write, by path, whether their forms are open or closed.</summary>
+    private readonly HashSet<string> captures = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The file a refresh selects, such as a profile just made.</summary>
     private string? select;
@@ -356,9 +356,7 @@ internal sealed partial class ProfilesViewModel(
         Connecting = null;
         // Nothing stays selected, so choosing any profile in the list leaves the form.
         Selected = null;
-        forms.RemoveAll(form => form.Holding is null);
-        Creating = new NewProfileViewModel(client, Folder, Usable, repositories(), repository, CreatedAsync, CancelNew, Released);
-        forms.Add(Creating);
+        Creating = new NewProfileViewModel(client, Folder, Usable, repositories(), repository, CreatedAsync, CancelNew, Released, captures);
     }
 
     /// <summary>
@@ -385,9 +383,6 @@ internal sealed partial class ProfilesViewModel(
         Creating = null;
         Selected = Items.FirstOrDefault(item => item.Listing.File == Current?.File);
     }
-
-    /// <summary>A folder's path in one form, with no separator at its end, as a picker may give one.</summary>
-    private static string SameFolder(string folder) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
 
     /// <summary>A closed form gave up the name it held, so the open one may now take it.</summary>
     private void Released() => Creating?.Recheck();
@@ -716,20 +711,11 @@ internal sealed partial class ProfilesViewModel(
             {
                 Directory.CreateDirectory(folder);
             }
-            var listed = await client.ProfilesAsync(folder, CancellationToken.None).ConfigureAwait(true);
+            var listings = await client.ProfilesAsync(folder, CancellationToken.None).ConfigureAwait(true);
             if (refresh != refreshes)
             {
                 return;
             }
-            // A capture still running holds its file empty, so the file is not a
-            // profile yet; one that runs on in a folder left behind holds nothing here.
-            var held = forms
-                .Select(form => form.Holding)
-                .OfType<string>()
-                .Where(file => string.Equals(SameFolder(Path.GetDirectoryName(file)!), SameFolder(folder), StringComparison.Ordinal))
-                .Select(Path.GetFileNameWithoutExtension)
-                .ToHashSet(StringComparer.Ordinal);
-            var listings = listed.Where(listing => !held.Contains(listing.Name)).ToList();
             // A linked file is listed under its real path, so two names can share one file.
             var names = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var listing in listings)

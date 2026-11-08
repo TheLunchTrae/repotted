@@ -103,7 +103,9 @@ Click **New profile** and choose what it starts from:
   every setting the other one sets, and you change only what differs.
 - **A repository**: Repotted reads the repository's settings, rulesets, and
   environments as they are on GitHub now, and saves them as a profile.
-  Capturing only reads from GitHub.
+  Capturing only reads from GitHub. The profile appears in the list, and in
+  a GitHub repository that keeps your profiles, only once the capture
+  finishes. A capture that fails or that you cancel leaves nothing behind.
 
 The app never overwrites a file that is already in the folder.
 
