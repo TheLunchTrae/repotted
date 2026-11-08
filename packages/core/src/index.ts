@@ -7,6 +7,7 @@ export {
   createPlan,
   describeFailure,
   describeSkipped,
+  failureReason,
   formatPlan,
   parsePlan,
   skippedDrafts,
@@ -15,7 +16,8 @@ export {
 export type { Plan } from './plan.js';
 export { editProfile, listProfiles, parseProfile, resolveProfile, stringifyProfile } from './profile.js';
 export type { EntryEdit, ProfileEdit } from './profile.js';
-export { currentUser, listRepositories } from './repositories.js';
+export { lockChanges } from './permissions.js';
+export { currentUser, listRepositories, readAccess } from './repositories.js';
 export { syncFolder } from './sync.js';
 export {
   createStagedApply,

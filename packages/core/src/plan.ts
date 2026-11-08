@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { type Change, type Section, sections } from './change.js';
 import { captureEndpoints, planEndpoint, readEndpoints } from './endpoints.js';
 import { type GitHub, GitHubError, parseRepo, repoPattern, type RepoRef } from './github.js';
-import { requiredPermission } from './permissions.js';
+import { type Lock, requiredPermission } from './permissions.js';
 import type { Drafts } from './profile.js';
 import { identifyingRepositoryFields, profile, type Profile } from './schema.js';
 import { actionsEndpoints, planActions, readActions } from './sections/actions.js';
@@ -306,14 +306,18 @@ export function describeSkipped({ section, target }: Skipped): string {
     : `${section}.${target}`;
 }
 
-export function formatPlan(plan: Plan): string {
+/** The plan as text; a change in `locks` says why Repotted cannot make it. */
+export function formatPlan(plan: Plan, locks: readonly Lock[] = []): string {
   const lines = [
     plan.changes.length === 0
       ? `${plan.repository} matches the profile.`
       : `${plan.repository}: ${plan.changes.length} ${plan.changes.length === 1 ? 'change' : 'changes'}`,
   ];
-  for (const change of plan.changes) {
-    lines.push(`  ${symbols[change.action]} ${change.action} ${describeTarget(change.section, change.target)}`);
+  for (const [index, change] of plan.changes.entries()) {
+    const lock = locks.find((item) => item.change === index);
+    lines.push(
+      `  ${symbols[change.action]} ${change.action} ${describeTarget(change.section, change.target)}${lock === undefined ? '' : ` (locked: ${lock.reason})`}`,
+    );
     for (const field of change.fields) {
       lines.push(`      ${field.field}: ${show(field.from)} -> ${show(field.to)}`);
     }
@@ -325,6 +329,45 @@ export function formatPlan(plan: Plan): string {
     lines.push(`  ! ${warning}`);
   }
   return lines.join('\n');
+}
+
+/** The `message` of each error in Octokit's comma-joined JSON objects, or none when they don't parse. */
+function errorMessages(tail: string): string[] {
+  try {
+    const errors: unknown = JSON.parse(`[${tail}]`);
+    return z
+      .array(z.object({ message: z.string().optional() }).loose())
+      .parse(errors)
+      .flatMap((item) => (item.message === undefined ? [] : [item.message]));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Why GitHub refused the change that failed, when it says something lasting
+ * about the repository, the token or the App: a `403` or a `422`. A refusal
+ * for want of a permission names the permission; any other, such as a
+ * feature the repository's plan lacks or an organization policy, gives
+ * GitHub's reason. Null for anything else, a rate limit included.
+ */
+export function failureReason(error: ApplyError): string | null {
+  const cause = error.cause;
+  if (!(cause instanceof GitHubError) || ![403, 422].includes(cause.status) || /rate limit/iu.test(cause.message)) {
+    return null;
+  }
+  if (cause.status === 403 && /not accessible by/iu.test(cause.message)) {
+    const { method, path } = error.failed.request;
+    return `Needs ${requiredPermission(method, path)}`;
+  }
+  // Octokit appends the docs link to GitHub's message, and a 422's errors as JSON after a colon.
+  const message = cause.message.replace(/ - https:\/\/\S+$/u, '');
+  const split = /^(?<head>.*?): (?<tail>\{.*\})$/su.exec(message);
+  if (split?.groups === undefined) {
+    return message;
+  }
+  const { head = '', tail = '' } = split.groups;
+  return [head, ...errorMessages(tail)].join(': ');
 }
 
 /** What an ApplyError means for the repository: what was written and what failed. */

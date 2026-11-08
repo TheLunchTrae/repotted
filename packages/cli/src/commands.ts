@@ -13,6 +13,7 @@ import {
   describeFailure,
   describeSkipped,
   editProfile,
+  failureReason,
   type EntryEdit,
   formatPlan,
   type GitHub,
@@ -20,9 +21,11 @@ import {
   type Plan,
   listProfiles,
   listRepositories,
+  lockChanges,
   parsePlan,
   parseRepo,
   type ProfileEdit,
+  readAccess,
   resolveProfile,
   skippedDrafts,
   StalePlanError,
@@ -158,16 +161,19 @@ async function plan(io: Io, args: string[]): Promise<number> {
       json: { type: 'boolean' },
     },
   });
+  let repo: ReturnType<typeof parseRepo>;
   let result: Plan;
   // A staged plan's document also says what the plan applies and what leaves each change out.
   let stagedPlan: StagedPlan | undefined;
+  let github: GitHub;
   if (values.staged === undefined) {
-    const repo = parseRepo(only(positionals, 'repository'));
+    repo = parseRepo(only(positionals, 'repository'));
     if (values.profile === undefined) {
       throw new UsageError('plan needs --profile or --staged.');
     }
     const desired = await resolveProfile(values.profile);
-    result = await createPlan(await io.github(), repo, desired.profile, skippedDrafts(desired.drafts));
+    github = await io.github();
+    result = await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts));
   } else {
     if (values.profile !== undefined) {
       throw new UsageError('plan takes --profile or --staged, not both.');
@@ -180,19 +186,25 @@ async function plan(io: Io, args: string[]): Promise<number> {
     if (named !== undefined && named.toLowerCase() !== staged.repository.toLowerCase()) {
       throw new UsageError(`${values.staged} applies to ${staged.repository}, not ${named}.`);
     }
-    stagedPlan = await planStagedApply(await io.github(), values.staged);
+    repo = parseRepo(staged.repository);
+    github = await io.github();
+    stagedPlan = await planStagedApply(github, values.staged);
     result = stagedPlan.plan;
   }
+  // Apply checks neither: GitHub decides at the write.
+  const access = await readAccess(github, repo);
+  const locks = lockChanges(access, result.changes);
+  const document = { ...result, access, locks };
   if (values.out !== undefined) {
-    await writeFile(values.out, `${JSON.stringify(result, null, 2)}\n`);
+    await writeFile(values.out, `${JSON.stringify(document, null, 2)}\n`);
   }
   if (values.json === true) {
     json(
       io,
       stagedPlan === undefined
-        ? result
+        ? document
         : {
-            ...result,
+            ...document,
             staged: {
               file: stagedPlan.staged.file,
               repository: stagedPlan.staged.repository,
@@ -204,7 +216,7 @@ async function plan(io: Io, args: string[]): Promise<number> {
     );
     return 0;
   }
-  io.out(`${formatPlan(result)}\n`);
+  io.out(`${formatPlan(result, locks)}\n`);
   if (values.out !== undefined) {
     io.err(`Saved the plan to ${values.out}. Apply it with: repotted apply ${values.out}\n`);
   }
@@ -266,6 +278,7 @@ async function apply(io: Io, args: string[]): Promise<number> {
             message: describeFailure(error),
             applied: error.applied,
             failed: error.failed,
+            reason: failureReason(error),
           },
         });
       } else {
