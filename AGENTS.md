@@ -230,12 +230,14 @@ builds outside mise.
   "Keep mine" and "Back to rulesets", not "Keep Mine".
   - The proper names are product and brand names: Repotted, Repotted App,
     GitHub, GitHub App, macOS, and Windows, plus GitHub's own names for its
-    features and permissions, such as Actions and Contents. Acronyms and
-    identifiers keep their own form, such as YAML, SHA, and `GITHUB_TOKEN`.
+    features and permissions, such as Actions and Contents. Acronyms,
+    identifiers, and key names keep their own form, such as YAML, SHA,
+    `GITHUB_TOKEN`, and Ctrl.
   - App concepts stay lowercase, however central they are: repository,
-    profile, ruleset, environment, and the rest of `CONTEXT.md`. Write "New
-    repository" and "New ruleset", not "New Repository". This is deliberate,
-    so that no one has to judge which nouns are important enough.
+    profile, ruleset, environment, and the other terms in `CONTEXT.md`.
+    Write "New profile" and "New ruleset", not "New Profile". This is
+    deliberate, so that no one has to judge which nouns are important
+    enough.
   - A word inserted into a label stays lowercase unless it is a proper name.
     Text that names another control uses that control's label as the app
     shows it, as in "Reload discards your unsaved changes."
