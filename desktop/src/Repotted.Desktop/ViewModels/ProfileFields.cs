@@ -213,7 +213,7 @@ internal static class ProfileFields
                 Choice("security", "dependabot_runner_settings.runner_type", "Dependabot runners",
                     ("Standard", "standard"), ("Labeled", "labeled")).Noted("Runner labels are edited in the YAML."),
             ]),
-            new("Code scanning", "Finds problems in the code with CodeQL.",
+            new("Code scanning", "Finds problems in the code with CodeQL. Languages are edited in the YAML.",
             [
                 Choice("security", "code_scanning_default_setup.state", "Default setup",
                     ("Configured", "configured"), ("Not configured", "not-configured"))
@@ -227,7 +227,7 @@ internal static class ProfileFields
                 Choice("security", "code_scanning_ai_scan.pr_scan", "AI Scan on pull requests",
                     ("On", "enabled"), ("Off", "disabled")),
             ]),
-            new("Code quality", "Finds maintainability and reliability problems.",
+            new("Code quality", "Finds maintainability and reliability problems. Languages are edited in the YAML.",
             [
                 Choice("security", "code_quality_setup.state", "Code quality",
                     ("Configured", "configured"), ("Not configured", "not-configured")),
