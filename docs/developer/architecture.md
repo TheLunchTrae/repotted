@@ -151,22 +151,22 @@ leaves out of its response is not checked. Either failure stops planning, so app
 A section that GitHub won't let Repotted read gives a warning, and the other
 sections still plan: rulesets on a GitHub plan that doesn't support them, or
 environments with a token that can't list them. The same holds for each
-setting at an endpoint of its own. A setting the repository doesn't have
-gives a warning with GitHub's reason, and one GitHub refuses with a `403`
-gives a warning that names the permission it needs, from `permissions.ts`.
-`capture` warns only about the refused settings and sections, since a
-feature the repository lacks is no news: every reader returns the same
-`Unavailable` from `endpoints.ts`, whose `refused` says which it is. A
-`403` on a write stops apply, and the failure names the permission too. `captureProfile` also parses each setting it captures with
-that setting's schema, and leaves out, with a warning, one that fails, such
-as an option GitHub added after `schema.ts`, so a captured profile always
-loads. The fields of an endpoint's object and of `security_and_analysis` are
-parsed one by one, so only the field that fails is left out. A commit message
-setting goes with its title setting, and the other way round, since GitHub
-takes them only as a pair. A ruleset or environment that fails its schema is
-left out whole, with a warning: without one of its rules, a ruleset would
-have that rule removed on apply, while a profile leaves alone a ruleset it
-doesn't name.
+setting at an endpoint of its own. A setting the repository doesn't have gives
+a warning with GitHub's reason, and one GitHub refuses with a `403` gives a
+warning that names the permission it needs, from `permissions.ts`. `capture`
+warns only about the refused settings and sections, since a feature the
+repository lacks is no news: every reader returns the same `Unavailable` from
+`endpoints.ts`, whose `refused` says which it is. A `403` on a write stops
+apply, and the failure names the permission too. `captureProfile` also parses
+each setting it captures with that setting's schema, and leaves out, with a
+warning, one that fails, such as an option GitHub added after `schema.ts`, so
+a captured profile always loads. The fields of an endpoint's object and of
+`security_and_analysis` are parsed one by one, so only the field that fails is
+left out. A commit message setting goes with its title setting, and the other
+way round, since GitHub takes them only as a pair. A ruleset or environment
+that fails its schema is left out whole, with a warning: without one of its
+rules, a ruleset would have that rule removed on apply, while a profile leaves
+alone a ruleset it doesn't name.
 
 Before anything is written, `readAccess` in `repositories.ts` reads the
 account's role from the repository and, with a Repotted App token, the
