@@ -191,15 +191,17 @@ public sealed class ApplyTests : IDisposable
         public int ProfilesSaved { get; set; }
     }
 
-    private Page Open(FakeCli cli, bool fromProfile = true, IDesktop? desktop = null)
+    private Page Open(FakeCli cli, bool fromProfile = true, IDesktop? desktop = null, ProfileFolder? profiles = null)
     {
         Page? page = null;
+        var client = new RepottedClient(cli);
         var apply = new ApplyViewModel(
-            new RepottedClient(cli),
+            client,
             folders.Settings,
             Repository,
             fromProfile ? Orgs : null,
             () => page!.Closed++,
+            profiles ?? new ProfileFolder(client, folders.Settings),
             () =>
             {
                 page!.ProfilesSaved++;
@@ -801,6 +803,37 @@ public sealed class ApplyTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Saving_edits_to_the_profile_waits_for_a_sync_of_the_profiles_folder()
+    {
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var cli = Cli();
+        var profiles = new ProfileFolder(new RepottedClient(cli), folders.Settings);
+        var page = Open(cli, profiles: profiles);
+        await page.Apply.OpenAsync();
+        var sync = $"sync {profiles.Path} --json";
+        var syncing = new TaskCompletionSource();
+        cli.OnceReady(
+            sync,
+            """{"repository":"lunch/config","path":"","branch":"main","commit":"abc123","pulled":[],"pushed":[],"conflicts":[]}""",
+            syncing.Task);
+        var save = $"stage {file} --save-to-profile --json";
+        cli.On(save, Staged());
+        cli.Calls.Clear();
+
+        var synced = profiles.SyncAsync(null, null);
+        var saved = page.Apply.SaveToProfileCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        // The save takes its turn after the sync, so the sync never reads the profile half written.
+        Assert.Equal([sync], cli.Calls);
+        syncing.SetResult();
+        Assert.NotNull(await synced);
+        await saved;
+        Assert.Equal([sync, save], cli.Calls.GetRange(0, 2));
+        Assert.Equal(1, page.ProfilesSaved);
+    }
+
+    [AvaloniaFact]
     public async Task Cancelling_the_confirmation_writes_nothing()
     {
         var (page, cli) = await Reviewing();
@@ -1364,7 +1397,7 @@ public sealed class ApplyTests : IDisposable
         Dispatcher.UIThread.RunJobs();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
         shell.Repositories.Selected = shell.Repositories.Rows.Single(row => row.FullName == Repository);
-        await Until(() => shell.Profiles.Usable.Any() && !shell.Profiles.Loading && !shell.Profiles.Syncing);
+        await Until(() => shell.Profiles.Usable.Any() && !shell.Profiles.Loading && !shell.Profiles.Folder.Syncing);
         Dispatcher.UIThread.RunJobs();
         return (window, shell, cli);
     }

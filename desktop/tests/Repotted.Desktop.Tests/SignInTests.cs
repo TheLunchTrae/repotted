@@ -349,7 +349,7 @@ public sealed class SignInTests : ViewModelTests
         cli.OnceReady(sync, synced, slow.Task);
         var syncing = first.Profiles.RefreshCommand.ExecuteAsync(null);
         Dispatcher.UIThread.RunJobs();
-        Assert.True(first.Profiles.Syncing);
+        Assert.True(first.Profiles.Folder.Syncing);
 
         cli.On("status --json", Documents.SignedInAsOther)
             .On("repos --json", Documents.SignedOutFailure, exitCode: 1);
@@ -603,7 +603,7 @@ public sealed class SignInTests : ViewModelTests
         var refreshing = shell.RefreshAsync();
         Dispatcher.UIThread.RunJobs();
 
-        Assert.True(shell.Profiles.Syncing);
+        Assert.True(shell.Profiles.Folder.Syncing);
         Assert.False(shell.SignOutCommand.CanExecute(null));
         synced.SetResult();
         await refreshing;

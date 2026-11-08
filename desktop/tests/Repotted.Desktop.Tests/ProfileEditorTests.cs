@@ -607,13 +607,17 @@ public sealed class ProfileEditorTests : ViewModelTests
         var own = folders.Write("orgs.yaml", "environments: [{ name: npm }]\n");
         var cli = new FakeCli().On($"profile {own} --json", Documents.Resolved(own, own));
         // The sync ahead of the save changes the file before the save's turn comes.
+        var client = new RepottedClient(cli);
         var editor = new ProfileViewModel(
-            new RepottedClient(cli),
+            client,
             new ProfileListingDocument("orgs", own, null, null),
-            exclusive: write =>
+            ProfileStore.Profile(client, new ProfileFolder(client, folders.Settings)) with
             {
-                File.AppendAllText(own, "# pulled by a sync\n");
-                return write();
+                Write = write =>
+                {
+                    File.AppendAllText(own, "# pulled by a sync\n");
+                    return write();
+                },
             });
         await editor.LoadCommand.ExecuteAsync(null);
         editor.Tab("Environments").Entries[0].Editor.Name = "pages";

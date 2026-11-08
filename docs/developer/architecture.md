@@ -356,7 +356,9 @@ The Apply page is a staged apply, as `repotted stage` makes one, kept in the
 app data folder per repository. Its one-off edits tab is the profile editor
 over the staged file: `ProfileStore` swaps the editor's reads and saves for
 `stage`, which takes the same edits as `profile`, so every setting the editor
-shows can be overridden once. The page plans with `plan --staged`, whose
+shows can be overridden once. A profile's store writes in its turn with the
+syncs of the profiles folder; the staged file is the app's alone, so its
+store writes at once. The page plans with `plan --staged`, whose
 `exclusions` name the key that leaves out each row, so the app never maps a
 plan field to a profile key itself. It applies the saved plan file with
 `apply --yes`, which re-plans and stops on any difference.

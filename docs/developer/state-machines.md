@@ -304,8 +304,9 @@ last good record in place and the next sync starts from it.
 
 ## Desktop profiles source
 
-`ProfilesViewModel` keeps the profiles folder, the config repository if there
-is one, and the sync state the page shows.
+`ProfileFolder` keeps the profiles folder, the config repository if there is
+one, and the sync state the page shows. `ProfilesViewModel` holds one, and the
+Apply page and the new profile form write through the same one.
 
 | State        | Event                                              | Next                                                        |
 | ------------ | -------------------------------------------------- | ----------------------------------------------------------- |
@@ -319,12 +320,21 @@ is one, and the sync state the page shows.
 | Any          | Connect another repository                         | Connecting, through the connect form below.                 |
 | Any          | The app is replaced                                | Stopped: a save under way finishes, and no sync starts.     |
 
-Saves and the page's syncs share one chain (`ExclusiveAsync` and
-`SyncAsync`), so a sync never reads a file a save is writing. The connect
-form's first sync runs outside it. So does a capture's read of GitHub, which
-writes a dot-prefixed file that no sync reads; only the move of the finished
-capture to the profile's name joins the chain, and the profile syncs once it
-is whole, as the [New profile form](#new-profile-form) describes.
+Saves to the folder and syncs of it take turns in one `SerialQueue` in
+`ProfileFolder` (`WriteAsync` and `SyncAsync`), so a sync never reads a file a
+save is writing. A profile editor's save writes through its `ProfileStore`,
+which `ProfileStore.Profile` gives the folder's `WriteAsync`; saving one-off
+edits to the profile on the Apply page and the new profile form's move of a
+capture write through the folder itself. Some writes and syncs run outside the
+queue:
+
+- The connect form's first sync.
+- The new profile form's empty start and its start that extends another
+  profile, which create the file only if no file has that name.
+- A capture's read of GitHub, which writes a dot-prefixed file that no sync
+  reads. Only the move of the finished capture to the profile's name joins the
+  queue, and the profile syncs once it is whole, as the
+  [New profile form](#new-profile-form) describes.
 
 ## Profile editor
 
@@ -503,7 +513,7 @@ the capture is whole. `ProfilesViewModel` keeps the names of the captures
 still running, in open and closed forms alike, and those names are held
 against every other form until each capture ends.
 
-The move to the profile's name runs in the chain that keeps saves and syncs
+The move to the profile's name runs in the queue that keeps saves and syncs
 apart, after any sync under way, so a pull can't write that name between the
 check and the move. On macOS and Linux, .NET's move that doesn't overwrite
 checks for the file and then renames, so it can still replace a file of that
