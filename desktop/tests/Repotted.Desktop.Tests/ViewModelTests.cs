@@ -294,6 +294,70 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_lost_sign_in_that_still_works_keeps_the_app_and_what_it_holds()
+    {
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories);
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        shell.Search = "repotted";
+
+        // Another run refreshed the token first, so the sign-in still works.
+        cli.On("repos --json", Documents.SignedOutFailure, exitCode: 1);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        cli.On("repos --json", Documents.Repositories);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(2, cli.Calls.Count(call => call == "status --json"));
+        Assert.Same(shell, main.Page);
+        Assert.Equal("repotted", shell.Search);
+        Assert.Equal("Bad credentials", shell.Repositories.Error);
+    }
+
+    [AvaloniaFact]
+    public async Task Pages_that_lose_the_sign_in_together_check_it_once_and_keep_the_app_meanwhile()
+    {
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories);
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        var checkedAgain = new TaskCompletionSource();
+        cli.OnceReady("status --json", Documents.SignedOut, checkedAgain.Task)
+            .On("repos --json", Documents.SignedOutFailure, exitCode: 1);
+
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(shell, main.Page);
+        Assert.Equal(2, cli.Calls.Count(call => call == "status --json"));
+        checkedAgain.SetResult();
+    }
+
+    [AvaloniaFact]
+    public async Task A_lost_sign_in_that_finds_another_account_opens_the_app_for_it()
+    {
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories);
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+
+        cli.On("status --json", Documents.SignedInAsOther)
+            .On("repos --json", Documents.SignedOutFailure, exitCode: 1);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        cli.On("repos --json", Documents.Repositories);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("other", Assert.IsType<ShellViewModel>(main.Page).Account.Login);
+    }
+
+    [AvaloniaFact]
     public async Task Closing_the_app_stops_a_capture_and_removes_its_file()
     {
         var made = Path.Combine(folders.Profiles, "repotted.yaml");

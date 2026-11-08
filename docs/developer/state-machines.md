@@ -75,7 +75,10 @@ keychain-failed state, because the lookup runs before that state is checked.
 `SignInViewModel` runs the device flow through `repotted login --json`.
 Each app gets a `RepottedClient` of its own, which raises `SignInLost` when
 any command fails with `kind: signed_out`. `MainViewModel` checks again in
-response, on the UI thread, if that app is still the page.
+response, on the UI thread, if that app is still the page. The app stays
+while the check runs, and pages that fail meanwhile check nothing more, so
+a run that loses a race to refresh the token, while another run stores the
+new one, leaves the app and what it holds in place.
 
 | State                                  | Event                                   | Next                                                                                           |
 | -------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -87,7 +90,12 @@ response, on the UI thread, if that app is still the page.
 | Sign-in                                | The flow fails                          | Sign-in, with the error.                                                                       |
 | Sign-in                                | Cancel, or the app closes               | Sign-in; the CLI process is stopped.                                                           |
 | Sign-in, for a rejected token variable | Any                                     | Signing in stays off: the variable comes first, so the user must change it and reopen the app. |
-| The app                                | A command fails with `kind: signed_out` | Checking. The check replaces the app, so other pages that fail with it check nothing more.     |
+| The app                                | A command fails with `kind: signed_out` | Checking the sign-in, with the app still showing.                                              |
+| Checking the sign-in                   | A command fails with `kind: signed_out` | Nothing more: the check already running answers for it.                                        |
+| Checking the sign-in                   | Signed in as the same account           | The app, as it was; the page that failed shows its error.                                      |
+| Checking the sign-in                   | Signed out or rejected                  | Sign-in, as from Checking.                                                                     |
+| Checking the sign-in                   | Signed in as another account            | The app for that account, as from Checking.                                                    |
+| Checking the sign-in                   | The CLI is missing or fails             | The app, as it was; the page that failed shows its error.                                      |
 | An app already replaced                | A command fails with `kind: signed_out` | Nothing: the app showing now stays.                                                            |
 | The app                                | Sign out, while no sync runs            | Signing out: `repotted logout --json` removes the keychain sign-in.                            |
 | The app                                | Replaced, or the app closes             | A running capture and a connect's first sync stop, and clean up as when their form closes.     |

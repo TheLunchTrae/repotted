@@ -11,6 +11,9 @@ internal sealed partial class MainViewModel : ViewModelBase
     private readonly IDesktop desktop;
     private readonly AppSettings settings;
 
+    /// <summary>The app whose lost sign-in is being checked, so pages that fail together check once.</summary>
+    private ShellViewModel? checking;
+
     public MainViewModel(ICli cli, IDesktop desktop, AppSettings settings)
     {
         this.cli = cli;
@@ -37,22 +40,7 @@ internal sealed partial class MainViewModel : ViewModelBase
         Page = new LoadingViewModel("Checking your GitHub sign-in");
         try
         {
-            switch (await client.StatusAsync(CancellationToken.None).ConfigureAwait(true))
-            {
-                case Account.SignedIn account:
-                    // Each app gets a client of its own, so a lost sign-in that an app
-                    // replaced since then reports can't replace the app showing now.
-                    var shellClient = new RepottedClient(cli);
-                    var shell = new ShellViewModel(account, shellClient, desktop, settings, SignOutAsync);
-                    var signInLost = OnContext<EventArgs>(_ => OnSignInLost(shell));
-                    shellClient.SignInLost += (_, e) => signInLost(e);
-                    Page = shell;
-                    await shell.RefreshAsync().ConfigureAwait(true);
-                    break;
-                case Account.SignedOut signedOut:
-                    Page = new SignInViewModel(client, desktop, signedOut, StartAsync);
-                    break;
-            }
+            await ShowAsync(await client.StatusAsync(CancellationToken.None).ConfigureAwait(true)).ConfigureAwait(true);
         }
         catch (Exception error) when (error is CliException or CliNotFoundException)
         {
@@ -66,17 +54,65 @@ internal sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Shows the app for a signed-in account, or the sign-in for a signed-out one, in place of the loading page.</summary>
+    private async Task ShowAsync(Account account)
+    {
+        switch (account)
+        {
+            case Account.SignedIn signedIn:
+                // Each app gets a client of its own, so a lost sign-in that an app
+                // replaced since then reports can't replace the app showing now.
+                var shellClient = new RepottedClient(cli);
+                var shell = new ShellViewModel(signedIn, shellClient, desktop, settings, SignOutAsync);
+                var signInLost = OnContext<EventArgs>(_ => OnSignInLost(shell));
+                shellClient.SignInLost += (_, e) => signInLost(e);
+                Page = shell;
+                await shell.RefreshAsync().ConfigureAwait(true);
+                break;
+            case Account.SignedOut signedOut:
+                Page = new SignInViewModel(client, desktop, signedOut, StartAsync);
+                break;
+        }
+    }
+
+    private void OnSignInLost(ShellViewModel shell) => _ = CheckSignInAsync(shell);
+
     /// <summary>
     /// A page of <paramref name="shell"/> found the sign-in missing or
-    /// rejected, so the app checks again, which leads to the sign-in page. The
-    /// check replaces the app, so pages that fail together check once, and
-    /// an app already replaced checks nothing.
+    /// rejected. The app stays while the check runs, and after it when the
+    /// same account is still signed in, such as when another run refreshed
+    /// the token first, so a compare, a capture and unsaved edits stay too.
+    /// Otherwise the page the check finds replaces the app. Pages that fail
+    /// together check once, and an app already replaced checks nothing.
     /// </summary>
-    private void OnSignInLost(ShellViewModel shell)
+    private async Task CheckSignInAsync(ShellViewModel shell)
     {
-        if (Page == shell)
+        if (Page != shell || checking == shell)
         {
-            _ = StartAsync();
+            return;
+        }
+        checking = shell;
+        try
+        {
+            var account = await client.StatusAsync(CancellationToken.None).ConfigureAwait(true);
+            if (Page == shell && !account.Equals(shell.Account))
+            {
+                Page = new LoadingViewModel("Checking your GitHub sign-in");
+                await ShowAsync(account).ConfigureAwait(true);
+            }
+        }
+        // The check itself failed, so nothing says the sign-in is gone; the
+        // page that met the failure shows it.
+        catch (Exception error) when (error is CliException or CliNotFoundException)
+        {
+        }
+        catch (Exception error)
+        {
+            Page = new ProblemViewModel($"Something unexpected went wrong: {error.Message}", StartAsync);
+        }
+        finally
+        {
+            checking = null;
         }
     }
 
