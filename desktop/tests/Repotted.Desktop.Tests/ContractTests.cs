@@ -222,8 +222,12 @@ public sealed class ContractTests
         var cancellationToken = TestContext.Current.CancellationToken;
         using var folders = new Folders();
         folders.Write("base.yaml", "security: { security_and_analysis: { secret_scanning: { status: enabled } } }\n");
-        var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
+        folders.Write("orgs.yaml", "extends: base.yaml\n");
 
+        // The app takes a profile's path from the listing, which names the real file, as
+        // macOS's temp folder sits behind a link.
+        var listings = await client.ProfilesAsync(folders.Profiles, cancellationToken);
+        var own = Assert.Single(listings, listing => listing.Name == "orgs").File;
         var resolved = await client.ProfileAsync(own, cancellationToken);
         Assert.EndsWith("base.yaml", resolved.Sources["security"]["security_and_analysis.secret_scanning"], StringComparison.Ordinal);
         Assert.Empty(resolved.Sources["pages"]);
