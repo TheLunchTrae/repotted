@@ -267,6 +267,30 @@ that holds the token.
 [Development](development.md#run-the-desktop-app) describes how the app finds
 the CLI.
 
+The app starts the CLI for every read and save, so the executable starts from a
+V8 startup snapshot: `sea.ts` has Node evaluate the bundle once at build time
+and store the resulting heap, and each run starts from that heap and calls
+`main` through `v8.startupSnapshot.setDeserializeMainFunction`. That skips
+evaluating the bundle, about half the time a short command takes. The snapshot
+sets how the code is built:
+
+- Node builds a snapshot only from a CommonJS main script, which can't
+  `import()`, so the executable's bundle is CommonJS and turns each `import()`
+  of a built-in module into a `require`. The npm bundle stays an ES module.
+- The snapshot freezes whatever the bundle computes at load time, so code reads
+  the environment, the working directory, the arguments, and the time when it
+  runs, not at module scope.
+- A snapshot can't hold a native module, so the keychain module loads on first
+  use, after the snapshot.
+- Node hasn't verified some built-in modules, such as `child_process` and
+  `readline`, in snapshots, so the code that uses them loads them on use, and
+  `sea.ts` fails the build when Node warns that the bundle loaded one.
+- A snapshot runs only on the platform that built it, so each package builds
+  its CLI on a runner of its own platform.
+
+The snapshot makes the executable about 9 MB larger, and the MCP server, which
+loads on use, isn't in it.
+
 ### Applying from the app
 
 The Apply page is a staged apply, as `repotted stage` makes one, kept in the

@@ -1,11 +1,14 @@
 // Builds the repotted CLI as one executable for the desktop app, which runs it
 // for all its GitHub work: the CLI and its dependencies in one bundle, run by a
-// copy of this Node as a single executable application. The keychain module is
-// native, and Node loads native code only from a real file, so it ships beside
-// the executable as repotted-keyring.node rather than inside it.
+// copy of this Node as a single executable application. It starts from a V8
+// startup snapshot of the heap after the bundle's modules are evaluated, so
+// each run, and the app runs it for every call, skips that work. The keychain
+// module is native, and Node loads native code only from a real file, so it
+// ships beside the executable as repotted-keyring.node rather than inside it,
+// and loads after the snapshot.
 //
 // Usage: node packages/cli/sea.ts <output executable>
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -40,20 +43,18 @@ const native = keyring.resolve(`@napi-rs/keyring-${platform}/keyring.${platform}
 
 const work = await mkdtemp(path.join(tmpdir(), 'repotted-sea-'));
 try {
-  const main = path.join(work, 'main.mjs');
+  const main = path.join(work, 'main.cjs');
   await build({
     entryPoints: [fileURLToPath(new URL('src/main.ts', import.meta.url))],
     outfile: main,
     bundle: true,
     platform: 'node',
-    format: 'esm',
+    // Node builds a startup snapshot only from a CommonJS main script, which
+    // can't import(), so each import() of a built-in module becomes a require.
+    format: 'cjs',
+    supported: { 'dynamic-import': false },
     minify: true,
     logLevel: 'warning',
-    // Bundled CommonJS dependencies require Node's built-in modules, which an
-    // ES module bundle can reach only through a require of its own.
-    banner: {
-      js: "import { createRequire as seaRequire } from 'node:module'; const require = seaRequire(import.meta.url);",
-    },
     plugins: [
       {
         name: 'keyring-beside-executable',
@@ -78,17 +79,28 @@ try {
     config,
     JSON.stringify({
       main,
-      mainFormat: 'module',
       output: executable,
       disableExperimentalSEAWarning: true,
-      useCodeCache: true,
+      useSnapshot: true,
       // The CLI holds the user's GitHub token, so NODE_OPTIONS cannot add
       // Node flags, such as --require, to it.
       execArgvExtension: 'none',
     }),
   );
   await rm(executable, { force: true });
-  execFileSync(process.execPath, ['--build-sea', config], { stdio: 'inherit' });
+  // Node builds the snapshot by running the bundle, and warns when the bundle
+  // loads a built-in module that isn't verified in snapshots, whose state can
+  // be out of sync when the executable starts. Such a module loads where it is
+  // used instead, and a warning here fails the build.
+  const sea = spawnSync(process.execPath, ['--build-sea', config], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'inherit', 'pipe'],
+  });
+  process.stderr.write(sea.stderr);
+  if (sea.status !== 0 || sea.stderr.includes('Warning:')) {
+    await rm(executable, { force: true });
+    throw new Error('Building the single executable failed or warned.');
+  }
   // Writing the bundle into Node breaks its signature, and macOS runs no
   // unsigned code on Apple silicon; packaging signs it properly afterwards.
   if (process.platform === 'darwin') {

@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import type { AsyncEntry } from '@napi-rs/keyring';
@@ -15,8 +14,6 @@ import {
   storedToken,
   waitForToken,
 } from './device-flow.js';
-
-const run = promisify(execFile);
 
 /**
  * The Repotted GitHub App, registered as "Repotted App". A client ID is
@@ -96,7 +93,9 @@ function parseJson(text: string): unknown {
 /**
  * The OS keychain: Keychain on macOS, Credential Manager on Windows, and the
  * Secret Service (GNOME Keyring or KWallet) on Linux. The native module loads on first use, so commands
- * that take GITHUB_TOKEN still run where it has no build or no keychain.
+ * that take GITHUB_TOKEN still run where it has no build or no keychain, and
+ * so the desktop app's startup snapshot can be built: a snapshot can't hold a
+ * native module.
  */
 export const keychain: TokenStore = {
   async read() {
@@ -133,7 +132,11 @@ export interface TokenSources {
 }
 
 async function ghCliToken(): Promise<string> {
-  const { stdout } = await run('gh', ['auth', 'token', '--hostname', 'github.com'], { timeout: 10_000 });
+  // Loaded on use: Node hasn't verified child_process in startup snapshots.
+  const { execFile } = await import('node:child_process');
+  const { stdout } = await promisify(execFile)('gh', ['auth', 'token', '--hostname', 'github.com'], {
+    timeout: 10_000,
+  });
   return stdout.trim();
 }
 
