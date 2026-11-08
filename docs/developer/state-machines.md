@@ -111,7 +111,10 @@ the App's installations and no token variable is set. A token variable or the
 GitHub CLI's sign-in would still apply after signing out, so checking would
 lead straight back to the app. **Sign out** is off while a save or a sync
 runs, including the sync a save starts, since neither can be stopped
-partway. Asking to leave and Asking to sign out are the question in
+partway. A saved editor that a listing drops from the cache while the sync
+after its save runs, such as when that sync pulled a file, no longer counts,
+so **Sign out** comes back once that sync ends. Asking to leave and Asking to
+sign out are the question in
 [Leaving with unsaved changes](#leaving-with-unsaved-changes), on the
 **Profiles** page.
 

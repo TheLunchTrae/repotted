@@ -438,6 +438,44 @@ public sealed class ConfigRepositoryTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Sign_out_comes_back_after_a_save_whose_sync_pulls_a_file()
+    {
+        var copy = Synced();
+        var file = Path.Combine(copy, "base.yaml");
+        File.WriteAllText(file, "repository:\n  has_issues: true\n");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var cli = new FakeCli()
+            .On("repos --json", Documents.Repositories)
+            .On(Command(copy), Sync())
+            .On(folders.List(copy), Listing(file))
+            .On($"profile {file} --json", Documents.ResolvedBase(file))
+            .On($"profile {file} --set repository.has_wiki=false --json", Documents.ResolvedBase(file));
+        var shell = new ShellViewModel(
+            new Account.SignedIn("TheLunchTrae", null, null, Documents.InstallUrl),
+            new RepottedClient(cli),
+            new FakeDesktop(),
+            folders.Settings,
+            () => Task.CompletedTask);
+        await shell.RefreshAsync();
+        shell.Profiles.Selected = shell.Profiles.Items.Single();
+        var editor = shell.Profiles.Current!;
+        editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki")
+            .Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        bool? lastRead = null;
+        shell.SignOutCommand.CanExecuteChanged += (_, _) => lastRead = shell.SignOutCommand.CanExecute(null);
+        // The sync after the save pulls another file, so the listing after it
+        // drops the saved editor from the cache while its save still runs.
+        cli.On(Command(copy), Sync(pulled: ["other.yaml"]));
+
+        await editor.SaveCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(editor.Saving);
+        // The button shows what it read at the last change it heard of.
+        Assert.True(lastRead);
+    }
+
+    [AvaloniaFact]
     public async Task Reconnecting_adds_the_local_profiles_the_repository_does_not_have()
     {
         var copy = Synced();

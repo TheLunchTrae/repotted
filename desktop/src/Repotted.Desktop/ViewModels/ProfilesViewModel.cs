@@ -632,8 +632,7 @@ internal sealed partial class ProfilesViewModel(
         }
         if (e.PropertyName == nameof(ProfileViewModel.HasChanges) && editor is { HasChanges: false, Removed: true })
         {
-            editor.PropertyChanged -= OnEditorChanged;
-            editors.Remove(editor.File);
+            Forget(editor.File, editor);
             _ = ListAsync();
         }
         else if (!marking
@@ -668,6 +667,18 @@ internal sealed partial class ProfilesViewModel(
             editor.PropertyChanged -= OnEditorChanged;
         }
         editors.Clear();
+    }
+
+    /// <summary>
+    /// Drops <paramref name="editor"/> from the cache. Its save can still be
+    /// running, such as when the sync after it pulled a file, and the list no
+    /// longer hears it end, so whether the list is busy is read again now.
+    /// </summary>
+    private void Forget(string file, ProfileViewModel editor)
+    {
+        editor.PropertyChanged -= OnEditorChanged;
+        editors.Remove(file);
+        OnPropertyChanged(nameof(Busy));
     }
 
     /// <summary>Lists the profiles again, after a sync with the config repository when they live in one.</summary>
@@ -736,8 +747,7 @@ internal sealed partial class ProfilesViewModel(
             {
                 if (!editor.HasChanges)
                 {
-                    editor.PropertyChanged -= OnEditorChanged;
-                    editors.Remove(file);
+                    Forget(file, editor);
                 }
                 else if (names.ContainsKey(file))
                 {
