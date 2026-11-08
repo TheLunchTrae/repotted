@@ -57,8 +57,8 @@ const noModuleMutableBinding = {
   },
 };
 
-// erasableSyntaxOnly rejects enums that emit code, but not ambient ones,
-// such as `declare enum` or an enum in a declaration file.
+// erasableSyntaxOnly already rejects enums that emit code. This rule reports
+// every enum, so it also covers `declare enum` and enums in declaration files.
 const noEnum = {
   meta: {
     type: 'problem',
@@ -69,6 +69,29 @@ const noEnum = {
     return {
       TSEnumDeclaration(node) {
         context.report({ node, messageId: 'enum' });
+      },
+    };
+  },
+};
+
+// typescript/no-namespace and erasableSyntaxOnly both allow `declare global {}`
+// and string-named `declare module 'x' {}`, so package source reports every
+// module declaration here and ambient ones live in *.d.ts files.
+const noModuleDeclaration = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      module:
+        'Do not declare namespaces, modules or globals in application or test code. Put ambient declarations in *.d.ts files and use ES modules for runtime namespacing.',
+    },
+  },
+  create(context) {
+    return {
+      TSModuleDeclaration(node) {
+        if (node.parent.type !== 'TSModuleDeclaration') {
+          context.report({ node, messageId: 'module' });
+        }
       },
     };
   },
@@ -96,6 +119,7 @@ const standardsPlugin = {
   rules: {
     'no-default-export': noDefaultExport,
     'no-enum': noEnum,
+    'no-module-declaration': noModuleDeclaration,
     'no-module-mutable-binding': noModuleMutableBinding,
     'typescript-source-only': typeScriptSourceOnly,
   },
