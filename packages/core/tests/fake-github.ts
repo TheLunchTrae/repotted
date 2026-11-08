@@ -19,6 +19,14 @@ interface StoredEnvironment {
   branch_policies: { id: number; name: string; type: string }[];
 }
 
+interface StoredLabel {
+  id: number;
+  name: string;
+  color: string;
+  description: string | null;
+  default: boolean;
+}
+
 export interface FakeState {
   repository: Record<string, unknown>;
   actions: { enabled: boolean; allowed_actions?: string; sha_pinning_required?: boolean };
@@ -34,6 +42,8 @@ export interface FakeState {
    */
   settings: Record<string, unknown>;
   autolinks: { id: number; key_prefix: string; url_template: string; is_alphanumeric: boolean }[];
+  /** Labels as GitHub stores them, where an empty description is null. */
+  labels: StoredLabel[];
   account: FakeAccount;
   /** The signed-in account's `permissions` flags on the repository. */
   viewer: { admin: boolean; maintain: boolean; push: boolean; triage: boolean; pull: boolean };
@@ -169,6 +179,7 @@ export class FakeGitHub implements GitHub {
       environments: [],
       settings: {},
       autolinks: [],
+      labels: [],
       account: { login: 'lunch', name: null, repositories: [] },
       viewer: { admin: true, maintain: true, push: true, triage: true, pull: true },
       ...state,
@@ -217,6 +228,10 @@ export class FakeGitHub implements GitHub {
     ).exec(route);
     if (environment !== null) {
       return this.handleEnvironment(method, decodeURIComponent(environment[1] ?? ''), environment, query, body);
+    }
+    const label = new RegExp(`^${base}/labels(?:/([^/]+))?$`, 'u').exec(route);
+    if (label !== null) {
+      return this.handleLabel(method, label[1] === undefined ? undefined : decodeURIComponent(label[1]), query, body);
     }
     const setting = this.handleSetting(method, route.slice(base.length), body);
     if (setting !== unhandled) {
@@ -465,12 +480,97 @@ export class FakeGitHub implements GitHub {
       throw new GitHubError(422, 'runner_labels and runner_group are only for self-hosted and labeled runners');
     }
     // A PUT replaces the settings; a PATCH changes the fields it sends.
-    settings[relative] = method === 'PUT' ? next : { ...record(settings[relative]), ...next };
+    const written = method === 'PUT' ? { ...next } : { ...record(settings[relative]), ...next };
+    if (relative === '/code-scanning/default-setup' || relative === '/code-quality/setup') {
+      if (written['state'] === 'not-configured') {
+        // GitHub reports no runner while the setup is not configured.
+        written['runner_type'] = null;
+        written['runner_label'] = null;
+      } else {
+        // A configured setup runs on standard runners unless told otherwise.
+        written['runner_type'] ??= 'standard';
+        if (written['runner_type'] === 'labeled' && typeof written['runner_label'] !== 'string') {
+          throw new GitHubError(422, 'labeled runners need a runner label');
+        }
+        // GitHub keeps no runner label with standard runners, reporting it as null.
+        if (written['runner_type'] === 'standard') {
+          written['runner_label'] = null;
+        }
+      }
+    }
+    settings[relative] = written;
     if (relative === '/dependabot/runner-settings') {
       // GitHub always reports the labels and group, empty when there are none.
       settings[relative] = { runner_labels: [], runner_group: '', ...record(settings[relative]) };
     }
     return undefined;
+  }
+
+  /**
+   * Labels as GitHub serves them: found by name in any case, refused when a
+   * write would give two labels one name, and written with a color without
+   * `#`, as GitHub requires.
+   */
+  private handleLabel(method: Method, name: string | undefined, query: string, body: unknown): unknown {
+    const find = (wanted: string): StoredLabel | undefined =>
+      this.state.labels.find((item) => item.name.toLowerCase() === wanted.toLowerCase());
+    const color = (value: unknown): string => {
+      if (typeof value !== 'string' || !/^[\da-f]{6}$/iu.test(value)) {
+        throw answered(422, `Validation Failed: color is invalid: ${String(value)}`);
+      }
+      return value;
+    };
+    const description = (value: unknown): string | null => (value === '' ? null : String(value));
+    if (name === undefined && method === 'GET') {
+      const { perPage, page } = paging(new URLSearchParams(query));
+      return this.state.labels.slice((page - 1) * perPage, page * perPage);
+    }
+    if (name === undefined && method === 'POST') {
+      const next = record(body);
+      const wanted = String(next['name']);
+      if (find(wanted) !== undefined) {
+        throw answered(422, 'Validation Failed: name already_exists');
+      }
+      const created: StoredLabel = {
+        id: this.nextId++,
+        name: wanted,
+        color: next['color'] === undefined ? 'ededed' : color(next['color']),
+        description: next['description'] === undefined ? null : description(next['description']),
+        default: false,
+      };
+      this.state.labels.push(created);
+      return created;
+    }
+    const current = name === undefined ? undefined : find(name);
+    if (current === undefined) {
+      throw answered(404, `Not Found: ${method} label ${name ?? ''}`);
+    }
+    if (method === 'GET') {
+      return current;
+    }
+    if (method === 'DELETE') {
+      this.state.labels = this.state.labels.filter((item) => item !== current);
+      return undefined;
+    }
+    if (method === 'PATCH') {
+      const next = record(body);
+      const renamed = next['new_name'];
+      if (typeof renamed === 'string') {
+        const taken = find(renamed);
+        if (taken !== undefined && taken !== current) {
+          throw answered(422, 'Validation Failed: name already_exists');
+        }
+        current.name = renamed;
+      }
+      if (next['color'] !== undefined) {
+        current.color = color(next['color']);
+      }
+      if (next['description'] !== undefined) {
+        current.description = description(next['description']);
+      }
+      return current;
+    }
+    throw answered(404, `Not Found: ${method} label ${current.name}`);
   }
 
   private handleAutolinks(method: Method, relative: string, body: unknown): unknown {

@@ -19,6 +19,55 @@ function combineScriptLanguages(value: Record<string, unknown>): Record<string, 
   return { ...value, languages: [...new Set(combined)] };
 }
 
+interface Adjusted {
+  readonly desired: Record<string, unknown>;
+  readonly dropped?: { readonly fields: string[]; readonly reason: string };
+}
+
+/** Leaves the fields out of what the profile names, with the reason, or changes nothing when there are none. */
+function without(desired: Record<string, unknown>, fields: string[], reason: string): Adjusted {
+  return fields.length > 0
+    ? {
+        desired: Object.fromEntries(Object.entries(desired).filter(([field]) => !fields.includes(field))),
+        dropped: { fields, reason },
+      }
+    : { desired };
+}
+
+/**
+ * Leaves out the runner fields of code scanning or code quality that GitHub
+ * would not keep. GitHub reports no runner while a setup is not configured,
+ * runs a configured one on standard runners unless told otherwise, reports
+ * no runner label with standard runners, and refuses labeled runners
+ * without one. GitHub's docs don't say so; this is how it reports these
+ * settings, and what the fake GitHub models.
+ */
+function keepRunnerLabel(desired: Record<string, unknown>, live: Record<string, unknown>): Adjusted {
+  const named = (field: string) => desired[field] !== undefined;
+  if (desired['state'] === 'not-configured') {
+    // GitHub keeps no runner then, and a runner a base profile names isn't a mistake, so it goes quietly.
+    return { desired: Object.fromEntries(Object.entries(desired).filter(([field]) => !field.startsWith('runner_'))) };
+  }
+  if (desired['state'] === undefined && live['state'] === 'not-configured') {
+    const set = ['runner_type', 'runner_label'].filter((field) => named(field) && desired[field] !== null);
+    return without(desired, set, 'GitHub keeps no runner while the setup is not configured');
+  }
+  const type = desired['runner_type'] ?? live['runner_type'] ?? 'standard';
+  const label = named('runner_label') ? desired['runner_label'] : live['runner_label'];
+  if (type === 'standard' && typeof label === 'string' && named('runner_label')) {
+    return without(desired, ['runner_label'], 'GitHub keeps none with standard runners');
+  }
+  if (type === 'labeled' && typeof label !== 'string') {
+    // The runner type only goes when it would change what GitHub has.
+    const fields = [
+      ...(named('runner_type') && desired['runner_type'] !== live['runner_type'] ? ['runner_type'] : []),
+      ...(named('runner_label') ? ['runner_label'] : []),
+    ];
+    return without(desired, fields, 'labeled runners need a runner label');
+  }
+  return { desired };
+}
+
 /**
  * Security and code quality settings at endpoints of their own, in the
  * order they apply: Dependabot alerts before the security updates that
@@ -58,6 +107,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     schema: securityFields.code_scanning_default_setup,
     identifying: ['languages'],
     fromGitHub: combineScriptLanguages,
+    adjust: keepRunnerLabel,
   },
   {
     kind: 'object',
@@ -75,6 +125,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     method: 'PATCH',
     schema: securityFields.code_quality_setup,
     identifying: ['languages'],
+    adjust: keepRunnerLabel,
   },
   {
     kind: 'object',

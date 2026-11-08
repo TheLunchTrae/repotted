@@ -7,7 +7,7 @@ each part.
 
 ## Sections
 
-A profile has up to nine sections. Keys are the field names of the
+A profile has up to ten sections. Keys are the field names of the
 [GitHub REST API](https://docs.github.com/rest), so GitHub's REST docs
 describe each one. Repotted rejects a key it doesn't know, so a misspelling
 never passes silently. The exceptions are a rule's `parameters` and a
@@ -24,6 +24,7 @@ ruleset's `conditions`, which Repotted passes to GitHub as they are.
 | `autolinks`         | A list of autolink references: `key_prefix`, `url_template`, `is_alphanumeric`                                                                                                                                                                                                                                                                                               |
 | `rulesets`          | A list of repository rulesets, as the rulesets API describes them                                                                                                                                                                                                                                                                                                            |
 | `environments`      | A list of deployment environments: `name`, `wait_timer`, `prevent_self_review`, `reviewers`, `deployment_branch_policy`, and `branch_policies`                                                                                                                                                                                                                               |
+| `labels`            | A list of issue and pull request labels: `name`, `color`, `description`, and Repotted's own `renamed_from`                                                                                                                                                                                                                                                                   |
 
 Most keys are settings GitHub keeps on the repository. The rest each have an
 endpoint of their own, and a key whose value is an object, such as
@@ -67,7 +68,7 @@ A draft is part of a profile that you've saved but don't want applied yet. It
 can be unfinished or invalid. Plans leave every draft out, so a draft never
 reaches GitHub, and a plan lists each draft it skipped.
 
-- A ruleset, environment, or autolink becomes a draft with `draft: true`.
+- A ruleset, environment, label, or autolink becomes a draft with `draft: true`.
   Only its name, or an autolink's `key_prefix`, has to be valid.
 - Draft settings go in a `drafts` section, which holds the same sections of
   settings as the profile: `repository`, `merge`, `actions`, `security`,
@@ -110,10 +111,10 @@ off. A draft ruleset isn't sent to GitHub at all.
 
 A setting the profile leaves out keeps its current value on each repository,
 and a ruleset, environment, autolink or custom property the profile doesn't
-name is left alone. So you can start with a few settings and add more later
+name, and a label it doesn't list, is left alone. So you can start with a few settings and add more later
 without touching the rest.
 
-To delete a ruleset or an environment, list it as
+To delete a ruleset, an environment, or a label, list it as
 `{ name: <name>, absent: true }`. Deleting an environment also deletes its
 secrets and variables. To delete an autolink, list it as
 `{ key_prefix: <prefix>, absent: true }`, and to take down the Pages site, set
@@ -189,9 +190,50 @@ alerts off turns the updates off first, and skips a profile that turns the
 updates on with the alerts off.
 
 Some settings only hold together. With standard Dependabot runners, GitHub
-keeps no runner labels or group, so a plan skips them with a warning. Naming
-OIDC `include_claim_keys` stops using the default subject, and claim keys next
-to `use_default: true` are skipped, since GitHub ignores them.
+keeps no runner labels or group, so a plan skips them with a warning. Code
+scanning and code quality use a `runner_label` only with labeled runners, and
+`runner_label: null` means no label. A configured setup runs on standard
+runners unless the profile names another type, so a label there is skipped
+with a warning, as is a labeled runner type, or a `null` label, that would
+leave labeled runners without a label. A setup that is not configured keeps no
+runner at all. To move a base profile's labeled runners to standard ones, set
+`runner_label: null` next to `runner_type: standard`, since the base's label
+is kept otherwise. Naming OIDC `include_claim_keys` stops using the default
+subject, and claim keys next to `use_default: true` are skipped, since GitHub
+ignores them.
+
+## Labels
+
+Labels match by name, without regard to case, as GitHub does. A `color` or
+`description` the profile leaves out keeps the repository's value, and
+`description: ''` clears it. `color` is six hex digits, with or without `#`.
+Quote it, because YAML reads `000000` as a number:
+
+```yaml
+labels:
+  - name: 'type: feature'
+    color: 'a2eeef'
+    description: New feature or request
+    renamed_from: [enhancement]
+  - name: 'priority: high'
+    color: 'b60205'
+  - name: wontfix
+    absent: true
+```
+
+To rename a label, list its old names in `renamed_from`. On a repository that
+has an old name and not the new one, Repotted renames the old label, so its
+issues and pull requests keep it. Once it's renamed, the old name matches
+nothing, so the same profile can roll the rename out to other repositories.
+When a repository has both the new name and an old one, Repotted updates the
+new label, leaves the old one as it is and warns: GitHub can't merge two
+labels, and deleting the old one would take it off its issues. When it has
+several old names, the first one listed is renamed and the plan warns about
+the rest. An old name can't be a label the profile lists, including one it
+gets from a base profile, so rename a base's label in the base. Two labels
+can't claim the same old name. A draft label that another label renames from
+gets a warning: the rename still applies, since drafts never change what
+applies.
 
 ## Autolinks and Pages
 
@@ -228,8 +270,8 @@ what it sets itself:
   such as `selected_actions` or `code_scanning_default_setup`.
 - `pages: { absent: true }` replaces a base's site, and a site replaces a
   base's `absent`.
-- A ruleset, environment, or autolink replaces the base's entry of the same
-  name or prefix whole. Entries with new names go after the base's.
+- A ruleset, environment, label, or autolink replaces the base's entry of the
+  same name or prefix whole. Entries with new names go after the base's.
 - Drafts merge the same way, but only with drafts: a draft replaces the base's
   draft of the same key, name or prefix, and never an entry or setting that
   applies.
@@ -244,8 +286,9 @@ leave out something that each profile extending it adds.
 
 A plan lists its changes in the order they apply: repository and merge
 settings, then security settings, then Actions settings, custom properties,
-Pages, and autolinks, then rulesets, then environments. Within
+Pages, and autolinks, then rulesets, then environments, then labels. Within
 each, Repotted orders the writes so the repository stays protected throughout.
-For example, a new ruleset exists before a ruleset it replaces is deleted.
+For example, a new ruleset exists before a ruleset it replaces is deleted,
+and labels are deleted, then renamed, then updated, then created.
 [Plan and apply](cli.md#plan-and-apply) describes how to review and apply a
 plan.

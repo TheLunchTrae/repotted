@@ -132,6 +132,38 @@ public sealed class PlanDiffTests
     }
 
     [Fact]
+    public void Labels_show_a_rename_a_new_label_and_a_deleted_one()
+    {
+        // A label whose name starts with another's and ": " is a label of its own, not a branch policy.
+        var plan = Plan(
+            """
+            {"labels":[{"name":"Type: feature","renamed_from":["enhancement"]},{"name":"priority","color":"b60205"},
+              {"name":"priority: high","color":"d93f0b"},{"name":"wontfix","absent":true}]}
+            """,
+            """
+            {"section":"labels","action":"delete","target":"wontfix","fields":[]},
+            {"section":"labels","action":"update","target":"Type: feature","fields":[{"field":"name","from":"enhancement","to":"Type: feature"}]},
+            {"section":"labels","action":"create","target":"priority: high","fields":[]}
+            """);
+
+        Assert.Equal(
+            [
+                "  labels:",
+                "-   - name: enhancement",
+                "+   - name: 'Type: feature'",
+                "      renamed_from:",
+                "        - enhancement",
+                "    - name: priority",
+                "      color: b60205",
+                "+   - name: 'priority: high'",
+                "+     color: d93f0b",
+                "    - name: wontfix",
+                "+     absent: true",
+            ],
+            Drawn(PlanDiff.Lines(plan)));
+    }
+
+    [Fact]
     public void A_change_Repotted_cannot_make_has_a_lock_under_it_and_a_one_off_edit_a_tag()
     {
         var plan = Plan(

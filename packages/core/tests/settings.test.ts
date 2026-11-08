@@ -595,6 +595,167 @@ describe('settings GitHub ties together', () => {
     expect(next.warnings).toEqual([warning]);
   });
 
+  test('leaves out a runner label with standard code scanning and code quality runners, so the plan settles', async () => {
+    const github = new FakeGitHub(offered());
+    github.state.settings['/code-scanning/default-setup'] = {
+      state: 'configured',
+      query_suite: 'default',
+      languages: ['python'],
+      runner_type: 'labeled',
+      runner_label: 'code-scanning',
+    };
+    github.state.settings['/code-quality/setup'] = { state: 'configured', runner_type: 'standard', runner_label: null };
+    const profile: Profile = {
+      security: {
+        code_scanning_default_setup: { runner_type: 'standard', runner_label: 'x' },
+        code_quality_setup: { runner_label: 'x' },
+      },
+    };
+    const warnings = [
+      'Skipped security.code_scanning_default_setup.runner_label: GitHub keeps none with standard runners',
+      'Skipped security.code_quality_setup.runner_label: GitHub keeps none with standard runners',
+    ];
+
+    const plan = await createPlan(github, repo, profile);
+    expect(plan.warnings).toEqual(warnings);
+    expect(plan.changes.map((change) => change.request.body)).toEqual([{ runner_type: 'standard' }]);
+    await applyPlan(github, plan);
+    const next = await createPlan(github, repo, profile);
+    expect(next.changes).toEqual([]);
+    expect(next.warnings).toEqual(warnings);
+  });
+
+  test('skips labeled code scanning and code quality runners without a runner label', async () => {
+    const github = new FakeGitHub(offered());
+    github.state.settings['/code-quality/setup'] = { state: 'configured', runner_type: 'labeled', runner_label: 'big' };
+
+    const profile: Profile = {
+      security: {
+        code_scanning_default_setup: { state: 'configured', runner_type: 'labeled' },
+        code_quality_setup: { runner_label: null },
+      },
+    };
+
+    const plan = await createPlan(github, repo, profile);
+    expect(plan.warnings).toEqual([
+      'Skipped security.code_scanning_default_setup.runner_type: labeled runners need a runner label',
+      'Skipped security.code_quality_setup.runner_label: labeled runners need a runner label',
+    ]);
+    expect(plan.changes.map((change) => change.request.body)).toEqual([{ state: 'configured' }]);
+    await applyPlan(github, plan);
+    const next = await createPlan(github, repo, profile);
+    expect(next.changes).toEqual([]);
+    expect(next.warnings).toEqual(plan.warnings);
+  });
+
+  test('clears a runner label by moving to standard runners with a null label', async () => {
+    const github = new FakeGitHub(offered());
+    github.state.settings['/code-quality/setup'] = { state: 'configured', runner_type: 'labeled', runner_label: 'big' };
+    const profile: Profile = { security: { code_quality_setup: { runner_type: 'standard', runner_label: null } } };
+
+    const plan = await createPlan(github, repo, profile);
+    expect(plan.warnings).toEqual([]);
+    expect(plan.changes.map((change) => change.request.body)).toEqual([
+      { runner_type: 'standard', runner_label: null },
+    ]);
+    await applyPlan(github, plan);
+    expect((await createPlan(github, repo, profile)).changes).toEqual([]);
+  });
+
+  test('skips a runner label on a setup that runs on standard runners by default', async () => {
+    const github = new FakeGitHub(offered());
+    const profile: Profile = {
+      security: { code_scanning_default_setup: { state: 'configured', runner_label: 'big' } },
+    };
+    const warning =
+      'Skipped security.code_scanning_default_setup.runner_label: GitHub keeps none with standard runners';
+
+    const plan = await createPlan(github, repo, profile);
+    expect(plan.warnings).toEqual([warning]);
+    expect(plan.changes.map((change) => change.request.body)).toEqual([{ state: 'configured' }]);
+    await applyPlan(github, plan);
+    const next = await createPlan(github, repo, profile);
+    expect(next.changes).toEqual([]);
+    expect(next.warnings).toEqual([warning]);
+  });
+
+  test('turns off a setup on labeled runners from a capture of one that is not configured', async () => {
+    const source = new FakeGitHub(offered());
+    // As GitHub reports it while not configured.
+    source.state.settings['/code-scanning/default-setup'] = {
+      state: 'not-configured',
+      query_suite: 'default',
+      languages: [],
+      runner_type: null,
+      runner_label: null,
+    };
+    const { profile } = await captureProfile(source, repo);
+    expect(profile.security?.code_scanning_default_setup).toHaveProperty('runner_label', null);
+    const github = new FakeGitHub(offered());
+    github.state.settings['/code-scanning/default-setup'] = {
+      state: 'configured',
+      query_suite: 'default',
+      languages: ['python'],
+      runner_type: 'labeled',
+      runner_label: 'big',
+    };
+
+    const plan = await createPlan(github, repo, profile);
+    expect(plan.warnings).toEqual([]);
+    expect(plan.changes.map((change) => change.request.path)).toEqual(['/repos/lunch/app/code-scanning/default-setup']);
+    await applyPlan(github, plan);
+    const next = await createPlan(github, repo, profile);
+    expect(next.changes).toEqual([]);
+    expect(next.warnings).toEqual([]);
+  });
+
+  test('plans no runner for a setup that is not configured, even one a base profile names', async () => {
+    const github = new FakeGitHub(offered());
+    // As GitHub reports it while not configured.
+    github.state.settings['/code-quality/setup'] = { state: 'not-configured', runner_type: null, runner_label: null };
+    const dir = await mkdtemp(path.join(tmpdir(), 'repotted-settings-'));
+    await writeFile(
+      path.join(dir, 'base.yaml'),
+      'security:\n  code_quality_setup: { state: configured, runner_type: standard }\n',
+    );
+    await writeFile(
+      path.join(dir, 'own.yaml'),
+      'extends: base.yaml\nsecurity:\n  code_quality_setup: { state: not-configured }\n',
+    );
+    const { profile } = await resolveProfile(path.join(dir, 'own.yaml'));
+    expect(profile.security?.code_quality_setup).toEqual({ state: 'not-configured', runner_type: 'standard' });
+
+    const plan = await createPlan(github, repo, profile);
+    expect(plan.changes).toEqual([]);
+    expect(plan.warnings).toEqual([]);
+  });
+
+  test('skips runner settings with a warning while the repository leaves the setup not configured', async () => {
+    const github = new FakeGitHub(offered());
+    const plan = await createPlan(github, repo, {
+      security: { code_scanning_default_setup: { runner_type: 'labeled', runner_label: 'big' } },
+    });
+    const reason = 'GitHub keeps no runner while the setup is not configured';
+    expect(plan.changes).toEqual([]);
+    expect(plan.warnings).toEqual([
+      `Skipped security.code_scanning_default_setup.runner_type: ${reason}`,
+      `Skipped security.code_scanning_default_setup.runner_label: ${reason}`,
+    ]);
+  });
+
+  test('warns only about the label when labeled runners would lose theirs', async () => {
+    const github = new FakeGitHub(offered());
+    github.state.settings['/code-quality/setup'] = { state: 'configured', runner_type: 'labeled', runner_label: 'big' };
+
+    const plan = await createPlan(github, repo, {
+      security: { code_quality_setup: { runner_type: 'labeled', runner_label: null } },
+    });
+    expect(plan.changes).toEqual([]);
+    expect(plan.warnings).toEqual([
+      'Skipped security.code_quality_setup.runner_label: labeled runners need a runner label',
+    ]);
+  });
+
   test('plans nothing for a captured repository on standard Dependabot runners', async () => {
     const github = new FakeGitHub(offered());
 

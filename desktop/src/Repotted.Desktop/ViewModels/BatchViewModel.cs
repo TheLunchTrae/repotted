@@ -486,7 +486,7 @@ internal sealed partial class BatchViewModel(
             return;
         }
         var edits = new ProfileViewModel(
-            client, StagedReview.Listing(member.File, member.Base), EditsSavedAsync, store: StagedReview.Store(client))
+            client, StagedReview.Listing(member.File, member.Base), StagedReview.Store(client), EditsSavedAsync)
         {
             Diff = review.Diff,
         };

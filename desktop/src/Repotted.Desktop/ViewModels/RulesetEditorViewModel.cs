@@ -75,13 +75,10 @@ internal sealed partial class RulesetEditorViewModel : EntryEditorViewModel
         get => include;
         set
         {
-            if (include == value)
+            if (SetProperty(ref include, value))
             {
-                return;
+                Touched();
             }
-            include = value;
-            OnPropertyChanged();
-            Touched();
         }
     }
 
@@ -92,13 +89,10 @@ internal sealed partial class RulesetEditorViewModel : EntryEditorViewModel
         get => exclude;
         set
         {
-            if (exclude == value)
+            if (SetProperty(ref exclude, value))
             {
-                return;
+                Touched();
             }
-            exclude = value;
-            OnPropertyChanged();
-            Touched();
         }
     }
 

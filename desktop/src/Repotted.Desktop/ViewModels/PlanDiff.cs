@@ -92,9 +92,9 @@ internal static partial class PlanDiff
             List<Unit>? units = (name, value) switch
             {
                 _ when SettingsSections.Contains(name) && value is JsonObject settings => SettingsUnits(name, settings, section, plan.Warnings),
-                ("rulesets" or "environments", JsonArray entries) =>
-                    EntryUnits(entries, section, "name", name == "environments", plan.Warnings, $"Skipped {name[..^1]}"),
-                ("autolinks", JsonArray entries) => EntryUnits(entries, section, "key_prefix", ignoreCase: false, plan.Warnings, null),
+                ("rulesets" or "environments" or "labels", JsonArray entries) =>
+                    EntryUnits(entries, section, "name", ignoreCase: name != "rulesets", name == "environments", plan.Warnings, $"Skipped {name[..^1]}"),
+                ("autolinks", JsonArray entries) => EntryUnits(entries, section, "key_prefix", ignoreCase: false, policies: false, plan.Warnings, null),
                 _ => null,
             };
             if (units is null)
@@ -212,6 +212,7 @@ internal static partial class PlanDiff
         IReadOnlyList<IndexedChange> changes,
         string key,
         bool ignoreCase,
+        bool policies,
         IReadOnlyList<string> warnings,
         string? skipped)
     {
@@ -228,7 +229,7 @@ internal static partial class PlanDiff
         {
             var name = entry[key]?.GetValue<string>() ?? "";
             var own = changes.Where(item => string.Equals(item.Change.Target, name, comparison)).ToList();
-            var policies = ignoreCase
+            var branchPolicies = policies
                 ? changes.Where(item => Policy(name, item.Change.Target)).ToList()
                 : [];
             JsonObject? now = (JsonObject)entry.DeepClone();
@@ -264,7 +265,7 @@ internal static partial class PlanDiff
                         break;
                 }
             }
-            foreach (var item in policies)
+            foreach (var item in branchPolicies)
             {
                 if (now is null || PolicyName().Match(item.Change.Target[(name.Length + 2)..]) is not { Success: true } match)
                 {
@@ -296,7 +297,7 @@ internal static partial class PlanDiff
             units.Add(new Unit(
                 now,
                 after,
-                [.. own.Concat(policies).Select(item => (item, (string?)null))],
+                [.. own.Concat(branchPolicies).Select(item => (item, (string?)null))],
                 Skipped: SkipReason(warnings, skipped is null ? null : $"{skipped} \"{name}\"")));
         }
         return units;

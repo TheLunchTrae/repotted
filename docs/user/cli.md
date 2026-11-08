@@ -44,7 +44,7 @@ npx repotted capture octo-org/app --output app.yaml
 ```
 
 `capture` reads every section of a repository, from its settings and merge
-methods to its rulesets and environments, and writes them as a profile. It
+methods to its rulesets, environments and labels, and writes them as a profile. It
 leaves out settings that name the repository, such as its description and
 topics, so the profile suits other repositories too. When GitHub reports a
 value that a profile can't hold, such as an option newer than Repotted, the
@@ -115,18 +115,18 @@ exists, and when edits given with `--new` fail, it leaves no file behind.
 
 `stage <file>` prints the profile the staged apply brings the repository to.
 It takes the editing options of `profile`, described below, for one-off edits.
-A ruleset or environment you edit replaces the profile's entry of that name
+A ruleset, environment or label you edit replaces the profile's entry of that name
 for this apply, so give the whole entry. It also takes:
 
 - `--exclude key` leaves a value of the profile out of this apply, so the
   repository keeps what it has: a section, as `pages`; a setting or a group
   of settings, as `repository.has_wiki` or `actions.selected_actions`; or one
-  entry of a list, as `rulesets/Main`, `environments/production`, or
-  `autolinks/JIRA-`. `--include key` takes it back. A value can't be both
+  entry of a list, as `rulesets/Main`, `environments/production`,
+  `labels/bug`, or `autolinks/JIRA-`. `--include key` takes it back. A value can't be both
   excluded and edited, and an exclusion has to name something the profile
   sets, so a mistyped name is refused, as is one already left out by a wider
-  exclusion, or one the profile no longer sets. An environment's name matches
-  in any case, as GitHub's does; a ruleset's name and an autolink's prefix
+  exclusion, or one the profile no longer sets. An environment's or a label's
+  name matches in any case, as GitHub's does; a ruleset's name and an autolink's prefix
   match as written. The profile is checked once the exclusions are out, so an edit
   that only fits without an excluded value is fine.
 - `--save-to-profile` writes the one-off edits into the profile the staged
@@ -223,25 +223,27 @@ profiles it extends. With these options, it edits the file instead:
   The value is JSON, or a bare word as a string.
 - `--unset section.key` removes a setting from the file, so a base profile's
   value applies, or else the repository keeps its own.
-- `--ruleset json` and `--environment json` write one ruleset or environment,
-  given as a JSON object with a `name`. It replaces the file's own entry of
+- `--ruleset json`, `--environment json` and `--label json` write one
+  ruleset, environment or label, given as a JSON object with a `name`. It replaces the file's own entry of
   that name, or goes after the others when the file has none.
-- `--drop-ruleset name` and `--drop-environment name` remove the file's own
+- `--drop-ruleset name`, `--drop-environment name` and `--drop-label name`
+  remove the file's own
   entry, so an entry of that name in a base profile applies again.
 - `--set drafts.section.key=value` and `--unset drafts.section.key` set and
   remove a [draft](profiles.md#drafts) setting. A draft value is saved even
   when it wouldn't apply, and its problems print as warnings.
-- `--ruleset` or `--environment` with `"draft": true` in the JSON writes a
-  draft, and `--drop-draft-ruleset name` and `--drop-draft-environment name`
-  remove one.
+- `--ruleset`, `--environment` or `--label` with `"draft": true` in the JSON
+  writes a draft, and `--drop-draft-ruleset name`,
+  `--drop-draft-environment name` and `--drop-draft-label name` remove one.
 
 You can give several options at once; they apply in order. A write right after
 a drop from the same list renames the dropped entry in place, which can also
-change only the case of an environment's name. Dropping a draft and then
+change only the case of an environment's or a label's name. Dropping a draft and then
 writing the entry without `"draft": true` finishes the draft in place.
 GitHub knows rulesets and environments by name, so applying a renamed entry
 creates a new one and leaves the old one on the repository, unless an
-`absent: true` entry removes it.
+`absent: true` entry removes it. A label keeps its issues through a rename
+only when its old name is in [`renamed_from`](profiles.md#labels).
 
 An edit changes only what differs and keeps the rest of the file, including
 comments, line endings, and indent width, though YAML quoting and list

@@ -617,7 +617,7 @@ public sealed class BatchTests : IDisposable
         await main.StartAsync();
         Dispatcher.UIThread.RunJobs();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
-        await Until(() => shell.Profiles.Usable.Any() && !shell.Profiles.Loading && !shell.Profiles.Syncing);
+        await Until(() => shell.Profiles.Usable.Any() && !shell.Profiles.Loading && !shell.Profiles.Folder.Syncing);
         var repositories = shell.Repositories;
 
         // Ticking two rows chooses both, and the panel offers a batch apply in place of one repository's details.

@@ -66,6 +66,8 @@ internal sealed record StagedReview(
     public static ProfileStore Store(RepottedClient client) => new(
         async (path, cancellationToken) => (await client.StagedAsync(path, cancellationToken).ConfigureAwait(true)).Layers,
         client.SaveStagedEditsAsync,
+        // Only the app writes the staged file, which is not in the profiles folder, so a save waits for no sync.
+        write => write(),
         "Save edits",
         "One-off edit",
         (@base, _) => @base is null

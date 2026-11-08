@@ -12,6 +12,8 @@ import {
   commitPairs,
   environment,
   identifyingRepositoryFields,
+  label,
+  labelKey,
   mergeSettings,
   profile,
   type Profile,
@@ -23,6 +25,7 @@ import {
 import { actionsEndpoints, planActions, readActions } from './sections/actions.js';
 import { describeAutolink, planAutolinks, readAutolinks } from './sections/autolinks.js';
 import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';
+import { describeLabel, planLabels, readLabels } from './sections/labels.js';
 import { describePages, planPages, readPages } from './sections/pages.js';
 import { captureCustomProperties, planCustomProperties, readCustomProperties } from './sections/properties.js';
 import { planRepository, readRepository, repositoryEndpoints } from './sections/repository.js';
@@ -50,7 +53,7 @@ function draftTargets(drafts: Drafts, section: Section): string[] {
   if (section === 'autolinks') {
     return (drafts.autolinks ?? []).map((entry) => entry.key_prefix);
   }
-  if (section === 'rulesets' || section === 'environments') {
+  if (section === 'rulesets' || section === 'environments' || section === 'labels') {
     return (drafts[section] ?? []).map((entry) => entry.name);
   }
   return Object.keys(drafts[section] ?? {});
@@ -130,12 +133,27 @@ export async function createPlan(
   if (desired.environments !== undefined) {
     add(planEnvironments(desired.environments, await readEnvironments(github, repo), repo));
   }
+  if (desired.labels !== undefined) {
+    const labels = planLabels(desired.labels, await readLabels(github, repo), repo);
+    add(labels);
+    // A rename applies even when a draft names the old label, so say so beside the skipped draft.
+    for (const draft of skipped.filter((item) => item.section === 'labels')) {
+      const rename = labels.changes.find((change) =>
+        change.fields.some(
+          (field) => field.field === 'name' && labelKey(String(field.from)) === labelKey(draft.target),
+        ),
+      );
+      if (rename !== undefined) {
+        warnings.push(`Label "${rename.target}" renames "${draft.target}", which the profile skips as a draft`);
+      }
+    }
+  }
 
   return { repository: `${repo.owner}/${repo.name}`, desired, changes, skipped, warnings };
 }
 
 /**
- * The captured rulesets or environments that a profile can hold. One that
+ * The captured rulesets, environments or labels that a profile can hold. One that
  * fails its schema is left out whole, with a warning: a ruleset without one
  * of its rules would have that rule removed on apply, while a profile leaves
  * a ruleset it does not name alone.
@@ -231,6 +249,7 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
   const autolinks = await readAutolinks(github, repo);
   const rulesets = await readRulesets(github, repo);
   const environments = await readEnvironments(github, repo);
+  const labels = await readLabels(github, repo);
   // A section the repository does not have is no news; one GitHub hides is.
   for (const [section, read] of [
     ['custom_properties', properties],
@@ -238,6 +257,7 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     ['autolinks', autolinks],
     ['rulesets', rulesets],
     ['environments', environments],
+    ['labels', labels],
   ] as const) {
     if (!read.available && read.refused) {
       warnings.push(`Skipped ${section}: ${read.reason}`);
@@ -255,6 +275,9 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
   const capturedEnvironments = environments.available
     ? loadableEntries('environment', environment, environments.environments.map(describeEnvironment), warnings)
     : undefined;
+  const capturedLabels = labels.available
+    ? loadableEntries('label', label, labels.labels.map(describeLabel), warnings)
+    : undefined;
   return {
     profile: {
       repository,
@@ -268,6 +291,7 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
         : {}),
       ...(capturedRulesets === undefined ? {} : { rulesets: capturedRulesets }),
       ...(capturedEnvironments === undefined ? {} : { environments: capturedEnvironments }),
+      ...(capturedLabels === undefined || capturedLabels.length === 0 ? {} : { labels: capturedLabels }),
     },
     warnings,
   };
@@ -362,6 +386,8 @@ function describeTarget(section: Section, target: string): string {
       return `environment ${target}`;
     case 'autolinks':
       return `autolink ${target}`;
+    case 'labels':
+      return `label "${target}"`;
     case 'repository':
     case 'merge':
     case 'actions':
@@ -374,7 +400,7 @@ function describeTarget(section: Section, target: string): string {
 
 /** A draft a plan leaves out, as plan output names it. */
 export function describeSkipped({ section, target }: Skipped): string {
-  if (section === 'autolinks' || section === 'rulesets' || section === 'environments') {
+  if (section === 'autolinks' || section === 'rulesets' || section === 'environments' || section === 'labels') {
     return describeTarget(section, target);
   }
   return section === 'pages' && target === 'absent'

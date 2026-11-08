@@ -51,6 +51,16 @@ These hooks are why a plan settles after one apply:
   runners, except the empty ones GitHub reports there, and labeled runners
   without exactly one label are skipped. An empty runner group stays out of
   a write.
+- A code scanning or code quality runner label is dropped with standard
+  runners, which a configured setup uses when no runner type is set, and a
+  labeled runner type or a `null` label that would leave labeled runners
+  without a label is skipped. A profile that sets the setup to not
+  configured leaves out a runner type or label without a warning, so it can
+  turn off a base profile's setup. One that names a runner for a setup the
+  repository leaves not configured gets a warning. GitHub's docs don't
+  describe this: it follows how GitHub reports these settings, which reads
+  `null` for the label with standard runners and for both fields while not
+  configured, and the fake GitHub models it.
 - Code quality can report `rust`, which its write doesn't take, so a profile
   that names code quality `languages` on such a repository keeps showing the
   difference.
@@ -86,7 +96,7 @@ except those at endpoints of their own, which `repositoryEndpoints` in
 settings outside the policy. The adapters in that folder read and write the
 rest: the Actions policy (`/actions/permissions`, its `/selected-actions`
 list and `/workflow` token permissions), topics, custom properties, Pages,
-autolinks, rulesets and environments. `permissions.ts` gives the permission
+autolinks, rulesets, environments and labels. `permissions.ts` gives the permission
 each endpoint needs. The notes below are what the code doesn't say.
 
 ### `repository` and `merge`
@@ -111,7 +121,10 @@ Enterprise Cloud only. GitHub reports
 through `automated_security_fixes`, so the profile has only the latter.
 Security updates need Dependabot alerts: a plan turns the updates off before
 the alerts, and skips turning the updates on while the profile turns the
-alerts off.
+alerts off. In `code_scanning_default_setup` and `code_quality_setup`,
+`runner_label` goes with labeled runners, and `null` is no label, as GitHub
+reports it; the schema takes no empty label. Dependabot's `runner_group` is a
+string, and GitHub's `null` group reads as `""`.
 
 ### `custom_properties`, `pages`, `autolinks`
 
@@ -129,6 +142,14 @@ the plan deletes and makes again one that differs.
 Rulesets cover branch, tag and push protection. Environments include their
 deployment branch policies.
 
+### `labels`
+
+`/labels` lists, creates, renames and deletes the repository's issue and pull
+request labels, by name. A rename is a `PATCH` with `new_name`, which keeps the
+label on its issues; `renamed_from` in a profile is how Repotted knows to make
+one. GitHub can't merge two labels, so where a repository has the new name and
+an old one, the plan leaves the old one and warns.
+
 ## Permissions the Repotted App needs
 
 The Repotted App asks for Administration read and write, which most settings
@@ -143,6 +164,8 @@ permission the App doesn't have yet needs it added to the App and to
 - Pages: read and write.
 - Custom properties: read and write.
 - Code scanning alerts: read, to read the code scanning AI Scan setting.
+- Issues: read and write, for labels. GitHub also takes Pull requests for the
+  labels endpoints, but Issues is the one `permissions.ts` names.
 
 Without one, Repotted still plans everything else, and says which permission
 the skipped setting needs.
