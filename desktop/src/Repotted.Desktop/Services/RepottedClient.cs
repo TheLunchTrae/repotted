@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
@@ -66,15 +67,15 @@ internal sealed record ResolvedProfile(
     IReadOnlyList<string> Chain,
     JsonElement Values,
     IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Sources,
-    JsonElement Drafts = default,
-    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? DraftSources = null,
-    IReadOnlyList<string>? Warnings = null)
+    JsonElement Drafts,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> DraftSources,
+    IReadOnlyList<string> Warnings)
 {
     public string File => Chain[0];
 
     /// <summary>The file behind one draft, by section and key or name, or null.</summary>
     public string? DraftSource(string section, string key) =>
-        DraftSources is not null && DraftSources.TryGetValue(section, out var files) && files.TryGetValue(key, out var file) ? file : null;
+        DraftSources.TryGetValue(section, out var files) && files.TryGetValue(key, out var file) ? file : null;
 }
 
 /// <summary>
@@ -292,7 +293,12 @@ internal sealed class RepottedClient(ICli cli)
         {
             throw Unreadable(run, "the staged apply is incomplete.");
         }
-        return new StagedApply(Resolved(staged.Chain, staged.Profile, staged.Sources), staged.Repository, staged.Base, staged.Exclude);
+        // One-off edits can't be drafts, so their editor gets none.
+        return new StagedApply(
+            Resolved(staged.Chain, staged.Profile, staged.Sources, NoDrafts, ReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>.Empty, []),
+            staged.Repository,
+            staged.Base,
+            staged.Exclude);
     }
 
     /// <summary>
@@ -343,25 +349,31 @@ internal sealed class RepottedClient(ICli cli)
     {
         var run = await cli.RunAsync(arguments, null, cancellationToken).ConfigureAwait(false);
         var profile = Read(run, CliJson.Default.ResolvedProfileDocument);
-        if (profile.Chain.Count == 0 || profile.Profile.ValueKind != JsonValueKind.Object)
+        if (profile.Chain.Count == 0
+            || profile.Profile.ValueKind != JsonValueKind.Object
+            || profile.Drafts.ValueKind != JsonValueKind.Object)
         {
             throw Unreadable(run, "the profile is incomplete.");
         }
-        return Resolved(
-            profile.Chain,
-            profile.Profile,
-            profile.Sources,
-            profile.Drafts.ValueKind == JsonValueKind.Object ? profile.Drafts : default,
-            profile.Warnings ?? []);
+        return Resolved(profile.Chain, profile.Profile, profile.Sources, profile.Drafts, profile.Sources.Drafts, profile.Warnings);
     }
 
-    /// <summary>A resolved profile; a staged apply holds no drafts, so it gives none.</summary>
+    /// <summary>No drafts, for the one-off edits of a staged apply.</summary>
+    private static readonly JsonElement NoDrafts = EmptyObject();
+
+    private static JsonElement EmptyObject()
+    {
+        using var document = JsonDocument.Parse("{}");
+        return document.RootElement.Clone();
+    }
+
     private static ResolvedProfile Resolved(
         IReadOnlyList<string> chain,
         JsonElement values,
         ProfileSourcesDocument sources,
-        JsonElement drafts = default,
-        IReadOnlyList<string>? warnings = null) =>
+        JsonElement drafts,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> draftSources,
+        IReadOnlyList<string> warnings) =>
         new(
             chain,
             values,
@@ -378,8 +390,8 @@ internal sealed class RepottedClient(ICli cli)
                 ["environments"] = sources.Environments,
             },
             drafts,
-            sources.Drafts ?? new Dictionary<string, IReadOnlyDictionary<string, string>>(),
-            warnings ?? []);
+            draftSources,
+            warnings);
 
     /// <summary>Removes the Repotted sign-in from the keychain, if there is one.</summary>
     public async Task SignOutAsync(CancellationToken cancellationToken)

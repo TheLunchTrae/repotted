@@ -54,17 +54,21 @@ public sealed class ApplyTests : IDisposable
             {"file":{{Json(file)}},"repository":"{{Repository}}","base":{{(fromProfile ? Json(@base) : "null")}},
              "exclude":{{List(exclude)}},"chain":{{chain}},
              "profile":{"repository":{"has_issues":true,"has_wiki":false},"merge":{"allow_squash_merge":false} },
+             {{Documents.NoDrafts}},
              "sources":{"repository":{"has_issues":{{Json(from)}},"has_wiki":{{Json(from)}} },
                "merge":{"allow_squash_merge":{{Json(file)}} },"actions":{},"security":{},"custom_properties":{},
-               "pages":{},"autolinks":{},"rulesets":{},"environments":{} } }
+               "pages":{},"autolinks":{},"rulesets":{},"environments":{},
+               {{Documents.NoDraftSources}} } }
             """;
     }
 
     private string Base() =>
         $$"""
         {"chain":[{{Json(@base)}}],"profile":{"repository":{"has_issues":true,"has_wiki":false} },
+         {{Documents.NoDrafts}},
          "sources":{"repository":{"has_issues":{{Json(@base)}},"has_wiki":{{Json(@base)}} },
-           "merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{} } }
+           "merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{},
+           {{Documents.NoDraftSources}} } }
         """;
 
     private const string WikiChange =
@@ -946,7 +950,7 @@ public sealed class ApplyTests : IDisposable
     {
         var cli = Cli().On(Planned, () =>
             $$"""
-            {"repository":"{{Repository}}","desired":{},"changes":[],"warnings":[],"access":{{Documents.Unknown}},"locks":[],
+            {"repository":"{{Repository}}","desired":{},"changes":[],"skipped":[],"warnings":[],"access":{{Documents.Unknown}},"locks":[],
              "staged":{"file":{{Json(file)}},"repository":"{{Repository}}","base":{{Json(@base)}},"exclude":[]},"exclusions":[]}
             """);
         var page = Open(cli);
@@ -981,7 +985,7 @@ public sealed class ApplyTests : IDisposable
     {
         var plan = JsonSerializer.Deserialize(
             """
-            {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"workflow"},"autolinks":[]},"warnings":[],"changes":[
+            {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"workflow"},"autolinks":[]},"skipped":[],"warnings":[],"changes":[
               {"section":"pages","action":"create","target":"GitHub Pages","fields":[{"field":"build_type","to":"workflow"}],
                "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/pages","body":{}}},
               {"section":"autolinks","action":"delete","target":"JIRA-","fields":[],

@@ -266,9 +266,9 @@ internal sealed partial class CompareViewModel(
     }
 
     /// <summary>What the profile holds as drafts, which a plan leaves out, or null for none.</summary>
-    internal static string? Drafts(PlanDocument plan) => plan.Skipped is { Count: > 0 } skipped
-        ? $"Left out as {(skipped.Count == 1 ? "a draft" : "drafts")}: {string.Join(", ", skipped.Select(Describe))}."
-        : null;
+    internal static string? Drafts(PlanDocument plan) => plan.Skipped.Count == 0
+        ? null
+        : $"Left out as {(plan.Skipped.Count == 1 ? "a draft" : "drafts")}: {string.Join(", ", plan.Skipped.Select(Describe))}.";
 
     /// <summary>A draft as the plan names it: the ruleset Later, or a setting's path.</summary>
     private static string Describe(SkippedDocument draft) => draft.Section switch

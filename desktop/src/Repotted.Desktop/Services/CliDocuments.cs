@@ -31,8 +31,7 @@ internal sealed record ProfileListDocument(IReadOnlyList<ProfileListingDocument>
 
 /// <summary>
 /// The file behind each value of a resolved profile. <c>Drafts</c> gives the
-/// same for drafts, by section and then key or name; it is null from a CLI
-/// without drafts.
+/// same for drafts, by section and then key or name.
 /// </summary>
 internal sealed record ProfileSourcesDocument(
     IReadOnlyDictionary<string, string> Repository,
@@ -44,7 +43,7 @@ internal sealed record ProfileSourcesDocument(
     IReadOnlyDictionary<string, string> Autolinks,
     IReadOnlyDictionary<string, string> Rulesets,
     IReadOnlyDictionary<string, string> Environments,
-    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? Drafts = null);
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Drafts);
 
 /// <summary>
 /// What <c>repotted profile --json</c> prints: the profile file, then each one
@@ -56,8 +55,8 @@ internal sealed record ResolvedProfileDocument(
     IReadOnlyList<string> Chain,
     JsonElement Profile,
     ProfileSourcesDocument Sources,
-    JsonElement Drafts = default,
-    IReadOnlyList<string>? Warnings = null);
+    JsonElement Drafts,
+    IReadOnlyList<string> Warnings);
 
 /// <summary>
 /// One field a change writes: what GitHub has and what the profile wants. A
@@ -88,7 +87,8 @@ internal sealed record LockDocument(int Change, string Reason);
 
 /// <summary>
 /// What <c>repotted plan --json</c> prints: the resolved profile, the writes
-/// that bring the repository in line, and the writes Repotted cannot make.
+/// that bring the repository in line, the writes Repotted cannot make, and
+/// the drafts it leaves out.
 /// </summary>
 internal sealed record PlanDocument(
     string Repository,
@@ -97,7 +97,7 @@ internal sealed record PlanDocument(
     IReadOnlyList<string> Warnings,
     AccessDocument Access,
     IReadOnlyList<LockDocument> Locks,
-    IReadOnlyList<SkippedDocument>? Skipped = null);
+    IReadOnlyList<SkippedDocument> Skipped);
 
 /// <summary>A draft a plan leaves out: a setting by its section and key, or an entry by its list and name.</summary>
 internal sealed record SkippedDocument(string Section, string Target);
@@ -139,7 +139,7 @@ internal sealed record StagedPlanDocument(
     IReadOnlyList<LockDocument> Locks,
     StagedSummaryDocument Staged,
     IReadOnlyList<PlanExclusionDocument> Exclusions,
-    IReadOnlyList<SkippedDocument>? Skipped = null)
+    IReadOnlyList<SkippedDocument> Skipped)
 {
     /// <summary>The plan alone, as a compare shows it, with what Repotted can't change and the drafts it leaves out.</summary>
     public PlanDocument Plan => new(Repository, Desired, Changes, Warnings, Access, Locks, Skipped);
