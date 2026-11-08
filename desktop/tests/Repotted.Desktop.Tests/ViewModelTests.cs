@@ -986,6 +986,83 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Changing_the_folder_asks_about_unsaved_changes_first()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+
+        // Cancel stays in the folder with the change kept.
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        Assert.True(profiles.HasLeaving);
+        Assert.Equal("orgs has unsaved changes. Save them before you change the folder?", profiles.LeavingMessage);
+        profiles.StayHereCommand.Execute(null);
+        await change;
+        Assert.False(profiles.HasLeaving);
+        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.True(editor.HasChanges);
+
+        // Discard drops the change and goes on.
+        change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await change;
+        Assert.Equal(other, profiles.Folder);
+        Assert.False(editor.HasChanges);
+        Assert.Equal("extends: base.yaml\nrepository: { has_wiki: false }\n", File.ReadAllText(files.Own));
+    }
+
+    [AvaloniaFact]
+    public async Task Save_settles_the_changes_before_the_folder_changes_and_a_failed_save_stays()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+        var save = $"profile {files.Own} --set repository.has_wiki=true --json";
+        cli.On(save, """{"error":{"kind":"error","message":"The file could not be written"}}""", exitCode: 1);
+
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await change;
+        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Contains("could not be written", editor.SaveError, StringComparison.Ordinal);
+        Assert.Same(editor, profiles.Current);
+
+        cli.On(save, Documents.Resolved(files.Own, files.Base, wiki: true));
+        change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await change;
+        Assert.Contains(save, cli.Calls);
+        Assert.Equal(other, profiles.Folder);
+    }
+
+    [AvaloniaFact]
+    public async Task Connecting_a_repository_asks_about_unsaved_changes_first()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        Choose(profiles.Current!, "has_wiki", "On");
+
+        var start = profiles.StartConnectCommand.ExecuteAsync(null);
+        Assert.Null(profiles.Connecting);
+        Assert.Equal("orgs has unsaved changes. Save them before you connect a repository?", profiles.LeavingMessage);
+        profiles.StayHereCommand.Execute(null);
+        await start;
+        Assert.Null(profiles.Connecting);
+
+        start = profiles.StartConnectCommand.ExecuteAsync(null);
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await start;
+        Assert.NotNull(profiles.Connecting);
+    }
+
+    [AvaloniaFact]
     public async Task Discarding_puts_rulesets_and_environments_back()
     {
         var (profiles, _, _) = await OpenOrgs();

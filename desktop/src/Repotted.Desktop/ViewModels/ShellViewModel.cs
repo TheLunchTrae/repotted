@@ -96,6 +96,22 @@ internal sealed partial class ShellViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Whether the app may quit: at once when nothing is unsaved, and
+    /// otherwise once the profiles page has asked and the changes are saved or
+    /// discarded.
+    /// </summary>
+    public Task<bool> ConfirmQuitAsync()
+    {
+        if (!Profiles.HasUnsaved)
+        {
+            return Task.FromResult(true);
+        }
+        Page = 1;
+        Profiles.CancelNew();
+        return Profiles.ConfirmLeaveAsync("quit");
+    }
+
     public string SearchHint => ShowingProfiles ? "Find a profile" : "Find a repository";
 
     /// <summary>Loads both lists, which the sidebar counts.</summary>

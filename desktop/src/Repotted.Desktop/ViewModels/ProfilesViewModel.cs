@@ -137,6 +137,115 @@ internal sealed partial class ProfilesViewModel(
         ? $"{Conflicts[0]} changed here and on GitHub since the last sync. Keep which version?"
         : $"These files changed here and on GitHub since the last sync: {string.Join(", ", Conflicts)}. Keep which versions?";
 
+    /// <summary>
+    /// What waits on the question about unsaved changes, such as "change the
+    /// folder"; null when nothing asks. Changing the folder, connecting a
+    /// repository, and quitting each drop every editor, so each asks first.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLeaving), nameof(LeavingMessage))]
+    public partial string? Leaving { get; private set; }
+
+    public bool HasLeaving => Leaving is not null;
+
+    /// <summary>The answer to the question about unsaved changes: true to go on, false to stay.</summary>
+    private TaskCompletionSource<bool>? leave;
+
+    /// <summary>The profiles whose editors hold unsaved changes.</summary>
+    private List<ProfileViewModel> Unsaved => [.. editors.Values.Where(editor => editor.HasChanges)];
+
+    public bool HasUnsaved => editors.Values.Any(editor => editor.HasChanges);
+
+    public string LeavingMessage
+    {
+        get
+        {
+            var names = Unsaved.Select(editor => editor.Name).Order(StringComparer.Ordinal).ToList();
+            var who = names.Count switch
+            {
+                0 => "Nothing has",
+                1 => $"{names[0]} has",
+                2 => $"{names[0]} and {names[1]} have",
+                _ => $"{names.Count} profiles have",
+            };
+            return $"{who} unsaved changes. Save them before you {Leaving}?";
+        }
+    }
+
+    /// <summary>
+    /// Asks what to do with unsaved changes before <paramref name="act"/>,
+    /// such as "change the folder", and answers whether to go on: true when
+    /// nothing is unsaved, or once every change is saved or discarded.
+    /// </summary>
+    public async Task<bool> ConfirmLeaveAsync(string act)
+    {
+        if (!HasUnsaved)
+        {
+            return true;
+        }
+        // A question already waiting gives way to the new one.
+        leave?.TrySetResult(false);
+        var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        leave = answer;
+        Leaving = act;
+        try
+        {
+            return await answer.Task.ConfigureAwait(true);
+        }
+        finally
+        {
+            if (leave == answer)
+            {
+                leave = null;
+                Leaving = null;
+            }
+        }
+    }
+
+    /// <summary>Saves every unsaved profile, and goes on only when each save went through.</summary>
+    [RelayCommand]
+    private async Task SaveAndLeaveAsync()
+    {
+        if (leave is not { } answer)
+        {
+            return;
+        }
+        foreach (var editor in Unsaved)
+        {
+            if (editor.SaveCommand.CanExecute(null))
+            {
+                await editor.SaveCommand.ExecuteAsync(null).ConfigureAwait(true);
+            }
+        }
+        // A profile that could not be saved opens, with why, and nothing moves on.
+        if (Unsaved.FirstOrDefault() is { } left)
+        {
+            Selected = Items.FirstOrDefault(item => item.Listing.File == left.File);
+            answer.TrySetResult(false);
+            return;
+        }
+        answer.TrySetResult(true);
+    }
+
+    /// <summary>Discards every unsaved change and goes on.</summary>
+    [RelayCommand]
+    private void DiscardAndLeave()
+    {
+        if (leave is not { } answer)
+        {
+            return;
+        }
+        foreach (var editor in Unsaved)
+        {
+            editor.DiscardCommand.Execute(null);
+        }
+        answer.TrySetResult(true);
+    }
+
+    /// <summary>Stays where the profiles are, with every unsaved change kept.</summary>
+    [RelayCommand]
+    private void StayHere() => leave?.TrySetResult(false);
+
     /// <summary>The form that moves the profiles to a config repository, which stands in for the editor until it closes.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowConnecting))]
@@ -235,9 +344,17 @@ internal sealed partial class ProfilesViewModel(
     public string EmptyMessage => $"No profiles in {SourceText} yet.";
 
     /// <summary>Opens the form that makes a GitHub repository the place profiles live.</summary>
+    /// <remarks>
+    /// Unsaved changes are settled first: connecting moves this folder's
+    /// files to the repository, and the editors close once it connects.
+    /// </remarks>
     [RelayCommand]
-    public void StartConnect()
+    public async Task StartConnectAsync()
     {
+        if (!await ConfirmLeaveAsync(Repository is null ? "connect a repository" : "change the repository").ConfigureAwait(true))
+        {
+            return;
+        }
         Creating = null;
         Captured = null;
         Selected = null;
@@ -626,7 +743,8 @@ internal sealed partial class ProfilesViewModel(
     [RelayCommand]
     private async Task ChangeFolderAsync()
     {
-        if (await desktop.PickFolderAsync("Choose the profiles folder").ConfigureAwait(true) is not { } folder)
+        if (await desktop.PickFolderAsync("Choose the profiles folder").ConfigureAwait(true) is not { } folder
+            || !await ConfirmLeaveAsync("change the folder").ConfigureAwait(true))
         {
             return;
         }

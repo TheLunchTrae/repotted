@@ -131,6 +131,12 @@ saved**. **Save profile** puts the file back with your changes, and
 **Discard** lets the profile go. If the profile was renamed on GitHub, saving
 brings it back under its old name, beside the renamed one.
 
+Unsaved changes stay with the app until you save or discard them. If you
+change the folder, connect a repository, or quit while a profile has unsaved
+changes, a banner on the **Profiles** page asks first: **Save** saves them and
+goes on, **Discard** drops them and goes on, and **Cancel** stays where you
+are. If a save fails, you stay on the profile with the error.
+
 ## Compare a repository with a profile
 
 On the **Repositories** page, select a repository, pick a profile under
