@@ -13,7 +13,8 @@ fields that the GitHub REST API's write endpoints take, so GitHub's REST docs
 describe each key. A setting at an endpoint of its own is kept under that
 endpoint's key, with the endpoint's fields inside it when there are several;
 `endpoints.ts` reads and plans those settings, and
-[Settings coverage](settings-coverage.md) lists each with its endpoint. Most
+[Settings coverage](settings-coverage.md) says where each section's
+endpoints are listed and what they need. Most
 sections capture the API's response as it is.
 Environments are the exception: `sections/environments.ts` turns GitHub's
 protection rules into `wait_timer`, `reviewers`, and `prevent_self_review`,

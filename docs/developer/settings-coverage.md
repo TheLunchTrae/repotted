@@ -1,9 +1,10 @@
 # Settings coverage
 
 Repotted aims to manage every repository setting that GitHub's REST API can
-both read and set. This page lists what a profile covers, the endpoint and
-GitHub App permission behind each setting, what Repotted leaves out on
-purpose, and the options on GitHub's settings pages that have no API at all.
+both read and set. This page explains how a profile's settings reach
+GitHub's API and which GitHub App permissions they need, what Repotted
+leaves out on purpose, and the options on GitHub's settings pages that have
+no API at all.
 
 The inventory was made from GitHub's OpenAPI descriptions for api.github.com
 and GitHub Enterprise Cloud, in
@@ -22,10 +23,12 @@ The rest each live at an endpoint of their own under the repository.
 reads and plans them all the same way:
 
 - A `toggle` is on while a `GET` finds it on. `PUT` turns it on and `DELETE`
-  turns it off. GitHub answers `404` while `vulnerability_alerts` and
-  `immutable_releases` are off, and `automated_security_fixes` while
-  Dependabot alerts are off, so those read as off (`missingIsOff`). For the
-  others, a `404` means the repository doesn't have the feature.
+  turns it off. A `presence` toggle, `vulnerability_alerts`, is on whenever
+  a `GET` finds it, so a `404` reads as off. The others say so in their
+  `enabled` field. GitHub answers `404` while `immutable_releases` is off,
+  and `automated_security_fixes` while Dependabot alerts are off, so those
+  read a `404` as off too (`missingIsOff`). For the rest, a `404` means the
+  repository doesn't have the feature.
 - A `field` is one field of an endpoint, kept in the profile under its name.
   A field GitHub leaves out of its answer is unset, so a plan sets it.
 - An `object` is several fields of an endpoint, kept together in the profile
@@ -73,68 +76,42 @@ permission gets its row there.
 
 ## What a profile covers
 
-### `repository`
+`schema.ts` holds every key a profile takes, and
+[Profiles](../user/profiles.md#sections) lists them by section. The
+repository and merge settings are fields of `PATCH /repos/{owner}/{repo}`,
+except those at endpoints of their own: `repositoryEndpoints`,
+`securityEndpoints` and `actionsEndpoints` in `packages/core/src/sections/`
+list them with their paths. The adapters there read and write the rest: the
+Actions policy, topics, custom properties, Pages, autolinks, rulesets and
+environments.
+`permissions.ts` gives the permission each endpoint needs. The notes below
+are what the code doesn't say.
 
-| Keys                                                                                                                                                                                                                                                                                                            | Endpoint                                       | Permission                                   |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------------- |
-| `description`, `homepage`, `visibility`, `default_branch`, `is_template`, `allow_forking`, `has_issues`, `has_projects`, `has_wiki`, `has_discussions`, `has_pull_requests`, `pull_request_creation_policy`, `allow_auto_merge`, `allow_update_branch`, `delete_branch_on_merge`, `web_commit_signoff_required` | `PATCH /repos/{owner}/{repo}`                  | Administration write                         |
-| `topics`                                                                                                                                                                                                                                                                                                        | `PUT /repos/{owner}/{repo}/topics`             | Administration write; reading needs Metadata |
-| `immutable_releases`                                                                                                                                                                                                                                                                                            | `/immutable-releases`, a toggle                | Administration                               |
-| `pull_request_creation_cap`: `enabled`, `max_open_pull_requests`, `include_drafts`                                                                                                                                                                                                                              | `PATCH /interaction-limits/pulls/creation-cap` | Administration write, to read it too         |
+### `repository` and `merge`
 
 `capture` leaves out `description`, `homepage`, `visibility` and `topics`,
 because they describe one repository. It keeps `default_branch`, so a
 captured profile applied to a repository without that branch fails there
-with GitHub's `422`. A plan that changes `visibility` warns
-what the change does beyond the setting.
-
-### `merge`
-
-`allow_merge_commit`, `allow_squash_merge`, `allow_rebase_merge`, and the four
-commit title and message settings, all on `PATCH /repos/{owner}/{repo}`, with
-Administration write.
+with GitHub's `422`. A plan that changes `visibility` warns what the change
+does beyond the setting.
 
 ### `actions`
 
-| Keys                                                                                   | Endpoint                                                   | Permission                                       |
-| -------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------ |
-| `enabled`, `allowed_actions`, `sha_pinning_required`                                   | `PUT /actions/permissions`                                 | Administration                                   |
-| `selected_actions`                                                                     | `PUT /actions/permissions/selected-actions`                | Administration                                   |
-| `default_workflow_permissions`, `can_approve_pull_request_reviews`                     | `PUT /actions/permissions/workflow`                        | Administration                                   |
-| `access_level`                                                                         | `PUT /actions/permissions/access`, private repositories    | Administration                                   |
-| `approval_policy`                                                                      | `PUT /actions/permissions/fork-pr-contributor-approval`    | Administration                                   |
-| `fork_pr_workflows_private_repos`                                                      | `PUT /actions/permissions/fork-pr-workflows-private-repos` | Administration                                   |
-| `artifact_and_log_retention`: `days`                                                   | `PUT /actions/permissions/artifact-and-log-retention`      | Administration                                   |
-| `max_cache_retention_days`                                                             | `PUT /actions/cache/retention-limit`                       | Administration                                   |
-| `max_cache_size_gb`                                                                    | `PUT /actions/cache/storage-limit`                         | Administration write; reading needs Actions read |
-| `oidc_customization_sub`: `use_default`, `include_claim_keys`, `use_immutable_subject` | `PUT /actions/oidc/customization/sub`                      | Actions                                          |
+`access_level` and `fork_pr_workflows_private_repos` apply to private
+repositories only.
 
 ### `security`
 
-| Keys                                                                                                                                                                                                                                                                                                                                                                                 | Endpoint                                     | Permission                                                    |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------- |
-| `security_and_analysis`: `advanced_security`, `code_security`, `secret_scanning`, `secret_scanning_push_protection`, `secret_scanning_ai_detection`, `secret_scanning_non_provider_patterns`, `secret_scanning_delegated_alert_dismissal`, `secret_scanning_delegated_bypass`, `secret_scanning_delegated_bypass_options`, `secret_scanning_validity_checks` (Enterprise Cloud only) | `PATCH /repos/{owner}/{repo}`                | Administration write; GitHub reports it to admins only        |
-| `vulnerability_alerts`                                                                                                                                                                                                                                                                                                                                                               | `/vulnerability-alerts`, a toggle            | Administration                                                |
-| `automated_security_fixes`                                                                                                                                                                                                                                                                                                                                                           | `/automated-security-fixes`, a toggle        | Administration                                                |
-| `private_vulnerability_reporting`                                                                                                                                                                                                                                                                                                                                                    | `/private-vulnerability-reporting`, a toggle | Administration write; reading needs Metadata                  |
-| `code_scanning_default_setup`: `state`, `runner_type`, `runner_label`, `query_suite`, `threat_model`, `languages`                                                                                                                                                                                                                                                                    | `PATCH /code-scanning/default-setup`         | Administration                                                |
-| `code_scanning_ai_scan`: `pr_scan`                                                                                                                                                                                                                                                                                                                                                   | `PATCH /code-scanning/ai-scan`               | Administration write; reading needs Code scanning alerts read |
-| `code_quality_setup`: `state`, `runner_type`, `runner_label`, `languages`, `ai_findings_option`                                                                                                                                                                                                                                                                                      | `PATCH /code-quality/setup`                  | Administration write, to read it too                          |
-| `dependabot_runner_settings`: `runner_type`, `runner_labels`, `runner_group`                                                                                                                                                                                                                                                                                                         | `PUT /dependabot/runner-settings`            | Administration                                                |
-
-GitHub reports `security_and_analysis.dependabot_security_updates` too, but
-sets it only through `automated_security_fixes`, so the profile has only the
-latter. Security updates need Dependabot alerts: a plan turns the updates off
-before the alerts, and skips turning the updates on while the profile turns
-the alerts off.
+`security_and_analysis` is a field of the repository, which GitHub reports
+to admins only. Its `secret_scanning_validity_checks` exists on GitHub
+Enterprise Cloud only. GitHub reports
+`security_and_analysis.dependabot_security_updates` too, but sets it only
+through `automated_security_fixes`, so the profile has only the latter.
+Security updates need Dependabot alerts: a plan turns the updates off before
+the alerts, and skips turning the updates on while the profile turns the
+alerts off.
 
 ### `custom_properties`, `pages`, `autolinks`
-
-| Section             | Endpoint                                       | Permission                                      |
-| ------------------- | ---------------------------------------------- | ----------------------------------------------- |
-| `custom_properties` | `PATCH /properties/values`                     | Custom properties write; reading needs Metadata |
-| `pages`             | `POST`, `PUT`, and `DELETE /pages`             | Administration write and Pages write            |
-| `autolinks`         | `POST /autolinks` and `DELETE /autolinks/{id}` | Administration                                  |
 
 Custom properties are defined by the organization, so a profile can set any
 property name, and a personal repository has none. Pages `public` exists only
@@ -147,9 +124,8 @@ the plan deletes and makes again one that differs.
 
 ### `rulesets` and `environments`
 
-Rulesets cover branch and tag protection, through `/rulesets`, with
-Administration. Environments use `/environments` and their deployment branch
-policies; listing them needs Actions read.
+Rulesets cover branch and tag protection. Environments include their
+deployment branch policies.
 
 ## Permissions the Repotted App needs
 

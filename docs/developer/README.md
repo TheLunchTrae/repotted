@@ -13,9 +13,9 @@ use Repotted, see the [user guide](../user/README.md).
 - [State machines](state-machines.md): the states that sign-in, plan and
   apply, sync, the profile editor, and releases move through, and the
   failure states each can reach.
-- [Settings coverage](settings-coverage.md): every repository setting a
-  profile covers, with its endpoint and permission, what Repotted leaves out
-  and why, and the settings-page options GitHub offers no API for.
+- [Settings coverage](settings-coverage.md): how a profile's settings reach
+  GitHub's API and the permissions they need, what Repotted leaves out and
+  why, and the settings-page options GitHub offers no API for.
 - [The GitHub App](github-app.md): how Repotted signs in, and the Repotted
   App's registration settings.
 - [Releasing](releasing.md): publishing the CLI to npm and building, signing,
