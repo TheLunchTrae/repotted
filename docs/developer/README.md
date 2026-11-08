@@ -37,4 +37,5 @@ use Repotted, see the [user guide](../user/README.md).
   with `--json` for everything it does.
 - `.config/mise/`: the pinned tools, the tasks, and the lockfile.
 - `.github/workflows/`: Quality, the gate on every pull request, and the
-  Publish NPM and Build Desktop release workflows.
+  Publish NPM and Build Desktop release workflows. All three run the gate
+  through `.github/actions/gate`.

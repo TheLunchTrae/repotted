@@ -67,13 +67,19 @@ run = "pnpm run build"
 [tasks."ts:node:check"]
 description = "Run the built CLI under the oldest supported Node, as npx does"
 depends = ["ts:build"]
-# mise's Node is the newest, so CI points SMOKE_NODE at the oldest one the
-# package supports. Without it, the check runs under mise's Node.
+# The workspace's Node is the newest; this task alone runs the oldest one that
+# packages/cli/package.json's engines allows, locally and in CI, and fails
+# when engines names another major version.
+tools = { node = "22.23.4" }
 run = """
 set -eu
-smoke_node="${SMOKE_NODE:-node}"
-echo "Running the built CLI under Node $("$smoke_node" --version)"
-"$smoke_node" packages/cli/tests/node-smoke.mjs
+oldest="$(node -p "require('./packages/cli/package.json').engines.node.replace('>=', '')")"
+running="$(node -p "process.versions.node.split('.')[0]")"
+if [ "$running" != "$oldest" ]; then
+  echo "ts:node:check runs Node $running, but engines allows Node $oldest; set the task's node to the newest $oldest release." >&2
+  exit 1
+fi
+node packages/cli/tests/node-smoke.mjs
 """
 
 [tasks."ts:sea:check"]

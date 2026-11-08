@@ -3,6 +3,12 @@
 [tools]
 dotnet = "10.0.403"
 
+# Every dotnet call that mise runs, locally and in CI, skips the first-run
+# banner and sends no telemetry.
+[env]
+DOTNET_NOLOGO = "true"
+DOTNET_CLI_TELEMETRY_OPTOUT = "true"
+
 [tasks."csharp:lock"]
 description = "Refresh the desktop app's NuGet lock files"
 dir = "{{config_root}}/desktop"
