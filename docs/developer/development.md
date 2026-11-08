@@ -7,8 +7,10 @@ covers working on them locally.
 
 [mise](https://mise.jdx.dev/) pins the tools: Node and pnpm, the .NET SDK for
 the desktop app, gitleaks, and Python for the hygiene task. `.config/mise/`
-holds the config, the tasks, and the lockfile. pnpm installs the workspace from
-`pnpm-lock.yaml`, and `pnpm-workspace.yaml` holds its settings.
+holds the config, the tasks, and the lockfile. mise also sets `DOTNET_NOLOGO`
+and `DOTNET_CLI_TELEMETRY_OPTOUT` for every `dotnet` call it runs. pnpm installs
+the workspace from `pnpm-lock.yaml`, and `pnpm-workspace.yaml` holds its
+settings.
 
 ```sh
 mise install
@@ -16,14 +18,19 @@ mise run ts:install
 mise run standards:check
 ```
 
-`ts:node:check` runs the built CLI the way `npx` does, under the Node that
-`SMOKE_NODE` names, or mise's Node without it. CI points `SMOKE_NODE` at Node 22,
-the oldest version `engines` allows. `ts:sea:check` builds the desktop app's
-compiled CLI with `packages/cli/sea.ts` and checks that its startup snapshot
-keeps none of the build's environment; see
-[the desktop app](architecture.md#the-desktop-app).
+`ts:node:check` runs the built CLI the way `npx` does, under Node 22, the
+oldest version `engines` allows. The task pins that Node for itself alone, so
+everything else runs mise's newer Node, and it fails when `engines` names
+another major version. A local run checks the same Node as CI.
+`ts:sea:check` builds the desktop app's compiled CLI with
+`packages/cli/sea.ts` and checks that its startup snapshot keeps none of the
+build's environment; see [the desktop app](architecture.md#the-desktop-app).
 
 `mise run standards:check` is the gate that CI runs on every pull request.
+Quality and both release workflows run it through one composite action,
+`.github/actions/gate`, which installs the pinned tools and the locked
+dependencies first. Only Quality turns on mise's tool cache; a release builds
+from the locked, checksummed downloads alone.
 [AGENTS.md](../../AGENTS.md) lists the narrower checks to run for each kind of
 change.
 

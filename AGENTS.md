@@ -54,7 +54,9 @@ existing task before you add one.
 - `mise install` installs the pinned tools. When an install needs network, run
   it and report that.
 - `mise run standards` applies the available autofixes.
-- `mise run standards:check` is the CI gate; run it before handoff.
+- `mise run standards:check` is the CI gate; run it before handoff. Every
+  workflow runs it through `.github/actions/gate`, so change the gate's setup
+  there and its environment in the mise config, not in a workflow.
 
 Run `git`, `rg`, `tokei`, and standalone scripts directly. Use native commands
 for focused diagnosis and the mise gate for final verification. Use

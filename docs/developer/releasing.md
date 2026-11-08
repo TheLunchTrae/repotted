@@ -12,9 +12,10 @@ Publishing a GitHub release with a `v` tag runs the Publish NPM workflow,
 version in `packages/cli/package.json`, such as `v0.2.0`, and must point at a
 commit on `main`. Create it as a full release:
 prereleases do not publish, and promoting one later does not start the
-workflow. The workflow runs the gate on that commit, packs `packages/cli` with
-`pnpm pack`, which builds the bundle and replaces the `workspace:` range, and
-publishes the tarball to npm with trusted publishing and provenance.
+workflow. The workflow runs the gate on that commit, as Quality does but
+without mise's tool cache, packs `packages/cli` with `pnpm pack`, which builds
+the bundle and replaces the `workspace:` range, and publishes the tarball to
+npm with trusted publishing and provenance.
 
 npm accepts the publish only from a trusted publisher: this repository,
 `publish.yml`, and the `npm` environment. npm adds a trusted publisher only to
@@ -46,9 +47,9 @@ git tag desktop-v0.1.0 origin/main
 git push origin desktop-v0.1.0
 ```
 
-The workflow runs the gate on that commit, builds the app on macOS for Apple
-silicon and Intel and on Windows for x64, and attaches these files to a draft
-release for the tag:
+The workflow runs the gate on that commit, as the CLI release does, builds the
+app on macOS for Apple silicon and Intel and on Windows for x64, and attaches
+these files to a draft release for the tag:
 
 - `Repotted-<version>-macos-arm64.dmg` and `Repotted-<version>-macos-x64.dmg`,
   signed with a Developer ID, notarized, and stapled.
