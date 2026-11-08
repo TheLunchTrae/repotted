@@ -156,7 +156,7 @@ const pageSize = 100;
  * Reads a list GitHub serves in pages, a page at a time, until a page comes
  * back short or the items reach the `total` a page reports.
  */
-export async function readPages<Item>(
+export async function readAllPages<Item>(
   path: string,
   fetchPage: (url: string) => Promise<{ readonly items: readonly Item[]; readonly total?: number }>,
 ): Promise<Item[]> {

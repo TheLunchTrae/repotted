@@ -156,8 +156,8 @@ gives a warning with GitHub's reason, and one GitHub refuses with a `403`
 gives a warning that names the permission it needs, from `permissions.ts`.
 `capture` warns only about the refused settings and sections, since a
 feature the repository lacks is no news: every reader returns the same
-`Unavailable` from `endpoints.ts`, whose `refused` says which it is. A `403` on a write stops apply, and the failure names the
-permission too. `captureProfile` also parses each setting it captures with
+`Unavailable` from `endpoints.ts`, whose `refused` says which it is. A
+`403` on a write stops apply, and the failure names the permission too. `captureProfile` also parses each setting it captures with
 that setting's schema, and leaves out, with a warning, one that fails, such
 as an option GitHub added after `schema.ts`, so a captured profile always
 loads. The fields of an endpoint's object and of `security_and_analysis` are

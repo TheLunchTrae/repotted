@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
 import type { Unavailable } from '../endpoints.js';
-import { type GitHub, GitHubError, readPages, repoPath, type RepoRef } from '../github.js';
+import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../github.js';
 import { bodyChanges, matches } from '../match.js';
 import { type Environment, type EnvironmentEntry, environmentKey } from '../schema.js';
 
@@ -80,7 +80,7 @@ function settingsFrom(listed: z.infer<typeof environmentList>['environments'][nu
 }
 
 async function readAll(github: GitHub, repo: RepoRef): Promise<LiveEnvironment[]> {
-  const listed = await readPages(`${repoPath(repo)}/environments`, async (url) => {
+  const listed = await readAllPages(`${repoPath(repo)}/environments`, async (url) => {
     const page = environmentList.parse(await github.request('GET', url));
     return { total: page.total_count, items: page.environments };
   });
@@ -89,7 +89,7 @@ async function readAll(github: GitHub, repo: RepoRef): Promise<LiveEnvironment[]
     const settings = settingsFrom(entry);
     const branchPolicies =
       settings.deployment_branch_policy?.custom_branch_policies === true
-        ? await readPages(`${environmentPath(repo, entry.name)}/deployment-branch-policies`, async (url) => {
+        ? await readAllPages(`${environmentPath(repo, entry.name)}/deployment-branch-policies`, async (url) => {
             const page = policyList.parse(await github.request('GET', url));
             return {
               total: page.total_count,

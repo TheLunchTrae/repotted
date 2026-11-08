@@ -16,14 +16,19 @@ function errorCode(error: unknown): string | undefined {
  * one. A file that exists keeps its permissions. A move that Windows holds up
  * is tried again. The temporary file's name starts with a dot, so neither a
  * sync nor a profile listing takes it for a profile, and has a random part,
- * so two writes at once never share one.
+ * so two writes at once never share one. With `create: false` the file must
+ * already exist, so a write never brings back a file deleted meanwhile.
  */
-export async function replaceFile(file: string, content: Uint8Array | string): Promise<void> {
+export async function replaceFile(
+  file: string,
+  content: Uint8Array | string,
+  { create = true }: { create?: boolean } = {},
+): Promise<void> {
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomBytes(6).toString('hex')}.tmp`);
   try {
     await writeFile(temporary, content);
     const existing = await stat(file).catch((error: unknown) => {
-      if (errorCode(error) === 'ENOENT') {
+      if (create && errorCode(error) === 'ENOENT') {
         return undefined;
       }
       throw error;

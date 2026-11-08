@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
 import type { Unavailable } from '../endpoints.js';
-import { type GitHub, GitHubError, readPages, repoPath, type RepoRef } from '../github.js';
+import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../github.js';
 import { bodyChanges, matches, overlay } from '../match.js';
 import type { Ruleset, RulesetEntry } from '../schema.js';
 
@@ -79,7 +79,7 @@ export async function readRulesets(github: GitHub, repo: RepoRef): Promise<LiveR
   const base = `${repoPath(repo)}/rulesets`;
   let listed: z.infer<typeof summary>[];
   try {
-    listed = await readPages(`${base}?includes_parents=false`, async (url) => ({
+    listed = await readAllPages(`${base}?includes_parents=false`, async (url) => ({
       items: z.array(summary).parse(await github.request('GET', url)),
     }));
   } catch (error) {

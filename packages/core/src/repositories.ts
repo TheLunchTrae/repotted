@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { type GitHub, GitHubError, readPages, repoPath, type RepoRef } from './github.js';
+import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from './github.js';
 import type { Access, AppAccess, Role } from './permissions.js';
 
 /** A repository the signed-in account can manage settings on. */
@@ -59,7 +59,7 @@ function byName(left: Repository, right: Repository): number {
 }
 
 async function installationRepositoryList(github: GitHub, id: number): Promise<z.infer<typeof repository>[]> {
-  return readPages(`/user/installations/${id}/repositories`, async (url) => {
+  return readAllPages(`/user/installations/${id}/repositories`, async (url) => {
     const page = installationRepositoryPage.parse(await github.request('GET', url));
     return { items: page.repositories, total: page.total_count };
   });
@@ -82,7 +82,7 @@ async function installationRepositories(
 }
 
 async function adminRepositories(github: GitHub): Promise<Repository[]> {
-  const repositories = await readPages(
+  const repositories = await readAllPages(
     '/user/repos?affiliation=owner,collaborator,organization_member&sort=full_name',
     async (url) => ({ items: z.array(repository).parse(await github.request('GET', url)) }),
   );
@@ -95,7 +95,7 @@ async function adminRepositories(github: GitHub): Promise<Repository[]> {
  */
 async function listInstallations(github: GitHub): Promise<z.infer<typeof installation>[] | undefined> {
   try {
-    return await readPages('/user/installations', async (url) => {
+    return await readAllPages('/user/installations', async (url) => {
       const page = installationPage.parse(await github.request('GET', url));
       return { items: page.installations, total: page.total_count };
     });

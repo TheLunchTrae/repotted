@@ -924,7 +924,9 @@ export async function editLayer(file: string, edits: readonly ProfileEdit[], lay
   );
   layer.check(resolved, text);
   try {
-    await replaceFile(own.file, original.includes('\r\n') ? text.replaceAll('\n', '\r\n') : text);
+    await replaceFile(own.file, original.includes('\r\n') ? text.replaceAll('\n', '\r\n') : text, {
+      create: false,
+    });
   } catch (error) {
     throw new ProfileError(`Cannot save profile ${own.file}`, { cause: error });
   }

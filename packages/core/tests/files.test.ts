@@ -57,4 +57,16 @@ describe('replaceFile', () => {
 
     expect(['one\n', 'two\n']).toContain(await readFile(file, 'utf8'));
   });
+
+  test('refuses to bring back a file deleted meanwhile when asked to replace only', async () => {
+    const file = path.join(directory, 'gone.yaml');
+
+    const failure = await replaceFile(file, 'new\n', { create: false }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toMatchObject({ code: 'ENOENT' });
+    expect((await readdir(directory)).filter((name) => name.startsWith('.gone.yaml'))).toEqual([]);
+  });
 });
