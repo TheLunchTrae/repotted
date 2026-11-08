@@ -76,6 +76,14 @@ echo "Running the built CLI under Node $("$smoke_node" --version)"
 "$smoke_node" packages/cli/tests/node-smoke.mjs
 """
 
+[tasks."ts:sea:check"]
+description = "Build the desktop app's compiled CLI and check its startup snapshot"
+depends = ["ts:install"]
+# Otherwise only the desktop packaging builds the executable, for a release or
+# by hand, and its startup snapshot limits what any CLI or core module may do
+# at load time; see docs/developer/architecture.md.
+run = "node packages/cli/tests/sea-check.mjs"
+
 [tasks."ts:standards"]
 description = "Run the TypeScript standards workflow with autofixes"
 depends = ["ts:install"]
@@ -83,7 +91,7 @@ run = "pnpm run standards"
 
 [tasks."ts:standards:check"]
 description = "Run the TypeScript standards CI gate"
-# Tests and the Node check run after the static checks, so a test that writes
-# temporary files cannot race the static scans.
+# Tests and the Node and executable checks run after the static checks, so a
+# test that writes temporary files cannot race the static scans.
 depends = ["ts:lint", "ts:type", "ts:fmt:check", "ts:audit", "ts:knip"]
-run = [{ task = "ts:test" }, { task = "ts:node:check" }]
+run = [{ task = "ts:test" }, { task = "ts:node:check" }, { task = "ts:sea:check" }]

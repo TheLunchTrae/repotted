@@ -86,9 +86,10 @@ release's. It checks that the packages build, that the CLI starts under the
 hardened runtime, and that the macOS app launches, then keeps the packages as
 run artifacts for 3 days. The macOS app in such a package is signed ad hoc, so
 Gatekeeper refuses it until it is allowed in System Settings. Pull requests
-don't run Build Desktop. Quality builds and tests the app on each one but
-doesn't package it, so run Build Desktop on the branch of a pull request that
-changes the packaging.
+don't run Build Desktop. Quality builds and tests the app on each one, and
+builds and checks the compiled CLI on Linux, but doesn't package it, so run
+Build Desktop on the branch of a pull request that changes the packaging or
+what `sea.ts` does on macOS or Windows.
 
 The repository's releases are immutable, so files can't be added once a
 release is published. The owner reviews the draft, sets it as a prerelease

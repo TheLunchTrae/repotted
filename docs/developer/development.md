@@ -18,7 +18,10 @@ mise run standards:check
 
 `ts:node:check` runs the built CLI the way `npx` does, under the Node that
 `SMOKE_NODE` names, or mise's Node without it. CI points `SMOKE_NODE` at Node 22,
-the oldest version `engines` allows.
+the oldest version `engines` allows. `ts:sea:check` builds the desktop app's
+compiled CLI with `packages/cli/sea.ts` and checks that its startup snapshot
+keeps none of the build's environment; see
+[the desktop app](architecture.md#the-desktop-app).
 
 `mise run standards:check` is the gate that CI runs on every pull request.
 [AGENTS.md](../../AGENTS.md) lists the narrower checks to run for each kind of

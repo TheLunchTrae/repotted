@@ -198,12 +198,15 @@ Select checks for the change:
 | Change                  | First checks                                     |
 | ----------------------- | ------------------------------------------------ |
 | Source or tests         | `ts:lint`, `ts:type`, `ts:test`                  |
-| CLI, build, or runtime  | `ts:build`, `ts:node:check`                      |
+| CLI, build, or runtime  | `ts:build`, `ts:node:check`, `ts:sea:check`      |
 | Dependencies or exports | `ts:audit`, `ts:knip`                            |
 | Formatting              | `ts:fmt:check`; `ts:standards` applies autofixes |
 
-A change to `sea.ts` or the desktop packaging also needs a manual Build Desktop
-run, since only macOS and Windows runners build the single executable.
+`ts:sea:check` builds the single executable, on Linux in CI, and checks its
+startup snapshot, so the gate catches a CLI or core change that breaks it. A
+change to the desktop packaging, or to what `sea.ts` does on macOS or Windows,
+such as signing or picking the keychain module, also needs a manual Build
+Desktop run, since only its macOS and Windows runners package the app.
 
 Before handoff, run `mise run standards:check`. Run `mise run ts:lock` after
 changing declared dependencies and commit `pnpm-lock.yaml`.
