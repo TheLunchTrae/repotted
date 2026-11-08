@@ -18,9 +18,9 @@ public sealed class ProfileEditorTests : ViewModelTests
         Assert.Equal("Extends base. Saved to orgs.yaml.", editor.Summary);
         Assert.Equal("extends base", profiles.Selected?.Note);
         Assert.Equal(
-            ["Repository", "Merge", "Actions", "Security", "Pages", "Rulesets", "Environments"],
+            ["Repository", "Merge", "Actions", "Security", "Pages", "Rulesets", "Environments", "Labels"],
             editor.Tabs.Select(tab => tab.Name));
-        Assert.Equal([2, 2, 0, 0, 0, 2, 1], editor.Tabs.Select(tab => tab.Count));
+        Assert.Equal([2, 2, 0, 0, 0, 2, 1, 0], editor.Tabs.Select(tab => tab.Count));
 
         Assert.Equal((SettingOrigin.Own, "Set here"), Origin(editor, "has_wiki"));
         Assert.Equal((SettingOrigin.Inherited, "From base"), Origin(editor, "has_issues"));
@@ -76,7 +76,7 @@ public sealed class ProfileEditorTests : ViewModelTests
             ["Protect main: From base", "Old tags: Removed from GitHub here", "Later: Draft, left out of compare and apply", "Protect main: Draft, left out of compare and apply"],
             rulesets.Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
         Assert.Equal("NPM: Draft in base, left out of compare and apply", $"{environments.Entries[1].Name}: {environments.Entries[1].Note}");
-        Assert.Equal([2, 2, 0, 0, 0, 2, 1], editor.Tabs.Select(tab => tab.Count));
+        Assert.Equal([2, 2, 0, 0, 0, 2, 1, 0], editor.Tabs.Select(tab => tab.Count));
 
         // A draft can take an entry's name, but not another draft's.
         rulesets.NewCommand.Execute(null);
@@ -218,7 +218,7 @@ public sealed class ProfileEditorTests : ViewModelTests
         editor.OnlyManaged = true;
         // Projects has only a draft, which doesn't apply, so the profile doesn't manage it yet.
         Assert.Equal(
-            "No settings match these filters. Drafts of rulesets and environments are on their own tabs.",
+            "No settings match these filters. Drafts of rulesets, environments and labels are on their own tabs.",
             editor.ResultsSummary);
 
         // Saving a draft is a change waiting to be saved, so Not saved yet shows it.
@@ -799,6 +799,66 @@ public sealed class ProfileEditorTests : ViewModelTests
         Assert.False(editor.OutOfDate);
     }
 
+    [AvaloniaFact]
+    public async Task The_labels_tab_shows_each_label_on_its_color_and_saves_renames()
+    {
+        var (editor, cli, own, resolved) = await OpenOwn(
+            """
+            {"labels":[
+              {"name":"type: bug","color":"D73A4A","description":"Something isn't working","renamed_from":["bug"]},
+              {"name":"help","color":"fef2c0"},
+              {"name":"wontfix","absent":true},
+              {"name":"good first issue","description":"Good for newcomers"}]}
+            """,
+            """{"labels":{"type: bug":OWN,"help":OWN,"wontfix":OWN,"good first issue":BASE}}""");
+        var labels = editor.Tab("Labels");
+
+        Assert.Equal(4, labels.Count);
+        Assert.Equal(
+            [
+                "type: bug d73a4a #ffffff Something isn't working: Renames bug where a repository still has it",
+                "help fef2c0 #14281a : Set here",
+                "wontfix  #14281a : Removed from GitHub here",
+                "good first issue  #14281a Good for newcomers: From base",
+            ],
+            labels.Entries.Select(entry => $"{entry.Name} {entry.Hex} {entry.Ink} {entry.Description}: {entry.Note}"));
+
+        // An old name one label lists can't be another's, and a name GitHub matches without case is taken.
+        var help = (LabelEditorViewModel)labels.Entries[1].Editor;
+        help.RenamedFrom = "BUG";
+        Assert.Equal("type: bug already lists BUG in Renamed from.", labels.Entries[1].Note);
+        help.RenamedFrom = "";
+        help.Name = "WONTFIX";
+        Assert.Equal("The profile already has a label named WONTFIX.", labels.Entries[1].Note);
+
+        // A removed label's name counts too, and each label hears when another claims its name.
+        var wontfix = labels.Entries[2].Editor;
+        var rechecked = 0;
+        wontfix.PropertyChanged += (_, e) => rechecked += e.PropertyName == nameof(EntryEditorViewModel.Problem) ? 1 : 0;
+        help.Name = "help";
+        help.RenamedFrom = "wontfix";
+        Assert.Equal("The profile has a label named wontfix, so it can't be an old name.", labels.Entries[1].Note);
+        Assert.Equal("help lists wontfix in Renamed from, so no label can be named that.", wontfix.Problem);
+        Assert.True(rechecked > 0);
+        help.RenamedFrom = "";
+        Assert.Null(wontfix.Problem);
+
+        // Renaming offers to rename on GitHub too, which the save writes after dropping the old name.
+        help.Name = "needs help";
+        help.AddOldNameCommand.Execute(null);
+        Assert.Equal(("Changed, not saved yet", "Renames help where a repository still has it"), (labels.Entries[1].Note, labels.Entries[1].Renaming));
+        labels.NewCommand.Execute(null);
+        var priority = (LabelEditorViewModel)labels.Editing!.Editor;
+        priority.Name = "priority: high";
+        priority.PickCommand.Execute("b60205");
+        var save = $$"""profile {{own}} --label={"name":"priority: high","color":"b60205"} --drop-label=help --label={"name":"needs help","color":"fef2c0","renamed_from":["help"]} --json""";
+        cli.On(save, resolved);
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Contains(save, cli.Calls);
+        Assert.Null(editor.SaveError);
+    }
+
     /// <summary>
     /// Opens orgs.yaml as it resolves to <paramref name="profile"/>, with each
     /// section's sources as <paramref name="sources"/> gives them, where OWN
@@ -814,7 +874,7 @@ public sealed class ProfileEditorTests : ViewModelTests
             .Replace("BASE", Json(@base), StringComparison.Ordinal))!.AsObject();
         var all = new JsonObject();
         var drafts = new JsonObject();
-        foreach (var section in (string[])["repository", "merge", "actions", "security", "custom_properties", "pages", "autolinks", "rulesets", "environments"])
+        foreach (var section in (string[])["repository", "merge", "actions", "security", "custom_properties", "pages", "autolinks", "rulesets", "environments", "labels"])
         {
             all[section] = given[section]?.DeepClone() ?? new JsonObject();
             drafts[section] = new JsonObject();

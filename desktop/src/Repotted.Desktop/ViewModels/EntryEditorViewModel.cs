@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 namespace Repotted.Desktop.ViewModels;
 
 /// <summary>
-/// The editor for one ruleset or environment. It starts from the entry as the
+/// The editor for one ruleset, environment or label. It starts from the entry as the
 /// profile resolves it and changes only what is edited here, so keys the
 /// editor does not show stay as they are. A draft is saved with
 /// <c>draft: true</c>: its fields may be unfinished, and plans leave it out.
@@ -116,11 +116,11 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
         _ => "Applies once saved.",
     };
 
-    /// <summary>How names compare: GitHub's environment names ignore case.</summary>
+    /// <summary>How names compare: GitHub's environment and label names ignore case.</summary>
     protected virtual StringComparison NameComparison => StringComparison.Ordinal;
 
     /// <summary>What a rename does on GitHub, which knows each entry by its name.</summary>
-    public string? RenameNote =>
+    public virtual string? RenameNote =>
         !Removes
         && Saved?["name"].AsText() is { } old
         && Name.Trim() is { Length: > 0 } renamed
@@ -185,7 +185,11 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
                     : $"The profile already has {Article} {Kind} named {trimmed}.";
             }
             // A draft may be unfinished: what would stop it applying waits until it is finished.
-            return Removes || IsDraft ? null : FieldProblem;
+            if (IsDraft)
+            {
+                return null;
+            }
+            return NameProblem ?? (Removes ? null : FieldProblem);
         }
     }
 
@@ -194,10 +198,20 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
     /// <summary>Why a field cannot be saved, if anything.</summary>
     protected abstract string? FieldProblem { get; }
 
+    /// <summary>Why the name cannot be saved, if anything, even on an entry that removes it from GitHub.</summary>
+    protected virtual string? NameProblem => null;
+
+    /// <summary>Checks the entry again after another entry changed, without telling the tab back.</summary>
+    public void Recheck()
+    {
+        OnPropertyChanged(nameof(Problem));
+        OnPropertyChanged(nameof(HasProblem));
+    }
+
     /// <summary>The entry from the fields, before the name is set.</summary>
     protected abstract JsonObject Build();
 
-    protected void Touched()
+    protected virtual void Touched()
     {
         OnPropertyChanged(nameof(Changed));
         OnPropertyChanged(nameof(Problem));

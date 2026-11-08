@@ -411,10 +411,13 @@ differs, and the diff is rebuilt from each plan the page shows.
 
 The app edits a folder of YAML files. Settings change through
 `repotted profile --set` and `--unset`; an empty runner label box sets the
-label to `null`, the profile's value for no label. Rulesets and environments
-open in an editor that starts from the entry as the profile resolves it and
-saves it through `--ruleset`, `--environment`, and their `--drop-` forms. The
-editor changes only what is edited, so keys and rules it doesn't show stay as
+label to `null`, the profile's value for no label. Rulesets, environments and
+labels open in an editor that starts from the entry as the profile resolves it
+and saves it through `--ruleset`, `--environment`, `--label`, and their
+`--drop-` forms. The label editor checks each label's name and
+`renamed_from` against the other labels as the save would leave them, removed
+labels included and drafts left out, as `addRenameIssues` does, so a clash
+shows before the save. The editor changes only what is edited, so keys and rules it doesn't show stay as
 they are, and a choice left unset leaves that key to GitHub.
 
 - Editing a base profile's entry sets the whole entry in this profile, over the

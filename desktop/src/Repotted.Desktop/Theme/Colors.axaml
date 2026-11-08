@@ -28,6 +28,7 @@
       <SolidColorBrush x:Key="AddBrush" Color="#1f5a31" />
       <SolidColorBrush x:Key="AddBgBrush" Color="#dff6e3" />
       <SolidColorBrush x:Key="CodeBgBrush" Color="#f1f8f2" />
+      <SolidColorBrush x:Key="ChipBorderBrush" Color="#24000000" />
       <!-- A ticked box takes the rail color. -->
       <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked" Color="#256438" />
       <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeChecked" Color="#256438" />
@@ -64,6 +65,7 @@
       <SolidColorBrush x:Key="AddBrush" Color="#a6fbad" />
       <SolidColorBrush x:Key="AddBgBrush" Color="#1f3a26" />
       <SolidColorBrush x:Key="CodeBgBrush" Color="#152019" />
+      <SolidColorBrush x:Key="ChipBorderBrush" Color="#2effffff" />
       <!-- A ticked box takes the rail color. -->
       <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked" Color="#8af793" />
       <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeChecked" Color="#8af793" />

@@ -49,8 +49,8 @@ internal sealed record RepositoryList(bool FromInstallations, IReadOnlyList<Repo
 internal sealed record ProfileChange(string Key, JsonNode? Value, bool SetsNull = false);
 
 /// <summary>
-/// A change to one ruleset or environment in a profile file, by name:
-/// <paramref name="List"/> is <c>rulesets</c> or <c>environments</c>, and
+/// A change to one ruleset, environment or label in a profile file, by name:
+/// <paramref name="List"/> is <c>rulesets</c>, <c>environments</c> or <c>labels</c>, and
 /// <paramref name="Entry"/> is the entry to write, or null to stop naming it
 /// in the file. <paramref name="Draft"/> says whether a drop takes out the
 /// file's draft of that name rather than its entry; a write is a draft when
@@ -233,11 +233,11 @@ internal sealed class RepottedClient(ICli cli)
         }
         foreach (var entry in entries)
         {
-            // --ruleset, --environment and their --drop- options, the draft ones
+            // --ruleset, --environment, --label and their --drop- options, the draft ones
             // included, joined to their value so a name that starts with a dash
             // stays a value. A write finds the draft or entry its own marker
             // says, or, right after a drop, the one dropped.
-            var flag = entry.List == "rulesets" ? "ruleset" : "environment";
+            var flag = entry.List[..^1];
             arguments.Add(entry.Entry is null
                 ? $"--drop-{(entry.Draft ? "draft-" : "")}{flag}={entry.Name}"
                 : $"--{flag}={entry.Entry.ToJsonString()}");
@@ -503,6 +503,7 @@ internal sealed class RepottedClient(ICli cli)
                 ["autolinks"] = sources.Autolinks,
                 ["rulesets"] = sources.Rulesets,
                 ["environments"] = sources.Environments,
+                ["labels"] = sources.Labels,
             },
             drafts,
             draftSources,

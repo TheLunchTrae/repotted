@@ -107,7 +107,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         : "There is no other profile in this folder to extend yet.";
 
     public string CaptureHelp => HasRepositories
-        ? "Captures its settings, rulesets and environments as they are on GitHub now. This only reads from GitHub."
+        ? "Captures its settings, rulesets, environments and labels as they are on GitHub now. This only reads from GitHub."
         : "No repositories are listed. Add the Repotted App to one, then start a new profile again.";
 
     /// <summary>The file name without its extension.</summary>

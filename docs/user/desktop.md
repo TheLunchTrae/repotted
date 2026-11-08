@@ -104,8 +104,9 @@ Click **New profile** and choose what it starts from:
   something.
 - **Another profile**: the new profile extends the one you pick, so it gets
   every setting the other one sets, and you change only what differs.
-- **A repository**: Repotted reads the repository's settings, rulesets, and
-  environments as they are on GitHub now, and saves them as a profile.
+- **A repository**: Repotted reads the repository's settings, rulesets,
+  environments, and labels as they are on GitHub now, and saves them as a
+  profile.
   Capturing only reads from GitHub. The profile appears in the list, and in
   a GitHub repository that keeps your profiles, only once the capture
   finishes. A capture that fails or that you cancel leaves nothing behind.
@@ -118,7 +119,7 @@ The app never overwrites a file that is already in the folder.
 
 Open a profile to edit it. Its tabs follow the parts of a repository's setup:
 repository settings, merge settings, Actions, security, GitHub Pages,
-rulesets, and environments. A setting's own options sit indented under it,
+rulesets, environments, and labels. A setting's own options sit indented under it,
 such as who can create pull requests under **Pull requests**. Names and
 numbers, such as a branch or a pull request limit, are typed in a box. Until
 what you type is valid, the app says what's wrong and won't save the profile;
@@ -126,9 +127,8 @@ what you type is valid, the app says what's wrong and won't save the profile;
 above it, such as **Runner label** with a **Runner type** of **Labeled**, is
 off while another choice applies, and keeps its value. Leave a runner label
 empty for no label.
-Topics, custom properties, autolinks, labels, and a few lists, such as the
-actions a repository allows, are edited in the YAML. Compare shows label
-changes with the rest.
+Topics, custom properties, autolinks, and a few lists, such as the actions a
+repository allows, are edited in the YAML.
 
 Some options on GitHub's settings pages have no API, so no profile can set
 them. Where one belongs to a setting, a note under that setting says so, such
@@ -154,18 +154,18 @@ looks across every settings tab at once and matches a setting's name, its
 description and notes, the names of its choices, its profile key such as
 `allow_squash_merge`, its tab and section, and common words for it such as
 "CodeQL" or "DCO". Searching a setting also finds the options under it, and an
-option that matches shows under its setting. Rulesets and environments aren't
-searched. **Managed** shows only the settings this profile or a profile it
+option that matches shows under its setting. Rulesets, environments, and
+labels aren't searched. **Managed** shows only the settings this profile or a profile it
 extends sets, **Not saved yet** shows only the settings you've changed and not
 saved, drafts included, and **Drafts** shows only the settings with a draft.
 Each works with or without a search. A setting you edit stays in the list until
 you change the search or a filter. Escape clears the search, and **Clear**
 clears the search and turns the filters off, which brings the tabs back.
 
-Rulesets and environments open in their own editor. The editor changes only
-what you edit, so anything it doesn't show stays as the YAML has it.
-**Leave it to GitHub** clears a choice, so each repository keeps its own. For
-each ruleset or environment, choose **Manage it**, or
+Rulesets, environments, and labels open in their own editor. The editor
+changes only what you edit, so anything it doesn't show stays as the YAML has
+it. **Leave it to GitHub** clears a choice, so each repository keeps its own.
+For each ruleset, environment, or label, choose **Manage it**, or
 **Remove it from the repository** to delete it from each repository that
 follows the profile. **Take out of profile** stops the profile from managing
 it at all; **Put it back** undoes that before you save.
@@ -176,7 +176,19 @@ repository. The app warns you when you rename one. You can rename only an
 entry that this profile names on its own; one from a base profile keeps its
 name.
 
-Any setting, ruleset or environment can be saved as a draft, which keeps it
+The **Labels** tab shows each label on its own color, with its description.
+In a label's editor, pick one of GitHub's colors or type six hex digits; an
+empty color leaves each repository's own. An empty description clears each
+repository's description, and **Leave each repository's own description**
+leaves it alone. **Renamed from** lists old names, one per line: a repository
+that has one of them and not the label has it renamed, so issues and pull
+requests keep the label. When you rename a label, **Rename it on GitHub too**
+adds its old name there; without it, applying creates the new label and
+leaves the old one. The preview shows the label with dark or light text,
+whichever reads on its color. See [Labels](profiles.md#labels) for what apply
+does with renames.
+
+Any setting, ruleset, environment or label can be saved as a draft, which keeps it
 in the profile, finished or not, without applying it. Compare leaves drafts
 out and names them, and so do `repotted plan` and `apply`. After you pick a
 setting's new value, **Save as draft** keeps that value as a draft and puts
@@ -184,23 +196,23 @@ the setting back. The draft shows under the setting with a **Draft** badge:
 **Finish draft** makes it the value, so it applies once you save, and
 **Discard draft** takes it out, and a base profile's draft of the setting, if
 it has one, shows again. A draft from a base profile shows too, but you finish
-it in that profile. A ruleset or environment this profile sets has **Save as a
-draft** in its editor, and a **Draft** badge in the list; for one a base
+it in that profile. A ruleset, environment or label this profile sets has
+**Save as a draft** in its editor, and a **Draft** badge in the list; for one a base
 profile sets, the box is off, and you make the draft in that profile. Its
 fields aren't checked while it's a draft; turn the box off to finish it, and
 the editor then checks them. What each draft still needs shows under the
-profile's heading. A draft can share its name with a ruleset or environment
-that applies, which is how you draft a change to one: finishing the draft
+profile's heading. A draft can share its name with a ruleset, environment or
+label that applies, which is how you draft a change to one: finishing the draft
 replaces that one once you save. Drafting a ruleset that overrides a base
 profile's leaves the base's applying until you finish it. See
 [Drafts](profiles.md#drafts) for how drafts sit in the YAML.
 
 Click **Save profile** to write your changes to the file. Saving writes each
-edited ruleset or environment whole. So when you edited one and the file
+edited ruleset, environment or label whole. So when you edited one and the file
 changed since you opened it, such as in another editor or by a sync with
 GitHub, the app doesn't save over that change. The same goes for a change to
-the profile it extends when you edited a ruleset or environment that comes
-from there. A banner asks what to do, when you save or as soon as a sync
+the profile it extends when you edited a ruleset, environment or label that
+comes from there. A banner asks what to do, when you save or as soon as a sync
 brings the change in: **Keep mine** saves your version over the change, and
 **Reload** shows the new version and discards your unsaved changes. Edits to
 settings alone save over a change to the file, since only the settings you
@@ -232,8 +244,8 @@ difference by section, with what GitHub has now and what the profile sets.
 off to see the settings and entries that already match. To find something in a
 long comparison, type in **Search this compare**, or press
 <kbd>Ctrl</kbd>+<kbd>F</kbd>, or <kbd>⌘</kbd>+<kbd>F</kbd> on macOS. It matches a
-setting the way the profile editor's search does, and a ruleset or environment
-by its name. Escape clears the search, and a section Repotted couldn't read
+setting the way the profile editor's search does, and a ruleset, environment,
+or label by its name. Escape clears the search, and a section Repotted couldn't read
 stays in view when you search for its name. Comparing only reads from GitHub.
 
 A padlock marks each difference the app can't change, with what it needs,

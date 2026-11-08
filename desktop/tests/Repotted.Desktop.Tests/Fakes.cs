@@ -204,7 +204,7 @@ internal static class Documents
     /// <summary>The <c>drafts</c> member of a resolved profile's sources when it has no drafts.</summary>
     public const string NoDraftSources =
         """
-        "drafts":{"repository":{},"merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{}}
+        "drafts":{"repository":{},"merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{},"labels":{}}
         """;
 
     /// <summary>A listing of two profiles: one, and the base it extends.</summary>
@@ -235,7 +235,7 @@ internal static class Documents
            "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(own)}}} },
            "actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
            "rulesets":{"Protect main":{{{Json(@base)}}},"Old tags":{{{Json(own)}}} },
-           "environments":{"npm":{{{Json(own)}}} },
+           "environments":{"npm":{{{Json(own)}}} },"labels":{},
            {{{NoDraftSources}}} } }
         """;
 
@@ -262,12 +262,12 @@ internal static class Documents
            "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(own)}}} },
            "actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
            "rulesets":{"Protect main":{{{Json(@base)}}},"Old tags":{{{Json(own)}}} },
-           "environments":{"npm":{{{Json(own)}}} },
+           "environments":{"npm":{{{Json(own)}}} },"labels":{},
            "drafts":{
              "repository":{"has_projects":{{{Json(@base)}}} },"merge":{},"actions":{},
              "security":{},"custom_properties":{},"pages":{},"autolinks":{},
              "rulesets":{"Later":{{{Json(own)}}},"Protect main":{{{Json(own)}}} },
-             "environments":{"NPM":{{{Json(@base)}}} } } } }
+             "environments":{"NPM":{{{Json(@base)}}} },"labels":{} } } }
         """;
 
     /// <summary>base alone: issues on, and rebase and squash merges allowed.</summary>
@@ -278,7 +278,7 @@ internal static class Documents
          {{{NoDrafts}}},
          "sources":{"repository":{"has_issues":{{{Json(@base)}}} },
            "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(@base)}}} },
-           "actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{},
+           "actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{},"labels":{},
            {{{NoDraftSources}}} } }
         """;
 

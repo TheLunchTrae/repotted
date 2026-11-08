@@ -43,6 +43,7 @@ internal sealed record ProfileSourcesDocument(
     IReadOnlyDictionary<string, string> Autolinks,
     IReadOnlyDictionary<string, string> Rulesets,
     IReadOnlyDictionary<string, string> Environments,
+    IReadOnlyDictionary<string, string> Labels,
     IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Drafts);
 
 /// <summary>

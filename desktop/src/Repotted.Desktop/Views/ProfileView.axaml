@@ -140,6 +140,34 @@
               </StackPanel>
             </Grid>
           </Border>
+          <!-- A label's old names, which apply renames so issues keep the label. Other entries have none. -->
+          <ContentControl Content="{Binding}">
+            <ContentControl.DataTemplates>
+              <DataTemplate DataType="vm:LabelEditorViewModel">
+                <Border Classes="field" IsVisible="{Binding Manages}">
+                  <Grid ColumnDefinitions="180,*" Margin="16,10">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Renamed from" FontWeight="SemiBold" FontSize="14" />
+                      <TextBlock Classes="muted small" TextWrapping="Wrap" Margin="0,0,12,0" Text="One old name per line." />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                      <TextBox AcceptsReturn="True" MinHeight="64" MaxWidth="420" MinWidth="320" HorizontalAlignment="Left"
+                               Text="{Binding RenamedFrom}" AutomationProperties.Name="Old names"
+                               AutomationProperties.HelpText="A repository that has one of these and not this label has it renamed." />
+                      <TextBlock Classes="muted small" TextWrapping="Wrap"
+                                 Text="A repository that has one of these and not this label has it renamed, so issues and pull requests keep the label. Where both are there, apply leaves both and says so." />
+                      <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding CanAddOldName}"
+                              Content="{Binding Source='Rename it on GitHub too', Converter={x:Static theme:ControlLabel.Converter}}"
+                              Command="{Binding AddOldNameCommand}" AutomationProperties.HelpText="{Binding AddOldNameHelp}" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+              <DataTemplate DataType="vm:EntryEditorViewModel">
+                <Panel />
+              </DataTemplate>
+            </ContentControl.DataTemplates>
+          </ContentControl>
           <Border Classes="field" MinHeight="56" IsVisible="{Binding Drafts}">
             <Grid ColumnDefinitions="180,*" Margin="16,10">
               <TextBlock Text="Draft" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
@@ -346,7 +374,7 @@
                         </ItemsControl.ItemTemplate>
                       </ItemsControl>
 
-                      <!-- The rulesets or environments the profile names -->
+                      <!-- The rulesets, environments or labels the profile names -->
                       <StackPanel Spacing="10" Margin="0,12,0,0" IsVisible="{Binding IsEntries}">
                         <StackPanel Spacing="10" IsVisible="{Binding ShowList}" PropertyChanged="OnListPropertyChanged">
                           <Grid ColumnDefinitions="*,Auto">
@@ -367,10 +395,26 @@
                                                 Classes.changed="{Binding Changed}" />
                                         <TextBlock Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"
                                                    FontSize="14.5" Text="{Binding Name}" TextTrimming="CharacterEllipsis" MaxWidth="360"
-                                                   Classes.gone="{Binding Dropped}" />
-                                        <Border Grid.Column="2" Classes="pill none" Margin="10,0,16,0" IsVisible="{Binding IsDraft}">
-                                          <StackPanel Orientation="Horizontal"><Ellipse /><TextBlock Text="Draft" /></StackPanel>
-                                        </Border>
+                                                   Classes.gone="{Binding Dropped}" IsVisible="{Binding !IsLabel}" />
+                                        <!-- A label shows as GitHub shows it: its name on its color. -->
+                                        <Panel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsLabel}">
+                                          <Border Classes="chip" Background="{Binding Hex, Converter={x:Static theme:LabelChip.Brush}}"
+                                                  IsVisible="{Binding HasColor}">
+                                            <TextBlock Text="{Binding Name}" Foreground="{Binding Ink, Converter={x:Static theme:LabelChip.Brush}}"
+                                                       Classes.struck="{Binding Absent}" Classes.gone="{Binding Dropped}" />
+                                          </Border>
+                                          <Border Classes="chip plain" IsVisible="{Binding !HasColor}">
+                                            <TextBlock Text="{Binding Name}" Classes.struck="{Binding Absent}" Classes.gone="{Binding Dropped}" />
+                                          </Border>
+                                        </Panel>
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="10,0,16,0" Spacing="10" VerticalAlignment="Center">
+                                          <Border Classes="pill none" IsVisible="{Binding IsDraft}">
+                                            <StackPanel Orientation="Horizontal"><Ellipse /><TextBlock Text="Draft" /></StackPanel>
+                                          </Border>
+                                          <TextBlock Classes="muted small" VerticalAlignment="Center" Text="{Binding Description}"
+                                                     TextTrimming="CharacterEllipsis" MaxWidth="320"
+                                                     IsVisible="{Binding IsLabel}" />
+                                        </StackPanel>
                                         <TextBlock Grid.Column="3" Margin="16,0" Classes="muted small" VerticalAlignment="Center"
                                                    Text="{Binding Note}" TextTrimming="CharacterEllipsis" MaxWidth="420" />
                                         <TextBlock Grid.Column="4" Margin="0,0,16,0" Classes="muted" VerticalAlignment="Center"
@@ -570,6 +614,80 @@
                                                        AutomationProperties.Name="Tags that may deploy" />
                                             </StackPanel>
                                           </Grid>
+                                        </Grid>
+                                      </Border>
+                                    </StackPanel>
+                                  </Border>
+                                </StackPanel>
+                              </DataTemplate>
+                              <DataTemplate DataType="vm:LabelEditorViewModel">
+                                <StackPanel Spacing="16">
+                                  <ContentControl Content="{Binding}" ContentTemplate="{StaticResource EntryHead}" />
+                                  <Border Classes="fields" IsVisible="{Binding Manages}">
+                                    <StackPanel Margin="0,-1,0,0">
+                                      <Border Classes="field" MinHeight="56">
+                                        <Grid ColumnDefinitions="180,*" Margin="16,10">
+                                          <TextBlock Text="Color" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Top" Margin="0,8,0,0" />
+                                          <StackPanel Grid.Column="1" Spacing="10">
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                              <Border Classes="swatch" Background="{Binding Hex, Converter={x:Static theme:LabelChip.Brush}}" />
+                                              <TextBox Classes="mono" Width="150" Text="{Binding Color}" PlaceholderText="Not set"
+                                                       AutomationProperties.Name="Label color"
+                                                       AutomationProperties.HelpText="Six hex digits, with or without #. Leave it empty and each repository keeps its own." />
+                                              <TextBlock Classes="muted small" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                         Text="Six hex digits, with or without #. Empty leaves each repository's own." />
+                                            </StackPanel>
+                                            <ItemsControl ItemsSource="{Binding Swatches}" AutomationProperties.Name="GitHub's label colors">
+                                              <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                  <WrapPanel ItemSpacing="6" LineSpacing="6" />
+                                                </ItemsPanelTemplate>
+                                              </ItemsControl.ItemsPanel>
+                                              <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:LabelSwatchViewModel">
+                                                  <Button Classes="swatch" Classes.chosen="{Binding IsChosen}"
+                                                          Command="{Binding Editor.PickCommand}" CommandParameter="{Binding Hex}"
+                                                          AutomationProperties.Name="{Binding AccessibleName}"
+                                                          ToolTip.Tip="{Binding AccessibleName}">
+                                                    <Border Background="{Binding Hex, Converter={x:Static theme:LabelChip.Brush}}" />
+                                                  </Button>
+                                                </DataTemplate>
+                                              </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                          </StackPanel>
+                                        </Grid>
+                                      </Border>
+                                      <Border Classes="field" MinHeight="56">
+                                        <Grid ColumnDefinitions="180,*" Margin="16,10">
+                                          <TextBlock Text="Description" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Top" Margin="0,8,0,0" />
+                                          <StackPanel Grid.Column="1" Spacing="6">
+                                            <Grid>
+                                              <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" MaxWidth="640" />
+                                              </Grid.ColumnDefinitions>
+                                              <TextBox Text="{Binding Description}" IsEnabled="{Binding SetsDescription}"
+                                                       AutomationProperties.Name="Label description"
+                                                       AutomationProperties.HelpText="{Binding DescriptionNote}" />
+                                            </Grid>
+                                            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding DescriptionNote}" />
+                                            <CheckBox IsChecked="{Binding KeepsDescription}" Content="Leave each repository's own description" />
+                                          </StackPanel>
+                                        </Grid>
+                                      </Border>
+                                      <Border Classes="field" MinHeight="56">
+                                        <Grid ColumnDefinitions="180,*" Margin="16,10">
+                                          <TextBlock Text="Preview" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                                            <Border Classes="chip" Background="{Binding Hex, Converter={x:Static theme:LabelChip.Brush}}"
+                                                    IsVisible="{Binding Hex, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                              <TextBlock Text="{Binding Name}" Foreground="{Binding Ink, Converter={x:Static theme:LabelChip.Brush}}" />
+                                            </Border>
+                                            <Border Classes="chip plain" IsVisible="{Binding Hex, Converter={x:Static ObjectConverters.IsNull}}">
+                                              <TextBlock Text="{Binding Name}" />
+                                            </Border>
+                                            <TextBlock Classes="muted small" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                       Text="Text on the label turns dark or light to stay readable on its color." />
+                                          </StackPanel>
                                         </Grid>
                                       </Border>
                                     </StackPanel>
