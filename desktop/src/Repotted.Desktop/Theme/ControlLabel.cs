@@ -48,7 +48,9 @@ internal static class ControlLabel
         var words = label.Split(' ');
         for (var i = 0; i < words.Length; i++)
         {
-            var word = words[i];
+            // An access key's underscore or other punctuation can come first.
+            var start = words[i].TakeWhile(c => !char.IsLetter(c)).Count();
+            var word = words[i][start..];
             if (word.Length == 0 || word.Any(char.IsUpper))
             {
                 continue;
@@ -61,7 +63,7 @@ internal static class ControlLabel
                 continue;
             }
 
-            words[i] = char.ToUpperInvariant(word[0]) + word[1..];
+            words[i] = words[i][..start] + char.ToUpperInvariant(word[0]) + word[1..];
         }
 
         return string.Join(' ', words);

@@ -246,7 +246,8 @@ builds outside mise.
   turns a label into Apple's title style on macOS, as in "Sign In with
   GitHub", and leaves it as written on Windows. It applies to buttons,
   segmented options, tabs, and page titles, and a button's accessible name
-  follows its shown label. Everything else stays in sentence case on both.
+  follows its shown label unless the view sets one. Everything else stays
+  in sentence case on both.
   - A button's or toggle button's string content gets it from the theme. Show
     a name or other data inside a button in a `TextBlock`, so it keeps its
     own casing.

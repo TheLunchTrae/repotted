@@ -3,8 +3,8 @@
 The Repotted desktop app lets you write profiles and compare them with your
 repositories without the command line. It runs on macOS and Windows.
 
-Each platform shows labels in its own style. On macOS, buttons, including
-segmented choices, tabs, and page titles capitalize each main word, as Mac
+Each platform shows labels in its own style. On macOS, buttons (segmented
+choices included), tabs, and page titles capitalize each main word, as Mac
 apps do, so **Keep mine** reads Keep Mine there. This guide quotes labels as
 Windows shows them.
 

@@ -592,6 +592,9 @@ public sealed class ViewTests : IDisposable
         window.Show();
         Dispatcher.UIThread.RunJobs();
 
+        // The theme's template; without it Fluent shows the text as written.
+        Assert.NotNull(button.ContentTemplate);
+        Assert.NotNull(option.ContentTemplate);
         Assert.Equal(Label("Keep mine"), Assert.IsType<AccessText>(button.Presenter?.Child).Text);
         Assert.Equal(Label("Pull request title"), Assert.IsType<AccessText>(option.Presenter?.Child).Text);
         Assert.Null(box.ContentTemplate);

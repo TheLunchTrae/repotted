@@ -17,6 +17,8 @@ public sealed class ControlLabelTests
     [InlineData("This owner's", "This Owner's")]
     [InlineData("Open the macOS settings", "Open the macOS Settings")]
     [InlineData("Save as", "Save As")]
+    [InlineData("_Save as", "_Save As")]
+    [InlineData("_save _as", "_Save _As")]
     [InlineData("A ruleset to start from", "A Ruleset to Start From")]
     public void TitleStyleCapitalizesAsAppleDoes(string label, string expected) =>
         Assert.Equal(expected, ControlLabel.TitleStyle(label));
