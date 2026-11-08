@@ -829,6 +829,11 @@ public sealed class ViewModelTests : IDisposable
         Assert.StartsWith("orgs.yaml is back in the folder, but not as you opened it", editor.OutOfDateMessage, StringComparison.Ordinal);
         Dispatcher.UIThread.RunJobs();
         Assert.Equal("extends base", profiles.Items.Single(item => item.Name == "orgs").Note);
+
+        // Keep mine saves over it only once the user has seen the question.
+        await editor.KeepMineCommand.ExecuteAsync(null);
+        Assert.Contains(save, cli.Calls);
+        Assert.False(editor.OutOfDate);
     }
 
     [AvaloniaFact]
@@ -836,6 +841,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
+        var text = File.ReadAllText(files.Own);
         var rulesets = editor.Tabs[3];
         rulesets.Entries[0].OpenCommand.Execute(null);
         ((RulesetEditorViewModel)rulesets.Entries[0].Editor).Enforcement.Options[1].ChooseCommand.Execute(null);
@@ -854,6 +860,41 @@ public sealed class ViewModelTests : IDisposable
         Assert.False(editor.ReloadCommand.CanExecute(null));
         Assert.DoesNotContain("Reload", editor.OutOfDateMessage, StringComparison.Ordinal);
         Assert.True(editor.KeepMineCommand.CanExecute(null));
+
+        // Once the file is listed again, the message offers Reload, and says so to the view.
+        File.WriteAllText(files.Own, text);
+        cli.On(folders.List(), Documents.Profiles(files.Own, files.Base));
+        var told = new List<string?>();
+        editor.PropertyChanged += (_, e) => told.Add(e.PropertyName);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.False(editor.Removed);
+        Assert.Contains(nameof(ProfileViewModel.OutOfDateMessage), told);
+        Assert.Contains("Reload", editor.OutOfDateMessage, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact]
+    public async Task Keep_mine_on_a_removed_profile_asks_again_when_the_file_came_back_as_something_else()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var rulesets = editor.Tabs[3];
+        rulesets.Entries[0].OpenCommand.Execute(null);
+        ((RulesetEditorViewModel)rulesets.Entries[0].Editor).Enforcement.Options[1].ChooseCommand.Execute(null);
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        File.AppendAllText(files.Base, "# changed by a sync\n");
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.True(editor is { Removed: true, OutOfDate: true });
+        File.WriteAllText(files.Own, "repository: {}\n");
+        cli.On(folders.List(), Documents.Profiles(files.Own, files.Base));
+        cli.Calls.Clear();
+
+        await editor.KeepMineCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(cli.Calls, call => call.StartsWith($"profile {files.Own} --", StringComparison.Ordinal));
+        Assert.Equal("repository: {}\n", File.ReadAllText(files.Own));
+        Assert.StartsWith("orgs.yaml is back in the folder, but not as you opened it", editor.OutOfDateMessage, StringComparison.Ordinal);
     }
 
     [AvaloniaFact]

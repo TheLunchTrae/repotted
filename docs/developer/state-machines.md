@@ -238,8 +238,9 @@ and Discard wait while the editor loads.
 
 A refresh never makes a Removed editor Out of date. A save can, when a file it
 extends changed under an edited inherited entry: the put-back file is deleted
-again, and the choice offers only Keep mine, since there is no file to reload. A rename by a sync shows as the old file removed and the new one
-listed, so a save brings the old name back beside the new one.
+again, and the choice offers only Keep mine, since there is no file to reload.
+A rename by a sync shows as the old file removed and the new one listed, so a
+save brings the old name back beside the new one.
 
 **Failures:**
 
