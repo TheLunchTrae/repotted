@@ -51,6 +51,16 @@ These hooks are why a plan settles after one apply:
   runners, except the empty ones GitHub reports there, and labeled runners
   without exactly one label are skipped. An empty runner group stays out of
   a write.
+- A code scanning or code quality runner label is dropped with standard
+  runners, which a configured setup uses when no runner type is set, and a
+  labeled runner type or a `null` label that would leave labeled runners
+  without a label is skipped. A profile that sets the setup to not
+  configured leaves out a runner type or label without a warning, so it can
+  turn off a base profile's setup. One that names a runner for a setup the
+  repository leaves not configured gets a warning. GitHub's docs don't
+  describe this: it follows how GitHub reports these settings, which reads
+  `null` for the label with standard runners and for both fields while not
+  configured, and the fake GitHub models it.
 - Code quality can report `rust`, which its write doesn't take, so a profile
   that names code quality `languages` on such a repository keeps showing the
   difference.
