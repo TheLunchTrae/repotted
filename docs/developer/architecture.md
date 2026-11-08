@@ -166,9 +166,11 @@ are, and a choice left unset leaves that key to GitHub.
 - Renaming an entry, or taking it out of the profile, frees its old name only
   once the profile is saved.
 - Saving writes each edited entry whole through `--ruleset` or
-  `--environment`, which is why an outside edit to that entry since it was
-  opened is lost. [State machines](state-machines.md#profile-editor) lists
-  where that happens.
+  `--environment`, so it would undo a change to that entry made since the
+  editor read the file, such as by a sync. The editor keeps the file's text as
+  it read it, and a save with an edited entry first compares the file with
+  it. When they differ, the save waits for the user to keep their version or
+  reload, as [State machines](state-machines.md#profile-editor) describes.
 
 A new profile starts empty, extends another profile in the folder, or is
 captured with `repotted capture --output`. The app never replaces a file

@@ -489,6 +489,70 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_save_waits_for_a_side_when_the_file_changed_under_an_edited_entry()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var rulesets = editor.Tabs[3];
+        rulesets.Entries[1].OpenCommand.Execute(null);
+        rulesets.Entries[1].Editor.Name = "Retired tags";
+        File.AppendAllText(files.Own, "# changed outside the app\n");
+        cli.Calls.Clear();
+
+        // Saving would write the entry from the copy the editor read, over the change.
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.True(editor.OutOfDate);
+        Assert.Empty(cli.Calls);
+        Assert.True(editor.HasChanges);
+        Assert.StartsWith("orgs.yaml changed since you opened it", editor.OutOfDateMessage, StringComparison.Ordinal);
+
+        var save = $$"""profile {{files.Own}} --drop-ruleset=Old tags --ruleset={"name":"Retired tags","absent":true} --json""";
+        cli.On(save, Documents.Resolved(files.Own, files.Base));
+        await editor.KeepMineCommand.ExecuteAsync(null);
+        Assert.Contains(save, cli.Calls);
+        Assert.False(editor.OutOfDate);
+        Assert.False(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
+    public async Task A_refresh_marks_an_edited_profile_whose_file_changed_and_reload_starts_over()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.Same(editor, profiles.Current);
+        Assert.False(editor.OutOfDate);
+
+        File.AppendAllText(files.Own, "# pulled by a sync\n");
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.Same(editor, profiles.Current);
+        Assert.True(editor.OutOfDate);
+
+        await editor.ReloadCommand.ExecuteAsync(null);
+        Assert.False(editor.OutOfDate);
+        Assert.False(editor.HasChanges);
+        Assert.Equal("npm", editor.Tabs[4].Entries[0].Name);
+        Assert.EndsWith("# pulled by a sync\n", editor.Yaml, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact]
+    public async Task Settings_save_key_by_key_over_a_change_to_the_file()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        File.AppendAllText(files.Own, "# changed outside the app\n");
+        var save = $"profile {files.Own} --set repository.has_wiki=true --json";
+        cli.On(save, Documents.Resolved(files.Own, files.Base, wiki: true));
+
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Contains(save, cli.Calls);
+        Assert.False(editor.OutOfDate);
+    }
+
+    [AvaloniaFact]
     public async Task Discarding_puts_rulesets_and_environments_back()
     {
         var (profiles, _, _) = await OpenOrgs();

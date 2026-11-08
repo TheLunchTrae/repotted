@@ -42,7 +42,7 @@ internal sealed partial class ProfileViewModel(
 
     /// <summary>Whether a save is running; the editor stays on screen, and nothing else can change it.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(DiscardCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand))]
     public partial bool Saving { get; set; }
 
     [ObservableProperty]
@@ -57,6 +57,21 @@ internal sealed partial class ProfileViewModel(
     public partial string? SaveError { get; set; }
 
     public bool HasSaveError => SaveError is not null;
+
+    /// <summary>The file's text when the editor last loaded or saved it; null when it could not be read.</summary>
+    private string? loaded;
+
+    /// <summary>
+    /// Whether a save stopped because the file changed since the editor read
+    /// it, such as by a sync: saving writes each edited entry whole, from the
+    /// copy the editor read, so it would undo that change.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OutOfDateMessage))]
+    public partial bool OutOfDate { get; private set; }
+
+    public string OutOfDateMessage =>
+        $"{FileName} changed since you opened it, so saving would undo that change to the rulesets and environments you edited. Reload discards your unsaved changes.";
 
     public bool ShowEditor => !Loading && Error is null && Tabs.Count > 0;
 
@@ -84,7 +99,7 @@ internal sealed partial class ProfileViewModel(
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasChanges), nameof(ChangesLabel))]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(DiscardCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand))]
     public partial int ChangeCount { get; set; }
 
     public bool HasChanges => ChangeCount > 0;
@@ -106,8 +121,13 @@ internal sealed partial class ProfileViewModel(
         Error = null;
         try
         {
+            // Read first, so a change the load misses still counts as a change since.
+            var text = ReadFile(File);
             var profile = await client.ProfileAsync(File, CancellationToken.None).ConfigureAwait(true);
             Show(profile, await BaseAsync(profile).ConfigureAwait(true));
+            loaded = text;
+            OutOfDate = false;
+            SaveError = null;
         }
         // A load runs unawaited when a profile opens, so every failure shows here.
         catch (Exception error)
@@ -121,7 +141,33 @@ internal sealed partial class ProfileViewModel(
     }
 
     [RelayCommand(CanExecute = nameof(CanSave))]
-    private async Task SaveAsync()
+    private Task SaveAsync() => SaveAsync(overwrite: false);
+
+    /// <summary>Saves over a change to the file since the editor read it.</summary>
+    [RelayCommand(CanExecute = nameof(CanSave))]
+    private Task KeepMineAsync() => SaveAsync(overwrite: true);
+
+    /// <summary>Starts over from the file as it is now, without the unsaved edits.</summary>
+    [RelayCommand(CanExecute = nameof(CanDiscard))]
+    private Task ReloadAsync() => LoadAsync();
+
+    /// <summary>
+    /// Asks whether saving would undo a change to the file since the editor
+    /// read it, and shows the choice when it would. Saving settings writes
+    /// only the keys edited, so only edited rulesets and environments count.
+    /// </summary>
+    public void CheckFile()
+    {
+        if (StaleEntries())
+        {
+            OutOfDate = true;
+        }
+    }
+
+    private bool StaleEntries() =>
+        Entries.Any(entry => entry.Changed) && !string.Equals(ReadFile(File), loaded, StringComparison.Ordinal);
+
+    private async Task SaveAsync(bool overwrite)
     {
         var changes = Settings.Select(setting => setting.Change).OfType<ProfileChange>().ToList();
         // The CLI takes a write right after a drop as a rename, so plain writes
@@ -134,9 +180,26 @@ internal sealed partial class ProfileViewModel(
         try
         {
             ResolvedProfile? profile = null;
-            async Task Write() => profile = await client.SaveProfileAsync(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
+            string? text = null;
+            async Task Write()
+            {
+                // Checked here, after any sync before the save, so a file that sync changed counts.
+                if (!overwrite && StaleEntries())
+                {
+                    OutOfDate = true;
+                    return;
+                }
+                profile = await client.SaveProfileAsync(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
+                text = ReadFile(File);
+            }
             await (exclusive is null ? Write() : exclusive(Write)).ConfigureAwait(true);
-            Show(profile!, await BaseAsync(profile!).ConfigureAwait(true));
+            if (profile is null)
+            {
+                return;
+            }
+            Show(profile, await BaseAsync(profile).ConfigureAwait(true));
+            loaded = text;
+            OutOfDate = false;
             if (saved is not null)
             {
                 await saved().ConfigureAwait(true);
@@ -168,6 +231,7 @@ internal sealed partial class ProfileViewModel(
             tab.Undo();
         }
         SaveError = null;
+        OutOfDate = false;
     }
 
     /// <summary>
@@ -278,9 +342,23 @@ internal sealed partial class ProfileViewModel(
         OnPropertyChanged(nameof(Problem));
         OnPropertyChanged(nameof(HasProblem));
         SaveCommand.NotifyCanExecuteChanged();
+        KeepMineCommand.NotifyCanExecuteChanged();
     }
 
     public bool HasProblem => Problem is not null;
+
+    /// <summary>The file's text, or null when it cannot be read, such as once a sync removed it.</summary>
+    private static string? ReadFile(string file)
+    {
+        try
+        {
+            return System.IO.File.ReadAllText(file);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
 
     private static string ReadText(string file)
     {

@@ -492,12 +492,17 @@ internal sealed partial class ProfilesViewModel(
             Count = all.Count;
             Usable = [.. all.Where(item => !item.Invalid)];
             // Editors start over from the file, which may have changed outside
-            // the app, unless they hold edits that are not saved yet.
+            // the app, unless they hold edits that are not saved yet; those
+            // check whether saving would undo a change to the file.
             foreach (var (file, editor) in editors.ToList())
             {
                 if (!editor.HasChanges || !names.ContainsKey(file))
                 {
                     editors.Remove(file);
+                }
+                else
+                {
+                    editor.CheckFile();
                 }
             }
             // The CLI lists real paths, and the folder's own path may not be one,

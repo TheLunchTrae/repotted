@@ -190,15 +190,18 @@ per file in a cache.
 
 ### The profile
 
-| State   | Event                     | Next                                                                                                                                                                            |
-| ------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Loading | The CLI resolves the file | Saved.                                                                                                                                                                          |
-| Loading | It fails                  | Error.                                                                                                                                                                          |
-| Saved   | Any edit                  | Changed.                                                                                                                                                                        |
-| Changed | Discard                   | Saved.                                                                                                                                                                          |
-| Changed | Save                      | Saving: settings through `--set` and `--unset`, entries whole through `--ruleset` and `--environment`, and taken-out entries through `--drop-ruleset` and `--drop-environment`. |
-| Saving  | It succeeds               | Saved, then a sync for a config repository.                                                                                                                                     |
-| Saving  | It fails                  | Changed, with the error.                                                                                                                                                        |
+| State       | Event                     | Next                                                                                                                                                                                                                                                                                            |
+| ----------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Loading     | The CLI resolves the file | Saved.                                                                                                                                                                                                                                                                                          |
+| Loading     | It fails                  | Error.                                                                                                                                                                                                                                                                                          |
+| Saved       | Any edit                  | Changed.                                                                                                                                                                                                                                                                                        |
+| Changed     | Discard                   | Saved.                                                                                                                                                                                                                                                                                          |
+| Changed     | Save                      | Out of date when an edited ruleset or environment is in a file that changed since the editor read it. Otherwise saving: settings through `--set` and `--unset`, entries whole through `--ruleset` and `--environment`, and taken-out entries through `--drop-ruleset` and `--drop-environment`. |
+| Saving      | It succeeds               | Saved, then a sync for a config repository.                                                                                                                                                                                                                                                     |
+| Saving      | It fails                  | Changed, with the error.                                                                                                                                                                                                                                                                        |
+| Out of date | Keep mine                 | Saving, over the change to the file.                                                                                                                                                                                                                                                            |
+| Out of date | Reload                    | Loading, without the unsaved edits.                                                                                                                                                                                                                                                             |
+| Out of date | Discard                   | Saved, as the editor read the file; the next refresh loads the file again.                                                                                                                                                                                                                      |
 
 ### Each ruleset or environment
 
@@ -211,23 +214,20 @@ per file in a cache.
 | Any                                       | Save                | Plain writes go first, then drops, then each rename as a drop and a write, since the CLI reads a write right after a drop as a rename. |
 
 An editor builds the entry it saves from the copy it loaded, so saving writes
-the whole entry as that copy plus the edits.
+the whole entry as that copy plus the edits. That is why a save checks the
+file first: it compares the file with the text the editor read when it loaded
+or last saved, and stops at Out of date when they differ.
 
 ### The cache
 
-| State                | Event                           | Next                                                           |
-| -------------------- | ------------------------------- | -------------------------------------------------------------- |
-| Cached, no changes   | A refresh lists the file        | Dropped from the cache, so the next open loads the file again. |
-| Cached, with changes | A refresh lists the file        | Kept as it is, with its loaded copy.                           |
-| Cached               | A refresh doesn't list the file | Dropped from the cache.                                        |
+| State                | Event                           | Next                                                                                      |
+| -------------------- | ------------------------------- | ----------------------------------------------------------------------------------------- |
+| Cached, no changes   | A refresh lists the file        | Dropped from the cache, so the next open loads the file again.                            |
+| Cached, with changes | A refresh lists the file        | Kept as it is, with its loaded copy, and Out of date when an edited entry's file changed. |
+| Cached               | A refresh doesn't list the file | Dropped from the cache.                                                                   |
 
 **Failures:**
 
-- An editor with unsaved changes keeps its loaded copy when a sync pulls a
-  newer version of the file. Saving then writes each edited entry from the
-  old copy, reverts what the sync brought in, and pushes that as a plain
-  update with no conflict. Tracked in
-  [#42](https://github.com/TheLunchTrae/repotted/issues/42).
 - When a sync deletes or renames the open profile's file, the refresh drops
   its editor with the unsaved changes and doesn't say so. Tracked in
   [#43](https://github.com/TheLunchTrae/repotted/issues/43).
