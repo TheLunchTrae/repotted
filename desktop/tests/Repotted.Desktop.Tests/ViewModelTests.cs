@@ -2414,8 +2414,8 @@ public sealed class ViewModelTests : IDisposable
         const string Earlier = "Repotted could not remember this folder for next time: the disk is full";
         profiles.Notice = Earlier;
         var notice = save
-            ? "orgs could not be saved, so Repotted did not change the folder."
-            : "orgs is still loading, so Repotted did not change the folder.";
+            ? "orgs could not be saved, so you cannot change the folder yet."
+            : "orgs is still loading, so you cannot change the folder yet.";
         async Task Answer()
         {
             var change = profiles.ChangeFolderCommand.ExecuteAsync(null);

@@ -306,7 +306,7 @@ internal sealed partial class ProfilesViewModel(
             // both stay as they are, and the notice names the profile instead.
             var why = left.Loading ? "is still loading" : left.Saving ? "is still saving" : "could not be saved";
             var covered = leaveNotice is { } earlier && Notice == earlier.Shown ? earlier.Covered : Notice;
-            Notice = $"{left.Name} {why}, so Repotted did not {Leaving}.";
+            Notice = $"{left.Name} {why}, so you cannot {Leaving} yet.";
             leaveNotice = (Notice, left.File, covered);
             answer.TrySetResult(false);
             return;
