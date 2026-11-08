@@ -56,10 +56,10 @@ internal sealed partial class ProfilesViewModel(
     private int refreshes;
 
     /// <summary>
-    /// The sync that runs last, which the next one waits for, so a save made
-    /// during a refresh commits after it. The view model runs on the UI thread.
+    /// The saves and syncs, one at a time, so a save made during a refresh
+    /// commits after it. The view model runs on the UI thread.
     /// </summary>
-    private Task lastSync = Task.CompletedTask;
+    private readonly SerialQueue turns = new();
 
     /// <summary>Set once the app this list belongs to is left; a sync then does nothing.</summary>
     private bool stopped;
@@ -400,7 +400,7 @@ internal sealed partial class ProfilesViewModel(
         stopped = true;
         Creating = null;
         Connecting = null;
-        return lastSync;
+        return turns.Idle;
     }
 
     /// <summary>Closes the new profile form, back to the profile that was open.</summary>
@@ -523,21 +523,7 @@ internal sealed partial class ProfilesViewModel(
     /// and holds the next sync until it ends. So a sync never reads a file
     /// being written, and never pulls a file over one being moved into place.
     /// </summary>
-    public async Task ExclusiveAsync(Func<Task> work)
-    {
-        var previous = lastSync;
-        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        lastSync = done.Task;
-        try
-        {
-            await previous.ConfigureAwait(true);
-            await work().ConfigureAwait(true);
-        }
-        finally
-        {
-            done.SetResult();
-        }
-    }
+    public Task ExclusiveAsync(Func<Task> work) => turns.RunAsync(work);
 
     /// <summary>
     /// Syncs the folder with the config repository, if profiles live in one,
@@ -551,39 +537,37 @@ internal sealed partial class ProfilesViewModel(
             return null;
         }
         var folder = Folder;
-        var previous = lastSync;
-        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        lastSync = done.Task;
-        try
+        return await turns.RunAsync<SyncDocument?>(async () =>
         {
-            await previous.ConfigureAwait(true);
-            if (stopped || folder != Folder)
+            try
             {
+                if (stopped || folder != Folder)
+                {
+                    return null;
+                }
+                Syncing = true;
+                var result = await client.SyncAsync(folder, null, null, prefer, only, CancellationToken.None).ConfigureAwait(true);
+                if (folder != Folder)
+                {
+                    return null;
+                }
+                ShowSync(result);
+                return result;
+            }
+            catch (Exception error) when (error is CliException or CliNotFoundException or IOException or UnauthorizedAccessException)
+            {
+                if (folder == Folder)
+                {
+                    SyncFailed = true;
+                    SyncNote = $"Not synced with GitHub. Saves stay on this computer until a sync works. {error.Message}";
+                }
                 return null;
             }
-            Syncing = true;
-            var result = await client.SyncAsync(folder, null, null, prefer, only, CancellationToken.None).ConfigureAwait(true);
-            if (folder != Folder)
+            finally
             {
-                return null;
+                Syncing = false;
             }
-            ShowSync(result);
-            return result;
-        }
-        catch (Exception error) when (error is CliException or CliNotFoundException or IOException or UnauthorizedAccessException)
-        {
-            if (folder == Folder)
-            {
-                SyncFailed = true;
-                SyncNote = $"Not synced with GitHub. Saves stay on this computer until a sync works. {error.Message}";
-            }
-            return null;
-        }
-        finally
-        {
-            Syncing = false;
-            done.SetResult();
-        }
+        }).ConfigureAwait(true);
     }
 
     private void ShowSync(SyncDocument result)
@@ -687,7 +671,7 @@ internal sealed partial class ProfilesViewModel(
     /// <summary>Lists the profiles again once any sync running ends, so the listing sees what it pulled.</summary>
     private async Task ListAsync()
     {
-        await lastSync.ConfigureAwait(true);
+        await turns.Idle.ConfigureAwait(true);
         await LoadAsync(sync: false).ConfigureAwait(true);
     }
 
