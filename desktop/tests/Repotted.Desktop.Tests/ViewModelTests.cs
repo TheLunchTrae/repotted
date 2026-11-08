@@ -1075,7 +1075,7 @@ public sealed class ViewModelTests : IDisposable
         var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
         var start = profiles.StartConnectCommand.ExecuteAsync(null);
 
-        await change;
+        await change.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(folders.Profiles, profiles.Folder);
         Assert.Equal("orgs has unsaved changes. Save them before you connect a repository?", profiles.LeavingMessage);
         profiles.DiscardAndLeaveCommand.Execute(null);
@@ -1141,6 +1141,16 @@ public sealed class ViewModelTests : IDisposable
         Assert.Same(editor, profiles.Current);
         Assert.True(profiles.ShowProfile);
         Assert.Equal(folders.Profiles, profiles.Folder);
+
+        // Over a new profile form, it still comes into view.
+        profiles.Selected = profiles.Items.Single(item => item.Name == "base");
+        profiles.StartNew(null);
+        change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await change;
+        Assert.Same(editor, profiles.Current);
+        Assert.False(profiles.ShowCreating);
+        Assert.True(profiles.ShowProfile);
     }
 
     [AvaloniaFact]

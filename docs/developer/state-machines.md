@@ -249,14 +249,14 @@ window go through `ProfilesViewModel.ConfirmLeaveAsync`, which asks only when
 a cached editor has unsaved changes. Closing the window cancels the close,
 shows the **Profiles** page, and closes again once the question settles.
 
-| State  | Event                                                    | Next                                                                                                                                                                                                    |
-| ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Idle   | Change folder, connect a repository, or close the window | Asking, when any editor has unsaved changes. Otherwise it goes on. The question names the profiles that had unsaved changes when it was asked.                                                          |
-| Asking | Save                                                     | Saving. Save, Discard and Cancel wait until the saves end.                                                                                                                                              |
-| Saving | Every save ends                                          | Each changed editor saves in turn. It goes on when none has changes left; otherwise it opens the first one that does, with its error or its Out of date choice, even when a search hides it, and stays. |
-| Asking | Discard                                                  | Every changed editor that can discard does. It goes on when none has changes left; an editor still loading keeps its changes, opens, and it stays.                                                      |
-| Asking | Cancel                                                   | Idle, with nothing changed. A new profile form that was open stays open.                                                                                                                                |
-| Asking | Another change of folder, connect, or close              | Asking, about the new act. The earlier one stays where it was, as if cancelled.                                                                                                                         |
+| State  | Event                                                    | Next                                                                                                                                                                      |
+| ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idle   | Change folder, connect a repository, or close the window | Asking, when any editor has unsaved changes. Otherwise it goes on. The question names the profiles that had unsaved changes when it was asked.                            |
+| Asking | Save                                                     | Saving: each changed editor saves in turn, and Save, Discard and Cancel wait until the saves end.                                                                         |
+| Saving | Every save ends                                          | It goes on when no editor has changes left; otherwise it opens the first one that does, with its error or its Out of date choice, even when a search hides it, and stays. |
+| Asking | Discard                                                  | Every changed editor that can discard does. It goes on when none has changes left; an editor still loading keeps its changes, opens, and it stays.                        |
+| Asking | Cancel                                                   | Idle, with nothing changed. A new profile form that was open stays open.                                                                                                  |
+| Asking | Another change of folder, connect, or close              | Asking, about the new act. The earlier one stays where it was, as if cancelled.                                                                                           |
 
 The folder is picked before the question, so cancelling the folder picker asks
 nothing.
