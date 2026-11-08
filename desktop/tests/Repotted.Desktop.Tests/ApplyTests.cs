@@ -316,6 +316,7 @@ public sealed class ApplyTests : IDisposable
         Assert.Equal("orgs.yaml: profile is not valid.", page.Apply.Outcome);
         // There is no staged apply to review or discard.
         Assert.False(page.Apply.ReviewAgainCommand.CanExecute(null));
+        Assert.False(page.Apply.DiscardCommand.CanExecute(null));
         Assert.True(page.Apply.CloseCommand.CanExecute(null));
     }
 
@@ -399,6 +400,152 @@ public sealed class ApplyTests : IDisposable
         Assert.Contains(Planned, cli.Calls);
         Assert.False(apply.EditsUnsaved);
         Assert.True(apply.ApplyCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
+    public async Task One_off_edits_change_only_while_the_plan_is_under_review()
+    {
+        var (page, cli) = await Reviewing();
+        var apply = page.Apply;
+        Assert.True(apply.CanEdit);
+
+        apply.ApplyCommand.Execute(null);
+        Assert.Equal(ApplyStep.Confirming, apply.Step);
+        Assert.False(apply.CanEdit);
+        apply.CancelApplyCommand.Execute(null);
+        Assert.True(apply.CanEdit);
+
+        var planned = new TaskCompletionSource<string>();
+        cli.On(Planned, _ => planned.Task);
+        var planning = apply.ReviewAgainCommand.ExecuteAsync(null);
+        Assert.Equal(ApplyStep.Planning, apply.Step);
+        Assert.False(apply.CanEdit);
+        planned.SetResult(Plan());
+        await planning;
+        Assert.True(apply.CanEdit);
+    }
+
+    [AvaloniaFact]
+    public async Task The_apply_waits_while_its_edits_are_read_again()
+    {
+        var (page, cli) = await Reviewing();
+        var apply = page.Apply;
+        apply.ApplyCommand.Execute(null);
+        Assert.True(apply.ConfirmApplyCommand.CanExecute(null));
+        var read = new TaskCompletionSource();
+        cli.OnceReady(Read, Staged(), read.Task);
+
+        var loading = apply.Edits!.LoadCommand.ExecuteAsync(null);
+
+        Assert.True(apply.Edits.Loading);
+        Assert.False(apply.ConfirmApplyCommand.CanExecute(null));
+        Assert.False(apply.DiscardCommand.CanExecute(null));
+        Assert.False(apply.CanLeave);
+        read.SetResult();
+        await loading;
+        Assert.True(apply.ConfirmApplyCommand.CanExecute(null));
+        Assert.True(apply.CanLeave);
+    }
+
+    [AvaloniaFact]
+    public async Task Leaving_waits_while_a_plan_runs_and_says_why()
+    {
+        var (page, cli) = await Reviewing();
+        var apply = page.Apply;
+        var planned = new TaskCompletionSource<string>();
+        cli.On(Planned, _ => planned.Task);
+
+        var planning = apply.ReviewAgainCommand.ExecuteAsync(null);
+
+        Assert.Equal(ApplyStep.Planning, apply.Step);
+        Assert.False(apply.CanLeave);
+        Assert.False(apply.CloseCommand.CanExecute(null));
+        Assert.False(await apply.ConfirmLeaveAsync("sign out"));
+        Assert.False(apply.AskingToLeave);
+        Assert.Equal("Repotted is still working on this apply, so you can sign out once it is done.", apply.Error);
+        planned.SetResult(Plan());
+        await planning;
+        Assert.True(apply.CanLeave);
+        Assert.True(await apply.ConfirmLeaveAsync("sign out"));
+    }
+
+    [AvaloniaFact]
+    public async Task Nothing_is_discarded_or_left_while_the_edits_save()
+    {
+        var (page, cli) = await Reviewing();
+        var apply = page.Apply;
+        var editor = apply.Edits!;
+        Setting(editor, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        var written = new TaskCompletionSource();
+        cli.OnceReady($"stage {file} --set repository.has_issues=false --json", Staged(), written.Task);
+
+        var saving = editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.True(editor.Saving);
+        Assert.False(apply.DiscardCommand.CanExecute(null));
+        Assert.False(apply.CanLeave);
+        Assert.False(await apply.ConfirmLeaveAsync("quit"));
+        Assert.Equal("Repotted is still working on this apply, so you can quit once it is done.", apply.Error);
+        written.SetResult();
+        await saving;
+        Assert.True(apply.DiscardCommand.CanExecute(null));
+        Assert.True(apply.CanLeave);
+    }
+
+    [AvaloniaFact]
+    public async Task A_question_about_leaving_settles_once_the_edits_are_saved_and_planned()
+    {
+        var (page, cli) = await Reviewing();
+        var apply = page.Apply;
+        var editor = apply.Edits!;
+        Setting(editor, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        apply.Tab = 0;
+
+        var leaving = apply.ConfirmLeaveAsync("sign out");
+
+        Assert.False(leaving.IsCompleted);
+        Assert.True(apply.AskingToLeave);
+        Assert.Equal("To sign out, save or undo your one-off edits first.", apply.LeavingMessage);
+        // The question shows with the edits it is about.
+        Assert.True(apply.ShowingEdits);
+
+        var save = $"stage {file} --set repository.has_issues=false --json";
+        cli.On(save, Staged());
+        var planned = new TaskCompletionSource<string>();
+        cli.On(Planned, _ => planned.Task);
+        cli.Calls.Clear();
+        var saving = editor.SaveCommand.ExecuteAsync(null);
+        await WaitFor(() => apply.Step == ApplyStep.Planning);
+        // The saved edits are planned before the page may go, so it never stays behind with an old plan.
+        Assert.False(leaving.IsCompleted);
+
+        planned.SetResult(Plan());
+        await saving;
+        Assert.True(await leaving);
+        Assert.Contains(save, cli.Calls);
+        Assert.Contains(Planned, cli.Calls);
+        Assert.False(apply.AskingToLeave);
+        Assert.Equal(ApplyStep.Reviewing, apply.Step);
+    }
+
+    [AvaloniaFact]
+    public async Task Staying_keeps_the_unsaved_edits_and_a_later_question_replaces_an_open_one()
+    {
+        var (page, _) = await Reviewing();
+        var apply = page.Apply;
+        Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+
+        var first = apply.ConfirmLeaveAsync("quit");
+        var second = apply.ConfirmLeaveAsync("sign out");
+
+        Assert.False(await first);
+        Assert.Equal("To sign out, save or undo your one-off edits first.", apply.LeavingMessage);
+        apply.StayHereCommand.Execute(null);
+        Assert.False(await second);
+        Assert.False(apply.AskingToLeave);
+        Assert.True(apply.EditsUnsaved);
+        Assert.Equal(ApplyStep.Reviewing, apply.Step);
+        Assert.Equal(0, page.Closed);
     }
 
     [AvaloniaFact]
@@ -705,14 +852,29 @@ public sealed class ApplyTests : IDisposable
         Assert.False(shell.ShowingRepositories);
         Assert.Equal($"Repositories / {Repository} / Apply", shell.Crumb);
 
-        // Unsaved one-off edits keep the apply open, and stop a quit.
-        Setting(shell.Apply!.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        // Unsaved one-off edits keep the apply open, and a quit asks about them.
+        var apply = shell.Apply!;
+        Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
         shell.ShowPage(0);
         Assert.True(shell.ShowingApply);
-        Assert.False(await shell.ConfirmQuitAsync());
+        var quit = shell.ConfirmQuitAsync();
+        Assert.False(quit.IsCompleted);
+        Assert.True(apply.AskingToLeave);
+        Assert.Equal("To quit, save or undo your one-off edits first.", apply.LeavingMessage);
+        Assert.True(apply.ShowingEdits);
+        apply.StayHereCommand.Execute(null);
+        Assert.False(await quit);
+        Assert.False(apply.AskingToLeave);
+        Assert.True(apply.EditsUnsaved);
+
+        // Undoing the edits answers the question, and the quit goes on.
+        quit = shell.ConfirmQuitAsync();
+        Assert.True(apply.AskingToLeave);
+        apply.Edits!.DiscardCommand.Execute(null);
+        Assert.True(await quit);
+        Assert.False(apply.AskingToLeave);
 
         // Without them the list comes back, with the apply left to resume.
-        shell.Apply.Edits!.DiscardCommand.Execute(null);
         shell.ShowPage(0);
         Assert.Null(shell.Apply);
         Assert.True(shell.ShowingRepositories);
@@ -755,7 +917,7 @@ public sealed class ApplyTests : IDisposable
         Assert.Contains(Label("Apply 3 changes"), text);
         Assert.Contains(Label("Leave out"), text);
         Assert.Contains("One-off edit", text);
-        Assert.Contains(Label("Discard"), text);
+        Assert.Contains(Label("Discard apply"), text);
         Assert.Contains($"Repositories / {Repository} / Apply", text);
         Save(window, $"apply-review-{theme}");
 

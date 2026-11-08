@@ -523,7 +523,7 @@ internal sealed partial class ProfilesViewModel(
     /// and holds the next sync until it ends. So a sync never reads a file
     /// being written, and never pulls a file over one being moved into place.
     /// </summary>
-    private async Task ExclusiveAsync(Func<Task> work)
+    public async Task ExclusiveAsync(Func<Task> work)
     {
         var previous = lastSync;
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

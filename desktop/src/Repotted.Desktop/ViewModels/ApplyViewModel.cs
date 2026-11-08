@@ -60,13 +60,15 @@ internal sealed record ExcludedViewModel(string Key);
 /// <param name="profile">The profile to start from, or null to start from the repository as it is.</param>
 /// <param name="close">Leaves the page.</param>
 /// <param name="profileSaved">Runs after one-off edits are saved to the profile, such as to list and sync the profiles again.</param>
+/// <param name="exclusive">Runs a write to the profiles folder, such as saving one-off edits to a profile, where no sync runs meanwhile.</param>
 internal sealed partial class ApplyViewModel(
     RepottedClient client,
     AppSettings settings,
     string repository,
     ProfileListingDocument? profile,
     Action close,
-    Func<Task>? profileSaved = null) : ViewModelBase
+    Func<Task>? profileSaved = null,
+    Func<Func<Task>, Task>? exclusive = null) : ViewModelBase
 {
     private readonly string file = settings.StagedFile(repository);
 
@@ -87,18 +89,22 @@ internal sealed partial class ApplyViewModel(
     [NotifyPropertyChangedFor(
         nameof(Summary), nameof(ShowStarting), nameof(ShowUnfinished), nameof(ShowPlanning), nameof(ShowReview),
         nameof(Confirming), nameof(ShowApplying), nameof(ShowResult), nameof(ShowFailed), nameof(ConfirmingDiscard),
-        nameof(CanLeave), nameof(ShowActions), nameof(CanRetry))]
+        nameof(CanLeave), nameof(ShowActions), nameof(CanRetry), nameof(CanEdit))]
     [NotifyCanExecuteChangedFor(
         nameof(ResumeCommand), nameof(StartOverCommand), nameof(ReviewAgainCommand), nameof(LeaveOutCommand), nameof(PutBackCommand),
         nameof(ApplyCommand), nameof(ConfirmApplyCommand), nameof(CancelApplyCommand), nameof(DiscardCommand),
         nameof(ConfirmDiscardCommand), nameof(KeepCommand), nameof(SaveToProfileCommand), nameof(CloseCommand))]
     public partial ApplyStep Step { get; private set; }
 
-    /// <summary>Whether a change to the staged apply runs, such as leaving a row out; nothing else starts meanwhile.</summary>
+    /// <summary>
+    /// Whether a change to the staged apply runs, such as leaving a row out,
+    /// until the plan after it starts; nothing else starts meanwhile.
+    /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanLeave), nameof(CanEdit))]
     [NotifyCanExecuteChangedFor(
         nameof(LeaveOutCommand), nameof(PutBackCommand), nameof(ApplyCommand), nameof(DiscardCommand),
-        nameof(SaveToProfileCommand), nameof(ReviewAgainCommand))]
+        nameof(SaveToProfileCommand), nameof(ReviewAgainCommand), nameof(CloseCommand))]
     public partial bool Working { get; private set; }
 
     /// <summary>The step to go back to when a discard is not confirmed.</summary>
@@ -193,6 +199,15 @@ internal sealed partial class ApplyViewModel(
     /// <summary>Whether the one-off edits hold changes not saved yet, which the plan does not have.</summary>
     public bool EditsUnsaved => Edits?.HasChanges == true;
 
+    /// <summary>Whether the one-off edits are being read or saved, which runs the command line.</summary>
+    private bool EditsBusy => Edits is { Loading: true } or { Saving: true };
+
+    /// <summary>
+    /// Whether the one-off edits can change: only while the plan is on
+    /// screen to change, so an edit never waits under a plan about to be applied.
+    /// </summary>
+    public bool CanEdit => Step == ApplyStep.Reviewing && !Working;
+
     /// <summary>Why a change to the staged apply failed, such as an edit the profile makes invalid; the review stays.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]
@@ -204,8 +219,13 @@ internal sealed partial class ApplyViewModel(
     [ObservableProperty]
     public partial string Outcome { get; private set; } = "";
 
-    /// <summary>Whether the page can close: not while it writes to GitHub, nor with one-off edits not saved.</summary>
-    public bool CanLeave => Step != ApplyStep.Applying && !EditsUnsaved;
+    /// <summary>
+    /// Whether the page can close: not while the command line runs for it,
+    /// since a run must not outlive the page, nor with one-off edits not saved.
+    /// </summary>
+    public bool CanLeave =>
+        Step is not (ApplyStep.Starting or ApplyStep.Planning or ApplyStep.Applying)
+        && !Working && !EditsUnsaved && !EditsBusy;
 
     /// <summary>Opens the staged apply to the repository: an unfinished one waits for a choice, and otherwise a new one starts.</summary>
     public async Task OpenAsync()
@@ -289,7 +309,8 @@ internal sealed partial class ApplyViewModel(
                 Edits = new ProfileViewModel(client, Listing(), EditsSavedAsync, store: Store());
                 Edits.PropertyChanged += (_, e) =>
                 {
-                    if (e.PropertyName == nameof(ProfileViewModel.ChangeCount))
+                    if (e.PropertyName is nameof(ProfileViewModel.ChangeCount) or nameof(ProfileViewModel.Saving)
+                        or nameof(ProfileViewModel.Loading))
                     {
                         OnEditsChanged();
                     }
@@ -335,10 +356,14 @@ internal sealed partial class ApplyViewModel(
             ? "For this apply only, over the repository as it is."
             : $"For this apply only, over {@base}, which stays as it is unless you save these edits to it.");
 
-    /// <summary>Saved one-off edits change the plan, so it is made again.</summary>
+    /// <summary>
+    /// Saved one-off edits change the plan, so it is made again; a plan
+    /// reviewed before the save is never applied. A question about leaving
+    /// waits for that plan, so the page never stays behind with an old one.
+    /// </summary>
     private async Task EditsSavedAsync()
     {
-        if (Step == ApplyStep.Reviewing)
+        if (Step is ApplyStep.Reviewing or ApplyStep.Confirming or ApplyStep.ConfirmingDiscard)
         {
             await ReviewAsync().ConfigureAwait(true);
         }
@@ -351,11 +376,27 @@ internal sealed partial class ApplyViewModel(
         LeaveOutCommand.NotifyCanExecuteChanged();
         PutBackCommand.NotifyCanExecuteChanged();
         ApplyCommand.NotifyCanExecuteChanged();
+        ConfirmApplyCommand.NotifyCanExecuteChanged();
         SaveToProfileCommand.NotifyCanExecuteChanged();
+        DiscardCommand.NotifyCanExecuteChanged();
         CloseCommand.NotifyCanExecuteChanged();
+        SettleLeave();
     }
 
-    private bool CanChange() => Step == ApplyStep.Reviewing && !Working && !EditsUnsaved;
+    partial void OnStepChanged(ApplyStep value) => SettleLeave();
+
+    partial void OnWorkingChanged(bool value) => SettleLeave();
+
+    /// <summary>The question about leaving settles once its edits are saved, and planned again, or undone.</summary>
+    private void SettleLeave()
+    {
+        if (leave is { } answer && CanLeave)
+        {
+            answer.TrySetResult(true);
+        }
+    }
+
+    private bool CanChange() => Step == ApplyStep.Reviewing && !Working && !EditsUnsaved && !EditsBusy;
 
     /// <summary>Leaves a row's change out of this apply; the profile keeps it.</summary>
     [RelayCommand(CanExecute = nameof(CanChange))]
@@ -371,12 +412,15 @@ internal sealed partial class ApplyViewModel(
     [RelayCommand(CanExecute = nameof(CanSaveToProfile))]
     private Task SaveToProfileAsync() => ChangeAsync(async () =>
     {
-        var staged = await client.SaveStagedToProfileAsync(file, CancellationToken.None).ConfigureAwait(true);
+        StagedApply? staged = null;
+        // The profile is a file of the profiles folder, so no sync reads it while it is written.
+        async Task Save() => staged = await client.SaveStagedToProfileAsync(file, CancellationToken.None).ConfigureAwait(true);
+        await (exclusive is null ? Save() : exclusive(Save)).ConfigureAwait(true);
         if (profileSaved is not null)
         {
             await profileSaved().ConfigureAwait(true);
         }
-        return staged;
+        return staged!;
     });
 
     private bool CanSaveToProfile() => CanChange() && HasBase && Edits?.SetsAnything == true;
@@ -389,21 +433,20 @@ internal sealed partial class ApplyViewModel(
         try
         {
             await change().ConfigureAwait(true);
+            if (Edits is not null)
+            {
+                await Edits.LoadAsync().ConfigureAwait(true);
+                OnEditsChanged();
+            }
         }
         catch (Exception error) when (error is CliException or CliNotFoundException)
         {
             Error = error.Message;
+            Working = false;
             return;
         }
-        finally
-        {
-            Working = false;
-        }
-        if (Edits is not null)
-        {
-            await Edits.LoadAsync().ConfigureAwait(true);
-            OnEditsChanged();
-        }
+        // The plan starts at once, so the old plan is never there to act on between the two.
+        Working = false;
         await ReviewAsync().ConfigureAwait(true);
     }
 
@@ -417,8 +460,11 @@ internal sealed partial class ApplyViewModel(
 
     private bool IsConfirming() => Step == ApplyStep.Confirming;
 
+    /// <summary>The reviewed plan is applied only while it still is what the edits say.</summary>
+    private bool CanConfirmApply() => IsConfirming() && !EditsUnsaved && !EditsBusy;
+
     /// <summary>Writes the reviewed plan, which the CLI checks against GitHub first.</summary>
-    [RelayCommand(CanExecute = nameof(IsConfirming))]
+    [RelayCommand(CanExecute = nameof(CanConfirmApply))]
     private async Task ConfirmApplyAsync()
     {
         Step = ApplyStep.Applying;
@@ -472,7 +518,9 @@ internal sealed partial class ApplyViewModel(
     }
 
     private bool CanDiscard() =>
-        !Working && Step is ApplyStep.Reviewing or ApplyStep.Stale or ApplyStep.PartlyApplied or ApplyStep.Failed;
+        !Working && !EditsBusy
+        && (Step is ApplyStep.Reviewing or ApplyStep.Stale or ApplyStep.PartlyApplied
+            || (Step == ApplyStep.Failed && File.Exists(file)));
 
     [RelayCommand(CanExecute = nameof(IsConfirmingDiscard))]
     private void Keep() => Step = beforeDiscard;
@@ -507,6 +555,59 @@ internal sealed partial class ApplyViewModel(
     /// <summary>Leaves the page; an unfinished staged apply stays to resume.</summary>
     [RelayCommand(CanExecute = nameof(CanLeave))]
     private void Close() => close();
+
+    private TaskCompletionSource<bool>? leave;
+
+    /// <summary>What the app waits to do while the page asks about its unsaved edits, such as "quit", or null.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LeavingMessage), nameof(AskingToLeave))]
+    public partial string? Leaving { get; private set; }
+
+    public bool AskingToLeave => Leaving is not null;
+
+    public string LeavingMessage => $"To {Leaving}, save or undo your one-off edits first.";
+
+    /// <summary>
+    /// Whether the app may leave the page to <paramref name="act"/>, such as
+    /// "sign out". While the command line runs for the page, it says so and
+    /// stays, since the run can't be stopped partway; the run's own end, such
+    /// as a sign-in it finds lost, then leads on. Unsaved one-off edits wait
+    /// on a question until they are saved and planned again, or undone, or the
+    /// question is put aside.
+    /// </summary>
+    public async Task<bool> ConfirmLeaveAsync(string act)
+    {
+        if (CanLeave)
+        {
+            return true;
+        }
+        if (!EditsUnsaved || EditsBusy || Working || Step is ApplyStep.Starting or ApplyStep.Planning or ApplyStep.Applying)
+        {
+            Error = $"Repotted is still working on this apply, so you can {act} once it is done.";
+            return false;
+        }
+        leave?.TrySetResult(false);
+        var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        leave = answer;
+        Leaving = act;
+        Tab = 1;
+        try
+        {
+            return await answer.Task.ConfigureAwait(true);
+        }
+        finally
+        {
+            if (leave == answer)
+            {
+                leave = null;
+                Leaving = null;
+            }
+        }
+    }
+
+    /// <summary>Puts the question about leaving aside; the edits stay as they are.</summary>
+    [RelayCommand]
+    private void StayHere() => leave?.TrySetResult(false);
 
     private void Fail(string message)
     {

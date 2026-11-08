@@ -107,7 +107,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         }
         Page = 0;
         Compare = null;
-        Apply = new ApplyViewModel(client, settings, repository, profile, CloseApply, Profiles.RefreshAsync);
+        Apply = new ApplyViewModel(client, settings, repository, profile, CloseApply, Profiles.RefreshAsync, Profiles.ExclusiveAsync);
         _ = Apply.OpenAsync();
     }
 
@@ -160,20 +160,23 @@ internal sealed partial class ShellViewModel : ViewModelBase
     /// page, brought into view, has asked and the changes are saved or
     /// discarded.
     /// </summary>
-    public Task<bool> ConfirmLeaveAsync(string act)
+    public async Task<bool> ConfirmLeaveAsync(string act)
     {
-        // An apply that is writing, or holds unsaved one-off edits, shows itself and waits.
-        if (Apply is { CanLeave: false })
+        // An apply that is running, or holds unsaved one-off edits, shows itself and says what it needs.
+        if (Apply is { CanLeave: false } apply)
         {
             Page = 0;
-            return Task.FromResult(false);
+            if (!await apply.ConfirmLeaveAsync(act).ConfigureAwait(true))
+            {
+                return false;
+            }
         }
         if (!Profiles.HasUnsaved)
         {
-            return Task.FromResult(true);
+            return true;
         }
         Page = 1;
-        return Profiles.ConfirmLeaveAsync(act);
+        return await Profiles.ConfirmLeaveAsync(act).ConfigureAwait(true);
     }
 
     public string SearchHint => ShowingProfiles ? "Find a profile" : "Find a repository";

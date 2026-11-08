@@ -207,9 +207,14 @@ a change partway, the changes before it stay written and nothing after it is;
 
 An apply you leave before it finishes is kept. The repository shows "An apply
 here is not finished." with **Resume**, which offers to pick it up or start
-over. **Discard** throws an apply away with its one-off edits; the profile
-stays as it is. The app keeps unfinished applies in a `staged` folder in its
-app data folder, below.
+over. **Discard apply** throws an apply away with its one-off edits; the
+profile stays as it is. The app keeps unfinished applies in a `staged` folder
+in its app data folder, below.
+
+One-off edits you haven't saved keep the apply open. If you quit or sign out
+then, the apply asks you to save or undo them first, and goes on once you do;
+**Stay here** keeps them as they are. While Repotted is still working on the
+apply, such as comparing or writing, it says so and waits for that to finish.
 
 The command line does the same with [`repotted stage`](cli.md#stage-an-apply), if you prefer
 it or want to script it.
