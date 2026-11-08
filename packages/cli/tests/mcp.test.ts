@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
+import { describe, expect, test } from 'vitest';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -7,7 +7,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { FakeGitHub } from '../../core/tests/fake-github.js';
 import { createServer } from '../src/mcp.js';
 
-const examples = path.join(import.meta.dir, '../../../examples');
+const examples = path.join(import.meta.dirname, '../../../examples');
 
 async function connect(github: FakeGitHub, readOnly = false, onClient: () => void = () => undefined): Promise<Client> {
   const server = createServer({

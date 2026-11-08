@@ -13,7 +13,7 @@ version in `packages/cli/package.json`, such as `v0.2.0`, and must point at a
 commit on `main`. Create it as a full release:
 prereleases do not publish, and promoting one later does not start the
 workflow. The workflow runs the gate on that commit, packs `packages/cli` with
-`bun pm pack`, which builds the bundle and replaces the `workspace:` range, and
+`pnpm pack`, which builds the bundle and replaces the `workspace:` range, and
 publishes the tarball to npm with trusted publishing and provenance.
 
 npm accepts the publish only from a trusted publisher: this repository,
@@ -21,7 +21,7 @@ npm accepts the publish only from a trusted publisher: this repository,
 a package that exists, so the first version is published by hand:
 
 1. On an up-to-date `main`, run `mise run standards:check`, then from
-   `packages/cli` run `bun publish` while signed in to npm. Releases start
+   `packages/cli` run `pnpm publish` while signed in to npm. Releases start
    from the next version, since npm already has this one.
 2. On npmjs.com, add the trusted publisher to the `repotted` package, then in
    its publishing access settings require two-factor authentication and
@@ -74,8 +74,8 @@ immutable release, which `gh release verify-asset` checks: that one shows a
 file belongs to the release, `SHA256SUMS.txt` included, but a file uploaded by
 hand passes it too.
 
-Each build ships the CLI compiled with `bun build --compile` beside the app as
-`repotted-cli`. `mise run desktop:package` makes the same package on a Mac or
+Each build ships the CLI beside the app as `repotted-cli`, a Node single
+executable, with its keychain module as `repotted-keyring.node`. `mise run desktop:package` makes the same package on a Mac or
 in Git Bash on Windows, in `artifacts/desktop`.
 
 To build test installers from any branch, run Build Desktop from the Actions

@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { describe, expect, test } from 'vitest';
 
 import {
   app,
@@ -244,7 +245,7 @@ describe('device flow', () => {
     expect(login.requests.filter((request) => request.url.endsWith('/device/code'))).toHaveLength(1);
 
     entered.resolve(undefined);
-    await Bun.sleep(0);
+    await sleep(0);
     expect(await token()).toBe('ghu_new');
   });
 
@@ -265,7 +266,7 @@ describe('device flow', () => {
 
     await rejection(token());
     answered.resolve(undefined);
-    await Bun.sleep(0);
+    await sleep(0);
 
     const next = String(await rejection(token()));
     expect(next).toContain('GitHub sign-in failed: The user denied the request. Not signed in to GitHub. Ask the user');
@@ -278,7 +279,7 @@ describe('device flow', () => {
     const write = store.write.bind(store);
     // A slow keychain, so the second call would read before the first writes.
     store.write = async (stored) => {
-      await Bun.sleep(5);
+      await sleep(5);
       await write(stored);
     };
     const token = tokenOrSignIn(sources(store, login));
@@ -305,7 +306,7 @@ describe('device flow', () => {
 
     await rejection(token());
     entered.resolve(undefined);
-    await Bun.sleep(0);
+    await sleep(0);
 
     expect(String(await rejection(token()))).toContain('Signed in, but the OS keychain could not store the token');
     expect(String(await rejection(token()))).toContain('Signed in, but the OS keychain could not store the token');

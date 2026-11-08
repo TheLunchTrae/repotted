@@ -47,6 +47,10 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
+          package-manager-cache: false
+      # mise puts its newer Node first on the PATH; ts:node:check runs this one.
+      - name: Point the npx smoke check at it
+        run: echo "SMOKE_NODE=$(command -v node)" >>"$GITHUB_ENV"
       # No cache: a release builds only from the locked, checksummed tools.
       - name: Install pinned tools
         uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds the desktop app for this machine into artifacts/desktop: on macOS an
-# app bundle and a DMG, on Windows an installer. The bundled CLI is compiled
-# from packages/cli with Bun, since the app runs it for all its GitHub work.
+# app bundle and a DMG, on Windows an installer. The bundled CLI is built from
+# packages/cli as a Node single executable, since the app runs it for all its
+# GitHub work; its keychain module ships beside it.
 #
 # With MACOS_SIGNING_IDENTITY set to a Developer ID Application identity in
 # the keychain, the bundle and the DMG are signed for notarization. Without it
@@ -39,7 +40,7 @@ rid="$([[ $os == macos ]] && echo osx || echo win)-$arch"
 exe="$([[ $os == windows ]] && echo .exe || true)"
 
 version="$(dotnet msbuild "$project" -getProperty:Version)"
-cli_version="$(cd "$root" && bun -p "require('./packages/cli/package.json').version")"
+cli_version="$(cd "$root" && node -p "require('./packages/cli/package.json').version")"
 publish="$out/publish-$rid"
 rm -rf "$publish"
 mkdir -p "$out"
@@ -50,15 +51,12 @@ dotnet publish "$project" --configuration Release --runtime "$rid" --self-contai
   -p:DebugType=none -p:PublishDocumentationFile=false --output "$publish"
 
 # The app finds the CLI beside itself as repotted-cli; see RepottedCli.Locate.
+# sea.ts writes repotted-keyring.node beside it.
 cli="$publish/repotted-cli$exe"
-# On x64, Bun's default runtime needs AVX2; the baseline one runs on any x64 CPU.
-target=
-if [[ $arch == x64 ]]; then
-  target="bun-$([[ $os == macos ]] && echo darwin || echo windows)-x64-baseline"
-fi
-bun build --compile --minify ${target:+--target "$target"} "$root/packages/cli/src/main.ts" --outfile "$cli"
+node "$root/packages/cli/sea.ts" "$cli"
 
-# The compiled CLI must start and load its keychain module on this platform.
+# The compiled CLI must start, serve MCP with its bundled dependencies, and
+# load its keychain module on this platform.
 smoke() {
   local reported
   reported="$("$1" --version)"
@@ -66,6 +64,7 @@ smoke() {
     echo "$1 reports version $reported, not $cli_version." >&2
     exit 1
   fi
+  node "$root/packages/cli/tests/node-smoke.mjs" "$1"
   # Without a token variable, status reads the keychain. Signed out, it exits 1
   # either way, so a keychain that fails to load shows only in problems.
   local status=0 answer
@@ -110,12 +109,13 @@ sign() {
 }
 # Each file first, then the bundle, which signs its executable, Repotted;
 # --deep would give every file the app's entitlements.
+# That includes the keychain module, so the CLI loads it signed by the same team.
 find "$app/Contents/MacOS" -type f ! -name Repotted ! -name repotted-cli -print0 |
   while IFS= read -r -d '' file; do sign "$file"; done
 sign --entitlements "$packaging/macos/repotted-cli.entitlements" "$app/Contents/MacOS/repotted-cli"
 sign --entitlements "$packaging/macos/Repotted.entitlements" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
-# The hardened runtime must still let the CLI JIT and load its keychain module,
+# The hardened runtime must still let the CLI's V8 JIT and load its keychain module,
 # and let the app load its native libraries: a launch that fails exits early.
 smoke "$app/Contents/MacOS/repotted-cli"
 "$app/Contents/MacOS/Repotted" &

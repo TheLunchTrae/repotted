@@ -1,7 +1,7 @@
-import { afterAll, describe, expect, test } from 'bun:test';
 import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { afterAll, describe, expect, test } from 'vitest';
 
 import {
   editProfile,
@@ -182,7 +182,7 @@ rulesets:
   });
 
   test('loads the example profiles', async () => {
-    const examples = path.join(import.meta.dir, '../../../examples');
+    const examples = path.join(import.meta.dirname, '../../../examples');
     const profile = await loadProfile(path.join(examples, 'repotted.yaml'));
 
     expect(profile.merge).toEqual({ allow_merge_commit: false, allow_squash_merge: false, allow_rebase_merge: true });

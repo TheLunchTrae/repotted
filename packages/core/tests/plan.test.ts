@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
+import { describe, expect, test } from 'vitest';
 
 import { parseRepo, repoPath } from '../src/github.js';
 import { matches } from '../src/match.js';
@@ -19,7 +19,7 @@ import { MergeSettingsError } from '../src/sections/repository.js';
 import { FakeGitHub } from './fake-github.js';
 
 const repo = parseRepo('lunch/app');
-const examples = path.join(import.meta.dir, '../../../examples');
+const examples = path.join(import.meta.dirname, '../../../examples');
 const mainBranch = { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } };
 
 function rejection(promise: Promise<unknown>): Promise<unknown> {

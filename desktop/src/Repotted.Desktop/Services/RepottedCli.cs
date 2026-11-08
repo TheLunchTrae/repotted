@@ -21,8 +21,9 @@ internal interface ICli
 internal sealed class CliNotFoundException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <summary>
-/// Starts the CLI as a child process. REPOTTED_CLI names it: a .js file runs
-/// with node, a .ts file with bun, and anything else directly. Without it, the
+/// Starts the CLI as a child process. REPOTTED_CLI names it: a .js or .mjs
+/// file, such as the built packages/cli/dist/repotted.js, runs with node, and
+/// anything else directly. Without it, the
 /// app runs the repotted-cli that ships beside it, then repotted on the PATH.
 /// </summary>
 internal sealed class RepottedCli(string fileName, IReadOnlyList<string> prefix) : ICli
@@ -50,7 +51,6 @@ internal sealed class RepottedCli(string fileName, IReadOnlyList<string> prefix)
         Path.GetExtension(path).ToUpperInvariant() switch
         {
             ".JS" or ".MJS" => new RepottedCli("node", [path]),
-            ".TS" => new RepottedCli("bun", [path]),
             _ => new RepottedCli(path, []),
         };
 

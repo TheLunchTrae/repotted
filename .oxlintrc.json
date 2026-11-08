@@ -387,29 +387,6 @@
       "rules": {
         "standards/typescript-source-only": "error"
       }
-    },
-    {
-      "files": ["packages/*/src/**/*.{cts,mts,ts,tsx}"],
-      "rules": {
-        "no-restricted-globals": [
-          "error",
-          {
-            "name": "Bun",
-            "message": "Shipped code runs under Node through npx. Use node: APIs."
-          }
-        ],
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": ["bun", "bun:*"],
-                "message": "Shipped code runs under Node through npx. Use node: APIs."
-              }
-            ]
-          }
-        ]
-      }
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 import { GitHubError } from '../src/github.js';
 import { currentUser, listRepositories } from '../src/repositories.js';

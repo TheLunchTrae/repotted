@@ -1,26 +1,25 @@
 // Runs the built CLI under Node, the way npx would: it starts, answers an MCP
 // handshake, and loads and validates profiles from disk. It never reaches
 // GitHub, because the profile it plans with is invalid. Run it with Node after
-// `bun run build`.
+// `pnpm run build`, or pass the path of the desktop app's compiled CLI to run
+// the same checks against that executable.
 import { spawn, spawnSync } from 'node:child_process';
 import { log } from 'node:console';
-import { execPath, version as nodeVersion } from 'node:process';
+import { argv, execPath, version as nodeVersion } from 'node:process';
 import { clearTimeout, setTimeout } from 'node:timers';
 import { fileURLToPath, URL } from 'node:url';
 
-const cli = fileURLToPath(new URL('../dist/repotted.js', import.meta.url));
+const compiled = argv[2];
+const [command, ...prefix] =
+  compiled === undefined ? [execPath, fileURLToPath(new URL('../dist/repotted.js', import.meta.url))] : [compiled];
 const examples = fileURLToPath(new URL('../../../examples/', import.meta.url));
 
-if (typeof globalThis.Bun !== 'undefined') {
-  throw new Error('node-smoke.mjs must run under Node, not Bun');
-}
-
-const version = spawnSync(execPath, [cli, '--version'], { encoding: 'utf8' });
+const version = spawnSync(command, [...prefix, '--version'], { encoding: 'utf8' });
 if (version.status !== 0 || !/^\d+\.\d+\.\d+/u.test(version.stdout)) {
   throw new Error(`repotted --version failed: ${version.stderr}`);
 }
 
-const server = spawn(execPath, [cli, 'mcp', '--read-only'], { cwd: examples, stdio: ['pipe', 'pipe', 'inherit'] });
+const server = spawn(command, [...prefix, 'mcp', '--read-only'], { cwd: examples, stdio: ['pipe', 'pipe', 'inherit'] });
 const replies = new Map();
 let buffer = '';
 server.stdout.setEncoding('utf8');
@@ -76,9 +75,8 @@ try {
   if (planned.result?.isError !== true || !text.includes('Every merge method is off')) {
     throw new Error(`Unexpected plan reply: ${JSON.stringify(planned)}`);
   }
-  log(
-    `node ${nodeVersion}: repotted ${version.stdout.trim()} starts, serves ${names.join(', ')} and validates profiles`,
-  );
+  const runtime = compiled === undefined ? `node ${nodeVersion}` : compiled;
+  log(`${runtime}: repotted ${version.stdout.trim()} starts, serves ${names.join(', ')} and validates profiles`);
 } finally {
   server.kill();
 }

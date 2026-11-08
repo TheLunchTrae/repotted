@@ -137,7 +137,7 @@ streams its JSON Lines, and kills the run whenever whatever started it ends.
 System.Text.Json, so a renamed or missing member is an error rather than a
 null.
 
-`ContractTests.cs` in `csharp:test` runs the CLI from source and reads what it
+`ContractTests.cs` in `csharp:test` runs the built CLI and reads what it
 prints for the commands that need no GitHub: signed-out `status`, `profiles`,
 `profile`, and profile saves through `--set`, `--ruleset`, and
 `--environment`. A change to those documents that the app doesn't expect
@@ -145,9 +145,15 @@ fails the gate. The `capture`, `plan`, `repos`, and `login` documents
 need GitHub, so the app's tests read hand-written examples of them, and only the
 strict parsing guards them against the real CLI.
 
-Each package ships the CLI compiled with `bun build --compile` beside the app
-as `repotted-cli`. It has a name of its own because macOS and Windows ignore
-case in file names, where `repotted` would collide with the app.
+Each package ships the CLI beside the app as `repotted-cli`, a Node single
+executable application that `packages/cli/sea.ts` builds: the CLI and its
+dependencies in one bundle, run by the pinned Node with no Node installed. The
+keychain module is native code, which Node loads only from a real file, so it
+ships beside the CLI as `repotted-keyring.node` and is signed with the app on
+macOS. The CLI has a name of its own because macOS and Windows ignore case in
+file names, where `repotted` would collide with the app. It ignores
+`NODE_OPTIONS`, so nothing in the environment can add Node flags to the process
+that holds the token.
 [Development](development.md#run-the-desktop-app) describes how the app finds
 the CLI.
 

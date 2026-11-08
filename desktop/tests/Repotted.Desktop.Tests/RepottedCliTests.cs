@@ -6,7 +6,7 @@ public sealed class RepottedCliTests
 {
     [Theory]
     [InlineData("/opt/repotted/dist/repotted.js", "node")]
-    [InlineData("/src/packages/cli/src/main.ts", "bun")]
+    [InlineData("/opt/repotted/dist/repotted.mjs", "node")]
     [InlineData("/usr/local/bin/repotted", "/usr/local/bin/repotted")]
     public void A_configured_path_runs_with_the_tool_its_extension_needs(string path, string fileName)
     {
@@ -28,7 +28,7 @@ public sealed class RepottedCliTests
             var bundled = Path.Combine(folder.FullName, OperatingSystem.IsWindows() ? "repotted-cli.exe" : "repotted-cli");
             File.WriteAllText(bundled, "");
             Assert.Equal(bundled, RepottedCli.Locate(" ", folder.FullName).FileName);
-            Assert.Equal("bun", RepottedCli.Locate("/src/main.ts", folder.FullName).FileName);
+            Assert.Equal("node", RepottedCli.Locate("/src/repotted.js", folder.FullName).FileName);
         }
         finally
         {
