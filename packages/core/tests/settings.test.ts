@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'bun:test';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { describe, expect, test } from 'vitest';
 
 import { GitHubError, parseRepo } from '../src/github.js';
 import { ApplyError, applyPlan, captureProfile, createPlan, describeFailure } from '../src/plan.js';
@@ -388,7 +388,7 @@ describe('profiles of every section', () => {
       ['custom_properties', 'team', 'inner'],
       ['rulesets', 'name'],
     ]) {
-      expect(editProfile(own, [{ path: bad, value: true }])).rejects.toThrow(
+      await expect(editProfile(own, [{ path: bad, value: true }])).rejects.toThrow(
         'it is not one setting of a profile section',
       );
     }

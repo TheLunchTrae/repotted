@@ -184,14 +184,14 @@ asynchronous work.
   that fixes one starts with a failing test, removes the note, and updates the
   table.
 
-## TypeScript and Bun
+## TypeScript, Node, and pnpm
 
-`package.json`, `bun.lock`, and the mise tasks own the tested versions and
-commands. Bun runs the workspace, the tests, and the build. The published
-package runs under Node through `npx`, so shipped code uses only `node:` APIs:
-`tsconfig.node.json` type-checks `packages/*/src/` with Node's types alone,
-`.oxlintrc.json` rejects the `Bun` global and `bun:` imports there, and
-`ts:node:check` runs the built CLI under the oldest supported Node.
+`package.json`, `pnpm-lock.yaml`, and the mise tasks own the tested versions
+and commands. mise pins Node and pnpm; pnpm installs the workspace, Vitest runs
+the tests, and esbuild builds the CLI. The published package runs under Node
+through `npx`, so shipped code uses only `node:` APIs, and `ts:node:check` runs
+the built CLI under the oldest supported Node. The desktop app ships the CLI as
+a Node single executable that `packages/cli/sea.ts` builds.
 
 Select checks for the change:
 
@@ -202,14 +202,18 @@ Select checks for the change:
 | Dependencies or exports | `ts:audit`, `ts:knip`                            |
 | Formatting              | `ts:fmt:check`; `ts:standards` applies autofixes |
 
+A change to `sea.ts` or the desktop packaging also needs a manual Build Desktop
+run, since only macOS and Windows runners build the single executable.
+
 Before handoff, run `mise run standards:check`. Run `mise run ts:lock` after
-changing declared dependencies and commit `bun.lock`. `bunfig.toml` pins new
-dependencies exactly and holds back versions younger than three days; an
-exception goes in `minimumReleaseAgeExcludes` and needs the owner's approval.
+changing declared dependencies and commit `pnpm-lock.yaml`.
+`pnpm-workspace.yaml` pins new dependencies exactly, holds back versions younger
+than three days, and allows no dependency install scripts; an exception goes in
+`minimumReleaseAgeExclude` or `allowBuilds` and needs the owner's approval.
 
 Source uses `.ts`, with `.js` extensions on relative imports. Use named
 exports and keep module bindings immutable. Tests live in each package's
-`tests/` and use `bun:test`.
+`tests/` and use Vitest, imported from `vitest`.
 
 ### Exceptions
 

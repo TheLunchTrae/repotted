@@ -232,6 +232,6 @@ __pycache__/
 /zig-pkg/
 
 # Repotted (project)
-# Workspace package builds; `bun run build` regenerates them.
+# Workspace package builds; `mise run ts:build` regenerates them.
 /packages/*/dist/
 /packages/cli/LICENSE

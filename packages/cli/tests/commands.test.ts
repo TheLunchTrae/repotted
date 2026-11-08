@@ -1,7 +1,7 @@
-import { afterAll, describe, expect, test } from 'bun:test';
 import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { afterAll, describe, expect, test } from 'vitest';
 
 import { parsePlan } from '@repotted/core';
 
@@ -13,7 +13,7 @@ type Method = Parameters<FakeGitHub['request']>[0];
 import { installUrl, NotSignedInError } from '../src/auth.js';
 import { type Io, run } from '../src/commands.js';
 
-const examples = path.join(import.meta.dir, '../../../examples');
+const examples = path.join(import.meta.dirname, '../../../examples');
 const directory = await mkdtemp(path.join(tmpdir(), 'repotted-cli-'));
 
 afterAll(async () => {
