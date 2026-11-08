@@ -514,7 +514,7 @@ describe('profile commands', () => {
       'drafts.repository.has_issues=false',
     );
     expect(drafted.code).toBe(0);
-    expect(drafted.err).toContain('Drafts, left out of plans: repository.has_issues, rulesets.Main');
+    expect(drafted.err).toContain('Drafts, left out of plans: repository.has_issues, ruleset "Main"');
     expect(drafted.err).toContain('warning: Draft ruleset "Main":');
 
     const planned = await cli(new FakeGitHub(), 'plan', 'lunch/app', '--profile', file, '--json');

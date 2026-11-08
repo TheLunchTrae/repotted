@@ -296,6 +296,16 @@ function describeTarget(section: Section, target: string): string {
   }
 }
 
+/** A draft a plan leaves out, as plan output names it. */
+export function describeSkipped({ section, target }: Skipped): string {
+  if (section === 'autolinks' || section === 'rulesets' || section === 'environments') {
+    return describeTarget(section, target);
+  }
+  return section === 'pages' && target === 'absent'
+    ? 'pages.absent (turns the Pages site off)'
+    : `${section}.${target}`;
+}
+
 export function formatPlan(plan: Plan): string {
   const lines = [
     plan.changes.length === 0
@@ -309,10 +319,7 @@ export function formatPlan(plan: Plan): string {
     }
   }
   for (const draft of plan.skipped) {
-    const named = draft.section === 'autolinks' || draft.section === 'rulesets' || draft.section === 'environments';
-    lines.push(
-      `  · skip draft ${describeTarget(draft.section, named ? draft.target : `${draft.section}.${draft.target}`)}`,
-    );
+    lines.push(`  · skip draft ${describeSkipped(draft)}`);
   }
   for (const warning of plan.warnings) {
     lines.push(`  ! ${warning}`);

@@ -91,13 +91,15 @@ setting or entry, and warns about what fails, such as a key it doesn't know
 or a value GitHub doesn't take. Rules that tie settings together, such as
 keeping one merge method on, are checked only when you finish the draft.
 To finish a draft, move a setting out of `drafts` into its section, or remove
-an entry's `draft: true`. From then on it's checked like the
-rest of the profile.
+an entry's `draft: true`. From then on it's checked like the rest of the
+profile.
 
 Drafts never change what applies. A draft can share a name with an entry in
 the same profile or in a base profile, and a draft setting can sit beside the
 same setting, which applies until you finish the draft. Two drafts in the same
-list can't share a name or prefix.
+list can't share a name or prefix, and a draft setting's name can't hold a
+dot, which joins a group to its key. A Pages draft with `absent: true` turns
+the site off, so Repotted warns about any other key beside it.
 
 `draft: true` is separate from a ruleset's `enforcement: disabled`. A disabled
 ruleset is a real state that Repotted applies: GitHub has the ruleset, turned

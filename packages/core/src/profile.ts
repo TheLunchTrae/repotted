@@ -261,10 +261,18 @@ function mergeSettings(
   merged.delete('absent');
   for (const [key, entry] of Object.entries(override)) {
     if (groupKeys[section].has(key) && isRecord(entry)) {
+      // A group replaces a base's value that was not one, as a draft's may be.
+      merged.delete(key);
       for (const [inner, value] of Object.entries(entry)) {
         merged.set(`${key}.${inner}`, { entry: value, file });
       }
     } else {
+      // A value that is not a group replaces each of a base's keys inside one.
+      for (const path of merged.keys()) {
+        if (path.startsWith(`${key}.`)) {
+          merged.delete(path);
+        }
+      }
       merged.set(key, { entry, file });
     }
   }
@@ -380,9 +388,10 @@ function validate(data: unknown, source: string): Profile {
 }
 
 function issueLines(error: z.ZodError): string[] {
-  return error.issues.map((issue) =>
-    issue.path.length === 0 ? issue.message : `${issue.message} at ${z.core.toDotPath(issue.path)}`,
-  );
+  return error.issues.map((issue) => {
+    const at = z.core.toDotPath(issue.path);
+    return at === '' ? issue.message : `${issue.message} at ${at}`;
+  });
 }
 
 function toDrafts(merged: SourcedDrafts): Drafts {
@@ -452,6 +461,24 @@ function draftWarnings(drafts: Drafts): string[] {
     );
   }
   return warnings;
+}
+
+/**
+ * What a file's drafts lose as they merge: a Pages draft with `absent: true`
+ * turns the site off, so the other keys beside it are left out, though the
+ * file keeps them and finishing the draft would then fail.
+ */
+function fileDraftWarnings(drafts: Drafts, file: string): string[] {
+  const pages = drafts.pages;
+  if (pages?.['absent'] !== true) {
+    return [];
+  }
+  const others = Object.keys(pages).filter((key) => key !== 'absent');
+  return others.length === 0
+    ? []
+    : [
+        `Draft pages in ${path.basename(file)}: absent turns the Pages site off, so ${others.join(', ')} ${others.length === 1 ? 'is' : 'are'} left out`,
+      ];
 }
 
 /**
@@ -543,7 +570,7 @@ function resolveChain(chain: readonly Link[], source: string): ResolvedProfile {
     chain: chain.map((link) => link.file),
     profile: validate(toProfile(merged), source),
     drafts,
-    warnings: draftWarnings(drafts),
+    warnings: [...chain.flatMap((link) => fileDraftWarnings(link.drafts, link.file)), ...draftWarnings(drafts)],
     sources: { ...sourcesOf(merged), drafts: sourcesOf(mergedDrafts) },
   };
 }

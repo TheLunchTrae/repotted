@@ -12,7 +12,7 @@ diagnostic and not a failure. `--help` and `--version` still print text.
 - `plan` prints the plan, the same document `--out` saves:
   `{ repository, desired, changes, skipped, warnings }`. `skipped` lists the
   profile's drafts as `{ section, target }`, where `target` is a draft
-  setting's key or a draft entry's name.
+  setting's key, a draft autolink's key prefix, or a draft entry's name.
 - `apply` needs `--yes`, since a program has no terminal to confirm in, and
   prints `{ repository, applied }` with the changes it made.
 - `profile` prints `{ chain, profile, drafts, warnings, sources }`. `chain` is

@@ -22,6 +22,7 @@ import {
   parseRepo,
   type ProfileEdit,
   resolveProfile,
+  describeSkipped,
   skippedDrafts,
   StalePlanError,
   stringifyProfile,
@@ -391,7 +392,7 @@ async function profile(io: Io, args: string[]): Promise<number> {
   }
   const drafts = skippedDrafts(resolved.drafts);
   if (drafts.length > 0) {
-    io.err(`Drafts, left out of plans: ${drafts.map((draft) => `${draft.section}.${draft.target}`).join(', ')}\n`);
+    io.err(`Drafts, left out of plans: ${drafts.map(describeSkipped).join(', ')}\n`);
   }
   warn(io, resolved.warnings);
   return 0;

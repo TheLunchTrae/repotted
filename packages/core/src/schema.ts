@@ -506,7 +506,13 @@ export const draftAutolink = z.looseObject({
   draft: z.literal(true),
 });
 
-const draftValues = z.record(z.string(), z.unknown());
+// A dot joins a group to its key in a draft's path, as
+// `selected_actions.verified_allowed`, so no name may hold one.
+const draftValues = z.record(z.string(), z.unknown()).superRefine((values, context) => {
+  for (const key of Object.keys(values).filter((name) => name.includes('.'))) {
+    context.addIssue({ code: 'custom', message: 'A draft setting name cannot contain a dot', path: [key] });
+  }
+});
 
 /**
  * Draft settings by section, one for each section that holds settings. Any

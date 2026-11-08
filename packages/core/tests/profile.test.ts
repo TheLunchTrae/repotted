@@ -674,6 +674,7 @@ drafts:
     const base = await write(
       'drafts-merge-base.yaml',
       `
+autolinks: [{ key_prefix: JIRA-, draft: true, url_template: "https://old/<num>" }, { key_prefix: KEPT-, draft: true }]
 rulesets: [{ name: Main, draft: true, target: tag }, { name: Kept, draft: true }]
 environments: [{ name: npm, draft: true, wait_timer: 1 }]
 drafts:
@@ -685,6 +686,7 @@ drafts:
       'drafts-merge-own.yaml',
       `
 extends: drafts-merge-base.yaml
+autolinks: [{ key_prefix: JIRA-, draft: true, url_template: "https://new/<num>" }]
 rulesets: [{ name: Main, draft: true, target: branch }]
 environments: [{ name: NPM, draft: true, wait_timer: 2 }]
 drafts:
@@ -699,6 +701,10 @@ drafts:
     expect(resolved.drafts).toEqual({
       repository: { has_wiki: false, has_issues: true },
       actions: { selected_actions: { github_owned_allowed: true, verified_allowed: true } },
+      autolinks: [
+        { key_prefix: 'JIRA-', draft: true, url_template: 'https://new/<num>' },
+        { key_prefix: 'KEPT-', draft: true },
+      ],
       rulesets: [
         { name: 'Main', draft: true, target: 'branch' },
         { name: 'Kept', draft: true },
@@ -710,8 +716,49 @@ drafts:
       'selected_actions.github_owned_allowed': base,
       'selected_actions.verified_allowed': own,
     });
+    expect(resolved.sources.drafts.autolinks).toEqual({ 'JIRA-': own, 'KEPT-': base });
     expect(resolved.sources.drafts.rulesets).toEqual({ Main: own, Kept: base });
     expect(resolved.sources.drafts.environments).toEqual({ NPM: own });
+  });
+
+  test('replace a base draft group whole with a value that is not one, and the reverse', async () => {
+    const base = await write(
+      'drafts-group-base.yaml',
+      'drafts:\n  actions: { selected_actions: { github_owned_allowed: true } }\n  pages: { source: oops }\n',
+    );
+    const own = await write(
+      'drafts-group-own.yaml',
+      'extends: drafts-group-base.yaml\ndrafts:\n  actions: { selected_actions: oops }\n  pages: { source: { branch: main } }\n',
+    );
+    const resolved = await resolveProfile(own);
+    expect(resolved.drafts.actions).toEqual({ selected_actions: 'oops' });
+    expect(resolved.drafts.pages).toEqual({ source: { branch: 'main' } });
+    expect(resolved.sources.drafts.actions).toEqual({ selected_actions: own });
+    expect(resolved.sources.drafts.pages).toEqual({ 'source.branch': own });
+    expect(base).not.toBe(own);
+  });
+
+  test('refuse a draft setting whose name holds a dot', async () => {
+    const file = await write('drafts-dot.yaml', 'drafts:\n  repository: { "has.wiki": true }\n');
+    const error = await rejection(resolveProfile(file));
+    expect(error).toBeInstanceOf(ProfileError);
+    expect(String(error)).toContain('A draft setting name cannot contain a dot');
+  });
+
+  test('warn when a Pages draft turns the site off beside other keys', async () => {
+    const file = await write('drafts-pages-absent.yaml', 'drafts:\n  pages: { absent: true, build_type: nope }\n');
+    const resolved = await resolveProfile(file);
+    expect(resolved.drafts.pages).toEqual({ absent: true });
+    expect(resolved.warnings).toEqual([
+      'Draft pages in drafts-pages-absent.yaml: absent turns the Pages site off, so build_type is left out',
+    ]);
+  });
+
+  test('warn about an empty custom property name without a trailing place', async () => {
+    const file = await write('drafts-empty-key.yaml', 'drafts:\n  custom_properties: { "": x }\n');
+    const { warnings } = await resolveProfile(file);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).not.toEndWith(' at ');
   });
 
   test('warn with the field of a draft ruleset that would not apply', async () => {

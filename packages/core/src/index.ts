@@ -8,6 +8,7 @@ export {
   describeFailure,
   formatPlan,
   parsePlan,
+  describeSkipped,
   skippedDrafts,
   StalePlanError,
 } from './plan.js';

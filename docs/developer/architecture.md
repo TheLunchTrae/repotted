@@ -76,9 +76,9 @@ indent width. Edits under `drafts` take any key below a settings section,
 and a key inside one of its groups, since a draft may name a key that
 doesn't exist yet. The desktop app saves through it, so a profile edited
 both by hand and in the app keeps both sets of changes, except inside an
-entry the app rewrites. An edit writes nothing when the result is not a valid profile,
-and it refuses a list that shares parts through YAML anchors and aliases,
-which an edit could leave dangling or expand.
+entry the app rewrites. An edit writes nothing when the result is not a
+valid profile, and it refuses a list that shares parts through YAML anchors
+and aliases, which an edit could leave dangling or expand.
 
 ## Plans
 

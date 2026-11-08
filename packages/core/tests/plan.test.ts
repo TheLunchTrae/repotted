@@ -11,6 +11,7 @@ import {
   captureProfile,
   createPlan,
   formatPlan,
+  describeSkipped,
   parsePlan,
   skippedDrafts,
   StalePlanError,
@@ -91,6 +92,10 @@ drafts:
       '  · skip draft repository.has_wiki\n  · skip draft security.vulnerability_alerts\n  · skip draft pages.build_type\n  · skip draft autolink TICKET-\n  · skip draft ruleset "Later"\n',
     );
     expect(parsePlan(JSON.parse(JSON.stringify(plan))).skipped).toEqual(plan.skipped);
+    // A plan saved before drafts has no skipped list, and reads as skipping none.
+    const { skipped: _skipped, ...older } = plan;
+    expect(parsePlan(JSON.parse(JSON.stringify(older))).skipped).toEqual([]);
+    expect(describeSkipped({ section: 'pages', target: 'absent' })).toBe('pages.absent (turns the Pages site off)');
     await applyPlan(github, plan);
     expect(github.writes).toEqual([
       { method: 'PATCH', path: '/repos/lunch/app', body: { delete_branch_on_merge: true } },

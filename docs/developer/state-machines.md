@@ -150,7 +150,7 @@ the file, so the state is whatever the file says when it's read.
 
 | State   | Event                                                     | Next                                                                                                          |
 | ------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| None    | Saved with `draft: true`, or under `drafts`               | Draft. Only its name, for an entry, is checked; its problems are warnings.                                    |
+| None    | Saved with `draft: true`, or under `drafts`               | Draft. Only its name, or an autolink's prefix, is checked; its problems are warnings.                         |
 | Draft   | Edited, valid or not                                      | Draft.                                                                                                        |
 | Draft   | Finished: saved without the marker, and the profile valid | Applies, in place of the draft. The next plan includes it.                                                    |
 | Draft   | Finished, but the profile would be invalid                | Draft: `editProfile` refuses, names the problem, and leaves the file as it was.                               |
