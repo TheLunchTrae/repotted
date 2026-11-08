@@ -538,6 +538,8 @@ public sealed class ViewTests : IDisposable
         wiki.Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
 
         var text = Texts(window);
+        Assert.Contains("What the drafts still need", text);
+        Assert.Contains("Draft environment \"NPM\": Invalid input at wait_timer", text);
         Assert.Contains(Label("Save as draft"), text);
         Assert.Contains("Draft", text);
         Assert.Contains(" · Saved in base, not applied.", text);
@@ -569,6 +571,15 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("Save as a draft", text);
         Assert.Contains("Saved as a draft: compare and apply leave it out, and it may be unfinished. Turn this off to finish it, once it is valid.", text);
         Save(window, $"drafts-ruleset-{theme}");
+
+        // A base's ruleset can be made a draft only in the base.
+        editor.Tab("Rulesets").Editing = null;
+        editor.Tab("Rulesets").Entries[0].OpenCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        var box = window.GetVisualDescendants().OfType<CheckBox>().Single(check => Equals(check.Content, "Save as a draft"));
+        Assert.False(box.IsEnabled);
+        Assert.Contains("Set in a base profile, so it can be saved as a draft only there.", Texts(window));
+        Save(window, $"drafts-base-ruleset-{theme}");
     }
 
     [AvaloniaTheory]

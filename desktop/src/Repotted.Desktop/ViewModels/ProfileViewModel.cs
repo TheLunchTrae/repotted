@@ -123,6 +123,13 @@ internal sealed partial class ProfileViewModel(
     [NotifyPropertyChangedFor(nameof(Summary), nameof(InheritedLabel))]
     public partial string? BaseName { get; set; }
 
+    /// <summary>What stops each draft from applying as it stands, as the profile was last read or saved.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDraftWarnings))]
+    public partial IReadOnlyList<string> DraftWarnings { get; private set; } = [];
+
+    public bool HasDraftWarnings => DraftWarnings.Count > 0;
+
     public string Summary => BaseName is null
         ? $"Saved to {FileName}."
         : $"Extends {BaseName}. Saved to {FileName}.";
@@ -281,9 +288,12 @@ internal sealed partial class ProfileViewModel(
             .Concat(drafts.Where(change => change.Value is null))
             .ToList();
         // The CLI takes a write right after a drop as a rename, so plain writes
-        // and drops go first and each rename last, as its own drop and write.
-        var entries = Entries.OrderBy(entry => entry.Renames ? 2 : entry.Dropped ? 1 : 0)
-            .SelectMany(entry => entry.Changes())
+        // go first, then drops, and each rename last, as its own drop and write.
+        // A draft finished over an entry this file names is a write and a drop.
+        var single = Entries.Where(entry => !entry.Renames || entry.Replaces).SelectMany(entry => entry.Changes()).ToList();
+        var entries = single.Where(change => change.Entry is not null)
+            .Concat(single.Where(change => change.Entry is null))
+            .Concat(Entries.Where(entry => entry.Renames && !entry.Replaces).SelectMany(entry => entry.Changes()))
             .ToList();
         Saving = true;
         SaveError = null;
@@ -434,7 +444,7 @@ internal sealed partial class ProfileViewModel(
                                     ? new DraftValue(value, profile.DraftSource(section.Section, field.Key) is { } file ? Base(file) : null)
                                     : null;
                                 SettingViewModel? row = null;
-                                row = new SettingViewModel(field, saved, origin, inherited, () => OnRowChanged(row!), draft);
+                                row = new SettingViewModel(field, saved, origin, inherited, () => OnRowChanged(row!), draft, BaseDraft(@base, section.Section, field.Key));
                                 return row;
                             }),
                         ])),
@@ -444,6 +454,7 @@ internal sealed partial class ProfileViewModel(
         Tabs.Add(EntriesTab("Environments", "environments"));
         SelectedTab = Tabs.FirstOrDefault(tab => tab.Name == selected) ?? Tabs[0];
         BaseName = profile.Chain.Count > 1 ? Path.GetFileNameWithoutExtension(profile.Chain[1]) : null;
+        DraftWarnings = profile.Warnings ?? [];
         ChangeCount = 0;
         Yaml = ReadText(profile.File);
 
@@ -493,6 +504,20 @@ internal sealed partial class ProfileViewModel(
             return null;
         }
         return new InheritedValue(value, Path.GetFileNameWithoutExtension(file));
+    }
+
+    /// <summary>The draft a base profile has of a setting, and the file that holds it there.</summary>
+    private static DraftValue? BaseDraft(ResolvedProfile? @base, string section, string key)
+    {
+        if (@base is null
+            || @base.Drafts.ValueKind != JsonValueKind.Object
+            || !@base.Drafts.TryGetProperty(section, out var drafts)
+            || SettingViewModel.Find(drafts, key) is not { } value
+            || @base.DraftSource(section, key) is not { } file)
+        {
+            return null;
+        }
+        return new DraftValue(value, Path.GetFileNameWithoutExtension(file));
     }
 
     /// <summary>

@@ -276,18 +276,22 @@ saved.
 
 ### Each ruleset or environment
 
-| State                                     | Event                  | Next                                                                                                                                                                                                       |
-| ----------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Saved                                     | Edit                   | Changed; a changed name on an entry this profile owns is a rename.                                                                                                                                         |
-| Saved                                     | Draft turned on or off | Changed. On an entry this profile owns, it is a move, saved as a rename is: a drop from the drafts or the entries, then a write to the other. A draft's fields aren't checked; turning it off checks them. |
-| New                                       | Discard                | Gone from the list.                                                                                                                                                                                        |
-| Saved or changed, and set in this profile | Take out of profile    | Dropped. An entry from a base profile can't be taken out here.                                                                                                                                             |
-| Dropped                                   | Put back               | Saved, as the profile has it.                                                                                                                                                                              |
-| Any                                       | Save                   | Plain writes go first, then drops, then each rename as a drop and a write, since the CLI reads a write right after a drop as a rename.                                                                     |
+| State                                     | Event                                                             | Next                                                                                                                                                                                                                                                                      |
+| ----------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Saved                                     | Edit                                                              | Changed; a changed name on an entry this profile owns is a rename.                                                                                                                                                                                                        |
+| Saved, set in this profile                | Draft turned on or off                                            | Changed. It is a move, saved as a rename is: a drop from the drafts or the entries, then a write to the other. A draft's fields aren't checked; turning it off checks them. A draft of an override leaves the base profile's entry applying, so the tab's count keeps it. |
+| Saved, from a base profile                | Draft turned on or off                                            | Can't happen: the box is off, since a base's entry or draft is that file's to change.                                                                                                                                                                                     |
+| Saved draft, set in this profile          | Finished under the name of an entry that applies and isn't edited | Changed, and that entry is shown as replaced and left out of the count. This file's own entry takes the draft's content in place, saved as a write over it and a drop of the draft; a base's is overridden.                                                               |
+| New                                       | Discard                                                           | Gone from the list.                                                                                                                                                                                                                                                       |
+| Saved or changed, and set in this profile | Take out of profile                                               | Dropped. An entry from a base profile can't be taken out here.                                                                                                                                                                                                            |
+| Dropped                                   | Put back                                                          | Saved, as the profile has it.                                                                                                                                                                                                                                             |
+| Any                                       | Save                                                              | Plain writes go first, then drops, then each rename as a drop and a write, since the CLI reads a write right after a drop as a rename. A draft that replaces this file's entry is a plain write and a drop.                                                               |
 
 A draft can share its name with an entry, but not with another draft. A
-draft that is finished may take the name of an entry a base profile names,
-which it then replaces, as any override does.
+draft that is finished may take the name of an entry that applies and isn't
+being edited, which it then replaces: this file's own in place, and a base's
+as any override does. The editor shows the profile's draft warnings, what
+each draft still needs, as the profile was last read or saved.
 
 An editor builds the entry it saves from the copy it loaded, so saving writes
 the whole entry as that copy plus the edits. That is why a save checks the
@@ -304,12 +308,13 @@ A setting row holds its value and, apart from it, a draft
 (`SettingViewModel`). Only this profile's own draft can be finished or
 discarded; a base's shows, read-only.
 
-| State                   | Event         | Next                                                                        |
-| ----------------------- | ------------- | --------------------------------------------------------------------------- |
-| No draft, value changed | Save as draft | A draft of the chosen value; the value goes back to what the profile saves. |
-| Own draft               | Finish draft  | No draft, and the value changed to the draft's, so it applies once saved.   |
-| Own draft               | Discard draft | No draft, and a base's draft of the setting, if any, shows again.           |
-| Any                     | Undo          | The value and the draft both as the profile saves them.                     |
+| State                   | Event                             | Next                                                                         |
+| ----------------------- | --------------------------------- | ---------------------------------------------------------------------------- |
+| No draft, value changed | Save as draft                     | A draft of the chosen value; the value goes back to what the profile saves.  |
+| Own draft               | Finish draft                      | No draft, and the value changed to the draft's, so it applies once saved.    |
+| Own draft               | Discard draft                     | No draft, and a base's draft of the setting, if any, shows again, read-only. |
+| Any draft               | Choose, type, or remove the value | The draft stays as it is; only the value changes.                            |
+| Any                     | Undo                              | The value and the draft both as the profile saves them.                      |
 
 ### The cache
 

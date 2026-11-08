@@ -905,6 +905,8 @@ public sealed class ViewModelTests : IDisposable
         draft.Editor.IsDraft = false;
         Assert.Null(draft.Editor.Problem);
         Assert.Equal("Finished, applies once saved", draft.Note);
+        Assert.Equal("Replaced by its finished draft once saved", rulesets.Entries[0].Note);
+        Assert.Equal(2, rulesets.Count);
 
         // Saving a change as a draft puts the value back, and an undo takes the draft out.
         Choose(editor, "has_wiki", "On");

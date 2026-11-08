@@ -101,9 +101,26 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
         }
     }
 
-    public string DraftNote => IsDraft
-        ? "Saved as a draft: compare and apply leave it out, and it may be unfinished. Turn this off to finish it, once it is valid."
-        : "Applies once saved.";
+    /// <summary>
+    /// Whether the entry can be made a draft or finished here: only one this
+    /// profile's file names, since a base's draft or entry is that file's.
+    /// </summary>
+    public bool CanDraft { get; init; } = true;
+
+    /// <summary>
+    /// Whether a base profile names the entry too, and not as a draft, so its
+    /// entry applies while this one is a draft.
+    /// </summary>
+    public bool BaseApplies { get; init; }
+
+    public string DraftNote => (CanDraft, IsDraft) switch
+    {
+        (false, true) => "A draft in a base profile, so it can be finished only there.",
+        (false, false) => "Set in a base profile, so it can be saved as a draft only there.",
+        (true, true) when BaseApplies => $"Saved as a draft: compare and apply leave it out, so the base profile's {Kind} applies until you finish it.",
+        (true, true) => "Saved as a draft: compare and apply leave it out, and it may be unfinished. Turn this off to finish it, once it is valid.",
+        _ => "Applies once saved.",
+    };
 
     /// <summary>How names compare: GitHub's environment names ignore case.</summary>
     protected virtual StringComparison NameComparison => StringComparison.Ordinal;

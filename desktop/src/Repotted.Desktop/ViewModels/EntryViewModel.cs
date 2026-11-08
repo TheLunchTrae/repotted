@@ -48,6 +48,18 @@ internal sealed partial class EntryViewModel : ViewModelBase
     /// <summary>Whether the entry will be a draft once saved.</summary>
     public bool IsDraft => editor?.IsDraft ?? SavedDraft;
 
+    /// <summary>Whether this file's draft is being finished, so it applies once saved.</summary>
+    public bool Finishes => !Dropped && Own && !IsNew && SavedDraft && !IsDraft;
+
+    /// <summary>
+    /// Whether a base profile names the entry too, and not as a draft, so its
+    /// entry applies while this one is a draft.
+    /// </summary>
+    public bool BaseApplies => InBase && !SavedDraft;
+
+    /// <summary>The draft that replaces this entry once saved, as it is finished under the same name.</summary>
+    public EntryViewModel? ReplacedBy => tab.ReplacedBy(this);
+
     /// <summary>Whether this profile's file names the entry, so it can be taken out.</summary>
     public bool Own => IsNew || Origin == SettingOrigin.Own;
 
@@ -98,11 +110,13 @@ internal sealed partial class EntryViewModel : ViewModelBase
         { Dropped: true, InBase: true } => $"Taken out of this profile, so the base profile's {tab.Noun} applies again",
         { Dropped: true } => $"Taken out of this profile, so the profile stops managing it",
         { Problem: { } problem } => problem,
+        { ReplacedBy: not null } => "Replaced by its finished draft once saved",
         { IsNew: true, IsDraft: true } => "New draft, not saved yet",
         { IsNew: true } => "New, not saved yet",
         { Changed: true, SavedDraft: true, IsDraft: false } => "Finished, applies once saved",
         { Changed: true, IsDraft: true } => "Draft, changed, not saved yet",
         { Changed: true } => "Changed, not saved yet",
+        { IsDraft: true, Own: true, BaseApplies: true } => $"Draft, left out of compare and apply, so the base profile's {tab.Noun} applies",
         { IsDraft: true, Own: true } => "Draft, left out of compare and apply",
         { IsDraft: true } => $"Draft in {BaseName}, left out of compare and apply",
         { Absent: true, Own: true } => "Removed from GitHub here",
@@ -127,6 +141,15 @@ internal sealed partial class EntryViewModel : ViewModelBase
         }
         var entry = editor.Entry;
         var name = entry["name"]!.GetValue<string>();
+        // A draft finished over the entry this file names takes its place, as a
+        // write over that entry and a drop of the draft, which the save keeps
+        // apart so the CLI doesn't take them as renaming the draft.
+        if (Replaces)
+        {
+            yield return new EntryChange(tab.List, name, entry);
+            yield return new EntryChange(tab.List, SavedName, null, SavedDraft);
+            yield break;
+        }
         // The CLI takes a write right after a drop as a rename in place.
         if (Renames)
         {
@@ -134,6 +157,12 @@ internal sealed partial class EntryViewModel : ViewModelBase
         }
         yield return new EntryChange(tab.List, name, entry);
     }
+
+    /// <summary>
+    /// Whether the draft is finished under the name of an entry this file
+    /// names, which it then replaces in place rather than sitting beside it.
+    /// </summary>
+    public bool Replaces => Finishes && Changed && tab.OwnApplies(this, CurrentName);
 
     [RelayCommand]
     private void Open() => tab.Editing = this;
@@ -278,7 +307,7 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
     /// <summary>What the profile manages here, once resolved over its bases.</summary>
     public int Count => IsSettings
         ? Groups.Sum(group => group.Settings.Count(setting => setting.Managed))
-        : Entries.Count(entry => !entry.Dropped && !entry.IsDraft);
+        : Entries.Count(entry => !entry.Dropped && (!entry.IsDraft || entry.BaseApplies) && entry.ReplacedBy is null);
 
     /// <summary>Whether two names are the same entry: environment names are case-insensitive, as on GitHub.</summary>
     public bool SameName(string left, string right) =>
@@ -289,21 +318,37 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
     /// when <paramref name="draft"/> or else not. A name this save takes out is
     /// not free until it is saved, since the file names each entry once, and
     /// each draft once. A draft that is finished may take the name of an entry
-    /// a base profile names, which it then replaces as any override does.
+    /// that applies and is not being edited, which it then replaces: this
+    /// file's own in place, or a base's as any override does.
     /// </summary>
     private bool Taken(EntryViewModel entry, string name, bool draft) =>
         Entries.Any(other => other != entry
-            && !(entry.SavedDraft && !draft && !other.Own)
+            && !(entry.SavedDraft && !draft && !other.Changed && !other.IsDraft)
             && ((other.IsDraft == draft && SameName(other.CurrentName, name))
                 || (!other.IsNew && other.SavedDraft == draft && SameName(other.SavedName, name))));
+
+    /// <summary>
+    /// The draft being finished under <paramref name="entry"/>'s name, which
+    /// replaces it once saved; null when none is.
+    /// </summary>
+    public EntryViewModel? ReplacedBy(EntryViewModel entry) =>
+        entry.Dropped || entry.IsDraft || entry.Changed
+            ? null
+            : Entries.FirstOrDefault(other => other != entry && other.Finishes && SameName(other.CurrentName, entry.SavedName));
+
+    /// <summary>Whether this file names a ruleset or environment of <paramref name="name"/> that applies, other than <paramref name="entry"/>.</summary>
+    public bool OwnApplies(EntryViewModel entry, string name) =>
+        Entries.Any(other => other != entry && !other.IsNew && other.Own && !other.SavedDraft && SameName(other.SavedName, name));
 
     public EntryEditorViewModel MakeEditor(EntryViewModel entry)
     {
         bool Taken(string name, bool draft) => this.Taken(entry, name, draft);
         void Changed() => Refresh();
+        // A draft is this file's own: a base's entry or draft stays as that file has it.
+        var (canDraft, baseApplies) = (entry.Own, entry.BaseApplies);
         return List == "environments"
-            ? new EnvironmentEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed)
-            : new RulesetEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed);
+            ? new EnvironmentEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed) { CanDraft = canDraft, BaseApplies = baseApplies }
+            : new RulesetEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed) { CanDraft = canDraft, BaseApplies = baseApplies };
     }
 
     [RelayCommand]

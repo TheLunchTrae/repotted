@@ -47,13 +47,15 @@ internal sealed partial class SettingViewModel : ViewModelBase
         SettingOrigin origin,
         InheritedValue? inherited,
         Action changed,
-        DraftValue? draft = null)
+        DraftValue? draft = null,
+        DraftValue? baseDraft = null)
     {
         Field = field;
         Saved = saved;
         Origin = origin;
         Inherited = inherited;
         SavedDraft = draft;
+        BaseDraft = baseDraft;
         this.changed = changed;
         Options = [.. field.Options.Select(option => new OptionViewModel(this, option))];
     }
@@ -102,19 +104,33 @@ internal sealed partial class SettingViewModel : ViewModelBase
     /// <summary>The draft as the profile resolves it, or null.</summary>
     public DraftValue? SavedDraft { get; }
 
+    /// <summary>
+    /// The draft a base profile has, which shows again once this profile's own
+    /// draft is taken out; null when no base has one.
+    /// </summary>
+    public DraftValue? BaseDraft { get; }
+
     /// <summary>Whether a change to the draft waits to be saved.</summary>
     public bool DraftChanged { get; private set; }
 
     /// <summary>The draft to save, or null to take it out; meaningful only while <see cref="DraftChanged"/>.</summary>
     private JsonNode? draftPending;
 
+    /// <summary>
+    /// The draft once saved and the profile that holds it: this one's pending
+    /// draft, or else a base's once this one's is taken out.
+    /// </summary>
+    private DraftValue? CurrentDraft => DraftChanged
+        ? draftPending is { } value ? new DraftValue(value, null) : BaseDraft
+        : SavedDraft;
+
     /// <summary>The draft once saved, or null when there is none.</summary>
-    public JsonNode? Draft => DraftChanged ? draftPending : SavedDraft?.Value;
+    public JsonNode? Draft => CurrentDraft?.Value;
 
     public bool HasDraft => Draft is not null;
 
     /// <summary>Whether the draft is this profile's own, so it can be finished or discarded here.</summary>
-    public bool OwnDraft => DraftChanged ? draftPending is not null : SavedDraft is { From: null };
+    public bool OwnDraft => CurrentDraft is { From: null };
 
     /// <summary>The draft's value as its option names it, or as JSON when no option does.</summary>
     public string DraftLabel => Draft is not { } draft
@@ -125,7 +141,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
     {
         (true, true) => "Saved as a draft when you save. It applies once you finish it.",
         (_, true) => "Saved, not applied. It applies once you finish it.",
-        _ => $"Saved in {SavedDraft?.From}, not applied.",
+        _ => $"Saved in {CurrentDraft?.From}, not applied.",
     };
 
     public string DraftName => $"{Label} draft: {DraftLabel}. {DraftNote}";
