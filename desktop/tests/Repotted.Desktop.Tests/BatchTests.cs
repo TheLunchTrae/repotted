@@ -772,7 +772,7 @@ public sealed class BatchTests : IDisposable
         await Until(() => shell.Batch?.Step == BatchStep.Reviewing);
         var batch = shell.Batch!;
         Assert.True(shell.ShowingBatch);
-        Assert.Equal("Repositories / Batch apply", shell.Crumb);
+        Assert.Equal($"Repositories / {ControlLabel.For("Batch apply")}", shell.Crumb);
         text = Texts(window);
         Assert.Contains("All repositories", text);
         Assert.Contains(ControlLabel.For("Leave out everywhere"), text);
