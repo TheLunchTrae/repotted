@@ -87,6 +87,62 @@ the App, so `plan` marks only what your role rules out. Limits of the repository
 owner's policies show only when `apply` fails. `apply` still tries every
 change; the marks only tell you ahead of time.
 
+## Stage an apply
+
+A staged apply is one apply to one repository, prepared in a file of its own.
+It starts from a profile, or from the repository as it is, and holds one-off
+edits for this apply only, such as a ruleset with enforcement turned off
+while you set a repository up. The profile stays as it is.
+
+```sh
+npx repotted stage setup.yaml --new octo-org/app --profile app.yaml
+npx repotted stage setup.yaml --ruleset '{"name":"Main","enforcement":"disabled"}'
+npx repotted stage setup.yaml --exclude repository.has_wiki
+npx repotted plan --staged setup.yaml --out plan.json
+npx repotted apply plan.json
+```
+
+`stage <file> --new owner/repo` starts a staged apply in a new file. With
+`--profile`, it starts from that profile; without it, from the repository as
+it is, so its plan holds only your edits. It never replaces a file that
+exists, and when edits given with `--new` fail, it leaves no file behind.
+
+`stage <file>` prints the profile the staged apply brings the repository to.
+It takes the editing options of `profile`, described below, for one-off edits.
+A ruleset or environment you edit replaces the profile's entry of that name
+for this apply, so give the whole entry. It also takes:
+
+- `--exclude key` leaves a value of the profile out of this apply, so the
+  repository keeps what it has: a section, as `pages`; a setting or a group
+  of settings, as `repository.has_wiki` or `actions.selected_actions`; or one
+  entry of a list, as `rulesets/Main`, `environments/production`, or
+  `autolinks/JIRA-`. `--include key` takes it back. A value can't be both
+  excluded and edited, and an exclusion has to name something the profile
+  sets, so a mistyped name is refused, as is one already left out by a wider
+  exclusion, or one the profile no longer sets. An environment's name matches
+  in any case, as GitHub's does; a ruleset's name and an autolink's prefix
+  match as written. The profile is checked once the exclusions are out, so an edit
+  that only fits without an excluded value is fine.
+- `--save-to-profile` writes the one-off edits into the profile the staged
+  apply starts from and clears them from the staged apply, which then
+  resolves the same. Exclusions stay, since they only say what this apply leaves
+  out. It refuses, and changes neither file, when the edits hold autolinks or
+  turn a Pages site into no site, or the reverse; make those changes in the
+  profile file itself.
+- `--discard` removes the staged apply file. The profile stays as it is.
+
+The profile's [drafts](profiles.md#drafts) stay out of a staged apply, as they
+stay out of any plan, and `stage` lists them. A staged apply holds no drafts of
+its own, since everything in it is for this apply.
+
+`plan --staged <file>` plans the staged apply for the repository it names, and
+`apply` applies that plan as it does any other: it writes only the reviewed
+changes, and nothing if the repository changed since you planned. A staged
+apply that starts from a profile reads the profile each time it resolves, so
+plan it again after the profile changes; a saved plan keeps the profile it was
+made from. With `--json`, the plan also says which `--exclude` key leaves out
+each change, as [JSON output](json-output.md) describes.
+
 ## Work with profiles
 
 `npx repotted profiles <folder>` lists the profiles in a folder and says why

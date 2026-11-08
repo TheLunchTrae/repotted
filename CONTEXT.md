@@ -20,6 +20,11 @@
   writes only when that yields the same changes.
 - **Stale plan**: a plan the repository has drifted from since it was made.
   Apply refuses it.
+- **Staged apply**: one apply to one repository, prepared as a file: the
+  profile it starts from, if any, **one-off edits** laid over that profile
+  for this apply only, and **exclusions**, the values of the profile this apply
+  leaves out. Its plan is reviewed and applied like any other, and the
+  profile changes only when its edits are saved to it.
 - **Drift**: a difference between a repository and its profile.
 - **Draft**: an autolink, ruleset, environment, or setting saved in a
   profile but left out of plans until it is finished. It may be unfinished

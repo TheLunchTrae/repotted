@@ -119,14 +119,25 @@ function duplicateKeys<Entry>(
   return problems;
 }
 
-function parseProfileFile(text: string, source: string): { own: OwnProfile; drafts: Drafts; extends?: string } {
+/**
+ * How a chain's first file reads: a profile file, or a file that carries a
+ * profile layer with keys of its own, such as a staged apply. The schema
+ * checks the whole file and yields the layer as a profile file.
+ */
+export type LayerSchema = z.ZodType<ProfileFile>;
+
+function parseProfileFile(
+  text: string,
+  source: string,
+  schema: LayerSchema = profileFile,
+): { own: OwnProfile; drafts: Drafts; extends?: string } {
   let data: unknown;
   try {
     data = parse(text) ?? {};
   } catch (error) {
     throw new ProfileError(`${source} is not valid YAML`, { cause: error });
   }
-  const result = profileFile.safeParse(data);
+  const result = schema.safeParse(data);
   if (!result.success) {
     throw new ProfileError(`${source} is not a valid profile:\n${describe(result.error)}`);
   }
@@ -185,7 +196,7 @@ function mergeByKey<Entry>(
 type Settings = Record<string, unknown>;
 
 /** The sections that hold settings, which merge key by key. */
-const settingsSections = ['repository', 'merge', 'actions', 'security', 'custom_properties', 'pages'] as const;
+export const settingsSections = ['repository', 'merge', 'actions', 'security', 'custom_properties', 'pages'] as const;
 
 export type SettingsSection = (typeof settingsSections)[number];
 
@@ -513,7 +524,7 @@ interface Link {
   readonly drafts: Drafts;
 }
 
-async function readChain(file: string): Promise<[Link, ...Link[]]> {
+async function readChain(file: string, head: LayerSchema = profileFile): Promise<[Link, ...Link[]]> {
   const chain: Link[] = [];
   const seen = new Set<string>();
   let next: string | undefined = path.resolve(file);
@@ -530,7 +541,7 @@ async function readChain(file: string): Promise<[Link, ...Link[]]> {
       throw new ProfileError(`Profile ${resolved} extends itself`);
     }
     seen.add(resolved);
-    const parsed = parseProfileFile(text, resolved);
+    const parsed = parseProfileFile(text, resolved, chain.length === 0 ? head : profileFile);
     chain.push({ file: resolved, parsed: parsed.own, drafts: parsed.drafts });
     next = parsed.extends === undefined ? undefined : path.resolve(path.dirname(resolved), parsed.extends);
   }
@@ -558,7 +569,13 @@ function sourcesOf(
   };
 }
 
-function resolveChain(chain: readonly Link[], source: string): ResolvedProfile {
+/**
+ * Changes a chain's merged profile before it is checked, as a staged apply
+ * leaves out what it excludes, so only the result has to be a valid profile.
+ */
+export type Adjust = (data: unknown) => unknown;
+
+function resolveChain(chain: readonly Link[], source: string, adjust?: Adjust): ResolvedProfile {
   const merged = chain
     .toReversed()
     .reduce<SourcedProfile>((base, { file, parsed }) => mergeProfiles(base, parsed, file), { settings: {} });
@@ -568,7 +585,7 @@ function resolveChain(chain: readonly Link[], source: string): ResolvedProfile {
   const drafts = toDrafts(mergedDrafts);
   return {
     chain: chain.map((link) => link.file),
-    profile: validate(toProfile(merged), source),
+    profile: validate(adjust === undefined ? toProfile(merged) : adjust(toProfile(merged)), source),
     drafts,
     warnings: [...chain.flatMap((link) => fileDraftWarnings(link.drafts, link.file)), ...draftWarnings(drafts)],
     sources: { ...sourcesOf(merged), drafts: sourcesOf(mergedDrafts) },
@@ -576,8 +593,12 @@ function resolveChain(chain: readonly Link[], source: string): ResolvedProfile {
 }
 
 /** Reads a profile file and every profile it extends, and says which file sets each value. */
-export async function resolveProfile(file: string): Promise<ResolvedProfile> {
-  return resolveChain(await readChain(file), path.resolve(file));
+export async function resolveProfile(
+  file: string,
+  head: LayerSchema = profileFile,
+  adjust?: Adjust,
+): Promise<ResolvedProfile> {
+  return resolveChain(await readChain(file, head), path.resolve(file), adjust);
 }
 
 /**
@@ -679,24 +700,33 @@ function isDraftPath(path: readonly string[]): boolean {
   );
 }
 
-function isEditable(path: readonly string[]): boolean {
-  if (path[0] === 'drafts') {
-    return isDraftPath(path.slice(1));
-  }
+/**
+ * What a path under a settings section names: one setting, such as
+ * `repository.has_wiki` or `actions.selected_actions.verified_allowed`, a
+ * group of settings, such as `actions.selected_actions`, or nothing.
+ */
+export function settingPath(path: readonly string[]): 'setting' | 'group' | undefined {
   const [section, key, inner, ...rest] = path;
   if (!isSettingsSection(section) || key === undefined || rest.length > 0) {
-    return false;
+    return undefined;
   }
   const schema = sectionSchemas[section];
   if (schema === undefined) {
-    return inner === undefined;
+    return inner === undefined ? 'setting' : undefined;
   }
   const field: unknown = schema.shape[key];
   if (field === undefined) {
-    return false;
+    return undefined;
   }
   const group = groupKeys[section].has(key) ? unwrapObject(field) : undefined;
-  return inner === undefined ? group === undefined : group?.shape[inner] !== undefined;
+  if (inner === undefined) {
+    return group === undefined ? 'setting' : 'group';
+  }
+  return group?.shape[inner] === undefined ? undefined : 'setting';
+}
+
+function isEditable(path: readonly string[]): boolean {
+  return path[0] === 'drafts' ? isDraftPath(path.slice(1)) : settingPath(path) === 'setting';
 }
 
 const retriedCodes = new Set(['EPERM', 'EBUSY', 'EACCES']);
@@ -873,14 +903,22 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
   }
 }
 
-/**
- * Changes settings in one profile file and keeps its comments, line endings
- * and indent width; YAML layout such as quoting and list indentation may be
- * normalized. The file changes only when the result, laid over the profiles
- * it extends, is a valid profile.
- */
-export async function editProfile(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
-  const [own, ...base] = await readChain(file);
+/** A kind of file whose first layer `editLayer` edits: its schema, keys of its own, and a last check. */
+export interface Layer {
+  readonly schema: LayerSchema;
+  /** Top-level keys of the file's own, which a setting edit may set or remove whole. */
+  readonly paths: ReadonlySet<string>;
+  /** What changes the edited file's merged profile before it is checked, from the edited text. */
+  readonly adjust?: (text: string) => Adjust;
+  /** Throws when the edited file, resolved, is not one to save. */
+  readonly check: (resolved: ResolvedProfile, text: string) => void;
+}
+
+const profileLayer: Layer = { schema: profileFile, paths: new Set(), check: () => undefined };
+
+/** Edits the first file of a chain, as `editProfile` does, for any kind of layer. */
+export async function editLayer(file: string, edits: readonly ProfileEdit[], layer: Layer): Promise<ResolvedProfile> {
+  const [own, ...base] = await readChain(file, layer.schema);
   const original = await readFile(own.file, 'utf8');
   const document = parseDocument(original);
   const seen = new Set<string>();
@@ -890,7 +928,7 @@ export async function editProfile(file: string, edits: readonly ProfileEdit[]): 
       continue;
     }
     const key = edit.path.join('.');
-    if (!isEditable(edit.path)) {
+    if (!isEditable(edit.path) && !layer.paths.has(key)) {
       throw new ProfileError(`Cannot edit ${key}: it is not one setting of a profile section, or a draft of one`);
     }
     if (seen.has(key)) {
@@ -898,7 +936,10 @@ export async function editProfile(file: string, edits: readonly ProfileEdit[]): 
     }
     seen.add(key);
     if (edit.value !== undefined) {
-      document.setIn(edit.path, edit.value);
+      document.setIn(
+        edit.path,
+        edit.value !== null && typeof edit.value === 'object' ? document.createNode(edit.value) : edit.value,
+      );
       continue;
     }
     // Nothing to remove when the file does not name the setting.
@@ -916,10 +957,25 @@ export async function editProfile(file: string, edits: readonly ProfileEdit[]): 
   }
   const indent = /^( +)\S/mu.exec(original)?.[1]?.length ?? 2;
   const text = document.toString({ lineWidth: 0, indent });
-  const edited = parseProfileFile(text, own.file);
-  const resolved = resolveChain([{ file: own.file, parsed: edited.own, drafts: edited.drafts }, ...base], own.file);
+  const edited = parseProfileFile(text, own.file, layer.schema);
+  const resolved = resolveChain(
+    [{ file: own.file, parsed: edited.own, drafts: edited.drafts }, ...base],
+    own.file,
+    layer.adjust?.(text),
+  );
+  layer.check(resolved, text);
   await replaceFile(own.file, original.includes('\r\n') ? text.replaceAll('\n', '\r\n') : text);
   return resolved;
+}
+
+/**
+ * Changes settings in one profile file and keeps its comments, line endings
+ * and indent width; YAML layout such as quoting and list indentation may be
+ * normalized. The file changes only when the result, laid over the profiles
+ * it extends, is a valid profile.
+ */
+export async function editProfile(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
+  return editLayer(file, edits, profileLayer);
 }
 
 export function stringifyProfile(value: Profile): string {

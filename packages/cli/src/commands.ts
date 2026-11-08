@@ -18,6 +18,7 @@ import {
   formatPlan,
   type GitHub,
   GitHubError,
+  type Plan,
   listProfiles,
   listRepositories,
   lockChanges,
@@ -28,6 +29,15 @@ import {
   resolveProfile,
   skippedDrafts,
   StalePlanError,
+  createStagedApply,
+  discardStagedApply,
+  editStagedApply,
+  planStagedApply,
+  resolveStagedApply,
+  saveStagedEdits,
+  type StagedApply,
+  type StagedEdit,
+  type StagedPlan,
   stringifyProfile,
   syncFolder,
 } from '@repotted/core';
@@ -66,6 +76,7 @@ const usage = `Usage: repotted <command> [options]
 Commands:
   capture <owner/repo> [--output file]          Write the repository's setup as a YAML profile
   plan <owner/repo> --profile file [--out file]  Show the changes a profile needs; --out saves the plan
+  plan [owner/repo] --staged file [--out file]   Show the changes a staged apply needs
   apply <plan.json> [--yes]                      Apply a saved plan if the repository has not changed
   profiles <folder>                              List the profiles in a folder
   sync <folder> [--repository owner/repo]        Sync a folder of profiles with a GitHub repository
@@ -75,6 +86,11 @@ Commands:
           [--ruleset json] [--drop-ruleset name]  and its rulesets and environments; drafts.<section>.<key>
           [--environment json] [--drop-environment name]  keys and "draft": true entries are drafts
           [--drop-draft-ruleset name] [--drop-draft-environment name]
+  stage <file> --new owner/repo [--profile file] Start a staged apply: one-off edits for one apply, over a
+                                                 profile or over the repository as it is
+  stage <file> [--set key=json] [--unset key]    Show a staged apply resolved; edit it as profile does, and
+        [--exclude key] [--include key]              exclude values of its profile, as repository.has_wiki or
+        [--save-to-profile] [--discard]          rulesets/Main; save its edits to its profile; or remove it
   mcp [--read-only]                              Run the MCP server over stdio
   repos                                          List the repositories Repotted can manage
   status                                         Show which GitHub account Repotted signs in as
@@ -138,15 +154,43 @@ async function plan(io: Io, args: string[]): Promise<number> {
   const { positionals, values } = parseArgs({
     args,
     allowPositionals: true,
-    options: { profile: { type: 'string', short: 'p' }, out: { type: 'string' }, json: { type: 'boolean' } },
+    options: {
+      profile: { type: 'string', short: 'p' },
+      staged: { type: 'string' },
+      out: { type: 'string' },
+      json: { type: 'boolean' },
+    },
   });
-  const repo = parseRepo(only(positionals, 'repository'));
-  if (values.profile === undefined) {
-    throw new UsageError('plan needs --profile.');
+  let repo: ReturnType<typeof parseRepo>;
+  let result: Plan;
+  // A staged plan's document also says what the plan applies and what leaves each change out.
+  let stagedPlan: StagedPlan | undefined;
+  let github: GitHub;
+  if (values.staged === undefined) {
+    repo = parseRepo(only(positionals, 'repository'));
+    if (values.profile === undefined) {
+      throw new UsageError('plan needs --profile or --staged.');
+    }
+    const desired = await resolveProfile(values.profile);
+    github = await io.github();
+    result = await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts));
+  } else {
+    if (values.profile !== undefined) {
+      throw new UsageError('plan takes --profile or --staged, not both.');
+    }
+    if (positionals.length > 1) {
+      throw new UsageError('Expected at most one repository.');
+    }
+    const staged = await resolveStagedApply(values.staged);
+    const [named] = positionals;
+    if (named !== undefined && named.toLowerCase() !== staged.repository.toLowerCase()) {
+      throw new UsageError(`${values.staged} applies to ${staged.repository}, not ${named}.`);
+    }
+    repo = parseRepo(staged.repository);
+    github = await io.github();
+    stagedPlan = await planStagedApply(github, values.staged);
+    result = stagedPlan.plan;
   }
-  const desired = await resolveProfile(values.profile);
-  const github = await io.github();
-  const result = await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts));
   // Apply checks neither: GitHub decides at the write.
   const access = await readAccess(github, repo);
   const locks = lockChanges(access, result.changes);
@@ -155,7 +199,21 @@ async function plan(io: Io, args: string[]): Promise<number> {
     await writeFile(values.out, `${JSON.stringify(document, null, 2)}\n`);
   }
   if (values.json === true) {
-    json(io, document);
+    json(
+      io,
+      stagedPlan === undefined
+        ? document
+        : {
+            ...document,
+            staged: {
+              file: stagedPlan.staged.file,
+              repository: stagedPlan.staged.repository,
+              base: stagedPlan.staged.base,
+              exclude: stagedPlan.staged.exclude,
+            },
+            exclusions: stagedPlan.exclusions,
+          },
+    );
     return 0;
   }
   io.out(`${formatPlan(result, locks)}\n`);
@@ -407,6 +465,91 @@ async function profile(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
+async function stage(io: Io, args: string[]): Promise<number> {
+  const { positionals, values, tokens } = parseArgs({
+    args,
+    allowPositionals: true,
+    tokens: true,
+    options: {
+      new: { type: 'string' },
+      profile: { type: 'string', short: 'p' },
+      set: { type: 'string', multiple: true },
+      unset: { type: 'string', multiple: true },
+      ruleset: { type: 'string', multiple: true },
+      'drop-ruleset': { type: 'string', multiple: true },
+      environment: { type: 'string', multiple: true },
+      'drop-environment': { type: 'string', multiple: true },
+      exclude: { type: 'string', multiple: true },
+      include: { type: 'string', multiple: true },
+      'save-to-profile': { type: 'boolean' },
+      discard: { type: 'boolean' },
+      json: { type: 'boolean' },
+    },
+  });
+  const file = only(positionals, 'staged apply file');
+  const edits: StagedEdit[] = [
+    ...profileEdits(tokens),
+    ...tokens.flatMap((token) =>
+      token.kind === 'option' && (token.name === 'exclude' || token.name === 'include')
+        ? [{ exclude: token.value, excluded: token.name === 'exclude' }]
+        : [],
+    ),
+  ];
+  if (values.profile !== undefined && values.new === undefined) {
+    throw new UsageError('--profile names what a new staged apply starts from, so it needs --new.');
+  }
+  if (values.discard === true) {
+    if (values.new !== undefined || edits.length > 0 || values['save-to-profile'] === true) {
+      throw new UsageError('--discard removes the staged apply, so it takes no other option.');
+    }
+    await discardStagedApply(file);
+    if (values.json === true) {
+      json(io, { discarded: path.resolve(file) });
+    } else {
+      io.err(`Removed ${file}\n`);
+    }
+    return 0;
+  }
+  let result: StagedApply =
+    values.new === undefined
+      ? await resolveStagedApply(file)
+      : await createStagedApply(file, values.new, values.profile);
+  try {
+    if (edits.length > 0) {
+      result = await editStagedApply(file, edits);
+    }
+    if (values['save-to-profile'] === true) {
+      result = await saveStagedEdits(file);
+    }
+  } catch (error) {
+    // A start whose edits fail leaves no file behind, so it can be run again.
+    // The edits' failure is the one to report, even if the cleanup fails too.
+    if (values.new !== undefined) {
+      await discardStagedApply(file).catch(() => undefined);
+    }
+    throw error;
+  }
+  if (values.json === true) {
+    json(io, result);
+    return 0;
+  }
+  io.err(
+    `Staged apply to ${result.repository}, ${result.base === null ? 'from the repository as it is' : `from ${result.base}`}\n`,
+  );
+  if (result.exclude.length > 0) {
+    io.err(`Exclusions: ${result.exclude.join(', ')}\n`);
+  }
+  io.out(stringifyProfile(result.profile));
+  if (values.new !== undefined || edits.length > 0 || values['save-to-profile'] === true) {
+    io.err(`Saved ${file}. See its changes with: repotted plan --staged ${file}\n`);
+  }
+  const drafts = skippedDrafts(result.drafts);
+  if (drafts.length > 0) {
+    io.err(`Drafts of its profile, left out: ${drafts.map(describeSkipped).join(', ')}\n`);
+  }
+  return 0;
+}
+
 async function repos(io: Io, args: string[]): Promise<number> {
   const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } });
   const list = await listRepositories(await io.github());
@@ -565,6 +708,7 @@ const commands: Record<string, (io: Io, args: string[]) => Promise<number>> = {
   apply,
   profiles,
   profile,
+  stage,
   sync,
   mcp,
   repos,
