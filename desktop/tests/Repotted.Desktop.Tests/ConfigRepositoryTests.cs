@@ -133,11 +133,11 @@ public sealed class ConfigRepositoryTests : IDisposable
         Assert.Equal("repository: { has_wiki: false }\n", copied);
         Assert.Null(profiles.Connecting);
         Assert.Equal(("lunch/config", "profiles"), (folders.Settings.Load().ConfigRepository, folders.Settings.Load().ConfigPath));
-        Assert.Equal(copy, profiles.Folder);
-        Assert.Equal("GitHub repository:", profiles.SourceLabel);
-        Assert.Equal("lunch/config/profiles", profiles.SourceText);
-        Assert.Equal("Sync now", profiles.RefreshLabel);
-        Assert.Equal("Committed base.yaml to main.", profiles.SyncNote);
+        Assert.Equal(copy, profiles.Folder.Path);
+        Assert.Equal("GitHub repository:", profiles.Folder.SourceLabel);
+        Assert.Equal("lunch/config/profiles", profiles.Folder.SourceText);
+        Assert.Equal("Sync now", profiles.Folder.RefreshLabel);
+        Assert.Equal("Committed base.yaml to main.", profiles.Folder.SyncNote);
         Assert.Equal(["base"], profiles.Items.Select(item => item.Name));
         // The first sync is the one that connected; loading the copy does not sync again.
         Assert.Single(cli.Calls, call => call.StartsWith("sync ", StringComparison.Ordinal));
@@ -169,7 +169,7 @@ public sealed class ConfigRepositoryTests : IDisposable
         Assert.Same(form, profiles.Connecting);
         Assert.StartsWith("Repotted cannot reach the profiles in lunch/config", form.Error, StringComparison.Ordinal);
         Assert.Equal(before, File.ReadAllText(Path.Combine(folders.SettingsFolder, "settings.json")));
-        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Equal(folders.Profiles, profiles.Folder.Path);
         // The copies of the local profiles go too, so a later connect does not commit them by surprise.
         Assert.False(Directory.Exists(copy));
 
@@ -192,15 +192,15 @@ public sealed class ConfigRepositoryTests : IDisposable
         var profiles = Profiles(cli);
 
         await profiles.RefreshCommand.ExecuteAsync(null);
-        Assert.Equal(copy, profiles.Folder);
-        Assert.Equal("In sync with main on GitHub.", profiles.SyncNote);
-        Assert.False(profiles.SyncFailed);
+        Assert.Equal(copy, profiles.Folder.Path);
+        Assert.Equal("In sync with main on GitHub.", profiles.Folder.SyncNote);
+        Assert.False(profiles.Folder.SyncFailed);
 
         cli.On(Command(copy), """{"error":{"kind":"error","message":"fetch failed"}}""", exitCode: 1);
         await profiles.RefreshCommand.ExecuteAsync(null);
 
         Assert.True(profiles.ShowSyncProblem);
-        Assert.Equal("Not synced with GitHub. Saves stay on this computer until a sync works. fetch failed", profiles.SyncNote);
+        Assert.Equal("Not synced with GitHub. Saves stay on this computer until a sync works. fetch failed", profiles.Folder.SyncNote);
         Assert.Null(profiles.Error);
         Assert.Equal(["base"], profiles.Items.Select(item => item.Name));
     }
@@ -245,16 +245,16 @@ public sealed class ConfigRepositoryTests : IDisposable
         await editor.SaveCommand.ExecuteAsync(null);
 
         Assert.Equal([$"profile {file} --set repository.has_wiki=false --json", Command(copy)], cli.Calls);
-        Assert.True(profiles.HasConflicts);
-        Assert.Equal("base.yaml changed here and on GitHub since the last sync. Keep which version?", profiles.ConflictMessage);
+        Assert.True(profiles.Folder.HasConflicts);
+        Assert.Equal("base.yaml changed here and on GitHub since the last sync. Keep which version?", profiles.Folder.ConflictMessage);
 
         // Only the file the banner named is settled.
         cli.On(Command(copy, " --prefer=local --only=base.yaml"), Sync(pushed: ["base.yaml"]));
         await profiles.KeepMineCommand.ExecuteAsync(null);
 
         Assert.Contains(Command(copy, " --prefer=local --only=base.yaml"), cli.Calls);
-        Assert.False(profiles.HasConflicts);
-        Assert.Equal("Committed base.yaml to main.", profiles.SyncNote);
+        Assert.False(profiles.Folder.HasConflicts);
+        Assert.Equal("Committed base.yaml to main.", profiles.Folder.SyncNote);
     }
 
     [AvaloniaFact]
@@ -268,15 +268,15 @@ public sealed class ConfigRepositoryTests : IDisposable
             .On(folders.List(), Documents.NoProfiles);
         var profiles = Profiles(cli, new FakeDesktop { Folder = folders.Profiles });
         await profiles.RefreshCommand.ExecuteAsync(null);
-        Assert.Equal("Change repository", profiles.RepositoryLabel);
+        Assert.Equal("Change repository", profiles.Folder.RepositoryLabel);
 
         await profiles.ChangeFolderCommand.ExecuteAsync(null);
 
         Assert.Null(folders.Settings.Load().ConfigRepository);
-        Assert.Equal(folders.Profiles, profiles.Folder);
-        Assert.Equal("Profiles folder:", profiles.SourceLabel);
-        Assert.Equal("Use a GitHub repository", profiles.RepositoryLabel);
-        Assert.Null(profiles.SyncNote);
+        Assert.Equal(folders.Profiles, profiles.Folder.Path);
+        Assert.Equal("Profiles folder:", profiles.Folder.SourceLabel);
+        Assert.Equal("Use a GitHub repository", profiles.Folder.RepositoryLabel);
+        Assert.Null(profiles.Folder.SyncNote);
     }
 
     [Fact]

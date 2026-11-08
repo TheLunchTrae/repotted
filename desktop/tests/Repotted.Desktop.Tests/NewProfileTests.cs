@@ -72,8 +72,9 @@ public sealed class NewProfileTests : ViewModelTests
     [AvaloniaFact]
     public void A_profile_extends_another_only_once_one_is_chosen()
     {
+        var client = new RepottedClient(new FakeCli());
         using var form = new NewProfileViewModel(
-            new RepottedClient(new FakeCli()), folders.Profiles, [], [], null, (_, _) => Task.CompletedTask, () => { }, () => { }, new HashSet<string>(), work => work())
+            client, new ProfileFolder(client, folders.Settings), [], [], null, (_, _) => Task.CompletedTask, () => { }, () => { }, new HashSet<string>())
         {
             Name = "libraries",
             Extends = true,
@@ -318,7 +319,7 @@ public sealed class NewProfileTests : ViewModelTests
         // Otherwise leaving closes the form, which stops the capture.
         await capturing.WaitAsync(TimeSpan.FromSeconds(5));
 
-        Assert.Equal(other, profiles.Folder);
+        Assert.Equal(other, profiles.Folder.Path);
         Assert.Equal(endsFirst, File.Exists(made));
         Assert.Empty(Leftovers());
     }
@@ -389,7 +390,7 @@ public sealed class NewProfileTests : ViewModelTests
         await Answer();
 
         // Opening the profile would close the form and stop the capture, so the notice says why instead.
-        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Equal(folders.Profiles, profiles.Folder.Path);
         Assert.Same(form, profiles.Creating);
         Assert.True(form.Working);
         Assert.False(stopped);
