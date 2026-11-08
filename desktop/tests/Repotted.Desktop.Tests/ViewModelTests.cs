@@ -294,6 +294,35 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Closing_the_app_stops_a_capture_and_removes_its_file()
+    {
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        var stopped = false;
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On($"capture TheLunchTrae/repotted --output {made} --json", async cancellationToken =>
+            {
+                cancellationToken.Register(() => stopped = true);
+                await finish.Task;
+                return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
+            });
+        var main = App(cli);
+        await main.StartAsync();
+        var shell = Assert.IsType<ShellViewModel>(main.Page);
+        shell.Profiles.StartNew("TheLunchTrae/repotted");
+        var capturing = shell.Profiles.Creating!.CreateCommand.ExecuteAsync(null);
+
+        main.Stop();
+        finish.SetResult();
+        await capturing;
+
+        Assert.True(stopped);
+        Assert.False(File.Exists(made));
+    }
+
+    [AvaloniaFact]
     public async Task Signing_out_stops_a_capture_and_removes_its_file()
     {
         var made = Path.Combine(folders.Profiles, "repotted.yaml");
