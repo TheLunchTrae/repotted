@@ -401,6 +401,48 @@ drafts:
     expect(await applyPlan(github, saved)).toHaveLength(plan.changes.length);
   });
 
+  test('reads a plan saved before changes named their entry as stale', async () => {
+    const github = new FakeGitHub();
+    const plan = await createPlan(github, repo, { labels: [{ name: 'bug', color: 'd73a4a' }] });
+    const old = {
+      ...plan,
+      changes: plan.changes.map(({ entry: _entry, ...change }) => change),
+    };
+
+    const failure = await rejection(applyPlan(github, parsePlan(JSON.parse(JSON.stringify(old)))));
+    expect(failure).toBeInstanceOf(StalePlanError);
+    expect(failure instanceof StalePlanError ? failure.current.changes : []).toEqual(plan.changes);
+    expect(github.writes).toEqual([]);
+  });
+
+  test('names each environment change by the profile spelling of its environment', async () => {
+    const environment = { wait_timer: 0, prevent_self_review: false, reviewers: [], deployment_branch_policy: null };
+    const github = new FakeGitHub({
+      environments: [
+        {
+          name: 'npm',
+          ...environment,
+          deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+          branch_policies: [{ id: 1, name: 'main', type: 'branch' }],
+        },
+        { name: 'old', ...environment, branch_policies: [] },
+      ],
+    });
+    const plan = await createPlan(github, repo, {
+      environments: [
+        { name: 'NPM', wait_timer: 5, branch_policies: [{ name: 'v*', type: 'tag' }] },
+        { name: 'OLD', absent: true },
+      ],
+    });
+
+    expect(plan.changes.map((change) => [`${change.action} ${change.target}`, change.entry])).toEqual([
+      ['update npm', { name: 'NPM' }],
+      ['delete npm: branch main', { name: 'NPM', branch_policy: { name: 'main', type: 'branch' } }],
+      ['create npm: tag v*', { name: 'NPM', branch_policy: { name: 'v*', type: 'tag' } }],
+      ['delete old', { name: 'OLD' }],
+    ]);
+  });
+
   test('never runs requests edited into a saved plan', async () => {
     const github = new FakeGitHub();
     const plan = await createPlan(github, repo, { repository: { has_wiki: false } });

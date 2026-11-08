@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { z } from 'zod';
 
-import { type Change, listSections, type Section, sections } from './change.js';
+import { type Change, isListSection, listSections, type Section, sections } from './change.js';
 import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadable } from './endpoints.js';
 import { type GitHub, GitHubError, parseRepo, repoPattern, type RepoRef } from './github.js';
 import { type Lock, requiredPermission } from './permissions.js';
@@ -315,10 +315,14 @@ const savedWrite = {
 const savedChange = z.union([
   z.object({
     section: z.enum(sections).extract(listSections),
-    entry: z.object({
-      name: z.string(),
-      branch_policy: z.object({ name: z.string(), type: z.enum(['branch', 'tag']) }).exactOptional(),
-    }),
+    // Plans saved before changes named their entry have none. No entry has
+    // an empty name, so such a plan never matches a new one and reads as stale.
+    entry: z
+      .object({
+        name: z.string(),
+        branch_policy: z.object({ name: z.string(), type: z.enum(['branch', 'tag']) }).exactOptional(),
+      })
+      .default({ name: '' }),
     ...savedWrite,
   }),
   z.object({ section: z.enum(sections).exclude(listSections), ...savedWrite }),
@@ -413,7 +417,7 @@ function describeTarget(section: Section, target: string): string {
 
 /** A draft a plan leaves out, as plan output names it. */
 export function describeSkipped({ section, target }: Skipped): string {
-  if (section === 'autolinks' || section === 'rulesets' || section === 'environments' || section === 'labels') {
+  if (isListSection(section)) {
     return describeTarget(section, target);
   }
   return section === 'pages' && target === 'absent'

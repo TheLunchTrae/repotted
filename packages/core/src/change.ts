@@ -28,6 +28,10 @@ export const listSections = ['autolinks', 'rulesets', 'environments', 'labels'] 
 
 export type SettingsSection = Exclude<Section, (typeof listSections)[number]>;
 
+export function isListSection(section: Section): section is (typeof listSections)[number] {
+  return (listSections as readonly Section[]).includes(section);
+}
+
 /** The entry of a list that a change acts on. */
 interface ChangeEntry {
   /**

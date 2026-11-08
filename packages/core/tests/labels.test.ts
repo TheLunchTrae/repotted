@@ -112,6 +112,20 @@ describe('label plans', () => {
     expect((await plan(github, labels)).changes).toEqual([]);
   });
 
+  test('name each change by the label the profile names', async () => {
+    const github = new FakeGitHub({ labels: [stored('enhancement'), stored('WontFix')] });
+
+    const result = await plan(github, [
+      { name: 'feature', color: 'a2eeef', renamed_from: ['enhancement'] },
+      { name: 'wontfix', absent: true },
+    ]);
+
+    expect(result.changes.map((change) => [`${change.action} ${change.target}`, change.entry])).toEqual([
+      ['delete wontfix', { name: 'wontfix' }],
+      ['update feature', { name: 'feature' }],
+    ]);
+  });
+
   test('leave an old label as it is, with a warning, when the repository has the new one too', async () => {
     const github = new FakeGitHub({ labels: [stored('enhancement'), stored('Feature', 'ededed')] });
 
