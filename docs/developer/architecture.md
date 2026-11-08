@@ -374,11 +374,12 @@ row it can leave out.
 ### Profiles in the app
 
 The app edits a folder of YAML files. Settings change through
-`repotted profile --set` and `--unset`. Rulesets and environments open in an
-editor that starts from the entry as the profile resolves it and saves it
-through `--ruleset`, `--environment`, and their `--drop-` forms. The editor
-changes only what is edited, so keys and rules it doesn't show stay as they
-are, and a choice left unset leaves that key to GitHub.
+`repotted profile --set` and `--unset`; an empty runner label box sets the
+label to `null`, the profile's value for no label. Rulesets and environments
+open in an editor that starts from the entry as the profile resolves it and
+saves it through `--ruleset`, `--environment`, and their `--drop-` forms. The
+editor changes only what is edited, so keys and rules it doesn't show stay as
+they are, and a choice left unset leaves that key to GitHub.
 
 - Editing a base profile's entry sets the whole entry in this profile, over the
   base's, under the same name. So only an entry that this profile alone names

@@ -189,9 +189,11 @@ alerts off turns the updates off first, and skips a profile that turns the
 updates on with the alerts off.
 
 Some settings only hold together. With standard Dependabot runners, GitHub
-keeps no runner labels or group, so a plan skips them with a warning. Naming
-OIDC `include_claim_keys` stops using the default subject, and claim keys next
-to `use_default: true` are skipped, since GitHub ignores them.
+keeps no runner labels or group, so a plan skips them with a warning. Code
+scanning and code quality use a `runner_label` only with labeled runners, and
+`runner_label: null` means no label. Naming OIDC `include_claim_keys` stops
+using the default subject, and claim keys next to `use_default: true` are
+skipped, since GitHub ignores them.
 
 ## Autolinks and Pages
 

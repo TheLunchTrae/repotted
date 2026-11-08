@@ -91,6 +91,21 @@ internal sealed partial class SettingViewModel : ViewModelBase
 
     public bool HasFieldNote => Field.Note is not null;
 
+    /// <summary>
+    /// The row of the setting that can turn this one off, as
+    /// <see cref="SettingField.OffWhen"/> names it, once the editor has made
+    /// every row; the editor refreshes this row when that one changes.
+    /// </summary>
+    public SettingViewModel? ControlledBy { get; set; }
+
+    /// <summary>
+    /// Whether the value can be edited: not while the setting that
+    /// <see cref="SettingField.OffWhen"/> names shows the value that turns it
+    /// off, as saved, inherited or changed. The value and its way back stay.
+    /// </summary>
+    public bool Enabled => Field.OffWhen is not { } off
+        || !string.Equals(ControlledBy?.Value.AsText(), off.Value, StringComparison.Ordinal);
+
     public JsonNode? Saved { get; }
 
     public SettingOrigin Origin { get; }
@@ -151,14 +166,18 @@ internal sealed partial class SettingViewModel : ViewModelBase
     /// <summary>Whether the file can hold drafts at all; a staged apply's one-off edits can't.</summary>
     public bool Drafts { get; }
 
-    /// <summary>Whether the chosen value can become a draft instead: a change that sets a value, in a file that holds drafts.</summary>
-    public bool CanSaveAsDraft => Drafts && Changed && pending is not null;
+    /// <summary>
+    /// Whether the chosen value can become a draft instead: a change that sets
+    /// a value, in a file that holds drafts. A value saved as <c>null</c> can't,
+    /// since a draft of <c>null</c> would not show.
+    /// </summary>
+    public bool CanSaveAsDraft => Drafts && Changed && pending is not null && !SavesNull(pending);
 
     /// <summary>The value shown: what the profile will hold once saved.</summary>
     public JsonNode? Value => !Changed ? Saved : pending ?? Inherited?.Value;
 
-    /// <summary>Whether the profile, once saved, names a value.</summary>
-    public bool Managed => Value is not null;
+    /// <summary>Whether the profile, once saved, names a value, <c>null</c> included.</summary>
+    public bool Managed => OwnAfterSave || InheritedAfterSave;
 
     /// <summary>Whether the profile file itself will hold the value: the rail is solid.</summary>
     public bool OwnAfterSave => Changed ? pending is not null : Origin == SettingOrigin.Own;
@@ -245,8 +264,9 @@ internal sealed partial class SettingViewModel : ViewModelBase
     /// <summary>The name screen readers hear for the box.</summary>
     public string TypedName => Label;
 
-    /// <summary>What screen readers hear after the box's name: the problem with the text, or where the value comes from.</summary>
-    public string TypedHelp => TypedProblem ?? Note;
+    /// <summary>What screen readers hear after the box's name: the problem with the text, or where the value comes from, after why the box is off while it is.</summary>
+    public string TypedHelp => TypedProblem
+        ?? (!Enabled && Field.Note is { } why ? $"{why} {Note}" : Note);
 
     private string? Parse(string text, out JsonNode? value)
     {
@@ -260,7 +280,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
             value = JsonValue.Create(number);
             return null;
         }
-        if (text.Length == 0 && !Field.AllowsEmpty)
+        if (text.Length == 0 && !Field.AllowsEmpty && !Field.EmptyIsNull)
         {
             return "Enter a value, or remove the setting from this profile.";
         }
@@ -277,10 +297,21 @@ internal sealed partial class SettingViewModel : ViewModelBase
     };
 
     /// <summary>What saving sends for this row's value; null when it did not change.</summary>
-    public Services.ProfileChange? Change => Changed ? new(Field.Path, pending?.DeepClone()) : null;
+    public Services.ProfileChange? Change => Changed ? Write(Field.Path, pending) : null;
 
     /// <summary>What saving sends for this row's draft; null when it did not change.</summary>
-    public Services.ProfileChange? DraftChange => DraftChanged ? new($"drafts.{Field.Path}", draftPending?.DeepClone()) : null;
+    public Services.ProfileChange? DraftChange => DraftChanged ? Write($"drafts.{Field.Path}", draftPending) : null;
+
+    /// <summary>
+    /// The change that saves <paramref name="value"/> at <paramref name="key"/>,
+    /// or stops setting it there when null. A row whose field has
+    /// <see cref="SettingField.EmptyIsNull"/> keeps an empty box's value as
+    /// <c>""</c>, and saves that as <c>null</c>.
+    /// </summary>
+    private Services.ProfileChange Write(string key, JsonNode? value) =>
+        value is not null && SavesNull(value) ? new(key, null, SetsNull: true) : new(key, value?.DeepClone());
+
+    private bool SavesNull(JsonNode value) => Field.EmptyIsNull && value.AsText() is "";
 
     /// <summary>
     /// Keeps the chosen value as a draft instead, and puts the value back as
@@ -354,6 +385,9 @@ internal sealed partial class SettingViewModel : ViewModelBase
         }
         Set(changed: true, null);
     }
+
+    /// <summary>Tells the bindings the row may show differently, as when the setting that turns it off changes.</summary>
+    public void Refresh() => OnAllPropertiesChanged();
 
     /// <summary>Puts the value and the draft back as saved.</summary>
     public void Undo()

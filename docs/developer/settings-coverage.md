@@ -111,7 +111,10 @@ Enterprise Cloud only. GitHub reports
 through `automated_security_fixes`, so the profile has only the latter.
 Security updates need Dependabot alerts: a plan turns the updates off before
 the alerts, and skips turning the updates on while the profile turns the
-alerts off.
+alerts off. In `code_scanning_default_setup` and `code_quality_setup`,
+`runner_label` goes with labeled runners, and `null` is no label, as GitHub
+reports it; the schema takes no empty label. Dependabot's `runner_group` is a
+string, and GitHub's `null` group reads as `""`.
 
 ### `custom_properties`, `pages`, `autolinks`
 
