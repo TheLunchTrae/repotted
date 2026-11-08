@@ -11,9 +11,9 @@ on:
 permissions:
   contents: read
 
-# A pull request keeps one run, its newest. Anything else, such as a push to
-# main, gets a group of its own commit, so every commit gets a result and none
-# waits behind another's run.
+# A pull request keeps one run, its newest. Any other run, such as a push to
+# main, is grouped by its commit, so no commit's run is dropped from the queue
+# or waits behind another commit's run.
 concurrency:
   group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
