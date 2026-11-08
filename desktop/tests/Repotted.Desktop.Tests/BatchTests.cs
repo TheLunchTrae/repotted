@@ -251,7 +251,7 @@ public sealed class BatchTests : IDisposable
         {"chain":[{{Json(@base)}}],"profile":{"repository":{"has_wiki":false},"rulesets":[{"name":"Main"}] },
          {{Documents.NoDrafts}},
          "sources":{"repository":{"has_wiki":{{Json(@base)}} },
-           "merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{"Main":{{Json(@base)}} },"environments":{},
+           "merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{"Main":{{Json(@base)}} },"environments":{},"labels":{},
            {{Documents.NoDraftSources}} } }
         """;
 
@@ -267,7 +267,7 @@ public sealed class BatchTests : IDisposable
              {{Documents.NoDrafts}},
              "sources":{"repository":{ {{(wiki ? "" : $"\"has_wiki\":{Json(@base)}")}} },
                "merge":{},"actions":{},"security":{},"custom_properties":{},
-               "pages":{},"autolinks":{},"rulesets":{ {{(main ? "" : $"\"Main\":{Json(@base)}")}} },"environments":{},
+               "pages":{},"autolinks":{},"rulesets":{ {{(main ? "" : $"\"Main\":{Json(@base)}")}} },"environments":{},"labels":{},
                {{Documents.NoDraftSources}} } }
             """;
     }
