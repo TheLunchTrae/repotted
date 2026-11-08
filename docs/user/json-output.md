@@ -159,8 +159,8 @@ diagnostic and not a failure. `--help` and `--version` still print text.
 
 A failure prints `{ error: { kind, message } }` and exits 1, or 2 for misuse,
 which has `kind: usage`. A stale plan has `kind: stale_plan` and `current`, the
-plan the repository needs now. A plan saved by a version of Repotted before
-changes carried `entry` is always stale. A write that fails partway has
+plan the repository needs now. A plan saved before changes carried `entry` is
+stale if it changes an autolink, ruleset, environment or label. A write that fails partway has
 `kind: apply_failed`, with the changes in `applied` and the one in `failed`,
 and `reason`: what GitHub refused it for, when GitHub refused it for good with
 a `403` or `422`, such as `Needs Pages write` or the repository's plan not
