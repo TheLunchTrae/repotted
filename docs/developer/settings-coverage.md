@@ -79,13 +79,15 @@ permission gets its row there.
 `schema.ts` holds every key a profile takes, and
 [Profiles](../user/profiles.md#sections) lists them by section. The
 repository and merge settings are fields of `PATCH /repos/{owner}/{repo}`,
-except those at endpoints of their own: `repositoryEndpoints`,
-`securityEndpoints` and `actionsEndpoints` in `packages/core/src/sections/`
-list them with their paths. The adapters there read and write the rest: the
-Actions policy, topics, custom properties, Pages, autolinks, rulesets and
-environments.
-`permissions.ts` gives the permission each endpoint needs. The notes below
-are what the code doesn't say.
+except those at endpoints of their own, which `repositoryEndpoints` in
+`packages/core/src/sections/repository.ts` lists with their paths.
+`securityEndpoints` in `security.ts` lists the security settings outside
+`security_and_analysis`, and `actionsEndpoints` in `actions.ts` the Actions
+settings outside the policy. The adapters in that folder read and write the
+rest: the Actions policy (`/actions/permissions`, its `/selected-actions`
+list and `/workflow` token permissions), topics, custom properties, Pages,
+autolinks, rulesets and environments. `permissions.ts` gives the permission
+each endpoint needs. The notes below are what the code doesn't say.
 
 ### `repository` and `merge`
 
@@ -124,14 +126,16 @@ the plan deletes and makes again one that differs.
 
 ### `rulesets` and `environments`
 
-Rulesets cover branch and tag protection. Environments include their
+Rulesets cover branch, tag and push protection. Environments include their
 deployment branch policies.
 
 ## Permissions the Repotted App needs
 
-The Repotted App asks for Administration read and write and Metadata read.
-Every setting above that names another permission needs it added, and the
-owner of each installation must accept it:
+The Repotted App asks for Administration read and write, which most settings
+need, Metadata read, which GitHub requires, and the permissions below, which
+[The GitHub App](github-app.md) also lists. A setting that needs a
+permission the App doesn't have yet needs it added to the App and to
+`permissions.ts`, and the owner of each installation must accept it:
 
 - Actions: read, to list environments, read the cache storage limit, and read
   the OIDC subject claim; write, to set the OIDC subject claim.
