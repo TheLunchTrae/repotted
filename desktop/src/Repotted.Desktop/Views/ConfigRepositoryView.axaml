@@ -1,12 +1,13 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:theme="using:Repotted.Desktop.Theme"
              xmlns:vm="using:Repotted.Desktop.ViewModels"
              x:Class="Repotted.Desktop.Views.ConfigRepositoryView"
              x:DataType="vm:ConfigRepositoryViewModel">
   <ScrollViewer>
     <StackPanel Margin="32,24" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
       <StackPanel Spacing="6">
-        <TextBlock Classes="h1" Text="Keep profiles on GitHub" />
+        <TextBlock Classes="h1" Text="{theme:Label 'Keep profiles on GitHub'}" />
         <TextBlock Classes="muted" TextWrapping="Wrap"
                    Text="Profiles live in a repository, so they follow you to any computer and keep their history. Each save is a commit to the repository's default branch, and a refresh brings in changes made elsewhere." />
       </StackPanel>

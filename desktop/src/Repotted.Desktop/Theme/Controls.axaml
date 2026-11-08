@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:theme="using:Repotted.Desktop.Theme">
   <!-- The custom theme over Fluent: the approved mock-ups' type, buttons,
        pills, chips, navigation and table rows. -->
 
@@ -43,6 +44,18 @@
       <FocusAdornerTemplate>
         <Border BorderThickness="2" BorderBrush="{DynamicResource FocusBrush}" />
       </FocusAdornerTemplate>
+    </Setter>
+  </Style>
+
+  <!-- A button's text is its label, in the platform's casing: title style on
+       macOS, as written elsewhere. AccessText keeps access keys working. Put
+       names and other data in a TextBlock inside the button instead, so they
+       keep their own casing. -->
+  <Style Selector="Button, ToggleButton">
+    <Setter Property="ContentTemplate">
+      <DataTemplate x:DataType="x:String">
+        <AccessText Text="{Binding Converter={x:Static theme:ControlLabel.Converter}}" />
+      </DataTemplate>
     </Setter>
   </Style>
 

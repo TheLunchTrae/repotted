@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:theme="using:Repotted.Desktop.Theme"
              xmlns:vm="using:Repotted.Desktop.ViewModels"
              x:Class="Repotted.Desktop.Views.ProfileView"
              x:DataType="vm:ProfileViewModel">
@@ -170,7 +171,7 @@
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:ProfileTabViewModel">
                   <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Name, Converter={x:Static theme:ControlLabel.Converter}}" VerticalAlignment="Center" />
                     <Border Classes="count"><TextBlock Text="{Binding Count}" /></Border>
                   </StackPanel>
                 </DataTemplate>
