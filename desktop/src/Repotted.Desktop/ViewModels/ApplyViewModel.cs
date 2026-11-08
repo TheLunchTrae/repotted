@@ -359,12 +359,12 @@ internal sealed partial class ApplyViewModel(
     {
         BaseName = plan.Staged.Base is null ? null : Path.GetFileNameWithoutExtension(plan.Staged.Base);
         var exclusions = plan.Exclusions.ToDictionary(exclusion => (exclusion.Change, exclusion.Field));
-        Sections = CompareViewModel.Build(plan.Plan, (change, field) =>
+        Sections = PlanSections.Build(plan.Plan, (change, field) =>
             exclusions.TryGetValue((change, field), out var found) ? new RowExclusion(found.Key, found.Edited) : null);
         Warnings = [.. plan.Warnings.Where(warning => !Sections.Any(section => section.SkippedBy == warning))];
         Excluded = [.. plan.Staged.Exclude.Select(key => new ExcludedViewModel(key))];
-        (AccessLabel, AccessUrl) = CompareViewModel.Access(plan.Plan, installUrl);
-        DraftsNote = CompareViewModel.Drafts(plan.Plan);
+        (AccessLabel, AccessUrl) = PlanSections.Access(plan.Plan, installUrl);
+        DraftsNote = PlanSections.Drafts(plan.Plan);
         ChangeCount = plan.Changes.Count;
         OnPropertyChanged(nameof(Sections));
         OnPropertyChanged(nameof(Locked));

@@ -1058,7 +1058,7 @@ public sealed class ApplyTests : IDisposable
             """,
             CliJson.Default.PlanDocument)!;
 
-        var sections = CompareViewModel.Build(plan, (change, field) => (change, field) switch
+        var sections = PlanSections.Build(plan, (change, field) => (change, field) switch
         {
             (0, null) => new RowExclusion("pages", false),
             (1, null) => new RowExclusion("autolinks/JIRA-", false),
