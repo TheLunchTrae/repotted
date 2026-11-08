@@ -48,6 +48,26 @@ app keeps your profiles in a folder: `Documents/Repotted` at first, which the
 app creates. To use another folder, such as a clone of a repository where you
 keep your profiles, click **Change folder** on the **Profiles** page.
 
+### Keep profiles on GitHub
+
+To have your profiles follow you to any computer, keep them in a GitHub
+repository instead. Click **Use a GitHub repository** on the **Profiles** page,
+name the repository, and optionally a folder in it. An empty repository works:
+tick **Add the profiles from** your current folder to start it with them. The
+Repotted App must be installed on the repository with the Contents permission.
+
+From then on, each save is a commit to the repository's default branch, and
+**Sync now** brings in changes made elsewhere. If a profile changed both in
+the app and on GitHub since the last sync, a banner asks which version to keep:
+**Keep mine** commits yours, and **Use GitHub's** takes the repository's. If a
+sync fails, the app says why under the list and keeps your saves until a sync
+works. A ruleset that requires pull requests on that branch, for example,
+refuses the commit unless you or the Repotted App can bypass it.
+
+The app keeps its copy of the repository's profiles in its app data folder.
+**Change folder** goes back to a local folder; the repository keeps every
+profile it has.
+
 ### Make a profile
 
 Click **New profile** and choose what it starts from:
@@ -108,8 +128,8 @@ line.
 
 ## Where the app keeps its settings
 
-The app keeps its own settings, such as which profiles folder you chose, in
-`settings.json` in your user's app data folder:
+The app keeps its own settings, such as which profiles folder or repository you
+chose, in `settings.json` in your user's app data folder:
 
 - macOS: `~/Library/Application Support/Repotted`
 - Windows: `%APPDATA%\Repotted`

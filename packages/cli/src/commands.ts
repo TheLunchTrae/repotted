@@ -25,6 +25,7 @@ import {
   resolveProfile,
   StalePlanError,
   stringifyProfile,
+  syncFolder,
 } from '@repotted/core';
 import { z } from 'zod';
 
@@ -62,6 +63,9 @@ Commands:
   plan <owner/repo> --profile file [--out file]  Show the changes a profile needs; --out saves the plan
   apply <plan.json> [--yes]                      Apply a saved plan if the repository has not changed
   profiles <folder>                              List the profiles in a folder
+  sync <folder> [--repository owner/repo]        Sync a folder of profiles with a GitHub repository
+       [--path folder] [--prefer local|remote]   (or a folder in it); --prefer settles files changed on both,
+       [--only file] [--message text]            or only the files --only names
   profile <file> [--set key=json] [--unset key]  Show a profile resolved over its bases; edit its settings
           [--ruleset json] [--drop-ruleset name]  and its rulesets and environments
           [--environment json] [--drop-environment name]
@@ -237,6 +241,50 @@ async function profiles(io: Io, args: string[]): Promise<number> {
     }
   }
   return 0;
+}
+
+async function sync(io: Io, args: string[]): Promise<number> {
+  const { positionals, values } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      repository: { type: 'string' },
+      path: { type: 'string' },
+      prefer: { type: 'string' },
+      only: { type: 'string', multiple: true },
+      message: { type: 'string', short: 'm' },
+      json: { type: 'boolean' },
+    },
+  });
+  const folder = only(positionals, 'folder');
+  const prefer = values.prefer;
+  if (prefer !== undefined && prefer !== 'local' && prefer !== 'remote') {
+    throw new UsageError(`--prefer takes local or remote: ${prefer}`);
+  }
+  if (values.only !== undefined && prefer === undefined) {
+    throw new UsageError('--only names the files that --prefer settles, so it needs --prefer.');
+  }
+  const result = await syncFolder(await io.github(), folder, {
+    ...(values.repository === undefined ? {} : { repository: values.repository }),
+    ...(values.path === undefined ? {} : { path: values.path }),
+    ...(prefer === undefined ? {} : { prefer }),
+    ...(values.only === undefined ? {} : { only: values.only }),
+    ...(values.message === undefined ? {} : { message: values.message }),
+  });
+  // A conflict leaves the folder out of step, which a script should notice.
+  const code = result.conflicts.length > 0 ? 1 : 0;
+  if (values.json === true) {
+    json(io, result);
+    return code;
+  }
+  const where = result.path === '' ? result.repository : `${result.repository}/${result.path}`;
+  io.out(
+    `Synced ${folder} with ${where} (${result.branch}): ${result.pulled.length} pulled, ${result.pushed.length} pushed.\n`,
+  );
+  for (const file of result.conflicts) {
+    io.err(`${file} changed here and on GitHub. Keep one with --prefer local or --prefer remote.\n`);
+  }
+  return code;
 }
 
 /** Reads `section.key=json` for --set, or `section.key` for --unset. */
@@ -481,6 +529,7 @@ const commands: Record<string, (io: Io, args: string[]) => Promise<number>> = {
   apply,
   profiles,
   profile,
+  sync,
   mcp,
   repos,
   status,

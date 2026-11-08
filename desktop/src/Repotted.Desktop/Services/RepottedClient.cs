@@ -126,6 +126,41 @@ internal sealed class RepottedClient(ICli cli)
         return Read(run, CliJson.Default.CaptureDocument).Warnings;
     }
 
+    /// <summary>
+    /// Syncs the profiles in <paramref name="folder"/> with a config repository:
+    /// <paramref name="repository"/> and <paramref name="path"/> name it the
+    /// first time, and the folder remembers them. <paramref name="prefer"/>,
+    /// <c>local</c> or <c>remote</c>, settles files that changed on both sides.
+    /// </summary>
+    public async Task<SyncDocument> SyncAsync(
+        string folder,
+        string? repository,
+        string? path,
+        string? prefer,
+        IReadOnlyList<string>? only,
+        CancellationToken cancellationToken)
+    {
+        List<string> arguments = ["sync", folder];
+        if (repository is not null)
+        {
+            arguments.Add($"--repository={repository}");
+        }
+        if (!string.IsNullOrEmpty(path))
+        {
+            arguments.Add($"--path={path}");
+        }
+        // An empty list settles nothing, which no --only at all would not mean.
+        if (prefer is not null && only is not { Count: 0 })
+        {
+            arguments.Add($"--prefer={prefer}");
+            arguments.AddRange((only ?? []).Select(file => $"--only={file}"));
+        }
+        arguments.Add("--json");
+        // A sync that leaves conflicts exits 1 and still prints its document.
+        var run = await cli.RunAsync(arguments, null, cancellationToken).ConfigureAwait(false);
+        return Read(run, CliJson.Default.SyncDocument);
+    }
+
     /// <summary>Writes <paramref name="changes"/> and <paramref name="entries"/> to the profile file, which the CLI checks first.</summary>
     public async Task<ResolvedProfile> SaveProfileAsync(
         string file,

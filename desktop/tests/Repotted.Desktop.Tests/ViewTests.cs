@@ -443,6 +443,78 @@ public sealed class ViewTests : IDisposable
         }
     }
 
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task The_repository_form_explains_what_syncing_does(string theme)
+    {
+        folders.Write("base.yaml", "repository:\n  has_issues: true\n");
+        var file = Path.Combine(folders.Profiles, "base.yaml");
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{System.Text.Json.JsonSerializer.Serialize(file)}},"extends":null,"problem":null}]}""")
+            .On($"profile {file} --json", Documents.ResolvedBase(file)));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+
+        shell.Profiles.StartConnectCommand.Execute(null);
+        shell.Profiles.Connecting!.Repository = "TheLunchTrae/repotted-config";
+
+        var text = Texts(window);
+        Assert.Contains("Keep profiles on GitHub", text);
+        Assert.Contains($"Add the profiles from {folders.Profiles}", text);
+        Assert.Contains("Use this repository", text);
+        Save(window, $"config-repository-form-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task Synced_profiles_say_where_they_live_and_ask_about_a_conflict(string theme)
+    {
+        var copy = folders.Settings.ConfigFolder("TheLunchTrae/repotted-config", "");
+        Directory.CreateDirectory(copy);
+        File.WriteAllText(Path.Combine(copy, ".repotted-sync.json"), "{}");
+        var @base = Path.Combine(copy, "base.yaml");
+        var own = Path.Combine(copy, "orgs.yaml");
+        File.WriteAllText(@base, "repository:\n  has_issues: true\nmerge:\n  allow_rebase_merge: true\n");
+        File.WriteAllText(own, "extends: base.yaml\nrepository:\n  has_wiki: false\n");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "TheLunchTrae/repotted-config", ConfigPath = "" });
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On($"sync {copy} --json", """{"repository":"TheLunchTrae/repotted-config","path":"","branch":"main","commit":"abc","pulled":[],"pushed":[],"conflicts":["orgs.yaml"]}""", exitCode: 1)
+            .On(folders.List(copy), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base));
+        var window = await Show(theme, cli);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        await shell.Profiles.RefreshCommand.ExecuteAsync(null);
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+
+        var text = Texts(window);
+        Assert.Contains("GitHub repository:", text);
+        Assert.Contains("TheLunchTrae/repotted-config", text);
+        Assert.Contains("orgs.yaml changed here and on GitHub since the last sync. Keep which version?", text);
+        Assert.Contains("Keep mine", text);
+        Assert.Contains("Use GitHub's", text);
+        Assert.Contains("Sync now", text);
+        Assert.Contains("In this repository", text);
+        Assert.Contains("Everything else is in sync with main.", text);
+        Save(window, $"config-repository-conflict-{theme}");
+
+        // A ruleset that turns the commit away says what to change, under the list.
+        cli.On(
+            $"sync {copy} --json",
+            """{"error":{"kind":"error","message":"GitHub refused the commit to main in TheLunchTrae/repotted-config: Repository rule violations found. A ruleset or branch protection on main, such as one that requires pull requests, needs a bypass for you or the Repotted App."}}""",
+            exitCode: 1);
+        await shell.Profiles.RefreshCommand.ExecuteAsync(null);
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+
+        Assert.Contains(Texts(window), line => line.StartsWith("Not synced with GitHub. Saves stay on this computer until a sync works. GitHub refused the commit", StringComparison.Ordinal));
+        Save(window, $"config-repository-refused-{theme}");
+    }
+
     private static ListBoxItem Item(Window window, string name) =>
         window.GetVisualDescendants().OfType<ListBoxItem>()
             .Single(candidate => AutomationProperties.GetName(candidate) == name);

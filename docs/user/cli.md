@@ -108,6 +108,46 @@ any comment above it. It writes nothing when the result would not be a valid
 profile, and it refuses to edit a list that shares parts through YAML anchors
 and aliases.
 
+## Sync profiles with a GitHub repository
+
+A folder of profiles can live in a GitHub repository, the **config
+repository**, so it follows you between machines and keeps its history.
+`npx repotted sync <folder> --repository owner/name` brings a local folder in line
+with the repository's default branch; `--path` names a folder in the
+repository instead of its root. The folder records the repository, the branch
+and what both sides last agreed on in `.repotted-sync.json`, so later syncs
+need only the folder.
+
+- A file that changed on one side since the last sync takes that side's
+  version, deletes included.
+- Local changes go to the branch as one commit, which only fast-forwards it.
+  When another commit lands first, the sync reads the branch again and builds
+  on it. `--message` sets the commit message. A ruleset or branch protection
+  that requires pull requests on that branch refuses the commit unless you or
+  the Repotted App can bypass it, and the sync says so.
+- A file that changed on both sides is left as it is on each and reported as
+  a conflict, and `sync` exits 1, until `--prefer local` or `--prefer remote`
+  settles it; `--only file`, given once per file, limits `--prefer` to those
+  files. A file edited here while the sync runs is kept and reported the same
+  way.
+- A folder's first sync deletes nothing on either side, and treats a file that
+  exists on both sides with different content as a conflict. So does a sync
+  whose branch no longer holds the commit the folder last synced at, such as
+  after the repository was made again under the same name, emptied, force
+  pushed, or switched to a default branch without that commit. A renamed
+  default branch keeps its history, so the sync carries on from it.
+- Only `.yaml` and `.yml` files sync, in the folder and the folders under it.
+  Hidden files and folders, such as `.github`, links, and anything else stay
+  out of it on both sides. A sync never reads or writes through a link, so it
+  never reaches a file outside the folder: a pull into a linked folder stops
+  the sync with an error. Two names that differ only in case also stop it,
+  since macOS and Windows cannot keep both. Profiles hold no secrets, and a
+  config repository should hold none.
+- An empty repository starts with the folder's profiles.
+
+Syncing needs the Contents permission on the config repository, read to pull
+and write to push (see [Sign in](sign-in.md#give-the-app-your-repositories)).
+
 ## Use Repotted from an agent
 
 `repotted mcp` runs an MCP server that gives an AI agent three tools:
@@ -138,6 +178,6 @@ enter on GitHub. Once you have entered it, the agent's next call works.
 
 ## Output for scripts
 
-`--json` makes `capture`, `plan`, `apply`, `profile`, `profiles`, `repos`, and
-`status` print one JSON document instead of text. The
+`--json` makes `capture`, `plan`, `apply`, `profile`, `profiles`, `sync`,
+`repos`, and `status` print one JSON document instead of text. The
 [JSON output reference](json-output.md) describes each document.

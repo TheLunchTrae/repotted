@@ -42,6 +42,9 @@ The App asks for these repository permissions:
 - **Administration**, read and write: to read repository settings and
   rulesets, and to change them when you apply a plan.
 - **Actions**, read: to list deployment environments.
+- **Contents**, read and write: to keep profiles in a GitHub repository and
+  commit your changes to them. Repotted reads and writes only YAML profiles
+  there.
 - **Metadata**, read: required by GitHub for every App.
 
 Repotted can only do what your own GitHub account may do on a repository. To
@@ -56,8 +59,9 @@ Repotted takes the first sign-in it finds, in this order:
 3. The GitHub CLI's sign-in for github.com, from `gh auth login`.
 
 A fine-grained personal access token needs the **Administration** permission,
-read to capture and plan and write to apply, and **Actions** read to list
-environments. A classic token needs the `repo` scope.
+read to capture and plan and write to apply, **Actions** read to list
+environments, and **Contents** read and write to sync profiles with a GitHub
+repository. A classic token needs the `repo` scope.
 
 On Linux without a Secret Service, use a token or the GitHub CLI.
 

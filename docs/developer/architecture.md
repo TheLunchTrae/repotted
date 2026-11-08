@@ -178,6 +178,15 @@ leaves out the file it holds. A profile that extends another names that file
 as the folder lists it, so the reference still works when the folder is
 reached through a link.
 
+Profiles kept in a config repository live in a working copy under `config`
+in the app data folder, one per repository and folder in it, which the app
+edits like any profiles folder and keeps in line with `repotted sync`: once
+before the repository is remembered, on every refresh, and after every save.
+Saves and syncs run one at a time, so a sync never reads a file a save is
+writing. The sync itself is a three-way merge per file against the record it
+keeps in `.repotted-sync.json`, and it starts over as a first sync, deleting
+nothing, whenever the branch no longer holds the commit that record names.
+
 The app keeps its own settings in `settings.json` in the per-user app data
 folder and never writes beside itself, since an update replaces the app's own
 folder and it may not be writable.

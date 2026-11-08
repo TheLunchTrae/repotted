@@ -1,10 +1,20 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace Repotted.Desktop.Services;
 
-/// <summary>What the app remembers between runs.</summary>
-internal sealed record SettingsDocument(string? ProfilesFolder = null);
+/// <summary>
+/// What the app remembers between runs. With <paramref name="ConfigRepository"/>
+/// set, as <c>owner/name</c>, profiles live in that repository, in
+/// <paramref name="ConfigPath"/> or at its root, and the app keeps its working
+/// copy in the app data folder; otherwise they live in
+/// <paramref name="ProfilesFolder"/>.
+/// </summary>
+internal sealed record SettingsDocument(
+    string? ProfilesFolder = null,
+    string? ConfigRepository = null,
+    string? ConfigPath = null);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower, WriteIndented = true)]
 [JsonSerializable(typeof(SettingsDocument))]
@@ -16,7 +26,7 @@ internal sealed partial class SettingsJson : JsonSerializerContext;
 /// <c>%APPDATA%\Repotted</c> on Windows. Never beside the app, which an update
 /// replaces and which may not be writable.
 /// </summary>
-internal sealed class AppSettings(string folder)
+internal sealed partial class AppSettings(string folder)
 {
     private string File => Path.Combine(folder, "settings.json");
 
@@ -40,13 +50,48 @@ internal sealed class AppSettings(string folder)
         return Path.Combine(documents, "Repotted");
     }
 
-    /// <summary>The saved settings, or none when there are none yet or they cannot be read.</summary>
+    /// <summary>
+    /// Where the app keeps its working copy of a config repository's profiles,
+    /// one folder for each repository and folder in it. The CLI's sync record
+    /// in it remembers which.
+    /// </summary>
+    public string ConfigFolder(string repository, string path)
+    {
+        if (!IsRepositoryName(repository))
+        {
+            throw new ArgumentException($"Expected a repository as owner/name, not {repository}.", nameof(repository));
+        }
+        var parts = repository.ToLowerInvariant().Split('/');
+        // A folder in the repository could not be told from the root's own subfolders, so it gets a name of its own.
+        var where = path.Length == 0
+            ? "root"
+            : $"folder-{Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(path)))[..12]}";
+        return Path.Combine([folder, "config", .. parts, where]);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="repository"/> is an owner and a name as GitHub
+    /// allows them. Neither is only dots, so a working copy never leaves the
+    /// folder that holds them.
+    /// </summary>
+    public static bool IsRepositoryName(string repository) => RepositoryName().IsMatch(repository);
+
+    [GeneratedRegex(@"^(?!\.+/)[\w.-]+/(?!\.+$)[\w.-]+$")]
+    private static partial Regex RepositoryName();
+
+    /// <summary>
+    /// The saved settings, or none when there are none yet or they cannot be
+    /// read. A config repository that is not a repository name is left out.
+    /// </summary>
     public SettingsDocument Load()
     {
         try
         {
             using var stream = System.IO.File.OpenRead(File);
-            return JsonSerializer.Deserialize(stream, SettingsJson.Default.SettingsDocument) ?? new SettingsDocument();
+            var saved = JsonSerializer.Deserialize(stream, SettingsJson.Default.SettingsDocument) ?? new SettingsDocument();
+            return saved.ConfigRepository is { } repository && !IsRepositoryName(repository)
+                ? saved with { ConfigRepository = null, ConfigPath = null }
+                : saved;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
         {

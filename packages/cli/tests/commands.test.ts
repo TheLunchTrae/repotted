@@ -5,7 +5,8 @@ import path from 'node:path';
 
 import { parsePlan } from '@repotted/core';
 
-import { GitHubError } from '../../core/src/github.js';
+import { type GitHub, GitHubError } from '../../core/src/github.js';
+import { FakeGitRepository } from '../../core/tests/fake-git.js';
 import { FakeGitHub } from '../../core/tests/fake-github.js';
 
 type Method = Parameters<FakeGitHub['request']>[0];
@@ -45,7 +46,7 @@ class FailingGitHub extends FakeGitHub {
   }
 }
 
-async function cliWith(github: FakeGitHub, overrides: Partial<Io>, ...argv: string[]): Promise<Result> {
+async function cliWith(github: GitHub, overrides: Partial<Io>, ...argv: string[]): Promise<Result> {
   let out = '';
   let err = '';
   const io: Io = {
@@ -498,5 +499,36 @@ describe('profile commands', () => {
         },
       ],
     });
+  });
+});
+
+describe('sync', () => {
+  test('prints the sync as JSON and exits 1 while a file is in conflict', async () => {
+    const github = new FakeGitRepository();
+    github.write({ 'base.yaml': '# base\n' });
+    const folder = await mkdtemp(path.join(directory, 'sync-'));
+    await writeFile(path.join(folder, 'base.yaml'), '# mine\n');
+
+    const conflicted = await cliWith(github, {}, 'sync', folder, '--repository', 'lunch/config', '--json');
+    const settled = await cliWith(github, {}, 'sync', folder, '--prefer', 'local', '--only', 'base.yaml', '--json');
+
+    expect(conflicted).toMatchObject({ code: 1, err: '' });
+    expect(document(conflicted)).toMatchObject({
+      repository: 'lunch/config',
+      branch: 'main',
+      conflicts: ['base.yaml'],
+    });
+    expect(settled.code).toBe(0);
+    expect(document(settled)).toMatchObject({ pushed: ['base.yaml'], conflicts: [] });
+    expect(github.files()).toEqual({ 'base.yaml': '# mine\n' });
+  });
+
+  test('refuses a side other than local or remote, as misuse', async () => {
+    const result = await cliWith(new FakeGitRepository(), {}, 'sync', directory, '--prefer', 'mine', '--json');
+
+    expect(result.code).toBe(2);
+    expect(document(result)).toMatchObject({ error: { kind: 'usage' } });
+    const alone = await cliWith(new FakeGitRepository(), {}, 'sync', directory, '--only', 'a.yaml', '--json');
+    expect(alone.code).toBe(2);
   });
 });
