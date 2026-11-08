@@ -386,10 +386,11 @@ internal sealed partial class ProfileViewModel(
 
     public bool HasProblem => Problem is not null;
 
-    /// <summary>The file's text, or null when it cannot be read, such as once a sync removed it.</summary>
+    /// <summary>Each file's text, keyed by its path, or null for a file that cannot be read.</summary>
     private static Dictionary<string, string?> ReadFiles(IEnumerable<string> files) =>
         files.Distinct(StringComparer.Ordinal).ToDictionary(file => file, ReadFile, StringComparer.Ordinal);
 
+    /// <summary>The file's text, or null when it cannot be read, such as once a sync removed it.</summary>
     private static string? ReadFile(string file)
     {
         try
