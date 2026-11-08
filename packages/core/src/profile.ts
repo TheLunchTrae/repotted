@@ -543,11 +543,6 @@ function entryProblems(schema: z.ZodType, { draft: _draft, ...entry }: Readonly<
 }
 
 /**
- * What stops each draft from applying as it stands: a key the section does
- * not have, or a value or entry the profile would reject. A draft may be
- * unfinished, so these are warnings; finishing a draft makes them errors.
- */
-/**
  * A draft label that a label of the profile renames from: the rename applies,
  * since drafts never change what applies, so the draft's label is renamed
  * away, and finishing the draft would be refused.
@@ -566,6 +561,11 @@ function renamedDraftWarnings(applied: Profile, drafts: Drafts): string[] {
   });
 }
 
+/**
+ * What stops each draft from applying as it stands: a key the section does
+ * not have, or a value or entry the profile would reject. A draft may be
+ * unfinished, so these are warnings; finishing a draft makes them errors.
+ */
 function draftWarnings(drafts: Drafts): string[] {
   const warnings: string[] = [];
   for (const section of settingsSections) {

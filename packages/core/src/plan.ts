@@ -13,6 +13,7 @@ import {
   environment,
   identifyingRepositoryFields,
   label,
+  labelKey,
   mergeSettings,
   profile,
   type Profile,
@@ -133,7 +134,19 @@ export async function createPlan(
     add(planEnvironments(desired.environments, await readEnvironments(github, repo), repo));
   }
   if (desired.labels !== undefined) {
-    add(planLabels(desired.labels, await readLabels(github, repo), repo));
+    const labels = planLabels(desired.labels, await readLabels(github, repo), repo);
+    add(labels);
+    // A rename applies even when a draft names the old label, so say so beside the skipped draft.
+    for (const draft of skipped.filter((item) => item.section === 'labels')) {
+      const rename = labels.changes.find((change) =>
+        change.fields.some(
+          (field) => field.field === 'name' && labelKey(String(field.from)) === labelKey(draft.target),
+        ),
+      );
+      if (rename !== undefined) {
+        warnings.push(`Label "${rename.target}" renames "${draft.target}", which the profile skips as a draft`);
+      }
+    }
   }
 
   return { repository: `${repo.owner}/${repo.name}`, desired, changes, skipped, warnings };

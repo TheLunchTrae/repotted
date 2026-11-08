@@ -309,6 +309,7 @@ describe('labels in profile files', () => {
       expect.stringContaining('Draft label "triage": label "needs-triage" is renamed from it'),
     ]);
     expect(result.changes.map((change) => change.request.path)).toEqual(['/repos/lunch/app/labels/triage']);
+    expect(result.warnings).toEqual(['Label "needs-triage" renames "triage", which the profile skips as a draft']);
   });
 
   test('replace a base label named in any case across extends, as rulesets are replaced', async () => {
