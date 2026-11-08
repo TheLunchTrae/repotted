@@ -133,7 +133,7 @@ export function planActions(desired: ActionsSettings, live: ActionsSettings, rep
   const allowed = desired.allowed_actions ?? live.allowed_actions;
   for (const key of ['allowed_actions', 'sha_pinning_required'] as const) {
     if (!enabled && desired[key] !== undefined) {
-      warnings.push(`Skipped ${key}: it only applies while Actions is enabled`);
+      warnings.push(`Skipped actions.${key}: it only applies while Actions is enabled`);
     }
   }
   const shaPinning = desired.sha_pinning_required ?? live.sha_pinning_required;
@@ -160,7 +160,7 @@ export function planActions(desired: ActionsSettings, live: ActionsSettings, rep
   if (desired.selected_actions !== undefined) {
     if (!enabled || allowed !== 'selected') {
       warnings.push(
-        'Skipped selected_actions: it only applies while Actions is enabled with allowed_actions: selected',
+        'Skipped actions.selected_actions: it only applies while Actions is enabled with allowed_actions: selected',
       );
     } else {
       const fields = fieldChanges(desired.selected_actions, live.selected_actions);

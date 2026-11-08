@@ -427,6 +427,18 @@ drafts:
     expect((await createPlan(github, repo, desired)).changes).toEqual([]);
   });
 
+  test('skips Actions settings that apply only while Actions allows them, naming each by its section', async () => {
+    const plan = await createPlan(new FakeGitHub(), repo, {
+      actions: { enabled: false, allowed_actions: 'selected', selected_actions: { github_owned_allowed: true } },
+    });
+
+    expect(plan.changes.map((change) => change.target)).toEqual(['Actions policy']);
+    expect(plan.warnings).toEqual([
+      'Skipped actions.allowed_actions: it only applies while Actions is enabled',
+      'Skipped actions.selected_actions: it only applies while Actions is enabled with allowed_actions: selected',
+    ]);
+  });
+
   test('keeps the environment settings a profile leaves out', async () => {
     const github = new FakeGitHub({
       environments: [
