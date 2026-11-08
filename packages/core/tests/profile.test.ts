@@ -743,6 +743,9 @@ drafts:
     const error = await rejection(resolveProfile(file));
     expect(error).toBeInstanceOf(ProfileError);
     expect(String(error)).toContain('A draft setting name cannot contain a dot');
+
+    const inner = await write('drafts-dot-inner.yaml', 'drafts:\n  actions: { selected_actions: { "a.b": true } }\n');
+    expect(String(await rejection(resolveProfile(inner)))).toContain('A draft setting name cannot contain a dot');
   });
 
   test('warn when a Pages draft turns the site off beside other keys', async () => {

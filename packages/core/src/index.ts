@@ -6,9 +6,9 @@ export {
   captureProfile,
   createPlan,
   describeFailure,
+  describeSkipped,
   formatPlan,
   parsePlan,
-  describeSkipped,
   skippedDrafts,
   StalePlanError,
 } from './plan.js';
