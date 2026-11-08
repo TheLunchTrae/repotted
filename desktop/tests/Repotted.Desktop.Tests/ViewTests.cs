@@ -12,6 +12,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Repotted.Desktop.Services;
+using Repotted.Desktop.Theme;
 using Repotted.Desktop.ViewModels;
 using Repotted.Desktop.Views;
 
@@ -43,7 +44,7 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("test-repo", text);
         Assert.Contains("TheLunchTrae/github-setup", text);
         Assert.Contains("No profile", text);
-        Assert.Contains("Add repositories", text);
+        Assert.Contains(Label("Add repositories"), text);
         Save(window, $"repositories-{theme}");
     }
 
@@ -126,8 +127,8 @@ public sealed class ViewTests : IDisposable
 
         var text = Texts(window);
         Assert.Contains("Asking GitHub for a code", text);
-        Assert.Contains("Cancel", text);
-        Assert.DoesNotContain("Sign in with GitHub", text);
+        Assert.Contains(Label("Cancel"), text);
+        Assert.DoesNotContain(Label("Sign in with GitHub"), text);
         Save(window, $"sign-in-starting-{theme}");
         signIn.SignInCancelCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
@@ -144,7 +145,7 @@ public sealed class ViewTests : IDisposable
 
         var text = Texts(window);
         Assert.Contains(text, line => line.EndsWith("then reopen Repotted.", StringComparison.Ordinal));
-        Assert.DoesNotContain("Sign in with GitHub", text);
+        Assert.DoesNotContain(Label("Sign in with GitHub"), text);
         Save(window, $"sign-in-variable-{theme}");
     }
 
@@ -198,7 +199,7 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("From base", text);
         Assert.Contains("Not managed", text);
         Assert.Contains("1 unsaved change", text);
-        Assert.Contains("Save profile", text);
+        Assert.Contains(Label("Save profile"), text);
         Save(window, $"profile-{theme}");
 
         // Screen readers hear which option is chosen, and where the value comes from.
@@ -234,8 +235,8 @@ public sealed class ViewTests : IDisposable
 
         var text = Texts(window);
         Assert.Contains(editor.OutOfDateMessage, text);
-        Assert.Contains("Keep mine", text);
-        Assert.Contains("Reload", text);
+        Assert.Contains(Label("Keep mine"), text);
+        Assert.Contains(Label("Reload"), text);
         Save(window, $"profile-out-of-date-{theme}");
     }
 
@@ -279,7 +280,7 @@ public sealed class ViewTests : IDisposable
         editor.SelectedTab = editor.Tabs[3];
 
         var text = Texts(window);
-        Assert.Contains("New ruleset", text);
+        Assert.Contains(Label("New ruleset"), text);
         var rows = window.GetVisualDescendants().OfType<Button>()
             .Where(button => button.Classes.Contains("entry"))
             .Select(button => AutomationProperties.GetName(button))
@@ -305,7 +306,7 @@ public sealed class ViewTests : IDisposable
         Assert.IsType<ListBoxItem>(window.FocusManager?.GetFocusedElement());
         main.Enforcement.Options[1].ChooseCommand.Execute(null);
         text = Texts(window);
-        Assert.Contains("Back to rulesets", text);
+        Assert.Contains(Label("Back to rulesets"), text);
         Assert.Contains("Require a pull request before merging", text);
         Assert.Contains("Changed, not saved yet", text);
         Assert.Contains("Not set here, so the repository keeps its own, or Branches when it is new", text);
@@ -328,7 +329,7 @@ public sealed class ViewTests : IDisposable
         editor.SelectedTab = editor.Tabs[4];
         editor.Tabs[4].Entries[0].OpenCommand.Execute(null);
         text = Texts(window);
-        Assert.Contains("Back to environments", text);
+        Assert.Contains(Label("Back to environments"), text);
         Assert.Contains("Which ones", text);
         Assert.Equal(
             "main",
@@ -349,7 +350,7 @@ public sealed class ViewTests : IDisposable
 
         var text = Texts(window);
         Assert.Contains($"No profiles in {folders.Profiles} yet.", text);
-        Assert.Contains("Choose a folder", text);
+        Assert.Contains(Label("Choose a folder"), text);
         Save(window, $"profiles-empty-{theme}");
     }
 
@@ -381,7 +382,7 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("orgs compared with TheLunchTrae/repotted", text);
         Assert.Contains("rules[pull_request].parameters.allowed_merge_methods", text);
         Assert.Contains("merge, squash, rebase", text);
-        Assert.Contains("Back to repositories", text);
+        Assert.Contains(Label("Back to repositories"), text);
         Assert.DoesNotContain("Issues", text);
         Save(window, $"compare-{theme}");
 
@@ -432,10 +433,10 @@ public sealed class ViewTests : IDisposable
         Dispatcher.UIThread.RunJobs();
 
         var text = Texts(window);
-        Assert.Contains("Profiles / New profile", text);
+        Assert.Contains($"Profiles / {Label("New profile")}", text);
         Assert.Contains("libraries.yaml", text);
-        Assert.Contains("Capture", text);
-        Assert.DoesNotContain("Save profile", text);
+        Assert.Contains(Label("Capture"), text);
+        Assert.DoesNotContain(Label("Save profile"), text);
         var extends = window.GetVisualDescendants().OfType<RadioButton>()
             .Single(radio => radio.IsChecked != true && ControlAutomationPeer.CreatePeerForElement(radio).GetName() == "Another profile");
         Assert.Equal(
@@ -492,9 +493,9 @@ public sealed class ViewTests : IDisposable
         shell.Profiles.Connecting!.Repository = "TheLunchTrae/repotted-config";
 
         var text = Texts(window);
-        Assert.Contains("Keep profiles on GitHub", text);
+        Assert.Contains(Label("Keep profiles on GitHub"), text);
         Assert.Contains($"Add the profiles from {folders.Profiles}", text);
-        Assert.Contains("Use this repository", text);
+        Assert.Contains(Label("Use this repository"), text);
         Save(window, $"config-repository-form-{theme}");
     }
 
@@ -527,9 +528,9 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("GitHub repository:", text);
         Assert.Contains("TheLunchTrae/repotted-config", text);
         Assert.Contains("orgs.yaml changed here and on GitHub since the last sync. Keep which version?", text);
-        Assert.Contains("Keep mine", text);
-        Assert.Contains("Use GitHub's", text);
-        Assert.Contains("Sync now", text);
+        Assert.Contains(Label("Keep mine"), text);
+        Assert.Contains(Label("Use GitHub's"), text);
+        Assert.Contains(Label("Sync now"), text);
         Assert.Contains("In this repository", text);
         Assert.Contains("Everything else is in sync with main.", text);
         Save(window, $"config-repository-conflict-{theme}");
@@ -595,6 +596,9 @@ public sealed class ViewTests : IDisposable
         Dispatcher.UIThread.RunJobs();
         return window;
     }
+
+    /// <summary>A control's label as this platform shows it: Title Case on macOS.</summary>
+    private static string Label(string text) => ControlLabel.Native.For(text);
 
     /// <summary>Every piece of text the window shows, runs included.</summary>
     private static HashSet<string> Texts(Window window)

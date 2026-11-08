@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:theme="using:Repotted.Desktop.Theme"
              xmlns:vm="using:Repotted.Desktop.ViewModels"
              xmlns:views="using:Repotted.Desktop.Views"
              x:Class="Repotted.Desktop.Views.SignInView"
@@ -12,7 +13,7 @@
       </StackPanel>
 
       <StackPanel Spacing="6">
-        <TextBlock Classes="h1" Text="Sign in to GitHub" />
+        <TextBlock Classes="h1" Text="{theme:Label 'Sign in to GitHub'}" />
         <TextBlock Classes="muted" TextWrapping="Wrap"
                    Text="Repotted reads and changes repository settings through the Repotted GitHub App. Signing in keeps a token in your system keychain." />
       </StackPanel>

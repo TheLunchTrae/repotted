@@ -3,6 +3,10 @@
 The Repotted desktop app lets you write profiles and compare them with your
 repositories without the command line. It runs on macOS and Windows.
 
+Each platform writes labels its own way. On macOS, buttons, tabs, and page
+titles capitalize each main word, as Mac apps do, so **Keep mine** reads
+Keep Mine there. This guide quotes labels as Windows shows them.
+
 ## Install
 
 Download the app from the

@@ -1,12 +1,13 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:theme="using:Repotted.Desktop.Theme"
              xmlns:vm="using:Repotted.Desktop.ViewModels"
              x:Class="Repotted.Desktop.Views.NewProfileView"
              x:DataType="vm:NewProfileViewModel">
   <ScrollViewer>
     <StackPanel Margin="32,24" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
       <StackPanel Spacing="6">
-        <TextBlock Classes="h1" Text="New profile" />
+        <TextBlock Classes="h1" Text="{theme:Label 'New profile'}" />
         <TextBlock Classes="muted" TextWrapping="Wrap"
                    Text="A profile manages only what it names. Once it is made, edit it here, or compare it with a repository to see what it would change." />
       </StackPanel>

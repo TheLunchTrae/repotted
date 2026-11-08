@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Repotted.Desktop.Services;
+using Repotted.Desktop.Theme;
 using Repotted.Desktop.ViewModels;
 
 namespace Repotted.Desktop.Tests;
@@ -1270,7 +1271,7 @@ public sealed class ViewModelTests : IDisposable
         shell.Repositories.CaptureCommand.Execute(null);
 
         Assert.True(shell.ShowingProfiles);
-        Assert.Equal("Profiles / New profile", shell.Crumb);
+        Assert.Equal($"Profiles / {ControlLabel.Native.For("New profile")}", shell.Crumb);
         var form = shell.Profiles.Creating!;
         Assert.True(form.Captures);
         Assert.Equal(("repotted", "TheLunchTrae/repotted"), (form.Name, form.Repository));
