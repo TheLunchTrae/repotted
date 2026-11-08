@@ -69,6 +69,7 @@ rulesets: [{ name: Later, draft: true, rules: [{ type: deletion }] }]
 environments: [{ name: npm, draft: true, wait_timer: -1 }]
 drafts:
   repository: { has_wiki: false }
+  actions: { default_workflow_permissions: read }
   security: { vulnerability_alerts: true }
   pages: { build_type: workflow }
 `,
@@ -83,13 +84,14 @@ drafts:
     expect(plan.skipped).toEqual([
       { section: 'repository', target: 'has_wiki' },
       { section: 'security', target: 'vulnerability_alerts' },
+      { section: 'actions', target: 'default_workflow_permissions' },
       { section: 'pages', target: 'build_type' },
       { section: 'autolinks', target: 'TICKET-' },
       { section: 'rulesets', target: 'Later' },
       { section: 'environments', target: 'npm' },
     ]);
     expect(formatPlan(plan)).toContain(
-      '  · skip draft repository.has_wiki\n  · skip draft security.vulnerability_alerts\n  · skip draft pages.build_type\n  · skip draft autolink TICKET-\n  · skip draft ruleset "Later"\n',
+      '  · skip draft repository.has_wiki\n  · skip draft security.vulnerability_alerts\n  · skip draft actions.default_workflow_permissions\n  · skip draft pages.build_type\n  · skip draft autolink TICKET-\n  · skip draft ruleset "Later"\n',
     );
     expect(parsePlan(JSON.parse(JSON.stringify(plan))).skipped).toEqual(plan.skipped);
     // A plan saved before drafts has no skipped list, and reads as skipping none.
