@@ -27,10 +27,14 @@ reads and plans them all the same way:
 - A `field` is one field of an endpoint, kept in the profile under its name.
   A field GitHub leaves out of its answer is unset, so a plan sets it.
 - An `object` is several fields of an endpoint, kept together in the profile
-  under the endpoint's key, such as `code_scanning_default_setup`. A write
-  sends the fields the profile names, plus the `carries` fields from the live
-  value, for endpoints that replace what they're sent. A carried `null`
-  stays out. Three optional hooks keep a plan in line with what GitHub keeps:
+  under the endpoint's key, such as `code_scanning_default_setup`. Its
+  `schema` is its object in `schema.ts`, which names its fields. GitHub sends
+  `null` for a field it leaves unset, so a `null` reads as unset unless the
+  schema takes `null` there. A write sends the fields the profile names, plus
+  the `carries` fields from the live value: every field for a `PUT`, which
+  replaces what it's sent, and none for a `PATCH`, unless the endpoint lists
+  its own. A carried `null` stays out. Three optional hooks keep a plan in
+  line with what GitHub keeps:
   `fromGitHub` puts what GitHub reports in the form a write takes, `adjust`
   fills in fields GitHub ties to the ones a profile names and leaves out,
   with a warning, fields GitHub drops with the option chosen, and

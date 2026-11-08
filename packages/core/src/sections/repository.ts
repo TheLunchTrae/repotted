@@ -8,6 +8,7 @@ import {
   type MergeSettings,
   mergeSettingsProblems,
   type Profile,
+  repositoryEndpointFields,
   repositoryFields,
   type RepositorySettings,
 } from '../schema.js';
@@ -29,7 +30,7 @@ export const repositoryEndpoints: readonly Endpoint[] = [
     path: '/interaction-limits/pulls/creation-cap',
     target: 'pull request creation cap',
     method: 'PATCH',
-    fields: ['enabled', 'max_open_pull_requests', 'include_drafts'],
+    schema: repositoryEndpointFields.pull_request_creation_cap,
     carries: ['enabled'],
   },
 ];
@@ -150,7 +151,16 @@ export function planRepository(
   repo: RepoRef,
 ): SectionPlan {
   if (desired.merge !== undefined) {
-    const problems = mergeSettingsProblems({ ...live.merge, ...desired.merge });
+    // A commit message pair the profile leaves out is never sent, so the
+    // live pair is checked only beside a profile that names half of it.
+    const named = desired.merge;
+    const unsent = commitPairs
+      .filter(({ title, message }) => named[title] === undefined && named[message] === undefined)
+      .flatMap(({ title, message }) => [title, message]);
+    const merged = { ...live.merge, ...named };
+    const problems = mergeSettingsProblems(
+      Object.fromEntries(Object.entries(merged).filter(([key]) => !unsent.some((pairKey) => pairKey === key))),
+    );
     if (problems.length > 0) {
       throw new MergeSettingsError(problems);
     }

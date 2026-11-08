@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import type { Change, Section, SectionPlan } from './change.js';
 import { type GitHub, GitHubError, type Method, repoPath, type RepoRef } from './github.js';
 import { fieldChanges } from './match.js';
@@ -39,8 +41,14 @@ export type Endpoint =
 interface ObjectEndpoint {
   readonly kind: 'object';
   readonly method: 'PUT' | 'PATCH';
-  readonly fields: readonly string[];
-  readonly carries: readonly string[];
+  /** The endpoint's object in the profile schema, which names its fields. */
+  readonly schema: z.ZodObject;
+  /**
+   * The fields a write takes from the live value when the profile leaves
+   * them out: by default every field for a PUT, which replaces what it is
+   * sent, and none for a PATCH.
+   */
+  readonly carries?: readonly string[];
   /** Fields that describe one repository, which a capture leaves out. */
   readonly identifying?: readonly string[];
   /** Puts what GitHub reports in the form a profile and a write use. */
@@ -147,8 +155,15 @@ export async function readEndpoint(github: GitHub, repo: RepoRef, endpoint: Endp
     return { available: true, value: data[endpoint.key] };
   }
   const reported = endpoint.fromGitHub?.(data) ?? data;
+  // GitHub sends null for a field it leaves unset, which reads as unset
+  // unless the profile can hold null there.
   const value = Object.fromEntries(
-    endpoint.fields.filter((field) => reported[field] !== undefined).map((field) => [field, reported[field]]),
+    Object.entries(endpoint.schema.shape)
+      .filter(
+        ([field, schema]: [string, z.ZodType]) =>
+          reported[field] !== undefined && (reported[field] !== null || schema.safeParse(null).success),
+      )
+      .map(([field]) => [field, reported[field]]),
   );
   return { available: true, value };
 }
@@ -213,8 +228,9 @@ export function planEndpoint(
     const fields = fieldChanges(wanted, current);
     if (fields.length > 0) {
       // GitHub takes no null for a field it leaves unset, so one stays out.
+      const carries = endpoint.carries ?? (endpoint.method === 'PUT' ? Object.keys(endpoint.schema.shape) : []);
       const carried = Object.fromEntries(
-        endpoint.carries
+        carries
           .filter((field) => current[field] !== undefined && current[field] !== null)
           .map((field) => [field, current[field]]),
       );
@@ -231,6 +247,51 @@ export function planEndpoint(
   return { changes, warnings };
 }
 
+/**
+ * Why a profile cannot hold a value GitHub reports, naming each part that
+ * fails and where it is, or undefined when it can.
+ */
+export function unloadable(schema: z.ZodType, value: unknown): string | undefined {
+  const result = schema.safeParse(value);
+  if (result.success) {
+    return undefined;
+  }
+  const problems = result.error.issues.map((issue) => {
+    const reported: unknown = issue.path.reduce<unknown>(
+      (inner, part) => (typeof inner === 'object' && inner !== null ? Reflect.get(inner, part) : undefined),
+      value,
+    );
+    const at = z.core.toDotPath(issue.path);
+    return `${JSON.stringify(reported)}${at === '' ? '' : ` at ${at}`} (${issue.message})`;
+  });
+  return `a profile cannot hold ${problems.join('; ')}`;
+}
+
+/**
+ * The captured settings that a profile can hold. GitHub may report a value
+ * that no profile takes, such as an option newer than the schema, so a
+ * setting that fails its schema is left out with a warning, and the capture
+ * still loads.
+ */
+export function loadable(
+  name: string,
+  schema: z.ZodObject,
+  settings: Readonly<Record<string, unknown>>,
+  warnings: string[],
+): Record<string, unknown> {
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(settings)) {
+    const field: unknown = schema.shape[key];
+    const problem = unloadable(field instanceof z.ZodType ? field : z.never(), value);
+    if (problem === undefined) {
+      kept[key] = value;
+    } else {
+      warnings.push(`Skipped ${name}.${key}: ${problem}`);
+    }
+  }
+  return kept;
+}
+
 /** A captured section: the settings it could read, and a warning for each it could not. */
 export function captureEndpoints(
   section: Section,
@@ -245,10 +306,18 @@ export function captureEndpoints(
       continue;
     }
     if (value.available) {
+      // An object's fields are checked one by one, so one GitHub reports in a
+      // form a profile cannot hold leaves out only that field.
       const identifying = endpoint.kind === 'object' ? (endpoint.identifying ?? []) : [];
-      const kept = isRecord(value.value)
-        ? Object.fromEntries(Object.entries(value.value).filter(([field]) => !identifying.includes(field)))
-        : value.value;
+      const kept =
+        endpoint.kind === 'object' && isRecord(value.value)
+          ? loadable(
+              `${section}.${endpoint.key}`,
+              endpoint.schema,
+              Object.fromEntries(Object.entries(value.value).filter(([field]) => !identifying.includes(field))),
+              warnings,
+            )
+          : value.value;
       // A setting GitHub reports as unset has nothing to capture.
       if (kept !== undefined && !(isRecord(kept) && Object.keys(kept).length === 0)) {
         settings[endpoint.key] = kept;

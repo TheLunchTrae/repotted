@@ -4,7 +4,7 @@ import type { Change, SectionPlan } from '../change.js';
 import type { Endpoint } from '../endpoints.js';
 import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
-import type { ActionsSettings } from '../schema.js';
+import { actionsEndpointFields, type ActionsSettings } from '../schema.js';
 
 /** Actions settings at endpoints of their own, which apply after the policy. */
 export const actionsEndpoints: readonly Endpoint[] = [
@@ -28,18 +28,7 @@ export const actionsEndpoints: readonly Endpoint[] = [
     path: '/actions/permissions/fork-pr-workflows-private-repos',
     target: 'fork pull request workflows in private repositories',
     method: 'PUT',
-    fields: [
-      'run_workflows_from_fork_pull_requests',
-      'send_write_tokens_to_workflows',
-      'send_secrets_and_variables',
-      'require_approval_for_fork_pr_workflows',
-    ],
-    carries: [
-      'run_workflows_from_fork_pull_requests',
-      'send_write_tokens_to_workflows',
-      'send_secrets_and_variables',
-      'require_approval_for_fork_pr_workflows',
-    ],
+    schema: actionsEndpointFields.fork_pr_workflows_private_repos,
   },
   {
     kind: 'object',
@@ -47,8 +36,7 @@ export const actionsEndpoints: readonly Endpoint[] = [
     path: '/actions/permissions/artifact-and-log-retention',
     target: 'artifact and log retention',
     method: 'PUT',
-    fields: ['days'],
-    carries: ['days'],
+    schema: actionsEndpointFields.artifact_and_log_retention,
   },
   {
     kind: 'field',
@@ -70,8 +58,7 @@ export const actionsEndpoints: readonly Endpoint[] = [
     path: '/actions/oidc/customization/sub',
     target: 'OIDC subject claim',
     method: 'PUT',
-    fields: ['use_default', 'include_claim_keys', 'use_immutable_subject'],
-    carries: ['use_default', 'include_claim_keys', 'use_immutable_subject'],
+    schema: actionsEndpointFields.oidc_customization_sub,
     // GitHub uses the claim keys only in place of the default subject.
     adjust: (desired) => {
       if (desired['include_claim_keys'] === undefined) {

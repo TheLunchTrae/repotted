@@ -46,8 +46,11 @@ npx repotted capture octo-org/app --output app.yaml
 `capture` reads every section of a repository, from its settings and merge
 methods to its rulesets and environments, and writes them as a profile. It
 leaves out settings that name the repository, such as its description and
-topics, so the profile suits other repositories too. Without `--output`,
-it prints the profile. Capturing only reads from GitHub.
+topics, so the profile suits other repositories too. When GitHub reports a
+value that a profile can't hold, such as an option newer than Repotted, the
+capture leaves that value out and warns about it, so the profile always
+loads. Without `--output`, it prints the profile. Capturing only reads from
+GitHub.
 
 Edit the profile so it names only what you want Repotted to manage, then use
 it for any number of repositories. [Profiles](profiles.md) describes what a

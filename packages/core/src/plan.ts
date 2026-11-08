@@ -3,11 +3,23 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 
 import { type Change, type Section, sections } from './change.js';
-import { captureEndpoints, planEndpoint, readEndpoints } from './endpoints.js';
+import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadable } from './endpoints.js';
 import { type GitHub, GitHubError, parseRepo, repoPattern, type RepoRef } from './github.js';
 import { type Lock, requiredPermission } from './permissions.js';
 import type { Drafts } from './profile.js';
-import { identifyingRepositoryFields, profile, type Profile } from './schema.js';
+import {
+  actionsSettings,
+  commitPairs,
+  environment,
+  identifyingRepositoryFields,
+  mergeSettings,
+  profile,
+  type Profile,
+  repositorySettings,
+  ruleset,
+  securityAndAnalysis,
+  securitySettings,
+} from './schema.js';
 import { actionsEndpoints, planActions, readActions } from './sections/actions.js';
 import { describeAutolink, planAutolinks, readAutolinks } from './sections/autolinks.js';
 import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';
@@ -123,6 +135,30 @@ export async function createPlan(
 }
 
 /**
+ * The captured rulesets or environments that a profile can hold. One that
+ * fails its schema is left out whole, with a warning: a ruleset without one
+ * of its rules would have that rule removed on apply, while a profile leaves
+ * a ruleset it does not name alone.
+ */
+function loadableEntries<Entry extends { readonly name: string }>(
+  kind: string,
+  schema: z.ZodType,
+  entries: readonly Entry[],
+  warnings: string[],
+): Entry[] {
+  const kept: Entry[] = [];
+  for (const entry of entries) {
+    const problem = unloadable(schema, entry);
+    if (problem === undefined) {
+      kept.push(entry);
+    } else {
+      warnings.push(`Skipped ${kind} "${entry.name}": ${problem}`);
+    }
+  }
+  return kept;
+}
+
+/**
  * Reads every section into a profile that describes the repository as it
  * is. Settings that name the repository, such as its description, stay out,
  * so the profile can describe other repositories too.
@@ -132,11 +168,29 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
   const live = await readRepository(github, repo);
   const repositoryEndpointSettings = captureEndpoints('repository', repositoryEndpoints, live.endpoints);
   warnings.push(...repositoryEndpointSettings.warnings);
-  const repository = Object.fromEntries(
-    Object.entries({ ...live.repository, ...repositoryEndpointSettings.settings }).filter(
-      ([key]) => !identifyingRepositoryFields.has(key),
+  const repository = loadable(
+    'repository',
+    repositorySettings,
+    Object.fromEntries(
+      Object.entries({ ...live.repository, ...repositoryEndpointSettings.settings }).filter(
+        ([key]) => !identifyingRepositoryFields.has(key),
+      ),
     ),
+    warnings,
   );
+  const loadableMerge = loadable('merge', mergeSettings, live.merge, warnings);
+  // GitHub takes a commit message setting only with its title setting, so
+  // when one of a pair is left out, the other goes too.
+  const merge: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(loadableMerge)) {
+    const pair = commitPairs.find(({ title, message }) => key === title || key === message);
+    const other = pair === undefined ? undefined : key === pair.title ? pair.message : pair.title;
+    if (other !== undefined && other in live.merge && !(other in loadableMerge)) {
+      warnings.push(`Skipped merge.${key}: GitHub takes it only with ${other}, which is left out`);
+    } else {
+      merge[key] = value;
+    }
+  }
 
   const securityEndpointSettings = captureEndpoints(
     'security',
@@ -144,11 +198,20 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     await readEndpoints(github, repo, securityEndpoints),
   );
   warnings.push(...securityEndpointSettings.warnings);
-  const securityAndAnalysis = liveSecurityAndAnalysis(live.securityAndAnalysis);
-  const security = {
-    ...(securityAndAnalysis === undefined ? {} : { security_and_analysis: securityAndAnalysis }),
-    ...securityEndpointSettings.settings,
-  };
+  const reported = liveSecurityAndAnalysis(live.securityAndAnalysis);
+  const securityAndAnalysisSettings =
+    reported === undefined ? {} : loadable('security.security_and_analysis', securityAndAnalysis, reported, warnings);
+  const security = loadable(
+    'security',
+    securitySettings,
+    {
+      ...(Object.keys(securityAndAnalysisSettings).length === 0
+        ? {}
+        : { security_and_analysis: securityAndAnalysisSettings }),
+      ...securityEndpointSettings.settings,
+    },
+    warnings,
+  );
 
   const actionsEndpointSettings = captureEndpoints(
     'actions',
@@ -156,7 +219,12 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     await readEndpoints(github, repo, actionsEndpoints),
   );
   warnings.push(...actionsEndpointSettings.warnings);
-  const actions = { ...(await readActions(github, repo)), ...actionsEndpointSettings.settings };
+  const actions = loadable(
+    'actions',
+    actionsSettings,
+    { ...(await readActions(github, repo)), ...actionsEndpointSettings.settings },
+    warnings,
+  );
 
   const properties = await readCustomProperties(github, repo);
   const pages = await readPages(github, repo);
@@ -179,10 +247,21 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     warnings.push(`Skipped environments: ${environments.reason}`);
   }
   const customProperties = properties.available ? captureCustomProperties(properties.values) : {};
+  const capturedRulesets = rulesets.available
+    ? loadableEntries(
+        'ruleset',
+        ruleset,
+        rulesets.rulesets.map((entry) => entry.ruleset),
+        warnings,
+      )
+    : undefined;
+  const capturedEnvironments = environments.available
+    ? loadableEntries('environment', environment, environments.environments.map(describeEnvironment), warnings)
+    : undefined;
   return {
     profile: {
       repository,
-      merge: live.merge,
+      merge,
       actions,
       ...(Object.keys(security).length > 0 ? { security } : {}),
       ...(Object.keys(customProperties).length > 0 ? { custom_properties: customProperties } : {}),
@@ -190,8 +269,8 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
       ...(autolinks.available && autolinks.autolinks.length > 0
         ? { autolinks: autolinks.autolinks.map(describeAutolink) }
         : {}),
-      ...(rulesets.available ? { rulesets: rulesets.rulesets.map((entry) => entry.ruleset) } : {}),
-      ...(environments.available ? { environments: environments.environments.map(describeEnvironment) } : {}),
+      ...(capturedRulesets === undefined ? {} : { rulesets: capturedRulesets }),
+      ...(capturedEnvironments === undefined ? {} : { environments: capturedEnvironments }),
     },
     warnings,
   };

@@ -209,7 +209,8 @@ repository's settings:
 
 - At least one merge method stays on.
 - Each commit title and message pair is one that the repository settings page
-  offers.
+  offers. When planning, a pair is checked only when the profile names its
+  title or its message, since Repotted sends neither otherwise.
 
 A profile that breaks either rule stops at planning, before anything is
 written.
