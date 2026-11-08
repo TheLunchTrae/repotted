@@ -67,6 +67,63 @@ internal sealed record PlanDocument(
     IReadOnlyList<PlanChangeDocument> Changes,
     IReadOnlyList<string> Warnings);
 
+/// <summary>
+/// What a staged apply holds, from <c>repotted stage --json</c>: the repository
+/// it applies to, the profile it starts from, or null when it starts from the
+/// repository as it is, and what it leaves out. <paramref name="Chain"/>,
+/// <paramref name="Profile"/> and <paramref name="Sources"/> are as in a
+/// resolved profile, with the staged file first.
+/// </summary>
+internal sealed record StagedApplyDocument(
+    string File,
+    string Repository,
+    string? Base,
+    IReadOnlyList<string> Exclude,
+    IReadOnlyList<string> Chain,
+    JsonElement Profile,
+    ProfileSourcesDocument Sources);
+
+/// <summary>The staged apply a plan was made from, as <c>repotted plan --staged --json</c> names it.</summary>
+internal sealed record StagedSummaryDocument(string File, string Repository, string? Base, IReadOnlyList<string> Exclude);
+
+/// <summary>
+/// What leaves one change of a staged plan out, or one field of it:
+/// <paramref name="Key"/> is what <c>stage --exclude</c> takes. An
+/// <paramref name="Edited"/> value is a one-off edit, which is undone rather
+/// than excluded.
+/// </summary>
+internal sealed record PlanExclusionDocument(int Change, string? Field, string Key, bool Edited);
+
+/// <summary>What <c>repotted plan --staged --json</c> prints: the plan, the staged apply it was made from, and what leaves out each change.</summary>
+internal sealed record StagedPlanDocument(
+    string Repository,
+    JsonElement Desired,
+    IReadOnlyList<PlanChangeDocument> Changes,
+    IReadOnlyList<string> Warnings,
+    StagedSummaryDocument Staged,
+    IReadOnlyList<PlanExclusionDocument> Exclusions)
+{
+    /// <summary>The plan alone, as a compare shows it.</summary>
+    public PlanDocument Plan => new(Repository, Desired, Changes, Warnings);
+}
+
+/// <summary>What <c>repotted apply --json</c> prints once every change is written.</summary>
+internal sealed record ApplyDocument(string Repository, IReadOnlyList<PlanChangeDocument> Applied);
+
+/// <summary>
+/// The <c>error</c> member of a failed apply: <c>stale_plan</c> when the
+/// repository changed since the plan, which writes nothing, and
+/// <c>apply_failed</c> when a write failed after <paramref name="Applied"/>.
+/// </summary>
+internal sealed record ApplyErrorDetail(
+    string Kind,
+    string Message,
+    IReadOnlyList<PlanChangeDocument>? Applied = null,
+    PlanChangeDocument? Failed = null);
+
+/// <summary>A failed apply.</summary>
+internal sealed record ApplyFailureDocument(ApplyErrorDetail? Error = null);
+
 /// <summary>What <c>repotted capture --json</c> prints: the repository's setup as a profile, and what it could not read.</summary>
 internal sealed record CaptureDocument(string Repository, JsonElement Profile, IReadOnlyList<string> Warnings);
 
@@ -113,6 +170,10 @@ internal sealed record LoginEvent(
 [JsonSerializable(typeof(ResolvedProfileDocument))]
 [JsonSerializable(typeof(PlanDocument))]
 [JsonSerializable(typeof(CaptureDocument))]
+[JsonSerializable(typeof(StagedApplyDocument))]
+[JsonSerializable(typeof(StagedPlanDocument))]
+[JsonSerializable(typeof(ApplyDocument))]
+[JsonSerializable(typeof(ApplyFailureDocument))]
 [JsonSerializable(typeof(SyncDocument))]
 [JsonSerializable(typeof(FailureDocument))]
 [JsonSerializable(typeof(LoginEvent))]

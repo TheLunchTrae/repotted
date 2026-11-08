@@ -70,6 +70,24 @@ internal sealed partial class AppSettings(string folder)
     }
 
     /// <summary>
+    /// Where the app keeps the staged apply to <paramref name="repository"/>:
+    /// one for each repository, so an apply left unfinished is there to pick
+    /// up again. The plan under review sits beside it.
+    /// </summary>
+    public string StagedFile(string repository)
+    {
+        if (!IsRepositoryName(repository))
+        {
+            throw new ArgumentException($"Expected a repository as owner/name, not {repository}.", nameof(repository));
+        }
+        var parts = repository.ToLowerInvariant().Split('/');
+        return Path.Combine(folder, "staged", parts[0], $"{parts[1]}.yaml");
+    }
+
+    /// <summary>The plan under review for the staged apply in <paramref name="stagedFile"/>.</summary>
+    public static string PlanFile(string stagedFile) => Path.ChangeExtension(stagedFile, ".plan.json");
+
+    /// <summary>
     /// Whether <paramref name="repository"/> is an owner and a name as GitHub
     /// allows them. Neither is only dots, so a working copy never leaves the
     /// folder that holds them.

@@ -121,7 +121,7 @@
           </ItemsControl>
           <Border Classes="rule" />
           <TextBlock Classes="muted small" FontWeight="SemiBold" Margin="0,0,0,6" Text="Compare with a profile" />
-          <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Profiles.Usable}" SelectedItem="{Binding CompareWith}"
+          <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Choices}" SelectedItem="{Binding CompareWith}"
                     PlaceholderText="No profiles in the folder" AutomationProperties.Name="Profile to compare with">
             <ComboBox.ItemTemplate>
               <DataTemplate x:DataType="vm:ProfileItemViewModel">
@@ -129,15 +129,32 @@
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
-          <Button Classes="primary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Content="Compare"
-                  Command="{Binding CompareCommand}" />
+          <Grid ColumnDefinitions="*,8,*" Margin="0,8,0,0">
+            <Button Classes="primary" HorizontalAlignment="Stretch" Content="Compare"
+                    Command="{Binding CompareCommand}" />
+            <Button Grid.Column="2" Classes="quiet" HorizontalAlignment="Stretch" Content="Apply"
+                    Command="{Binding ApplyProfileCommand}" IsVisible="{Binding CanApply}"
+                    AutomationProperties.HelpText="Shows what the profile changes, to edit before anything is written." />
+          </Grid>
+          <!-- An apply to this repository that was left unfinished -->
+          <Border Classes="chip" HorizontalAlignment="Stretch" Margin="0,12,0,0" Padding="10,8"
+                  IsVisible="{Binding HasUnfinishedApply}">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="An apply here is not finished." TextWrapping="Wrap" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="link" Margin="8,0,0,0" Content="Resume"
+                      Command="{Binding ResumeApplyCommand}" />
+            </Grid>
+          </Border>
           <Border Classes="rule" />
-          <Button Classes="quiet" HorizontalAlignment="Stretch" Content="Capture as a profile"
+          <Button Classes="quiet" HorizontalAlignment="Stretch" Content="Change settings once"
+                  Command="{Binding ChangeSettingsCommand}" IsVisible="{Binding CanApply}"
+                  AutomationProperties.HelpText="Starts from the repository as it is, without a profile." />
+          <Button Classes="quiet" HorizontalAlignment="Stretch" Margin="0,8,0,0" Content="Capture as a profile"
                   Command="{Binding CaptureCommand}" />
           <Button Classes="quiet" HorizontalAlignment="Stretch" Margin="0,8,0,0" Content="Open on GitHub"
                   Command="{Binding OpenOnGitHubCommand}" />
           <TextBlock Classes="muted small" Margin="0,12,0,0" TextWrapping="Wrap"
-                     Text="Comparing and capturing only read from GitHub. They change nothing there." />
+                     Text="Comparing and capturing only read from GitHub. An apply shows its changes first, and writes nothing until you confirm." />
         </StackPanel>
       </Border>
     </Grid>

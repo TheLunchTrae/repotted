@@ -183,4 +183,70 @@ public sealed class ContractTests
         await client.SaveProfileAsync(made!, [new("repository.has_wiki", JsonValue.Create(false))], [], cancellationToken);
         Assert.Equal("repository:\n  has_wiki: false\n", await File.ReadAllTextAsync(made!, cancellationToken));
     }
+    [Fact]
+    public async Task The_cli_stages_an_apply_the_way_the_app_drives_it()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        var orgs = folders.Write("orgs.yaml", "repository: { has_issues: true, has_wiki: false }\n");
+        var file = folders.Settings.StagedFile("TheLunchTrae/repotted");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+
+        var started = await client.StartStagedAsync(file, "TheLunchTrae/repotted", orgs, cancellationToken);
+        Assert.Equal("TheLunchTrae/repotted", started.Repository);
+        // The CLI names files by their real path, which a temp folder's link can change, as on macOS.
+        Assert.Equal("orgs.yaml", Path.GetFileName(started.Base));
+        Assert.Equal(started.Base, started.Layers.Sources["repository"]["has_wiki"]);
+        // The CLI never replaces a staged apply that is already there.
+        await Assert.ThrowsAsync<CliException>(() => client.StartStagedAsync(file, "TheLunchTrae/repotted", orgs, cancellationToken));
+
+        var edited = await client.SaveStagedEditsAsync(file, [new("merge.allow_squash_merge", JsonValue.Create(false))], [], cancellationToken);
+        Assert.Equal(edited.File, edited.Sources["merge"]["allow_squash_merge"]);
+        Assert.Equal(Path.GetFileName(file), Path.GetFileName(edited.File));
+
+        var excluded = await client.ExcludeAsync(file, "repository.has_wiki", true, cancellationToken);
+        Assert.Equal(["repository.has_wiki"], excluded.Exclude);
+        // What the apply edits itself is changed in the edits, not left out.
+        await Assert.ThrowsAsync<CliException>(() => client.ExcludeAsync(file, "merge.allow_squash_merge", true, cancellationToken));
+        Assert.Empty((await client.ExcludeAsync(file, "repository.has_wiki", false, cancellationToken)).Exclude);
+
+        var saved = await client.SaveStagedToProfileAsync(file, cancellationToken);
+        Assert.Equal(saved.Base, saved.Layers.Sources["merge"]["allow_squash_merge"]);
+        Assert.Contains("allow_squash_merge: false", await File.ReadAllTextAsync(orgs, cancellationToken), StringComparison.Ordinal);
+        Assert.Equal(saved, await client.StagedAsync(file, cancellationToken), StagedComparer.Instance);
+
+        await client.DiscardStagedAsync(file, cancellationToken);
+        Assert.False(File.Exists(file));
+        Assert.True(File.Exists(orgs));
+    }
+
+    [Fact]
+    public async Task The_cli_stages_an_apply_from_the_repository_as_it_is()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        var file = folders.Settings.StagedFile("TheLunchTrae/repotted");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+
+        var started = await client.StartStagedAsync(file, "TheLunchTrae/repotted", null, cancellationToken);
+
+        Assert.Null(started.Base);
+        Assert.Equal([Path.GetFileName(file)], started.Layers.Chain.Select(Path.GetFileName));
+        // With no profile under it, there is nothing to save the edits to.
+        await Assert.ThrowsAsync<CliException>(() => client.SaveStagedToProfileAsync(file, cancellationToken));
+    }
+
+    /// <summary>Two reads of a staged apply match when they name the same repository, base, exclusions and chain.</summary>
+    private sealed class StagedComparer : IEqualityComparer<StagedApply>
+    {
+        public static readonly StagedComparer Instance = new();
+
+        public bool Equals(StagedApply? x, StagedApply? y) =>
+            x is not null && y is not null && x.Repository == y.Repository && x.Base == y.Base
+            && x.Exclude.SequenceEqual(y.Exclude) && x.Layers.Chain.SequenceEqual(y.Layers.Chain);
+
+        public int GetHashCode(StagedApply obj) => obj.Repository.GetHashCode(StringComparison.Ordinal);
+    }
 }

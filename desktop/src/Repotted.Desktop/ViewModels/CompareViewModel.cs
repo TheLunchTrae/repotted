@@ -53,9 +53,22 @@ internal sealed partial class CompareSectionViewModel(
 /// A profile compared with a repository: what the profile would change, by
 /// section, as the plan has it. It only reads; nothing here writes to GitHub.
 /// </summary>
-internal sealed partial class CompareViewModel(RepottedClient client, string repository, ProfileListingDocument profile)
+/// <param name="client">Plans the compare.</param>
+/// <param name="repository">The repository, as owner/name.</param>
+/// <param name="profile">The profile it is compared with.</param>
+/// <param name="apply">Starts an apply of the profile to the repository, which shows the diff again to edit before anything is written.</param>
+internal sealed partial class CompareViewModel(
+    RepottedClient client,
+    string repository,
+    ProfileListingDocument profile,
+    Action<string, ProfileListingDocument?>? apply = null)
     : ViewModelBase
 {
+    public bool CanApply => apply is not null;
+
+    [RelayCommand]
+    private void Apply() => apply?.Invoke(repository, profile);
+
     public string Repository => repository;
 
     public string ProfileName => profile.Name;
@@ -156,36 +169,90 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
 
     private static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 
-    /// <summary>The sections the profile names, in the editor's order.</summary>
-    internal static IReadOnlyList<CompareSectionViewModel> Build(PlanDocument plan)
+    /// <summary>The sections the editor shows, in its order.</summary>
+    private static readonly string[] Edited = ["repository", "merge", "actions", "rulesets", "environments"];
+
+    /// <summary>
+    /// The sections the profile names, in the editor's order, then any other
+    /// section the plan changes, so no change goes unseen.
+    /// <paramref name="exclusion"/> gives what leaves out a change, by its
+    /// index in the plan and its field, or null for a whole change.
+    /// </summary>
+    internal static IReadOnlyList<CompareSectionViewModel> Build(PlanDocument plan, Func<int, string?, RowExclusion?>? exclusion = null)
     {
         var desired = JsonNode.Parse(plan.Desired.GetRawText())?.AsObject() ?? [];
+        var leaveOut = exclusion ?? ((_, _) => null);
         List<CompareSectionViewModel> sections = [];
         if (desired["repository"] is JsonObject || desired["merge"] is JsonObject)
         {
-            sections.Add(Settings("Repository and merge settings", plan, desired, ["repository", "merge"]));
+            sections.Add(Settings("Repository and merge settings", plan, desired, ["repository", "merge"], leaveOut));
         }
         if (desired["actions"] is JsonObject)
         {
-            sections.Add(Settings("Actions", plan, desired, ["actions"]));
+            sections.Add(Settings("Actions", plan, desired, ["actions"], leaveOut));
         }
         if (desired["rulesets"] is JsonArray rulesets)
         {
-            sections.Add(Entries("Rulesets", "ruleset", plan, rulesets, "rulesets"));
+            sections.Add(Entries("Rulesets", "ruleset", plan, rulesets, "rulesets", leaveOut));
         }
         if (desired["environments"] is JsonArray environments)
         {
-            sections.Add(Entries("Environments", "environment", plan, environments, "environments"));
+            sections.Add(Entries("Environments", "environment", plan, environments, "environments", leaveOut));
+        }
+        foreach (var section in plan.Changes.Select(change => change.Section).Where(section => !Edited.Contains(section)).Distinct())
+        {
+            sections.Add(Other(section, plan, leaveOut));
         }
         return sections;
     }
 
+    /// <summary>
+    /// A section the editor does not show yet, such as security or Pages: a
+    /// row for each part of each change, as GitHub names it.
+    /// </summary>
+    private static CompareSectionViewModel Other(string section, PlanDocument plan, Func<int, string?, RowExclusion?> leaveOut)
+    {
+        List<CompareRow> differences = [];
+        foreach (var (change, index) in plan.Changes.Select((change, index) => (change, index)).Where(pair => pair.change.Section == section))
+        {
+            // A new or deleted whole, such as an autolink or a Pages site, is one row.
+            if (change.Fields.Count == 0)
+            {
+                differences.Add(change.Action == "delete"
+                    ? new CompareRow(CompareKind.Removes, change.Target, section, CompareRow.OnGitHub, "Deleted") { LeaveOut = leaveOut(index, null) }
+                    : new CompareRow(CompareKind.Adds, change.Target, section, CompareRow.NotOnGitHub, CompareRow.Created) { LeaveOut = leaveOut(index, null) });
+                continue;
+            }
+            foreach (var field in change.Fields)
+            {
+                foreach (var difference in Differences(field))
+                {
+                    differences.Add(Row(difference, change.Target, difference.Path, CompareRows.Show)
+                        with
+                    { LeaveOut = leaveOut(index, null) ?? leaveOut(index, field.Field) });
+                }
+            }
+        }
+        var title = section switch
+        {
+            "custom_properties" => "Custom properties",
+            "pages" => "GitHub Pages",
+            _ => string.Concat(section[..1].ToUpperInvariant(), section[1..].Replace('_', ' ')),
+        };
+        return new CompareSectionViewModel(title, differences, [], "");
+    }
+
     /// <summary>A section of single settings, one row for each that differs.</summary>
-    private static CompareSectionViewModel Settings(string title, PlanDocument plan, JsonObject desired, string[] names)
+    private static CompareSectionViewModel Settings(
+        string title,
+        PlanDocument plan,
+        JsonObject desired,
+        string[] names,
+        Func<int, string?, RowExclusion?> leaveOut)
     {
         List<CompareRow> differences = [];
         HashSet<string> changed = new(StringComparer.Ordinal);
-        foreach (var change in plan.Changes.Where(change => names.Contains(change.Section)))
+        foreach (var (change, index) in plan.Changes.Select((change, index) => (change, index)).Where(pair => names.Contains(pair.change.Section)))
         {
             foreach (var field in change.Fields)
             {
@@ -193,7 +260,9 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
                 foreach (var difference in Differences(field))
                 {
                     var setting = Field(change.Section, difference.Path);
-                    differences.Add(Row(difference, Label(setting, difference.Path), difference.Path, value => Show(setting, value)));
+                    differences.Add(Row(difference, Label(setting, difference.Path), difference.Path, value => Show(setting, value))
+                        with
+                    { LeaveOut = leaveOut(index, field.Field) });
                 }
             }
         }
@@ -226,7 +295,13 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
     /// one row, a changed one a row for each part that differs, and an entry
     /// the profile removes one row.
     /// </summary>
-    private static CompareSectionViewModel Entries(string title, string noun, PlanDocument plan, JsonArray entries, string name)
+    private static CompareSectionViewModel Entries(
+        string title,
+        string noun,
+        PlanDocument plan,
+        JsonArray entries,
+        string name,
+        Func<int, string?, RowExclusion?> leaveOut)
     {
         if (plan.Warnings.FirstOrDefault(warning => warning.StartsWith($"Skipped {name}: ", StringComparison.Ordinal)) is { } skipped)
         {
@@ -238,8 +313,9 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
         var comparer = environments ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         List<CompareRow> differences = [];
         HashSet<string> touched = new(comparer);
-        foreach (var change in plan.Changes.Where(change => change.Section == name))
+        foreach (var (change, index) in plan.Changes.Select((change, index) => (change, index)).Where(pair => pair.change.Section == name))
         {
+            var exclusion = leaveOut(index, null);
             touched.Add(change.Target);
             // An environment's branch policy is named "environment: type pattern".
             var policy = environments && change.Target.Contains(": ", StringComparison.Ordinal);
@@ -252,19 +328,22 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
                         change.Target,
                         policy ? "new branch policy" : $"new {noun}",
                         CompareRow.NotOnGitHub,
-                        rules is null ? CompareRow.Created : Rules(CompareRows.Node(rules.To))));
+                        rules is null ? CompareRow.Created : Rules(CompareRows.Node(rules.To)))
+                    { LeaveOut = exclusion });
                     break;
                 case "delete":
-                    differences.Add(policy
+                    differences.Add((policy
                         ? new CompareRow(CompareKind.Removes, change.Target, "branch_policies", CompareRow.OnGitHub, Removed)
-                        : new CompareRow(CompareKind.Removes, change.Target, "absent: true", CompareRow.OnGitHub, "Deleted"));
+                        : new CompareRow(CompareKind.Removes, change.Target, "absent: true", CompareRow.OnGitHub, "Deleted"))
+                        with
+                    { LeaveOut = exclusion });
                     break;
                 default:
                     foreach (var field in change.Fields)
                     {
                         foreach (var difference in Differences(field))
                         {
-                            differences.Add(Row(difference, change.Target, difference.Path, CompareRows.Show));
+                            differences.Add(Row(difference, change.Target, difference.Path, CompareRows.Show) with { LeaveOut = exclusion });
                         }
                     }
                     break;

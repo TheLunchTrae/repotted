@@ -17,6 +17,8 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     private readonly Uri? installUrl;
     private readonly Action<string, ProfileListingDocument> compare;
     private readonly Action<string> capture;
+    private readonly Action<string, ProfileListingDocument?>? apply;
+    private readonly Func<string, bool> unfinished;
 
     private IReadOnlyList<RepositoryRowViewModel> all = [];
 
@@ -26,25 +28,37 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     /// <param name="profiles">The profiles a repository can be compared with.</param>
     /// <param name="compare">Opens a compare of a repository, by full name, with a profile.</param>
     /// <param name="capture">Opens a new profile captured from a repository, by full name.</param>
+    /// <param name="apply">Opens an apply to a repository, from a profile or from the repository as it is.</param>
+    /// <param name="unfinished">Whether an apply to a repository waits to be resumed.</param>
     public RepositoriesViewModel(
         RepottedClient client,
         IDesktop desktop,
         Uri? installUrl,
         ProfilesViewModel profiles,
         Action<string, ProfileListingDocument> compare,
-        Action<string> capture)
+        Action<string> capture,
+        Action<string, ProfileListingDocument?>? apply = null,
+        Func<string, bool>? unfinished = null)
     {
         this.capture = capture;
+        this.apply = apply;
+        this.unfinished = unfinished ?? (_ => false);
         this.client = client;
         this.desktop = desktop;
         this.installUrl = installUrl;
         this.compare = compare;
         Profiles = profiles;
+        Choices = profiles.Usable;
         profiles.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ProfilesViewModel.Usable))
             {
-                CompareWith = profiles.Usable.FirstOrDefault(item => item.Listing.File == CompareWith?.Listing.File)
+                // The box gets the new list first, which clears its choice, and then the choice, which is
+                // in the list by then. The other way round, the box drops a choice it cannot find yet and
+                // shows no profile while Compare and Apply act on one.
+                var chosen = CompareWith?.Listing.File;
+                Choices = profiles.Usable;
+                CompareWith = profiles.Usable.FirstOrDefault(item => item.Listing.File == chosen)
                     ?? (profiles.Usable.Count > 0 ? profiles.Usable[0] : null);
             }
         };
@@ -53,16 +67,29 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     /// <summary>The profiles a repository can be compared with.</summary>
     public ProfilesViewModel Profiles { get; }
 
+    /// <summary>The profiles to compare with, as the box lists them: the usable profiles, taken before the choice among them.</summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<ProfileItemViewModel> Choices { get; private set; } = [];
+
     /// <summary>The profile to compare the selected repository with.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(CompareCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CompareCommand), nameof(ApplyProfileCommand))]
     public partial ProfileItemViewModel? CompareWith { get; set; }
+
+    /// <summary>Whether this window can apply, as it can once signed in.</summary>
+    public bool CanApply => apply is not null;
+
+    /// <summary>Whether an apply to the selected repository was left unfinished, to resume.</summary>
+    public bool HasUnfinishedApply => CanApply && Selected is { } row && unfinished(row.FullName);
+
+    /// <summary>Checks again whether the selected repository has an unfinished apply, such as after one closes.</summary>
+    public void RefreshUnfinished() => OnPropertyChanged(nameof(HasUnfinishedApply));
 
     public ObservableCollection<RepositoryRowViewModel> Rows { get; } = [];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasSelection))]
-    [NotifyCanExecuteChangedFor(nameof(CompareCommand), nameof(CaptureCommand))]
+    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(HasUnfinishedApply))]
+    [NotifyCanExecuteChangedFor(nameof(CompareCommand), nameof(CaptureCommand), nameof(ApplyProfileCommand), nameof(ChangeSettingsCommand), nameof(ResumeApplyCommand))]
     public partial RepositoryRowViewModel? Selected { get; set; }
 
     /// <summary>Every repository in the list, whatever the search, by full name.</summary>
@@ -164,6 +191,36 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     }
 
     private bool CanCompare() => Selected is not null && CompareWith is not null;
+
+    /// <summary>Starts an apply of the chosen profile, or resumes the unfinished one, which shows the diff to edit before anything is written.</summary>
+    [RelayCommand(CanExecute = nameof(CanCompare))]
+    private void ApplyProfile()
+    {
+        if (Selected is { } row && CompareWith is { } profile)
+        {
+            apply?.Invoke(row.FullName, profile.Listing);
+        }
+    }
+
+    /// <summary>Opens the unfinished apply to the selected repository, which asks whether to resume it or start over.</summary>
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private void ResumeApply()
+    {
+        if (Selected is { } row)
+        {
+            apply?.Invoke(row.FullName, CompareWith?.Listing);
+        }
+    }
+
+    /// <summary>Starts an apply from the repository as it is, to change settings once without a profile.</summary>
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private void ChangeSettings()
+    {
+        if (Selected is { } row)
+        {
+            apply?.Invoke(row.FullName, null);
+        }
+    }
 
     [RelayCommand(CanExecute = nameof(HasSelection))]
     private void Capture()

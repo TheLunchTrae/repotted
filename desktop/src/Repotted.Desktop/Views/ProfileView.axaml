@@ -125,7 +125,7 @@
                    IsVisible="{Binding HasChanges}" />
         <Button Classes="quiet" Content="Discard" IsVisible="{Binding HasChanges}" Command="{Binding DiscardCommand}" />
         <Button Classes="quiet" Content="{Binding YamlLabel}" Command="{Binding ToggleYamlCommand}" />
-        <Button Classes="primary" Content="Save profile" Command="{Binding SaveCommand}" />
+        <Button Classes="primary" Content="{Binding SaveLabel}" Command="{Binding SaveCommand}" />
       </StackPanel>
     </Grid>
 
@@ -186,7 +186,7 @@
           <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="20" Margin="0,14,0,6">
             <StackPanel Orientation="Horizontal" Spacing="8">
               <Border Classes="legend" Background="{DynamicResource RailBrush}" />
-              <TextBlock Classes="muted small" Text="Set in this profile" VerticalAlignment="Center" />
+              <TextBlock Classes="muted small" Text="{Binding OwnLabel}" VerticalAlignment="Center" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="8">
               <Border Classes="legend" Background="{DynamicResource RailInheritedBrush}" />

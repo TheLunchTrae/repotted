@@ -107,6 +107,15 @@
         </ContentControl.DataTemplates>
       </ContentControl>
     </DockPanel>
+    <DockPanel Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowingApply}">
+      <Button DockPanel.Dock="Top" Classes="link" Margin="32,16,32,0" HorizontalAlignment="Left"
+              Content="Back to repositories" Command="{Binding Apply.CloseCommand, FallbackValue={x:Null}}" />
+      <ContentControl Content="{Binding Apply}">
+        <ContentControl.DataTemplates>
+          <DataTemplate DataType="vm:ApplyViewModel"><views:ApplyView /></DataTemplate>
+        </ContentControl.DataTemplates>
+      </ContentControl>
+    </DockPanel>
     <Panel Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowingProfiles}">
       <views:ProfilesView DataContext="{Binding Profiles}" />
     </Panel>
