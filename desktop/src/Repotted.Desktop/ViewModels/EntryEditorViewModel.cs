@@ -33,6 +33,9 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
 
     public abstract string Kind { get; }
 
+    /// <summary>The name box's accessible name, such as "Ruleset name".</summary>
+    public string NameLabel => $"{char.ToUpperInvariant(Kind[0])}{Kind[1..]} name";
+
     private string Article => Kind[0] is 'a' or 'e' or 'i' or 'o' or 'u' ? "an" : "a";
 
     private string name;

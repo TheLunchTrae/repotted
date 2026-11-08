@@ -307,7 +307,7 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaTheory]
-    [InlineData("installations", null, "Signed in with Repotted App.")]
+    [InlineData("installations", null, "Signed in with the Repotted App.")]
     [InlineData("admin", null, "Signed in with a GitHub token.")]
     [InlineData("admin", "GITHUB_TOKEN", "Signed in with GITHUB_TOKEN.")]
     public async Task Signed_in_with_says_what_the_token_is(string source, string? variable, string expected)
