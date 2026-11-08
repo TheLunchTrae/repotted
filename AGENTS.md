@@ -164,6 +164,26 @@ version-numbered names.
   examples. Keep test setup smaller than the behavior it protects.
 - Test counts and coverage percentages are not goals.
 
+## State machines
+
+[State machines](docs/developer/state-machines.md) lists the flows whose state
+no type names, in the engine, the CLI, the desktop app, and releases: sign-in,
+sync, the profile editor and its cache, captures, and the rest. Each flow has
+a table of its states, the events they meet, and what comes next. Implicit
+state includes flags, nullable fields, caches, files on disk, and the order of
+asynchronous work.
+
+- When a change adds, removes, or changes a state or a transition, update the
+  owning table in the same change. A new flow gets its own section.
+- Test each transition, failure transitions included, at the narrowest stable
+  interface, such as a view model over `FakeCli`. A transition that needs
+  overlapping work, such as a save queued behind a sync or a command pressed
+  while a load runs, needs a test that holds that work open.
+- A known defect, a failure that leaves the user worse off than where they
+  started, keeps its **Failure:** note and the link to its issue. A change
+  that fixes one starts with a failing test, removes the note, and updates the
+  table.
+
 ## TypeScript and Bun
 
 `package.json`, `bun.lock`, and the mise tasks own the tested versions and
