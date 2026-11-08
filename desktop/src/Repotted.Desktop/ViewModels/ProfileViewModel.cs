@@ -283,7 +283,7 @@ internal sealed partial class ProfileViewModel(
         ResultsSummary = count switch
         {
             0 when words.Length > 0 => $"No settings match \u201c{Query.Trim()}\u201d.",
-            0 when OnlyUnsaved && HasChanges => "No settings match these filters. Unsaved changes to rulesets and environments are on their own tabs.",
+            0 when OnlyUnsaved && Entries.Any(entry => entry.Changed) => "No settings match these filters. Unsaved changes to rulesets and environments are on their own tabs.",
             0 when OnlyDrafts && Entries.Any(entry => entry.IsDraft) => "No settings match these filters. Drafts of rulesets and environments are on their own tabs.",
             0 => "No settings match these filters.",
             1 => "1 setting found.",

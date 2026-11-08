@@ -93,8 +93,12 @@ internal sealed partial class CompareSectionViewModel : ViewModelBase
 
     public string Summary { get; }
 
-    /// <summary>The line for the rest, such as how many settings match, which a search or the locked filter hides since it counts rows they may leave out.</summary>
-    public bool HasSummary => Summary.Length > 0 && words.Count == 0 && !lockedOnly;
+    /// <summary>
+    /// The line for the rest, such as how many settings match, which a search
+    /// or the locked filter hides since it counts rows they may leave out. A
+    /// section the plan could not read always keeps its line, which says why.
+    /// </summary>
+    public bool HasSummary => Summary.Length > 0 && (Skipped || (words.Count == 0 && !lockedOnly));
 
     /// <summary>Shows what fits the compare's filters and has every word of <paramref name="search"/>.</summary>
     public void Filter(bool differencesOnly, bool lockedOnly, IReadOnlyList<string> search)

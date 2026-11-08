@@ -2680,6 +2680,8 @@ public sealed class ViewModelTests : IDisposable
 
         compare.Query = "rulesets";
         Assert.True(rulesets.Shown);
+        // It keeps the line that says why it wasn't read.
+        Assert.True(rulesets.HasSummary);
         Assert.False(compare.NothingFound);
         compare.Query = "wiki";
         Assert.False(rulesets.Shown);
