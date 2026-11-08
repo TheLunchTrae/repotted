@@ -20,16 +20,18 @@ import { z } from 'zod';
 
 import {
   actionsSettings,
+  type AutolinkEntry,
   environmentKey,
   type EnvironmentEntry,
-  mergeFields,
+  mergeSettings as mergeSettingsSchema,
+  pagesSite,
   profile,
   type Profile,
   profileFile,
   type ProfileFile,
-  repositoryFields,
+  repositorySettings,
   type RulesetEntry,
-  selectedActions,
+  securitySettings,
 } from './schema.js';
 
 export class ProfileError extends Error {
@@ -63,43 +65,89 @@ interface Sourced<Entry> {
   readonly file: string;
 }
 
-function mergeByName<Entry extends { name: string }>(
+function mergeByKey<Entry>(
   base: Sourced<Entry>[] | undefined,
   override: Sourced<Entry>[] | undefined,
-  key: (name: string) => string = (name) => name,
+  key: (entry: Entry) => string,
 ): Sourced<Entry>[] | undefined {
   if (base === undefined || override === undefined) {
     return override ?? base;
   }
-  const replacements = new Map(override.map((item) => [key(item.entry.name), item]));
-  const merged = base.map((item) => replacements.get(key(item.entry.name)) ?? item);
-  const baseNames = new Set(base.map((item) => key(item.entry.name)));
-  return [...merged, ...override.filter((item) => !baseNames.has(key(item.entry.name)))];
+  const replacements = new Map(override.map((item) => [key(item.entry), item]));
+  const merged = base.map((item) => replacements.get(key(item.entry)) ?? item);
+  const baseKeys = new Set(base.map((item) => key(item.entry)));
+  return [...merged, ...override.filter((item) => !baseKeys.has(key(item.entry)))];
 }
 
 type Settings = Record<string, unknown>;
 
+/** The sections that hold settings, which merge key by key. */
+const settingsSections = ['repository', 'merge', 'actions', 'security', 'custom_properties', 'pages'] as const;
+
+type SettingsSection = (typeof settingsSections)[number];
+
+/** The keys of a section's schema whose value is an object of settings. */
+function groups(schema: z.ZodObject): ReadonlySet<string> {
+  return new Set(
+    Object.entries(schema.shape)
+      .filter(([, field]) => (field instanceof z.ZodOptional ? field.unwrap() : field) instanceof z.ZodObject)
+      .map(([key]) => key),
+  );
+}
+
+/**
+ * Keys whose value is itself an object of settings, such as
+ * `selected_actions`. They merge key by key, one level down, so an override
+ * can change one of them and keep the rest.
+ */
+const groupKeys: Readonly<Record<SettingsSection, ReadonlySet<string>>> = {
+  repository: groups(repositorySettings),
+  merge: new Set(),
+  actions: groups(actionsSettings),
+  security: groups(securitySettings),
+  custom_properties: new Set(),
+  pages: groups(pagesSite),
+};
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** A section's settings by path, as `has_wiki` or `selected_actions.verified_allowed`. */
+type SourcedSettings = Map<string, Sourced<unknown>>;
+
 /** A profile mid-merge: each setting and entry carries the file that sets it. */
 interface SourcedProfile {
-  repository?: Map<string, Sourced<unknown>> | undefined;
-  merge?: Map<string, Sourced<unknown>> | undefined;
-  actions?: Map<string, Sourced<unknown>> | undefined;
-  selected_actions?: Map<string, Sourced<unknown>> | undefined;
+  settings: Partial<Record<SettingsSection, SourcedSettings>>;
+  autolinks?: Sourced<AutolinkEntry>[] | undefined;
   rulesets?: Sourced<RulesetEntry>[] | undefined;
   environments?: Sourced<EnvironmentEntry>[] | undefined;
 }
 
 function mergeSettings(
-  base: Map<string, Sourced<unknown>> | undefined,
+  section: SettingsSection,
+  base: SourcedSettings | undefined,
   override: Settings | undefined,
   file: string,
-): Map<string, Sourced<unknown>> | undefined {
+): SourcedSettings | undefined {
   if (override === undefined) {
     return base;
   }
+  // `absent: true` turns the Pages site off whatever the base sets, and a
+  // site the override describes replaces a base's `absent`.
+  if (section === 'pages' && override['absent'] === true) {
+    return new Map([['absent', { entry: true, file }]]);
+  }
   const merged = new Map(base);
+  merged.delete('absent');
   for (const [key, entry] of Object.entries(override)) {
-    merged.set(key, { entry, file });
+    if (groupKeys[section].has(key) && isRecord(entry)) {
+      for (const [inner, value] of Object.entries(entry)) {
+        merged.set(`${key}.${inner}`, { entry: value, file });
+      }
+    } else {
+      merged.set(key, { entry, file });
+    }
   }
   return merged;
 }
@@ -109,27 +157,48 @@ function sourced<Entry>(entries: Entry[] | undefined, file: string): Sourced<Ent
 }
 
 /**
- * Lays `override` over `base`. Settings merge key by key, and so does
- * `selected_actions`; a ruleset or environment in the override replaces the
- * base entry of the same name whole.
+ * Lays `override` over `base`. Settings merge key by key, and so do the
+ * settings inside a group such as `selected_actions`; an autolink, ruleset
+ * or environment in the override replaces the base entry of the same name
+ * whole.
  */
 function mergeProfiles(base: SourcedProfile, override: ProfileFile, file: string): SourcedProfile {
-  const { selected_actions: selected, ...actions } = override.actions ?? {};
+  const settings: SourcedProfile['settings'] = {};
+  for (const section of settingsSections) {
+    const merged = mergeSettings(section, base.settings[section], override[section], file);
+    if (merged !== undefined) {
+      settings[section] = merged;
+    }
+  }
+  const prefix = (entry: AutolinkEntry): string => entry.key_prefix;
   return {
-    repository: mergeSettings(base.repository, override.repository, file),
-    merge: mergeSettings(base.merge, override.merge, file),
-    actions: mergeSettings(base.actions, override.actions === undefined ? undefined : actions, file),
-    selected_actions: mergeSettings(base.selected_actions, selected, file),
-    rulesets: mergeByName(base.rulesets, sourced(override.rulesets, file)),
-    environments: mergeByName(base.environments, sourced(override.environments, file), environmentKey),
+    settings,
+    autolinks: mergeByKey(base.autolinks, sourced(override.autolinks, file), prefix),
+    rulesets: mergeByKey(base.rulesets, sourced(override.rulesets, file), (entry) => entry.name),
+    environments: mergeByKey(base.environments, sourced(override.environments, file), (entry) =>
+      environmentKey(entry.name),
+    ),
   };
 }
 
-function values(settings: Map<string, Sourced<unknown>> | undefined): Settings | undefined {
-  return settings === undefined ? undefined : Object.fromEntries([...settings].map(([key, item]) => [key, item.entry]));
+function values(settings: SourcedSettings | undefined): Settings | undefined {
+  if (settings === undefined) {
+    return undefined;
+  }
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of settings) {
+    const [group, inner] = key.split('.', 2);
+    if (inner === undefined || group === undefined) {
+      result[key] = item.entry;
+    } else {
+      const current = result[group];
+      result[group] = { ...(isRecord(current) ? current : {}), [inner]: item.entry };
+    }
+  }
+  return result;
 }
 
-function files(settings: Map<string, Sourced<unknown>> | undefined): Record<string, string> {
+function files(settings: SourcedSettings | undefined): Record<string, string> {
   return Object.fromEntries([...(settings ?? [])].map(([key, item]) => [key, item.file]));
 }
 
@@ -137,20 +206,14 @@ function entries<Entry>(list: Sourced<Entry>[] | undefined): Entry[] | undefined
   return list?.map((item) => item.entry);
 }
 
-function entryFiles(list: Sourced<{ name: string }>[] | undefined): Record<string, string> {
-  return Object.fromEntries((list ?? []).map((item) => [item.entry.name, item.file]));
+function entryFiles<Entry>(list: Sourced<Entry>[] | undefined, key: (entry: Entry) => string): Record<string, string> {
+  return Object.fromEntries((list ?? []).map((item) => [key(item.entry), item.file]));
 }
 
 function toProfile(merged: SourcedProfile): unknown {
-  const actions = values(merged.actions);
-  const selected = values(merged.selected_actions);
   const data: Record<string, unknown> = {
-    repository: values(merged.repository),
-    merge: values(merged.merge),
-    actions:
-      actions === undefined && selected === undefined
-        ? undefined
-        : { ...actions, ...(selected === undefined ? {} : { selected_actions: selected }) },
+    ...Object.fromEntries(settingsSections.map((section) => [section, values(merged.settings[section])])),
+    autolinks: entries(merged.autolinks),
     rulesets: entries(merged.rulesets),
     environments: entries(merged.environments),
   };
@@ -167,16 +230,13 @@ function validate(data: unknown, source: string): Profile {
 
 /**
  * The file that sets each value of a resolved profile. Settings go by key,
- * `selected_actions` settings by `selected_actions.<key>` under `actions`,
- * and rulesets and environments by name.
+ * and a setting inside a group by `<group>.<key>`, as
+ * `selected_actions.verified_allowed` under `actions`. Autolinks go by
+ * prefix, and rulesets and environments by name.
  */
-export interface ProfileSources {
-  readonly repository: Record<string, string>;
-  readonly merge: Record<string, string>;
-  readonly actions: Record<string, string>;
-  readonly rulesets: Record<string, string>;
-  readonly environments: Record<string, string>;
-}
+export type ProfileSources = Readonly<
+  Record<SettingsSection | 'autolinks' | 'rulesets' | 'environments', Record<string, string>>
+>;
 
 /** A profile file laid over every profile it extends. */
 export interface ResolvedProfile {
@@ -223,21 +283,20 @@ async function readChain(file: string): Promise<[Link, ...Link[]]> {
 function resolveChain(chain: readonly Link[], source: string): ResolvedProfile {
   const merged = chain
     .toReversed()
-    .reduce<SourcedProfile>((base, { file, parsed }) => mergeProfiles(base, parsed, file), {});
+    .reduce<SourcedProfile>((base, { file, parsed }) => mergeProfiles(base, parsed, file), { settings: {} });
   return {
     chain: chain.map((link) => link.file),
     profile: validate(toProfile(merged), source),
     sources: {
-      repository: files(merged.repository),
-      merge: files(merged.merge),
-      actions: {
-        ...files(merged.actions),
-        ...Object.fromEntries(
-          Object.entries(files(merged.selected_actions)).map(([key, from]) => [`selected_actions.${key}`, from]),
-        ),
-      },
-      rulesets: entryFiles(merged.rulesets),
-      environments: entryFiles(merged.environments),
+      repository: files(merged.settings.repository),
+      merge: files(merged.settings.merge),
+      actions: files(merged.settings.actions),
+      security: files(merged.settings.security),
+      custom_properties: files(merged.settings.custom_properties),
+      pages: files(merged.settings.pages),
+      autolinks: entryFiles(merged.autolinks, (entry) => entry.key_prefix),
+      rulesets: entryFiles(merged.rulesets, (entry) => entry.name),
+      environments: entryFiles(merged.environments, (entry) => entry.name),
     },
   };
 }
@@ -322,14 +381,45 @@ export interface EntryEdit {
 
 export type ProfileEdit = SettingEdit | EntryEdit;
 
-const editableKeys = new Set([
-  ...Object.keys(repositoryFields).map((key) => `repository.${key}`),
-  ...Object.keys(mergeFields).map((key) => `merge.${key}`),
-  ...Object.keys(actionsSettings.shape)
-    .filter((key) => key !== 'selected_actions')
-    .map((key) => `actions.${key}`),
-  ...Object.keys(selectedActions.shape).map((key) => `actions.selected_actions.${key}`),
-]);
+const sectionSchemas: Readonly<Record<SettingsSection, z.ZodObject | undefined>> = {
+  repository: repositorySettings,
+  merge: mergeSettingsSchema,
+  actions: actionsSettings,
+  security: securitySettings,
+  // Custom properties are named by the organization, so any name goes.
+  custom_properties: undefined,
+  pages: pagesSite.extend({ absent: z.literal(true) }),
+};
+
+function unwrapObject(field: unknown): z.ZodObject | undefined {
+  const inner = field instanceof z.ZodOptional ? field.unwrap() : field;
+  return inner instanceof z.ZodObject ? inner : undefined;
+}
+
+/**
+ * Whether a path names one setting: a section's key, or a key inside one of
+ * its groups, as `actions.selected_actions.verified_allowed`.
+ */
+function isSettingsSection(name: string | undefined): name is SettingsSection {
+  return settingsSections.some((section) => section === name);
+}
+
+function isEditable(path: readonly string[]): boolean {
+  const [section, key, inner, ...rest] = path;
+  if (!isSettingsSection(section) || key === undefined || rest.length > 0) {
+    return false;
+  }
+  const schema = sectionSchemas[section];
+  if (schema === undefined) {
+    return inner === undefined;
+  }
+  const field: unknown = schema.shape[key];
+  if (field === undefined) {
+    return false;
+  }
+  const group = groupKeys[section].has(key) ? unwrapObject(field) : undefined;
+  return inner === undefined ? group === undefined : group?.shape[inner] !== undefined;
+}
 
 const retriedCodes = new Set(['EPERM', 'EBUSY', 'EACCES']);
 
@@ -360,10 +450,6 @@ async function replaceFile(file: string, text: string): Promise<void> {
     await rm(temporary, { force: true });
     throw new ProfileError(`Cannot save profile ${file}`, { cause: error });
   }
-}
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -511,8 +597,8 @@ export async function editProfile(file: string, edits: readonly ProfileEdit[]): 
       continue;
     }
     const key = edit.path.join('.');
-    if (!editableKeys.has(key)) {
-      throw new ProfileError(`Cannot edit ${key}: it is not a repository, merge or actions setting`);
+    if (!isEditable(edit.path)) {
+      throw new ProfileError(`Cannot edit ${key}: it is not one setting of a profile section`);
     }
     if (seen.has(key)) {
       throw new ProfileError(`${key} is edited more than once`);

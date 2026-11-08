@@ -43,8 +43,10 @@ the App, it lists every repository your account administers.
 npx repotted capture octo-org/app --output app.yaml
 ```
 
-`capture` reads a repository's settings, merge methods, Actions policy,
-rulesets, and environments, and writes them as a profile. Without `--output`,
+`capture` reads every section of a repository, from its settings and merge
+methods to its rulesets and environments, and writes them as a profile. It
+leaves out settings that name the repository, such as its description and
+topics, so the profile suits other repositories too. Without `--output`,
 it prints the profile. Capturing only reads from GitHub.
 
 Edit the profile so it names only what you want Repotted to manage, then use
@@ -71,8 +73,10 @@ plan again and review the new changes.
 If a write fails partway through, `apply` stops and lists the changes it
 already made. Plan again to see where the repository stands.
 
-If the repository's GitHub plan doesn't support rulesets, or your sign-in
-can't list environments, `plan` warns you and still plans the other sections.
+If the repository doesn't have a setting the profile names, such as rulesets
+on a GitHub plan that lacks them, `plan` warns you and still plans the rest.
+When GitHub refuses to read or change a setting, the warning or error names
+the GitHub App permission it needs.
 
 ## Work with profiles
 
@@ -82,10 +86,13 @@ any of them can't be used.
 `npx repotted profile <file>` prints a profile with everything it gets from the
 profiles it extends. With these options, it edits the file instead:
 
-- `--set section.key=value` sets a repository, merge, or Actions setting, such
-  as `--set repository.has_wiki=false` or
-  `--set actions.selected_actions.github_owned_allowed=true`. The value is
-  JSON, or a bare word as a string.
+- `--set section.key=value` sets one setting of the `repository`, `merge`,
+  `actions`, `security`, `custom_properties`, or `pages` section, such as
+  `--set repository.has_wiki=false`,
+  `--set actions.selected_actions.github_owned_allowed=true`, or
+  `--set custom_properties.team=platform`. A key inside an object of
+  settings takes its own path, as `security.code_scanning_default_setup.state`.
+  The value is JSON, or a bare word as a string.
 - `--unset section.key` removes a setting from the file, so a base profile's
   value applies, or else the repository keeps its own.
 - `--ruleset json` and `--environment json` write one ruleset or environment,

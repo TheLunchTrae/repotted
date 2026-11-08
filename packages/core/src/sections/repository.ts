@@ -1,8 +1,7 @@
-import { z } from 'zod';
-
-import type { Change } from '../change.js';
+import type { Change, SectionPlan } from '../change.js';
+import { type Endpoint, type EndpointValue, planEndpoint, readEndpoints } from '../endpoints.js';
 import { type GitHub, repoPath, type RepoRef } from '../github.js';
-import { fieldChanges } from '../match.js';
+import { fieldChanges, matches } from '../match.js';
 import {
   commitPairs,
   mergeFields,
@@ -13,18 +12,74 @@ import {
   type RepositorySettings,
 } from '../schema.js';
 
-// Each schema drops the response keys it does not manage.
-const liveRepository = z.object(repositoryFields).partial();
-const liveMerge = z.object(mergeFields).partial();
+/** Repository settings at endpoints of their own; `topics` comes with the repository instead. */
+export const repositoryEndpoints: readonly Endpoint[] = [
+  {
+    kind: 'toggle',
+    key: 'immutable_releases',
+    path: '/immutable-releases',
+    target: 'release immutability',
+    reads: 'enabled',
+  },
+  {
+    kind: 'object',
+    key: 'pull_request_creation_cap',
+    path: '/interaction-limits/pulls/creation-cap',
+    target: 'pull request creation cap',
+    method: 'PATCH',
+    fields: ['enabled', 'max_open_pull_requests', 'include_drafts'],
+    carries: ['enabled'],
+  },
+];
 
 export interface LiveRepository {
-  readonly repository: RepositorySettings;
+  /** The repository's own settings and its topics. */
+  readonly repository: Record<string, unknown>;
   readonly merge: MergeSettings;
+  /** The repository's `security_and_analysis`, which GitHub reports only to admins. */
+  readonly securityAndAnalysis: Record<string, unknown> | undefined;
+  /** The endpoint settings read, by key. */
+  readonly endpoints: ReadonlyMap<string, EndpointValue>;
 }
 
-export async function readRepository(github: GitHub, repo: RepoRef): Promise<LiveRepository> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function pick(data: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  return Object.fromEntries(keys.filter((key) => data[key] !== undefined).map((key) => [key, data[key]]));
+}
+
+/**
+ * Reads the repository and the endpoint settings in `endpointKeys`. Values
+ * stay as GitHub sends them, such as `internal` visibility, so they differ
+ * from any a profile can set; only an empty description or homepage, which
+ * GitHub sends as null, reads as the empty string a profile writes.
+ */
+export async function readRepository(
+  github: GitHub,
+  repo: RepoRef,
+  endpointKeys: readonly string[] = repositoryEndpoints.map((endpoint) => endpoint.key),
+): Promise<LiveRepository> {
   const data = await github.request('GET', repoPath(repo));
-  return { repository: liveRepository.parse(data), merge: liveMerge.parse(data) };
+  const record = isRecord(data) ? data : {};
+  const repository = pick(record, [...Object.keys(repositoryFields), 'topics']);
+  for (const key of ['description', 'homepage']) {
+    if (record[key] === null) {
+      repository[key] = '';
+    }
+  }
+  const security = record['security_and_analysis'];
+  return {
+    repository,
+    merge: pick(record, Object.keys(mergeFields)),
+    securityAndAnalysis: isRecord(security) ? security : undefined,
+    endpoints: await readEndpoints(
+      github,
+      repo,
+      repositoryEndpoints.filter((endpoint) => endpointKeys.includes(endpoint.key)),
+    ),
+  };
 }
 
 function settingsChange(
@@ -74,21 +129,69 @@ export class MergeSettingsError extends Error {
   }
 }
 
+// What a change of visibility does beyond the setting, from GitHub's docs.
+const visibilityWarnings: Readonly<Record<string, string>> = {
+  public: 'Changing visibility to public shows the repository, its history and its issues to everyone',
+  private:
+    'Changing visibility to private detaches public forks and drops stars and watchers from people without access',
+};
+
+/** The settings the repository's own PATCH writes, without topics and endpoint settings. */
+function ownSettings(settings: RepositorySettings): Record<string, unknown> {
+  const elsewhere = new Set(['topics', ...repositoryEndpoints.map((endpoint) => endpoint.key)]);
+  return Object.fromEntries(Object.entries(settings).filter(([key]) => !elsewhere.has(key)));
+}
+
 export function planRepository(
   desired: Pick<Profile, 'repository' | 'merge'>,
   live: LiveRepository,
   repo: RepoRef,
-): Change[] {
+): SectionPlan {
   if (desired.merge !== undefined) {
     const problems = mergeSettingsProblems({ ...live.merge, ...desired.merge });
     if (problems.length > 0) {
       throw new MergeSettingsError(problems);
     }
   }
-  return [
-    ...(desired.repository === undefined
-      ? []
-      : settingsChange('repository', 'repository settings', desired.repository, live.repository, repo)),
-    ...(desired.merge === undefined ? [] : settingsChange('merge', 'merge methods', desired.merge, live.merge, repo)),
-  ];
+  const changes: Change[] = [];
+  const warnings: string[] = [];
+  if (desired.repository !== undefined) {
+    const own = settingsChange(
+      'repository',
+      'repository settings',
+      ownSettings(desired.repository),
+      live.repository,
+      repo,
+    );
+    changes.push(...own);
+    const visibility = own[0]?.fields.find((field) => field.field === 'visibility');
+    const warning = visibility === undefined ? undefined : visibilityWarnings[String(visibility.to)];
+    if (warning !== undefined) {
+      warnings.push(warning);
+    }
+    const { topics } = desired.repository;
+    const liveTopics = live.repository['topics'] ?? [];
+    if (topics !== undefined && !matches(topics, liveTopics)) {
+      changes.push({
+        section: 'repository',
+        action: 'update',
+        target: 'topics',
+        fields: [{ field: 'topics', from: liveTopics, to: topics }],
+        request: { method: 'PUT', path: `${repoPath(repo)}/topics`, body: { names: topics } },
+      });
+    }
+    for (const endpoint of repositoryEndpoints) {
+      const value: unknown = Reflect.get(desired.repository, endpoint.key);
+      const current = live.endpoints.get(endpoint.key);
+      if (value !== undefined && current !== undefined) {
+        const plan = planEndpoint('repository', endpoint, value, current, repo);
+        changes.push(...plan.changes);
+        warnings.push(...plan.warnings);
+      }
+    }
+  }
+  if (desired.merge !== undefined) {
+    changes.push(...settingsChange('merge', 'merge methods', desired.merge, live.merge, repo));
+  }
+  return { changes, warnings };
 }

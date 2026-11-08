@@ -249,6 +249,10 @@ environments: [{ name: NPM, wait_timer: 5 }]
         'selected_actions.verified_allowed': base,
         'selected_actions.github_owned_allowed': own,
       },
+      security: {},
+      custom_properties: {},
+      pages: {},
+      autolinks: {},
       rulesets: { Keep: base, Replace: own },
       environments: { NPM: own },
     });
