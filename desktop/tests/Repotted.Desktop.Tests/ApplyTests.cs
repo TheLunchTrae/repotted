@@ -977,8 +977,7 @@ public sealed class ApplyTests : IDisposable
         Assert.False(apply.PutBackCommand.CanExecute(new ExcludedViewModel("rulesets/Main")));
 
         excluded.SetResult();
-        await Task.Delay(50, TestContext.Current.CancellationToken);
-        Assert.Equal(ApplyStep.Planning, apply.Step);
+        await Until(() => apply.Step == ApplyStep.Planning);
         Assert.False(apply.ApplyCommand.CanExecute(null));
         Assert.False(apply.LeaveOutCommand.CanExecute(Row(apply, "repository.has_wiki")));
 
