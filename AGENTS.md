@@ -240,7 +240,9 @@ builds outside mise.
 
 - `Directory.Build.props` holds the compiler and analyzer contract: warnings
   are errors under `AnalysisMode=Recommended`, with code style enforced in the
-  build. Fix the cause of a diagnostic; an exception is a per-site
+  build. `csharp:fmt:check` runs only `dotnet format whitespace`, since the
+  build already reports every style and analyzer rule; `csharp:fmt` fixes the
+  same whitespace. Fix the cause of a diagnostic; an exception is a per-site
   `[SuppressMessage]` with a real `Justification`.
 - Package versions live in `Directory.Packages.props`. Run
   `mise run csharp:lock` after changing them and commit the lock files; CI

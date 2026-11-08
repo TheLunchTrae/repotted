@@ -19,17 +19,19 @@ description = "Restore the desktop app's locked NuGet packages"
 dir = "{{config_root}}/desktop"
 run = "dotnet restore Repotted.Desktop.slnx --locked-mode"
 
+# dotnet format checks only whitespace: the build already fails on every
+# style and analyzer rule that its style and analyzers passes would report.
 [tasks."csharp:fmt"]
-description = "Format the desktop app"
+description = "Fix the desktop app's whitespace"
 depends = ["csharp:restore"]
 dir = "{{config_root}}/desktop"
-run = "dotnet format Repotted.Desktop.slnx --no-restore"
+run = "dotnet format whitespace Repotted.Desktop.slnx --no-restore"
 
 [tasks."csharp:fmt:check"]
-description = "Check the desktop app's formatting"
+description = "Check the desktop app's whitespace"
 depends = ["csharp:restore"]
 dir = "{{config_root}}/desktop"
-run = "dotnet format Repotted.Desktop.slnx --verify-no-changes --no-restore"
+run = "dotnet format whitespace Repotted.Desktop.slnx --verify-no-changes --no-restore"
 
 [tasks."csharp:lint"]
 description = "Build the desktop app with its analyzers, warnings as errors"
@@ -58,10 +60,11 @@ run_windows = "set GITHUB_TOKEN=& set GH_TOKEN=& set GH_CONFIG_DIR=%TEMP%\\repot
 description = "Run the desktop app's standards workflow with autofixes"
 depends = ["csharp:fmt"]
 
+# csharp:test depends on csharp:lint, so the tests start once the build ends
+# and the whitespace check runs beside them.
 [tasks."csharp:standards:check"]
 description = "Run the desktop app's standards CI gate"
-depends = ["csharp:fmt:check", "csharp:lint"]
-run = [{ task = "csharp:test" }]
+depends = ["csharp:fmt:check", "csharp:test"]
 
 [tasks."desktop:package"]
 description = "Build the desktop app for this machine: a macOS DMG or a Windows installer, in artifacts/desktop"

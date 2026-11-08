@@ -1,4 +1,5 @@
-# C# and XAML style for the desktop app; `dotnet format` and the build enforce it.
+# C# and XAML style for the desktop app. The build enforces the style and
+# analyzer rules; `dotnet format whitespace` enforces the whitespace.
 root = false
 
 [*.{cs,axaml,csproj,props,slnx}]
