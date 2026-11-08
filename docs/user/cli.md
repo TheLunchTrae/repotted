@@ -96,7 +96,7 @@ npx repotted apply plan.json
 `stage <file> --new owner/repo` starts a staged apply in a new file. With
 `--profile`, it starts from that profile; without it, from the repository as
 it is, so its plan holds only your edits. It never replaces a file that
-exists.
+exists, and when edits given with `--new` fail, it leaves no file behind.
 
 `stage <file>` prints the profile the staged apply brings the repository to.
 It takes the editing options of `profile`, described below, for one-off edits.
@@ -108,11 +108,17 @@ for this apply, so give the whole entry. It also takes:
   of settings, as `repository.has_wiki` or `actions.selected_actions`; or one
   entry of a list, as `rulesets/Main`, `environments/production`, or
   `autolinks/JIRA-`. `--include key` takes it back. A value can't be both
-  excluded and edited.
+  excluded and edited, and an exclusion has to name something the profile
+  sets, so a mistyped name is refused. An environment's name matches in any
+  case, as GitHub's does; a ruleset's name and an autolink's prefix match as
+  written. The profile is checked once the exclusions are out, so an edit
+  that only fits without an excluded value is fine.
 - `--save-to-profile` writes the one-off edits into the profile the staged
   apply starts from and clears them from the staged apply, which then
   resolves the same. Exclusions stay, since they only say what this apply leaves
-  out.
+  out. It refuses, and changes neither file, when the edits hold autolinks or
+  turn a Pages site into no site, or the reverse; make those changes in the
+  profile file itself.
 - `--discard` removes the staged apply file. The profile stays as it is.
 
 The profile's [drafts](profiles.md#drafts) stay out of a staged apply, as they

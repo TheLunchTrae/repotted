@@ -691,6 +691,21 @@ describe('stage', () => {
     expect(result.err).toContain('applies to lunch/app');
   });
 
+  test('leaves no file behind when the edits of a start fail, so it can start again', async () => {
+    const file = path.join(directory, 'staged-failed-start.yaml');
+
+    const failed = await cli(new FakeGitHub(), 'stage', file, '--new', 'lunch/app', '--set', 'repository.no_such=1');
+    expect(failed.code).not.toBe(0);
+    expect(
+      await readFile(file).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false);
+    const started = await cli(new FakeGitHub(), 'stage', file, '--new', 'lunch/app');
+    expect(started.code).toBe(0);
+  });
+
   test('names the drafts of its profile, which its plan leaves out', async () => {
     const profile = path.join(directory, 'staged-drafts-base.yaml');
     await writeFile(profile, 'repository: { has_wiki: false }\ndrafts:\n  repository: { has_projects: false }\n');

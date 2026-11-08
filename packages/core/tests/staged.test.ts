@@ -175,7 +175,7 @@ describe('staged apply', () => {
     expect(github.state.rulesets.map((ruleset) => `${ruleset.name} ${ruleset.enforcement}`)).toEqual(['Main disabled']);
   });
 
-  test('leaves out what it exclusions, and stops excluding it again', async () => {
+  test('leaves out what it excludes, and stops excluding it again', async () => {
     const files = await folder(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     const excluded = await editStagedApply(files.staged, [
@@ -196,7 +196,7 @@ describe('staged apply', () => {
     expect(restored.profile.rulesets?.map((entry) => entry.name)).toEqual(['Main']);
   });
 
-  test('exclusions a whole section, a group of settings, and a list entry by its key', async () => {
+  test('excludes a whole section, a group of settings, and a list entry by its key', async () => {
     const files = await folder(`
 actions: { allowed_actions: selected, selected_actions: { github_owned_allowed: true, verified_allowed: false } }
 environments: [{ name: Production }]
@@ -306,7 +306,97 @@ merge: { allow_rebase_merge: false }
     await createStagedApply(files.staged, 'lunch/app', undefined);
     await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
 
+    const before = await readFile(files.staged, 'utf8');
+
     expect(await rejection(saveStagedEdits(files.staged))).toBeInstanceOf(ProfileError);
+    expect(await readFile(files.staged, 'utf8')).toBe(before);
+    expect(await readFile(files.profile, 'utf8')).toBe(base);
+  });
+
+  test('saves a group of settings and a new ruleset to the profile', async () => {
+    const files =
+      await folder(`${base}actions: { allowed_actions: selected, selected_actions: { github_owned_allowed: true } }
+`);
+    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    const release = { name: 'Release', target: 'tag', enforcement: 'active', bypass_actors: [], rules: [] };
+    const edited = await editStagedApply(files.staged, [
+      { path: ['actions', 'selected_actions', 'verified_allowed'], value: true },
+      { list: 'rulesets', name: 'Release', entry: release },
+    ]);
+
+    const saved = await saveStagedEdits(files.staged);
+    expect(saved.profile).toEqual(edited.profile);
+    expect(saved.sources['rulesets']).toEqual({ Main: files.profile, Release: files.profile });
+    expect(saved.sources['actions']).toMatchObject({ 'selected_actions.verified_allowed': files.profile });
+    expect(await readFile(files.staged, 'utf8')).not.toContain('Release');
+  });
+
+  test('refuses to save autolinks, or a change between a Pages site and none, and changes neither file', async () => {
+    const files = await folder(`${base}pages: { build_type: workflow }
+`);
+    const profileText = await readFile(files.profile, 'utf8');
+    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await editStagedApply(files.staged, [{ path: ['pages', 'absent'], value: true }]);
+    const withoutPages = await readFile(files.staged, 'utf8');
+
+    const pages = await rejection(saveStagedEdits(files.staged));
+    expect(pages instanceof ProfileError ? pages.message : '').toContain('Pages site');
+    expect(await readFile(files.staged, 'utf8')).toBe(withoutPages);
+
+    await writeFile(
+      files.staged,
+      stringify({
+        apply_to: 'lunch/app',
+        extends: path.basename(files.profile),
+        autolinks: [{ key_prefix: 'JIRA-', url_template: 'https://jira.example.com/browse/<num>' }],
+      }),
+    );
+    const withAutolinks = await readFile(files.staged, 'utf8');
+    expect(await rejection(saveStagedEdits(files.staged))).toBeInstanceOf(ProfileError);
+    expect(await readFile(files.staged, 'utf8')).toBe(withAutolinks);
+    expect(await readFile(files.profile, 'utf8')).toBe(profileText);
+  });
+
+  test('checks the profile only once its exclusions are left out', async () => {
+    const files = await folder('security: { vulnerability_alerts: true, automated_security_fixes: true }\n');
+    await createStagedApply(files.staged, 'lunch/app', files.profile);
+
+    const staged = await editStagedApply(files.staged, [
+      { path: ['security', 'vulnerability_alerts'], value: false },
+      { exclude: 'security.automated_security_fixes', excluded: true },
+    ]);
+    expect(staged.profile).toEqual({ security: { vulnerability_alerts: false } });
+    expect((await resolveStagedApply(files.staged)).profile).toEqual(staged.profile);
+  });
+
+  test('refuses an exclusion that leaves nothing out, and knows an environment by any case', async () => {
+    const files = await folder(`${base}environments: [{ name: Prod }]
+`);
+    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    const before = await readFile(files.staged, 'utf8');
+
+    // Ruleset names keep their case, so this names no ruleset of the profile.
+    const typo = await rejection(editStagedApply(files.staged, [{ exclude: 'rulesets/main', excluded: true }]));
+    expect(typo instanceof ProfileError ? typo.message : '').toContain('sets nothing it names');
+    expect(await readFile(files.staged, 'utf8')).toBe(before);
+
+    await editStagedApply(files.staged, [{ exclude: 'environments/Prod', excluded: true }]);
+    const again = await editStagedApply(files.staged, [{ exclude: 'environments/prod', excluded: true }]);
+    expect(again.exclude).toEqual(['environments/Prod']);
+    const included = await editStagedApply(files.staged, [{ exclude: 'environments/PROD', excluded: false }]);
+    expect(included.exclude).toEqual([]);
+    expect(included.profile.environments?.map((entry) => entry.name)).toEqual(['Prod']);
+  });
+
+  test('warns when its profile changes so that an exclusion leaves nothing out', async () => {
+    const files = await folder(base);
+    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await editStagedApply(files.staged, [{ exclude: 'rulesets/Main', excluded: true }]);
+    await writeFile(files.profile, 'repository: { has_wiki: false }\n');
+
+    const warning = 'Excluding rulesets/Main leaves nothing out, since the profile sets nothing it names';
+    expect((await resolveStagedApply(files.staged)).warnings).toEqual([warning]);
+    expect((await planStagedApply(new FakeGitHub(), files.staged)).plan.warnings).toContain(warning);
   });
 
   test('names what leaves out every change and field of its plan, each of which then leaves the plan', async () => {

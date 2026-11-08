@@ -569,7 +569,13 @@ function sourcesOf(
   };
 }
 
-function resolveChain(chain: readonly Link[], source: string): ResolvedProfile {
+/**
+ * Changes a chain's merged profile before it is checked, as a staged apply
+ * leaves out what it excludes, so only the result has to be a valid profile.
+ */
+export type Adjust = (data: unknown) => unknown;
+
+function resolveChain(chain: readonly Link[], source: string, adjust?: Adjust): ResolvedProfile {
   const merged = chain
     .toReversed()
     .reduce<SourcedProfile>((base, { file, parsed }) => mergeProfiles(base, parsed, file), { settings: {} });
@@ -579,7 +585,7 @@ function resolveChain(chain: readonly Link[], source: string): ResolvedProfile {
   const drafts = toDrafts(mergedDrafts);
   return {
     chain: chain.map((link) => link.file),
-    profile: validate(toProfile(merged), source),
+    profile: validate(adjust === undefined ? toProfile(merged) : adjust(toProfile(merged)), source),
     drafts,
     warnings: [...chain.flatMap((link) => fileDraftWarnings(link.drafts, link.file)), ...draftWarnings(drafts)],
     sources: { ...sourcesOf(merged), drafts: sourcesOf(mergedDrafts) },
@@ -587,8 +593,12 @@ function resolveChain(chain: readonly Link[], source: string): ResolvedProfile {
 }
 
 /** Reads a profile file and every profile it extends, and says which file sets each value. */
-export async function resolveProfile(file: string, head: LayerSchema = profileFile): Promise<ResolvedProfile> {
-  return resolveChain(await readChain(file, head), path.resolve(file));
+export async function resolveProfile(
+  file: string,
+  head: LayerSchema = profileFile,
+  adjust?: Adjust,
+): Promise<ResolvedProfile> {
+  return resolveChain(await readChain(file, head), path.resolve(file), adjust);
 }
 
 /**
@@ -898,6 +908,8 @@ export interface Layer {
   readonly schema: LayerSchema;
   /** Top-level keys of the file's own, which a setting edit may set or remove whole. */
   readonly paths: ReadonlySet<string>;
+  /** What changes the edited file's merged profile before it is checked, from the edited text. */
+  readonly adjust?: (text: string) => Adjust;
   /** Throws when the edited file, resolved, is not one to save. */
   readonly check: (resolved: ResolvedProfile, text: string) => void;
 }
@@ -946,7 +958,11 @@ export async function editLayer(file: string, edits: readonly ProfileEdit[], lay
   const indent = /^( +)\S/mu.exec(original)?.[1]?.length ?? 2;
   const text = document.toString({ lineWidth: 0, indent });
   const edited = parseProfileFile(text, own.file, layer.schema);
-  const resolved = resolveChain([{ file: own.file, parsed: edited.own, drafts: edited.drafts }, ...base], own.file);
+  const resolved = resolveChain(
+    [{ file: own.file, parsed: edited.own, drafts: edited.drafts }, ...base],
+    own.file,
+    layer.adjust?.(text),
+  );
   layer.check(resolved, text);
   await replaceFile(own.file, original.includes('\r\n') ? text.replaceAll('\n', '\r\n') : text);
   return resolved;

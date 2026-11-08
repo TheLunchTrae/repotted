@@ -13,8 +13,8 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `{ repository, desired, changes, skipped, warnings }`. `skipped` lists the
   profile's drafts as `{ section, target }`, where `target` is a draft
   setting's key, a draft autolink's key prefix, or a draft entry's name.
-  With `--staged`, the document also has `staged`, as `stage` prints it
-  below, and `exclusions`, which says what leaves each change out of the
+  With `--staged`, the document also has `staged`, as
+  `{ file, repository, base, exclude }` from `stage` below, and `exclusions`, which says what leaves each change out of the
   staged apply. Each exclusion is `{ change, field, key, edited }`: `change`
   is the change's index in `changes`, `field` is the field it leaves out, or
   null for a whole ruleset, environment, autolink or Pages site, and `key`
@@ -48,7 +48,9 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   the repository to: the profile with the one-off edits laid over it and the
   excluded values left out. `drafts` and `warnings` are the drafts of the
   profile it starts from, which its plan leaves out, as in `profile`; a
-  staged apply holds no drafts of its own. `sources` is as in `profile`,
+  staged apply holds no drafts of its own. `warnings` also names each
+  exclusion that leaves nothing out, as when the profile stops setting what
+  it names, and a staged plan's `warnings` do too. `sources` is as in `profile`,
   without the excluded values, so a value whose file is `chain[0]` is a
   one-off edit. With `--discard`, it prints `{ discarded }`, the file's path.
 - `profiles` prints `{ profiles }`, each as `{ name, file, extends, problem }`,

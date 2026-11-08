@@ -73,7 +73,7 @@ const usage = `Usage: repotted <command> [options]
 Commands:
   capture <owner/repo> [--output file]          Write the repository's setup as a YAML profile
   plan <owner/repo> --profile file [--out file]  Show the changes a profile needs; --out saves the plan
-  plan --staged file [--out file]                Show the changes a staged apply needs
+  plan [owner/repo] --staged file [--out file]   Show the changes a staged apply needs
   apply <plan.json> [--yes]                      Apply a saved plan if the repository has not changed
   profiles <folder>                              List the profiles in a folder
   sync <folder> [--repository owner/repo]        Sync a folder of profiles with a GitHub repository
@@ -177,7 +177,7 @@ async function plan(io: Io, args: string[]): Promise<number> {
     }
     const staged = await resolveStagedApply(values.staged);
     const [named] = positionals;
-    if (named !== undefined && named !== staged.repository) {
+    if (named !== undefined && named.toLowerCase() !== staged.repository.toLowerCase()) {
       throw new UsageError(`${values.staged} applies to ${staged.repository}, not ${named}.`);
     }
     stagedPlan = await planStagedApply(await io.github(), values.staged);
@@ -501,11 +501,19 @@ async function stage(io: Io, args: string[]): Promise<number> {
     values.new === undefined
       ? await resolveStagedApply(file)
       : await createStagedApply(file, values.new, values.profile);
-  if (edits.length > 0) {
-    result = await editStagedApply(file, edits);
-  }
-  if (values['save-to-profile'] === true) {
-    result = await saveStagedEdits(file);
+  try {
+    if (edits.length > 0) {
+      result = await editStagedApply(file, edits);
+    }
+    if (values['save-to-profile'] === true) {
+      result = await saveStagedEdits(file);
+    }
+  } catch (error) {
+    // A start whose edits fail leaves no file behind, so it can be run again.
+    if (values.new !== undefined) {
+      await discardStagedApply(file);
+    }
+    throw error;
   }
   if (values.json === true) {
     json(io, result);

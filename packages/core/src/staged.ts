@@ -1,5 +1,6 @@
 import { readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
@@ -7,6 +8,7 @@ import { z } from 'zod';
 import { type GitHub, parseRepo, repoPattern } from './github.js';
 import { createPlan, type Plan, skippedDrafts } from './plan.js';
 import {
+  type Adjust,
   type Drafts,
   editLayer,
   editProfile,
@@ -19,7 +21,7 @@ import {
   settingPath,
   settingsSections,
 } from './profile.js';
-import { environmentKey, profile, type Profile, profileFile, type ProfileFile } from './schema.js';
+import { environmentKey, type Profile, profileFile, type ProfileFile } from './schema.js';
 
 // A staged apply is a profile layer of its own: a file that names the
 // repository it applies to, extends the profile it starts from, if any, and
@@ -67,6 +69,15 @@ function parseExclusion(key: string): Exclusion | undefined {
   }
   const parts = key.split('.');
   return settingPath(parts) === undefined ? undefined : { kind: 'setting', path: parts };
+}
+
+/** The key an exclusion is known by, so two spellings of one environment's name are one exclusion. */
+function exclusionKey(key: string): string {
+  const exclusion = parseExclusion(key);
+  if (exclusion?.kind !== 'entry') {
+    return key;
+  }
+  return `${exclusion.list}/${lists[exclusion.list]({ name: exclusion.name, key_prefix: exclusion.name })}`;
 }
 
 function getIn(value: unknown, keys: readonly string[]): unknown {
@@ -120,10 +131,10 @@ const stagedFile = profileFile
         });
         continue;
       }
-      if (seen.has(key)) {
+      if (seen.has(exclusionKey(key))) {
         context.addIssue({ code: 'custom', message: `${key} is excluded more than once`, path: ['exclude', index] });
       }
-      seen.add(key);
+      seen.add(exclusionKey(key));
       if (sets(value, exclusion)) {
         context.addIssue({
           code: 'custom',
@@ -191,13 +202,25 @@ function withoutExclusion(data: unknown, exclusion: Exclusion): unknown {
     : data;
 }
 
-/** A profile without what `exclusions` name. */
-function withoutExclusions(value: Profile, exclusions: readonly Exclusion[]): Profile {
-  const result = profile.safeParse(exclusions.reduce<unknown>(withoutExclusion, value));
-  if (!result.success) {
-    throw new ProfileError(`The staged apply's exclusions leave an invalid profile:\n${z.prettifyError(result.error)}`);
-  }
-  return result.data;
+/**
+ * Leaves a staged apply's exclusions out of the merged profile it starts
+ * from, before the result is checked, and lists in `unmatched` each
+ * exclusion that leaves nothing out.
+ */
+function excluding(own: StagedFile, unmatched: string[]): Adjust {
+  return (data) =>
+    (own.exclude ?? []).reduce<unknown>((current, key) => {
+      const exclusion = parseExclusion(key);
+      const next = exclusion === undefined ? current : withoutExclusion(current, exclusion);
+      if (isDeepStrictEqual(next, current)) {
+        unmatched.push(key);
+      }
+      return next;
+    }, data);
+}
+
+function unmatchedWarning(key: string): string {
+  return `Excluding ${key} leaves nothing out, since the profile sets nothing it names`;
 }
 
 /** Whether `exclusion` names the value that `sources` lists under `section` as `name`. */
@@ -274,7 +297,8 @@ async function readStagedFile(file: string): Promise<StagedFile> {
   return result.data;
 }
 
-function staged(own: StagedFile, resolved: ResolvedProfile): StagedApply {
+/** A staged apply from its file and its resolved chain, whose profile already leaves its exclusions out. */
+function staged(own: StagedFile, resolved: ResolvedProfile, unmatched: readonly string[]): StagedApply {
   const exclude = own.exclude ?? [];
   const exclusions = exclude.flatMap((key) => parseExclusion(key) ?? []);
   const { drafts, ...settled } = resolved.sources;
@@ -284,9 +308,9 @@ function staged(own: StagedFile, resolved: ResolvedProfile): StagedApply {
     base: resolved.chain[1] ?? null,
     exclude,
     chain: resolved.chain,
-    profile: withoutExclusions(resolved.profile, exclusions),
+    profile: resolved.profile,
     drafts: resolved.drafts,
-    warnings: resolved.warnings,
+    warnings: [...resolved.warnings, ...unmatched.map(unmatchedWarning)],
     sources: { ...sourcesWithoutExclusions(settled, exclusions), drafts },
   };
 }
@@ -294,7 +318,9 @@ function staged(own: StagedFile, resolved: ResolvedProfile): StagedApply {
 /** Reads a staged apply over the profile it starts from. */
 export async function resolveStagedApply(file: string): Promise<StagedApply> {
   const own = await readStagedFile(file);
-  return staged(own, await resolveProfile(file, stagedLayer));
+  // A profile that changes after an exclusion was added may set nothing it names, which is a warning.
+  const unmatched: string[] = [];
+  return staged(own, await resolveProfile(file, stagedLayer, excluding(own, unmatched)), unmatched);
 }
 
 /**
@@ -353,7 +379,7 @@ export async function editStagedApply(file: string, edits: readonly StagedEdit[]
         `Cannot exclude ${edit.exclude}: it names no section, setting, or list entry, as in repository.has_wiki or rulesets/Main`,
       );
     }
-    const index = exclude.indexOf(edit.exclude);
+    const index = exclude.findIndex((key) => exclusionKey(key) === exclusionKey(edit.exclude));
     if (edit.excluded && index === -1) {
       exclude.push(edit.exclude);
     } else if (!edit.excluded && index !== -1) {
@@ -363,12 +389,25 @@ export async function editStagedApply(file: string, edits: readonly StagedEdit[]
   if (!isSameList(exclude, own.exclude ?? [])) {
     profileEdits.push({ path: ['exclude'], value: exclude.length === 0 ? undefined : exclude });
   }
+  const added = new Set(
+    edits.flatMap((edit) => ('exclude' in edit && edit.excluded ? [exclusionKey(edit.exclude)] : [])),
+  );
   let result: StagedApply | undefined;
+  let unmatched: string[] = [];
   const layer: Layer = {
     schema: stagedLayer,
     paths: new Set(['exclude']),
+    adjust: (text) => {
+      unmatched = [];
+      return excluding(stagedFile.parse(parse(text) ?? {}), unmatched);
+    },
     check: (resolved, text) => {
-      result = staged(stagedFile.parse(parse(text) ?? {}), resolved);
+      // A new exclusion that leaves nothing out is most likely a mistyped name.
+      const missed = unmatched.find((key) => added.has(exclusionKey(key)));
+      if (missed !== undefined) {
+        throw new ProfileError(`Cannot exclude ${missed}: the profile it starts from sets nothing it names`);
+      }
+      result = staged(stagedFile.parse(parse(text) ?? {}), resolved, unmatched);
     },
   };
   await editLayer(file, profileEdits, layer);
@@ -425,6 +464,13 @@ export async function saveStagedEdits(file: string): Promise<StagedApply> {
   if (edits.length === 0) {
     return before;
   }
+  // `absent` replaces a whole Pages site when files merge, but an edit sets one key of the profile.
+  const pages = (await resolveProfile(before.base)).profile.pages;
+  if (layer.pages !== undefined && pages !== undefined && 'absent' in layer.pages !== 'absent' in pages) {
+    throw new ProfileError(
+      'Cannot save a change between a Pages site and no Pages site to a profile; change pages in the profile file',
+    );
+  }
   await editProfile(before.base, edits);
   return editStagedApply(file, layerEdits(layer, true));
 }
@@ -473,12 +519,15 @@ function entryKey(change: Plan['changes'][number], desired: Profile): string | u
   if (change.section !== 'environments') {
     return undefined;
   }
-  // A branch policy's target is its environment's name, then ": " and the policy.
+  // A branch policy's target is its environment's name, then ": " and the policy,
+  // so the longest name that fits wins when one name starts with another.
   const target = environmentKey(change.target);
-  const entry = (desired.environments ?? []).find((environment) => {
-    const name = environmentKey(environment.name);
-    return target === name || target.startsWith(`${name}: `);
-  });
+  const entry = (desired.environments ?? [])
+    .filter((environment) => {
+      const name = environmentKey(environment.name);
+      return target === name || target.startsWith(`${name}: `);
+    })
+    .toSorted((left, right) => right.name.length - left.name.length)[0];
   return entry === undefined ? undefined : `environments/${entry.name}`;
 }
 
@@ -502,13 +551,15 @@ function planExclusions(plan: Plan, own: StagedFile): PlanExclusion[] {
 /** Plans a staged apply: the changes that bring its repository to its profile, and what leaves each out. */
 export async function planStagedApply(github: GitHub, file: string): Promise<StagedPlan> {
   const own = await readStagedFile(file);
-  const resolved = staged(own, await resolveProfile(file, stagedLayer));
-  const plan = await createPlan(
+  const unmatched: string[] = [];
+  const resolved = staged(own, await resolveProfile(file, stagedLayer, excluding(own, unmatched)), unmatched);
+  const created = await createPlan(
     github,
     parseRepo(resolved.repository),
     resolved.profile,
     skippedDrafts(resolved.drafts),
   );
+  const plan = { ...created, warnings: [...created.warnings, ...unmatched.map(unmatchedWarning)] };
   return { staged: resolved, plan, exclusions: planExclusions(plan, own) };
 }
 
