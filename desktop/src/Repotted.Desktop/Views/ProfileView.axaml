@@ -138,7 +138,7 @@
               </StackPanel>
             </Grid>
           </Border>
-          <Border Classes="field" MinHeight="56">
+          <Border Classes="field" MinHeight="56" IsVisible="{Binding Drafts}">
             <Grid ColumnDefinitions="180,*" Margin="16,10">
               <TextBlock Text="Draft" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
               <StackPanel Grid.Column="1" Spacing="4">
@@ -175,7 +175,7 @@
                    IsVisible="{Binding HasChanges}" />
         <Button Classes="quiet" Content="Discard" IsVisible="{Binding HasChanges}" Command="{Binding DiscardCommand}" />
         <Button Classes="quiet" Content="{Binding YamlLabel}" Command="{Binding ToggleYamlCommand}" />
-        <Button Classes="primary" Content="Save profile" Command="{Binding SaveCommand}" />
+        <Button Classes="primary" Content="{Binding SaveLabel}" Command="{Binding SaveCommand}" />
       </StackPanel>
     </Grid>
 
@@ -240,7 +240,7 @@
                             AutomationProperties.HelpText="Shows only settings this profile or a profile it extends sets." />
               <ToggleButton Classes="chip" Content="Not saved yet" IsChecked="{Binding OnlyUnsaved}"
                             AutomationProperties.HelpText="Shows only settings with a change waiting to be saved." />
-              <ToggleButton Classes="chip" Content="Drafts" IsChecked="{Binding OnlyDrafts}"
+              <ToggleButton Classes="chip" Content="Drafts" IsChecked="{Binding OnlyDrafts}" IsVisible="{Binding HoldsDrafts}"
                             AutomationProperties.HelpText="Shows only settings with a draft, saved in this profile or a profile it extends." />
               <Button Classes="link" Margin="4,0,0,0" Content="Clear" IsVisible="{Binding Filtering}"
                       Command="{Binding ClearFiltersCommand}" AutomationProperties.Name="Clear the search and filters" />
@@ -285,7 +285,7 @@
           <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="20" Margin="0,14,0,6">
             <StackPanel Orientation="Horizontal" Spacing="8">
               <Border Classes="legend" Background="{DynamicResource RailBrush}" />
-              <TextBlock Classes="muted small" Text="Set in this profile" VerticalAlignment="Center" />
+              <TextBlock Classes="muted small" Text="{Binding OwnLabel}" VerticalAlignment="Center" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="8">
               <Border Classes="legend" Background="{DynamicResource RailInheritedBrush}" />

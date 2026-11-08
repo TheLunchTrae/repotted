@@ -193,6 +193,59 @@ changes, so every failed event below leaves the file as it was.
 Applying does not end the staged apply: the file stays until it is
 discarded, so a stale or partly applied apply can be planned again from it.
 
+## Desktop apply
+
+The Apply page (`ApplyViewModel`) drives one staged apply per repository,
+kept at `staged/<owner>/<name>.yaml` in the app data folder with its reviewed
+plan beside it as `<name>.plan.json`. Leaving the page keeps the file, so an
+apply left unfinished is offered again. A change runs with `Working` set, and
+no other change, apply or discard starts until it ends.
+
+| State                                     | Event                                         | Next                                                                                                                         |
+| ----------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Starting                                  | No staged file for the repository             | Planning, after `stage --new`, from the chosen profile or from the repository as it is.                                      |
+| Starting                                  | A staged file is there                        | Unfinished, naming what it starts from; one the CLI can't read can still be started over.                                    |
+| Starting                                  | `stage --new` fails                           | Failed, with the CLI's message; with no staged file there is nothing to review or discard.                                   |
+| Unfinished                                | Resume                                        | Planning, from the file as it is.                                                                                            |
+| Unfinished                                | Start over                                    | Starting: the file and its plan are removed, and a new one starts from the chosen profile.                                   |
+| Planning                                  | `plan --staged` succeeds                      | Reviewing, with each row's exclusion key from the plan.                                                                      |
+| Planning                                  | `plan --staged` fails                         | Failed; Review again plans once more, and Discard apply is offered while the staged file is there.                           |
+| Reviewing                                 | Leave out, Put back, or Save edits to profile | Working, then Planning; a refused change keeps the review as it was and shows why.                                           |
+| Reviewing, Confirming, Confirming discard | Save the one-off edits                        | Planning, since the edits change the plan; a plan reviewed before the save is never applied.                                 |
+| Reviewing                                 | One-off edits not saved yet                   | Reviewing, with Apply, leaving out, saving to the profile and leaving the page held until saved or undone.                   |
+| Reviewing                                 | Apply, with a locked change                   | Reviewing: Apply stays held until each change the locks say GitHub refuses is left out or planned again with access.         |
+| Reviewing                                 | Apply, with changes to make and none locked   | Confirming. The one-off edits can change only in Reviewing, so none waits under a plan about to be applied.                  |
+| Confirming                                | Cancel                                        | Reviewing; nothing is written.                                                                                               |
+| Confirming                                | Apply now                                     | Applying: `apply --yes` on the reviewed plan file. It waits while the edits are read or saved.                               |
+| Applying                                  | Every change written                          | Applied: the staged file and plan are removed. A failed removal leaves the file, to be offered again.                        |
+| Applying                                  | The repository changed since the review       | Stale: nothing was written. Review again plans from the file.                                                                |
+| Applying                                  | A write fails partway                         | Partly applied: the outcome counts what was written and names what failed. Review again shows the rest.                      |
+| Applying                                  | Any other failure                             | Failed, warning that some changes may already be on GitHub.                                                                  |
+| Reviewing, Stale, Partly applied, Failed  | Discard apply, with the staged file there     | Confirming discard, which shows the review behind it while it asks. Held while a change runs or the edits are read or saved. |
+| Confirming discard                        | Keep it                                       | The state it came from.                                                                                                      |
+| Confirming discard                        | Discard apply                                 | Discarded: the file and plan are removed and the page closes. A refused discard returns with the error.                      |
+
+Leaving the page, whether by Back to repositories, by choosing Repositories in
+the sidebar again, or by closing the window, signing out or a lost sign-in,
+goes by `CanLeave`: not while a change, a plan or an apply runs, nor while the
+one-off edits are read, saved or unsaved. A discarded apply can always leave.
+Choosing Profiles in the sidebar shows that page and leaves the apply open
+behind it, to come back to.
+
+| When leaving                                            | What happens                                                                                                  |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| The page can close                                      | It closes; an unfinished staged apply stays to resume.                                                        |
+| A run is going, or the edits are read or saved          | The page shows itself, says the act waits until Repotted is done, and stays. The note goes when the run ends. |
+| The same, for a lost sign-in                            | The check waits for the run to end, then goes on as below, since the app can't leave a run partway.           |
+| One-off edits are unsaved                               | The page shows its edits and asks to save or undo them first.                                                 |
+| Asking, and the edits are saved                         | The saved edits are planned again, then the act goes on, so the page never stays behind with an old plan.     |
+| Asking, and the edits are undone or the apply discarded | The act goes on.                                                                                              |
+| Asking, and Stay here, or another act asks              | The act is put aside and the edits stay as they are; a later question replaces an open one.                   |
+
+Unsaved profile changes on the Profiles page are asked about after the apply.
+A lost sign-in that asked either question checks the sign-in again once it is
+answered. Opening another apply while one is open does nothing.
+
 ## Config repository sync
 
 `syncFolder` (`packages/core/src/sync.ts`) brings a folder and a folder in a

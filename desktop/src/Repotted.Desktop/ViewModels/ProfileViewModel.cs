@@ -41,6 +41,34 @@ internal sealed partial class SettingResultsViewModel(string tab, string title, 
 }
 
 /// <summary>
+/// Where a profile editor reads and saves its file, and how it names what it
+/// edits: a profile, or the one-off edits of a staged apply, which is a
+/// profile layer of its own over the profile it starts from.
+/// </summary>
+/// <param name="Load">Resolves the file.</param>
+/// <param name="Save">Writes edits to the file, which the CLI checks first.</param>
+/// <param name="SaveLabel">The save button's label.</param>
+/// <param name="OwnLabel">The legend's name for values the file sets itself.</param>
+/// <param name="Summary">The line under the heading, given what the file extends, if anything, and its name.</param>
+/// <param name="Drafts">Whether the file can hold drafts: a profile can, and a staged apply's one-off edits can't.</param>
+internal sealed record ProfileStore(
+    Func<string, CancellationToken, Task<ResolvedProfile>> Load,
+    Func<string, IReadOnlyList<ProfileChange>, IReadOnlyList<EntryChange>, CancellationToken, Task<ResolvedProfile>> Save,
+    string SaveLabel,
+    string OwnLabel,
+    Func<string?, string, string> Summary,
+    bool Drafts = true)
+{
+    /// <summary>A profile file.</summary>
+    public static ProfileStore Profile(RepottedClient client) => new(
+        client.ProfileAsync,
+        client.SaveProfileAsync,
+        "Save profile",
+        "Set in this profile",
+        (@base, file) => @base is null ? $"Saved to {file}." : $"Extends {@base}. Saved to {file}.");
+}
+
+/// <summary>
 /// One profile, resolved over the profiles it extends: its settings by tab,
 /// marked as set here, inherited, or not managed, and the edits waiting to be
 /// saved to its file.
@@ -49,12 +77,23 @@ internal sealed partial class SettingResultsViewModel(string tab, string title, 
 /// <param name="listing">The profile in the folder.</param>
 /// <param name="saved">Runs after each save, such as to sync the folder with its config repository.</param>
 /// <param name="exclusive">Runs the write itself, such as once a sync of the folder ends; the write runs at once when null.</param>
+/// <param name="store">Where it reads and saves; a profile file when null.</param>
 internal sealed partial class ProfileViewModel(
     RepottedClient client,
     ProfileListingDocument listing,
     Func<Task>? saved = null,
-    Func<Func<Task>, Task>? exclusive = null) : ViewModelBase
+    Func<Func<Task>, Task>? exclusive = null,
+    ProfileStore? store = null) : ViewModelBase
 {
+    private readonly ProfileStore store = store ?? ProfileStore.Profile(client);
+
+    public string SaveLabel => store.SaveLabel;
+
+    public string OwnLabel => store.OwnLabel;
+
+    /// <summary>Whether the file can hold drafts, so the Drafts filter is offered; a staged apply's one-off edits can't.</summary>
+    public bool HoldsDrafts => store.Drafts;
+
     public string Name => listing.Name;
 
     public string File => listing.File;
@@ -160,9 +199,7 @@ internal sealed partial class ProfileViewModel(
 
     public bool HasDraftWarnings => DraftWarnings.Count > 0;
 
-    public string Summary => BaseName is null
-        ? $"Saved to {FileName}."
-        : $"Extends {BaseName}. Saved to {FileName}.";
+    public string Summary => store.Summary(BaseName, FileName);
 
     /// <summary>The profile file's own text, as saved.</summary>
     [ObservableProperty]
@@ -185,6 +222,10 @@ internal sealed partial class ProfileViewModel(
     public bool HasChanges => ChangeCount > 0;
 
     public string ChangesLabel => ChangeCount == 1 ? "1 unsaved change" : $"{ChangeCount} unsaved changes";
+
+    /// <summary>Whether the file, as last loaded or saved, sets any setting, ruleset or environment itself.</summary>
+    public bool SetsAnything =>
+        Settings.Any(setting => setting.Origin == SettingOrigin.Own) || Entries.Any(entry => entry.Origin == SettingOrigin.Own);
 
     /// <summary>What is typed in the settings search.</summary>
     [ObservableProperty]
@@ -322,7 +363,7 @@ internal sealed partial class ProfileViewModel(
             // a change since. A file the chain gains, such as a base read for
             // the first time, can only be read after.
             var texts = ReadFiles(chain.Count == 0 ? [File] : chain);
-            var profile = await client.ProfileAsync(File, CancellationToken.None).ConfigureAwait(true);
+            var profile = await store.Load(File, CancellationToken.None).ConfigureAwait(true);
             foreach (var file in ChainOf(profile).Where(file => !texts.ContainsKey(file)))
             {
                 texts[file] = ReadFile(file);
@@ -477,7 +518,7 @@ internal sealed partial class ProfileViewModel(
                         ChangedFile = file;
                         return;
                     }
-                    profile = await client.SaveProfileAsync(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
+                    profile = await store.Save(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
                     texts = ReadFiles(ChainOf(profile));
                 }
                 finally
@@ -589,7 +630,7 @@ internal sealed partial class ProfileViewModel(
                                     ? new DraftValue(value, profile.DraftSource(section.Section, field.Key) is { } file ? Base(file) : null)
                                     : null;
                                 SettingViewModel? row = null;
-                                row = new SettingViewModel(field, saved, origin, inherited, () => OnRowChanged(row!), draft, BaseDraft(@base, section.Section, field.Key));
+                                row = new SettingViewModel(field, saved, origin, inherited, () => OnRowChanged(row!), draft, BaseDraft(@base, section.Section, field.Key), store.Drafts);
                                 return row;
                             }),
                         ])),
@@ -609,7 +650,7 @@ internal sealed partial class ProfileViewModel(
 
         ProfileTabViewModel EntriesTab(string name, string section)
         {
-            var tab = new ProfileTabViewModel(name, section, OnSettingChanged);
+            var tab = new ProfileTabViewModel(name, section, OnSettingChanged, store.Drafts);
             var sources = profile.Sources[section];
             foreach (var entry in EntriesOf(profile, section))
             {

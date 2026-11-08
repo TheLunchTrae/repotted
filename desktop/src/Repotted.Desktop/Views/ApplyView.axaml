@@ -1,0 +1,282 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:theme="using:Repotted.Desktop.Theme"
+             xmlns:vm="using:Repotted.Desktop.ViewModels"
+             xmlns:views="using:Repotted.Desktop.Views"
+             x:Class="Repotted.Desktop.Views.ApplyView"
+             x:DataType="vm:ApplyViewModel">
+  <DockPanel>
+    <!-- Heading and the review's actions -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="32,24,32,0">
+      <StackPanel Spacing="6">
+        <TextBlock Classes="h1" Text="{Binding Heading}" TextWrapping="Wrap" />
+        <TextBlock Classes="muted" Text="{Binding Summary}" TextWrapping="Wrap" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom" IsVisible="{Binding ShowActions}">
+        <Button Classes="quiet" Content="Discard apply" Command="{Binding DiscardCommand}"
+                AutomationProperties.HelpText="Throws this apply away with its one-off edits. The profile stays as it is." />
+        <Button Classes="quiet" Content="Save edits to profile" Command="{Binding SaveToProfileCommand}" IsVisible="{Binding HasBase}"
+                AutomationProperties.HelpText="Writes the one-off edits into the profile this apply starts from." />
+        <Button Classes="quiet" Content="Review again" Command="{Binding ReviewAgainCommand}"
+                AutomationProperties.HelpText="Reads the repository and the App's access again and plans the apply from them." />
+        <Button Classes="primary" Content="{Binding ApplyLabel}" Command="{Binding ApplyCommand}" />
+      </StackPanel>
+    </Grid>
+
+    <!-- The last look before anything is written -->
+    <Border DockPanel.Dock="Top" Classes="panel" Margin="32,16,32,0" IsVisible="{Binding Confirming}">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="4" VerticalAlignment="Center">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding ConfirmMessage}" AutomationProperties.LiveSetting="Assertive" />
+          <TextBlock Classes="muted small" TextWrapping="Wrap"
+                     Text="Repotted checks GitHub first, and writes nothing if the repository changed since this review." />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0" VerticalAlignment="Center">
+          <Button Classes="quiet" Content="Cancel" Command="{Binding CancelApplyCommand}" />
+          <Button Classes="primary" Content="Apply now" Command="{Binding ConfirmApplyCommand}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Asking before the staged apply goes -->
+    <Border DockPanel.Dock="Top" Classes="panel" Margin="32,16,32,0" IsVisible="{Binding ConfirmingDiscard}">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="4" VerticalAlignment="Center">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="Discard this apply?" AutomationProperties.LiveSetting="Assertive" />
+          <TextBlock Classes="muted small" TextWrapping="Wrap"
+                     Text="Its one-off edits, and what it leaves out, go with it. The profile and GitHub stay as they are." />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0" VerticalAlignment="Center">
+          <Button Classes="quiet" Content="Keep it" Command="{Binding KeepCommand}" />
+          <Button Classes="primary" Content="Discard apply" Command="{Binding ConfirmDiscardCommand}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- The app waits to quit, sign out or sign in again until the one-off edits are saved or undone -->
+    <Border DockPanel.Dock="Top" Classes="panel" Margin="32,16,32,0" IsVisible="{Binding AskingToLeave}">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="4" VerticalAlignment="Center">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding LeavingMessage}" AutomationProperties.LiveSetting="Assertive" />
+          <TextBlock Classes="muted small" TextWrapping="Wrap"
+                     Text="Saved edits stay in this apply, to resume later. The profile and GitHub stay as they are." />
+        </StackPanel>
+        <Button Grid.Column="1" Classes="quiet" Margin="16,0,0,0" VerticalAlignment="Center" Content="Stay here" Command="{Binding StayHereCommand}" />
+      </Grid>
+    </Border>
+
+    <SelectableTextBlock DockPanel.Dock="Top" Margin="32,12,32,0" TextWrapping="Wrap" Text="{Binding Error}"
+                         Foreground="{DynamicResource RemoveBrush}" IsVisible="{Binding HasError}"
+                         AutomationProperties.LiveSetting="Assertive" />
+
+    <Panel>
+      <TextBlock Classes="muted" Margin="32,24" Text="Starting the apply" IsVisible="{Binding ShowStarting}" />
+      <TextBlock Classes="muted" Margin="32,24" Text="Comparing with GitHub" IsVisible="{Binding ShowPlanning}" />
+      <TextBlock Classes="muted" Margin="32,24" Text="Applying to GitHub" IsVisible="{Binding ShowApplying}"
+                 AutomationProperties.LiveSetting="Polite" />
+
+      <!-- An apply to this repository was left unfinished -->
+      <StackPanel Margin="32,24" Spacing="12" IsVisible="{Binding ShowUnfinished}">
+        <TextBlock TextWrapping="Wrap" MaxWidth="640" HorizontalAlignment="Left" Text="{Binding UnfinishedMessage}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="primary" Content="Resume" Command="{Binding ResumeCommand}" />
+          <Button Classes="quiet" Content="Start over" Command="{Binding StartOverCommand}" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- How the apply went -->
+      <StackPanel Margin="32,24" Spacing="12" IsVisible="{Binding ShowResult}">
+        <TextBlock TextWrapping="Wrap" MaxWidth="640" HorizontalAlignment="Left" Text="{Binding Outcome}"
+                   AutomationProperties.LiveSetting="Assertive" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="primary" Content="Review again" Command="{Binding ReviewAgainCommand}"
+                  IsVisible="{Binding CanRetry}" />
+          <Button Classes="quiet" Content="Discard apply" Command="{Binding DiscardCommand}"
+                  IsVisible="{Binding CanRetry}" />
+          <Button Classes="quiet" Content="Back to repositories" Command="{Binding CloseCommand}" />
+        </StackPanel>
+      </StackPanel>
+
+      <StackPanel Margin="32,24" Spacing="12" IsVisible="{Binding ShowFailed}">
+        <SelectableTextBlock TextWrapping="Wrap" MaxWidth="640" HorizontalAlignment="Left" Text="{Binding Outcome}"
+                             Foreground="{DynamicResource RemoveBrush}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="primary" Content="Review again" Command="{Binding ReviewAgainCommand}" />
+          <Button Classes="quiet" Content="Discard apply" Command="{Binding DiscardCommand}" />
+          <Button Classes="quiet" Content="Back to repositories" Command="{Binding CloseCommand}" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- The review: the changes, and the one-off edits -->
+      <DockPanel IsVisible="{Binding ShowReview}">
+        <Border DockPanel.Dock="Top" Margin="32,16,32,0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+          <ListBox Classes="tabs" SelectedIndex="{Binding Tab}" AutomationProperties.Name="Apply">
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBoxItem AutomationProperties.Name="Changes">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="{Binding Source='Changes', Converter={x:Static theme:ControlLabel.Converter}}" VerticalAlignment="Center" />
+                <Border Classes="count"><TextBlock Text="{Binding ChangeCount}" /></Border>
+              </StackPanel>
+            </ListBoxItem>
+            <ListBoxItem AutomationProperties.Name="One-off edits">
+              <TextBlock Text="{Binding Source='One-off edits', Converter={x:Static theme:ControlLabel.Converter}}" VerticalAlignment="Center" />
+            </ListBoxItem>
+          </ListBox>
+        </Border>
+
+        <TextBlock DockPanel.Dock="Top" Margin="32,12,32,0" Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource DriftBrush}"
+                   Text="Save or discard your one-off edits first, so the changes show what they do."
+                   IsVisible="{Binding EditsUnsaved}" AutomationProperties.LiveSetting="Assertive" />
+
+        <Panel>
+          <!-- What the apply writes, and a way to leave each part out -->
+          <ScrollViewer IsVisible="{Binding ShowingChanges}">
+            <StackPanel Margin="32,16,32,32" Spacing="12" IsEnabled="{Binding !Working}">
+              <TextBlock Classes="muted" Text="{Binding ReviewSummary}" TextWrapping="Wrap" />
+
+              <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding DraftsNote}"
+                         IsVisible="{Binding DraftsNote, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+              <!-- Changes GitHub will refuse: Apply waits until they are left out or the access is granted -->
+              <Border Classes="locks" IsVisible="{Binding HasLocks}">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <Path Classes="lock" VerticalAlignment="Center" Margin="0,0,10,0" />
+                  <TextBlock Grid.Column="1" Classes="small" TextWrapping="Wrap" VerticalAlignment="Center"
+                             Text="{Binding LockSummary}" AutomationProperties.LiveSetting="Polite" />
+                  <Button Grid.Column="2" Classes="link" Margin="16,0,0,0" Content="{Binding AccessLabel}"
+                          Command="{Binding ReviewAccessCommand}" IsVisible="{Binding HasAccessUrl}" />
+                </Grid>
+              </Border>
+
+              <ItemsControl ItemsSource="{Binding Warnings}" IsVisible="{Binding HasWarnings}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource DriftBrush}" Text="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <Border Classes="fields" VerticalAlignment="Top">
+                <StackPanel>
+                  <Grid ColumnDefinitions="4,*,*,*,150" Background="{DynamicResource SunkenBrush}">
+                    <Grid.Styles>
+                      <Style Selector="TextBlock">
+                        <Setter Property="FontSize" Value="13" />
+                        <Setter Property="FontWeight" Value="SemiBold" />
+                        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+                        <Setter Property="Margin" Value="16,9" />
+                      </Style>
+                    </Grid.Styles>
+                    <TextBlock Grid.Column="1" Text="Setting" />
+                    <TextBlock Grid.Column="2" Text="On GitHub now" />
+                    <TextBlock Grid.Column="3" Text="After this apply" />
+                  </Grid>
+
+                  <ItemsControl ItemsSource="{Binding Sections}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:CompareSectionViewModel">
+                        <StackPanel>
+                          <Border Classes="field" MinHeight="52">
+                            <StackPanel Orientation="Horizontal" Spacing="10" Margin="20,0" VerticalAlignment="Center">
+                              <TextBlock Classes="h2" FontSize="15" Text="{Binding Title}" VerticalAlignment="Center" />
+                              <Border Classes="pill" Classes.ok="{Binding InLine}" Classes.drift="{Binding HasChanges}"
+                                      Classes.none="{Binding Skipped}">
+                                <StackPanel Orientation="Horizontal"><Ellipse /><TextBlock Text="{Binding Status}" /></StackPanel>
+                              </Border>
+                            </StackPanel>
+                          </Border>
+
+                          <ListBox Classes="rows" ItemsSource="{Binding Differences}" AutomationProperties.Name="{Binding Title}">
+                            <ListBox.ItemsPanel>
+                              <ItemsPanelTemplate><StackPanel /></ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.Styles>
+                              <Style Selector="ListBoxItem" x:DataType="vm:CompareRow">
+                                <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
+                              </Style>
+                            </ListBox.Styles>
+                            <ListBox.ItemTemplate>
+                              <DataTemplate x:DataType="vm:CompareRow">
+                                <Border Classes="field" Classes.change="{Binding IsChange}" Classes.add="{Binding IsAdd}"
+                                        Classes.remove="{Binding IsRemove}">
+                                  <Grid ColumnDefinitions="4,*,*,*,150">
+                                    <Border Classes="rail" Classes.change="{Binding IsChange}" Classes.add="{Binding IsAdd}"
+                                            Classes.remove="{Binding IsRemove}" />
+                                    <StackPanel Grid.Column="1" Margin="16,10" VerticalAlignment="Center" Spacing="2">
+                                      <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="14.5" TextWrapping="Wrap" />
+                                      <TextBlock Classes="mono muted" FontSize="12.5" Text="{Binding Key}" TextWrapping="Wrap" />
+                                      <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0" IsVisible="{Binding IsLocked}">
+                                        <Path Classes="lock" VerticalAlignment="Center" />
+                                        <TextBlock Classes="muted small" Text="{Binding Lock}" TextWrapping="Wrap" />
+                                      </StackPanel>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Margin="16,10" VerticalAlignment="Center" TextWrapping="Wrap"
+                                               Classes.gone="{Binding NowGoes}" Text="{Binding Now}" />
+                                    <TextBlock Grid.Column="3" Margin="16,10" VerticalAlignment="Center" TextWrapping="Wrap"
+                                               Classes="wanted" Classes.removed="{Binding IsRemove}" Text="{Binding Wanted}" />
+                                    <Button Grid.Column="4" Classes="quiet" Margin="0,0,16,0" HorizontalAlignment="Right"
+                                            VerticalAlignment="Center" Content="Leave out" IsVisible="{Binding CanLeaveOut}"
+                                            Command="{Binding $parent[views:ApplyView].((vm:ApplyViewModel)DataContext).LeaveOutCommand, FallbackValue={x:Null}}"
+                                            CommandParameter="{Binding}"
+                                            AutomationProperties.HelpText="Leaves this change out of this apply. The profile keeps it." />
+                                    <Border Grid.Column="4" Classes="chip" Margin="0,0,16,0" HorizontalAlignment="Right"
+                                            VerticalAlignment="Center" IsVisible="{Binding IsEdit}"
+                                            ToolTip.Tip="Change or undo it under One-off edits.">
+                                      <TextBlock Text="One-off edit" />
+                                    </Border>
+                                  </Grid>
+                                </Border>
+                              </DataTemplate>
+                            </ListBox.ItemTemplate>
+                          </ListBox>
+
+                          <Border Classes="field" MinHeight="44" IsVisible="{Binding HasSummary}">
+                            <TextBlock Classes="muted" Margin="20,0" VerticalAlignment="Center" TextWrapping="Wrap"
+                                       Text="{Binding Summary}" />
+                          </Border>
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Border>
+
+              <!-- What this apply leaves out of the profile -->
+              <StackPanel Spacing="8" IsVisible="{Binding HasExcluded}" Margin="0,8,0,0">
+                <TextBlock Classes="h2" Text="Left out of this apply" />
+                <TextBlock Classes="muted small" TextWrapping="Wrap"
+                           Text="The profile still sets these. This apply leaves them as GitHub has them." />
+                <Border Classes="fields">
+                  <ItemsControl ItemsSource="{Binding Excluded}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ExcludedViewModel">
+                        <Border Classes="field" MinHeight="44">
+                          <Grid ColumnDefinitions="*,Auto" Margin="20,0,16,0">
+                            <TextBlock Classes="mono" FontSize="13" Text="{Binding Key}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                            <Button Grid.Column="1" Classes="quiet" Content="Put back" VerticalAlignment="Center"
+                                    Command="{Binding $parent[views:ApplyView].((vm:ApplyViewModel)DataContext).PutBackCommand, FallbackValue={x:Null}}"
+                                    CommandParameter="{Binding}"
+                                    AutomationProperties.HelpText="Puts this back into this apply." />
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Border>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- One-off edits, in the profile editor -->
+          <ContentControl Content="{Binding Edits}" IsVisible="{Binding ShowingEdits}" IsEnabled="{Binding CanEdit}">
+            <ContentControl.DataTemplates>
+              <DataTemplate DataType="vm:ProfileViewModel"><views:ProfileView /></DataTemplate>
+            </ContentControl.DataTemplates>
+          </ContentControl>
+        </Panel>
+      </DockPanel>
+    </Panel>
+  </DockPanel>
+</UserControl>

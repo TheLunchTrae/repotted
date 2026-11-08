@@ -77,6 +77,27 @@ internal sealed record ResolvedProfile(
         DraftSources is not null && DraftSources.TryGetValue(section, out var files) && files.TryGetValue(key, out var file) ? file : null;
 }
 
+/// <summary>
+/// A staged apply: one apply to <paramref name="Repository"/>, prepared in a
+/// file of its own. <paramref name="Layers"/> is it resolved as a profile, with
+/// the staged file first; <paramref name="Base"/> is the profile it starts
+/// from, or null when it starts from the repository as it is.
+/// </summary>
+internal sealed record StagedApply(ResolvedProfile Layers, string Repository, string? Base, IReadOnlyList<string> Exclude);
+
+/// <summary>How an apply of a reviewed plan ended.</summary>
+internal abstract record ApplyResult
+{
+    /// <summary>Every change was written.</summary>
+    internal sealed record Applied(IReadOnlyList<PlanChangeDocument> Changes) : ApplyResult;
+
+    /// <summary>The repository changed since the plan was made, so nothing was written.</summary>
+    internal sealed record Stale(string Message) : ApplyResult;
+
+    /// <summary>A write failed after <paramref name="Changes"/> were written; the rest were not.</summary>
+    internal sealed record PartlyApplied(string Message, IReadOnlyList<PlanChangeDocument> Changes, PlanChangeDocument? Failed) : ApplyResult;
+}
+
 /// <summary>Reads the CLI's JSON output into what the views show.</summary>
 internal sealed class RepottedClient(ICli cli)
 {
@@ -191,9 +212,13 @@ internal sealed class RepottedClient(ICli cli)
         string file,
         IReadOnlyList<ProfileChange> changes,
         IReadOnlyList<EntryChange> entries,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        await ProfileAsync(["profile", file, .. Edits(changes, entries), "--json"], cancellationToken).ConfigureAwait(false);
+
+    /// <summary>The options that write <paramref name="changes"/> and <paramref name="entries"/>, as <c>profile</c> and <c>stage</c> take them.</summary>
+    private static List<string> Edits(IReadOnlyList<ProfileChange> changes, IReadOnlyList<EntryChange> entries)
     {
-        List<string> arguments = ["profile", file];
+        List<string> arguments = [];
         foreach (var change in changes)
         {
             arguments.AddRange(change.Value is null
@@ -211,8 +236,107 @@ internal sealed class RepottedClient(ICli cli)
                 ? $"--drop-{(entry.Draft ? "draft-" : "")}{flag}={entry.Name}"
                 : $"--{flag}={entry.Entry.ToJsonString()}");
         }
-        arguments.Add("--json");
-        return await ProfileAsync(arguments, cancellationToken).ConfigureAwait(false);
+        return arguments;
+    }
+
+    /// <summary>
+    /// Starts a staged apply to <paramref name="repository"/> in the new file
+    /// <paramref name="file"/>, from the profile in <paramref name="profile"/>,
+    /// or from the repository as it is when that is null. The CLI never
+    /// replaces a file that is already there.
+    /// </summary>
+    public Task<StagedApply> StartStagedAsync(string file, string repository, string? profile, CancellationToken cancellationToken) =>
+        StagedAsync(
+            ["stage", file, $"--new={repository}", .. profile is null ? Array.Empty<string>() : [$"--profile={profile}"], "--json"],
+            cancellationToken);
+
+    /// <summary>Reads the staged apply in <paramref name="file"/>.</summary>
+    public Task<StagedApply> StagedAsync(string file, CancellationToken cancellationToken) =>
+        StagedAsync(["stage", file, "--json"], cancellationToken);
+
+    /// <summary>Writes one-off edits to the staged apply in <paramref name="file"/>, as a profile edit writes them to a profile.</summary>
+    public async Task<ResolvedProfile> SaveStagedEditsAsync(
+        string file,
+        IReadOnlyList<ProfileChange> changes,
+        IReadOnlyList<EntryChange> entries,
+        CancellationToken cancellationToken) =>
+        (await StagedAsync(["stage", file, .. Edits(changes, entries), "--json"], cancellationToken).ConfigureAwait(false)).Layers;
+
+    /// <summary>Leaves out what <paramref name="key"/> names, such as <c>rulesets/Main</c>, or stops leaving it out.</summary>
+    public Task<StagedApply> ExcludeAsync(string file, string key, bool excluded, CancellationToken cancellationToken) =>
+        StagedAsync(["stage", file, excluded ? $"--exclude={key}" : $"--include={key}", "--json"], cancellationToken);
+
+    /// <summary>Writes the staged apply's one-off edits to the profile it starts from, and clears them from it.</summary>
+    public Task<StagedApply> SaveStagedToProfileAsync(string file, CancellationToken cancellationToken) =>
+        StagedAsync(["stage", file, "--save-to-profile", "--json"], cancellationToken);
+
+    /// <summary>Removes the staged apply file; the profile it starts from stays as it is.</summary>
+    public async Task DiscardStagedAsync(string file, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["stage", file, "--discard", "--json"], null, cancellationToken).ConfigureAwait(false);
+        if (Failure(run.Output) is { } failure)
+        {
+            throw Raise(failure);
+        }
+        if (run.ExitCode != 0)
+        {
+            throw Unreadable(run, "it did not say the staged apply was removed.");
+        }
+    }
+
+    private async Task<StagedApply> StagedAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(arguments, null, cancellationToken).ConfigureAwait(false);
+        var staged = Read(run, CliJson.Default.StagedApplyDocument);
+        if (staged.Chain.Count == 0 || staged.Profile.ValueKind != JsonValueKind.Object)
+        {
+            throw Unreadable(run, "the staged apply is incomplete.");
+        }
+        return new StagedApply(Resolved(staged.Chain, staged.Profile, staged.Sources), staged.Repository, staged.Base, staged.Exclude);
+    }
+
+    /// <summary>
+    /// Plans the staged apply in <paramref name="file"/>, and saves the plan to
+    /// <paramref name="planFile"/>, which <see cref="ApplyAsync"/> applies. It
+    /// only reads from GitHub.
+    /// </summary>
+    public async Task<StagedPlanDocument> PlanStagedAsync(string file, string planFile, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["plan", $"--staged={file}", $"--out={planFile}", "--json"], null, cancellationToken)
+            .ConfigureAwait(false);
+        var plan = Read(run, CliJson.Default.StagedPlanDocument);
+        if (plan.Desired.ValueKind != JsonValueKind.Object)
+        {
+            throw Unreadable(run, "the plan has no profile.");
+        }
+        return plan;
+    }
+
+    /// <summary>
+    /// Applies the reviewed plan in <paramref name="planFile"/>. The CLI plans
+    /// again first and writes only if the result is the reviewed plan; a
+    /// repository that changed since gives <see cref="ApplyResult.Stale"/>.
+    /// This writes to GitHub.
+    /// </summary>
+    public async Task<ApplyResult> ApplyAsync(string planFile, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["apply", planFile, "--yes", "--json"], null, cancellationToken).ConfigureAwait(false);
+        ApplyErrorDetail? error;
+        try
+        {
+            error = JsonSerializer.Deserialize(run.Output, CliJson.Default.ApplyFailureDocument)?.Error;
+        }
+        catch (JsonException)
+        {
+            error = null;
+        }
+        return error switch
+        {
+            { Kind: "stale_plan" } => new ApplyResult.Stale(error.Message),
+            { Kind: "apply_failed" } => new ApplyResult.PartlyApplied(error.Message, error.Applied ?? [], error.Failed),
+            { } => throw Raise(new ErrorDetail(error.Kind, error.Message)),
+            null => new ApplyResult.Applied(Read(run, CliJson.Default.ApplyDocument).Applied),
+        };
     }
 
     private async Task<ResolvedProfile> ProfileAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
@@ -223,10 +347,24 @@ internal sealed class RepottedClient(ICli cli)
         {
             throw Unreadable(run, "the profile is incomplete.");
         }
-        var sources = profile.Sources;
-        return new ResolvedProfile(
+        return Resolved(
             profile.Chain,
             profile.Profile,
+            profile.Sources,
+            profile.Drafts.ValueKind == JsonValueKind.Object ? profile.Drafts : default,
+            profile.Warnings ?? []);
+    }
+
+    /// <summary>A resolved profile; a staged apply holds no drafts, so it gives none.</summary>
+    private static ResolvedProfile Resolved(
+        IReadOnlyList<string> chain,
+        JsonElement values,
+        ProfileSourcesDocument sources,
+        JsonElement drafts = default,
+        IReadOnlyList<string>? warnings = null) =>
+        new(
+            chain,
+            values,
             new Dictionary<string, IReadOnlyDictionary<string, string>>
             {
                 ["repository"] = sources.Repository,
@@ -239,10 +377,9 @@ internal sealed class RepottedClient(ICli cli)
                 ["rulesets"] = sources.Rulesets,
                 ["environments"] = sources.Environments,
             },
-            profile.Drafts.ValueKind == JsonValueKind.Object ? profile.Drafts : default,
+            drafts,
             sources.Drafts ?? new Dictionary<string, IReadOnlyDictionary<string, string>>(),
-            profile.Warnings ?? []);
-    }
+            warnings ?? []);
 
     /// <summary>Removes the Repotted sign-in from the keychain, if there is one.</summary>
     public async Task SignOutAsync(CancellationToken cancellationToken)

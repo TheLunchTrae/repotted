@@ -234,13 +234,14 @@ that stops working mid-session leads back to the sign-in page, while one that
 still works keeps the app.
 
 `ContractTests.cs` in `csharp:test` runs the built CLI and reads what it
-prints for the commands that need no GitHub: signed-out `status`,
-`profiles`, `profile`, and profile saves through `--set`, `--ruleset`, and
-`--environment`, drafts included. A change to those documents that the app
-doesn't expect fails the gate. The `capture`, `plan`, `repos`, and `login`
-documents need GitHub, and `logout` would remove a real sign-in, so the app's
-tests read hand-written examples of them, and only the strict parsing guards
-them against the real CLI.
+prints for the commands that need no GitHub: signed-out `status`, `profiles`,
+`profile`, profile saves through `--set`, `--ruleset`, and `--environment`,
+drafts included, and a staged apply through `stage` from `--new` to
+`--discard`. A change to those documents that the app doesn't expect fails the
+gate. The `capture`, `plan`, `repos`, and `login` documents need GitHub, and
+`logout` would remove a real sign-in, so the app's tests read hand-written
+examples of them, and only the strict parsing guards them against the real
+CLI.
 
 Each package ships the CLI beside the app as `repotted-cli`, a Node single
 executable application that `packages/cli/sea.ts` builds: the CLI and its
@@ -253,6 +254,22 @@ file names, where `repotted` would collide with the app. It ignores
 that holds the token.
 [Development](development.md#run-the-desktop-app) describes how the app finds
 the CLI.
+
+### Applying from the app
+
+The Apply page is a staged apply, as `repotted stage` makes one, kept in the
+app data folder per repository. Its one-off edits tab is the profile editor
+over the staged file: `ProfileStore` swaps the editor's reads and saves for
+`stage`, which takes the same edits as `profile`, so every setting the editor
+shows can be overridden once. The page plans with `plan --staged`, whose
+`exclusions` name the key that leaves out each row, so the app never maps a
+plan field to a profile key itself. It applies the saved plan file with
+`apply --yes`, which re-plans and stops on any difference.
+[State machines](state-machines.md#desktop-apply) lists its transitions.
+
+Compare and Apply list every section a plan changes. Sections the profile
+editor has no tab for, such as security, Pages, autolinks and custom
+properties, show as a row per change.
 
 ### Profiles in the app
 

@@ -239,9 +239,58 @@ or **Install the App** when it isn't installed on the repository.
 Limits of the repository's GitHub plan or its owner's policies don't show
 here; GitHub reports them only when a change is made.
 
-The app doesn't apply profiles. To make the changes a comparison shows, use
-[`repotted plan` and `repotted apply`](cli.md#plan-and-apply) on the command
-line.
+To make those changes, click **Apply** on the comparison, or beside
+**Compare** on the Repositories page.
+
+## Apply changes to a repository
+
+An apply is its own step: it shows what it would change, lets you adjust that,
+and writes nothing to GitHub until you confirm.
+
+To start one, select a repository on the **Repositories** page and either:
+
+- pick a profile and click **Apply**, to make the repository match the profile
+- click **Change settings once**, to change settings without a profile
+
+The **Changes** tab shows each change by section, with what GitHub has now and
+what it will have after the apply. From there you can:
+
+- **Leave out** a change, for this apply only. The profile keeps it, and it
+  shows under **Left out of this apply** with **Put back**.
+- Make one-off edits on the **One-off edits** tab, in the same editor as a
+  profile, and click **Save edits**. They apply on top of the profile for this
+  apply only, and the changes are compared again. A change that comes from a
+  one-off edit is marked **One-off edit**; change or undo it on that tab.
+  One-off edits can't be drafts, since they are for this apply only.
+- Click **Save edits to profile** to write the one-off edits into the profile,
+  which then sets them itself.
+
+A padlock marks each change GitHub will refuse, with what it needs, as on the
+comparison. **Apply** waits until no such change is left: leave it out, or
+click **Review App access**, grant what it needs, and click **Review again**.
+Otherwise the apply would stop at that change and leave the ones after it
+unwritten.
+
+Click **Apply** and then **Apply now** to write the changes. Repotted checks
+GitHub first: if the repository changed since you reviewed it, nothing is
+written, and **Review again** shows what the apply needs now. If GitHub refuses
+a change partway, the changes before it stay written and nothing after it is;
+**Review again** shows what is left.
+
+An apply you leave before it finishes is kept. The repository shows "An apply
+here is not finished." with **Resume**, which offers to pick it up or start
+over. **Discard apply** throws an apply away with its one-off edits; the
+profile stays as it is. The app keeps unfinished applies in a `staged` folder
+in its app data folder, below.
+
+One-off edits you haven't saved keep the apply open. If you quit or sign out
+then, the apply asks you to save or undo them first, and goes on once you do;
+**Stay here** keeps them as they are. While Repotted is still working on the
+apply, such as comparing or writing, closing the window or signing out says so
+and leaves you on the apply; try again once it is done.
+
+The command line does the same with [`repotted stage`](cli.md#stage-an-apply), if you prefer
+it or want to script it.
 
 ## Where the app keeps its settings
 

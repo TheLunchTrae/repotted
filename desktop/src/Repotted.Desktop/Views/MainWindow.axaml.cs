@@ -10,11 +10,14 @@ internal sealed partial class MainWindow : Window
 
     public MainWindow() => InitializeComponent();
 
-    /// <summary>Holds the window open while unsaved profile changes wait for the user to save or discard them.</summary>
+    /// <summary>
+    /// Holds the window open while unsaved profile changes, or an apply that
+    /// runs or holds unsaved one-off edits, wait for the user.
+    /// </summary>
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         base.OnClosing(e);
-        if (settled || e.Cancel || DataContext is not MainViewModel { Page: ShellViewModel shell } || !shell.Profiles.HasUnsaved)
+        if (settled || e.Cancel || DataContext is not MainViewModel { Page: ShellViewModel shell } || !shell.MustAskToLeave)
         {
             return;
         }

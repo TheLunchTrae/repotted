@@ -15,6 +15,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
     private readonly RepottedClient client;
     private readonly IDesktop desktop;
     private readonly Func<Task> signOut;
+    private readonly AppSettings settings;
 
     /// <summary><paramref name="signOut"/> removes the sign-in and leaves the app.</summary>
     public ShellViewModel(
@@ -28,11 +29,13 @@ internal sealed partial class ShellViewModel : ViewModelBase
         this.client = client;
         this.desktop = desktop;
         this.signOut = signOut;
+        this.settings = settings;
         // Each list reaches the other: a new profile is captured from a listed repository.
         RepositoriesViewModel? repositories = null;
         Profiles = new ProfilesViewModel(client, desktop, settings, () => repositories?.Names ?? []);
         Profiles.PropertyChanged += OnProfilesChanged;
-        Repositories = repositories = new RepositoriesViewModel(client, desktop, account.InstallUrl, Profiles, OpenCompare, OpenCapture);
+        Repositories = repositories = new RepositoriesViewModel(
+            client, desktop, account.InstallUrl, Profiles, OpenCompare, OpenCapture, OpenApply, Unfinished);
         Repositories.PropertyChanged += OnRepositoriesChanged;
     }
 
@@ -44,7 +47,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
 
     /// <summary>The page: 0 for the repositories, 1 for the profiles, as the sidebar lists them.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowingProfiles), nameof(ShowingRepositories), nameof(ShowingCompare), nameof(Crumb), nameof(SearchHint))]
+    [NotifyPropertyChangedFor(nameof(ShowingProfiles), nameof(ShowingRepositories), nameof(ShowingCompare), nameof(ShowingApply), nameof(Crumb), nameof(SearchHint))]
     public partial int Page { get; set; }
 
     /// <summary>The open compare, which stands in for the repository list until it closes.</summary>
@@ -52,33 +55,74 @@ internal sealed partial class ShellViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowingRepositories), nameof(ShowingCompare), nameof(Crumb))]
     public partial CompareViewModel? Compare { get; private set; }
 
-    public bool ShowingRepositories => Page == 0 && Compare is null;
+    /// <summary>The open apply, which stands in for the repository list, and for a compare, until it closes.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowingRepositories), nameof(ShowingCompare), nameof(ShowingApply), nameof(Crumb))]
+    public partial ApplyViewModel? Apply { get; private set; }
 
-    public bool ShowingCompare => Page == 0 && Compare is not null;
+    public bool ShowingRepositories => Page == 0 && Compare is null && Apply is null;
+
+    public bool ShowingCompare => Page == 0 && Compare is not null && Apply is null;
+
+    public bool ShowingApply => Page == 0 && Apply is not null;
 
     public bool ShowingProfiles => Page == 1;
 
     /// <summary>Where you are, for the header.</summary>
-    public string Crumb => (ShowingProfiles, Profiles.Current, Compare) switch
+    public string Crumb => (ShowingProfiles, Profiles.Current, Compare, Apply) switch
     {
-        (true, _, _) when Profiles.ShowCreating => $"Profiles / {ControlLabel.For("New profile")}",
-        (true, { } profile, _) => $"Profiles / {profile.Name}",
-        (true, null, _) => "Profiles",
-        (false, _, { } compare) => $"Repositories / {compare.Repository} / Compare",
+        (true, _, _, _) when Profiles.ShowCreating => $"Profiles / {ControlLabel.For("New profile")}",
+        (true, { } profile, _, _) => $"Profiles / {profile.Name}",
+        (true, null, _, _) => "Profiles",
+        (false, _, _, { } apply) => $"Repositories / {apply.Repository} / Apply",
+        (false, _, { } compare, _) => $"Repositories / {compare.Repository} / Compare",
         _ => "Repositories",
     };
 
-    // Leaving the repositories closes the compare, so the sidebar always leads back to the list.
-    partial void OnPageChanged(int value) => Compare = null;
+    // Leaving the repositories closes the compare, and the apply when nothing
+    // of it would be lost, so the sidebar leads back to the list. An apply
+    // that is writing or holds unsaved edits stays until it can close.
+    partial void OnPageChanged(int value)
+    {
+        Compare = null;
+        if (Apply?.CanLeave == true)
+        {
+            CloseApply();
+        }
+    }
 
     private void OpenCompare(string repository, ProfileListingDocument profile)
     {
-        Compare = new CompareViewModel(client, desktop, repository, profile, Account.InstallUrl);
+        Compare = new CompareViewModel(client, desktop, repository, profile, Account.InstallUrl, OpenApply);
         _ = Compare.LoadCommand.ExecuteAsync(null);
     }
 
     [RelayCommand]
     private void CloseCompare() => Compare = null;
+
+    /// <summary>Opens an apply to a repository, from a profile or from the repository as it is, in place of a compare.</summary>
+    private void OpenApply(string repository, ProfileListingDocument? profile)
+    {
+        if (Apply is not null)
+        {
+            return;
+        }
+        Page = 0;
+        Compare = null;
+        Apply = new ApplyViewModel(
+            client, settings, repository, profile, CloseApply, Profiles.RefreshAsync, Profiles.ExclusiveAsync, desktop, Account.InstallUrl);
+        _ = Apply.OpenAsync();
+    }
+
+    private void CloseApply()
+    {
+        Apply = null;
+        Repositories.RefreshUnfinished();
+    }
+
+    /// <summary>Whether an apply to a repository was left unfinished, to resume.</summary>
+    private bool Unfinished(string repository) =>
+        AppSettings.IsRepositoryName(repository) && System.IO.File.Exists(settings.StagedFile(repository));
 
     private void OpenCapture(string repository)
     {
@@ -99,6 +143,10 @@ internal sealed partial class ShellViewModel : ViewModelBase
         if (page == 0)
         {
             Compare = null;
+            if (Apply?.CanLeave == true)
+            {
+                CloseApply();
+            }
         }
         else
         {
@@ -115,15 +163,27 @@ internal sealed partial class ShellViewModel : ViewModelBase
     /// page, brought into view, has asked and the changes are saved or
     /// discarded.
     /// </summary>
-    public Task<bool> ConfirmLeaveAsync(string act)
+    public async Task<bool> ConfirmLeaveAsync(string act, bool wait = false)
     {
+        // An apply that is running, or holds unsaved one-off edits, shows itself and says what it needs.
+        if (Apply is { CanLeave: false } apply)
+        {
+            Page = 0;
+            if (!await apply.ConfirmLeaveAsync(act, wait).ConfigureAwait(true))
+            {
+                return false;
+            }
+        }
         if (!Profiles.HasUnsaved)
         {
-            return Task.FromResult(true);
+            return true;
         }
         Page = 1;
-        return Profiles.ConfirmLeaveAsync(act);
+        return await Profiles.ConfirmLeaveAsync(act).ConfigureAwait(true);
     }
+
+    /// <summary>Whether leaving the app would ask first, or wait, for unsaved changes or an apply.</summary>
+    public bool MustAskToLeave => Profiles.HasUnsaved || Apply is { CanLeave: false };
 
     public string SearchHint => ShowingProfiles ? "Find a profile" : "Find a repository";
 

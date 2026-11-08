@@ -107,6 +107,9 @@ internal abstract partial class EntryEditorViewModel : ViewModelBase
     /// </summary>
     public bool CanDraft { get; init; } = true;
 
+    /// <summary>Whether the file holds drafts at all; the editor offers none for a staged apply's one-off edits.</summary>
+    public bool Drafts { get; init; } = true;
+
     /// <summary>
     /// Whether a base profile names the entry too, and not as a draft, so its
     /// entry applies while this one is a draft.

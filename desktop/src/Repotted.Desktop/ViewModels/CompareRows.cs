@@ -27,6 +27,15 @@ internal enum CompareKind
 /// </summary>
 internal sealed record CompareRow(CompareKind Kind, string Label, string Key, string Now, string Wanted, string? Lock = null)
 {
+    /// <summary>What leaves this row out of a staged apply, when it is a change one can leave out.</summary>
+    public RowExclusion? LeaveOut { get; init; }
+
+    /// <summary>Whether a staged apply can leave this row out by excluding it.</summary>
+    public bool CanLeaveOut => LeaveOut is { Edited: false };
+
+    /// <summary>Whether the row is a one-off edit of a staged apply, which is undone rather than left out.</summary>
+    public bool IsEdit => LeaveOut is { Edited: true };
+
     public const string NotOnGitHub = "Not on GitHub";
 
     /// <summary>What GitHub has of a whole ruleset, environment or branch policy that the profile removes.</summary>
@@ -65,6 +74,12 @@ internal sealed record CompareRow(CompareKind Kind, string Label, string Key, st
         _ => $"{Label}, {Key}: {Now}, matches the profile",
     };
 }
+
+/// <summary>
+/// The exclusion that leaves a row out of a staged apply, as <c>stage --exclude</c>
+/// takes it; an <paramref name="Edited"/> one is a one-off edit instead.
+/// </summary>
+internal sealed record RowExclusion(string Key, bool Edited);
 
 /// <summary>One part of a field that differs, and what the profile does to it.</summary>
 internal sealed record Difference(CompareKind Kind, string Path, JsonNode? Now, JsonNode? Wanted);
