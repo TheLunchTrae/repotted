@@ -106,6 +106,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
 
     public string Note => (Changed, pending, Origin) switch
     {
+        _ when Invalid => "Not valid yet",
         (true, null, _) when Inherited is not null => $"From {Inherited.From} when saved",
         (true, null, _) => "Removed when saved",
         (true, _, _) => "Changed",
@@ -114,17 +115,29 @@ internal sealed partial class SettingViewModel : ViewModelBase
         _ => "Not managed",
     };
 
-    /// <summary>Whether the row can go back: undo a change, or stop setting the value here.</summary>
-    public bool CanReset => Changed || Origin == SettingOrigin.Own;
+    /// <summary>
+    /// Whether the box holds text that isn't a valid value. The row then waits
+    /// on the person, like a change does, but saving is held back until the
+    /// text is fixed or undone.
+    /// </summary>
+    public bool Invalid => TypedProblem is not null;
 
-    public string ResetLabel => Changed ? "Undo" : "Remove";
+    /// <summary>Whether the row differs from the saved profile: a change to save, or text to fix.</summary>
+    public bool Pending => Changed || Invalid;
 
-    public string ResetName => Changed ? $"Undo the change to {Label}" : $"Remove {Label} from this profile";
+    /// <summary>Whether the row can go back: undo a change or invalid text, or stop setting the value here.</summary>
+    public bool CanReset => Pending || Origin == SettingOrigin.Own;
+
+    public string ResetLabel => Pending ? "Undo" : "Remove";
+
+    public string ResetName => Pending ? $"Undo the change to {Label}" : $"Remove {Label} from this profile";
 
     /// <summary>
     /// The number or text in the box. Typing a valid value changes the
-    /// setting at once; an invalid one, with <see cref="TypedProblem"/>
-    /// saying why, leaves the saved value as it is.
+    /// setting at once, and typing back what the box started with is no
+    /// change at all. An invalid value, with <see cref="TypedProblem"/>
+    /// saying why, leaves the saved value as it is and keeps the row
+    /// <see cref="Invalid"/> until it is fixed or undone.
     /// </summary>
     public string Typed
     {
@@ -135,25 +148,24 @@ internal sealed partial class SettingViewModel : ViewModelBase
             {
                 return;
             }
-            typed = value;
-            TypedProblem = Parse(value, out var parsed);
-            OnPropertyChanged(nameof(TypedProblem));
-            OnPropertyChanged(nameof(HasTypedProblem));
-            if (TypedProblem is not null)
+            if (string.Equals(value, Display(Saved), StringComparison.Ordinal))
             {
-                if (Changed)
-                {
-                    Set(changed: false, null, keepTyped: true);
-                }
+                Undo();
                 return;
             }
-            if (Origin == SettingOrigin.Own && JsonNode.DeepEquals(parsed, Saved))
+            typed = value;
+            TypedProblem = Parse(value, out var parsed);
+            if (TypedProblem is not null)
             {
                 Set(changed: false, null, keepTyped: true);
             }
             else if (!Changed || !JsonNode.DeepEquals(parsed, pending))
             {
                 Set(changed: true, parsed, keepTyped: true);
+            }
+            else
+            {
+                Set(changed: true, pending, keepTyped: true);
             }
         }
     }
@@ -165,6 +177,9 @@ internal sealed partial class SettingViewModel : ViewModelBase
 
     /// <summary>The name screen readers hear for the box.</summary>
     public string TypedName => Label;
+
+    /// <summary>What screen readers hear after the box's name: the problem with the text, or where the value comes from.</summary>
+    public string TypedHelp => TypedProblem ?? Note;
 
     private string? Parse(string text, out JsonNode? value)
     {
@@ -208,11 +223,11 @@ internal sealed partial class SettingViewModel : ViewModelBase
         Set(changed: true, option.Value.DeepClone());
     }
 
-    /// <summary>Undoes a change, or else stops setting the value in this profile.</summary>
+    /// <summary>Undoes a change or invalid text, or else stops setting the value in this profile.</summary>
     [RelayCommand]
     private void Reset()
     {
-        if (Changed)
+        if (Pending)
         {
             Undo();
             return;
@@ -221,6 +236,26 @@ internal sealed partial class SettingViewModel : ViewModelBase
     }
 
     public void Undo() => Set(changed: false, null);
+
+    /// <summary>
+    /// Leaves the value out of this profile's own file once saved: removes a
+    /// value it sets, or undoes a change that would add one. Used when another
+    /// setting can't be saved beside it.
+    /// </summary>
+    public void Clear()
+    {
+        if (Origin == SettingOrigin.Own)
+        {
+            if (!Changed || pending is not null)
+            {
+                Set(changed: true, null);
+            }
+        }
+        else if (Pending)
+        {
+            Undo();
+        }
+    }
 
     /// <summary>
     /// Records the change and tells the row, its options and the profile,
@@ -236,7 +271,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
             TypedProblem = null;
         }
         foreach (var name in (string[])[
-            nameof(Typed), nameof(TypedProblem), nameof(HasTypedProblem),
+            nameof(Typed), nameof(TypedProblem), nameof(HasTypedProblem), nameof(TypedHelp), nameof(Invalid), nameof(Pending),
             nameof(Changed), nameof(Value), nameof(Managed), nameof(OwnAfterSave), nameof(InheritedAfterSave),
             nameof(Note), nameof(CanReset), nameof(ResetLabel), nameof(ResetName),
         ])

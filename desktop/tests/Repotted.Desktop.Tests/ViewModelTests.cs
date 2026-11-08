@@ -876,32 +876,38 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        var save = $"profile {files.Own} --set repository.description=\"\" --set actions.max_cache_size_gb=5 --json";
+        var save = $"profile {files.Own} --set repository.default_branch=\"trunk\" --set actions.max_cache_size_gb=5 --json";
         cli.On(save, Documents.Resolved(files.Own, files.Base));
         var size = Find(editor, "max_cache_size_gb");
         var branch = Find(editor, "default_branch");
+        var description = Find(editor, "description");
 
         Assert.True(size.IsTyped);
         Assert.Equal("", size.Typed);
+        // Text that isn't a value waits to be fixed, and holds back the save.
         size.Typed = "0";
         Assert.Equal("Enter a whole number of 1 or more.", size.TypedProblem);
-        Assert.False(size.Changed);
+        Assert.Equal((false, true, true), (size.Changed, size.Invalid, size.Pending));
+        Assert.Equal(("Not valid yet", "Undo"), (size.Note, size.ResetLabel));
+        Assert.Equal("Enter a whole number of 1 or more.", size.TypedHelp);
+        Assert.Equal($"{size.Label}: Enter a whole number of 1 or more.", editor.Problem);
+        Assert.Equal("1 unsaved change", editor.ChangesLabel);
+        Assert.False(editor.SaveCommand.CanExecute(null));
         size.Typed = "5";
         Assert.Null(size.TypedProblem);
         Assert.Equal("Changed", size.Note);
+        Assert.Null(editor.Problem);
+
         branch.Typed = "trunk";
         Assert.True(branch.Changed);
-        // A value that can't be saved leaves the setting as it was.
+        // Typing back what the box started with is no change at all.
+        description.Typed = "x";
+        Assert.True(description.Changed);
+        description.Typed = "";
+        Assert.False(description.Pending);
         branch.Typed = "";
-        Assert.Equal("Enter a value, or remove the setting from this profile.", branch.TypedProblem);
-        Assert.False(branch.Changed);
-        Assert.Equal("", branch.Typed);
-        // A description may be empty, which clears it on GitHub.
-        Find(editor, "description").Typed = "";
-        Assert.False(Find(editor, "description").Changed);
-        Find(editor, "description").Typed = "x";
-        Find(editor, "description").Typed = "";
-        Assert.True(Find(editor, "description").Changed);
+        Assert.False(branch.Pending);
+        branch.Typed = "trunk";
 
         Assert.Equal("2 unsaved changes", editor.ChangesLabel);
         await editor.SaveCommand.ExecuteAsync(null);
@@ -909,19 +915,70 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
-    public async Task Undo_puts_a_typed_value_back()
+    public async Task A_value_the_profile_sets_must_stay_valid_to_save()
+    {
+        var (editor, _, _, _) = await OpenOwn(
+            """{"repository":{"default_branch":"main"}}""", """{"repository":{"default_branch":OWN}}""");
+        var branch = Find(editor, "default_branch");
+        Assert.Equal((SettingOrigin.Own, "main"), (branch.Origin, branch.Typed));
+
+        // Clearing a value the profile would set is invalid, and Undo puts the box back as it started.
+        branch.Typed = "";
+        Assert.Equal("Enter a value, or remove the setting from this profile.", branch.TypedProblem);
+        Assert.True(branch.Invalid);
+        Assert.False(branch.Changed);
+        branch.ResetCommand.Execute(null);
+        Assert.Equal(("main", false), (branch.Typed, branch.Pending));
+        Assert.False(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
+    public async Task Undo_and_discard_put_a_typed_value_back()
     {
         var (profiles, _, _) = await OpenOrgs();
-        var size = Find(profiles.Current!, "max_cache_size_gb");
+        var editor = profiles.Current!;
+        var size = Find(editor, "max_cache_size_gb");
 
         size.Typed = "abc";
+        Assert.True(size.CanReset);
         size.ResetCommand.Execute(null);
         Assert.Equal("", size.Typed);
         Assert.Null(size.TypedProblem);
         size.Typed = "7";
         size.ResetCommand.Execute(null);
-        Assert.False(size.Changed);
+        Assert.False(size.Pending);
         Assert.Equal("", size.Typed);
+        Assert.False(editor.HasChanges);
+
+        size.Typed = "abc";
+        Assert.True(editor.HasChanges);
+        editor.DiscardCommand.Execute(null);
+        Assert.Equal(("", false, false), (size.Typed, size.Pending, editor.HasChanges));
+    }
+
+    [AvaloniaFact]
+    public async Task Taking_the_Pages_site_down_stands_alone_in_the_profile()
+    {
+        var (editor, cli, own, resolved) = await OpenOwn("""{"pages":{"absent":true}}""", """{"pages":{"absent":OWN}}""");
+        var save = $"profile {own} --unset pages.absent --set pages.build_type=\"workflow\" --json";
+        cli.On(save, resolved);
+        var absent = Find(editor, "absent");
+
+        Assert.Equal((SettingOrigin.Own, "Set here"), Origin(editor, "absent"));
+        Assert.Equal(1, editor.Tab("Pages").Count);
+        // Describing a site takes the profile's "take it down" out, since the two can't be saved together.
+        Choose(editor, "build_type", "GitHub Actions");
+        Assert.Equal("Removed when saved", absent.Note);
+        Assert.True(Find(editor, "build_type").OwnAfterSave);
+        // Taking it down again drops the site's settings.
+        Choose(editor, "absent", "Yes");
+        Assert.False(absent.Pending);
+        Assert.False(Find(editor, "build_type").Pending);
+        Assert.False(editor.HasChanges);
+
+        Choose(editor, "build_type", "GitHub Actions");
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Contains(save, cli.Calls);
     }
 
     [AvaloniaFact]
@@ -2192,6 +2249,52 @@ public sealed class ViewModelTests : IDisposable
         Assert.Equal("Repotted could not read it: GitHub refused to read GitHub Pages (Forbidden); that needs the Pages read permission", pages.Summary);
     }
 
+    [AvaloniaFact]
+    public async Task A_compare_shows_a_changed_Pages_source_once()
+    {
+        const string plan = """
+            {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"legacy","source":{"branch":"main","path":"/"}}},
+             "changes":[{"section":"pages","action":"update","target":"GitHub Pages site",
+               "fields":[{"field":"source","from":{"branch":"gh-pages","path":"/"},"to":{"branch":"main","path":"/"}}],
+               "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/pages","body":{} } }],
+             "warnings":[]}
+            """;
+        var compare = await Compare(plan);
+        compare.ToggleEverythingCommand.Execute(null);
+
+        Assert.Equal(
+            [new CompareRow(CompareKind.Changes, "Branch", "source.branch", "gh-pages", "main"),
+             new CompareRow(CompareKind.Matches, "Build from", "build_type", "A branch", "A branch")],
+            compare.Sections.Single().Rows);
+    }
+
+    [AvaloniaFact]
+    public async Task A_compare_says_when_the_profile_leaves_a_section_unchecked()
+    {
+        const string plan = """
+            {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"legacy"}},"changes":[],
+             "warnings":["Skipped pages: a new site built from a branch needs source.branch, or build_type: workflow"]}
+            """;
+        var compare = await Compare(plan);
+
+        Assert.Equal("Not checked: a new site built from a branch needs source.branch, or build_type: workflow", compare.Sections.Single().Summary);
+    }
+
+    [AvaloniaFact]
+    public async Task A_skipped_section_hides_only_its_own_settings()
+    {
+        const string plan = """
+            {"repository":"TheLunchTrae/repotted","desired":{"custom_properties":{"rulesets":"strict"}},"changes":[],
+             "warnings":["Skipped rulesets: GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"]}
+            """;
+        var compare = await Compare(plan);
+        compare.ToggleEverythingCommand.Execute(null);
+
+        Assert.Equal(
+            [new CompareRow(CompareKind.Matches, "rulesets", "rulesets", "strict", "strict")],
+            compare.Sections.Single(section => section.Title == "Custom properties").Rows);
+    }
+
     private static async Task<CompareViewModel> Compare(string plan)
     {
         var compare = new CompareViewModel(
@@ -2762,6 +2865,37 @@ public sealed class ViewModelTests : IDisposable
         // The fake answers at once, so selecting a profile has loaded it.
         profiles.Selected = profiles.Items.Single(item => item.Name == "orgs");
         return (profiles, cli, (own, @base));
+    }
+
+    /// <summary>
+    /// Opens orgs.yaml as it resolves to <paramref name="profile"/>, with each
+    /// section's sources as <paramref name="sources"/> gives them, where OWN
+    /// stands for orgs.yaml. It extends base.yaml, which sets nothing it shows.
+    /// </summary>
+    private async Task<(ProfileViewModel Editor, FakeCli Cli, string Own, string Resolved)> OpenOwn(string profile, string sources)
+    {
+        var @base = folders.Write("base.yaml", "repository: {}\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
+        var given = JsonNode.Parse(sources.Replace("OWN", JsonSerializer.Serialize(own), StringComparison.Ordinal))!.AsObject();
+        var all = new JsonObject();
+        foreach (var section in (string[])["repository", "merge", "actions", "security", "custom_properties", "pages", "autolinks", "rulesets", "environments"])
+        {
+            all[section] = given[section]?.DeepClone() ?? new JsonObject();
+        }
+        var resolved = new JsonObject
+        {
+            ["chain"] = new JsonArray(own, @base),
+            ["profile"] = JsonNode.Parse(profile),
+            ["sources"] = all,
+        }.ToJsonString();
+        var cli = new FakeCli()
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", resolved)
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base));
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), orgsDesktop, folders.Settings, () => []);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        profiles.Selected = profiles.Items.Single(item => item.Name == "orgs");
+        return (profiles.Current!, cli, own, resolved);
     }
 
     private static SettingViewModel Find(ProfileViewModel editor, string key) =>

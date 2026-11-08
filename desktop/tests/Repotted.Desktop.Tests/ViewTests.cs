@@ -252,7 +252,7 @@ public sealed class ViewTests : IDisposable
 
         editor.SelectedTab = editor.Tab("Security");
         text = Texts(window);
-        Assert.Contains("Malware alerts and Dependabot rules have no API, so they are set on GitHub only.", text);
+        Assert.Contains("Malware alerts, Dependabot rules, and preventing direct dismissals have no API here, so they are set on GitHub or in a security configuration.", text);
         Assert.Contains("From base", text);
         Save(window, $"settings-security-{theme}");
 

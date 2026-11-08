@@ -42,6 +42,12 @@ internal sealed record SettingField(string Section, string Key, string Label, IR
     /// <summary>Whether a <see cref="SettingKind.Text"/> may be empty, as a description may.</summary>
     public bool AllowsEmpty { get; init; }
 
+    /// <summary>
+    /// Whether a profile that sets it can set nothing else in its section, as
+    /// Pages' <c>absent</c>, which takes the site down whatever else is said.
+    /// </summary>
+    public bool Alone { get; init; }
+
     /// <summary>The setting as a sub-option of the one above it.</summary>
     public SettingField Under() => this with { Nested = true };
 
@@ -102,7 +108,7 @@ internal static class ProfileFields
             new("Features", "What the repository shows on GitHub.",
             [
                 Switch("repository", "has_issues", "Issues")
-                    .Noted("Limiting issues to collaborators has no API, so it is set on GitHub only."),
+                    .Noted("Limiting issues to collaborators and closing issues when a linked pull request merges have no API, so they are set on GitHub only."),
                 Switch("repository", "has_projects", "Projects"),
                 Switch("repository", "has_wiki", "Wiki")
                     .Noted("Restricting editing to collaborators has no API, so it is set on GitHub only."),
@@ -201,7 +207,7 @@ internal static class ProfileFields
             new("Dependabot", "Alerts and pull requests for vulnerable dependencies.",
             [
                 Switch("security", "vulnerability_alerts", "Dependabot alerts")
-                    .Noted("Malware alerts and Dependabot rules have no API, so they are set on GitHub only."),
+                    .Noted("Malware alerts, Dependabot rules, and preventing direct dismissals have no API here, so they are set on GitHub or in a security configuration."),
                 Switch("security", "automated_security_fixes", "Dependabot security updates").Under()
                     .Noted("Grouping security updates has no API; groups in dependabot.yml do it instead."),
                 Choice("security", "dependabot_runner_settings.runner_type", "Dependabot runners",
@@ -211,7 +217,7 @@ internal static class ProfileFields
             [
                 Choice("security", "code_scanning_default_setup.state", "Default setup",
                     ("Configured", "configured"), ("Not configured", "not-configured"))
-                    .Noted("Copilot Autofix has no API, so it is set on GitHub only."),
+                    .Noted("Copilot Autofix, Agentic Autofix, and preventing direct dismissals have no API here, so they are set on GitHub or in a security configuration."),
                 Choice("security", "code_scanning_default_setup.query_suite", "Query suite",
                     ("Default", "default"), ("Extended", "extended")).Under(),
                 Choice("security", "code_scanning_default_setup.threat_model", "Threat model",
@@ -231,11 +237,12 @@ internal static class ProfileFields
             new("Secret scanning", "Finds secrets pushed to the repository.",
             [
                 Feature("secret_scanning", "Secret Protection"),
-                Feature("secret_scanning_push_protection", "Push protection").Under(),
+                Feature("secret_scanning_push_protection", "Push protection").Under()
+                    .Noted("Push protection for AI-detected secrets is set only in a security configuration."),
                 Feature("secret_scanning_ai_detection", "AI detection").Under(),
                 Feature("secret_scanning_non_provider_patterns", "Non-provider patterns").Under(),
                 Feature("secret_scanning_validity_checks", "Validity checks").Under()
-                    .Noted("GitHub Enterprise Cloud only."),
+                    .Noted("GitHub Enterprise Cloud only. Extended metadata is set only in a security configuration."),
                 Feature("secret_scanning_delegated_alert_dismissal", "Delegated alert dismissal").Under(),
                 Feature("secret_scanning_delegated_bypass", "Delegated bypass").Under()
                     .Noted("Who can approve a bypass is edited in the YAML."),
@@ -243,12 +250,15 @@ internal static class ProfileFields
         ]),
         new("Pages", "pages",
         [
-            new("GitHub Pages", "The site GitHub publishes from the repository. To take a site down, set pages to absent: true in the YAML.",
+            new("GitHub Pages", "The site GitHub publishes from the repository.",
             [
+                new SettingField("pages", "absent", "Take the site down", [new("Yes", true)]) { Alone = true }
+                    .Noted("It deletes the site on each repository. Remove it to describe a site instead."),
                 Choice("pages", "build_type", "Build from", ("A branch", "legacy"), ("GitHub Actions", "workflow")),
                 Text("pages", "source.branch", "Branch").Under(),
                 Choice("pages", "source.path", "Folder", ("/ (root)", "/"), ("/docs", "/docs")).Under(),
-                Text("pages", "cname", "Custom domain"),
+                Text("pages", "cname", "Custom domain")
+                    .Noted("To clear a domain, set cname to null in the YAML."),
                 Switch("pages", "https_enforced", "Enforce HTTPS"),
                 new SettingField("pages", "public", "Who can see the site",
                     [new("Everyone", true), new("People with access", false)])

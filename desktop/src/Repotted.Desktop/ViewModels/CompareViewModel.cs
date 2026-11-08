@@ -196,7 +196,12 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
         if (names is [var only]
             && plan.Warnings.FirstOrDefault(warning => warning.StartsWith($"Skipped {only}: ", StringComparison.Ordinal)) is { } skipped)
         {
-            return new CompareSectionViewModel(title, [], [], $"Repotted could not read it: {skipped[$"Skipped {only}: ".Length..]}", skippedBy: skipped);
+            // A read GitHub refused or doesn't offer says so; anything else is the profile's to fix.
+            var reason = skipped[$"Skipped {only}: ".Length..];
+            var why = reason.StartsWith("GitHub ", StringComparison.Ordinal)
+                ? $"Repotted could not read it: {reason}"
+                : $"Not checked: {reason}";
+            return new CompareSectionViewModel(title, [], [], why, skippedBy: skipped);
         }
         List<CompareRow> differences = [];
         HashSet<string> changed = new(StringComparer.Ordinal);
@@ -229,7 +234,7 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
             {
                 // A plan skips what cannot apply, such as selected actions while
                 // all actions are allowed, and a new site's settings come with it.
-                if (changed.Contains($"{name}.{key}") || created || Skips(plan, name, key))
+                if (Covers(changed, name, key) || created || Skips(plan, name, key))
                 {
                     continue;
                 }
@@ -367,13 +372,26 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
     };
 
     /// <summary>
+    /// Whether a change covers a setting: it names the setting, or an object
+    /// the setting is part of, as Pages names <c>source</c> for <c>source.branch</c>.
+    /// </summary>
+    private static bool Covers(HashSet<string> changed, string section, string key)
+    {
+        var parts = key.Split('.');
+        return Enumerable.Range(1, parts.Length).Any(count => changed.Contains($"{section}.{string.Join('.', parts[..count])}"));
+    }
+
+    /// <summary>
     /// Whether the plan skipped a setting, with a warning that names it, the
-    /// object it is part of, or its section.
+    /// object it is part of, or its section. Actions alone names a setting
+    /// without its section, as in "Skipped allowed_actions:".
     /// </summary>
     private static bool Skips(PlanDocument plan, string section, string key)
     {
         var top = key.Split('.')[0];
-        string[] prefixes = [$"Skipped {section}.{key}:", $"Skipped {section}.{top}:", $"Skipped {top}:", $"Skipped {section}:"];
+        string[] prefixes = section == "actions"
+            ? [$"Skipped {section}.{key}:", $"Skipped {section}.{top}:", $"Skipped {top}:", $"Skipped {section}:"]
+            : [$"Skipped {section}.{key}:", $"Skipped {section}.{top}:", $"Skipped {section}:"];
         return plan.Warnings.Any(warning => prefixes.Any(prefix => warning.StartsWith(prefix, StringComparison.Ordinal)));
     }
 

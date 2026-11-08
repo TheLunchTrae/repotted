@@ -26,7 +26,7 @@
           <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4" IsVisible="{Binding IsTyped}">
             <TextBox Classes="setting" Text="{Binding Typed}" Classes.number="{Binding IsNumber}"
                      AutomationProperties.Name="{Binding TypedName}"
-                     AutomationProperties.HelpText="{Binding Note}" />
+                     AutomationProperties.HelpText="{Binding TypedHelp}" />
             <TextBlock Classes="problem small" Text="{Binding TypedProblem}" IsVisible="{Binding HasTypedProblem}"
                        TextWrapping="Wrap" MaxWidth="240" />
           </StackPanel>
