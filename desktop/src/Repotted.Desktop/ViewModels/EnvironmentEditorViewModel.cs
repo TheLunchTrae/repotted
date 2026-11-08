@@ -13,7 +13,7 @@ internal sealed partial class EnvironmentEditorViewModel : EntryEditorViewModel
 
     private readonly JsonArray? savedPatterns;
 
-    public EnvironmentEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool> taken, Action changed)
+    public EnvironmentEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool, bool> taken, Action changed)
         : base(saved, renamable, taken, changed)
     {
         var start = Start;
@@ -126,8 +126,8 @@ internal sealed partial class EnvironmentEditorViewModel : EntryEditorViewModel
             }
             // GitHub refuses it without reviewers. A file that leaves reviewers to the
             // repository, as this one already did, stays as it is.
-            var asSaved = Start["prevent_self_review"]?.GetValue<bool>() == true && !Start.ContainsKey("reviewers") && !Reviewers.IsSet;
-            if (SelfReview.Value?.GetValue<bool>() == true && Reviewers.Value is not JsonArray { Count: > 0 } && !asSaved)
+            var asSaved = Start["prevent_self_review"].AsFlag() == true && !Start.ContainsKey("reviewers") && !Reviewers.IsSet;
+            if (SelfReview.Value.AsFlag() == true && Reviewers.Value is not JsonArray { Count: > 0 } && !asSaved)
             {
                 return Reviewers.IsSet
                     ? "Prevent self-review needs at least one required reviewer."
@@ -181,7 +181,7 @@ internal sealed partial class EnvironmentEditorViewModel : EntryEditorViewModel
     private string PatternText(string type) =>
         string.Join('\n', (savedPatterns ?? [])
             .OfType<JsonObject>()
-            .Where(policy => (policy["type"]?.GetValue<string>() ?? "branch") == type)
-            .Select(policy => policy["name"]?.GetValue<string>())
+            .Where(policy => (policy["type"].AsText() ?? "branch") == type)
+            .Select(policy => policy["name"].AsText())
             .OfType<string>());
 }

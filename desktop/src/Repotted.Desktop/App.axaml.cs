@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Repotted.Desktop.Services;
+using Repotted.Desktop.Theme;
 using Repotted.Desktop.ViewModels;
 using Repotted.Desktop.Views;
 
@@ -9,7 +10,11 @@ namespace Repotted.Desktop;
 
 internal sealed partial class App : Application
 {
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        ControlLabel.ApplyToButtons();
+        AvaloniaXamlLoader.Load(this);
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {

@@ -96,7 +96,9 @@ public sealed class ViewTests : IDisposable
         _ = signIn.SignInCommand.ExecuteAsync(null);
         Dispatcher.UIThread.RunJobs();
 
-        Assert.Contains("ABCD-1234", Texts(window));
+        var text = Texts(window);
+        Assert.Contains("ABCD-1234", text);
+        Assert.Contains("Copy", text);
         Save(window, $"sign-in-code-{theme}");
         signIn.SignInCancelCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
@@ -462,6 +464,8 @@ public sealed class ViewTests : IDisposable
             .Select(button => AutomationProperties.GetName(button))
             .ToList();
         Assert.Equal(["Main: Set here", "Tags: From base"], rows);
+        Assert.Contains("Main", text);
+        Assert.DoesNotContain(text, line => line.Contains("Avalonia.Controls", StringComparison.Ordinal));
         Save(window, $"rulesets-{theme}");
 
         // A row opens its ruleset with focus on its name, and every choice says what it leaves to GitHub.
@@ -511,6 +515,71 @@ public sealed class ViewTests : IDisposable
             "main",
             window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "Branches that may deploy").Text);
         Save(window, $"environment-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task Drafts_show_with_a_badge_under_their_setting_and_in_the_list(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.ResolvedWithDrafts(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        editor.ShowYaml = false;
+        var wiki = editor.Tabs[0].Groups.SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki");
+        wiki.Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
+
+        var text = Texts(window);
+        Assert.Contains("What the drafts still need", text);
+        Assert.Contains("Draft environment \"NPM\": Invalid input at wait_timer", text);
+        Assert.Contains(Label("Save as draft"), text);
+        Assert.Contains("Draft", text);
+        Assert.Contains(" · Saved in base, not applied.", text);
+        Assert.DoesNotContain(Label("Finish draft"), text);
+        wiki.SaveAsDraftCommand.Execute(null);
+        text = Texts(window);
+        Assert.Contains(Label("Finish draft"), text);
+        Assert.Contains(Label("Discard draft"), text);
+        var drafts = window.GetVisualDescendants().OfType<TextBlock>()
+            .Select(block => AutomationProperties.GetName(block))
+            .Where(name => name?.Contains(" draft: ", StringComparison.Ordinal) == true);
+        Assert.Contains("Wiki draft: On. Saved as a draft when you save. It applies once you finish it.", drafts);
+        window.Height = 1100;
+        Save(window, $"drafts-settings-{theme}");
+
+        editor.SelectedTab = editor.Tab("Rulesets");
+        Dispatcher.UIThread.RunJobs();
+        var rows = window.GetVisualDescendants().OfType<Button>()
+            .Where(button => button.Classes.Contains("entry"))
+            .Select(button => AutomationProperties.GetName(button))
+            .ToList();
+        Assert.Equal(
+            ["Protect main: From base", "Old tags: Removed from GitHub here", "Later: Draft, left out of compare and apply", "Protect main: Draft, left out of compare and apply"],
+            rows);
+        Save(window, $"drafts-rulesets-{theme}");
+
+        editor.Tab("Rulesets").Entries[3].OpenCommand.Execute(null);
+        text = Texts(window);
+        Assert.Contains("Save as a draft", text);
+        Assert.Contains("Saved as a draft: compare and apply leave it out, and it may be unfinished. Turn this off to finish it, once it is valid.", text);
+        Save(window, $"drafts-ruleset-{theme}");
+
+        // A base's ruleset can be made a draft only in the base.
+        editor.Tab("Rulesets").Editing = null;
+        editor.Tab("Rulesets").Entries[0].OpenCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        var box = window.GetVisualDescendants().OfType<CheckBox>().Single(check => Equals(check.Content, "Save as a draft"));
+        Assert.False(box.IsEnabled);
+        Assert.Contains("Set in a base profile, so it can be saved as a draft only there.", Texts(window));
+        Save(window, $"drafts-base-ruleset-{theme}");
     }
 
     [AvaloniaTheory]
@@ -833,7 +902,9 @@ public sealed class ViewTests : IDisposable
         var option = new ToggleButton { Content = "Pull request title", Classes = { "seg" } };
         var box = new CheckBox { Content = "Keep mine" };
         var radio = new RadioButton { Content = "Keep mine" };
-        var window = new Window { Content = new StackPanel { Children = { button, option, box, radio } } };
+        var row = new TextBlock { Text = "Protect main" };
+        var entry = new Button { Content = new Grid { Children = { row } } };
+        var window = new Window { Content = new StackPanel { Children = { button, option, box, radio, entry } } };
         window.Show();
         Dispatcher.UIThread.RunJobs();
 
@@ -844,6 +915,11 @@ public sealed class ViewTests : IDisposable
         Assert.Equal(Label("Pull request title"), Assert.IsType<AccessText>(option.Presenter?.Child).Text);
         Assert.Null(box.ContentTemplate);
         Assert.Null(radio.ContentTemplate);
+
+        // A button whose content is a control shows that control, not its type name.
+        Assert.Null(entry.ContentTemplate);
+        Assert.True(row.IsEffectivelyVisible);
+        Assert.Same(entry.Content, entry.Presenter?.Child);
     }
 
     private async Task<Window> Show(string theme, FakeCli cli, FakeDesktop? desktop = null)

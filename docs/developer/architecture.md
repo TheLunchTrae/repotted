@@ -236,11 +236,12 @@ still works keeps the app.
 `ContractTests.cs` in `csharp:test` runs the built CLI and reads what it
 prints for the commands that need no GitHub: signed-out `status`, `profiles`,
 `profile`, profile saves through `--set`, `--ruleset`, and `--environment`,
-and a staged apply through `stage` from `--new` to `--discard`. A change to
-those documents that the app doesn't expect fails the gate. The `capture`,
-`plan`, `repos`, and `login` documents need GitHub, and `logout` would remove
-a real sign-in, so the app's tests read hand-written examples of them, and only
-the strict parsing guards them against the real CLI.
+drafts included, and a staged apply through `stage` from `--new` to
+`--discard`. A change to those documents that the app doesn't expect fails the
+gate. The `capture`, `plan`, `repos`, and `login` documents need GitHub, and
+`logout` would remove a real sign-in, so the app's tests read hand-written
+examples of them, and only the strict parsing guards them against the real
+CLI.
 
 Each package ships the CLI beside the app as `repotted-cli`, a Node single
 executable application that `packages/cli/sea.ts` builds: the CLI and its

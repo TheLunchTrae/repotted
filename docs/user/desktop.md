@@ -155,6 +155,25 @@ repository. The app warns you when you rename one. You can rename only an
 entry that this profile names on its own; one from a base profile keeps its
 name.
 
+Any setting, ruleset or environment can be saved as a draft, which keeps it
+in the profile, finished or not, without applying it. Compare leaves drafts
+out and names them, and so do `repotted plan` and `apply`. After you pick a
+setting's new value, **Save as draft** keeps that value as a draft and puts
+the setting back. The draft shows under the setting with a **Draft** badge:
+**Finish draft** makes it the value, so it applies once you save, and
+**Discard draft** takes it out, and a base profile's draft of the setting, if
+it has one, shows again. A draft from a base profile shows too, but you finish
+it in that profile. A ruleset or environment this profile sets has **Save as a
+draft** in its editor, and a **Draft** badge in the list; for one a base
+profile sets, the box is off, and you make the draft in that profile. Its
+fields aren't checked while it's a draft; turn the box off to finish it, and
+the editor then checks them. What each draft still needs shows under the
+profile's heading. A draft can share its name with a ruleset or environment
+that applies, which is how you draft a change to one: finishing the draft
+replaces that one once you save. Drafting a ruleset that overrides a base
+profile's leaves the base's applying until you finish it. See
+[Drafts](profiles.md#drafts) for how drafts sit in the YAML.
+
 Click **Save profile** to write your changes to the file. Saving writes each
 edited ruleset or environment whole. So when you edited one and the file
 changed since you opened it, such as in another editor or by a sync with

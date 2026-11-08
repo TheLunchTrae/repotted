@@ -20,7 +20,7 @@ internal sealed partial class RulesetEditorViewModel : EntryEditorViewModel
     private readonly JsonObject? savedRefName;
     private readonly IReadOnlyList<JsonObject> savedRules;
 
-    public RulesetEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool> taken, Action changed)
+    public RulesetEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool, bool> taken, Action changed)
         : base(saved, renamable, taken, changed)
     {
         var start = Start;
@@ -44,7 +44,7 @@ internal sealed partial class RulesetEditorViewModel : EntryEditorViewModel
         [
             .. Kinds.Select(kind =>
             {
-                var rule = savedRules.FirstOrDefault(candidate => candidate["type"]?.GetValue<string>() == kind.Type);
+                var rule = savedRules.FirstOrDefault(candidate => candidate["type"].AsText() == kind.Type);
                 return kind.Type switch
                 {
                     "pull_request" => new PullRequestRuleViewModel(kind, rule, Touched),
@@ -54,7 +54,7 @@ internal sealed partial class RulesetEditorViewModel : EntryEditorViewModel
             }),
         ];
         Others = string.Join(", ", savedRules
-            .Select(rule => rule["type"]?.GetValue<string>())
+            .Select(rule => rule["type"].AsText())
             .OfType<string>()
             .Where(type => Kinds.All(kind => kind.Type != type)));
     }
@@ -165,7 +165,7 @@ internal sealed partial class RulesetEditorViewModel : EntryEditorViewModel
         List<JsonNode> rules = [];
         foreach (var rule in savedRules)
         {
-            var type = rule["type"]?.GetValue<string>();
+            var type = rule["type"].AsText();
             if (type is null || !built.TryGetValue(type, out var replacement))
             {
                 rules.Add(rule.DeepClone());

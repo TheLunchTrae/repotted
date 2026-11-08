@@ -36,7 +36,8 @@ internal sealed record RepositoryList(bool FromInstallations, IReadOnlyList<Repo
 
 /// <summary>
 /// A change to one profile setting: <paramref name="Key"/> is its section and
-/// key, such as <c>repository.has_wiki</c>, and <paramref name="Value"/> is the
+/// key, such as <c>repository.has_wiki</c>, or a draft's under <c>drafts</c>,
+/// such as <c>drafts.repository.has_wiki</c>, and <paramref name="Value"/> is the
 /// new value, or null to stop managing it.
 /// </summary>
 internal sealed record ProfileChange(string Key, JsonNode? Value);
@@ -45,21 +46,35 @@ internal sealed record ProfileChange(string Key, JsonNode? Value);
 /// A change to one ruleset or environment in a profile file, by name:
 /// <paramref name="List"/> is <c>rulesets</c> or <c>environments</c>, and
 /// <paramref name="Entry"/> is the entry to write, or null to stop naming it
-/// in the file.
+/// in the file. <paramref name="Draft"/> says whether a drop takes out the
+/// file's draft of that name rather than its entry; a write is a draft when
+/// the entry has <c>draft: true</c>.
 /// </summary>
-internal sealed record EntryChange(string List, string Name, JsonObject? Entry);
+internal sealed record EntryChange(string List, string Name, JsonObject? Entry, bool Draft = false);
 
 /// <summary>
 /// A profile resolved over the profiles it extends. <paramref name="Chain"/> is
 /// the file, then each one it extends; <paramref name="Sources"/> names the file
 /// behind each value, by section and then by key or entry name.
+/// <paramref name="Drafts"/> holds what <paramref name="Values"/> leaves out:
+/// draft settings by section, and draft entries by list.
+/// <paramref name="DraftSources"/> names the file behind each draft, and
+/// <paramref name="Warnings"/> says what stops each draft from applying as it
+/// stands.
 /// </summary>
 internal sealed record ResolvedProfile(
     IReadOnlyList<string> Chain,
     JsonElement Values,
-    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Sources)
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Sources,
+    JsonElement Drafts = default,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? DraftSources = null,
+    IReadOnlyList<string>? Warnings = null)
 {
     public string File => Chain[0];
+
+    /// <summary>The file behind one draft, by section and key or name, or null.</summary>
+    public string? DraftSource(string section, string key) =>
+        DraftSources is not null && DraftSources.TryGetValue(section, out var files) && files.TryGetValue(key, out var file) ? file : null;
 }
 
 /// <summary>
@@ -212,10 +227,14 @@ internal sealed class RepottedClient(ICli cli)
         }
         foreach (var entry in entries)
         {
-            // --ruleset, --drop-ruleset, --environment and --drop-environment, joined
-            // to their value so a name that starts with a dash stays a value.
+            // --ruleset, --environment and their --drop- options, the draft ones
+            // included, joined to their value so a name that starts with a dash
+            // stays a value. A write finds the draft or entry its own marker
+            // says, or, right after a drop, the one dropped.
             var flag = entry.List == "rulesets" ? "ruleset" : "environment";
-            arguments.Add(entry.Entry is null ? $"--drop-{flag}={entry.Name}" : $"--{flag}={entry.Entry.ToJsonString()}");
+            arguments.Add(entry.Entry is null
+                ? $"--drop-{(entry.Draft ? "draft-" : "")}{flag}={entry.Name}"
+                : $"--{flag}={entry.Entry.ToJsonString()}");
         }
         return arguments;
     }
@@ -328,10 +347,21 @@ internal sealed class RepottedClient(ICli cli)
         {
             throw Unreadable(run, "the profile is incomplete.");
         }
-        return Resolved(profile.Chain, profile.Profile, profile.Sources);
+        return Resolved(
+            profile.Chain,
+            profile.Profile,
+            profile.Sources,
+            profile.Drafts.ValueKind == JsonValueKind.Object ? profile.Drafts : default,
+            profile.Warnings ?? []);
     }
 
-    private static ResolvedProfile Resolved(IReadOnlyList<string> chain, JsonElement values, ProfileSourcesDocument sources) =>
+    /// <summary>A resolved profile; a staged apply holds no drafts, so it gives none.</summary>
+    private static ResolvedProfile Resolved(
+        IReadOnlyList<string> chain,
+        JsonElement values,
+        ProfileSourcesDocument sources,
+        JsonElement drafts = default,
+        IReadOnlyList<string>? warnings = null) =>
         new(
             chain,
             values,
@@ -346,7 +376,10 @@ internal sealed class RepottedClient(ICli cli)
                 ["autolinks"] = sources.Autolinks,
                 ["rulesets"] = sources.Rulesets,
                 ["environments"] = sources.Environments,
-            });
+            },
+            drafts,
+            sources.Drafts ?? new Dictionary<string, IReadOnlyDictionary<string, string>>(),
+            warnings ?? []);
 
     /// <summary>Removes the Repotted sign-in from the keychain, if there is one.</summary>
     public async Task SignOutAsync(CancellationToken cancellationToken)

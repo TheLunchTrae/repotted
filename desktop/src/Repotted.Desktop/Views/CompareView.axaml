@@ -66,6 +66,10 @@
           </Grid>
         </Border>
 
+        <TextBlock DockPanel.Dock="Top" Classes="muted small" TextWrapping="Wrap" Margin="0,0,0,12"
+                   Text="{Binding DraftsNote}"
+                   IsVisible="{Binding DraftsNote, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
         <ScrollViewer>
           <Border Classes="fields" VerticalAlignment="Top" Margin="0,0,0,32">
             <StackPanel>

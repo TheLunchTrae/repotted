@@ -21,10 +21,15 @@ internal enum SettingOrigin
 /// <summary>The value a setting would have without this profile, and the profile that sets it.</summary>
 internal sealed record InheritedValue(JsonNode Value, string From);
 
+/// <summary>A draft of a setting: the value saved but not applied, and the base profile that holds it, or null for this one.</summary>
+internal sealed record DraftValue(JsonNode Value, string? From);
+
 /// <summary>
 /// One setting row: its saved value and where that comes from, and the change
 /// waiting to be saved, if any. Removing a value the profile sets falls back
 /// to <see cref="Inherited"/>, the value its base profile gives, when there is one.
+/// A row may also hold a draft: a value saved under the profile's
+/// <c>drafts</c>, which plans leave out until it is finished.
 /// </summary>
 internal sealed partial class SettingViewModel : ViewModelBase
 {
@@ -41,12 +46,16 @@ internal sealed partial class SettingViewModel : ViewModelBase
         JsonNode? saved,
         SettingOrigin origin,
         InheritedValue? inherited,
-        Action changed)
+        Action changed,
+        DraftValue? draft = null,
+        DraftValue? baseDraft = null)
     {
         Field = field;
         Saved = saved;
         Origin = origin;
         Inherited = inherited;
+        SavedDraft = draft;
+        BaseDraft = baseDraft;
         this.changed = changed;
         Options = [.. field.Options.Select(option => new OptionViewModel(this, option))];
     }
@@ -89,8 +98,56 @@ internal sealed partial class SettingViewModel : ViewModelBase
 
     public IReadOnlyList<OptionViewModel> Options { get; }
 
-    /// <summary>Whether a change waits to be saved.</summary>
+    /// <summary>Whether a change to the value waits to be saved.</summary>
     public bool Changed { get; private set; }
+
+    /// <summary>The draft as the profile resolves it, or null.</summary>
+    public DraftValue? SavedDraft { get; }
+
+    /// <summary>
+    /// The draft a base profile has, which shows again once this profile's own
+    /// draft is taken out; null when no base has one.
+    /// </summary>
+    public DraftValue? BaseDraft { get; }
+
+    /// <summary>Whether a change to the draft waits to be saved.</summary>
+    public bool DraftChanged { get; private set; }
+
+    /// <summary>The draft to save, or null to take it out; meaningful only while <see cref="DraftChanged"/>.</summary>
+    private JsonNode? draftPending;
+
+    /// <summary>
+    /// The draft once saved and the profile that holds it: this one's pending
+    /// draft, or else a base's once this one's is taken out.
+    /// </summary>
+    private DraftValue? CurrentDraft => DraftChanged
+        ? draftPending is { } value ? new DraftValue(value, null) : BaseDraft
+        : SavedDraft;
+
+    /// <summary>The draft once saved, or null when there is none.</summary>
+    public JsonNode? Draft => CurrentDraft?.Value;
+
+    public bool HasDraft => Draft is not null;
+
+    /// <summary>Whether the draft is this profile's own, so it can be finished or discarded here.</summary>
+    public bool OwnDraft => CurrentDraft is { From: null };
+
+    /// <summary>The draft's value as its option names it, or as JSON when no option does.</summary>
+    public string DraftLabel => Draft is not { } draft
+        ? ""
+        : Field.Options.FirstOrDefault(option => JsonNode.DeepEquals(option.Value, draft))?.Label ?? Display(draft);
+
+    public string DraftNote => (DraftChanged, OwnDraft) switch
+    {
+        (true, true) => "Saved as a draft when you save. It applies once you finish it.",
+        (_, true) => "Saved, not applied. It applies once you finish it.",
+        _ => $"Saved in {CurrentDraft?.From}, not applied.",
+    };
+
+    public string DraftName => $"{Label} draft: {DraftLabel}. {DraftNote}";
+
+    /// <summary>Whether the chosen value can become a draft instead: a change that sets a value.</summary>
+    public bool CanSaveAsDraft => Changed && pending is not null;
 
     /// <summary>The value shown: what the profile will hold once saved.</summary>
     public JsonNode? Value => !Changed ? Saved : pending ?? Inherited?.Value;
@@ -122,15 +179,18 @@ internal sealed partial class SettingViewModel : ViewModelBase
     /// </summary>
     public bool Invalid => TypedProblem is not null;
 
-    /// <summary>Whether the row differs from the saved profile: a change to save, or text to fix.</summary>
+    /// <summary>Whether the value differs from the saved profile: a change to save, or text to fix.</summary>
     public bool Pending => Changed || Invalid;
 
-    /// <summary>Whether the row can go back: undo a change or invalid text, or stop setting the value here.</summary>
-    public bool CanReset => Pending || Origin == SettingOrigin.Own;
+    /// <summary>Whether anything about the row, its value or its draft, differs from the saved profile.</summary>
+    public bool HasChanges => Pending || DraftChanged;
 
-    public string ResetLabel => Pending ? "Undo" : "Remove";
+    /// <summary>Whether the row can go back: undo a change, a draft or invalid text, or stop setting the value here.</summary>
+    public bool CanReset => HasChanges || Origin == SettingOrigin.Own;
 
-    public string ResetName => Pending ? $"Undo the change to {Label}" : $"Remove {Label} from this profile";
+    public string ResetLabel => HasChanges ? "Undo" : "Remove";
+
+    public string ResetName => HasChanges ? $"Undo the changes to {Label}" : $"Remove {Label} from this profile";
 
     /// <summary>
     /// The number or text in the box. Typing a valid value changes the
@@ -150,7 +210,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
             }
             if (string.Equals(value, Display(Saved), StringComparison.Ordinal))
             {
-                Undo();
+                UndoValue();
                 return;
             }
             typed = value;
@@ -211,25 +271,84 @@ internal sealed partial class SettingViewModel : ViewModelBase
         _ => value.ToJsonString(),
     };
 
-    /// <summary>What saving sends for this row; null when nothing changed.</summary>
+    /// <summary>What saving sends for this row's value; null when it did not change.</summary>
     public Services.ProfileChange? Change => Changed ? new(Field.Path, pending?.DeepClone()) : null;
+
+    /// <summary>What saving sends for this row's draft; null when it did not change.</summary>
+    public Services.ProfileChange? DraftChange => DraftChanged ? new($"drafts.{Field.Path}", draftPending?.DeepClone()) : null;
+
+    /// <summary>
+    /// Keeps the chosen value as a draft instead, and puts the value back as
+    /// saved: the draft is saved with the profile, and plans leave it out.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSaveAsDraft))]
+    private void SaveAsDraft()
+    {
+        var value = pending!.DeepClone();
+        SetDraft(value);
+        Set(changed: false, null);
+    }
+
+    /// <summary>Makes the draft the value, so it applies once saved, and takes the draft out.</summary>
+    [RelayCommand(CanExecute = nameof(OwnDraft))]
+    private void FinishDraft()
+    {
+        var value = Draft!.DeepClone();
+        SetDraft(null);
+        if (Origin == SettingOrigin.Own && JsonNode.DeepEquals(value, Saved))
+        {
+            Set(changed: false, null);
+        }
+        else
+        {
+            Set(changed: true, value);
+        }
+    }
+
+    /// <summary>Takes this profile's draft out, so the value stays as it is.</summary>
+    [RelayCommand(CanExecute = nameof(OwnDraft))]
+    private void DiscardDraft() => SetDraft(null);
+
+    /// <summary>Records the draft to save: one this profile already has is no change.</summary>
+    private void SetDraft(JsonNode? value)
+    {
+        var own = SavedDraft is { From: null } saved ? saved.Value : null;
+        // Only this profile's own draft can be taken out, so a base's comes back when nothing replaces it.
+        DraftChanged = value is null ? own is not null : !JsonNode.DeepEquals(value, own);
+        draftPending = DraftChanged ? value : null;
+        RefreshDraft();
+    }
+
+    private void RefreshDraft()
+    {
+        foreach (var name in (string[])[
+            nameof(DraftChanged), nameof(HasChanges), nameof(Draft), nameof(HasDraft), nameof(OwnDraft),
+            nameof(DraftLabel), nameof(DraftNote), nameof(DraftName), nameof(CanReset), nameof(ResetLabel), nameof(ResetName),
+        ])
+        {
+            OnPropertyChanged(name);
+        }
+        FinishDraftCommand.NotifyCanExecuteChanged();
+        DiscardDraftCommand.NotifyCanExecuteChanged();
+        changed();
+    }
 
     public void Choose(SettingOption option)
     {
         // Choosing the saved value of a profile's own setting is no change at all.
         if (Origin == SettingOrigin.Own && JsonNode.DeepEquals(option.Value, Saved))
         {
-            Undo();
+            UndoValue();
             return;
         }
         Set(changed: true, option.Value.DeepClone());
     }
 
-    /// <summary>Undoes a change or invalid text, or else stops setting the value in this profile.</summary>
+    /// <summary>Undoes the changes, a draft or invalid text, or else stops setting the value in this profile.</summary>
     [RelayCommand]
     private void Reset()
     {
-        if (Pending)
+        if (HasChanges)
         {
             Undo();
             return;
@@ -237,7 +356,17 @@ internal sealed partial class SettingViewModel : ViewModelBase
         Set(changed: true, null);
     }
 
-    public void Undo() => Set(changed: false, null);
+    /// <summary>Puts the value and the draft back as saved.</summary>
+    public void Undo()
+    {
+        DraftChanged = false;
+        draftPending = null;
+        RefreshDraft();
+        UndoValue();
+    }
+
+    /// <summary>Puts the value back as saved, leaving any change to the draft.</summary>
+    private void UndoValue() => Set(changed: false, null);
 
     /// <summary>
     /// Leaves the value out of this profile's own file once saved: removes a
@@ -255,7 +384,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
         }
         else if (Pending)
         {
-            Undo();
+            UndoValue();
         }
     }
 
@@ -275,7 +404,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
         foreach (var name in (string[])[
             nameof(Typed), nameof(TypedProblem), nameof(HasTypedProblem), nameof(TypedHelp), nameof(Invalid), nameof(Pending),
             nameof(Changed), nameof(Value), nameof(Managed), nameof(OwnAfterSave), nameof(InheritedAfterSave),
-            nameof(Note), nameof(CanReset), nameof(ResetLabel), nameof(ResetName),
+            nameof(Note), nameof(CanReset), nameof(ResetLabel), nameof(ResetName), nameof(HasChanges), nameof(CanSaveAsDraft),
         ])
         {
             OnPropertyChanged(name);
@@ -284,6 +413,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
         {
             option.Refresh();
         }
+        SaveAsDraftCommand.NotifyCanExecuteChanged();
         this.changed();
     }
 

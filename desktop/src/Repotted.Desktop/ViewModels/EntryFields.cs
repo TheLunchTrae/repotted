@@ -243,7 +243,7 @@ internal sealed partial class MergeMethodsViewModel : ViewModelBase
         {
             IsSet = true;
             saved = methods;
-            var names = methods.Select(method => method?.GetValue<string>()).ToHashSet();
+            var names = methods.Select(method => method.AsText()).ToHashSet();
             merge = names.Contains("merge");
             squash = names.Contains("squash");
             rebase = names.Contains("rebase");
@@ -303,7 +303,7 @@ internal sealed partial class MergeMethodsViewModel : ViewModelBase
             .ToList();
         // The same methods keep the order the YAML lists them in.
         parameters[Key] = saved is not null
-            && saved.Select(method => method?.GetValue<string>()).Order().SequenceEqual(chosen.Order())
+            && saved.Select(method => method.AsText()).Order().SequenceEqual(chosen.Order())
             ? saved.DeepClone()
             : new JsonArray([.. chosen.Select(method => (JsonNode)JsonValue.Create(method))]);
     }

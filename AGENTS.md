@@ -272,9 +272,11 @@ builds outside mise.
   segmented options, tabs, and page titles, and a button's accessible name
   follows its shown label unless the view sets one. Everything else stays
   in sentence case on both.
-  - A button's or toggle button's string content gets it from the theme. Show
-    a name or other data inside a button in a `TextBlock`, so it keeps its
-    own casing.
+  - A button's or toggle button's string content gets it from
+    `ControlLabel.ApplyToButtons`, which the app calls at startup. Show a
+    name or other data inside a button in a `TextBlock`, so it keeps its own
+    casing. Don't set a `ContentTemplate` on every button in a style: any
+    template shows a button's control content as its type name.
   - A tab's or page title's `TextBlock` needs it written in: bind with
     `Converter={x:Static theme:ControlLabel.Converter}`, or use
     `{theme:Label 'New profile'}` for a fixed title.

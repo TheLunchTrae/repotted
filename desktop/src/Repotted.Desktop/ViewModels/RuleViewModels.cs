@@ -131,7 +131,7 @@ internal sealed partial class StatusChecksRuleViewModel : RuleViewModel
     {
         var parameters = saved?["parameters"] as JsonObject;
         savedChecks = parameters?[ChecksKey] is JsonArray checks ? [.. checks.OfType<JsonObject>()] : [];
-        savedContexts = contexts = string.Join('\n', savedChecks.Select(check => check["context"]?.GetValue<string>()).OfType<string>());
+        savedContexts = contexts = string.Join('\n', savedChecks.Select(check => check["context"].AsText()).OfType<string>());
         Strict = new("Require branches to be up to date before merging", "strict_required_status_checks_policy", parameters, Changed);
     }
 
@@ -164,8 +164,8 @@ internal sealed partial class StatusChecksRuleViewModel : RuleViewModel
         }
         // A check keeps what else it named, such as the app that must report it.
         var byContext = savedChecks
-            .Where(check => check["context"] is not null)
-            .GroupBy(check => check["context"]!.GetValue<string>())
+            .Where(check => check["context"].AsText() is not null)
+            .GroupBy(check => check["context"].AsText()!)
             .ToDictionary(group => group.Key, group => group.First());
         parameters[ChecksKey] = new JsonArray(
         [

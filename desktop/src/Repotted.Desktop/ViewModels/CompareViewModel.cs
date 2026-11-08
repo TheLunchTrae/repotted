@@ -85,6 +85,9 @@ internal sealed partial class CompareViewModel(
 
     public bool HasWarnings => Warnings.Count > 0;
 
+    /// <summary>What the profile holds as drafts, which the compare leaves out, or null for none.</summary>
+    public string? DraftsNote { get; private set; }
+
     /// <summary>How many differences Repotted cannot change, as the plan's locks have it.</summary>
     public int Locked => Sections.Sum(section => section.Differences.Count(row => row.IsLocked));
 
@@ -158,6 +161,15 @@ internal sealed partial class CompareViewModel(
     [RelayCommand]
     private void ToggleEverything() => ShowEverything = !ShowEverything;
 
+    /// <summary>A draft as the plan names it: the ruleset Later, or a setting's path.</summary>
+    private static string Describe(SkippedDocument draft) => draft.Section switch
+    {
+        "rulesets" => $"the ruleset {draft.Target}",
+        "environments" => $"the environment {draft.Target}",
+        "autolinks" => $"the autolink {draft.Target}",
+        _ => $"{draft.Section}.{draft.Target}",
+    };
+
     [RelayCommand]
     public async Task LoadAsync()
     {
@@ -179,6 +191,10 @@ internal sealed partial class CompareViewModel(
             OnPropertyChanged(nameof(Sections));
             OnPropertyChanged(nameof(Warnings));
             OnPropertyChanged(nameof(HasWarnings));
+            DraftsNote = plan.Skipped is { Count: > 0 } skipped
+                ? $"Left out as {(skipped.Count == 1 ? "a draft" : "drafts")}: {string.Join(", ", skipped.Select(Describe))}."
+                : null;
+            OnPropertyChanged(nameof(DraftsNote));
             OnPropertyChanged(nameof(Summary));
             OnPropertyChanged(nameof(Locked));
             OnPropertyChanged(nameof(HasLocks));
