@@ -629,7 +629,11 @@ internal sealed partial class ProfilesViewModel(
         await LoadAsync(sync: false).ConfigureAwait(true);
     }
 
-    /// <summary>Editors belong to one folder, so another folder starts without them.</summary>
+    /// <summary>
+    /// Editors belong to one folder, so another folder starts without them.
+    /// The leave question has already settled any unsaved changes, so this
+    /// only drops editors that have none.
+    /// </summary>
     partial void OnFolderChanged(string value)
     {
         foreach (var editor in editors.Values)
