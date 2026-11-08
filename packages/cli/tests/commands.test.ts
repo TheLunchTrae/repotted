@@ -15,6 +15,7 @@ import { type Io, run } from '../src/commands.js';
 
 const examples = path.join(import.meta.dirname, '../../../examples');
 const directory = await mkdtemp(path.join(tmpdir(), 'repotted-cli-'));
+const fixtures = path.join(import.meta.dirname, '../../../desktop/tests/Repotted.Desktop.Tests/Fixtures');
 
 afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
@@ -57,6 +58,28 @@ function cli(github: FakeGitHub, ...argv: string[]): Promise<Result> {
 function document(result: Result): unknown {
   const parsed: unknown = JSON.parse(result.out);
   return parsed;
+}
+
+/**
+ * Saves a document the app reads from the CLI as one of the app's test
+ * fixtures, which its tests parse with the type the app reads it with. Each
+ * string that starts with this test's folder, or with a key of `names`,
+ * starts with a placeholder instead, with forward slashes, and so does one
+ * that is a key of `names` alone, such as a random id. The file is then the
+ * same on every machine.
+ */
+async function fixture(name: string, result: Result, names: Record<string, string> = {}): Promise<void> {
+  const roots = Object.entries({ ...names, [directory]: '<tests>', [await realpath(directory)]: '<tests>' }).sort(
+    ([a], [b]) => b.length - a.length,
+  );
+  const value: unknown = JSON.parse(result.out, (_key, value: unknown) => {
+    if (typeof value !== 'string') {
+      return value;
+    }
+    const root = roots.find(([prefix]) => value === prefix || value.startsWith(`${prefix}${path.sep}`));
+    return root === undefined ? value : `${root[1]}${value.slice(root[0].length).replaceAll(path.sep, '/')}`;
+  });
+  await expect(`${JSON.stringify(value, null, 2)}\n`).toMatchFileSnapshot(path.join(fixtures, `${name}.json`));
 }
 
 async function savePlan(github: FakeGitHub, name: string): Promise<string> {
@@ -109,9 +132,11 @@ describe('--json', () => {
     expect(document(planned)).toEqual(JSON.parse(await readFile(file, 'utf8')));
     expect(document(planned)).toMatchObject({ repository: 'lunch/app', warnings: [] });
     expect(github.writes).toEqual([]);
+    await fixture('plan', planned);
 
     const applied = await cli(github, 'apply', file, '--yes', '--json');
     expect(applied).toMatchObject({ code: 0, err: '' });
+    await fixture('apply', applied);
     expect(document(applied)).toEqual({
       repository: 'lunch/app',
       applied: parsePlan(document(planned)).changes,
@@ -139,6 +164,7 @@ describe('--json', () => {
         },
       ],
     });
+    await fixture('capture', result);
     expect((await cli(github, 'capture', 'lunch/app')).err).toBe(
       'warning: Skipped environments: GitHub refused to read environments (Resource not accessible by integration); reading them needs the Actions read permission\n',
     );
@@ -164,6 +190,7 @@ describe('--json', () => {
 
     expect(result.code).toBe(1);
     expect(document(result)).toMatchObject({ error: { kind: 'stale_plan', current: { repository: 'lunch/app' } } });
+    await fixture('apply-stale', result);
     expect(github.writes).toEqual([]);
   });
 
@@ -213,6 +240,7 @@ describe('--json', () => {
       },
       locks: [{ change: 0, reason: 'Needs Administration write' }],
     });
+    await fixture('plan-locked', planned);
     expect((await cli(github, 'plan', 'lunch/app', '--profile', profile)).out).toContain(
       '~ update repository settings (locked: Needs Administration write)',
     );
@@ -233,6 +261,7 @@ describe('--json', () => {
     expect(document(result)).toMatchObject({
       error: { kind: 'apply_failed', applied: [], reason: 'Needs Administration write' },
     });
+    await fixture('apply-failed', result);
     // Only text output links GitHub's docs, after the failure.
     expect(JSON.stringify(document(result))).not.toContain('docs.github.com');
     expect((await cli(refusing, 'apply', file, '--yes')).err).toMatch(
@@ -314,6 +343,8 @@ describe('batch', () => {
         { repository: 'lunch/web', file: path.join(folder, 'lunch', 'web.yaml'), left_out: false, joined: false },
       ],
     });
+    const names = { [path.dirname(folder)]: '<batch>', [id ?? '']: '<id>' };
+    await fixture('batch', started, names);
 
     // One repository's one-off edit, then a value left out of every repository.
     const edited = await cliWith(
@@ -342,6 +373,7 @@ describe('batch', () => {
       '--json',
     );
     expect(document(everywhere)).toMatchObject({ changed: ['lunch/app', 'lunch/web'], refused: [] });
+    await fixture('batch-everywhere', everywhere, names);
 
     const plans = path.join(folder, '..', 'plans.json');
     const planned = await cliWith(github, {}, 'plan', '--staged', folder, '--out', plans, '--json');
@@ -357,6 +389,7 @@ describe('batch', () => {
       left_out: [],
       failures: [],
     });
+    await fixture('batch-plan', planned, names);
 
     const applied = await cliWith(github, {}, 'apply', plans, '--yes', '--json');
     expect(applied.code).toBe(0);
@@ -367,6 +400,7 @@ describe('batch', () => {
         { repository: 'lunch/web', status: 'applied', ended: true },
       ],
     });
+    await fixture('batch-apply', applied, names);
     expect(fakes.map((fake) => fake.writes)).toEqual([
       [],
       [{ method: 'PATCH', path: '/repos/lunch/web', body: { has_projects: false } }],
@@ -553,6 +587,7 @@ describe('account commands', () => {
       source: 'installations',
       repositories: [{ full_name: 'lunch/app', private: true, archived: false }],
     });
+    await fixture('repos', listed);
 
     expect(await cli(github, 'repos')).toMatchObject({ code: 0, out: 'lunch/app (private)\n' });
   });
@@ -651,6 +686,7 @@ describe('account commands', () => {
       token_variable: null,
       install_url: installUrl,
     });
+    await fixture('status', signedIn);
 
     // Another App's install page is not one Repotted knows.
     const otherApp = await cliWith(
@@ -1010,6 +1046,8 @@ describe('sync', () => {
     });
     expect(settled.code).toBe(0);
     expect(document(settled)).toMatchObject({ pushed: ['base.yaml'], conflicts: [] });
+    await fixture('sync-conflict', conflicted, { [folder]: '<folder>' });
+    await fixture('sync', settled, { [folder]: '<folder>' });
     expect(github.files()).toEqual({ 'base.yaml': '# mine\n' });
   });
 
@@ -1051,6 +1089,7 @@ describe('stage', () => {
     const started = await cli(github, 'stage', file, '--new', 'lunch/app', '--profile', profile, '--json');
     expect(started).toMatchObject({ code: 0, err: '' });
     expect(document(started)).toMatchObject({ repository: 'lunch/app', exclude: [] });
+    await fixture('stage', started);
 
     const edited = await cli(
       github,
@@ -1082,6 +1121,7 @@ describe('stage', () => {
     expect(document(planned)).toHaveProperty('locks');
     expect(document(planned)).toHaveProperty('access');
     expect(await readFile(planFile, 'utf8')).not.toContain('exclusions');
+    await fixture('staged-plan', planned);
     const applied = await cli(github, 'apply', planFile, '--yes', '--json');
     expect(applied.code).toBe(0);
     expect(github.writes).toEqual([

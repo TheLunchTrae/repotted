@@ -1,0 +1,36 @@
+{
+  "batch": "<batch>/batch",
+  "results": [
+    {
+      "repository": "lunch/app",
+      "ended": true,
+      "status": "in_line"
+    },
+    {
+      "repository": "lunch/web",
+      "ended": true,
+      "status": "applied",
+      "applied": [
+        {
+          "section": "repository",
+          "action": "update",
+          "target": "repository settings",
+          "fields": [
+            {
+              "field": "has_projects",
+              "from": true,
+              "to": false
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "path": "/repos/lunch/web",
+            "body": {
+              "has_projects": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

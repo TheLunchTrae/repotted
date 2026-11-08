@@ -1,0 +1,90 @@
+{
+  "batch": "<batch>/batch",
+  "id": "<id>",
+  "profile": "<batch>/profile.yaml",
+  "plans": [
+    {
+      "repository": "lunch/app",
+      "desired": {},
+      "changes": [],
+      "skipped": [],
+      "warnings": [],
+      "file": "<batch>/batch/lunch/app.yaml",
+      "digest": "e9f0152079a8d68b870c4c5680435a4654933794efc7ca56153406687a3d5601",
+      "access": {
+        "role": "admin",
+        "app": {
+          "status": "unknown"
+        }
+      },
+      "locks": [],
+      "staged": {
+        "file": "<batch>/batch/lunch/app.yaml",
+        "repository": "lunch/app",
+        "base": "<batch>/profile.yaml",
+        "exclude": [
+          "repository.has_wiki"
+        ]
+      },
+      "exclusions": []
+    },
+    {
+      "repository": "lunch/web",
+      "desired": {
+        "repository": {
+          "has_projects": false
+        }
+      },
+      "changes": [
+        {
+          "section": "repository",
+          "action": "update",
+          "target": "repository settings",
+          "fields": [
+            {
+              "field": "has_projects",
+              "from": true,
+              "to": false
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "path": "/repos/lunch/web",
+            "body": {
+              "has_projects": false
+            }
+          }
+        }
+      ],
+      "skipped": [],
+      "warnings": [],
+      "file": "<batch>/batch/lunch/web.yaml",
+      "digest": "2c1ca153d525523db1cb4b793379c4ddcbd89d90e1ec7f158e14ac07b2ae9709",
+      "access": {
+        "role": "admin",
+        "app": {
+          "status": "unknown"
+        }
+      },
+      "locks": [],
+      "staged": {
+        "file": "<batch>/batch/lunch/web.yaml",
+        "repository": "lunch/web",
+        "base": "<batch>/profile.yaml",
+        "exclude": [
+          "repository.has_wiki"
+        ]
+      },
+      "exclusions": [
+        {
+          "change": 0,
+          "field": "has_projects",
+          "key": "repository.has_projects",
+          "edited": true
+        }
+      ]
+    }
+  ],
+  "left_out": [],
+  "failures": []
+}

@@ -14,6 +14,10 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The CLI's own documents, which its tests write: see CliFixtureTests. -->
+    <None Include="Fixtures\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Repotted.Desktop\Repotted.Desktop.csproj" />
   </ItemGroup>
 </Project>

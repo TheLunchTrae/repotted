@@ -1,0 +1,45 @@
+{
+  "error": {
+    "kind": "apply_failed",
+    "message": "Failed to update repository settings after 0 of the plan's changes: Resource not accessible by integration\nThat change needs the Administration write permission.\nNothing after the failed change was written. Plan again to see where the repository stands.",
+    "applied": [],
+    "failed": {
+      "section": "repository",
+      "action": "update",
+      "target": "repository settings",
+      "fields": [
+        {
+          "field": "has_projects",
+          "from": true,
+          "to": false
+        },
+        {
+          "field": "allow_update_branch",
+          "from": false,
+          "to": true
+        },
+        {
+          "field": "delete_branch_on_merge",
+          "from": false,
+          "to": true
+        },
+        {
+          "field": "web_commit_signoff_required",
+          "from": false,
+          "to": true
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "path": "/repos/lunch/app",
+        "body": {
+          "has_projects": false,
+          "allow_update_branch": true,
+          "delete_branch_on_merge": true,
+          "web_commit_signoff_required": true
+        }
+      }
+    },
+    "reason": "Needs Administration write"
+  }
+}
