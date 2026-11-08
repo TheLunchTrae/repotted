@@ -364,6 +364,80 @@ public sealed class ConfigRepositoryTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_stopped_list_finishes_a_save_but_starts_no_sync()
+    {
+        var copy = Synced();
+        var file = Path.Combine(copy, "base.yaml");
+        File.WriteAllText(file, "repository:\n  has_issues: true\n");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var written = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .On(Command(copy), Sync())
+            .On(folders.List(copy), Listing(file))
+            .On($"profile {file} --json", Documents.ResolvedBase(file))
+            .OnceReady($"profile {file} --set repository.has_wiki=false --json", Documents.ResolvedBase(file), written.Task);
+        var profiles = Profiles(cli);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        var editor = profiles.Current!;
+        editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki")
+            .Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        cli.Calls.Clear();
+        var save = editor.SaveCommand.ExecuteAsync(null);
+
+        var stopping = profiles.Stop();
+        // The write can't be stopped partway, so stopping waits for it.
+        Assert.False(stopping.IsCompleted);
+        written.SetResult();
+        await save;
+        await stopping;
+
+        Assert.Null(editor.SaveError);
+        Assert.Contains($"profile {file} --set repository.has_wiki=false --json", cli.Calls);
+        Assert.DoesNotContain(Command(copy), cli.Calls);
+    }
+
+    [AvaloniaFact]
+    public async Task A_stopped_list_puts_back_a_removed_profile_it_saves_but_starts_no_sync()
+    {
+        var copy = Synced();
+        var file = Path.Combine(copy, "base.yaml");
+        File.WriteAllText(file, "repository:\n  has_issues: true\n");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var written = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .On(Command(copy), Sync())
+            .On(folders.List(copy), Listing(file))
+            .On($"profile {file} --json", Documents.ResolvedBase(file))
+            .OnceReady($"profile {file} --set repository.has_wiki=false --json", Documents.ResolvedBase(file), written.Task);
+        var profiles = Profiles(cli);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        var editor = profiles.Current!;
+        editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki")
+            .Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        File.Delete(file);
+        cli.On(Command(copy), Sync(pulled: ["base.yaml"])).On(folders.List(copy), Listing());
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.True(editor is { Removed: true, HasChanges: true });
+        cli.On(folders.List(copy), Listing(file));
+        cli.Calls.Clear();
+        var save = editor.SaveCommand.ExecuteAsync(null);
+
+        var stopping = profiles.Stop();
+        Assert.True(profiles.Busy);
+        // Putting the file back and saving can't be stopped partway, so stopping waits for both.
+        Assert.False(stopping.IsCompleted);
+        written.SetResult();
+        await save;
+        await stopping;
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Null(editor.SaveError);
+        Assert.True(File.Exists(file));
+        Assert.False(profiles.Busy);
+        Assert.DoesNotContain(Command(copy), cli.Calls);
+    }
+
+    [AvaloniaFact]
     public async Task Reconnecting_adds_the_local_profiles_the_repository_does_not_have()
     {
         var copy = Synced();

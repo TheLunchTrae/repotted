@@ -97,16 +97,18 @@ new one, leaves the app and what it holds in place.
 | Checking the sign-in                   | Signed in as another account            | The app for that account, as from Checking.                                                    |
 | Checking the sign-in                   | The CLI is missing or fails             | The app, as it was; the page that failed shows its error.                                      |
 | An app already replaced                | A command fails with `kind: signed_out` | Nothing: the app showing now stays.                                                            |
-| The app                                | Sign out, while no sync runs            | Signing out: `repotted logout --json` removes the keychain sign-in.                            |
+| The app                                | Sign out, while no save or sync runs    | Signing out: `repotted logout --json` removes the keychain sign-in.                            |
 | The app                                | Replaced, or the app closes             | A running capture and a connect's first sync stop, and clean up as when their form closes.     |
+| The app                                | Replaced, while a save or sync runs     | The save or sync finishes and no sync follows it; the next app syncs only once it ends.        |
 | Signing out                            | It succeeds                             | Checking.                                                                                      |
 | Signing out                            | It fails                                | Problem, with a retry that checks again.                                                       |
 
 The app offers **Sign out** only for the Repotted sign-in: the list comes from
 the App's installations and no token variable is set. A token variable or the
 GitHub CLI's sign-in would still apply after signing out, so checking would
-lead straight back to the app. **Sign out** is off while a sync runs, since a
-sync can't be stopped partway.
+lead straight back to the app. **Sign out** is off while a save or a sync
+runs, including the sync a save starts, since neither can be stopped
+partway.
 
 ## Plan and apply
 
@@ -191,6 +193,7 @@ is one, and the sync state the page shows.
 | Conflicts    | Keep this computer's or GitHub's version           | Syncing, with `prefer` for those files only.                |
 | Any          | Choose another folder, which leaves any repository | Local folder, listed from the start.                        |
 | Any          | Connect another repository                         | Connecting, through the connect form below.                 |
+| Any          | The app is replaced                                | Stopped: a save under way finishes, and no sync starts.     |
 
 Saves and the page's syncs share one chain (`ExclusiveAsync` and
 `SyncAsync`), so a sync never reads a file a save is writing. The connect

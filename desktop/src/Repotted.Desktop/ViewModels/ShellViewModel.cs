@@ -158,14 +158,18 @@ internal sealed partial class ShellViewModel : ViewModelBase
     /// </summary>
     public bool ShowSignOut => Account.TokenVariable is null && Repositories.FromInstallations is true;
 
-    /// <summary>Signing out waits for a sync, which can't be stopped partway.</summary>
+    /// <summary>Signing out waits for a sync, and for a save and the sync after it, which can't be stopped partway.</summary>
     [RelayCommand(CanExecute = nameof(CanSignOut))]
     private Task SignOutAsync() => signOut();
 
-    private bool CanSignOut() => !Profiles.Syncing;
+    private bool CanSignOut() => !Profiles.Busy;
 
-    /// <summary>Stops the work the app started that can be stopped: a capture, and a connect's first sync.</summary>
-    public void Stop() => Profiles.Stop();
+    /// <summary>
+    /// Stops the work the app started that can be stopped, a capture and a
+    /// connect's first sync, and any sync not yet started. The task ends once
+    /// a save or sync already running ends.
+    /// </summary>
+    public Task Stop() => Profiles.Stop();
 
     [ObservableProperty]
     public partial string Search { get; set; } = "";
@@ -182,7 +186,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         {
             OnPropertyChanged(nameof(Crumb));
         }
-        else if (e.PropertyName == nameof(ProfilesViewModel.Syncing))
+        else if (e.PropertyName == nameof(ProfilesViewModel.Busy))
         {
             SignOutCommand.NotifyCanExecuteChanged();
         }

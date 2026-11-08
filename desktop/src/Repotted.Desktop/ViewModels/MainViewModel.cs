@@ -11,6 +11,9 @@ internal sealed partial class MainViewModel : ViewModelBase
     private readonly IDesktop desktop;
     private readonly AppSettings settings;
 
+    /// <summary>The save or sync a replaced app still runs, which the next app waits for before it syncs the same folder.</summary>
+    private Task retired = Task.CompletedTask;
+
     /// <summary>The app whose lost sign-in is being checked, so pages that fail together check once.</summary>
     private ShellViewModel? checking;
 
@@ -30,7 +33,7 @@ internal sealed partial class MainViewModel : ViewModelBase
     {
         if (oldValue is ShellViewModel shell)
         {
-            shell.Stop();
+            retired = shell.Stop();
         }
     }
 
@@ -60,6 +63,8 @@ internal sealed partial class MainViewModel : ViewModelBase
         switch (account)
         {
             case Account.SignedIn signedIn:
+                // A replaced app may still save or sync the folder this one syncs first.
+                await retired.ConfigureAwait(true);
                 // Each app gets a client of its own, so a lost sign-in that an app
                 // replaced since then reports can't replace the app showing now.
                 var shellClient = new RepottedClient(cli);
@@ -141,7 +146,7 @@ internal sealed partial class MainViewModel : ViewModelBase
                 signIn.Stop();
                 break;
             case ShellViewModel shell:
-                shell.Stop();
+                _ = shell.Stop();
                 break;
         }
     }

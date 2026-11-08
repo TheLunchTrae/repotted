@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Repotted.Desktop.Services;
@@ -59,6 +60,9 @@ internal sealed partial class ProfilesViewModel(
     /// during a refresh commits after it. The view model runs on the UI thread.
     /// </summary>
     private Task lastSync = Task.CompletedTask;
+
+    /// <summary>Set once the app this list belongs to is left; a sync then does nothing.</summary>
+    private bool stopped;
 
     private const string SyncRecord = ".repotted-sync.json";
 
@@ -124,7 +128,11 @@ internal sealed partial class ProfilesViewModel(
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(KeepMineCommand), nameof(UseGitHubsCommand))]
+    [NotifyPropertyChangedFor(nameof(Busy))]
     public partial bool Syncing { get; private set; }
+
+    /// <summary>Whether a sync, or a save and the sync after it, is under way; a save ends once the sync after it does.</summary>
+    public bool Busy => Syncing || editors.Values.Any(editor => editor.Saving);
 
     /// <summary>The files that changed both here and on GitHub since the last sync, which wait for the user to pick a side.</summary>
     [ObservableProperty]
@@ -353,11 +361,18 @@ internal sealed partial class ProfilesViewModel(
         forms.Add(Creating);
     }
 
-    /// <summary>Closes the new profile form and the repository form, which stops a capture or a first sync they run.</summary>
-    public void Stop()
+    /// <summary>
+    /// Closes the new profile form and the repository form, which stops a
+    /// capture or a first sync they run, and keeps any later sync from
+    /// starting. The task ends once a save or sync already running ends, since
+    /// neither can be stopped partway.
+    /// </summary>
+    public Task Stop()
     {
+        stopped = true;
         Creating = null;
         Connecting = null;
+        return lastSync;
     }
 
     /// <summary>Closes the new profile form, back to the profile that was open.</summary>
@@ -515,7 +530,7 @@ internal sealed partial class ProfilesViewModel(
         try
         {
             await previous.ConfigureAwait(true);
-            if (folder != Folder)
+            if (stopped || folder != Folder)
             {
                 return null;
             }
@@ -600,10 +615,15 @@ internal sealed partial class ProfilesViewModel(
     /// <summary>
     /// Keeps the list in step with an editor whose file is gone: it shows as
     /// removed once a save finds the file gone, and leaves the list once its
-    /// edits are discarded.
+    /// edits are discarded. A save starting or ending changes whether the list
+    /// is busy.
     /// </summary>
-    private void OnEditorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private void OnEditorChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(ProfileViewModel.Saving))
+        {
+            OnPropertyChanged(nameof(Busy));
+        }
         if (sender is not ProfileViewModel editor
             || !editors.TryGetValue(editor.File, out var cached)
             || !ReferenceEquals(cached, editor))
