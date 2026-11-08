@@ -293,10 +293,12 @@ Other calls run until the CLI exits, which every command does on its own.
 ## Desktop releases
 
 `.github/workflows/desktop.yml` packages the app, as
-[Releasing](releasing.md#the-desktop-app) describes. Two states matter when a
+[Releasing](releasing.md#the-desktop-app) describes. Three states matter when a
 run fails:
 
-| State    | Event               | Next                                                                                                |
-| -------- | ------------------- | --------------------------------------------------------------------------------------------------- |
-| Packaged | A platform fails    | No upload; re-running the failed job continues the same tag, and its upload then creates the draft. |
-| Draft    | The owner publishes | Released. A published release is immutable, so a fix needs the next version's tag.                  |
+| State    | Event                 | Next                                                                                                                    |
+| -------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Packaged | A platform fails      | No attestation or upload; re-running the failed job continues the same tag, and the attestation and upload then follow. |
+| Packaged | The attestation fails | No upload; re-running the failed job attests the same packages, and the upload then creates the draft.                  |
+| Attested | The upload fails      | Re-running the failed job attaches the attested packages, replacing any files the first try left on the draft.          |
+| Draft    | The owner publishes   | Released. A published release is immutable, so a fix needs the next version's tag.                                      |

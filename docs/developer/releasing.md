@@ -57,6 +57,22 @@ release for the tag:
   is signed.
 - `SHA256SUMS.txt`, the checksums of the three.
 
+Before the upload, the attest job records a build provenance attestation for
+each package with [`actions/attest`](https://github.com/actions/attest), which
+users check with `gh attestation verify`, as
+[the user guide](../user/desktop.md#install) shows. It attests the packages
+after signing, notarization, and stapling, since each of those changes the
+file, so the attested digest is that of the file the release offers. The
+upload job runs only after the attestations succeed, so a draft never holds
+an unattested package. The attest job is the only one with `id-token: write`
+and `attestations: write`, and it neither checks out the repository nor
+builds anything, so the signing identity never meets the build steps or the
+Apple secrets.
+
+Manual runs attest nothing. Their packages are unsigned test builds from any
+branch, and `gh attestation verify --repo` would accept an attested test build
+just as it accepts a release.
+
 Each build ships the CLI compiled with `bun build --compile` beside the app as
 `repotted-cli`. `mise run desktop:package` makes the same package on a Mac or
 in Git Bash on Windows, in `artifacts/desktop`.

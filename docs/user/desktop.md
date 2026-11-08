@@ -25,6 +25,18 @@ Desktop releases are titled Repotted and a version, such as Repotted 0.1.0.
 `SHA256SUMS.txt` in the same release lists each file's checksum, so you can
 check a download.
 
+Each package in a release also has an attestation, a signed record that this
+repository's release workflow built it. To check that a download is a genuine
+release package, run this with the [GitHub CLI](https://cli.github.com/),
+signed in to any GitHub account:
+
+```sh
+gh attestation verify Repotted-<version>-macos-arm64.dmg --repo TheLunchTrae/repotted
+```
+
+The command fails if the file differs in any way from a package that the
+workflow built and attested.
+
 The app includes its own copy of the Repotted CLI, so you don't need Node or
 npm to use it.
 
