@@ -132,7 +132,7 @@ internal static class ProfileFields
     [
         new("Repository", "repository",
         [
-            new("About", "The description, website, and visibility describe one repository, so a captured profile leaves them out. Topics, custom properties, and autolinks are edited in the YAML.",
+            new("About", "The description, website, and visibility describe one repository, so a captured profile leaves them out. Topics, custom properties, autolinks, and labels are edited in the YAML.",
             [
                 Text("repository", "description", "Description", allowsEmpty: true),
                 Text("repository", "homepage", "Website", allowsEmpty: true),

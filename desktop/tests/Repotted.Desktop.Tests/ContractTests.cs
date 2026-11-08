@@ -25,6 +25,7 @@ public sealed class ContractTests
         "repository.topics",
         "custom_properties",
         "autolinks",
+        "labels",
         "actions.selected_actions.patterns_allowed",
         "actions.oidc_customization_sub.include_claim_keys",
         "security.security_and_analysis.secret_scanning_delegated_bypass_options",

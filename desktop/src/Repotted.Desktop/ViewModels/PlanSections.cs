@@ -21,6 +21,7 @@ internal static class PlanSections
         "rulesets" => $"the ruleset {draft.Target}",
         "environments" => $"the environment {draft.Target}",
         "autolinks" => $"the autolink {draft.Target}",
+        "labels" => $"the label {draft.Target}",
         _ => $"{draft.Section}.{draft.Target}",
     };
 
@@ -70,6 +71,10 @@ internal static class PlanSections
         if (desired["environments"] is JsonArray environments)
         {
             sections.Add(Entries("Environments", "environment", plan, environments, "environments", leaveOut));
+        }
+        if (desired["labels"] is JsonArray labels)
+        {
+            sections.Add(Entries("Labels", "label", plan, labels, "labels", leaveOut));
         }
         return sections;
     }

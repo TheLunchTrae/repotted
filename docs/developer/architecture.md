@@ -46,14 +46,14 @@ such as `selected_actions`. `flattenSettings` gives each setting its path, as
 `has_wiki` or `selected_actions.verified_allowed`, and `unflattenSettings`
 turns paths back into settings, so merging, the sources the resolved profile
 records, and saving a staged apply's edits all read a group the same way. A
-ruleset, environment, or autolink replaces the base's entry of the same name
-or prefix whole, and `pages: { absent: true }` replaces a base's site. The
+ruleset, environment, label, or autolink replaces the base's entry of the same
+name or prefix whole, and `pages: { absent: true }` replaces a base's site. The
 resolved profile records which file sets each value, which
 `repotted profile --json` reports and the desktop app shows.
 
 ### Drafts
 
-A [draft](../user/profiles.md#drafts) is a ruleset, environment or autolink
+A [draft](../user/profiles.md#drafts) is a ruleset, environment, label or autolink
 with `draft: true`, or a setting under the profile's `drafts` section. Each file
 is split into what applies and its drafts as it is read, and the two merge
 separately. So drafts never change what applies: the resolved `profile` is
@@ -111,9 +111,9 @@ target, with the fields it changes and the request that makes it.
 ### Only what the profile names
 
 A profile manages only what it names: a setting it leaves out keeps its live
-value, a ruleset or environment it doesn't name is left alone, and inside a
-ruleset a key it leaves out keeps its live value. Deleting a ruleset or an
-environment needs an explicit `absent: true` entry. As a result, a profile can
+value, a ruleset, environment or label it doesn't name is left alone, and
+inside a ruleset a key it leaves out keeps its live value. Deleting a ruleset,
+an environment or a label needs an explicit `absent: true` entry. As a result, a profile can
 cover a repository one setting at a time, and every delete a plan makes
 appears in the profile as an `absent: true` entry.
 
@@ -141,6 +141,12 @@ never less protected in between:
    ones, then environment deletes. Custom branch policies are on before their
    patterns are added, and no branch or tag outside both the old and the new
    lists can deploy in between.
+5. Label deletes, then renames, then updates, then creates. A label pairs
+   with the repository's by name in any case, or, when the repository lacks
+   it, by the first name in its `renamed_from` that the repository has, which
+   it renames so the label stays on its issues. `addRenameIssues` in
+   `schema.ts` refuses an old name that a profile label has or that two labels
+   claim, so no two changes write one label.
 
 ### Checks at plan time
 
@@ -169,7 +175,7 @@ a captured profile always loads. The fields of an endpoint's object and of
 `security_and_analysis` are parsed one by one, so only the field that fails is
 left out. A commit message setting goes with its title setting, and the other
 way round, since GitHub takes them only as a pair. A ruleset or environment
-that fails its schema is left out whole, with a warning: without one of its
+that fails its schema is left out whole, with a warning, and so is a label: without one of its
 rules, a ruleset would have that rule removed on apply, while a profile leaves
 alone a ruleset it doesn't name.
 

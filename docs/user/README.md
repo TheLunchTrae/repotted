@@ -2,8 +2,8 @@
 
 Repotted keeps GitHub repositories set up the way you want. You describe a
 repository's settings, merge methods, Actions and security settings, custom
-properties, GitHub Pages site, autolinks, rulesets, and deployment
-environments in a YAML file called a profile. Repotted compares repositories
+properties, GitHub Pages site, autolinks, rulesets, deployment
+environments, and labels in a YAML file called a profile. Repotted compares repositories
 with the profile and changes only what you review and approve.
 
 You can use Repotted in three ways:

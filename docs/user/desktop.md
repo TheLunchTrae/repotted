@@ -123,8 +123,9 @@ what you type is valid, the app says what's wrong and won't save the profile;
 above it, such as **Runner label** with a **Runner type** of **Labeled**, is
 off while another choice applies, and keeps its value. Leave a runner label
 empty for no label.
-Topics, custom properties, autolinks, and a few lists, such as the actions a
-repository allows, are edited in the YAML.
+Topics, custom properties, autolinks, labels, and a few lists, such as the
+actions a repository allows, are edited in the YAML. Compare shows label
+changes with the rest.
 
 Some options on GitHub's settings pages have no API, so no profile can set
 them. Where one belongs to a setting, a note under that setting says so, such

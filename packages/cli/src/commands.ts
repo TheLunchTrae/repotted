@@ -82,9 +82,10 @@ Commands:
        [--path folder] [--prefer local|remote]   (or a folder in it); --prefer settles files changed on both,
        [--only file] [--message text]            or only the files --only names
   profile <file> [--set key=json] [--unset key]  Show a profile resolved over its bases; edit its settings
-          [--ruleset json] [--drop-ruleset name]  and its rulesets and environments; drafts.<section>.<key>
-          [--environment json] [--drop-environment name]  keys and "draft": true entries are drafts
-          [--drop-draft-ruleset name] [--drop-draft-environment name]
+          [--ruleset json] [--drop-ruleset name]  and its rulesets, environments and labels;
+          [--environment json] [--drop-environment name]  drafts.<section>.<key> keys and "draft": true
+          [--label json] [--drop-label name]      entries are drafts
+          [--drop-draft-ruleset name] [--drop-draft-environment name] [--drop-draft-label name]
   stage <file> --new owner/repo [--profile file] Start a staged apply: one-off edits for one apply, over a
                                                  profile or over the repository as it is
   stage <file> [--set key=json] [--unset key]    Show a staged apply resolved; edit it as profile does, and
@@ -393,7 +394,7 @@ function profileEdit(argument: string, unset: boolean): ProfileEdit {
   return { path: argument.slice(0, separator).split('.'), value };
 }
 
-/** Reads a ruleset or environment for --ruleset or --environment: a JSON object with a name. */
+/** Reads a ruleset, environment or label for --ruleset, --environment or --label: a JSON object with a name. */
 function entryEdit(list: EntryEdit['list'], text: string): EntryEdit {
   let value: unknown;
   try {
@@ -413,6 +414,8 @@ const drops: Readonly<Record<string, Pick<EntryEdit, 'list' | 'draft'>>> = {
   'drop-environment': { list: 'environments', draft: false },
   'drop-draft-ruleset': { list: 'rulesets', draft: true },
   'drop-draft-environment': { list: 'environments', draft: true },
+  'drop-label': { list: 'labels', draft: false },
+  'drop-draft-label': { list: 'labels', draft: true },
 };
 
 /**
@@ -433,8 +436,8 @@ function profileEdits(tokens: readonly { kind: string; name?: string; value?: st
       edits.push(profileEdit(value, token.name === 'unset'));
     } else if (drop !== undefined) {
       edits.push({ ...drop, name: value, entry: undefined });
-    } else if (token.name === 'ruleset' || token.name === 'environment') {
-      const edit = entryEdit(token.name === 'ruleset' ? 'rulesets' : 'environments', value);
+    } else if (token.name === 'ruleset' || token.name === 'environment' || token.name === 'label') {
+      const edit = entryEdit(`${token.name}s`, value);
       if (previous !== undefined && 'list' in previous && previous.list === edit.list && previous.entry === undefined) {
         edits[edits.length - 1] = { ...edit, name: previous.name, draft: previous.draft === true };
       } else {
@@ -459,6 +462,9 @@ async function profile(io: Io, args: string[]): Promise<number> {
       'drop-environment': { type: 'string', multiple: true },
       'drop-draft-ruleset': { type: 'string', multiple: true },
       'drop-draft-environment': { type: 'string', multiple: true },
+      label: { type: 'string', multiple: true },
+      'drop-label': { type: 'string', multiple: true },
+      'drop-draft-label': { type: 'string', multiple: true },
       json: { type: 'boolean' },
     },
   });
@@ -495,6 +501,8 @@ async function stage(io: Io, args: string[]): Promise<number> {
       'drop-ruleset': { type: 'string', multiple: true },
       environment: { type: 'string', multiple: true },
       'drop-environment': { type: 'string', multiple: true },
+      label: { type: 'string', multiple: true },
+      'drop-label': { type: 'string', multiple: true },
       exclude: { type: 'string', multiple: true },
       include: { type: 'string', multiple: true },
       'save-to-profile': { type: 'boolean' },

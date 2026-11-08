@@ -6,7 +6,7 @@ before changing architecture or domain language.
 ## Project
 
 Repotted captures, plans, and applies GitHub repository setups: repository
-settings, merge methods, Actions policy, rulesets, and environments. `README.md` stays
+settings, merge methods, Actions policy, rulesets, environments, and labels. `README.md` stays
 minimal; put context that agents need in this file. Docs live in `docs/`, in
 two sets for two readers:
 
@@ -35,9 +35,9 @@ CLI and the MCP server over that engine.
 - Apply writes only what a reviewed plan lists. It plans again and refuses
   when the result differs; it never executes requests read from a saved plan.
   Keep that property when you change the plan format or the engine.
-- A profile manages only what it names. Settings, rulesets, and environments
-  it leaves out stay as they are; a ruleset or environment is deleted only by
-  an `absent: true` entry.
+- A profile manages only what it names. Settings, rulesets, environments, and
+  labels it leaves out stay as they are; a ruleset, environment, or label is
+  deleted only by an `absent: true` entry.
 - Tests use the in-memory GitHub in `packages/core/tests/fake-github.ts`.
   Never run `apply` against a real repository, and never change a real
   repository's settings, rulesets, or branch protection, without the owner's

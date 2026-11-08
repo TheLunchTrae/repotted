@@ -537,6 +537,78 @@ export function environmentKey(name: string): string {
   return name.toLowerCase();
 }
 
+/**
+ * A label's color: six hex digits, with or without `#`, in any case. YAML
+ * reads digits alone, as `000000`, as a number, so the color has to be quoted.
+ */
+const labelColor = z
+  .string({
+    error: (issue) => (issue.input === undefined ? undefined : "color is six hex digits in quotes, as '000000'"),
+  })
+  .regex(/^#?[\da-f]{6}$/iu, 'color is six hex digits, as d73a4a');
+
+export const label = z
+  .object({
+    name: z.string().min(1).max(50),
+    color: labelColor.optional(),
+    description: z.string().max(100).optional(),
+    /**
+     * Names the label had before. A repository with one of them and no label
+     * of this name has it renamed, so issues and pull requests keep it.
+     */
+    renamed_from: z.array(z.string().min(1).max(50)).min(1).optional(),
+  })
+  .strict();
+
+/** A label the profile removes by name. */
+const absentLabel = z
+  .object({
+    name: z.string().min(1).max(50),
+    absent: z.literal(true),
+    draft: unmarked,
+  })
+  .strict();
+
+export const labelEntry = z.discriminatedUnion(
+  'absent',
+  [absentLabel, label.extend({ absent: unmarked, draft: unmarked })],
+  marked('absent'),
+);
+
+/** GitHub treats label names as case-insensitive, so entries pair by this key. */
+export function labelKey(name: string): string {
+  return name.toLowerCase();
+}
+
+/**
+ * Old names that cannot rename: one that is a label the profile also lists,
+ * which would rename one label into another, or one that two labels claim.
+ */
+function addRenameIssues(entries: readonly z.infer<typeof labelEntry>[], context: z.RefinementCtx): void {
+  const names = new Set(entries.map((entry) => labelKey(entry.name)));
+  const claimed = new Map<string, string>();
+  for (const [index, entry] of entries.entries()) {
+    for (const [at, old] of (('renamed_from' in entry ? entry.renamed_from : undefined) ?? []).entries()) {
+      const path = ['labels', index, 'renamed_from', at];
+      const owner = claimed.get(labelKey(old));
+      if (names.has(labelKey(old))) {
+        context.addIssue({
+          code: 'custom',
+          message: `Label "${entry.name}" is renamed from "${old}", which the profile also lists as a label`,
+          path,
+        });
+      } else if (owner !== undefined) {
+        context.addIssue({
+          code: 'custom',
+          message: `"${old}" is renamed to both "${owner}" and "${entry.name}"`,
+          path,
+        });
+      }
+      claimed.set(labelKey(old), entry.name);
+    }
+  }
+}
+
 function addDuplicateNameIssues(
   entries: readonly { name: string }[],
   kind: string,
@@ -568,6 +640,7 @@ export const profile = z
     autolinks: z.array(autolinkEntry),
     rulesets: z.array(rulesetEntry),
     environments: z.array(environmentEntry),
+    labels: z.array(labelEntry),
   })
   .partial()
   .strict()
@@ -583,10 +656,12 @@ export const profile = z
     );
     addDuplicateNameIssues(value.rulesets ?? [], 'Ruleset', 'rulesets', context);
     addDuplicateNameIssues(value.environments ?? [], 'Environment', 'environments', context, environmentKey);
+    addDuplicateNameIssues(value.labels ?? [], 'Label', 'labels', context, labelKey);
+    addRenameIssues(value.labels ?? [], context);
   });
 
 /**
- * A ruleset or environment saved as a draft. Only its name has to be valid:
+ * A ruleset, environment or label saved as a draft. Only its name has to be valid:
  * the rest may be unfinished, and plan and apply leave it out.
  */
 export const draftEntry = z.looseObject({
@@ -642,6 +717,7 @@ export const profileFile = z
     autolinks: z.array(z.discriminatedUnion('draft', [draftAutolink, autolinkEntry], marked('draft'))).optional(),
     rulesets: z.array(z.discriminatedUnion('draft', [draftEntry, rulesetEntry], marked('draft'))).optional(),
     environments: z.array(z.discriminatedUnion('draft', [draftEntry, environmentEntry], marked('draft'))).optional(),
+    labels: z.array(z.discriminatedUnion('draft', [draftEntry, labelEntry], marked('draft'))).optional(),
     drafts: draftSettings.optional(),
   })
   .strict();
@@ -672,6 +748,8 @@ export type Ruleset = z.infer<typeof ruleset>;
 export type RulesetEntry = z.infer<typeof rulesetEntry>;
 export type Environment = z.infer<typeof environment>;
 export type EnvironmentEntry = z.infer<typeof environmentEntry>;
+export type Label = z.infer<typeof label>;
+export type LabelEntry = z.infer<typeof labelEntry>;
 export type Profile = z.infer<typeof profile>;
 export type ProfileFile = z.infer<typeof profileFile>;
 export type DraftEntry = z.infer<typeof draftEntry>;

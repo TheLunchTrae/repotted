@@ -564,6 +564,33 @@ describe('profile commands', () => {
     );
   });
 
+  test('profile writes, drafts and drops labels', async () => {
+    const file = path.join(directory, 'labels.yaml');
+    await writeFile(file, "labels: [{ name: bug, color: 'd73a4a' }, { name: old }]\n");
+
+    const edited = await cli(
+      new FakeGitHub(),
+      'profile',
+      file,
+      '--label',
+      '{"name":"Bug","color":"d73a4a","description":"Something is wrong"}',
+      '--label',
+      '{"name":"later","draft":true}',
+      '--drop-label=OLD',
+      '--json',
+    );
+
+    expect(edited).toMatchObject({ code: 0, err: '' });
+    expect(document(edited)).toMatchObject({
+      profile: { labels: [{ name: 'Bug', description: 'Something is wrong' }] },
+      drafts: { labels: [{ name: 'later' }] },
+    });
+
+    const dropped = await cli(new FakeGitHub(), 'profile', file, '--drop-draft-label', 'later', '--json');
+    expect(document(dropped)).not.toHaveProperty('drafts.labels.0');
+    expect(await readFile(file, 'utf8')).not.toContain('later');
+  });
+
   test('profile saves a draft, finishes it when its write follows its drop, and plan skips drafts', async () => {
     const file = path.join(directory, 'drafts.yaml');
     await writeFile(file, 'repository: { has_wiki: false }\n');

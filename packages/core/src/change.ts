@@ -18,6 +18,7 @@ export const sections = [
   'autolinks',
   'rulesets',
   'environments',
+  'labels',
 ] as const;
 
 export type Section = (typeof sections)[number];
