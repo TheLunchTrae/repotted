@@ -149,6 +149,62 @@ plan it again after the profile changes; a saved plan keeps the profile it was
 made from. With `--json`, the plan also says which `--exclude` key leaves out
 each change, as [JSON output](json-output.md) describes.
 
+## Apply a profile to several repositories
+
+A batch applies one profile to several repositories, through a staged apply
+for each. You review, edit and apply each repository as you would one staged
+apply, and the profile stays as it is.
+
+```sh
+npx repotted stage rollout --batch --new octo-org/app --new octo-org/web --profile app.yaml
+npx repotted stage rollout --exclude rulesets/Main --everywhere
+npx repotted stage rollout --repo octo-org/web --set repository.has_wiki=true
+npx repotted plan --staged rollout --out plans.json
+npx repotted apply plans.json
+```
+
+`stage <folder> --batch` starts a batch in a folder, which it makes if it is
+missing. Each `--new owner/repo` gets a staged apply at
+`<folder>/<owner>/<name>.yaml`, or under `--staged-dir`, from `--profile`, or
+from the repository as it is without one. A repository that already has a
+staged apply there is refused, so it never has two at once; `--join file` adds
+that staged apply to the batch as it is instead. The folder's `batch.yaml`
+lists the repositories. When a start fails, it leaves no file behind.
+
+`stage <folder>` lists the batch's repositories, and with these options
+changes it:
+
+- `--new owner/repo` and `--join file` add repositories, from the batch's
+  profile.
+- `--leave-out owner/repo` keeps a repository in the batch but out of its
+  plans and applies; `--put-back owner/repo` takes it back.
+- `--repo owner/repo` with any option of `stage <file>` above shows or edits
+  that repository's staged apply, and `--repo owner/repo --discard` takes it
+  out of the batch and discards its staged apply.
+- `--exclude key --everywhere` leaves a value out of every repository whose
+  profile sets it, and `--include key --everywhere` takes it back in each. A
+  repository whose own one-off edits set that value keeps its staged apply as
+  it is, and `stage` names it and exits 1.
+- `--discard` ends the batch. It discards the staged applies the batch
+  started; one that joined stays as it was.
+
+`plan --staged <folder>` plans every repository of the batch that isn't left
+out, a few at a time. A repository that can't be planned, such as one the
+Repotted App isn't installed on, is reported on its own, and the rest are
+planned all the same.
+
+`apply` applies a batch's saved plan one repository at a time, in the batch's
+order, after you confirm all of them at once. Each repository is applied as
+one plan is: planned again first, and written only when its changes are the
+ones you reviewed. It skips a repository whose changes are locked, and one you
+left out of the batch since the review. A repository that fails doesn't stop
+the rest unless you pass `--stop-on-failure`; `--only owner/repo` applies only
+the repositories it names. Each repository that is applied, or already
+matched, ends its staged apply and leaves the batch, unless its staged apply
+changed after the review, so an edit you made meanwhile is never lost. The
+batch ends with its last repository. `apply` exits 1 when any repository
+didn't finish; plan the batch again to review what is left.
+
 ## Work with profiles
 
 `npx repotted profiles <folder>` lists the profiles in a folder and says why

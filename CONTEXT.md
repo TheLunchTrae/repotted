@@ -25,6 +25,10 @@
   for this apply only, and **exclusions**, the values of the profile this apply
   leaves out. Its plan is reviewed and applied like any other, and the
   profile changes only when its edits are saved to it.
+- **Batch**: one profile applied to several repositories, as a folder of
+  staged applies, one for each, listed in a manifest. Each repository is
+  reviewed and applied as its staged apply is, one at a time, and a
+  repository **left out** stays in the batch but out of its plans.
 - **Drift**: a difference between a repository and its profile.
 - **Draft**: an autolink, ruleset, environment, or setting saved in a
   profile but left out of plans until it is finished. It may be unfinished

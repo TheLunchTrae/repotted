@@ -86,8 +86,8 @@ function getIn(value: unknown, keys: readonly string[]): unknown {
   return keys.reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), value);
 }
 
-/** Whether a profile layer sets what `exclusion` names. */
-function sets(layer: ProfileFile, exclusion: Exclusion): boolean {
+/** Whether a profile, or a layer of one, sets what `exclusion` names. */
+function sets(layer: Readonly<Record<string, unknown>>, exclusion: Exclusion): boolean {
   if (exclusion.kind === 'section') {
     return getIn(layer, [exclusion.section]) !== undefined;
   }
@@ -590,6 +590,20 @@ export async function planStagedApply(
   );
   const plan = { ...created, warnings: [...created.warnings, ...read.unmatched.map(unmatchedWarning)] };
   return { staged: resolved, plan, exclusions: planExclusions(plan, read.head.own) };
+}
+
+/**
+ * Whether excluding `key` would leave something out of what a staged apply
+ * applies: its profile sets what the key names, and it is not excluded yet.
+ */
+export function stagedSets(staged: StagedApply, key: string): boolean {
+  const exclusion = parseExclusion(key);
+  return exclusion !== undefined && sets(staged.profile, exclusion);
+}
+
+/** Whether a staged apply excludes what `key` names, however the key spells an environment's name. */
+export function stagedExcludes(staged: StagedApply, key: string): boolean {
+  return staged.exclude.some((excluded) => exclusionKey(excluded) === exclusionKey(key));
 }
 
 /** Ends a staged apply by removing its file; the profile it starts from stays as it is. */

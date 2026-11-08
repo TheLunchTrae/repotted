@@ -130,7 +130,7 @@ function paging(query: URLSearchParams): { perPage: number; page: number } {
 
 /**
  * An in-memory GitHub that serves the endpoints Repotted uses for one
- * repository, `lunch/app`, and records every write.
+ * repository, `lunch/app` unless it names another, and records every write.
  */
 export class FakeGitHub implements GitHub {
   readonly state: FakeState;
@@ -138,7 +138,11 @@ export class FakeGitHub implements GitHub {
   private readonly failures: Failure[] = [];
   private nextId = 100;
 
-  constructor(state: Partial<FakeState> = {}) {
+  /** The repository it serves, `lunch/app` by default. */
+  readonly fullName: string;
+
+  constructor(state: Partial<FakeState> = {}, fullName = 'lunch/app') {
+    this.fullName = fullName;
     this.state = {
       repository: {
         has_issues: true,
@@ -204,7 +208,7 @@ export class FakeGitHub implements GitHub {
 
   private handle(method: Method, path: string, body: unknown): unknown {
     const [route = '', query = ''] = path.split('?');
-    const base = '/repos/lunch/app';
+    const base = `/repos/${this.fullName}`;
     const permissions = `${base}/actions/permissions`;
     const rulesetId = new RegExp(`^${base}/rulesets/(\\d+)$`, 'u').exec(route)?.[1];
     const environment = new RegExp(
@@ -224,7 +228,7 @@ export class FakeGitHub implements GitHub {
       case `GET ${base}`:
         return {
           id: 1,
-          full_name: 'lunch/app',
+          full_name: this.fullName,
           visibility: 'public',
           ...this.state.repository,
           permissions: this.state.viewer,
@@ -627,7 +631,7 @@ export class FakeGitHub implements GitHub {
     const { perPage, page } = paging(query);
     return this.state.rulesets
       .slice((page - 1) * perPage, page * perPage)
-      .map((item) => ({ id: item.id, name: item.name, source_type: 'Repository', source: 'lunch/app' }));
+      .map((item) => ({ id: item.id, name: item.name, source_type: 'Repository', source: this.fullName }));
   }
 
   private findRuleset(id: number): StoredRuleset & Record<string, unknown> {
@@ -635,7 +639,7 @@ export class FakeGitHub implements GitHub {
     if (found === undefined) {
       throw new GitHubError(404, 'Not Found');
     }
-    return { ...found, source_type: 'Repository', source: 'lunch/app', node_id: `RRS_${id}` };
+    return { ...found, source_type: 'Repository', source: this.fullName, node_id: `RRS_${id}` };
   }
 
   private saveRuleset(id: number, body: Record<string, unknown>): unknown {
@@ -650,5 +654,28 @@ export class FakeGitHub implements GitHub {
     };
     this.state.rulesets = [...this.state.rulesets.filter((item) => item.id !== id), stored];
     return stored;
+  }
+}
+
+/**
+ * Several fakes as one GitHub: a request about a repository goes to the fake
+ * that serves it, and is not found when none does. Any other request goes
+ * to the first fake.
+ */
+export class FakeFleet implements GitHub {
+  readonly fakes: readonly FakeGitHub[];
+
+  constructor(fakes: readonly FakeGitHub[]) {
+    this.fakes = fakes;
+  }
+
+  request(method: Method, path: string, body?: unknown): Promise<unknown> {
+    const named = /^\/repos\/([^/?]+\/[^/?]+)/u.exec(path)?.[1];
+    const first = this.fakes[0];
+    if (named === undefined && first !== undefined) {
+      return first.request(method, path, body);
+    }
+    const fake = this.fakes.find((item) => item.fullName.toLowerCase() === named?.toLowerCase());
+    return fake === undefined ? Promise.reject(answered(404, 'Not Found')) : fake.request(method, path, body);
   }
 }

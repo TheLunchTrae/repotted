@@ -1,10 +1,26 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
 import {
+  addToBatch,
+  applyBatch,
   ApplyError,
   applyPlan,
+  type Batch,
+  batchMemberFile,
+  type BatchPlan,
+  createBatch,
+  discardBatch,
+  discardBatchMember,
+  editEverywhere,
+  isBatchPlan,
+  isFailure,
+  leaveOut,
+  type MemberResult,
+  parseBatchPlan,
+  planBatch,
+  readBatch,
   captureProfile,
   createGitHub,
   createPlan,
@@ -75,8 +91,10 @@ const usage = `Usage: repotted <command> [options]
 Commands:
   capture <owner/repo> [--output file]          Write the repository's setup as a YAML profile
   plan <owner/repo> --profile file [--out file]  Show the changes a profile needs; --out saves the plan
-  plan [owner/repo] --staged file [--out file]   Show the changes a staged apply needs
-  apply <plan.json> [--yes]                      Apply a saved plan if the repository has not changed
+  plan [owner/repo] --staged file [--out file]   Show the changes a staged apply needs, or each repository
+                                                 of a batch, when file is a batch folder
+  apply <plan.json> [--yes]                      Apply a saved plan if the repository has not changed; a
+        [--only owner/repo] [--stop-on-failure]  batch's plan, one repository at a time
   profiles <folder>                              List the profiles in a folder
   sync <folder> [--repository owner/repo]        Sync a folder of profiles with a GitHub repository
        [--path folder] [--prefer local|remote]   (or a folder in it); --prefer settles files changed on both,
@@ -90,6 +108,12 @@ Commands:
   stage <file> [--set key=json] [--unset key]    Show a staged apply resolved; edit it as profile does, and
         [--exclude key] [--include key]              exclude values of its profile, as repository.has_wiki or
         [--save-to-profile] [--discard]          rulesets/Main; save its edits to its profile; or remove it
+  stage <folder> --batch --new owner/repo ...    Start a batch: a staged apply for each repository, all from
+        [--profile file] [--join file]           one profile; --join adds a staged apply as it is
+        [--staged-dir folder]                    (new ones go in folder/<owner>/<name>.yaml)
+  stage <folder> [--new owner/repo] [--join file]  Add to a batch; leave a repository out of it or put it
+        [--leave-out owner/repo] [--put-back owner/repo]  back; edit one with --repo and the options above;
+        [--repo owner/repo] [--exclude key --everywhere]  exclude a value from all; or --discard the batch
   schema                                         Print the JSON Schema of a profile file, for editors
   mcp [--read-only]                              Run the MCP server over stdio
   repos                                          List the repositories Repotted can manage
@@ -164,6 +188,126 @@ async function capture(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
+async function isFolder(target: string): Promise<boolean> {
+  return stat(target).then(
+    (found) => found.isDirectory(),
+    () => false,
+  );
+}
+
+async function planBatchCommand(io: Io, folder: string, out: string | undefined, asJson: boolean): Promise<number> {
+  const result: BatchPlan = await planBatch(await io.github(), folder);
+  // The saved plan is the whole document, so apply can end each staged apply it finishes.
+  if (out !== undefined) {
+    await writeFile(out, `${JSON.stringify(result, null, 2)}\n`);
+  }
+  if (asJson) {
+    json(io, result);
+    return 0;
+  }
+  io.out(`${result.plans.map((member) => formatPlan(member.plan, member.locks)).join('\n\n')}\n`);
+  for (const { repository, error } of result.failures) {
+    io.err(`${repository} could not be planned: ${error.message}\n`);
+  }
+  if (result.left_out.length > 0) {
+    io.err(`Left out of the batch: ${result.left_out.map((member) => member.repository).join(', ')}\n`);
+  }
+  if (out !== undefined) {
+    io.err(`Saved the plans to ${out}. Apply them with: repotted apply ${out}\n`);
+  }
+  return 0;
+}
+
+function plural(count: number, noun: string, nouns = `${noun}s`): string {
+  return `${count} ${count === 1 ? noun : nouns}`;
+}
+
+/** One member's result as text, after the repository's name. */
+function describeResult(result: MemberResult): string {
+  switch (result.status) {
+    case 'applied':
+      return `applied ${plural(result.applied.length, 'change')}.${result.ended ? '' : ' Its staged apply stays, since it changed after the review or left the batch.'}`;
+    case 'in_line':
+      return 'already matches the profile.';
+    case 'locked':
+      return `not applied: ${plural(result.locks.length, 'change')} locked (${result.locks[0]?.reason ?? 'locked'}).`;
+    case 'left_out':
+      return 'not applied: it was left out of the batch after the review.';
+    case 'stopped':
+      return 'not applied, since an earlier repository failed.';
+    case 'stale':
+      return result.message;
+    case 'apply_failed':
+      return `${describeFailure(new ApplyError(result.applied, result.failed, result.cause))}\n${docsLink(result.cause)}`;
+    case 'failed':
+      return result.error.message;
+  }
+}
+
+/** One member's result for --json: an apply failure leaves its cause out, which says no more than its message. */
+function resultDocument(result: MemberResult): unknown {
+  if (result.status !== 'apply_failed') {
+    return result;
+  }
+  const { cause: _cause, ...rest } = result;
+  return rest;
+}
+
+interface BatchApplyFlags {
+  readonly yes: boolean;
+  readonly only: readonly string[] | undefined;
+  readonly stopOnFailure: boolean;
+  readonly json: boolean;
+}
+
+async function applyBatchCommand(io: Io, data: unknown, flags: BatchApplyFlags): Promise<number> {
+  const reviewed = parseBatchPlan(data);
+  const chosen = reviewed.plans.filter(
+    (member) =>
+      flags.only === undefined ||
+      flags.only.some((repository) => repository.toLowerCase() === member.repository.toLowerCase()),
+  );
+  if (!flags.json) {
+    io.out(`${chosen.map((member) => formatPlan(member.plan, member.locks)).join('\n\n')}\n`);
+  }
+  const changes = chosen
+    .filter((member) => member.locks.length === 0)
+    .reduce((sum, member) => sum + member.plan.changes.length, 0);
+  if (changes > 0 && !flags.yes) {
+    if (!io.interactive) {
+      throw new UsageError('apply asks before it writes. Run it in a terminal, or pass --yes.');
+    }
+    const repositories = chosen.filter((member) => member.locks.length === 0 && member.plan.changes.length > 0);
+    if (
+      !(await io.confirm(
+        `Apply ${plural(changes, 'change')} to ${plural(repositories.length, 'repository', 'repositories')}, one at a time? [y/N] `,
+      ))
+    ) {
+      io.err('Nothing applied.\n');
+      return 1;
+    }
+  }
+  const results = await applyBatch(await io.github(), reviewed, {
+    ...(flags.only === undefined ? {} : { only: flags.only }),
+    stopOnFailure: flags.stopOnFailure,
+    ...(flags.json
+      ? {}
+      : { onResult: (result: MemberResult) => io.err(`${result.repository}: ${describeResult(result)}\n`) }),
+  });
+  // A repository that was not applied, or failed, leaves the batch unfinished, which a script should notice.
+  const unfinished = results.filter(
+    (result) => isFailure(result) || result.status === 'locked' || result.status === 'stopped',
+  );
+  if (flags.json) {
+    json(io, { batch: reviewed.batch, results: results.map(resultDocument) });
+  } else if (unfinished.length > 0) {
+    io.err(
+      `${plural(unfinished.length, 'repository', 'repositories')} did not finish. Review what is left with: repotted plan --staged ${reviewed.batch}\n`,
+    );
+  }
+  return unfinished.length > 0 ? 1 : 0;
+}
+
 async function plan(io: Io, args: string[]): Promise<number> {
   const { positionals, values } = parseArgs({
     args,
@@ -175,6 +319,12 @@ async function plan(io: Io, args: string[]): Promise<number> {
       json: { type: 'boolean' },
     },
   });
+  if (values.staged !== undefined && (await isFolder(values.staged))) {
+    if (values.profile !== undefined || positionals.length > 0) {
+      throw new UsageError('plan --staged <folder> plans each repository of a batch, so it takes no other.');
+    }
+    return planBatchCommand(io, values.staged, values.out, values.json === true);
+  }
   let repo: ReturnType<typeof parseRepo>;
   let result: Plan;
   // A staged plan's document also says what the plan applies and what leaves each change out.
@@ -243,14 +393,31 @@ async function apply(io: Io, args: string[]): Promise<number> {
   const { positionals, values } = parseArgs({
     args,
     allowPositionals: true,
-    options: { yes: { type: 'boolean', short: 'y' }, json: { type: 'boolean' } },
+    options: {
+      yes: { type: 'boolean', short: 'y' },
+      only: { type: 'string', multiple: true },
+      'stop-on-failure': { type: 'boolean' },
+      json: { type: 'boolean' },
+    },
   });
   const file = only(positionals, 'plan file');
   // A program has no terminal to confirm in; the reviewed plan is its confirmation.
   if (values.json === true && values.yes !== true) {
     throw new UsageError('apply --json needs --yes.');
   }
-  const reviewed = parsePlan(JSON.parse(await readFile(file, 'utf8')));
+  const data: unknown = JSON.parse(await readFile(file, 'utf8'));
+  if (isBatchPlan(data)) {
+    return applyBatchCommand(io, data, {
+      yes: values.yes === true,
+      only: values.only,
+      stopOnFailure: values['stop-on-failure'] === true,
+      json: values.json === true,
+    });
+  }
+  if (values.only !== undefined || values['stop-on-failure'] === true) {
+    throw new UsageError('--only and --stop-on-failure are for a batch plan, which lists several repositories.');
+  }
+  const reviewed = parsePlan(data);
   if (values.json !== true) {
     io.out(`${formatPlan(reviewed)}\n`);
   }
@@ -481,13 +648,202 @@ async function profile(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
+/** What `stage` does to one staged apply file, alone or as a member of a batch. */
+interface StageOptions {
+  readonly new?: string | undefined;
+  readonly profile?: string | undefined;
+  readonly saveToProfile: boolean;
+  readonly discard: boolean;
+  readonly json: boolean;
+}
+
+async function stageFile(io: Io, file: string, options: StageOptions, edits: readonly StagedEdit[]): Promise<number> {
+  if (options.profile !== undefined && options.new === undefined) {
+    throw new UsageError('--profile names what a new staged apply starts from, so it needs --new.');
+  }
+  if (options.discard) {
+    if (options.new !== undefined || edits.length > 0 || options.saveToProfile) {
+      throw new UsageError('--discard removes the staged apply, so it takes no other option.');
+    }
+    await discardStagedApply(file);
+    if (options.json) {
+      json(io, { discarded: path.resolve(file) });
+    } else {
+      io.err(`Removed ${file}\n`);
+    }
+    return 0;
+  }
+  // Each step returns the staged apply as it leaves it, so the file is read again only when nothing else read it.
+  let result: StagedApply | undefined =
+    options.new === undefined ? undefined : await createStagedApply(file, options.new, options.profile);
+  try {
+    if (edits.length > 0) {
+      result = await editStagedApply(file, edits);
+    }
+    if (options.saveToProfile) {
+      result = await saveStagedEdits(file);
+    }
+  } catch (error) {
+    // A start whose edits fail leaves no file behind, so it can be run again.
+    // The edits' failure is the one to report, even if the cleanup fails too.
+    if (options.new !== undefined) {
+      await discardStagedApply(file).catch(() => undefined);
+    }
+    throw error;
+  }
+  result ??= await resolveStagedApply(file);
+  if (options.json) {
+    json(io, result);
+    return 0;
+  }
+  io.err(
+    `Staged apply to ${result.repository}, ${result.base === null ? 'from the repository as it is' : `from ${result.base}`}\n`,
+  );
+  if (result.exclude.length > 0) {
+    io.err(`Exclusions: ${result.exclude.join(', ')}\n`);
+  }
+  io.out(stringifyProfile(result.profile));
+  if (options.new !== undefined || edits.length > 0 || options.saveToProfile) {
+    io.err(`Saved ${file}. See its changes with: repotted plan --staged ${file}\n`);
+  }
+  const drafts = skippedDrafts(result.drafts);
+  if (drafts.length > 0) {
+    io.err(`Drafts of its profile, left out: ${drafts.map(describeSkipped).join(', ')}\n`);
+  }
+  return 0;
+}
+
+function printBatch(io: Io, batch: Batch): void {
+  io.err(
+    `Batch in ${batch.folder}, ${batch.profile === null ? 'from each repository as it is' : `from ${batch.profile}`}\n`,
+  );
+  for (const member of batch.members) {
+    const notes = [member.left_out ? 'left out' : '', member.joined ? 'joined' : ''].filter(Boolean);
+    io.out(`${member.repository}${notes.length > 0 ? ` (${notes.join(', ')})` : ''}\n`);
+  }
+}
+
+/** What `stage` does to a batch folder: start it, add, leave out or put back members, edit them, or discard it. */
+interface BatchStageOptions extends StageOptions {
+  readonly start: boolean;
+  readonly repositories: readonly string[];
+  readonly join: readonly string[];
+  readonly stagedDir?: string | undefined;
+  readonly repo?: string | undefined;
+  readonly leaveOut: readonly string[];
+  readonly putBack: readonly string[];
+  readonly everywhere: boolean;
+}
+
+async function stageBatch(
+  io: Io,
+  folder: string,
+  options: BatchStageOptions,
+  edits: readonly StagedEdit[],
+): Promise<number> {
+  const membership =
+    options.start || options.repositories.length > 0 || options.join.length > 0 || options.stagedDir !== undefined;
+  const leaving = options.leaveOut.length > 0 || options.putBack.length > 0;
+  if (options.repo !== undefined) {
+    if (membership || leaving || options.everywhere) {
+      throw new UsageError('--repo edits one repository of the batch, so it takes only the options of a staged apply.');
+    }
+    if (options.discard) {
+      if (edits.length > 0 || options.saveToProfile) {
+        throw new UsageError('--discard removes the staged apply, so it takes no other option.');
+      }
+      const left = await discardBatchMember(folder, options.repo);
+      if (options.json) {
+        json(io, left);
+      } else {
+        io.err(`Took ${options.repo} out of the batch and discarded its staged apply.\n`);
+        printBatch(io, left);
+      }
+      return 0;
+    }
+    return stageFile(io, await batchMemberFile(folder, options.repo), options, edits);
+  }
+  if (options.discard) {
+    if (membership || leaving || options.everywhere || edits.length > 0 || options.saveToProfile) {
+      throw new UsageError('--discard removes the batch, so it takes no other option but --repo.');
+    }
+    await discardBatch(folder);
+    if (options.json) {
+      json(io, { discarded: path.resolve(folder) });
+    } else {
+      io.err(`Removed the batch in ${folder}. Staged applies that joined it stay.\n`);
+    }
+    return 0;
+  }
+  if (options.everywhere) {
+    const [edit, ...more] = edits;
+    if (edit === undefined || !('exclude' in edit) || more.length > 0 || membership || leaving) {
+      throw new UsageError('--everywhere takes one --exclude or --include, and no other option.');
+    }
+    const result = await editEverywhere(folder, edit.exclude, edit.excluded);
+    if (options.json) {
+      json(io, { ...result.batch, changed: result.changed, refused: result.refused });
+    } else {
+      io.err(
+        `${edit.excluded ? 'Excluded' : 'Included'} ${edit.exclude} in ${result.changed.length === 0 ? 'none' : result.changed.join(', ')}\n`,
+      );
+      for (const { repository, message } of result.refused) {
+        io.err(`warning: ${repository} kept its staged apply as it is: ${message}\n`);
+      }
+    }
+    // A repository that refused leaves the batch out of step, which a script should notice.
+    return result.refused.length > 0 ? 1 : 0;
+  }
+  if (edits.length > 0 || options.saveToProfile) {
+    throw new UsageError(
+      'Name the repository to edit with --repo, or leave a value out of every repository with --exclude key --everywhere.',
+    );
+  }
+  if (options.stagedDir !== undefined && options.repositories.length === 0) {
+    throw new UsageError('--staged-dir says where new staged applies go, so it needs --new.');
+  }
+  let batch: Batch | undefined;
+  const additions = {
+    repositories: options.repositories,
+    join: options.join,
+    ...(options.stagedDir === undefined ? {} : { stagedFolder: options.stagedDir }),
+  };
+  if (options.start) {
+    batch = await createBatch(folder, {
+      ...additions,
+      ...(options.profile === undefined ? {} : { profile: options.profile }),
+    });
+  } else if (options.profile !== undefined) {
+    throw new UsageError("A batch's new repositories start from its profile, so --profile needs --batch.");
+  } else if (membership) {
+    batch = await addToBatch(folder, additions);
+  }
+  if (options.leaveOut.length > 0) {
+    batch = await leaveOut(folder, options.leaveOut, true);
+  }
+  if (options.putBack.length > 0) {
+    batch = await leaveOut(folder, options.putBack, false);
+  }
+  const changed = batch !== undefined;
+  batch ??= await readBatch(folder);
+  if (options.json) {
+    json(io, batch);
+    return 0;
+  }
+  printBatch(io, batch);
+  if (changed) {
+    io.err(`Saved the batch. See its changes with: repotted plan --staged ${folder}\n`);
+  }
+  return 0;
+}
+
 async function stage(io: Io, args: string[]): Promise<number> {
   const { positionals, values, tokens } = parseArgs({
     args,
     allowPositionals: true,
     tokens: true,
     options: {
-      new: { type: 'string' },
+      new: { type: 'string', multiple: true },
       profile: { type: 'string', short: 'p' },
       set: { type: 'string', multiple: true },
       unset: { type: 'string', multiple: true },
@@ -499,10 +855,17 @@ async function stage(io: Io, args: string[]): Promise<number> {
       include: { type: 'string', multiple: true },
       'save-to-profile': { type: 'boolean' },
       discard: { type: 'boolean' },
+      batch: { type: 'boolean' },
+      join: { type: 'string', multiple: true },
+      'staged-dir': { type: 'string' },
+      repo: { type: 'string' },
+      'leave-out': { type: 'string', multiple: true },
+      'put-back': { type: 'string', multiple: true },
+      everywhere: { type: 'boolean' },
       json: { type: 'boolean' },
     },
   });
-  const file = only(positionals, 'staged apply file');
+  const target = only(positionals, 'staged apply file or batch folder');
   const edits: StagedEdit[] = [
     ...profileEdits(tokens),
     ...tokens.flatMap((token) =>
@@ -511,59 +874,40 @@ async function stage(io: Io, args: string[]): Promise<number> {
         : [],
     ),
   ];
-  if (values.profile !== undefined && values.new === undefined) {
-    throw new UsageError('--profile names what a new staged apply starts from, so it needs --new.');
+  const repositories = values.new ?? [];
+  const options = {
+    profile: values.profile,
+    saveToProfile: values['save-to-profile'] === true,
+    discard: values.discard === true,
+    json: values.json === true,
+  };
+  if (values.batch === true || (await isFolder(target))) {
+    return stageBatch(
+      io,
+      target,
+      {
+        ...options,
+        start: values.batch === true,
+        repositories,
+        join: values.join ?? [],
+        stagedDir: values['staged-dir'],
+        repo: values.repo,
+        leaveOut: values['leave-out'] ?? [],
+        putBack: values['put-back'] ?? [],
+        everywhere: values.everywhere === true,
+      },
+      edits,
+    );
   }
-  if (values.discard === true) {
-    if (values.new !== undefined || edits.length > 0 || values['save-to-profile'] === true) {
-      throw new UsageError('--discard removes the staged apply, so it takes no other option.');
-    }
-    await discardStagedApply(file);
-    if (values.json === true) {
-      json(io, { discarded: path.resolve(file) });
-    } else {
-      io.err(`Removed ${file}\n`);
-    }
-    return 0;
+  const batchOnly = ['join', 'staged-dir', 'repo', 'leave-out', 'put-back', 'everywhere'] as const;
+  const misplaced = batchOnly.find((name) => values[name] !== undefined);
+  if (misplaced !== undefined) {
+    throw new UsageError(`--${misplaced} is for a batch folder; start one with --batch.`);
   }
-  // Each step returns the staged apply as it leaves it, so the file is read again only when nothing else read it.
-  let result: StagedApply | undefined =
-    values.new === undefined ? undefined : await createStagedApply(file, values.new, values.profile);
-  try {
-    if (edits.length > 0) {
-      result = await editStagedApply(file, edits);
-    }
-    if (values['save-to-profile'] === true) {
-      result = await saveStagedEdits(file);
-    }
-  } catch (error) {
-    // A start whose edits fail leaves no file behind, so it can be run again.
-    // The edits' failure is the one to report, even if the cleanup fails too.
-    if (values.new !== undefined) {
-      await discardStagedApply(file).catch(() => undefined);
-    }
-    throw error;
+  if (repositories.length > 1) {
+    throw new UsageError('A staged apply is for one repository; stage several as a batch, with --batch.');
   }
-  result ??= await resolveStagedApply(file);
-  if (values.json === true) {
-    json(io, result);
-    return 0;
-  }
-  io.err(
-    `Staged apply to ${result.repository}, ${result.base === null ? 'from the repository as it is' : `from ${result.base}`}\n`,
-  );
-  if (result.exclude.length > 0) {
-    io.err(`Exclusions: ${result.exclude.join(', ')}\n`);
-  }
-  io.out(stringifyProfile(result.profile));
-  if (values.new !== undefined || edits.length > 0 || values['save-to-profile'] === true) {
-    io.err(`Saved ${file}. See its changes with: repotted plan --staged ${file}\n`);
-  }
-  const drafts = skippedDrafts(result.drafts);
-  if (drafts.length > 0) {
-    io.err(`Drafts of its profile, left out: ${drafts.map(describeSkipped).join(', ')}\n`);
-  }
-  return 0;
+  return stageFile(io, target, { ...options, new: repositories[0] }, edits);
 }
 
 function schema(io: Io, args: string[]): Promise<number> {
