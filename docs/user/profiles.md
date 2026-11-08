@@ -138,6 +138,11 @@ GitHub's documented defaults for the parameters it requires. The plan shows
 each of these values. Other rule types need their required parameters in the
 profile.
 
+A rule's parameters are checked against the values GitHub documents for its
+type, such as a `pull_request` rule's `allowed_merge_methods`, which needs at
+least one of `merge`, `squash`, and `rebase`, and a `merge_queue` rule's
+`merge_method`. Other parameters, and other rule types, are sent as written.
+
 ## Environments
 
 Environments also match by name, without regard to case, as GitHub does. A

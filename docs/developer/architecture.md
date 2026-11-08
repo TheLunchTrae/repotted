@@ -20,7 +20,12 @@ protection rules into `wait_timer`, `reviewers`, and `prevent_self_review`,
 and reads `branch_policies` from a separate endpoint. The schema's objects are
 strict, so an unknown key is an error, except inside a rule's `parameters` and
 a ruleset's `conditions`, which are open records passed to GitHub as they
-are.
+are. `ruleParameters` checks the parameters of the rule types whose values
+GitHub's REST description constrains, such as a `pull_request` rule's
+`allowed_merge_methods`, so a profile GitHub would refuse partway through an
+apply fails when it loads. Each parameter there is optional, because a rule
+keeps the live parameters the profile leaves out; other parameters and rule
+types stay open.
 
 `packages/core/src/profile.ts` loads a profile and the chain of profiles it
 `extends`, merges them, and only then validates the result. Validating after

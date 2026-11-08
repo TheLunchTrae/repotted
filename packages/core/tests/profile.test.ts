@@ -158,6 +158,43 @@ rulesets:
     expect(String(await rejection(loadProfile(file)))).toContain('Every merge method is off');
   });
 
+  test('checks the rule parameters GitHub documents, and leaves other parameters and rule types open', async () => {
+    const empty = await write(
+      'no-pull-request-merge.yaml',
+      'rulesets: [{ name: Main, rules: [{ type: pull_request, parameters: { allowed_merge_methods: [] } }] }]\n',
+    );
+    expect(String(await rejection(loadProfile(empty)))).toContain(
+      'allowed_merge_methods needs at least one merge method\n  → at rulesets[0].rules[0].parameters.allowed_merge_methods',
+    );
+    const paths = (rules: unknown[]): string[] =>
+      (profile.safeParse({ rulesets: [{ name: 'Main', rules }] }).error?.issues ?? []).map((issue) =>
+        issue.path.join('.'),
+      );
+    expect(
+      paths([
+        { type: 'pull_request', parameters: { allowed_merge_methods: ['fast_forward'] } },
+        { type: 'pull_request', parameters: { required_approving_review_count: 11 } },
+        { type: 'merge_queue', parameters: { merge_method: 'squash' } },
+        { type: 'branch_name_pattern', parameters: { operator: 'matches' } },
+        { type: 'max_file_size', parameters: { max_file_size: 0 } },
+      ]),
+    ).toEqual([
+      'rulesets.0.rules.0.parameters.allowed_merge_methods.0',
+      'rulesets.0.rules.1.parameters.required_approving_review_count',
+      'rulesets.0.rules.2.parameters.merge_method',
+      'rulesets.0.rules.3.parameters.operator',
+      'rulesets.0.rules.4.parameters.max_file_size',
+    ]);
+    expect(
+      paths([
+        { type: 'pull_request', parameters: { allowed_merge_methods: ['squash'], required_reviewers: [] } },
+        { type: 'required_status_checks', parameters: { required_status_checks: [] } },
+        { type: 'made_up', parameters: { allowed_merge_methods: [] } },
+        { type: 'constructor' },
+      ]),
+    ).toEqual([]);
+  });
+
   test('accepts exactly the commit title and message pairs the settings page offers', () => {
     const accepted = commitPairs.flatMap(({ title, message }) =>
       mergeFields[title].options.flatMap((titleValue) =>

@@ -208,13 +208,12 @@ public sealed class EntryEditorTests
         editor.SelfReview.Options[0].ChooseCommand.Execute(null);
         editor.Reviewers.Options[0].ChooseCommand.Execute(null);
         Assert.Equal("Prevent self-review needs at least one required reviewer.", editor.Problem);
-        // GitHub refuses it where the repository has no reviewers either, and the YAML is where they are listed.
+        // Left out, reviewers keep the repository's, which the plan checks, as the profile schema does.
         editor.Reviewers.ClearCommand.Execute(null);
-        Assert.Equal("Prevent self-review needs at least one required reviewer. List them in the YAML first.", editor.Problem);
+        Assert.Null(editor.Problem);
+        Assert.Equal("""{"name":"npm","prevent_self_review":true}""", editor.Entry.ToJsonString());
         editor.SelfReview.ClearCommand.Execute(null);
         Assert.Null(editor.Problem);
-        // A file that already leaves reviewers to the repository stays as it is.
-        Assert.Null(Environment("""{"name":"npm","prevent_self_review":true}""").Problem);
 
         editor.Deployments.Options[2].ChooseCommand.Execute(null);
         editor.Tags = "v*\nv*";

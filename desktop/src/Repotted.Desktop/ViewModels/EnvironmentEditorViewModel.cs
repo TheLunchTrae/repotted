@@ -124,14 +124,12 @@ internal sealed partial class EnvironmentEditorViewModel : EntryEditorViewModel
             {
                 return "Each branch or tag pattern can be listed once.";
             }
-            // GitHub refuses it without reviewers. A file that leaves reviewers to the
-            // repository, as this one already did, stays as it is.
-            var asSaved = Start["prevent_self_review"].AsFlag() == true && !Start.ContainsKey("reviewers") && !Reviewers.IsSet;
-            if (SelfReview.Value.AsFlag() == true && Reviewers.Value is not JsonArray { Count: > 0 } && !asSaved)
+            // GitHub refuses it without reviewers. As in the profile schema, only an
+            // empty list is a problem here: an entry that leaves reviewers out keeps
+            // the repository's, and the plan checks those.
+            if (SelfReview.Value.AsFlag() == true && Reviewers.Value is JsonArray { Count: 0 })
             {
-                return Reviewers.IsSet
-                    ? "Prevent self-review needs at least one required reviewer."
-                    : "Prevent self-review needs at least one required reviewer. List them in the YAML first.";
+                return "Prevent self-review needs at least one required reviewer.";
             }
             return null;
         }
