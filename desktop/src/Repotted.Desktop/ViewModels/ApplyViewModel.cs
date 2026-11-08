@@ -155,17 +155,25 @@ internal sealed partial class ApplyViewModel(
     [ObservableProperty]
     public partial string UnfinishedMessage { get; private set; } = "";
 
-    public IReadOnlyList<CompareSectionViewModel> Sections { get; private set; } = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Locked), nameof(HasLocks), nameof(LockSummary), nameof(HasAccessUrl), nameof(ReviewSummary))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyCommand))]
+    public partial IReadOnlyList<CompareSectionViewModel> Sections { get; private set; } = [];
 
-    public IReadOnlyList<string> Warnings { get; private set; } = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasWarnings))]
+    public partial IReadOnlyList<string> Warnings { get; private set; } = [];
 
     public bool HasWarnings => Warnings.Count > 0;
 
     /// <summary>The drafts of the profile the apply starts from, which it leaves out, or null for none.</summary>
-    public string? DraftsNote { get; private set; }
+    [ObservableProperty]
+    public partial string? DraftsNote { get; private set; }
 
     /// <summary>What the staged apply leaves out of the profile it starts from.</summary>
-    public IReadOnlyList<ExcludedViewModel> Excluded { get; private set; } = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasExcluded))]
+    public partial IReadOnlyList<ExcludedViewModel> Excluded { get; private set; } = [];
 
     public bool HasExcluded => Excluded.Count > 0;
 
@@ -190,9 +198,12 @@ internal sealed partial class ApplyViewModel(
         : $"GitHub will refuse {Locked} of the changes below, each marked with what it needs. Apply waits until you leave them out, or give the App that access and review again.";
 
     /// <summary>Where to grant what the locks need, as the compare has it.</summary>
-    public Uri? AccessUrl { get; private set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAccessUrl))]
+    public partial Uri? AccessUrl { get; private set; }
 
-    public string AccessLabel { get; private set; } = "Review App access";
+    [ObservableProperty]
+    public partial string AccessLabel { get; private set; } = "Review App access";
 
     public bool HasAccessUrl => HasLocks && AccessUrl is not null && desktop is not null;
 
@@ -366,20 +377,6 @@ internal sealed partial class ApplyViewModel(
         (AccessLabel, AccessUrl) = PlanSections.Access(plan.Plan, installUrl);
         DraftsNote = PlanSections.Drafts(plan.Plan);
         ChangeCount = plan.Changes.Count;
-        OnPropertyChanged(nameof(Sections));
-        OnPropertyChanged(nameof(Locked));
-        OnPropertyChanged(nameof(HasLocks));
-        OnPropertyChanged(nameof(LockSummary));
-        OnPropertyChanged(nameof(AccessUrl));
-        OnPropertyChanged(nameof(AccessLabel));
-        OnPropertyChanged(nameof(HasAccessUrl));
-        ApplyCommand.NotifyCanExecuteChanged();
-        OnPropertyChanged(nameof(Warnings));
-        OnPropertyChanged(nameof(HasWarnings));
-        OnPropertyChanged(nameof(DraftsNote));
-        OnPropertyChanged(nameof(Excluded));
-        OnPropertyChanged(nameof(HasExcluded));
-        OnPropertyChanged(nameof(ReviewSummary));
     }
 
     /// <summary>The staged file as the profile editor lists it.</summary>

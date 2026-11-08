@@ -155,14 +155,19 @@ internal sealed partial class CompareViewModel(
 
     public string Heading => $"{profile.Name} compared with {repository}";
 
-    public IReadOnlyList<CompareSectionViewModel> Sections { get; private set; } = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Locked), nameof(HasLocks), nameof(LockSummary), nameof(HasAccessUrl), nameof(Summary))]
+    public partial IReadOnlyList<CompareSectionViewModel> Sections { get; private set; } = [];
 
-    public IReadOnlyList<string> Warnings { get; private set; } = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasWarnings))]
+    public partial IReadOnlyList<string> Warnings { get; private set; } = [];
 
     public bool HasWarnings => Warnings.Count > 0;
 
     /// <summary>What the profile holds as drafts, which the compare leaves out, or null for none.</summary>
-    public string? DraftsNote { get; private set; }
+    [ObservableProperty]
+    public partial string? DraftsNote { get; private set; }
 
     /// <summary>How many differences Repotted cannot change, as the plan's locks have it.</summary>
     public int Locked => Sections.Sum(section => section.Differences.Count(row => row.IsLocked));
@@ -177,9 +182,12 @@ internal sealed partial class CompareViewModel(
     /// Where to grant what's missing: the settings page of the GitHub App's
     /// installation on the repository, or the App's install page when it isn't installed there.
     /// </summary>
-    public Uri? AccessUrl { get; private set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAccessUrl))]
+    public partial Uri? AccessUrl { get; private set; }
 
-    public string AccessLabel { get; private set; } = "Review App access";
+    [ObservableProperty]
+    public partial string AccessLabel { get; private set; } = "Review App access";
 
     public bool HasAccessUrl => HasLocks && AccessUrl is not null;
 
@@ -284,18 +292,7 @@ internal sealed partial class CompareViewModel(
             {
                 Find();
             }
-            OnPropertyChanged(nameof(Sections));
-            OnPropertyChanged(nameof(Warnings));
-            OnPropertyChanged(nameof(HasWarnings));
             DraftsNote = PlanSections.Drafts(plan);
-            OnPropertyChanged(nameof(DraftsNote));
-            OnPropertyChanged(nameof(Summary));
-            OnPropertyChanged(nameof(Locked));
-            OnPropertyChanged(nameof(HasLocks));
-            OnPropertyChanged(nameof(LockSummary));
-            OnPropertyChanged(nameof(AccessUrl));
-            OnPropertyChanged(nameof(AccessLabel));
-            OnPropertyChanged(nameof(HasAccessUrl));
             Loaded = true;
         }
         // A compare runs unawaited when it opens, so every failure shows here.
