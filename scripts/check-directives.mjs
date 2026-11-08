@@ -2,7 +2,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { argv, cwd, exit, stderr } from 'node:process';
 
-import tseslint from 'typescript-eslint';
+import ts from 'typescript';
 
 const sourceExtensions = new Set(['.cjs', '.cts', '.js', '.jsx', '.mjs', '.mts', '.ts', '.tsx']);
 const ignoredDirectories = new Set(['.git', 'build', 'coverage', 'dist', 'node_modules', 'out']);
@@ -63,20 +63,48 @@ function directiveViolation(comment) {
   return undefined;
 }
 
+// Lists every comment by asking TypeScript's scanner for the comments around
+// each token of the parsed file. Parsing first keeps the text of strings,
+// templates, and regular expressions out of the result. The walk skips JSDoc
+// nodes, whose tags sit inside a comment it already finds, and drops what the
+// scanner reads as comments inside JSX text, which is not trivia.
+function commentRanges(sourceFile) {
+  const { text } = sourceFile;
+  const comments = new Map();
+  const jsxText = [];
+  const add = (ranges) => {
+    for (const range of ranges ?? []) {
+      comments.set(range.pos, range);
+    }
+  };
+  const visit = (node) => {
+    if (ts.isJsxText(node)) {
+      jsxText.push(node);
+    } else if (ts.isTokenKind(node.kind)) {
+      add(ts.getLeadingCommentRanges(text, node.pos));
+      add(ts.getTrailingCommentRanges(text, node.end));
+    } else if (!ts.isJSDoc(node)) {
+      for (const child of node.getChildren(sourceFile)) {
+        visit(child);
+      }
+    }
+  };
+  visit(sourceFile);
+
+  return [...comments.values()]
+    .filter((comment) => !jsxText.some((node) => comment.pos >= node.pos && comment.pos < node.end))
+    .sort((left, right) => left.pos - right.pos);
+}
+
 function violationsFor(source, fileName) {
-  const { ast } = tseslint.parser.parseForESLint(source, {
-    comment: true,
-    filePath: fileName,
-    loc: true,
-    range: true,
-    sourceType: 'module',
-  });
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
   const violations = [];
 
-  for (const comment of ast.comments) {
-    const violation = directiveViolation(source.slice(comment.range[0], comment.range[1]));
+  for (const comment of commentRanges(sourceFile)) {
+    const violation = directiveViolation(source.slice(comment.pos, comment.end));
     if (violation !== undefined) {
-      violations.push(`${fileName}:${String(comment.loc.start.line)}: ${violation}`);
+      const { line } = sourceFile.getLineAndCharacterOfPosition(comment.pos);
+      violations.push(`${fileName}:${String(line + 1)}: ${violation}`);
     }
   }
 

@@ -148,8 +148,10 @@
   "overrides": [
     {
       "files": ["**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}"],
+      "plugins": ["import"],
       "rules": {
         "no-duplicate-imports": "error",
+        "import/no-commonjs": ["error", { "allowConditionalRequire": false }],
         "standards/no-default-export": "error"
       }
     },
@@ -297,7 +299,17 @@
         "typescript/prefer-optional-chain": "error",
         "typescript/prefer-regexp-exec": "error",
         "typescript/prefer-string-starts-ends-with": "error",
-        "standards/no-global-mutation": "error",
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "globalThis",
+            "message": "The global object is ambient state. Use the needed global API directly, or pass the value through a service."
+          },
+          {
+            "name": "global",
+            "message": "The global object is ambient state. Use the needed global API directly, or pass the value through a service."
+          }
+        ],
         "array-callback-return": "error",
         "eqeqeq": "error",
         "no-eval": "error",
@@ -352,8 +364,8 @@
             "allowAny": false
           }
         ],
-        "standards/no-module-mutable-binding": "error",
-        "standards/no-typescript-emit-syntax": "error"
+        "standards/no-enum": "error",
+        "standards/no-module-mutable-binding": "error"
       }
     },
     {
@@ -366,19 +378,12 @@
     {
       "files": ["**/*.d.ts"],
       "rules": {
-        "standards/no-typescript-emit-syntax": [
-          "error",
-          {
-            "allowNamespaces": true
-          }
-        ],
-        "typescript/no-namespace": "off"
+        "standards/no-enum": "error"
       }
     },
     {
       "files": ["**/*.{cjs,js,jsx,mjs}"],
       "rules": {
-        "standards/esm-only": "error",
         "no-undef": "error"
       }
     },
