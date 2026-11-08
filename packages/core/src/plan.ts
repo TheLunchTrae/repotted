@@ -2,10 +2,11 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { z } from 'zod';
 
-import { type Change, sections } from './change.js';
+import { type Change, type Section, sections } from './change.js';
 import { captureEndpoints, planEndpoint, readEndpoints } from './endpoints.js';
 import { type GitHub, GitHubError, parseRepo, repoPattern, type RepoRef } from './github.js';
 import { requiredPermission } from './permissions.js';
+import type { Drafts } from './profile.js';
 import { identifyingRepositoryFields, profile, type Profile } from './schema.js';
 import { actionsEndpoints, planActions, readActions } from './sections/actions.js';
 import { describeAutolink, planAutolinks, readAutolinks } from './sections/autolinks.js';
@@ -16,20 +17,50 @@ import { planRepository, readRepository, repositoryEndpoints } from './sections/
 import { planRulesets, readRulesets } from './sections/rulesets.js';
 import { liveSecurityAndAnalysis, planSecurity, securityEndpoints } from './sections/security.js';
 
+/** A draft that a plan leaves out: a setting by its key, or an entry by its prefix or name. */
+export interface Skipped {
+  readonly section: Section;
+  readonly target: string;
+}
+
 /** The changes a profile needs on one repository, in the order they apply. */
 export interface Plan {
   readonly repository: string;
   readonly desired: Profile;
   readonly changes: readonly Change[];
+  /** The profile's drafts, which the plan leaves out. */
+  readonly skipped: readonly Skipped[];
   readonly warnings: readonly string[];
+}
+
+/** The drafts of one section: settings by key, autolinks by prefix, and other entries by name. */
+function draftTargets(drafts: Drafts, section: Section): string[] {
+  if (section === 'autolinks') {
+    return (drafts.autolinks ?? []).map((entry) => entry.key_prefix);
+  }
+  if (section === 'rulesets' || section === 'environments') {
+    return (drafts[section] ?? []).map((entry) => entry.name);
+  }
+  return Object.keys(drafts[section] ?? {});
+}
+
+/** What a plan skips for these drafts, in the order their sections apply. */
+export function skippedDrafts(drafts: Drafts): Skipped[] {
+  return sections.flatMap((section) => draftTargets(drafts, section).map((target) => ({ section, target })));
 }
 
 /**
  * Reads only the sections the profile mentions and plans the writes that
  * bring them in line. Settings and rulesets the profile does not name are
- * left alone.
+ * left alone. `skipped` lists the profile's drafts, which `desired` never
+ * holds, so the plan can say what it left out.
  */
-export async function createPlan(github: GitHub, repo: RepoRef, desired: Profile): Promise<Plan> {
+export async function createPlan(
+  github: GitHub,
+  repo: RepoRef,
+  desired: Profile,
+  skipped: readonly Skipped[] = [],
+): Promise<Plan> {
   const changes: Change[] = [];
   const warnings: string[] = [];
   const add = (plan: { changes: readonly Change[]; warnings: readonly string[] }): void => {
@@ -88,7 +119,7 @@ export async function createPlan(github: GitHub, repo: RepoRef, desired: Profile
     add(planEnvironments(desired.environments, await readEnvironments(github, repo), repo));
   }
 
-  return { repository: `${repo.owner}/${repo.name}`, desired, changes, warnings };
+  return { repository: `${repo.owner}/${repo.name}`, desired, changes, skipped, warnings };
 }
 
 /**
@@ -184,6 +215,8 @@ const savedPlan = z.object({
   repository: z.string().regex(repoPattern),
   desired: profile,
   changes: z.array(savedChange),
+  // Plans saved before drafts existed have none.
+  skipped: z.array(z.object({ section: z.enum(sections), target: z.string() })).default([]),
   warnings: z.array(z.string()),
 });
 
@@ -223,7 +256,7 @@ function jsonValue(value: unknown): unknown {
  * plan only runs when that yields exactly the reviewed changes.
  */
 export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonly Change[]> {
-  const current = await createPlan(github, parseRepo(reviewed.repository), reviewed.desired);
+  const current = await createPlan(github, parseRepo(reviewed.repository), reviewed.desired, reviewed.skipped);
   if (!isDeepStrictEqual(jsonValue(current.changes), jsonValue(reviewed.changes))) {
     throw new StalePlanError(current);
   }
@@ -245,6 +278,24 @@ function show(value: unknown): string {
 
 const symbols = { create: '+', update: '~', delete: '-' } as const;
 
+function describeTarget(section: Section, target: string): string {
+  switch (section) {
+    case 'rulesets':
+      return `ruleset "${target}"`;
+    case 'environments':
+      return `environment ${target}`;
+    case 'autolinks':
+      return `autolink ${target}`;
+    case 'repository':
+    case 'merge':
+    case 'actions':
+    case 'security':
+    case 'custom_properties':
+    case 'pages':
+      return target;
+  }
+}
+
 export function formatPlan(plan: Plan): string {
   const lines = [
     plan.changes.length === 0
@@ -252,18 +303,16 @@ export function formatPlan(plan: Plan): string {
       : `${plan.repository}: ${plan.changes.length} ${plan.changes.length === 1 ? 'change' : 'changes'}`,
   ];
   for (const change of plan.changes) {
-    const kind =
-      change.section === 'rulesets'
-        ? `ruleset "${change.target}"`
-        : change.section === 'environments'
-          ? `environment ${change.target}`
-          : change.section === 'autolinks'
-            ? `autolink ${change.target}`
-            : change.target;
-    lines.push(`  ${symbols[change.action]} ${change.action} ${kind}`);
+    lines.push(`  ${symbols[change.action]} ${change.action} ${describeTarget(change.section, change.target)}`);
     for (const field of change.fields) {
       lines.push(`      ${field.field}: ${show(field.from)} -> ${show(field.to)}`);
     }
+  }
+  for (const draft of plan.skipped) {
+    const named = draft.section === 'autolinks' || draft.section === 'rulesets' || draft.section === 'environments';
+    lines.push(
+      `  · skip draft ${describeTarget(draft.section, named ? draft.target : `${draft.section}.${draft.target}`)}`,
+    );
   }
   for (const warning of plan.warnings) {
     lines.push(`  ! ${warning}`);

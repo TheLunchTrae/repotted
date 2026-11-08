@@ -21,3 +21,5 @@
 - **Stale plan**: a plan the repository has drifted from since it was made.
   Apply refuses it.
 - **Drift**: a difference between a repository and its profile.
+- **Draft**: a ruleset, environment, or setting saved in a profile but left
+  out of plans until it is finished. It may be unfinished or invalid.

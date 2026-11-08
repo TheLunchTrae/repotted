@@ -500,6 +500,59 @@ describe('profile commands', () => {
     );
   });
 
+  test('profile saves a draft, finishes it when its write follows its drop, and plan skips drafts', async () => {
+    const file = path.join(directory, 'drafts.yaml');
+    await writeFile(file, 'repository: { has_wiki: false }\n');
+
+    const drafted = await cli(
+      new FakeGitHub(),
+      'profile',
+      file,
+      '--ruleset',
+      '{"name":"Main","draft":true,"enforcement":"maybe"}',
+      '--set',
+      'drafts.repository.has_issues=false',
+    );
+    expect(drafted.code).toBe(0);
+    expect(drafted.err).toContain('Drafts, left out of plans: repository.has_issues, rulesets.Main');
+    expect(drafted.err).toContain('warning: Draft ruleset "Main":');
+
+    const planned = await cli(new FakeGitHub(), 'plan', 'lunch/app', '--profile', file, '--json');
+    expect(document(planned)).toMatchObject({
+      skipped: [
+        { section: 'repository', target: 'has_issues' },
+        { section: 'rulesets', target: 'Main' },
+      ],
+    });
+
+    const finished = await cli(
+      new FakeGitHub(),
+      'profile',
+      file,
+      '--drop-draft-ruleset',
+      'Main',
+      '--ruleset',
+      '{"name":"Main","enforcement":"evaluate"}',
+      '--json',
+    );
+    expect(finished).toMatchObject({ code: 0, err: '' });
+    expect(document(finished)).toMatchObject({
+      profile: { rulesets: [{ name: 'Main', enforcement: 'evaluate' }] },
+      drafts: { repository: { has_issues: false } },
+      warnings: [],
+    });
+  });
+
+  test('profile drops a draft environment and keeps the environment of the same name', async () => {
+    const file = path.join(directory, 'draft-environments.yaml');
+    await writeFile(file, 'environments: [{ name: npm, wait_timer: 1 }, { name: NPM, draft: true, wait_timer: 2 }]\n');
+
+    const dropped = await cli(new FakeGitHub(), 'profile', file, '--drop-draft-environment', 'npm', '--json');
+    expect(dropped.code).toBe(0);
+    expect(document(dropped)).toMatchObject({ profile: { environments: [{ name: 'npm', wait_timer: 1 }] } });
+    expect(document(dropped)).not.toHaveProperty('drafts.environments');
+  });
+
   test('profile refuses a ruleset that is not an object with a name, as misuse', async () => {
     for (const text of ['[]', '{"enforcement":"active"}', 'Main']) {
       const result = await cli(

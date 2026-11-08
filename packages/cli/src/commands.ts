@@ -18,11 +18,11 @@ import {
   GitHubError,
   listProfiles,
   listRepositories,
-  loadProfile,
   parsePlan,
   parseRepo,
   type ProfileEdit,
   resolveProfile,
+  skippedDrafts,
   StalePlanError,
   stringifyProfile,
   syncFolder,
@@ -68,8 +68,9 @@ Commands:
        [--path folder] [--prefer local|remote]   (or a folder in it); --prefer settles files changed on both,
        [--only file] [--message text]            or only the files --only names
   profile <file> [--set key=json] [--unset key]  Show a profile resolved over its bases; edit its settings
-          [--ruleset json] [--drop-ruleset name]  and its rulesets and environments
-          [--environment json] [--drop-environment name]
+          [--ruleset json] [--drop-ruleset name]  and its rulesets and environments; drafts.<section>.<key>
+          [--environment json] [--drop-environment name]  keys and "draft": true entries are drafts
+          [--drop-draft-ruleset name] [--drop-draft-environment name]
   mcp [--read-only]                              Run the MCP server over stdio
   repos                                          List the repositories Repotted can manage
   status                                         Show which GitHub account Repotted signs in as
@@ -139,8 +140,8 @@ async function plan(io: Io, args: string[]): Promise<number> {
   if (values.profile === undefined) {
     throw new UsageError('plan needs --profile.');
   }
-  const desired = await loadProfile(values.profile);
-  const result = await createPlan(await io.github(), repo, desired);
+  const desired = await resolveProfile(values.profile);
+  const result = await createPlan(await io.github(), repo, desired.profile, skippedDrafts(desired.drafts));
   if (values.out !== undefined) {
     await writeFile(values.out, `${JSON.stringify(result, null, 2)}\n`);
   }
@@ -320,26 +321,38 @@ function entryEdit(list: EntryEdit['list'], text: string): EntryEdit {
   if (!entry.success) {
     throw new UsageError(`--${list.slice(0, -1)} takes a JSON object with a name, as in {"name":"Main"}: ${text}`);
   }
-  return { list, name: entry.data.name, entry: entry.data };
+  return { list, name: entry.data.name, draft: entry.data['draft'] === true, entry: entry.data };
 }
 
-/** The profile edits in command-line order; a write right after a drop from the same list renames the dropped entry. */
+const drops: Readonly<Record<string, Pick<EntryEdit, 'list' | 'draft'>>> = {
+  'drop-ruleset': { list: 'rulesets', draft: false },
+  'drop-environment': { list: 'environments', draft: false },
+  'drop-draft-ruleset': { list: 'rulesets', draft: true },
+  'drop-draft-environment': { list: 'environments', draft: true },
+};
+
+/**
+ * The profile edits in command-line order. A write right after a drop from
+ * the same list renames the dropped entry, so dropping a draft and writing
+ * its entry without `"draft": true` finishes the draft in place.
+ */
 function profileEdits(tokens: readonly { kind: string; name?: string; value?: string | undefined }[]): ProfileEdit[] {
   const edits: ProfileEdit[] = [];
   for (const token of tokens) {
     const value = token.value ?? '';
     const previous = edits.at(-1);
-    if (token.kind !== 'option') {
+    if (token.kind !== 'option' || token.name === undefined) {
       continue;
     }
+    const drop = drops[token.name];
     if (token.name === 'set' || token.name === 'unset') {
       edits.push(profileEdit(value, token.name === 'unset'));
-    } else if (token.name === 'drop-ruleset' || token.name === 'drop-environment') {
-      edits.push({ list: token.name === 'drop-ruleset' ? 'rulesets' : 'environments', name: value, entry: undefined });
+    } else if (drop !== undefined) {
+      edits.push({ ...drop, name: value, entry: undefined });
     } else if (token.name === 'ruleset' || token.name === 'environment') {
       const edit = entryEdit(token.name === 'ruleset' ? 'rulesets' : 'environments', value);
       if (previous !== undefined && 'list' in previous && previous.list === edit.list && previous.entry === undefined) {
-        edits[edits.length - 1] = { ...edit, name: previous.name };
+        edits[edits.length - 1] = { ...edit, name: previous.name, draft: previous.draft === true };
       } else {
         edits.push(edit);
       }
@@ -360,6 +373,8 @@ async function profile(io: Io, args: string[]): Promise<number> {
       'drop-ruleset': { type: 'string', multiple: true },
       environment: { type: 'string', multiple: true },
       'drop-environment': { type: 'string', multiple: true },
+      'drop-draft-ruleset': { type: 'string', multiple: true },
+      'drop-draft-environment': { type: 'string', multiple: true },
       json: { type: 'boolean' },
     },
   });
@@ -374,6 +389,11 @@ async function profile(io: Io, args: string[]): Promise<number> {
   if (edits.length > 0) {
     io.err(`Saved ${file}\n`);
   }
+  const drafts = skippedDrafts(resolved.drafts);
+  if (drafts.length > 0) {
+    io.err(`Drafts, left out of plans: ${drafts.map((draft) => `${draft.section}.${draft.target}`).join(', ')}\n`);
+  }
+  warn(io, resolved.warnings);
   return 0;
 }
 

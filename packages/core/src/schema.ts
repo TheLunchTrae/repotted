@@ -491,6 +491,40 @@ export const profile = z
     addDuplicateNameIssues(value.environments ?? [], 'Environment', 'environments', context, environmentKey);
   });
 
+/**
+ * A ruleset or environment saved as a draft. Only its name has to be valid:
+ * the rest may be unfinished, and plan and apply leave it out.
+ */
+export const draftEntry = z.looseObject({
+  name: z.string().min(1),
+  draft: z.literal(true),
+});
+
+/** An autolink saved as a draft, known by its prefix as an autolink is. */
+export const draftAutolink = z.looseObject({
+  key_prefix: z.string().min(1),
+  draft: z.literal(true),
+});
+
+const draftValues = z.record(z.string(), z.unknown());
+
+/**
+ * Draft settings by section, one for each section that holds settings. Any
+ * key and value is kept, since a draft may be unfinished; what would stop it
+ * from applying is a warning.
+ */
+export const draftSettings = z
+  .object({
+    repository: draftValues,
+    merge: draftValues,
+    actions: draftValues,
+    security: draftValues,
+    custom_properties: draftValues,
+    pages: draftValues,
+  })
+  .partial()
+  .strict();
+
 /** A profile file, which may extend another profile file. */
 export const profileFile = z
   .object({
@@ -501,9 +535,10 @@ export const profileFile = z
     security: securitySettings.optional(),
     custom_properties: customProperties.optional(),
     pages: pagesEntry.optional(),
-    autolinks: z.array(autolinkEntry).optional(),
-    rulesets: z.array(rulesetEntry).optional(),
-    environments: z.array(environmentEntry).optional(),
+    autolinks: z.array(z.union([draftAutolink, autolinkEntry])).optional(),
+    rulesets: z.array(z.union([draftEntry, rulesetEntry])).optional(),
+    environments: z.array(z.union([draftEntry, environmentEntry])).optional(),
+    drafts: draftSettings.optional(),
   })
   .strict();
 
@@ -520,3 +555,5 @@ export type Environment = z.infer<typeof environment>;
 export type EnvironmentEntry = z.infer<typeof environmentEntry>;
 export type Profile = z.infer<typeof profile>;
 export type ProfileFile = z.infer<typeof profileFile>;
+export type DraftEntry = z.infer<typeof draftEntry>;
+export type DraftAutolink = z.infer<typeof draftAutolink>;

@@ -9,17 +9,27 @@ diagnostic and not a failure. `--help` and `--version` still print text.
 - `capture` prints `{ repository, profile, warnings }`, where `profile` is the
   profile the YAML holds. With `--output`, it also writes the YAML to that
   file.
-- `plan` prints the plan, the same document `--out` saves.
+- `plan` prints the plan, the same document `--out` saves:
+  `{ repository, desired, changes, skipped, warnings }`. `skipped` lists the
+  profile's drafts as `{ section, target }`, where `target` is a draft
+  setting's key or a draft entry's name.
 - `apply` needs `--yes`, since a program has no terminal to confirm in, and
   prints `{ repository, applied }` with the changes it made.
-- `profile` prints `{ chain, profile, sources }`. `chain` is the profile
-  file, then each one it extends, as real paths, with links resolved. `profile` is the
-  resolved profile, and `sources` names the file that sets each value:
+- `profile` prints `{ chain, profile, drafts, warnings, sources }`. `chain` is
+  the profile file, then each one it extends, as real paths, with links
+  resolved. `profile` is the resolved profile without its
+  [drafts](profiles.md#drafts): what a plan applies. `drafts` holds them, as
+  `repository`, `merge`, `actions`, `security`, `custom_properties` and
+  `pages` objects of draft settings and `autolinks`, `rulesets` and
+  `environments` lists of draft entries, each with `draft: true`; a member
+  with no drafts is left out. `warnings` says what stops each draft from
+  applying as it stands. `sources` names the file that sets each value:
   `repository`, `merge`, `actions`, `security`, `custom_properties` and
   `pages` by key, with the keys inside an object of settings as
   `<object>.<key>`, such as `selected_actions.verified_allowed` under
-  `actions`, `autolinks` by key prefix, and `rulesets` and `environments` by
-  name. A value whose file is `chain[0]` is set in the profile itself.
+  `actions`, `autolinks` by key prefix, `rulesets` and `environments` by
+  name, and `drafts` the same way for drafts. A value whose file is
+  `chain[0]` is set in the profile itself.
 - `profiles` prints `{ profiles }`, each as `{ name, file, extends, problem }`,
   sorted by file name: the `.yaml` and `.yml` files directly in the folder.
   `file` is a real path, with links resolved, as in `profile`'s `chain`.

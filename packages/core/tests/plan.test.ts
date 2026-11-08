@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { parseRepo, repoPath } from '../src/github.js';
@@ -10,13 +12,16 @@ import {
   createPlan,
   formatPlan,
   parsePlan,
+  skippedDrafts,
   StalePlanError,
 } from '../src/plan.js';
-import { loadProfile } from '../src/profile.js';
+import { resolveProfile } from '../src/profile.js';
 import type { Profile } from '../src/schema.js';
 import { EnvironmentSettingsError } from '../src/sections/environments.js';
 import { MergeSettingsError } from '../src/sections/repository.js';
 import { FakeGitHub } from './fake-github.js';
+
+const loadProfile = async (file: string): Promise<Profile> => (await resolveProfile(file)).profile;
 
 const repo = parseRepo('lunch/app');
 const examples = path.join(import.meta.dir, '../../../examples');
@@ -51,6 +56,47 @@ describe('parseRepo', () => {
 });
 
 describe('plan and apply', () => {
+  test('leaves drafts out, lists them as skipped, and applies only what applies', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'repotted-plan-'));
+    const file = path.join(directory, 'drafts.yaml');
+    await writeFile(
+      file,
+      `
+repository: { delete_branch_on_merge: true }
+autolinks: [{ key_prefix: TICKET-, draft: true }]
+rulesets: [{ name: Later, draft: true, rules: [{ type: deletion }] }]
+environments: [{ name: npm, draft: true, wait_timer: -1 }]
+drafts:
+  repository: { has_wiki: false }
+  security: { vulnerability_alerts: true }
+  pages: { build_type: workflow }
+`,
+    );
+    const resolved = await resolveProfile(file);
+    await rm(directory, { recursive: true, force: true });
+    const github = new FakeGitHub();
+
+    const plan = await createPlan(github, repo, resolved.profile, skippedDrafts(resolved.drafts));
+
+    expect(plan.changes.map((change) => change.target)).toEqual(['repository settings']);
+    expect(plan.skipped).toEqual([
+      { section: 'repository', target: 'has_wiki' },
+      { section: 'security', target: 'vulnerability_alerts' },
+      { section: 'pages', target: 'build_type' },
+      { section: 'autolinks', target: 'TICKET-' },
+      { section: 'rulesets', target: 'Later' },
+      { section: 'environments', target: 'npm' },
+    ]);
+    expect(formatPlan(plan)).toContain(
+      '  · skip draft repository.has_wiki\n  · skip draft security.vulnerability_alerts\n  · skip draft pages.build_type\n  · skip draft autolink TICKET-\n  · skip draft ruleset "Later"\n',
+    );
+    expect(parsePlan(JSON.parse(JSON.stringify(plan))).skipped).toEqual(plan.skipped);
+    await applyPlan(github, plan);
+    expect(github.writes).toEqual([
+      { method: 'PATCH', path: '/repos/lunch/app', body: { delete_branch_on_merge: true } },
+    ]);
+  });
+
   test("brings a fresh repository to Trae's profile, after which the plan is empty", async () => {
     const github = new FakeGitHub();
     const desired = await loadProfile(path.join(examples, 'repotted.yaml'));

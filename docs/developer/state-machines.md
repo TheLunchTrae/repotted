@@ -142,6 +142,27 @@ it writes, so two calls with one id can't both apply it, and a stale or
 failed apply needs a new plan. A sign-in failure comes before that, so it
 keeps the plan.
 
+## Drafts
+
+A ruleset, environment, autolink, or setting in a profile file is a draft or
+an entry that applies (`packages/core/src/profile.ts`). The marker lives in
+the file, so the state is whatever the file says when it's read.
+
+| State   | Event                                                     | Next                                                                                                          |
+| ------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| None    | Saved with `draft: true`, or under `drafts`               | Draft. Only its name, for an entry, is checked; its problems are warnings.                                    |
+| Draft   | Edited, valid or not                                      | Draft.                                                                                                        |
+| Draft   | Finished: saved without the marker, and the profile valid | Applies, in place of the draft. The next plan includes it.                                                    |
+| Draft   | Finished, but the profile would be invalid                | Draft: `editProfile` refuses, names the problem, and leaves the file as it was.                               |
+| Draft   | Finished while the file has an entry of the same name     | Draft: `editProfile` refuses. Replacing the entry and dropping the draft, in one edit, finishes it.           |
+| Draft   | Planned or applied                                        | Draft: left out of the changes and listed in `skipped`.                                                       |
+| Draft   | A second draft of the same name in the same list          | The profile is invalid, as a duplicate entry makes it.                                                        |
+| Applies | Saved with the marker                                     | Draft, unless the file already has a draft of that name. The profile stops naming it, as the note below says. |
+
+Turning an entry into a draft doesn't delete it from GitHub. Like any entry a
+profile stops naming, it keeps its current state there, unless a base profile
+names an entry of that name, which then applies again.
+
 ## Config repository sync
 
 `syncFolder` (`packages/core/src/sync.ts`) brings a folder and a folder in a
