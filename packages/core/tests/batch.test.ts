@@ -175,10 +175,10 @@ describe('starting a batch', () => {
     expect((await resolveStagedApply(web)).base).toBe(profile);
 
     const left = await discardBatchMember(folder, 'lunch/web');
-    expect(left).toMatchObject({ file: web, discarded: true });
+    expect(left).toMatchObject({ file: web, kept: false });
     expect(left.batch?.members.map((member) => member.repository)).toEqual(['lunch/app']);
     expect(await exists(web)).toBe(false);
-    expect(await discardBatchMember(folder, 'lunch/app')).toMatchObject({ discarded: true, batch: null });
+    expect(await discardBatchMember(folder, 'lunch/app')).toMatchObject({ kept: false, batch: null });
     expect(await exists(folder)).toBe(false);
   });
 
@@ -187,7 +187,7 @@ describe('starting a batch', () => {
     const existing = path.join(root, 'web.yaml');
     await createStagedApply(existing, 'lunch/web', undefined);
     await createBatch(folder, { repositories: ['lunch/app'], join: [existing], profile });
-    expect(await discardBatchMember(folder, 'lunch/web')).toMatchObject({ file: existing, discarded: false });
+    expect(await discardBatchMember(folder, 'lunch/web')).toMatchObject({ file: existing, kept: true });
     expect(await exists(existing)).toBe(true);
   });
 

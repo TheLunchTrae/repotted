@@ -758,9 +758,9 @@ async function stageBatch(
         return 0;
       }
       io.err(
-        result.discarded
-          ? `Took ${options.repo} out of the batch and discarded its staged apply.\n`
-          : `Took ${options.repo} out of the batch. Its staged apply joined the batch, so it stays in ${result.file}.\n`,
+        result.kept
+          ? `Took ${options.repo} out of the batch. Its staged apply joined the batch, so it stays in ${result.file}.\n`
+          : `Took ${options.repo} out of the batch and discarded its staged apply.\n`,
       );
       if (result.batch === null) {
         io.err('That was its last repository, so the batch ended.\n');

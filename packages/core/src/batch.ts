@@ -503,8 +503,8 @@ export async function editEverywhere(folder: string, key: string, excluded: bool
 export interface MemberDiscard {
   /** The member's staged apply file. */
   readonly file: string;
-  /** Whether its staged apply was discarded; one that joined the batch stays as it was. */
-  readonly discarded: boolean;
+  /** Whether its staged apply stays, as one that joined the batch does; otherwise it was discarded. */
+  readonly kept: boolean;
   /** The batch as it is now, or null when that was its last member and the batch ended. */
   readonly batch: Batch | null;
 }
@@ -527,7 +527,7 @@ export async function discardBatchMember(folder: string, repository: string): Pr
   if (left.members.length === 0) {
     await endBatch(left);
   }
-  return { file: member.file, discarded: !member.joined, batch: left.members.length === 0 ? null : left };
+  return { file: member.file, kept: member.joined, batch: left.members.length === 0 ? null : left };
 }
 
 /**
