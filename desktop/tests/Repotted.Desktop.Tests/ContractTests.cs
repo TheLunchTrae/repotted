@@ -44,15 +44,25 @@ public sealed class ContractTests
     }
 
     [Fact]
-    public async Task The_app_tells_a_lost_sign_in_from_other_failures()
+    public async Task The_app_reads_a_failure_for_want_of_a_sign_in()
     {
         var client = Client();
         var cancellationToken = TestContext.Current.CancellationToken;
-        Assert.SkipUnless(
-            await client.StatusAsync(cancellationToken) is Account.SignedOut,
-            "Signed in here, so no command fails for want of a sign-in.");
+        var account = await client.StatusAsync(cancellationToken);
+        Assert.SkipWhen(account is Account.SignedIn, "Signed in here, so no command fails for want of a sign-in.");
 
-        await Assert.ThrowsAsync<SignInLostException>(() => client.RepositoriesAsync(cancellationToken));
+        var error = await Assert.ThrowsAnyAsync<CliException>(() => client.RepositoriesAsync(cancellationToken));
+
+        // With no sign-in at all, the sign-in is lost. A problem, such as a
+        // keychain that would not open, may pass, and then may not be lost.
+        if (account is Account.SignedOut { Problems.Count: 0 })
+        {
+            Assert.IsType<SignInLostException>(error);
+        }
+        else
+        {
+            Assert.Contains("Not signed in to GitHub.", error.Message, StringComparison.Ordinal);
+        }
     }
 
     [Fact]

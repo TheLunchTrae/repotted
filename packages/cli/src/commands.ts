@@ -564,12 +564,16 @@ async function dispatch(io: Io, argv: string[]): Promise<number> {
   return handler(io, rest);
 }
 
-/** The JSON failure kind: misuse, a sign-in that is missing or that GitHub rejects, or anything else. */
+/**
+ * The JSON failure kind: misuse, a sign-in that is missing or that GitHub
+ * refuses, or anything else, including a passing problem such as an
+ * unreadable keychain, which the next try may not meet.
+ */
 function failureKind(error: unknown, misused: boolean): 'usage' | 'signed_out' | 'error' {
   if (misused) {
     return 'usage';
   }
-  return error instanceof NotSignedInError || (error instanceof GitHubError && error.status === 401)
+  return (error instanceof NotSignedInError && error.lost) || (error instanceof GitHubError && error.status === 401)
     ? 'signed_out'
     : 'error';
 }

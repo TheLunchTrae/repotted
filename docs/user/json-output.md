@@ -60,6 +60,7 @@ A failure prints `{ error: { kind, message } }` and exits 1, or 2 for misuse,
 which has `kind: usage`. A stale plan has `kind: stale_plan` and `current`, the
 plan the repository needs now. A write that fails partway has
 `kind: apply_failed`, with the changes in `applied` and the one in `failed`.
-A command that finds no sign-in, or whose token GitHub rejects, has
-`kind: signed_out`; `status` says which. Anything else, such as an invalid
-profile or a network error, has `kind: error`.
+A command that finds no sign-in, or whose sign-in or token GitHub rejects,
+has `kind: signed_out`; `status` says which. Anything else, such as an invalid
+profile, a network error, or a keychain that would not open, has
+`kind: error`.

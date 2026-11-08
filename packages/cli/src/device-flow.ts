@@ -9,6 +9,18 @@ export class AuthError extends Error {
   }
 }
 
+/**
+ * GitHub answered a token request with an OAuth error, such as
+ * `bad_refresh_token` or `access_denied`: it refused the grant, rather than
+ * being unreachable or failing on its side.
+ */
+export class GrantRefusedError extends AuthError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GrantRefusedError';
+  }
+}
+
 /** A user token for the Repotted GitHub App, as the keychain holds it. */
 export const storedToken = z.object({
   access_token: z.string().min(1),
@@ -73,8 +85,10 @@ async function post(environment: FlowEnvironment, url: string, fields: Record<st
   const data: unknown = await response.json().catch(() => undefined);
   if (!response.ok) {
     const parsed = errorResponse.safeParse(data);
-    const detail = parsed.success ? (parsed.data.error_description ?? parsed.data.error) : `HTTP ${response.status}`;
-    throw new AuthError(`GitHub sign-in failed: ${detail}`);
+    if (parsed.success) {
+      throw new GrantRefusedError(`GitHub sign-in failed: ${parsed.data.error_description ?? parsed.data.error}`);
+    }
+    throw new AuthError(`GitHub sign-in failed: HTTP ${response.status}`);
   }
   return data;
 }
@@ -89,7 +103,7 @@ function parse<T>(schema: z.ZodType<T>, data: unknown): T {
 
 function toStored(environment: FlowEnvironment, token: z.infer<typeof tokenResponse>): StoredToken {
   if ('error' in token) {
-    throw new AuthError(`GitHub sign-in failed: ${token.error_description ?? token.error}`);
+    throw new GrantRefusedError(`GitHub sign-in failed: ${token.error_description ?? token.error}`);
   }
   const now = environment.now();
   return {

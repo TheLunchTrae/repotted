@@ -252,6 +252,18 @@ describe('account commands', () => {
     expect(rejected.code).toBe(1);
     expect(document(rejected)).toEqual({ error: { kind: 'signed_out', message: 'Bad credentials' } });
 
+    // A passing problem, such as a refresh that could not reach GitHub, may clear on the next try.
+    const passing = await cliWith(
+      new FakeGitHub(),
+      {
+        github: () =>
+          Promise.reject(new NotSignedInError('Could not refresh. Not signed in.', ['Could not refresh.'], false)),
+      },
+      'repos',
+      '--json',
+    );
+    expect(document(passing)).toMatchObject({ error: { kind: 'error' } });
+
     // Other refusals from GitHub say nothing about the sign-in.
     github.request = () => Promise.reject(new GitHubError(403, 'Resource not accessible by integration'));
     expect(document(await cli(github, 'repos', '--json'))).toMatchObject({ error: { kind: 'error' } });

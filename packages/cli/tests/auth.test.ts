@@ -170,7 +170,35 @@ describe('resolveToken', () => {
     }
     expect(error.problems).toHaveLength(1);
     expect(error.problems[0]).toContain('The Repotted sign-in expired.');
+    expect(error.lost).toBe(true);
     expect(await resolveToken(sources(store, login, { ghToken: () => Promise.resolve('gho_cli') }))).toBe('gho_cli');
+  });
+  test('counts the sign-in lost only when GitHub refuses it', async () => {
+    const expiring = (): MemoryStore =>
+      new MemoryStore({ access_token: 'ghu_old', expires_at: 0, refresh_token: 'ghr_old' });
+    const lost = async (source: TokenSources): Promise<boolean> => {
+      const error = await rejection(resolveToken(source));
+      if (!(error instanceof NotSignedInError)) {
+        throw new Error('expected a NotSignedInError');
+      }
+      return error.lost;
+    };
+    const login = new FakeGitHubLogin([]);
+
+    expect(await lost(sources(expiring(), new FakeGitHubLogin([{ error: 'bad_refresh_token' }])))).toBe(true);
+    // GitHub out of reach, or failing on its side, leaves the sign-in for the next try.
+    const answering = (fetch: FlowEnvironment['fetch']): FlowEnvironment => ({
+      now: login.now,
+      sleep: login.sleep,
+      fetch,
+    });
+    const offline = answering(() => Promise.reject(new TypeError('fetch failed')));
+    expect(await lost(sources(expiring(), offline))).toBe(false);
+    const failing = answering(() => Promise.resolve(new Response('', { status: 502 })));
+    expect(await lost(sources(expiring(), failing))).toBe(false);
+    // So does a keychain that would not open, such as a dismissed unlock prompt.
+    expect(await lost(sources(new BrokenKeychain(), login))).toBe(false);
+    expect(await lost(sources(new MemoryStore(), login))).toBe(true);
   });
 });
 
