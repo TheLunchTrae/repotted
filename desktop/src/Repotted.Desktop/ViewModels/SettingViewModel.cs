@@ -48,8 +48,10 @@ internal sealed partial class SettingViewModel : ViewModelBase
         InheritedValue? inherited,
         Action changed,
         DraftValue? draft = null,
-        DraftValue? baseDraft = null)
+        DraftValue? baseDraft = null,
+        bool drafts = true)
     {
+        Drafts = drafts;
         Field = field;
         Saved = saved;
         Origin = origin;
@@ -146,8 +148,11 @@ internal sealed partial class SettingViewModel : ViewModelBase
 
     public string DraftName => $"{Label} draft: {DraftLabel}. {DraftNote}";
 
-    /// <summary>Whether the chosen value can become a draft instead: a change that sets a value.</summary>
-    public bool CanSaveAsDraft => Changed && pending is not null;
+    /// <summary>Whether the file can hold drafts at all; a staged apply's one-off edits can't.</summary>
+    public bool Drafts { get; }
+
+    /// <summary>Whether the chosen value can become a draft instead: a change that sets a value, in a file that holds drafts.</summary>
+    public bool CanSaveAsDraft => Drafts && Changed && pending is not null;
 
     /// <summary>The value shown: what the profile will hold once saved.</summary>
     public JsonNode? Value => !Changed ? Saved : pending ?? Inherited?.Value;

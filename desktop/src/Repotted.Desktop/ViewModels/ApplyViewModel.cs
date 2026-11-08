@@ -61,6 +61,8 @@ internal sealed record ExcludedViewModel(string Key);
 /// <param name="close">Leaves the page.</param>
 /// <param name="profileSaved">Runs after one-off edits are saved to the profile, such as to list and sync the profiles again.</param>
 /// <param name="exclusive">Runs a write to the profiles folder, such as saving one-off edits to a profile, where no sync runs meanwhile.</param>
+/// <param name="desktop">Opens the App's installation settings, to grant what a locked change needs.</param>
+/// <param name="installUrl">Where the App is installed, for a repository it isn't installed on.</param>
 internal sealed partial class ApplyViewModel(
     RepottedClient client,
     AppSettings settings,
@@ -68,7 +70,9 @@ internal sealed partial class ApplyViewModel(
     ProfileListingDocument? profile,
     Action close,
     Func<Task>? profileSaved = null,
-    Func<Func<Task>, Task>? exclusive = null) : ViewModelBase
+    Func<Func<Task>, Task>? exclusive = null,
+    IDesktop? desktop = null,
+    Uri? installUrl = null) : ViewModelBase
 {
     private readonly string file = settings.StagedFile(repository);
 
@@ -169,6 +173,25 @@ internal sealed partial class ApplyViewModel(
     public partial int ChangeCount { get; private set; }
 
     public bool HasChanges => ChangeCount > 0;
+
+    /// <summary>
+    /// How many rows the plan's locks say GitHub will refuse. Apply waits until
+    /// none is left, since a write that stops at one leaves the rest unwritten.
+    /// </summary>
+    public int Locked => Sections.Sum(section => section.Differences.Count(row => row.IsLocked));
+
+    public bool HasLocks => Locked > 0;
+
+    public string LockSummary => Locked == 1
+        ? "GitHub will refuse 1 of the changes below, marked with what it needs. Apply waits until you leave it out, or give the App that access and review again."
+        : $"GitHub will refuse {Locked} of the changes below, each marked with what it needs. Apply waits until you leave them out, or give the App that access and review again.";
+
+    /// <summary>Where to grant what the locks need, as the compare has it.</summary>
+    public Uri? AccessUrl { get; private set; }
+
+    public string AccessLabel { get; private set; } = "Review App access";
+
+    public bool HasAccessUrl => HasLocks && AccessUrl is not null && desktop is not null;
 
     public string ApplyLabel => ChangeCount switch
     {
@@ -337,8 +360,16 @@ internal sealed partial class ApplyViewModel(
             exclusions.TryGetValue((change, field), out var found) ? new RowExclusion(found.Key, found.Edited) : null);
         Warnings = [.. plan.Warnings.Where(warning => !Sections.Any(section => section.SkippedBy == warning))];
         Excluded = [.. plan.Staged.Exclude.Select(key => new ExcludedViewModel(key))];
+        (AccessLabel, AccessUrl) = CompareViewModel.Access(plan.Plan, installUrl);
         ChangeCount = plan.Changes.Count;
         OnPropertyChanged(nameof(Sections));
+        OnPropertyChanged(nameof(Locked));
+        OnPropertyChanged(nameof(HasLocks));
+        OnPropertyChanged(nameof(LockSummary));
+        OnPropertyChanged(nameof(AccessUrl));
+        OnPropertyChanged(nameof(AccessLabel));
+        OnPropertyChanged(nameof(HasAccessUrl));
+        ApplyCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(Warnings));
         OnPropertyChanged(nameof(HasWarnings));
         OnPropertyChanged(nameof(Excluded));
@@ -357,7 +388,8 @@ internal sealed partial class ApplyViewModel(
         "One-off edit",
         (@base, _) => @base is null
             ? "For this apply only, over the repository as it is."
-            : $"For this apply only, over {@base}, which stays as it is unless you save these edits to it.");
+            : $"For this apply only, over {@base}, which stays as it is unless you save these edits to it.",
+        Drafts: false);
 
     /// <summary>
     /// Saved one-off edits change the plan, so it is made again; a plan
@@ -473,7 +505,10 @@ internal sealed partial class ApplyViewModel(
     [RelayCommand(CanExecute = nameof(CanApply))]
     private void Apply() => Step = ApplyStep.Confirming;
 
-    private bool CanApply() => CanChange() && ChangeCount > 0;
+    [RelayCommand]
+    private Task ReviewAccessAsync() => AccessUrl is { } url && desktop is not null ? desktop.OpenUrlAsync(url) : Task.CompletedTask;
+
+    private bool CanApply() => CanChange() && ChangeCount > 0 && !HasLocks;
 
     [RelayCommand(CanExecute = nameof(IsConfirming))]
     private void CancelApply() => Step = ApplyStep.Reviewing;
@@ -481,7 +516,7 @@ internal sealed partial class ApplyViewModel(
     private bool IsConfirming() => Step == ApplyStep.Confirming;
 
     /// <summary>The reviewed plan is applied only while it still is what the edits say.</summary>
-    private bool CanConfirmApply() => IsConfirming() && !EditsUnsaved && !EditsBusy;
+    private bool CanConfirmApply() => IsConfirming() && !EditsUnsaved && !EditsBusy && !HasLocks;
 
     /// <summary>Writes the reviewed plan, which the CLI checks against GitHub first.</summary>
     [RelayCommand(CanExecute = nameof(CanConfirmApply))]

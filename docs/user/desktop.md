@@ -241,8 +241,15 @@ what it will have after the apply. From there you can:
   profile, and click **Save edits**. They apply on top of the profile for this
   apply only, and the changes are compared again. A change that comes from a
   one-off edit is marked **One-off edit**; change or undo it on that tab.
+  One-off edits can't be drafts, since they are for this apply only.
 - Click **Save edits to profile** to write the one-off edits into the profile,
   which then sets them itself.
+
+A padlock marks each change GitHub will refuse, with what it needs, as on the
+comparison. **Apply** waits until no such change is left: leave it out, or
+click **Review App access**, grant what it needs, and click **Review again**.
+Otherwise the apply would stop at that change and leave the ones after it
+unwritten.
 
 Click **Apply** and then **Apply now** to write the changes. Repotted checks
 GitHub first: if the repository changed since you reviewed it, nothing is

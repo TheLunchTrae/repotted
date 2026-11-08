@@ -20,12 +20,14 @@ internal sealed record SettingGroupViewModel(string Title, string Description, I
 /// <param name="SaveLabel">The save button's label.</param>
 /// <param name="OwnLabel">The legend's name for values the file sets itself.</param>
 /// <param name="Summary">The line under the heading, given what the file extends, if anything, and its name.</param>
+/// <param name="Drafts">Whether the file can hold drafts: a profile can, and a staged apply's one-off edits can't.</param>
 internal sealed record ProfileStore(
     Func<string, CancellationToken, Task<ResolvedProfile>> Load,
     Func<string, IReadOnlyList<ProfileChange>, IReadOnlyList<EntryChange>, CancellationToken, Task<ResolvedProfile>> Save,
     string SaveLabel,
     string OwnLabel,
-    Func<string?, string, string> Summary)
+    Func<string?, string, string> Summary,
+    bool Drafts = true)
 {
     /// <summary>A profile file.</summary>
     public static ProfileStore Profile(RepottedClient client) => new(
@@ -480,7 +482,7 @@ internal sealed partial class ProfileViewModel(
                                     ? new DraftValue(value, profile.DraftSource(section.Section, field.Key) is { } file ? Base(file) : null)
                                     : null;
                                 SettingViewModel? row = null;
-                                row = new SettingViewModel(field, saved, origin, inherited, () => OnRowChanged(row!), draft, BaseDraft(@base, section.Section, field.Key));
+                                row = new SettingViewModel(field, saved, origin, inherited, () => OnRowChanged(row!), draft, BaseDraft(@base, section.Section, field.Key), store.Drafts);
                                 return row;
                             }),
                         ])),
@@ -496,7 +498,7 @@ internal sealed partial class ProfileViewModel(
 
         ProfileTabViewModel EntriesTab(string name, string section)
         {
-            var tab = new ProfileTabViewModel(name, section, OnSettingChanged);
+            var tab = new ProfileTabViewModel(name, section, OnSettingChanged, store.Drafts);
             var sources = profile.Sources[section];
             foreach (var entry in EntriesOf(profile, section))
             {

@@ -109,7 +109,8 @@ internal sealed partial class ShellViewModel : ViewModelBase
         }
         Page = 0;
         Compare = null;
-        Apply = new ApplyViewModel(client, settings, repository, profile, CloseApply, Profiles.RefreshAsync, Profiles.ExclusiveAsync);
+        Apply = new ApplyViewModel(
+            client, settings, repository, profile, CloseApply, Profiles.RefreshAsync, Profiles.ExclusiveAsync, desktop, Account.InstallUrl);
         _ = Apply.OpenAsync();
     }
 

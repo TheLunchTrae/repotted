@@ -185,9 +185,7 @@ internal sealed partial class CompareViewModel(
             {
                 section.ShowEverything = ShowEverything;
             }
-            var installed = plan.Access.App.Status != "not_installed";
-            AccessLabel = installed ? "Review App access" : "Install the App";
-            AccessUrl = Https(installed ? plan.Access.App.SettingsUrl : installUrl?.ToString());
+            (AccessLabel, AccessUrl) = Access(plan, installUrl);
             OnPropertyChanged(nameof(Sections));
             OnPropertyChanged(nameof(Warnings));
             OnPropertyChanged(nameof(HasWarnings));
@@ -217,6 +215,15 @@ internal sealed partial class CompareViewModel(
 
     [RelayCommand]
     private Task ReviewAccessAsync() => AccessUrl is { } url ? desktop.OpenUrlAsync(url) : Task.CompletedTask;
+
+    /// <summary>
+    /// Where to grant what a plan's locks need: the settings page of the App's
+    /// installation on the repository, or the App's install page when it isn't installed there.
+    /// </summary>
+    internal static (string Label, Uri? Url) Access(PlanDocument plan, Uri? installUrl) =>
+        plan.Access.App.Status != "not_installed"
+            ? ("Review App access", Https(plan.Access.App.SettingsUrl))
+            : ("Install the App", Https(installUrl?.ToString()));
 
     private static Uri? Https(string? address) =>
         Uri.TryCreate(address, UriKind.Absolute, out var url) && url.Scheme == Uri.UriSchemeHttps ? url : null;

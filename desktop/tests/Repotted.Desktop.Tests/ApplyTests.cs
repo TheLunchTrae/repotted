@@ -94,7 +94,7 @@ public sealed class ApplyTests : IDisposable
     /// from the staged file's own edit, and the Main ruleset from orgs, unless
     /// the wiki is left out.
     /// </summary>
-    private string Plan(bool fromProfile = true, bool wikiLeftOut = false)
+    private string Plan(bool fromProfile = true, bool wikiLeftOut = false, bool locked = false)
     {
         List<(string Change, string Exclusion)> changes =
         [
@@ -107,14 +107,17 @@ public sealed class ApplyTests : IDisposable
             changes.RemoveAt(0);
         }
         var exclusions = changes.Select((change, index) => change.Exclusion.Replace("{", $$"""{"change":{{index}},""", StringComparison.Ordinal));
-        // The ruleset needs a permission the App lacks, which the review shows as a lock.
-        var locks = $$"""{"change":{{changes.Count - 1}},"reason":"Needs Administration write"}""";
+        // When locked, the ruleset needs a permission the App lacks, which the review shows as a lock.
+        var locks = locked ? $$"""{"change":{{changes.Count - 1}},"reason":"Needs Administration write"}""" : "";
+        var access = locked
+            ? """{"role":"admin","app":{"status":"installed","settings_url":"https://github.com/settings/installations/7"}}"""
+            : Documents.Unknown;
         return $$"""
             {"repository":"{{Repository}}",
              "desired":{"repository":{"has_issues":true,"has_wiki":false},"merge":{"allow_squash_merge":false},
                "rulesets":[{"name":"Main","target":"branch","enforcement":"active","bypass_actors":[],"rules":[{"type":"deletion"}]}]},
              "changes":[{{string.Join(',', changes.Select(change => change.Change))}}],
-             "warnings":[],"access":{{Documents.Unknown}},"locks":[{{locks}}],
+             "warnings":[],"access":{{access}},"locks":[{{locks}}],
              "staged":{"file":{{Json(file)}},"repository":"{{Repository}}","base":{{(fromProfile ? Json(@base) : "null")}},
                "exclude":{{(wikiLeftOut ? """["repository.has_wiki"]""" : "[]")}} },
              "exclusions":[{{string.Join(',', exclusions)}}]}
@@ -182,7 +185,7 @@ public sealed class ApplyTests : IDisposable
         public int ProfilesSaved { get; set; }
     }
 
-    private Page Open(FakeCli cli, bool fromProfile = true)
+    private Page Open(FakeCli cli, bool fromProfile = true, IDesktop? desktop = null)
     {
         Page? page = null;
         var apply = new ApplyViewModel(
@@ -195,7 +198,8 @@ public sealed class ApplyTests : IDisposable
             {
                 page!.ProfilesSaved++;
                 return Task.CompletedTask;
-            });
+            },
+            desktop: desktop);
         page = new Page(apply);
         return page;
     }
@@ -323,6 +327,67 @@ public sealed class ApplyTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_change_GitHub_will_refuse_holds_the_apply_until_it_is_left_out()
+    {
+        var desktop = new FakeDesktop();
+        var cli = Cli().On(Planned, () =>
+        {
+            File.WriteAllText(plan, "{}");
+            return Plan(locked: true);
+        });
+        var page = Open(cli, desktop: desktop);
+        var apply = page.Apply;
+        await apply.OpenAsync();
+
+        // The ruleset is locked, so writing would stop at it and leave the rest unwritten.
+        Assert.Equal(ApplyStep.Reviewing, apply.Step);
+        Assert.True(apply.HasLocks);
+        Assert.Equal(1, apply.Locked);
+        Assert.Equal(
+            "GitHub will refuse 1 of the changes below, marked with what it needs. Apply waits until you leave it out, or give the App that access and review again.",
+            apply.LockSummary);
+        Assert.False(apply.ApplyCommand.CanExecute(null));
+        Assert.Equal("Needs Administration write", Row(apply, "rulesets/Main").Lock);
+
+        // The App's installation settings are where the access is granted.
+        Assert.True(apply.HasAccessUrl);
+        Assert.Equal("Review App access", apply.AccessLabel);
+        await apply.ReviewAccessCommand.ExecuteAsync(null);
+        Assert.Equal("https://github.com/settings/installations/7", Assert.Single(desktop.Opened).ToString());
+
+        // Leaving the locked change out plans again, and the apply can go on.
+        cli.On($"stage {file} --exclude=rulesets/Main --json", Staged(true, "rulesets/Main"))
+            .On(Planned, () => Plan());
+        await apply.LeaveOutCommand.ExecuteAsync(Row(apply, "rulesets/Main"));
+        Assert.False(apply.HasLocks);
+        Assert.False(apply.HasAccessUrl);
+        Assert.True(apply.ApplyCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
+    public async Task Access_granted_since_the_review_lets_the_apply_go_on_once_reviewed_again()
+    {
+        var cli = Cli().On(Planned, () =>
+        {
+            File.WriteAllText(plan, "{}");
+            return Plan(locked: true);
+        });
+        var page = Open(cli);
+        var apply = page.Apply;
+        await apply.OpenAsync();
+        Assert.False(apply.ApplyCommand.CanExecute(null));
+        // With no way to open a browser, no link is offered.
+        Assert.False(apply.HasAccessUrl);
+
+        cli.On(Planned, () => Plan());
+        await apply.ReviewAgainCommand.ExecuteAsync(null);
+
+        Assert.Equal(ApplyStep.Reviewing, apply.Step);
+        Assert.False(apply.HasLocks);
+        Assert.True(apply.ApplyCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
     public async Task Leaving_a_change_out_plans_again_without_it_and_putting_it_back_restores_it()
     {
         var (page, cli) = await Reviewing();
@@ -375,6 +440,24 @@ public sealed class ApplyTests : IDisposable
         await page.Apply.LeaveOutCommand.ExecuteAsync(Row(page.Apply, "merge.allow_squash_merge"));
 
         Assert.Empty(cli.Calls);
+    }
+
+    [AvaloniaFact]
+    public async Task One_off_edits_offer_no_drafts()
+    {
+        var (page, _) = await Reviewing();
+        var editor = page.Apply.Edits!;
+
+        // A staged apply holds no drafts, so neither a setting nor a new entry can become one.
+        var issues = Setting(editor, "has_issues");
+        issues.Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        Assert.True(issues.Changed);
+        Assert.False(issues.CanSaveAsDraft);
+        Assert.False(issues.SaveAsDraftCommand.CanExecute(null));
+        var rulesets = editor.Tabs.Single(tab => tab.List == "rulesets");
+        Assert.False(rulesets.Drafts);
+        rulesets.NewCommand.Execute(null);
+        Assert.False(rulesets.Editing!.Editor.Drafts);
     }
 
     [AvaloniaFact]
@@ -1029,6 +1112,18 @@ public sealed class ApplyTests : IDisposable
             .Select(button => ControlAutomationPeer.CreatePeerForElement(button).GetName())
             .ToList();
         Assert.Contains(names, name => name.StartsWith(Label("Leave out"), StringComparison.Ordinal));
+
+        // A change GitHub will refuse holds the apply, and the review says why and where to grant it.
+        cli.On(Planned, () => Plan(locked: true));
+        await apply.ReviewAgainCommand.ExecuteAsync(null);
+        text = Texts(window);
+        Assert.Contains(apply.LockSummary, text);
+        Assert.Contains("Needs Administration write", text);
+        Assert.Contains(Label("Review App access"), text);
+        Assert.False(apply.ApplyCommand.CanExecute(null));
+        Save(window, $"apply-locked-{theme}");
+        cli.On(Planned, () => Plan());
+        await apply.ReviewAgainCommand.ExecuteAsync(null);
 
         cli.On($"stage {file} --exclude=repository.has_wiki --json", Staged(true, "repository.has_wiki"))
             .On(Planned, () => Plan(wikiLeftOut: true));

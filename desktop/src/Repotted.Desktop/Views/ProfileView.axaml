@@ -138,7 +138,7 @@
               </StackPanel>
             </Grid>
           </Border>
-          <Border Classes="field" MinHeight="56">
+          <Border Classes="field" MinHeight="56" IsVisible="{Binding Drafts}">
             <Grid ColumnDefinitions="180,*" Margin="16,10">
               <TextBlock Text="Draft" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
               <StackPanel Grid.Column="1" Spacing="4">

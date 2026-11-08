@@ -237,9 +237,10 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
         changed = () => { };
     }
 
-    /// <summary>A rulesets or environments tab; <paramref name="list"/> is the profile key.</summary>
-    public ProfileTabViewModel(string name, string list, Action changed)
+    /// <summary>A rulesets or environments tab; <paramref name="list"/> is the profile key, and <paramref name="drafts"/> whether the file holds drafts.</summary>
+    public ProfileTabViewModel(string name, string list, Action changed, bool drafts = true)
     {
+        Drafts = drafts;
         Name = name;
         Groups = [];
         List = list;
@@ -255,6 +256,9 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
     public string List { get; }
 
     public string Noun { get; }
+
+    /// <summary>Whether entries can be saved as drafts here; a staged apply's one-off edits can't hold one.</summary>
+    public bool Drafts { get; } = true;
 
     public ObservableCollection<EntryViewModel> Entries { get; } = [];
 
@@ -348,8 +352,8 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
         // A draft is this file's own: a base's entry or draft stays as that file has it.
         var (canDraft, baseApplies) = (entry.Own, entry.BaseApplies);
         return List == "environments"
-            ? new EnvironmentEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed) { CanDraft = canDraft, BaseApplies = baseApplies }
-            : new RulesetEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed) { CanDraft = canDraft, BaseApplies = baseApplies };
+            ? new EnvironmentEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed) { CanDraft = canDraft, Drafts = Drafts, BaseApplies = baseApplies }
+            : new RulesetEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed) { CanDraft = canDraft, Drafts = Drafts, BaseApplies = baseApplies };
     }
 
     [RelayCommand]

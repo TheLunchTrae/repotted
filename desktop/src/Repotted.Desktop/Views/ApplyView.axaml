@@ -134,6 +134,17 @@
             <StackPanel Margin="32,16,32,32" Spacing="12" IsEnabled="{Binding !Working}">
               <TextBlock Classes="muted" Text="{Binding ReviewSummary}" TextWrapping="Wrap" />
 
+              <!-- Changes GitHub will refuse: Apply waits until they are left out or the access is granted -->
+              <Border Classes="locks" IsVisible="{Binding HasLocks}">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <Path Classes="lock" VerticalAlignment="Center" Margin="0,0,10,0" />
+                  <TextBlock Grid.Column="1" Classes="small" TextWrapping="Wrap" VerticalAlignment="Center"
+                             Text="{Binding LockSummary}" AutomationProperties.LiveSetting="Polite" />
+                  <Button Grid.Column="2" Classes="link" Margin="16,0,0,0" Content="{Binding AccessLabel}"
+                          Command="{Binding ReviewAccessCommand}" IsVisible="{Binding HasAccessUrl}" />
+                </Grid>
+              </Border>
+
               <ItemsControl ItemsSource="{Binding Warnings}" IsVisible="{Binding HasWarnings}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="x:String">
