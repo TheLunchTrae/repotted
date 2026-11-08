@@ -214,7 +214,7 @@ internal static class Documents
          "sources":{
            "repository":{"has_issues":{{{Json(@base)}}},"has_wiki":{{{Json(own)}}} },
            "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(own)}}} },
-           "actions":{},
+           "actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
            "rulesets":{"Protect main":{{{Json(@base)}}},"Old tags":{{{Json(own)}}} },
            "environments":{"npm":{{{Json(own)}}} } } }
         """;
@@ -226,7 +226,7 @@ internal static class Documents
          "profile":{"repository":{"has_issues":true},"merge":{"allow_rebase_merge":true,"allow_squash_merge":true}},
          "sources":{"repository":{"has_issues":{{{Json(@base)}}} },
            "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(@base)}}} },
-           "actions":{},"rulesets":{},"environments":{} } }
+           "actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{} } }
         """;
 
     /// <summary>
@@ -308,4 +308,11 @@ internal static class Documents
 
     public const string Done =
         """{"event":"signed_in","install_url":"https://github.com/apps/repotted-app/installations/new","token_variable":null}""";
+}
+
+internal static class ProfileTabs
+{
+    /// <summary>A profile editor's tab by its name, as the tab bar shows it.</summary>
+    public static ViewModels.ProfileTabViewModel Tab(this ViewModels.ProfileViewModel editor, string name) =>
+        editor.Tabs.Single(tab => tab.Name == name);
 }

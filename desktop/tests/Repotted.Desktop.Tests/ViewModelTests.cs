@@ -829,15 +829,17 @@ public sealed class ViewModelTests : IDisposable
         var editor = Assert.IsType<ProfileViewModel>(profiles.Current);
         Assert.Equal("Extends base. Saved to orgs.yaml.", editor.Summary);
         Assert.Equal("extends base", profiles.Selected?.Note);
-        Assert.Equal(["Repository", "Merge", "Actions", "Rulesets", "Environments"], editor.Tabs.Select(tab => tab.Name));
-        Assert.Equal([2, 2, 0, 2, 1], editor.Tabs.Select(tab => tab.Count));
+        Assert.Equal(
+            ["Repository", "Merge", "Actions", "Security", "Pages", "Rulesets", "Environments"],
+            editor.Tabs.Select(tab => tab.Name));
+        Assert.Equal([2, 2, 0, 0, 0, 2, 1], editor.Tabs.Select(tab => tab.Count));
 
         Assert.Equal((SettingOrigin.Own, "Set here"), Origin(editor, "has_wiki"));
         Assert.Equal((SettingOrigin.Inherited, "From base"), Origin(editor, "has_issues"));
         Assert.Equal((SettingOrigin.NotManaged, "Not managed"), Origin(editor, "has_projects"));
         Assert.Equal(
             ["Protect main: From base", "Old tags: Removed from GitHub here"],
-            editor.Tabs[3].Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
+            editor.Tab("Rulesets").Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
         Assert.StartsWith("extends: base.yaml", editor.Yaml, StringComparison.Ordinal);
     }
 
@@ -870,11 +872,97 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Numbers_and_text_save_once_they_are_valid()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var save = $"profile {files.Own} --set repository.description=\"\" --set actions.max_cache_size_gb=5 --json";
+        cli.On(save, Documents.Resolved(files.Own, files.Base));
+        var size = Find(editor, "max_cache_size_gb");
+        var branch = Find(editor, "default_branch");
+
+        Assert.True(size.IsTyped);
+        Assert.Equal("", size.Typed);
+        size.Typed = "0";
+        Assert.Equal("Enter a whole number of 1 or more.", size.TypedProblem);
+        Assert.False(size.Changed);
+        size.Typed = "5";
+        Assert.Null(size.TypedProblem);
+        Assert.Equal("Changed", size.Note);
+        branch.Typed = "trunk";
+        Assert.True(branch.Changed);
+        // A value that can't be saved leaves the setting as it was.
+        branch.Typed = "";
+        Assert.Equal("Enter a value, or remove the setting from this profile.", branch.TypedProblem);
+        Assert.False(branch.Changed);
+        Assert.Equal("", branch.Typed);
+        // A description may be empty, which clears it on GitHub.
+        Find(editor, "description").Typed = "";
+        Assert.False(Find(editor, "description").Changed);
+        Find(editor, "description").Typed = "x";
+        Find(editor, "description").Typed = "";
+        Assert.True(Find(editor, "description").Changed);
+
+        Assert.Equal("2 unsaved changes", editor.ChangesLabel);
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Contains(save, cli.Calls);
+    }
+
+    [AvaloniaFact]
+    public async Task Undo_puts_a_typed_value_back()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        var size = Find(profiles.Current!, "max_cache_size_gb");
+
+        size.Typed = "abc";
+        size.ResetCommand.Execute(null);
+        Assert.Equal("", size.Typed);
+        Assert.Null(size.TypedProblem);
+        size.Typed = "7";
+        size.ResetCommand.Execute(null);
+        Assert.False(size.Changed);
+        Assert.Equal("", size.Typed);
+    }
+
+    [AvaloniaFact]
+    public async Task Sub_options_sit_under_their_setting_and_notes_say_what_GitHub_alone_sets()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        var editor = profiles.Current!;
+
+        var features = editor.Tabs[0].Groups.Single(group => group.Title == "Features").Settings;
+        Assert.Equal(
+            [("has_issues", false), ("has_projects", false), ("has_wiki", false), ("has_discussions", false),
+             ("has_pull_requests", false), ("pull_request_creation_policy", true), ("pull_request_creation_cap.enabled", true),
+             ("pull_request_creation_cap.max_open_pull_requests", true), ("pull_request_creation_cap.include_drafts", true)],
+            features.Select(setting => (setting.Key, setting.Nested)));
+        Assert.Equal(
+            "Restricting editing to collaborators has no API, so it is set on GitHub only.",
+            Find(editor, "has_wiki").FieldNote);
+        Assert.False(Find(editor, "has_projects").HasFieldNote);
+    }
+
+    [AvaloniaFact]
+    public async Task A_security_feature_saves_as_the_status_GitHub_takes()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        var save = $"profile {files.Own} --set security.security_and_analysis.secret_scanning={{\"status\":\"enabled\"}} --set pages.public=false --json";
+        cli.On(save, Documents.Resolved(files.Own, files.Base));
+
+        Choose(editor, "security_and_analysis.secret_scanning", "On");
+        Choose(editor, "public", "People with access");
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Contains(save, cli.Calls);
+    }
+
+    [AvaloniaFact]
     public async Task Rulesets_and_environments_save_by_name_and_a_rename_takes_the_old_one_out()
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        var (rulesets, environments) = (editor.Tabs[3], editor.Tabs[4]);
+        var (rulesets, environments) = (editor.Tab("Rulesets"), editor.Tab("Environments"));
 
         // A base's ruleset keeps its name, and an edit sets it here over the base's.
         var main = rulesets.Entries[0];
@@ -931,7 +1019,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        var (rulesets, environments) = (editor.Tabs[3], editor.Tabs[4]);
+        var (rulesets, environments) = (editor.Tab("Rulesets"), editor.Tab("Environments"));
         var shared = new EntryViewModel(rulesets, new JsonObject { ["name"] = "Shared" }, SettingOrigin.Own, null, inBase: true);
         Assert.True(shared.CanDrop);
         Assert.False(shared.Renamable);
@@ -977,7 +1065,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        var rulesets = editor.Tabs[3];
+        var rulesets = editor.Tab("Rulesets");
         rulesets.Entries[1].OpenCommand.Execute(null);
         rulesets.Entries[1].Editor.Name = "Retired tags";
         File.AppendAllText(files.Own, "# changed outside the app\n");
@@ -1003,7 +1091,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        editor.Tab("Environments").Entries[0].Editor.Name = "pages";
         await profiles.RefreshCommand.ExecuteAsync(null);
         Assert.Same(editor, profiles.Current);
         Assert.False(editor.OutOfDate);
@@ -1016,7 +1104,7 @@ public sealed class ViewModelTests : IDisposable
         await editor.ReloadCommand.ExecuteAsync(null);
         Assert.False(editor.OutOfDate);
         Assert.False(editor.HasChanges);
-        Assert.Equal("npm", editor.Tabs[4].Entries[0].Name);
+        Assert.Equal("npm", editor.Tab("Environments").Entries[0].Name);
         Assert.EndsWith("# pulled by a sync\n", editor.Yaml, StringComparison.Ordinal);
     }
 
@@ -1025,7 +1113,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        var rulesets = editor.Tabs[3];
+        var rulesets = editor.Tab("Rulesets");
         File.AppendAllText(files.Base, "# changed by a sync\n");
 
         // An entry this profile sets is written from this profile alone.
@@ -1039,7 +1127,7 @@ public sealed class ViewModelTests : IDisposable
 
         // An inherited entry is saved whole as an override, from the base as the editor read it.
         File.AppendAllText(files.Base, "# changed again\n");
-        rulesets = editor.Tabs[3];
+        rulesets = editor.Tab("Rulesets");
         rulesets.Entries[0].OpenCommand.Execute(null);
         ((RulesetEditorViewModel)rulesets.Entries[0].Editor).Enforcement.Options[1].ChooseCommand.Execute(null);
         cli.Calls.Clear();
@@ -1064,7 +1152,7 @@ public sealed class ViewModelTests : IDisposable
                 return write();
             });
         await editor.LoadCommand.ExecuteAsync(null);
-        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        editor.Tab("Environments").Entries[0].Editor.Name = "pages";
         cli.Calls.Clear();
 
         await editor.SaveCommand.ExecuteAsync(null);
@@ -1078,7 +1166,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        var environments = editor.Tabs[4];
+        var environments = editor.Tab("Environments");
         string Saved(string name)
         {
             File.WriteAllText(files.Own, $"extends: base.yaml\nenvironments: [{{ name: {name} }}]\n");
@@ -1091,7 +1179,7 @@ public sealed class ViewModelTests : IDisposable
         Assert.Contains(first, cli.Calls);
 
         // The fixture resolves npm again, so the second save renames npm once more.
-        environments = editor.Tabs[4];
+        environments = editor.Tab("Environments");
         environments.Entries[0].Editor.Name = "staging";
         var second = $$"""profile {{files.Own}} --drop-environment=npm --environment={"name":"staging"} --json""";
         cli.On(second, () => Saved("staging"));
@@ -1105,7 +1193,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        editor.Tab("Environments").Entries[0].Editor.Name = "pages";
         File.AppendAllText(files.Own, "# pulled by a sync\n");
         await editor.SaveCommand.ExecuteAsync(null);
         Assert.True(editor.OutOfDate);
@@ -1130,7 +1218,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        editor.Tab("Environments").Entries[0].Editor.Name = "pages";
         File.AppendAllText(files.Own, "# pulled by a sync\n");
         await editor.SaveCommand.ExecuteAsync(null);
         Assert.True(editor.OutOfDate);
@@ -1323,7 +1411,7 @@ public sealed class ViewModelTests : IDisposable
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
         var text = File.ReadAllText(files.Own);
-        var rulesets = editor.Tabs[3];
+        var rulesets = editor.Tab("Rulesets");
         rulesets.Entries[0].OpenCommand.Execute(null);
         ((RulesetEditorViewModel)rulesets.Entries[0].Editor).Enforcement.Options[1].ChooseCommand.Execute(null);
         File.Delete(files.Own);
@@ -1358,7 +1446,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        var rulesets = editor.Tabs[3];
+        var rulesets = editor.Tab("Rulesets");
         rulesets.Entries[0].OpenCommand.Execute(null);
         ((RulesetEditorViewModel)rulesets.Entries[0].Editor).Enforcement.Options[1].ChooseCommand.Execute(null);
         File.Delete(files.Own);
@@ -1435,7 +1523,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        editor.Tab("Environments").Entries[0].Editor.Name = "pages";
         File.AppendAllText(files.Own, "# pulled by a sync\n");
         await profiles.RefreshCommand.ExecuteAsync(null);
         Assert.True(editor.OutOfDate);
@@ -1675,7 +1763,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, cli, files) = await OpenOrgs();
         var editor = profiles.Current!;
-        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        editor.Tab("Environments").Entries[0].Editor.Name = "pages";
         File.AppendAllText(files.Own, "# pulled by a sync\n");
         await editor.SaveCommand.ExecuteAsync(null);
         Assert.True(editor.OutOfDate);
@@ -1728,7 +1816,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var (profiles, _, _) = await OpenOrgs();
         var editor = profiles.Current!;
-        var (rulesets, environments) = (editor.Tabs[3], editor.Tabs[4]);
+        var (rulesets, environments) = (editor.Tab("Rulesets"), editor.Tab("Environments"));
         rulesets.Entries[1].OpenCommand.Execute(null);
         rulesets.Entries[1].Editor.Name = "Retired tags";
         environments.Entries[0].DropCommand.Execute(null);
@@ -2042,6 +2130,67 @@ public sealed class ViewModelTests : IDisposable
 
     private static string Plan(string desired, string changes) =>
         $$"""{"repository":"TheLunchTrae/repotted","desired":{{desired}},"changes":[{{changes}}],"warnings":[]}""";
+
+    [AvaloniaFact]
+    public async Task A_compare_covers_security_pages_and_autolinks()
+    {
+        const string plan = """
+            {"repository":"TheLunchTrae/repotted",
+             "desired":{
+               "security":{"security_and_analysis":{"secret_scanning":{"status":"enabled"},"secret_scanning_push_protection":{"status":"enabled"}},
+                 "dependabot_runner_settings":{"runner_type":"standard","runner_labels":["x"]}},
+               "custom_properties":{"team":"platform"},
+               "pages":{"build_type":"workflow"},
+               "autolinks":[{"key_prefix":"JIRA-","url_template":"https://jira.example.com/<num>"},{"key_prefix":"OLD-","absent":true}]},
+             "changes":[
+               {"section":"security","action":"update","target":"security and analysis",
+                "fields":[{"field":"security_and_analysis.secret_scanning","from":{"status":"disabled"},"to":{"status":"enabled"}}],
+                "request":{"method":"PATCH","path":"/repos/TheLunchTrae/repotted","body":{} } },
+               {"section":"pages","action":"create","target":"GitHub Pages site","fields":[],
+                "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/pages","body":{"build_type":"workflow"} } },
+               {"section":"autolinks","action":"delete","target":"JIRA-","fields":[],
+                "request":{"method":"DELETE","path":"/repos/TheLunchTrae/repotted/autolinks/1"} },
+               {"section":"autolinks","action":"create","target":"JIRA-",
+                "fields":[{"field":"url_template","from":"https://old.example.com/<num>","to":"https://jira.example.com/<num>"}],
+                "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/autolinks","body":{} } }],
+             "warnings":["Skipped security.dependabot_runner_settings.runner_labels: GitHub keeps none with standard runners"]}
+            """;
+        var compare = await Compare(plan);
+        compare.ToggleEverythingCommand.Execute(null);
+
+        Assert.Equal(
+            ["Security", "Custom properties", "GitHub Pages", "Autolinks"],
+            compare.Sections.Select(section => section.Title));
+        Assert.Equal(
+            [new CompareRow(CompareKind.Changes, "Secret Protection", "security_and_analysis.secret_scanning.status", "Off", "On"),
+             new CompareRow(CompareKind.Matches, "Push protection", "security_and_analysis.secret_scanning_push_protection", "On", "On"),
+             new CompareRow(CompareKind.Matches, "Dependabot runners", "dependabot_runner_settings.runner_type", "Standard", "Standard")],
+            compare.Sections[0].Rows);
+        Assert.Equal(
+            [new CompareRow(CompareKind.Matches, "team", "team", "platform", "platform")],
+            compare.Sections[1].Rows);
+        Assert.Equal(
+            [new CompareRow(CompareKind.Adds, "GitHub Pages site", "new GitHub Pages site", CompareRow.NotOnGitHub, CompareRow.Created)],
+            compare.Sections[2].Rows);
+        Assert.Equal(
+            [new CompareRow(CompareKind.Changes, "JIRA-", "url_template", "https://old.example.com/<num>", "https://jira.example.com/<num>")],
+            compare.Sections[3].Rows);
+        Assert.Equal("1 removed autolink is already gone.", compare.Sections[3].Summary);
+    }
+
+    [AvaloniaFact]
+    public async Task A_compare_says_when_GitHub_would_not_show_a_section()
+    {
+        const string plan = """
+            {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"workflow"}},"changes":[],
+             "warnings":["Skipped pages: GitHub refused to read GitHub Pages (Forbidden); that needs the Pages read permission"]}
+            """;
+        var compare = await Compare(plan);
+
+        var pages = compare.Sections.Single();
+        Assert.True(pages.Skipped);
+        Assert.Equal("Repotted could not read it: GitHub refused to read GitHub Pages (Forbidden); that needs the Pages read permission", pages.Summary);
+    }
 
     private static async Task<CompareViewModel> Compare(string plan)
     {

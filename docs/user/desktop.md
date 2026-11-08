@@ -114,7 +114,18 @@ The app never overwrites a file that is already in the folder.
 ### Edit a profile
 
 Open a profile to edit it. Its tabs follow the parts of a repository's setup:
-repository settings, merge settings, Actions, rulesets, and environments.
+repository settings, merge settings, Actions, security, GitHub Pages,
+rulesets, and environments. A setting's own options sit indented under it,
+such as who can create pull requests under **Pull requests**. Names and
+numbers, such as a branch or a pull request limit, are typed in a box; the
+app keeps a value only once it is valid, and says what's wrong until then.
+Topics, custom properties, autolinks, and a few lists, such as the actions a
+repository allows, are edited in the YAML.
+
+Some options on GitHub's settings pages have no API, so no profile can set
+them. Where one belongs to a setting, a note under that setting says so, such
+as **Restrict editing to collaborators only** under **Wiki**. Set those on
+GitHub itself.
 
 A profile manages only what it names. A setting you leave unset keeps whatever
 value each repository has. When a profile extends another, each setting shows

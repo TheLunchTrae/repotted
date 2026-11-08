@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CommunityToolkit.Mvvm.Input;
@@ -32,6 +33,9 @@ internal sealed partial class SettingViewModel : ViewModelBase
     /// <summary>The value to save, or null to stop setting it here; meaningful only while <see cref="Changed"/>.</summary>
     private JsonNode? pending;
 
+    /// <summary>What is typed in a number or text box, kept as typed while it is being edited.</summary>
+    private string? typed;
+
     public SettingViewModel(
         SettingField field,
         JsonNode? saved,
@@ -52,6 +56,29 @@ internal sealed partial class SettingViewModel : ViewModelBase
     public string Label => Field.Label;
 
     public string Key => Field.Key;
+
+    /// <summary>Whether the setting is one of a few values, rather than typed in.</summary>
+    public bool IsChoice => Field.Kind == SettingKind.Choice;
+
+    public bool IsTyped => !IsChoice;
+
+    public bool IsNumber => Field.Kind == SettingKind.Number;
+
+    /// <summary>Whether the choices are too long to sit beside the label, so they go under it.</summary>
+    public bool Wide => IsChoice && Field.Options.Sum(option => option.Label.Length) > 40;
+
+    public int OptionsRow => Wide ? 1 : 0;
+
+    public int OptionsColumn => Wide ? 1 : 2;
+
+    public int OptionsSpan => Wide ? 3 : 1;
+
+    /// <summary>Whether it belongs to the setting above it, so it shows indented under it.</summary>
+    public bool Nested => Field.Nested;
+
+    public string? FieldNote => Field.Note;
+
+    public bool HasFieldNote => Field.Note is not null;
 
     public JsonNode? Saved { get; }
 
@@ -94,6 +121,79 @@ internal sealed partial class SettingViewModel : ViewModelBase
 
     public string ResetName => Changed ? $"Undo the change to {Label}" : $"Remove {Label} from this profile";
 
+    /// <summary>
+    /// The number or text in the box. Typing a valid value changes the
+    /// setting at once; an invalid one, with <see cref="TypedProblem"/>
+    /// saying why, leaves the saved value as it is.
+    /// </summary>
+    public string Typed
+    {
+        get => typed ?? Display(Value);
+        set
+        {
+            if (string.Equals(value, Typed, StringComparison.Ordinal))
+            {
+                return;
+            }
+            typed = value;
+            TypedProblem = Parse(value, out var parsed);
+            OnPropertyChanged(nameof(TypedProblem));
+            OnPropertyChanged(nameof(HasTypedProblem));
+            if (TypedProblem is not null)
+            {
+                if (Changed)
+                {
+                    Set(changed: false, null, keepTyped: true);
+                }
+                return;
+            }
+            if (Origin == SettingOrigin.Own && JsonNode.DeepEquals(parsed, Saved))
+            {
+                Set(changed: false, null, keepTyped: true);
+            }
+            else if (!Changed || !JsonNode.DeepEquals(parsed, pending))
+            {
+                Set(changed: true, parsed, keepTyped: true);
+            }
+        }
+    }
+
+    /// <summary>Why the typed value can't be used, or null when it can.</summary>
+    public string? TypedProblem { get; private set; }
+
+    public bool HasTypedProblem => TypedProblem is not null;
+
+    /// <summary>The name screen readers hear for the box.</summary>
+    public string TypedName => Label;
+
+    private string? Parse(string text, out JsonNode? value)
+    {
+        value = null;
+        if (Field.Kind == SettingKind.Number)
+        {
+            if (!int.TryParse(text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var number) || number < Field.Minimum)
+            {
+                return $"Enter a whole number of {Field.Minimum} or more.";
+            }
+            value = JsonValue.Create(number);
+            return null;
+        }
+        if (text.Length == 0 && !Field.AllowsEmpty)
+        {
+            return "Enter a value, or remove the setting from this profile.";
+        }
+        value = JsonValue.Create(text);
+        return null;
+    }
+
+    /// <summary>A number or text as the box shows it.</summary>
+    private static string Display(JsonNode? value) => value switch
+    {
+        null => "",
+        JsonValue scalar when scalar.GetValueKind() == JsonValueKind.String => scalar.GetValue<string>(),
+        _ => value.ToJsonString(),
+    };
+
     /// <summary>What saving sends for this row; null when nothing changed.</summary>
     public Services.ProfileChange? Change => Changed ? new(Field.Path, pending?.DeepClone()) : null;
 
@@ -122,12 +222,21 @@ internal sealed partial class SettingViewModel : ViewModelBase
 
     public void Undo() => Set(changed: false, null);
 
-    /// <summary>Records the change and tells the row, its options and the profile, which all show it.</summary>
-    private void Set(bool changed, JsonNode? value)
+    /// <summary>
+    /// Records the change and tells the row, its options and the profile,
+    /// which all show it. A change made by typing keeps the box as typed.
+    /// </summary>
+    private void Set(bool changed, JsonNode? value, bool keepTyped = false)
     {
         Changed = changed;
         pending = value;
+        if (!keepTyped)
+        {
+            typed = null;
+            TypedProblem = null;
+        }
         foreach (var name in (string[])[
+            nameof(Typed), nameof(TypedProblem), nameof(HasTypedProblem),
             nameof(Changed), nameof(Value), nameof(Managed), nameof(OwnAfterSave), nameof(InheritedAfterSave),
             nameof(Note), nameof(CanReset), nameof(ResetLabel), nameof(ResetName),
         ])
