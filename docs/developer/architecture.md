@@ -138,8 +138,8 @@ anything is written. `mergeSettingsProblems` in `schema.ts` runs on the
 profile alone when it loads, and again at plan time with the profile laid over
 the live settings; `commitPairs` lists the title and message pairs the
 repository settings page offers. At plan time a pair the profile doesn't
-name is left out of the check, since no write sends it. A setting GitHub leaves out of its response
-is not checked. Either failure stops planning, so apply never sees it.
+name is left out of the check, since no write sends it. A setting GitHub
+leaves out of its response is not checked. Either failure stops planning, so apply never sees it.
 
 A section that GitHub won't let Repotted read gives a warning, and the other
 sections still plan: rulesets on a GitHub plan that doesn't support them, or
