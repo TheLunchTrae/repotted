@@ -195,6 +195,28 @@ changes, so every failed event below leaves the file as it was.
 Applying does not end the staged apply: the file stays until it is
 discarded, so a stale or partly applied apply can be planned again from it.
 
+## Batch
+
+A batch is a folder (`packages/core/src/batch.ts`) whose manifest lists one
+staged apply for each repository; each member's own state is as in
+[Staged apply](#staged-apply). The manifest is replaced whole on each change,
+from one read of it.
+
+| State    | Event                                                            | Next                                                                                                                             |
+| -------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| None     | Start                                                            | Staged: a new staged apply for each `--new` repository, each joined one as it is, then the manifest.                             |
+| None     | Start where a repository already has a staged apply              | None: the staged applies it started are removed, and so is the folder if the start made it. `--join` adds the existing one.      |
+| None     | Start where the folder holds a batch, or with a repository twice | None: nothing is written.                                                                                                        |
+| Staged   | Add, leave out, or put back a repository                         | Staged, with the manifest changed. A repository is in a batch once.                                                              |
+| Staged   | Exclude or include a key everywhere                              | Staged: each member that sets the key changes; one that refuses keeps its staged apply and is named.                             |
+| Staged   | Plan                                                             | Reviewed: a plan for each member not left out, with the digest of its staged apply. A member that fails is a failure of its own. |
+| Reviewed | Apply a member: applied, or no changes                           | The member ends its staged apply and leaves the batch, if its file still has the reviewed digest; otherwise it stays.            |
+| Reviewed | Apply a member: stale, failed partway, or failed                 | The member stays, to plan again. The next member is applied, unless `--stop-on-failure` stops the rest.                          |
+| Reviewed | Apply a member that is locked, or left out since the review      | The member stays, and nothing is written to it.                                                                                  |
+| Reviewed | The last member leaves                                           | None: the manifest is removed, and the folder if nothing else is in it.                                                          |
+| Staged   | Take a member out                                                | Staged without it; its staged apply is discarded. With the last one, None.                                                       |
+| Staged   | Discard                                                          | None: the staged applies the batch started are discarded; joined ones stay as they were.                                         |
+
 ## Desktop apply
 
 The Apply page (`ApplyViewModel`) drives one staged apply per repository,
