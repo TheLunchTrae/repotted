@@ -1,8 +1,9 @@
 name: Run the mandatory gate
 description: >-
   Installs the pinned tools and the locked dependencies, then runs
-  mise run standards:check. Check out the repository first, and set
-  MISE_LOCKED and MISE_TRUSTED_CONFIG_PATHS on the job.
+  mise run standards:check, or the part of it a job names. Check out the
+  repository first, and set MISE_LOCKED and MISE_TRUSTED_CONFIG_PATHS on the
+  job.
 
 inputs:
   cache:
@@ -11,6 +12,10 @@ inputs:
     description: Restore and save mise's tool cache, as true or false.
     required: false
     default: 'false'
+  task:
+    description: The mise task to run, standards:check unless the job runs one part of it.
+    required: false
+    default: standards:check
 
 runs:
   using: composite
@@ -26,4 +31,6 @@ runs:
       run: mise run ts:install
     - name: Run the mandatory gate
       shell: bash
-      run: mise run standards:check
+      env:
+        TASK: ${{ inputs.task }}
+      run: mise run "$TASK"

@@ -32,3 +32,31 @@ jobs:
         uses: ./.github/actions/gate
         with:
           cache: true
+
+  # The app's code differs by platform, such as its shortcuts, labels and
+  # settings folder, so its tests also run on the platforms it ships for.
+  desktop:
+    name: desktop tests on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos
+            runner: macos-26
+          - os: windows
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      MISE_LOCKED: '1'
+      MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run the desktop app's tests
+        uses: ./.github/actions/gate
+        with:
+          cache: true
+          task: csharp:test
