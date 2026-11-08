@@ -565,9 +565,10 @@ public sealed class ViewModelTests : IDisposable
         var cli = new FakeCli()
             .On("status --json", Documents.SignedIn)
             .On("repos --json", Documents.Repositories)
-            .On($"capture TheLunchTrae/repotted --output {made} --json", async cancellationToken =>
+            .OnCapture("TheLunchTrae/repotted", async (output, cancellationToken) =>
             {
                 cancellationToken.Register(() => stopped = true);
+                File.WriteAllText(output, "repository:\n");
                 await finish.Task;
                 return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
             });
@@ -576,6 +577,7 @@ public sealed class ViewModelTests : IDisposable
         var shell = Assert.IsType<ShellViewModel>(main.Page);
         shell.Profiles.StartNew("TheLunchTrae/repotted");
         var capturing = shell.Profiles.Creating!.CreateCommand.ExecuteAsync(null);
+        Assert.Single(Leftovers());
 
         main.Stop();
         finish.SetResult();
@@ -583,6 +585,7 @@ public sealed class ViewModelTests : IDisposable
 
         Assert.True(stopped);
         Assert.False(File.Exists(made));
+        Assert.Empty(Leftovers());
     }
 
     [AvaloniaFact]
@@ -595,9 +598,10 @@ public sealed class ViewModelTests : IDisposable
             .On("status --json", Documents.SignedIn)
             .On("repos --json", Documents.Repositories)
             .On("logout --json", """{"removed":true}""")
-            .On($"capture TheLunchTrae/repotted --output {made} --json", async cancellationToken =>
+            .OnCapture("TheLunchTrae/repotted", async (output, cancellationToken) =>
             {
                 cancellationToken.Register(() => stopped = true);
+                File.WriteAllText(output, "repository:\n");
                 // A command line that finishes anyway, as one that is slow to stop would.
                 await finish.Task;
                 return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
@@ -607,7 +611,7 @@ public sealed class ViewModelTests : IDisposable
         var shell = Assert.IsType<ShellViewModel>(main.Page);
         shell.Profiles.StartNew("TheLunchTrae/repotted");
         var capturing = shell.Profiles.Creating!.CreateCommand.ExecuteAsync(null);
-        Assert.True(File.Exists(made));
+        Assert.Single(Leftovers());
 
         cli.On("status --json", Documents.SignedOut, exitCode: 1);
         await shell.SignOutCommand.ExecuteAsync(null);
@@ -617,6 +621,7 @@ public sealed class ViewModelTests : IDisposable
         Assert.IsType<SignInViewModel>(main.Page);
         Assert.True(stopped);
         Assert.False(File.Exists(made));
+        Assert.Empty(Leftovers());
     }
 
     [AvaloniaFact]
