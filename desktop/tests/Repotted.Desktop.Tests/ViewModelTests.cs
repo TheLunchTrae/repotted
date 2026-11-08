@@ -2319,6 +2319,50 @@ public sealed class ViewModelTests : IDisposable
         Assert.Null(profiles.Creating.Problem);
     }
 
+    [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Changing_the_folder_during_a_capture_waits_on_the_question_and_leaves_no_file(bool endsFirst)
+    {
+        var (profiles, cli, files) = await OpenOrgs("TheLunchTrae/repotted");
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        cli.OnCapture("TheLunchTrae/repotted", async (output, cancellationToken) =>
+        {
+            File.WriteAllText(output, "repository:\n");
+            await finish.Task.WaitAsync(cancellationToken);
+            File.WriteAllText(output, "repository:\n  has_wiki: false\n");
+            return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
+        });
+        cli.On(folders.List(), Listing(("base", files.Base, null), ("orgs", files.Own, files.Base), ("repotted", made, null)))
+            .On($"profile {made} --json", Documents.ResolvedBase(made));
+        Choose(profiles.Current!, "has_wiki", "On");
+        profiles.StartNew("TheLunchTrae/repotted");
+        var capturing = profiles.Creating!.CreateCommand.ExecuteAsync(null);
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        Assert.True(profiles.HasLeaving);
+        if (endsFirst)
+        {
+            // A capture that ends while the question waits makes its profile in the folder it started in.
+            finish.SetResult();
+            await capturing.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(profiles.HasLeaving);
+        }
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await change.WaitAsync(TimeSpan.FromSeconds(5));
+        // Otherwise leaving closes the form, which stops the capture.
+        await capturing.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(other, profiles.Folder);
+        Assert.Equal(endsFirst, File.Exists(made));
+        Assert.Empty(Leftovers());
+    }
+
     [AvaloniaFact]
     public async Task Captures_in_two_copies_of_the_app_write_files_of_their_own()
     {

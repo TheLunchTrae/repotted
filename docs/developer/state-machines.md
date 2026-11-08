@@ -334,18 +334,19 @@ checks for the file and then renames, so it can still replace a file of that
 name that another program writes at that moment; on Windows the move refuses
 it.
 
-| State                      | Event                                                      | Next                                                                                                                      |
-| -------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Editing                    | Create                                                     | Checks the name again, since the folder may have changed. A file of that name, or another capture running, refuses it.    |
-| Creating, empty or extends | The file is written                                        | Created; the list opens it.                                                                                               |
-| Creating, capture          | Start                                                      | Holding: `repotted capture --output` writes the capture's file.                                                           |
-| Holding                    | The capture ends                                           | Placing, once any save or sync under way ends; no sync starts until it does.                                              |
-| Placing                    | The name is free                                           | The capture's file moves to the profile's name: Created, and the name is no longer held.                                  |
-| Placing                    | A file of that name came in meanwhile                      | Editing, with "is already in this folder"; the file that came in stays, and the capture's file is removed.                |
-| Holding                    | The capture fails                                          | Editing, with the error; the capture's file is removed.                                                                   |
-| Holding or placing         | The form closes                                            | The capture is stopped, or its move skipped, and its file removed, also when the app is left.                             |
-| Any end of a capture       | Its file can't be removed, such as when the folder is gone | The name is no longer held and the form is editable again; the file stays, as when the app quits.                         |
-| Holding                    | The app quits                                              | The capture's file may stay behind. It holds no name, and no later capture writes to it, so it stays until it is deleted. |
+| State                      | Event                                                               | Next                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Editing                    | Create                                                              | Checks the name again, since the folder may have changed. A file of that name, or another capture running, refuses it.           |
+| Creating, empty or extends | The file is written                                                 | Created; the list opens it.                                                                                                      |
+| Creating, capture          | Start                                                               | Holding: `repotted capture --output` writes the capture's file.                                                                  |
+| Holding                    | The capture ends                                                    | Placing, once any save or sync under way ends; no sync starts until it does.                                                     |
+| Placing                    | The name is free                                                    | The capture's file moves to the profile's name: Created, and the name is no longer held.                                         |
+| Placing                    | A file of that name came in meanwhile                               | Editing, with "is already in this folder"; the file that came in stays, and the capture's file is removed.                       |
+| Holding                    | The capture fails                                                   | Editing, with the error; the capture's file is removed.                                                                          |
+| Holding or placing         | The form closes                                                     | The capture is stopped, or its move skipped, and its file removed, also when the app is left.                                    |
+| Holding                    | Another folder, a repository or quitting asks about unsaved changes | The capture runs on while the question waits, and still makes its profile in the folder it started in. Going on closes the form. |
+| Any end of a capture       | Its file can't be removed, such as when the folder is gone          | The name is no longer held and the form is editable again; the file stays, as when the app quits.                                |
+| Holding                    | The app quits                                                       | The capture's file may stay behind. It holds no name, and no later capture writes to it, so it stays until it is deleted.        |
 
 ## Connect form
 
