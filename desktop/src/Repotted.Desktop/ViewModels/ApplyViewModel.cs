@@ -161,6 +161,9 @@ internal sealed partial class ApplyViewModel(
 
     public bool HasWarnings => Warnings.Count > 0;
 
+    /// <summary>The drafts of the profile the apply starts from, which it leaves out, or null for none.</summary>
+    public string? DraftsNote { get; private set; }
+
     /// <summary>What the staged apply leaves out of the profile it starts from.</summary>
     public IReadOnlyList<ExcludedViewModel> Excluded { get; private set; } = [];
 
@@ -320,7 +323,7 @@ internal sealed partial class ApplyViewModel(
     private Task ReviewAgainAsync() => ReviewAsync();
 
     private bool CanReviewAgain() =>
-        !Working && Step is ApplyStep.Reviewing or ApplyStep.Stale or ApplyStep.PartlyApplied or ApplyStep.Failed && File.Exists(file);
+        !Working && !EditsBusy && Step is ApplyStep.Reviewing or ApplyStep.Stale or ApplyStep.PartlyApplied or ApplyStep.Failed && File.Exists(file);
 
     private async Task ReviewAsync()
     {
@@ -361,6 +364,7 @@ internal sealed partial class ApplyViewModel(
         Warnings = [.. plan.Warnings.Where(warning => !Sections.Any(section => section.SkippedBy == warning))];
         Excluded = [.. plan.Staged.Exclude.Select(key => new ExcludedViewModel(key))];
         (AccessLabel, AccessUrl) = CompareViewModel.Access(plan.Plan, installUrl);
+        DraftsNote = CompareViewModel.Drafts(plan.Plan);
         ChangeCount = plan.Changes.Count;
         OnPropertyChanged(nameof(Sections));
         OnPropertyChanged(nameof(Locked));
@@ -372,6 +376,7 @@ internal sealed partial class ApplyViewModel(
         ApplyCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(Warnings));
         OnPropertyChanged(nameof(HasWarnings));
+        OnPropertyChanged(nameof(DraftsNote));
         OnPropertyChanged(nameof(Excluded));
         OnPropertyChanged(nameof(HasExcluded));
         OnPropertyChanged(nameof(ReviewSummary));
@@ -415,6 +420,7 @@ internal sealed partial class ApplyViewModel(
         SaveToProfileCommand.NotifyCanExecuteChanged();
         DiscardCommand.NotifyCanExecuteChanged();
         CloseCommand.NotifyCanExecuteChanged();
+        ReviewAgainCommand.NotifyCanExecuteChanged();
         SettleLeave();
     }
 

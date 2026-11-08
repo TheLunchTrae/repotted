@@ -94,7 +94,7 @@ public sealed class ApplyTests : IDisposable
     /// from the staged file's own edit, and the Main ruleset from orgs, unless
     /// the wiki is left out.
     /// </summary>
-    private string Plan(bool fromProfile = true, bool wikiLeftOut = false, bool locked = false)
+    private string Plan(bool fromProfile = true, bool wikiLeftOut = false, bool locked = false, bool draft = false)
     {
         List<(string Change, string Exclusion)> changes =
         [
@@ -120,7 +120,8 @@ public sealed class ApplyTests : IDisposable
              "warnings":[],"access":{{access}},"locks":[{{locks}}],
              "staged":{"file":{{Json(file)}},"repository":"{{Repository}}","base":{{(fromProfile ? Json(@base) : "null")}},
                "exclude":{{(wikiLeftOut ? """["repository.has_wiki"]""" : "[]")}} },
-             "exclusions":[{{string.Join(',', exclusions)}}]}
+             "exclusions":[{{string.Join(',', exclusions)}}],
+             "skipped":[{{(draft ? """{"section":"rulesets","target":"Release"}""" : "")}}]}
             """;
     }
 
@@ -440,6 +441,24 @@ public sealed class ApplyTests : IDisposable
         await page.Apply.LeaveOutCommand.ExecuteAsync(Row(page.Apply, "merge.allow_squash_merge"));
 
         Assert.Empty(cli.Calls);
+    }
+
+    [AvaloniaFact]
+    public async Task The_apply_names_the_drafts_it_leaves_out_of_the_profile()
+    {
+        var cli = Cli().On(Planned, () =>
+        {
+            File.WriteAllText(plan, "{}");
+            return Plan(draft: true);
+        });
+        var page = Open(cli);
+        await page.Apply.OpenAsync();
+
+        Assert.Equal("Left out as a draft: the ruleset Release.", page.Apply.DraftsNote);
+
+        cli.On(Planned, () => Plan());
+        await page.Apply.ReviewAgainCommand.ExecuteAsync(null);
+        Assert.Null(page.Apply.DraftsNote);
     }
 
     [AvaloniaFact]
@@ -1122,8 +1141,15 @@ public sealed class ApplyTests : IDisposable
         Assert.Contains(Label("Review App access"), text);
         Assert.False(apply.ApplyCommand.CanExecute(null));
         Save(window, $"apply-locked-{theme}");
+
+        // Once the access is granted, Review again beside Apply plans with it.
         cli.On(Planned, () => Plan());
+        var again = window.GetVisualDescendants().OfType<Button>()
+            .Single(button => button.IsEffectivelyVisible && button.Command == apply.ReviewAgainCommand);
+        Assert.Equal(Label("Review again"), ControlAutomationPeer.CreatePeerForElement(again).GetName());
         await apply.ReviewAgainCommand.ExecuteAsync(null);
+        Assert.False(apply.HasLocks);
+        Assert.True(apply.ApplyCommand.CanExecute(null));
 
         cli.On($"stage {file} --exclude=repository.has_wiki --json", Staged(true, "repository.has_wiki"))
             .On(Planned, () => Plan(wikiLeftOut: true));

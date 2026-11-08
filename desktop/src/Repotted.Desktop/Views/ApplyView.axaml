@@ -17,6 +17,8 @@
                 AutomationProperties.HelpText="Throws this apply away with its one-off edits. The profile stays as it is." />
         <Button Classes="quiet" Content="Save edits to profile" Command="{Binding SaveToProfileCommand}" IsVisible="{Binding HasBase}"
                 AutomationProperties.HelpText="Writes the one-off edits into the profile this apply starts from." />
+        <Button Classes="quiet" Content="Review again" Command="{Binding ReviewAgainCommand}"
+                AutomationProperties.HelpText="Reads the repository and the App's access again and plans the apply from them." />
         <Button Classes="primary" Content="{Binding ApplyLabel}" Command="{Binding ApplyCommand}" />
       </StackPanel>
     </Grid>
@@ -133,6 +135,9 @@
           <ScrollViewer IsVisible="{Binding ShowingChanges}">
             <StackPanel Margin="32,16,32,32" Spacing="12" IsEnabled="{Binding !Working}">
               <TextBlock Classes="muted" Text="{Binding ReviewSummary}" TextWrapping="Wrap" />
+
+              <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding DraftsNote}"
+                         IsVisible="{Binding DraftsNote, Converter={x:Static ObjectConverters.IsNotNull}}" />
 
               <!-- Changes GitHub will refuse: Apply waits until they are left out or the access is granted -->
               <Border Classes="locks" IsVisible="{Binding HasLocks}">

@@ -138,10 +138,11 @@ internal sealed record StagedPlanDocument(
     AccessDocument Access,
     IReadOnlyList<LockDocument> Locks,
     StagedSummaryDocument Staged,
-    IReadOnlyList<PlanExclusionDocument> Exclusions)
+    IReadOnlyList<PlanExclusionDocument> Exclusions,
+    IReadOnlyList<SkippedDocument>? Skipped = null)
 {
-    /// <summary>The plan alone, as a compare shows it, with what Repotted can't change.</summary>
-    public PlanDocument Plan => new(Repository, Desired, Changes, Warnings, Access, Locks);
+    /// <summary>The plan alone, as a compare shows it, with what Repotted can't change and the drafts it leaves out.</summary>
+    public PlanDocument Plan => new(Repository, Desired, Changes, Warnings, Access, Locks, Skipped);
 }
 
 /// <summary>What <c>repotted apply --json</c> prints once every change is written.</summary>

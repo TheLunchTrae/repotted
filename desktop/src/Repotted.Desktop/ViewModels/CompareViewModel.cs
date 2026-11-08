@@ -161,6 +161,11 @@ internal sealed partial class CompareViewModel(
     [RelayCommand]
     private void ToggleEverything() => ShowEverything = !ShowEverything;
 
+    /// <summary>What the profile holds as drafts, which a plan leaves out, or null for none.</summary>
+    internal static string? Drafts(PlanDocument plan) => plan.Skipped is { Count: > 0 } skipped
+        ? $"Left out as {(skipped.Count == 1 ? "a draft" : "drafts")}: {string.Join(", ", skipped.Select(Describe))}."
+        : null;
+
     /// <summary>A draft as the plan names it: the ruleset Later, or a setting's path.</summary>
     private static string Describe(SkippedDocument draft) => draft.Section switch
     {
@@ -189,9 +194,7 @@ internal sealed partial class CompareViewModel(
             OnPropertyChanged(nameof(Sections));
             OnPropertyChanged(nameof(Warnings));
             OnPropertyChanged(nameof(HasWarnings));
-            DraftsNote = plan.Skipped is { Count: > 0 } skipped
-                ? $"Left out as {(skipped.Count == 1 ? "a draft" : "drafts")}: {string.Join(", ", skipped.Select(Describe))}."
-                : null;
+            DraftsNote = Drafts(plan);
             OnPropertyChanged(nameof(DraftsNote));
             OnPropertyChanged(nameof(Summary));
             OnPropertyChanged(nameof(Locked));
