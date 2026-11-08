@@ -379,7 +379,8 @@
     {
       "files": ["**/*.d.ts"],
       "rules": {
-        "standards/no-enum": "error"
+        "standards/no-enum": "error",
+        "standards/no-module-declaration": "off"
       }
     },
     {
