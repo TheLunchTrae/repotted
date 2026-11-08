@@ -347,8 +347,8 @@ export function failureReason(error: ApplyError): string | null {
     const { method, path } = error.failed.request;
     return `Needs ${requiredPermission(method, path)}`;
   }
-  // Octokit appends the docs link to GitHub's message.
-  return cause.message.replace(/ - https:\/\/\S+$/u, '');
+  // Octokit appends the docs link to GitHub's message, and the raw details of a 422 after a colon.
+  return cause.message.replace(/ - https:\/\/\S+$/u, '').replace(/: [[{].*$/su, '');
 }
 
 /** What an ApplyError means for the repository: what was written and what failed. */

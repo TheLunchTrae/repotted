@@ -1922,6 +1922,47 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_compare_names_the_locks_on_changes_it_does_not_show()
+    {
+        const string Pages = """
+            ,{"section":"pages","action":"update","target":"pages",
+              "fields":[{"field":"https_enforced","from":false,"to":true}],
+              "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/pages","body":{} } }
+            """;
+        var compare = await Compare(Documents.Plan(
+            access: Documents.ActionsRead,
+            locks: """{"change":5,"reason":"Needs Actions write"},{"change":6,"reason":"Needs Pages write"}""",
+            changes: Documents.Oidc + Pages));
+
+        Assert.Equal(
+            "Repotted can't change 2 differences below. Each says what it needs. "
+                + "It also can't make 1 change the compare doesn't show: Needs Pages write.",
+            compare.LockSummary);
+
+        var hiddenOnly = await Compare(Documents.Plan(
+            access: Documents.ActionsRead, locks: """{"change":5,"reason":"Needs Pages write"}""", changes: Pages));
+
+        Assert.True(hiddenOnly.HasLocks);
+        Assert.True(hiddenOnly.HasAccessUrl);
+        Assert.Equal("Repotted can't make 1 change the compare doesn't show: Needs Pages write.", hiddenOnly.LockSummary);
+    }
+
+    [AvaloniaFact]
+    public async Task A_compare_offers_the_install_page_when_the_App_is_not_on_the_repository()
+    {
+        var desktop = new FakeDesktop();
+        var compare = await Compare(
+            Documents.Plan(
+                access: """{"role":"admin","app":{"status":"not_installed"}}""",
+                locks: """{"change":0,"reason":"Needs the GitHub App installed on this repository"}"""),
+            desktop);
+
+        Assert.Equal("Install the App", compare.AccessLabel);
+        await compare.ReviewAccessCommand.ExecuteAsync(null);
+        Assert.Equal([Documents.InstallUrl], desktop.Opened);
+    }
+
+    [AvaloniaFact]
     public async Task A_compare_locks_nothing_when_the_access_is_unknown_and_links_only_https()
     {
         var unknown = await Compare(Documents.Plan(changes: Documents.Oidc));
@@ -2087,7 +2128,8 @@ public sealed class ViewModelTests : IDisposable
             new RepottedClient(new FakeCli().On("plan TheLunchTrae/repotted --profile orgs.yaml --json", plan)),
             desktop ?? new FakeDesktop(),
             "TheLunchTrae/repotted",
-            new ProfileListingDocument("orgs", "orgs.yaml", null, null));
+            new ProfileListingDocument("orgs", "orgs.yaml", null, null),
+            Documents.InstallUrl);
         await compare.LoadCommand.ExecuteAsync(null);
         Assert.Null(compare.Error);
         return compare;

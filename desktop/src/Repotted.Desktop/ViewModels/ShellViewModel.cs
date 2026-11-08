@@ -73,7 +73,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
 
     private void OpenCompare(string repository, ProfileListingDocument profile)
     {
-        Compare = new CompareViewModel(client, desktop, repository, profile);
+        Compare = new CompareViewModel(client, desktop, repository, profile, Account.InstallUrl);
         _ = Compare.LoadCommand.ExecuteAsync(null);
     }
 

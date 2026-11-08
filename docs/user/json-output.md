@@ -18,7 +18,8 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   GitHub doesn't say. `app` is `{ status: installed, permissions,
   settings_url }` when the Repotted App is installed on the repository, with
   the permissions its installation was granted, by GitHub's key, and the
-  installation's settings page; `{ status: not_installed }` when it isn't;
+  installation's settings page, or null when GitHub gives none;
+  `{ status: not_installed }` when it isn't;
   and `{ status: unknown }` with a token that can't read installations, such
   as `GITHUB_TOKEN`. `locks` lists `{ change, reason }`, where `change` is an
   index into `changes` and `reason` says what the change needs, such as

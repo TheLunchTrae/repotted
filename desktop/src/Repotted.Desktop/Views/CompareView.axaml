@@ -59,7 +59,7 @@
             <Path Classes="lock" VerticalAlignment="Center" Margin="0,0,10,0" />
             <TextBlock Grid.Column="1" Classes="small" TextWrapping="Wrap" VerticalAlignment="Center"
                        Text="{Binding LockSummary}" />
-            <Button Grid.Column="2" Classes="link" Margin="16,0,0,0" Content="Review App access"
+            <Button Grid.Column="2" Classes="link" Margin="16,0,0,0" Content="{Binding AccessLabel}"
                     Command="{Binding ReviewAccessCommand}" IsVisible="{Binding HasAccessUrl}" />
           </Grid>
         </Border>

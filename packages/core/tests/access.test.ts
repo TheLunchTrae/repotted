@@ -50,6 +50,15 @@ describe('readAccess', () => {
     expect(github.calls.some((call) => call.path.startsWith('/user/installations/3/'))).toBe(false);
   });
 
+  test('matches the installation by the name GitHub has for the repository now, in any case', async () => {
+    const github = withInstallations([
+      { id: 4, account: 'Acme', repositories: [{ ...lunchApp, full_name: 'Acme/Renamed' }] },
+    ]);
+    github.state.repository = { ...github.state.repository, full_name: 'acme/renamed' };
+
+    expect((await readAccess(github, app)).app.status).toBe('installed');
+  });
+
   test('reads as not installed when no installation covers the repository', async () => {
     for (const installations of [
       [{ id: 1, account: 'acme', selection: 'all' as const, repositories: [] }],
@@ -110,6 +119,12 @@ describe('lockChanges', () => {
     ]);
   });
 
+  test('checks only the App when GitHub reports no role', () => {
+    expect(lockChanges({ role: null, app: installed({ administration: 'write' }) }, [settings, pages])).toEqual([
+      { change: 1, reason: 'Needs Pages write' },
+    ]);
+  });
+
   test('locks nothing that the access leaves unknown', () => {
     expect(lockChanges({ role: null, app: { status: 'unknown' } }, [settings, pages, oidc])).toEqual([]);
   });
@@ -141,6 +156,11 @@ describe('failureReason', () => {
         ),
       ),
     ).toBe('Your current plan does not support GitHub Pages for this repository.');
+    expect(
+      failureReason(
+        failed(new GitHubError(422, 'Validation Failed: {"resource":"Repository","code":"custom","field":"name"}')),
+      ),
+    ).toBe('Validation Failed');
     expect(failureReason(failed(new GitHubError(403, 'Organization policy prevents this change')))).toBe(
       'Organization policy prevents this change',
     );

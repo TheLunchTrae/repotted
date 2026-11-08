@@ -57,9 +57,13 @@ internal sealed partial class CompareViewModel(
     RepottedClient client,
     IDesktop desktop,
     string repository,
-    ProfileListingDocument profile)
+    ProfileListingDocument profile,
+    Uri? installUrl = null)
     : ViewModelBase
 {
+    /// <summary>The plan sections the compare shows; a lock on any other change counts as hidden.</summary>
+    private static readonly HashSet<string> Shown = new(StringComparer.Ordinal) { "repository", "merge", "actions", "rulesets", "environments" };
+
     public string Repository => repository;
 
     public string ProfileName => profile.Name;
@@ -75,14 +79,39 @@ internal sealed partial class CompareViewModel(
     /// <summary>How many differences Repotted cannot change, as the plan's locks have it.</summary>
     public int Locked => Sections.Sum(section => section.Differences.Count(row => row.IsLocked));
 
-    public bool HasLocks => Locked > 0;
+    /// <summary>The reasons for the locked changes in sections the compare doesn't show, such as Pages, one for each change.</summary>
+    public IReadOnlyList<string> HiddenLocks { get; private set; } = [];
 
-    public string LockSummary => Locked == 1
-        ? "Repotted can't change 1 difference below. It says what it needs."
-        : $"Repotted can't change {Locked} differences below. Each says what it needs.";
+    public bool HasLocks => Locked > 0 || HiddenLocks.Count > 0;
 
-    /// <summary>The settings page of the GitHub App's installation on the repository, where its owner reviews what the App may do.</summary>
+    public string LockSummary
+    {
+        get
+        {
+            List<string> sentences = [];
+            if (Locked > 0)
+            {
+                sentences.Add(Locked == 1
+                    ? "Repotted can't change 1 difference below. It says what it needs."
+                    : $"Repotted can't change {Locked} differences below. Each says what it needs.");
+            }
+            if (HiddenLocks.Count > 0)
+            {
+                var start = Locked > 0 ? "It also can't make" : "Repotted can't make";
+                var reasons = string.Join("; ", HiddenLocks.Distinct(StringComparer.Ordinal));
+                sentences.Add($"{start} {Count(HiddenLocks.Count, "change")} the compare doesn't show: {reasons}.");
+            }
+            return string.Join(" ", sentences);
+        }
+    }
+
+    /// <summary>
+    /// Where to grant what's missing: the settings page of the GitHub App's
+    /// installation on the repository, or the App's install page when it isn't installed there.
+    /// </summary>
     public Uri? AccessUrl { get; private set; }
+
+    public string AccessLabel { get; private set; } = "Review App access";
 
     public bool HasAccessUrl => HasLocks && AccessUrl is not null;
 
@@ -155,9 +184,12 @@ internal sealed partial class CompareViewModel(
             {
                 section.ShowEverything = ShowEverything;
             }
-            AccessUrl = Uri.TryCreate(plan.Access.App.SettingsUrl, UriKind.Absolute, out var url) && url.Scheme == Uri.UriSchemeHttps
-                ? url
-                : null;
+            HiddenLocks = [.. plan.Locks
+                .Where(item => item.Change < plan.Changes.Count && !Shown.Contains(plan.Changes[item.Change].Section))
+                .Select(item => item.Reason)];
+            var installed = plan.Access.App.Status != "not_installed";
+            AccessLabel = installed ? "Review App access" : "Install the App";
+            AccessUrl = Https(installed ? plan.Access.App.SettingsUrl : installUrl?.ToString());
             OnPropertyChanged(nameof(Sections));
             OnPropertyChanged(nameof(Warnings));
             OnPropertyChanged(nameof(HasWarnings));
@@ -165,7 +197,9 @@ internal sealed partial class CompareViewModel(
             OnPropertyChanged(nameof(Locked));
             OnPropertyChanged(nameof(HasLocks));
             OnPropertyChanged(nameof(LockSummary));
+            OnPropertyChanged(nameof(HiddenLocks));
             OnPropertyChanged(nameof(AccessUrl));
+            OnPropertyChanged(nameof(AccessLabel));
             OnPropertyChanged(nameof(HasAccessUrl));
             Loaded = true;
         }
@@ -182,6 +216,9 @@ internal sealed partial class CompareViewModel(
 
     [RelayCommand]
     private Task ReviewAccessAsync() => AccessUrl is { } url ? desktop.OpenUrlAsync(url) : Task.CompletedTask;
+
+    private static Uri? Https(string? address) =>
+        Uri.TryCreate(address, UriKind.Absolute, out var url) && url.Scheme == Uri.UriSchemeHttps ? url : null;
 
     private static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 

@@ -82,8 +82,8 @@ the GitHub App permission it needs.
 `(locked: Needs Pages write)`. With a Repotted App sign-in, it checks the
 permissions the App's installation was granted and your role on the
 repository. Repotted treats every change as needing admin on the repository.
-A token from `GITHUB_TOKEN` or `GH_TOKEN` can't see the App, so `plan` marks
-only what your role rules out. Limits of the repository's GitHub plan or its
+Another token, such as the GitHub CLI's or Actions' `GITHUB_TOKEN`, can't see
+the App, so `plan` marks only what your role rules out. Limits of the repository's GitHub plan or its
 owner's policies show only when `apply` fails. `apply` still tries every
 change; the marks only tell you ahead of time.
 

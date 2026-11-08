@@ -172,7 +172,10 @@ A padlock marks each difference the app can't change, with what it needs,
 such as **Needs Actions write**. The Repotted App's installation may not
 have been granted that permission, or you may not be an admin on the
 repository. **Review App access**, above the differences, opens the
-installation's settings on GitHub, where its owner can grant what's missing.
+installation's settings on GitHub, where its owner can grant what's missing,
+or **Install the App** when it isn't installed on the repository. The same
+note counts changes the compare doesn't show, such as Pages, with what each
+needs.
 Limits of the repository's GitHub plan or its owner's policies don't show
 here; GitHub reports them only when a change is made.
 

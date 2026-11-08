@@ -144,6 +144,7 @@ export async function listRepositories(github: GitHub): Promise<RepositoryList> 
 }
 
 const viewer = z.object({
+  full_name: z.string().optional(),
   permissions: z
     .object({ admin: z.boolean(), maintain: z.boolean(), push: z.boolean(), triage: z.boolean(), pull: z.boolean() })
     .partial()
@@ -154,8 +155,7 @@ function sameName(left: string | undefined, right: string): boolean {
   return left?.toLowerCase() === right.toLowerCase();
 }
 
-async function readRole(github: GitHub, repo: RepoRef): Promise<Role | null> {
-  const flags = viewer.parse(await github.request('GET', repoPath(repo))).permissions;
+function readRole(flags: z.infer<typeof viewer>['permissions']): Role | null {
   const order = [
     ['admin', 'admin'],
     ['maintain', 'maintain'],
@@ -166,19 +166,19 @@ async function readRole(github: GitHub, repo: RepoRef): Promise<Role | null> {
   return order.find(([flag]) => flags?.[flag] === true)?.[1] ?? null;
 }
 
-async function readAppAccess(github: GitHub, repo: RepoRef): Promise<AppAccess> {
+/** `fullName` is the repository's name as GitHub has it now, after any rename or transfer. */
+async function readAppAccess(github: GitHub, fullName: string): Promise<AppAccess> {
   const installations = await listInstallations(github);
   if (installations === undefined) {
     return { status: 'unknown' };
   }
   // An account installs an App once, so the installation on the owner is the only one that can cover the repository.
-  const owned = installations.find((item) => sameName(item.account?.login, repo.owner));
+  const owner = fullName.split('/')[0] ?? fullName;
+  const owned = installations.find((item) => sameName(item.account?.login, owner));
   const covers =
     owned !== undefined &&
     (owned.repository_selection === 'all' ||
-      (await installationRepositoryList(github, owned.id)).some((entry) =>
-        sameName(entry.full_name, `${repo.owner}/${repo.name}`),
-      ));
+      (await installationRepositoryList(github, owned.id)).some((entry) => sameName(entry.full_name, fullName)));
   if (owned === undefined || !covers) {
     return { status: 'not_installed' };
   }
@@ -191,7 +191,11 @@ async function readAppAccess(github: GitHub, repo: RepoRef): Promise<AppAccess> 
  * installation on it. It only reads.
  */
 export async function readAccess(github: GitHub, repo: RepoRef): Promise<Access> {
-  return { role: await readRole(github, repo), app: await readAppAccess(github, repo) };
+  const found = viewer.parse(await github.request('GET', repoPath(repo)));
+  return {
+    role: readRole(found.permissions),
+    app: await readAppAccess(github, found.full_name ?? `${repo.owner}/${repo.name}`),
+  };
 }
 
 const user = z.object({ login: z.string(), name: z.string().nullish() });
