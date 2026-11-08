@@ -803,11 +803,13 @@ describe('stage', () => {
 
   test('refuses a plan for another repository than the staged apply names', async () => {
     const file = path.join(directory, 'staged-other.yaml');
-    await cli(new FakeGitHub(), 'stage', file, '--new', 'lunch/app');
+    await cli(new FakeGitHub(), 'stage', file, '--new', 'lunch/app', '--set', 'repository.has_wiki=false');
 
-    const result = await cli(new FakeGitHub(), 'plan', 'lunch/other', '--staged', file);
+    const github = new FakeGitHub();
+    const result = await cli(github, 'plan', 'lunch/other', '--staged', file);
     expect(result.code).toBe(2);
     expect(result.err).toContain('applies to lunch/app');
+    expect(github.calls).toEqual([]);
   });
 
   test('plans a staged apply for its repository named in any case', async () => {

@@ -117,7 +117,9 @@ To delete a ruleset or an environment, list it as
 `{ name: <name>, absent: true }`. Deleting an environment also deletes its
 secrets and variables. To delete an autolink, list it as
 `{ key_prefix: <prefix>, absent: true }`, and to take down the Pages site, set
-`pages: { absent: true }`. To clear a custom property, set it to `null`.
+`pages: { absent: true }`. To clear a custom property, set it to `null`. A
+custom property's name is 1 to 75 letters, digits, `_`, `-`, `$`, or `#`, as
+GitHub allows.
 
 Values that GitHub fills in on its own, and the profile doesn't name, don't
 count as differences. Lists match as a whole, in any order.

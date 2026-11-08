@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import type * as FileSystem from 'node:fs/promises';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterAll, describe, expect, test } from 'vitest';
+import { afterAll, describe, expect, test, vi } from 'vitest';
 import { stringify } from 'yaml';
 
 import { ApplyError, applyPlan, parsePlan, StalePlanError } from '../src/plan.js';
@@ -17,6 +18,12 @@ import {
   saveStagedEdits,
 } from '../src/staged.js';
 import { FakeGitHub } from './fake-github.js';
+
+// By name rather than by import, since a typed mock takes only one signature of the overloaded readFile.
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof FileSystem>();
+  return { ...actual, readFile: vi.fn(actual.readFile) };
+});
 
 // The real path, because staged applies report real paths and macOS links its temporary folder.
 const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-staged-')));
@@ -103,6 +110,16 @@ function rejection(promise: Promise<unknown>): Promise<unknown> {
 
 function targets(changes: readonly { action: string; target: string }[]): string[] {
   return changes.map((change) => `${change.action} ${change.target}`);
+}
+
+/** Makes the next read of `file` give its text as it is now, and then gives the file `next`, as another program might. */
+async function replacedAfterNextRead(file: string, next: string): Promise<void> {
+  const text = await readFile(file, 'utf8');
+  vi.mocked(readFile).mockImplementationOnce(async (read) => {
+    expect(read).toBe(file);
+    await writeFile(file, next);
+    return text;
+  });
 }
 
 describe('staged apply', () => {
@@ -298,6 +315,21 @@ merge: { allow_rebase_merge: false }
     expect(profile).toContain('delete_branch_on_merge: true');
   });
 
+  test('keeps a change made while its edits are saved, and says the edits were not cleared', async () => {
+    const files = await folder(base);
+    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
+    const changed = `apply_to: lunch/app\nextends: ${path.basename(files.profile)}\nrepository: { has_wiki: false }\n`;
+    await replacedAfterNextRead(files.staged, changed);
+
+    const error = await rejection(saveStagedEdits(files.staged));
+
+    expect(error).toBeInstanceOf(ProfileError);
+    expect(String(error)).toContain('not cleared');
+    expect(await readFile(files.profile, 'utf8')).toContain('has_wiki: true');
+    expect(await readFile(files.staged, 'utf8')).toBe(changed);
+  });
+
   test('has no profile to save edits to when it starts from the repository', async () => {
     const files = await folder(base);
     await createStagedApply(files.staged, 'lunch/app', undefined);
@@ -439,6 +471,43 @@ merge: { allow_rebase_merge: false }
           : left.filter((other) => other.fields.some((field) => field.field === exclusion.field)),
       ).toEqual([]);
     }
+  });
+
+  test.each([
+    ['shows', (file: string) => resolveStagedApply(file)],
+    ['plans', async (file: string) => (await planStagedApply(new FakeGitHub(), file)).staged],
+  ])('%s its file as one read found it, though the file changes meanwhile', async (_, read) => {
+    const files = await folder(base);
+    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await editStagedApply(files.staged, [
+      { path: ['repository', 'has_wiki'], value: true },
+      { exclude: 'repository.delete_branch_on_merge', excluded: true },
+    ]);
+    await replacedAfterNextRead(
+      files.staged,
+      `apply_to: lunch/app\nextends: ${path.basename(files.profile)}\nrepository: { has_issues: false }\n`,
+    );
+
+    const staged = await read(files.staged);
+
+    expect(staged.exclude).toEqual(['repository.delete_branch_on_merge']);
+    expect(staged.profile.repository).toEqual({ has_wiki: true });
+  });
+
+  test('edits its file as one read found it, though the file changes meanwhile', async () => {
+    const files = await folder(base);
+    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await editStagedApply(files.staged, [{ exclude: 'repository.delete_branch_on_merge', excluded: true }]);
+    await replacedAfterNextRead(
+      files.staged,
+      `apply_to: lunch/app\nextends: ${path.basename(files.profile)}\nrepository: { has_issues: false }\n`,
+    );
+
+    const edited = await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
+
+    expect(edited.exclude).toEqual(['repository.delete_branch_on_merge']);
+    expect(edited.profile.repository).toEqual({ has_wiki: true });
+    expect(await readFile(files.staged, 'utf8')).toContain('- repository.delete_branch_on_merge');
   });
 
   test('discards only a staged apply file', async () => {

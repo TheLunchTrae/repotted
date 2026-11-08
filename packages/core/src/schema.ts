@@ -281,8 +281,23 @@ export const securitySettings = z
     }
   });
 
-/** Custom property values by property name; null clears a value. */
-export const customProperties = z.record(z.string().min(1), z.union([z.string(), z.array(z.string()), z.null()]));
+/**
+ * Custom property values by property name; null clears a value. GitHub
+ * documents a property name as 1 to 75 of `a-z`, `A-Z`, `0-9`, `_`, `-`,
+ * `$` and `#`.
+ */
+export const customProperties = z
+  .record(z.string(), z.union([z.string(), z.array(z.string()), z.null()]))
+  .superRefine((value, context) => {
+    // Checked here rather than as the record's key, whose own message would not say what a name allows.
+    for (const name of Object.keys(value).filter((key) => !/^[\w$#-]{1,75}$/u.test(key))) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A custom property name is 1 to 75 letters, digits, _, -, $ or #',
+        path: [name],
+      });
+    }
+  });
 
 /**
  * `absent: true` marks an entry that removes, and `draft: true` a draft in a
