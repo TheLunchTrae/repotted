@@ -565,9 +565,10 @@ public sealed class ViewModelTests : IDisposable
         var cli = new FakeCli()
             .On("status --json", Documents.SignedIn)
             .On("repos --json", Documents.Repositories)
-            .On($"capture TheLunchTrae/repotted --output {made} --json", async cancellationToken =>
+            .OnCapture("TheLunchTrae/repotted", async (output, cancellationToken) =>
             {
                 cancellationToken.Register(() => stopped = true);
+                File.WriteAllText(output, "repository:\n");
                 await finish.Task;
                 return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
             });
@@ -576,6 +577,7 @@ public sealed class ViewModelTests : IDisposable
         var shell = Assert.IsType<ShellViewModel>(main.Page);
         shell.Profiles.StartNew("TheLunchTrae/repotted");
         var capturing = shell.Profiles.Creating!.CreateCommand.ExecuteAsync(null);
+        Assert.Single(Leftovers());
 
         main.Stop();
         finish.SetResult();
@@ -583,6 +585,7 @@ public sealed class ViewModelTests : IDisposable
 
         Assert.True(stopped);
         Assert.False(File.Exists(made));
+        Assert.Empty(Leftovers());
     }
 
     [AvaloniaFact]
@@ -595,9 +598,10 @@ public sealed class ViewModelTests : IDisposable
             .On("status --json", Documents.SignedIn)
             .On("repos --json", Documents.Repositories)
             .On("logout --json", """{"removed":true}""")
-            .On($"capture TheLunchTrae/repotted --output {made} --json", async cancellationToken =>
+            .OnCapture("TheLunchTrae/repotted", async (output, cancellationToken) =>
             {
                 cancellationToken.Register(() => stopped = true);
+                File.WriteAllText(output, "repository:\n");
                 // A command line that finishes anyway, as one that is slow to stop would.
                 await finish.Task;
                 return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
@@ -607,7 +611,7 @@ public sealed class ViewModelTests : IDisposable
         var shell = Assert.IsType<ShellViewModel>(main.Page);
         shell.Profiles.StartNew("TheLunchTrae/repotted");
         var capturing = shell.Profiles.Creating!.CreateCommand.ExecuteAsync(null);
-        Assert.True(File.Exists(made));
+        Assert.Single(Leftovers());
 
         cli.On("status --json", Documents.SignedOut, exitCode: 1);
         await shell.SignOutCommand.ExecuteAsync(null);
@@ -617,6 +621,7 @@ public sealed class ViewModelTests : IDisposable
         Assert.IsType<SignInViewModel>(main.Page);
         Assert.True(stopped);
         Assert.False(File.Exists(made));
+        Assert.Empty(Leftovers());
     }
 
     [AvaloniaFact]
@@ -2113,7 +2118,7 @@ public sealed class ViewModelTests : IDisposable
     public void A_profile_extends_another_only_once_one_is_chosen()
     {
         using var form = new NewProfileViewModel(
-            new RepottedClient(new FakeCli()), folders.Profiles, [], [], null, (_, _) => Task.CompletedTask, () => { }, () => { })
+            new RepottedClient(new FakeCli()), folders.Profiles, [], [], null, (_, _) => Task.CompletedTask, () => { }, () => { }, new HashSet<string>(), work => work())
         {
             Name = "libraries",
             Extends = true,
@@ -2126,16 +2131,23 @@ public sealed class ViewModelTests : IDisposable
     public async Task A_capture_never_replaces_a_file_and_leaves_none_when_it_fails()
     {
         var made = Path.Combine(folders.Profiles, "repotted.yaml");
-        var cli = new FakeCli().On($"capture TheLunchTrae/repotted --output {made} --json", "", exitCode: 1, error: "Not Found");
+        var cli = new FakeCli().OnCapture("TheLunchTrae/repotted", output =>
+        {
+            File.WriteAllText(output, "repository:\n");
+            return NotFound;
+        });
         var profiles = new ProfilesViewModel(new RepottedClient(cli.On(folders.List(), Documents.NoProfiles)), new FakeDesktop(), folders.Settings, () => ["TheLunchTrae/repotted"]);
         await profiles.RefreshCommand.ExecuteAsync(null);
+        // A capture the app never saw end, such as when it quit, leaves its file, which holds nothing.
+        var left = folders.Write(".repotted.yaml.k2v9x0qa.4fz.repotted-capture", "repository:\n");
         profiles.StartNew("TheLunchTrae/repotted");
         var form = profiles.Creating!;
+        Assert.Null(form.Problem);
 
         await form.CreateCommand.ExecuteAsync(null);
 
-        Assert.NotNull(form.Error);
-        Assert.False(File.Exists(made));
+        Assert.Equal("Not Found", form.Error);
+        Assert.Equal([left], Directory.EnumerateFileSystemEntries(folders.Profiles));
 
         // A file made after the name was typed stops the capture before it reads GitHub.
         cli.Calls.Clear();
@@ -2151,15 +2163,14 @@ public sealed class ViewModelTests : IDisposable
     public async Task Cancelling_a_capture_stops_it_and_keeps_what_the_user_opened_next()
     {
         var (profiles, cli, files) = await OpenOrgs("TheLunchTrae/repotted");
-        var made = Path.Combine(folders.Profiles, "repotted.yaml");
         var finish = new TaskCompletionSource();
         var stopped = false;
-        cli.On($"capture TheLunchTrae/repotted --output {made} --json", async cancellationToken =>
+        cli.OnCapture("TheLunchTrae/repotted", async (output, cancellationToken) =>
         {
             cancellationToken.Register(() => stopped = true);
             // A command line that finishes anyway, as one that is slow to stop would.
             await finish.Task;
-            File.WriteAllText(made, "repository:\n  has_wiki: false\n");
+            File.WriteAllText(output, "repository:\n  has_wiki: false\n");
             return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":["Skipped rulesets"]}""";
         });
         profiles.StartNew("TheLunchTrae/repotted");
@@ -2172,78 +2183,318 @@ public sealed class ViewModelTests : IDisposable
         await capturing;
 
         Assert.True(stopped);
-        Assert.False(File.Exists(made));
+        Assert.Equal([files.Base, files.Own], Directory.EnumerateFileSystemEntries(folders.Profiles).Order());
         Assert.Same(next, profiles.Creating);
         Assert.Null(profiles.Captured);
         Assert.Equal(files.Own, profiles.Current?.File);
     }
 
     [AvaloniaFact]
-    public async Task A_capture_hides_the_file_it_holds_and_frees_the_name_once_it_stops()
+    public async Task A_capture_holds_its_name_and_frees_it_once_it_stops()
     {
-        var (profiles, cli, files) = await OpenOrgs("TheLunchTrae/repotted");
-        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var (profiles, cli, _) = await OpenOrgs("TheLunchTrae/repotted");
         var finish = new TaskCompletionSource();
-        cli.On($"capture TheLunchTrae/repotted --output {made} --json", async _ =>
+        cli.OnCapture("TheLunchTrae/repotted", async (output, _) =>
         {
+            File.WriteAllText(output, "repository:\n");
             await finish.Task;
-            return """{"error":{"kind":"error","message":"Not Found"}}""";
+            return NotFound;
         });
-        cli.On(folders.List(), Listing(("base", files.Base, null), ("orgs", files.Own, files.Base), ("repotted", made, null)));
         profiles.StartNew("TheLunchTrae/repotted");
         var capturing = profiles.Creating!.CreateCommand.ExecuteAsync(null);
-
-        // The empty file the capture holds is not a profile yet.
-        await profiles.RefreshCommand.ExecuteAsync(null);
-        Assert.Equal(["base", "orgs"], profiles.Items.Select(item => item.Name));
 
         // Another form cannot take the name while the closed one holds it, and can once it lets go.
         profiles.Creating!.CancelCommand.Execute(null);
         profiles.StartNew(null);
         var next = profiles.Creating!;
-        next.Name = "repotted";
-        Assert.Equal("repotted.yaml is already in this folder.", next.Problem);
+        next.Name = "Repotted";
+        Assert.Equal("Another capture is making Repotted.yaml.", next.Problem);
         finish.SetResult();
         await capturing;
 
-        Assert.False(File.Exists(made));
+        Assert.Empty(Leftovers());
         Assert.Null(next.Problem);
     }
 
-    [AvaloniaFact]
-    public async Task A_capture_still_running_in_the_folder_left_behind_hides_nothing_in_the_new_one()
+    [AvaloniaTheory]
+    [InlineData("repotted.yaml")]
+    [InlineData("Repotted.yaml")]
+    public async Task A_file_that_arrives_during_a_capture_is_kept(string arrives)
     {
-        // A picker may give the folder with a separator at its end.
-        var other = Path.Combine(folders.Profiles, "other") + Path.DirectorySeparatorChar;
-        Directory.CreateDirectory(other);
-        var made = Path.Combine(folders.Profiles, "repotted.yaml");
-        var held = Path.Combine(other, "held.yaml");
-        var finish = new TaskCompletionSource();
-        var cli = new FakeCli()
-            .On(folders.List(), Documents.NoProfiles)
-            .On(folders.List(other), Listing(("held", held, null), ("repotted", Path.Combine(other, "repotted.yaml"), null)));
-        foreach (var (repository, file) in new[] { ("TheLunchTrae/repotted", made), ("TheLunchTrae/held", held) })
+        var (profiles, cli, _) = await OpenOrgs("TheLunchTrae/repotted");
+        cli.OnCapture("TheLunchTrae/repotted", output =>
         {
-            cli.On($"capture {repository} --output {file} --json", async _ =>
+            File.WriteAllText(output, "repository:\n  has_wiki: false\n");
+            // A sync brings in a profile of the same name meanwhile.
+            folders.Write(arrives, "repository: { has_issues: true }\n");
+            return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
+        });
+        profiles.StartNew("TheLunchTrae/repotted");
+        var form = profiles.Creating!;
+
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.Equal($"{arrives} is already in this folder.", form.Error);
+        Assert.Equal("repository: { has_issues: true }\n", File.ReadAllText(Path.Combine(folders.Profiles, arrives)));
+        Assert.Empty(Leftovers());
+    }
+
+    [AvaloniaFact]
+    public async Task A_capture_keeps_the_name_it_started_with()
+    {
+        var (profiles, cli, files) = await OpenOrgs("TheLunchTrae/repotted");
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        cli.OnCapture("TheLunchTrae/repotted", async (output, _) =>
+        {
+            await finish.Task;
+            File.WriteAllText(output, "repository:\n  has_wiki: false\n");
+            return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
+        });
+        cli.On(folders.List(), Listing(("base", files.Base, null), ("orgs", files.Own, files.Base), ("repotted", made, null)))
+            .On($"profile {made} --json", Documents.ResolvedBase(made));
+        profiles.StartNew("TheLunchTrae/repotted");
+        var form = profiles.Creating!;
+        var capturing = form.CreateCommand.ExecuteAsync(null);
+
+        Assert.False(form.Editable);
+        // A name in use, typed while GitHub is read, changes nothing.
+        form.Name = "orgs";
+        finish.SetResult();
+        await capturing;
+
+        Assert.Null(form.Error);
+        Assert.Equal("repository:\n  has_wiki: false\n", File.ReadAllText(made));
+        Assert.Equal(made, profiles.Current?.File);
+        Assert.True(form.Editable);
+    }
+
+    [AvaloniaFact]
+    public async Task A_capture_is_not_held_against_its_own_form()
+    {
+        var (profiles, cli, _) = await OpenOrgs("TheLunchTrae/one", "TheLunchTrae/two");
+        var finish = new Dictionary<string, TaskCompletionSource> { ["TheLunchTrae/one"] = new(), ["TheLunchTrae/two"] = new() };
+        foreach (var (repository, done) in finish)
+        {
+            cli.OnCapture(repository, async (_, _) =>
             {
-                await finish.Task;
-                return """{"error":{"kind":"error","message":"Not Found"}}""";
+                await done.Task;
+                return NotFound;
             });
         }
-        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop { Folder = other }, folders.Settings, () => ["TheLunchTrae/repotted", "TheLunchTrae/held"]);
+        profiles.StartNew("TheLunchTrae/one");
+        var first = profiles.Creating!.CreateCommand.ExecuteAsync(null);
+        profiles.Creating!.CancelCommand.Execute(null);
+        profiles.StartNew("TheLunchTrae/two");
+        var form = profiles.Creating!;
+        var second = form.CreateCommand.ExecuteAsync(null);
+
+        // The closed form's capture ends first, and the open form checks its name again.
+        finish["TheLunchTrae/one"].SetResult();
+        await first;
+
+        Assert.Null(form.Problem);
+        finish["TheLunchTrae/two"].SetResult();
+        await second;
+    }
+
+    [AvaloniaFact]
+    public async Task A_capture_whose_file_cannot_go_still_lets_go_of_its_name()
+    {
+        var cli = new FakeCli()
+            .On(folders.List(), Documents.NoProfiles)
+            .OnCapture("TheLunchTrae/repotted", output =>
+            {
+                File.WriteAllText(output, "repository:\n");
+                // The folder goes while GitHub is read, so the file can't be removed.
+                Directory.Delete(folders.Profiles, recursive: true);
+                return NotFound;
+            });
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => ["TheLunchTrae/repotted"]);
         await profiles.RefreshCommand.ExecuteAsync(null);
         profiles.StartNew("TheLunchTrae/repotted");
+        var form = profiles.Creating!;
+
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.Equal("Not Found", form.Error);
+        Assert.False(form.Working);
+        profiles.StartNew(null);
+        profiles.Creating!.Name = "repotted";
+        Assert.Null(profiles.Creating.Problem);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Changing_the_folder_during_a_capture_waits_on_the_question_and_leaves_no_capture_file(bool endsFirst)
+    {
+        var (profiles, cli, files) = await OpenOrgs("TheLunchTrae/repotted");
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        cli.OnCapture("TheLunchTrae/repotted", async (output, cancellationToken) =>
+        {
+            File.WriteAllText(output, "repository:\n");
+            await finish.Task.WaitAsync(cancellationToken);
+            File.WriteAllText(output, "repository:\n  has_wiki: false\n");
+            return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
+        });
+        cli.On(folders.List(), Listing(("base", files.Base, null), ("orgs", files.Own, files.Base), ("repotted", made, null)))
+            .On($"profile {made} --json", Documents.ResolvedBase(made));
+        Choose(profiles.Current!, "has_wiki", "On");
+        profiles.StartNew("TheLunchTrae/repotted");
         var capturing = profiles.Creating!.CreateCommand.ExecuteAsync(null);
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
 
-        await profiles.ChangeFolderCommand.ExecuteAsync(null);
-        profiles.StartNew("TheLunchTrae/held");
-        var holding = profiles.Creating!.CreateCommand.ExecuteAsync(null);
-        await profiles.RefreshCommand.ExecuteAsync(null);
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        Assert.True(profiles.HasLeaving);
+        if (endsFirst)
+        {
+            // A capture that ends while the question waits makes its profile in the folder it started in.
+            finish.SetResult();
+            await capturing.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(profiles.HasLeaving);
+        }
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await change.WaitAsync(TimeSpan.FromSeconds(5));
+        // Otherwise leaving closes the form, which stops the capture.
+        await capturing.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // The new folder hides only the file its own capture holds.
-        Assert.Equal(["repotted"], profiles.Items.Select(item => item.Name));
+        Assert.Equal(other, profiles.Folder);
+        Assert.Equal(endsFirst, File.Exists(made));
+        Assert.Empty(Leftovers());
+    }
+
+    [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_question_that_cannot_settle_keeps_a_running_capture_and_says_why(bool save)
+    {
+        var (profiles, cli, files) = await OpenOrgs("TheLunchTrae/repotted");
+        var editor = profiles.Current!;
+        var reload = Task.CompletedTask;
+        var resolve = new TaskCompletionSource<string>();
+        if (save)
+        {
+            Choose(editor, "has_wiki", "On");
+            cli.On($"profile {files.Own} --set repository.has_wiki=true --json", """{"error":{"kind":"error","message":"The file could not be written"}}""", exitCode: 1);
+        }
+        else
+        {
+            // An editor reloading its file can't discard its changes yet.
+            editor.Tabs[4].Entries[0].Editor.Name = "pages";
+            File.AppendAllText(files.Own, "# pulled by a sync\n");
+            await editor.SaveCommand.ExecuteAsync(null);
+            cli.On($"profile {files.Own} --json", _ => resolve.Task);
+            reload = editor.ReloadCommand.ExecuteAsync(null);
+        }
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var finish = new TaskCompletionSource();
+        var stopped = false;
+        cli.OnCapture("TheLunchTrae/repotted", async (output, cancellationToken) =>
+        {
+            cancellationToken.Register(() => stopped = true);
+            await finish.Task.WaitAsync(cancellationToken);
+            File.WriteAllText(output, "repository:\n  has_wiki: false\n");
+            return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
+        });
+        cli.On(folders.List(), Listing(("base", files.Base, null), ("orgs", files.Own, files.Base), ("repotted", made, null)))
+            .On($"profile {made} --json", Documents.ResolvedBase(made));
+        profiles.StartNew("TheLunchTrae/repotted");
+        var form = profiles.Creating!;
+        var capturing = form.CreateCommand.ExecuteAsync(null);
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+        // A notice already showing, which the one about the question covers for a while.
+        const string Earlier = "Repotted could not remember this folder for next time: the disk is full";
+        profiles.Notice = Earlier;
+        var notice = save
+            ? "orgs could not be saved, so you cannot change the folder yet."
+            : "orgs is still loading, so you cannot change the folder yet.";
+        async Task Answer()
+        {
+            var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+            Assert.True(profiles.HasLeaving);
+            if (save)
+            {
+                await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+            }
+            else
+            {
+                profiles.DiscardAndLeaveCommand.Execute(null);
+            }
+            await change.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        await Answer();
+
+        // Opening the profile would close the form and stop the capture, so the notice says why instead.
+        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Same(form, profiles.Creating);
+        Assert.True(form.Working);
+        Assert.False(stopped);
+        Assert.Equal(notice, profiles.Notice);
+
+        // Asking again takes it away, and the notice it covered shows again.
+        var asking = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        Assert.True(profiles.HasLeaving);
+        Assert.Equal(Earlier, profiles.Notice);
+        profiles.StayHereCommand.Execute(null);
+        await asking.WaitAsync(TimeSpan.FromSeconds(5));
+        await Answer();
+        Assert.Equal(notice, profiles.Notice);
+        resolve.SetResult(Documents.Resolved(files.Own, files.Base));
+        await reload.WaitAsync(TimeSpan.FromSeconds(5));
         finish.SetResult();
-        await Task.WhenAll(capturing, holding);
+        await capturing.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(File.Exists(made));
+        Assert.NotNull(profiles.Notice);
+
+        // The notice goes once the profile it names opens.
+        profiles.Selected = profiles.Items.Single(item => item.Name == "orgs");
+        Assert.Equal(Earlier, profiles.Notice);
+    }
+
+    [AvaloniaFact]
+    public async Task Captures_in_two_copies_of_the_app_write_files_of_their_own()
+    {
+        var made = Path.Combine(folders.Profiles, "repotted.yaml");
+        var outputs = new List<string>();
+        var finish = new[] { new TaskCompletionSource(), new TaskCompletionSource() };
+        var cli = new FakeCli()
+            .On(folders.List(), Documents.NoProfiles)
+            .OnCapture("TheLunchTrae/repotted", async (output, _) =>
+            {
+                var index = outputs.Count;
+                outputs.Add(output);
+                File.WriteAllText(output, $"# copy {index}\n");
+                await finish[index].Task;
+                return """{"repository":"TheLunchTrae/repotted","profile":{},"warnings":[]}""";
+            });
+        var forms = new List<NewProfileViewModel>();
+        foreach (var _ in finish)
+        {
+            var copy = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => ["TheLunchTrae/repotted"]);
+            await copy.RefreshCommand.ExecuteAsync(null);
+            copy.StartNew("TheLunchTrae/repotted");
+            forms.Add(copy.Creating!);
+        }
+        var capturing = forms.Select(form => form.CreateCommand.ExecuteAsync(null)).ToList();
+
+        Assert.Equal(2, outputs.Distinct().Count());
+        finish[0].SetResult();
+        await capturing[0];
+        finish[1].SetResult();
+        await capturing[1];
+
+        Assert.Equal("# copy 0\n", File.ReadAllText(made));
+        Assert.Equal("repotted.yaml is already in this folder.", forms[1].Error);
+        Assert.Empty(Leftovers());
     }
 
     [AvaloniaFact]
@@ -2299,9 +2550,9 @@ public sealed class ViewModelTests : IDisposable
         var cli = new FakeCli()
             .On("repos --json", Documents.Repositories)
             .On(folders.List(), Documents.NoProfiles)
-            .On($"capture TheLunchTrae/repotted --output {made} --json", () =>
+            .OnCapture("TheLunchTrae/repotted", output =>
             {
-                File.WriteAllText(made, "repository:\n  has_wiki: false\n");
+                File.WriteAllText(output, "repository:\n  has_wiki: false\n");
                 return """{"repository":"TheLunchTrae/repotted","profile":{"repository":{"has_wiki":false}},"warnings":["Skipped rulesets: this repository’s plan does not support rulesets","Skipped environments: the app cannot read Actions"]}""";
             });
         var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => Task.CompletedTask);
@@ -2323,7 +2574,8 @@ public sealed class ViewModelTests : IDisposable
 
         await form.CreateCommand.ExecuteAsync(null);
 
-        Assert.True(File.Exists(made));
+        Assert.Equal("repository:\n  has_wiki: false\n", File.ReadAllText(made));
+        Assert.Empty(Leftovers());
         Assert.Equal("Profiles / repotted", shell.Crumb);
         Assert.Equal(
             "Repotted could not read all of the repository, so this profile leaves out:\nSkipped rulesets: this repository’s plan does not support rulesets\nSkipped environments: the app cannot read Actions",
@@ -2332,7 +2584,18 @@ public sealed class ViewModelTests : IDisposable
         // The note is about the captured profile, so it goes once another opens.
         shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "other");
         Assert.Null(shell.Profiles.Captured);
+
+        // A finished capture holds its name no longer, so it is free once the profile is gone.
+        File.Delete(made);
+        shell.Profiles.StartNew(null);
+        shell.Profiles.Creating!.Name = "repotted";
+        Assert.Null(shell.Profiles.Creating.Problem);
     }
+
+    private const string NotFound = """{"error":{"kind":"error","message":"Not Found"}}""";
+
+    /// <summary>The files that captures write in the profiles folder until they are whole.</summary>
+    private IEnumerable<string> Leftovers() => Directory.EnumerateFiles(folders.Profiles, "*.repotted-capture");
 
     private static string Listing(params (string Name, string File, string? Extends)[] profiles) =>
         JsonSerializer.Serialize(new { profiles = profiles.Select(profile => new { name = profile.Name, file = profile.File, extends = profile.Extends, problem = (string?)null }) });

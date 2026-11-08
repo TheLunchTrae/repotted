@@ -31,7 +31,8 @@
     <!-- Shown in every state, the empty folder included, because the usual folder to choose is a new one -->
     <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
             Padding="32,10" IsVisible="{Binding HasNotice}">
-      <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Notice}" />
+      <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Notice}"
+                 AutomationProperties.LiveSetting="Assertive" />
     </Border>
     <!-- Changing the folder, connecting a repository, or quitting waits until unsaved changes are saved or discarded -->
     <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"

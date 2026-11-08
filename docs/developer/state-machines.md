@@ -167,7 +167,9 @@ names an entry of that name, which then applies again.
 
 `syncFolder` (`packages/core/src/sync.ts`) brings a folder and a folder in a
 repository in line, file by file, against the blob ids in
-`.repotted-sync.json`.
+`.repotted-sync.json`. Only `.yaml` and `.yml` files sync, and a file or
+folder whose name starts with a dot stays out on both sides. So the
+temporary files that a pull or a capture writes never reach a commit.
 
 ### The record
 
@@ -227,13 +229,10 @@ is one, and the sync state the page shows.
 
 Saves and the page's syncs share one chain (`ExclusiveAsync` and
 `SyncAsync`), so a sync never reads a file a save is writing. The connect
-form's first sync runs outside it.
-
-**Failure:** a capture writes its file outside that chain, and the sync
-covers the whole folder, including the empty file a capture holds. A sync
-during a capture commits the empty file, and the capture's result or its
-removal follows as another commit. Tracked in
-[#46](https://github.com/TheLunchTrae/repotted/issues/46).
+form's first sync runs outside it. So does a capture's read of GitHub, which
+writes a dot-prefixed file that no sync reads; only the move of the finished
+capture to the profile's name joins the chain, and the profile syncs once it
+is whole, as the [New profile form](#new-profile-form) describes.
 
 ## Profile editor
 
@@ -304,34 +303,51 @@ the **Profiles** page first, through `ShellViewModel.ConfirmLeaveAsync`.
 Closing the window cancels the close and closes again once the question
 settles.
 
-| State  | Event                                                                              | Next                                                                                                                                                                                              |
-| ------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Idle   | Change folder, connect a repository, close the window, sign out, or a lost sign-in | Asking, when any editor has unsaved changes. Otherwise it goes on. The question names the profiles that had unsaved changes when it was asked.                                                    |
-| Asking | Save                                                                               | Saving: each changed editor saves in turn, and Save, Discard and Cancel wait until the saves end.                                                                                                 |
-| Saving | Every save ends                                                                    | It goes on when no editor has changes left; otherwise it opens the first one that does, with its error, its Out of date choice, or that its file is gone, even when a search hides it, and stays. |
-| Asking | Discard                                                                            | Every changed editor that can discard does. It goes on when none has changes left; an editor still loading keeps its changes, opens, and it stays.                                                |
-| Asking | Cancel                                                                             | Idle, with nothing changed. A new profile form that was open stays open.                                                                                                                          |
-| Asking | Another change of folder, connect, or close                                        | Asking, about the new act. The earlier one stays where it was, as if cancelled.                                                                                                                   |
+| State            | Event                                                                              | Next                                                                                                                                                                                                                                                                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idle             | Change folder, connect a repository, close the window, sign out, or a lost sign-in | Asking, when any editor has unsaved changes. Otherwise it goes on. The question names the profiles that had unsaved changes when it was asked.                                                                                                                                                                                               |
+| Asking           | Save                                                                               | Saving: each changed editor saves in turn, and Save, Discard and Cancel wait until the saves end.                                                                                                                                                                                                                                            |
+| Saving           | Every save ends                                                                    | It goes on when no editor has changes left; otherwise it opens the first one that does, with its error, its Out of date choice, or that its file is gone, even when a search hides it, and stays.                                                                                                                                            |
+| Asking           | Discard                                                                            | Every changed editor that can discard does. It goes on when none has changes left; an editor still loading keeps its changes, opens, and it stays.                                                                                                                                                                                           |
+| Saving or asking | A save failed, or an editor still loading kept its changes, while a capture runs   | It stays, but opens nothing, since that would close the new profile form and stop its capture. A notice names the profile and why, such as "orgs could not be saved, so you cannot change the folder yet.", over any notice already showing. It goes once that profile opens or a way out asks again, and the notice it covered shows again. |
+| Asking           | Cancel                                                                             | Idle, with nothing changed. A new profile form that was open stays open.                                                                                                                                                                                                                                                                     |
+| Asking           | Another change of folder, connect, or close                                        | Asking, about the new act. The earlier one stays where it was, as if cancelled.                                                                                                                                                                                                                                                              |
 
 The folder is picked before the question, so cancelling the folder picker asks
 nothing.
 
 ## New profile form
 
-`NewProfileViewModel` creates the file first and never replaces one already
-in the folder.
+`NewProfileViewModel` never replaces a file already in the folder. It reads
+the name once, when Create is pressed, and the name and what the profile
+starts from can't change while it works. A capture writes a file of its own,
+`.<name>.yaml.<random>.repotted-capture`, which is dot-prefixed and not a
+`.yaml` file, so neither a sync nor the list reads it, and two copies of the
+app capturing one name never share it. The profile takes its name only once
+the capture is whole. `ProfilesViewModel` keeps the names of the captures
+still running, in open and closed forms alike, and those names are held
+against every other form until each capture ends.
 
-| State                      | Event                     | Next                                                                               |
-| -------------------------- | ------------------------- | ---------------------------------------------------------------------------------- |
-| Editing                    | Create                    | Checks the name again, since the folder may have changed.                          |
-| Creating, empty or extends | The file is written       | Created; the list opens it.                                                        |
-| Creating, capture          | The empty file is written | Holding: the list leaves the file out while `repotted capture --output` writes it. |
-| Holding                    | The capture ends          | Created.                                                                           |
-| Holding                    | The capture fails         | Editing, with the error; the file is removed.                                      |
-| Holding                    | The form closes           | The capture is stopped and the file removed, also when the app is left.            |
+The move to the profile's name runs in the chain that keeps saves and syncs
+apart, after any sync under way, so a pull can't write that name between the
+check and the move. On macOS and Linux, .NET's move that doesn't overwrite
+checks for the file and then renames, so it can still replace a file of that
+name that another program writes at that moment; on Windows the move refuses
+it.
 
-The failure in this machine is the sync during a hold, under
-[Desktop profiles source](#desktop-profiles-source).
+| State                      | Event                                                                                            | Next                                                                                                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Editing                    | Create                                                                                           | Checks the name again, since the folder may have changed. A file of that name, or another capture running, refuses it.                                                                 |
+| Creating, empty or extends | The file is written                                                                              | Created; the list opens it.                                                                                                                                                            |
+| Creating, capture          | Start                                                                                            | Holding: `repotted capture --output` writes the capture's file.                                                                                                                        |
+| Holding                    | The capture ends                                                                                 | Placing, once any save or sync under way ends; no sync starts until it does.                                                                                                           |
+| Placing                    | The name is free                                                                                 | The capture's file moves to the profile's name: Created, and the name is no longer held.                                                                                               |
+| Placing                    | A file of that name came in meanwhile                                                            | Editing, with "is already in this folder"; the file that came in stays, and the capture's file is removed.                                                                             |
+| Holding                    | The capture fails                                                                                | Editing, with the error; the capture's file is removed.                                                                                                                                |
+| Holding or placing         | The form closes                                                                                  | The capture is stopped, or its move skipped, and its file removed, also when the app is left.                                                                                          |
+| Holding                    | Another folder, a repository, signing out, a lost sign-in or quitting asks about unsaved changes | The capture runs on while the question waits, and still makes its profile in the folder it started in. Going on closes the form; a question that can't settle keeps it, with a notice. |
+| Any end of a capture       | Its file can't be removed, such as when the folder is gone                                       | The name is no longer held and the form is editable again; the file stays, as when the app quits.                                                                                      |
+| Holding                    | The app quits                                                                                    | The capture's file may stay behind. It holds no name, and no later capture writes to it, so it stays until it is deleted.                                                              |
 
 ## Connect form
 

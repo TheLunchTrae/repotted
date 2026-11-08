@@ -103,7 +103,11 @@ Click **New profile** and choose what it starts from:
   every setting the other one sets, and you change only what differs.
 - **A repository**: Repotted reads the repository's settings, rulesets, and
   environments as they are on GitHub now, and saves them as a profile.
-  Capturing only reads from GitHub.
+  Capturing only reads from GitHub. The profile appears in the list, and in
+  a GitHub repository that keeps your profiles, only once the capture
+  finishes. A capture that fails or that you cancel leaves nothing behind.
+  If the app quits during a capture, the folder can keep a file whose name
+  starts with a dot and ends in `.repotted-capture`. It is safe to delete.
 
 The app never overwrites a file that is already in the folder.
 
@@ -156,9 +160,11 @@ click **Change folder**, **Use a GitHub repository**, **Change repository** or
 **Sign out**, or quit, while a profile has unsaved changes, a banner on the
 **Profiles** page asks first: **Save** saves them and goes on, **Discard**
 drops them and goes on, and **Cancel** stays where you are. If a save fails,
-the profile opens with the error and nothing else changes. The banner also asks
-before a sign-in that stopped working takes you back to the sign-in page, since
-saving needs no sign-in.
+the profile opens with the error and nothing else changes. While a new profile
+is being captured, the profile that could not be saved stays closed, since
+opening it would stop the capture. A note names it instead, and you can open it
+once the capture finishes. The banner also asks before a sign-in that stopped
+working takes you back to the sign-in page, since saving needs no sign-in.
 
 ## Compare a repository with a profile
 

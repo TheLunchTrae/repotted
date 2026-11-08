@@ -592,6 +592,39 @@ public sealed class ViewTests : IDisposable
         }
     }
 
+    [AvaloniaFact]
+    public async Task A_capture_under_way_locks_the_name_and_where_it_starts_from()
+    {
+        var finish = new TaskCompletionSource();
+        var window = await Show("light", new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.NoProfiles)
+            .OnCapture("TheLunchTrae/repotted", async (_, _) =>
+            {
+                await finish.Task;
+                return """{"error":{"kind":"error","message":"Not Found"}}""";
+            }));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.StartNew("TheLunchTrae/repotted");
+        Dispatcher.UIThread.RunJobs();
+        var nameBox = window.GetVisualDescendants().OfType<TextBox>()
+            .Single(box => AutomationProperties.GetName(box) == "Profile name");
+        var starts = window.GetVisualDescendants().OfType<RadioButton>().ToList();
+        Assert.True(nameBox.IsEffectivelyEnabled);
+
+        var capturing = shell.Profiles.Creating!.CreateCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(nameBox.IsEffectivelyEnabled);
+        Assert.All(starts, start => Assert.False(start.IsEffectivelyEnabled));
+        finish.SetResult();
+        await capturing;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(nameBox.IsEffectivelyEnabled);
+    }
+
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
     public async Task The_repository_form_explains_what_syncing_does(string theme)

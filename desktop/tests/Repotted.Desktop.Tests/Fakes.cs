@@ -7,6 +7,9 @@ internal sealed class FakeCli : ICli
 {
     private readonly Dictionary<string, Func<Action<string>?, CancellationToken, Task<CliRun>>> answers = [];
 
+    /// <summary>Captures of a repository, by its full name, which answer whatever file they are told to write.</summary>
+    private readonly Dictionary<string, Func<string, CancellationToken, Task<string>>> captures = [];
+
     public List<string> Calls { get; } = [];
 
     /// <summary>Answers <paramref name="command"/> with one document, an exit code, and what it said on stderr.</summary>
@@ -73,6 +76,21 @@ internal sealed class FakeCli : ICli
         return this;
     }
 
+    /// <summary>
+    /// Answers <c>capture</c> of <paramref name="repository"/> with what
+    /// <paramref name="run"/> returns, given the file the capture is told to
+    /// write and the run's cancellation.
+    /// </summary>
+    public FakeCli OnCapture(string repository, Func<string, CancellationToken, Task<string>> run)
+    {
+        captures[repository] = run;
+        return this;
+    }
+
+    /// <summary>Answers <c>capture</c> of <paramref name="repository"/> at once, with what <paramref name="run"/> returns given the file to write.</summary>
+    public FakeCli OnCapture(string repository, Func<string, string> run) =>
+        OnCapture(repository, (output, _) => Task.FromResult(run(output)));
+
     public bool Answers(string command) => answers.ContainsKey(command);
 
     public FakeCli Missing(string command)
@@ -81,12 +99,18 @@ internal sealed class FakeCli : ICli
         return this;
     }
 
+    private static async Task<CliRun> Captured(Task<string> output) => new(0, await output.ConfigureAwait(true), "");
+
     public Task<CliRun> RunAsync(IReadOnlyList<string> arguments, Action<string>? onLine, CancellationToken cancellationToken)
     {
         var command = string.Join(' ', arguments);
         Calls.Add(command);
-        return answers.TryGetValue(command, out var answer)
-            ? answer(onLine, cancellationToken)
+        if (answers.TryGetValue(command, out var answer))
+        {
+            return answer(onLine, cancellationToken);
+        }
+        return arguments is ["capture", var repository, "--output", var output, "--json"] && captures.TryGetValue(repository, out var capture)
+            ? Captured(capture(output, cancellationToken))
             : throw new InvalidOperationException($"No answer for: {command}");
     }
 }
