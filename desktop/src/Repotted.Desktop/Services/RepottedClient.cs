@@ -39,9 +39,11 @@ internal sealed record RepositoryList(bool FromInstallations, IReadOnlyList<Repo
 /// A change to one profile setting: <paramref name="Key"/> is its section and
 /// key, such as <c>repository.has_wiki</c>, or a draft's under <c>drafts</c>,
 /// such as <c>drafts.repository.has_wiki</c>, and <paramref name="Value"/> is the
-/// new value, or null to stop managing it.
+/// new value, or null to stop managing it. <paramref name="SetsNull"/> sets the
+/// value to JSON <c>null</c> instead, as an empty runner label is saved; its
+/// <paramref name="Value"/> is null.
 /// </summary>
-internal sealed record ProfileChange(string Key, JsonNode? Value);
+internal sealed record ProfileChange(string Key, JsonNode? Value, bool SetsNull = false);
 
 /// <summary>
 /// A change to one ruleset or environment in a profile file, by name:
@@ -222,9 +224,9 @@ internal sealed class RepottedClient(ICli cli)
         List<string> arguments = [];
         foreach (var change in changes)
         {
-            arguments.AddRange(change.Value is null
+            arguments.AddRange(change is { Value: null, SetsNull: false }
                 ? ["--unset", change.Key]
-                : ["--set", $"{change.Key}={change.Value.ToJsonString()}"]);
+                : ["--set", $"{change.Key}={change.Value?.ToJsonString() ?? "null"}"]);
         }
         foreach (var entry in entries)
         {

@@ -307,6 +307,88 @@ public sealed class ProfileEditorTests : ViewModelTests
     }
 
     [AvaloniaFact]
+    public async Task An_empty_runner_label_saves_as_null_and_an_empty_runner_group_as_no_group()
+    {
+        var (editor, cli, own, resolved) = await OpenOwn(
+            """{"security":{"code_scanning_default_setup":{"runner_type":"labeled","runner_label":"gpu"},"dependabot_runner_settings":{"runner_type":"labeled","runner_group":"builders"}}}""",
+            """{"security":{"code_scanning_default_setup.runner_type":OWN,"code_scanning_default_setup.runner_label":OWN,"dependabot_runner_settings.runner_type":OWN,"dependabot_runner_settings.runner_group":OWN}}""");
+        var save = $"profile {own} --set security.dependabot_runner_settings.runner_group=\"\" --set security.code_scanning_default_setup.runner_label=null --json";
+        cli.On(save, resolved);
+        var label = Find(editor, "code_scanning_default_setup.runner_label");
+        var group = Find(editor, "dependabot_runner_settings.runner_group");
+        Assert.Equal(("gpu", "builders"), (label.Typed, group.Typed));
+
+        // The schema takes no empty label, so an empty box means none.
+        label.Typed = "";
+        group.Typed = "";
+        Assert.Null(label.TypedProblem);
+        Assert.Equal((true, "Changed"), (label.Changed, label.Note));
+        Assert.True(group.Changed);
+        // A null draft would not show, so an empty label can't be one.
+        Assert.False(label.CanSaveAsDraft);
+        await editor.SaveCommand.ExecuteAsync(null);
+
+        Assert.Contains(save, cli.Calls);
+        Assert.Null(editor.SaveError);
+    }
+
+    [AvaloniaFact]
+    public async Task A_runner_label_of_null_shows_as_an_empty_box_that_left_empty_is_no_change()
+    {
+        var (editor, _, _, _) = await OpenOwn(
+            """{"security":{"code_quality_setup":{"runner_type":"labeled","runner_label":null}}}""",
+            """{"security":{"code_quality_setup.runner_type":OWN,"code_quality_setup.runner_label":OWN}}""");
+        var label = Find(editor, "code_quality_setup.runner_label");
+
+        Assert.Equal(("", SettingOrigin.Own, "Set here"), (label.Typed, label.Origin, label.Note));
+        // The profile sets the label, to null, so it counts as managed.
+        Assert.True(label.Managed);
+        Assert.Equal(2, editor.Tab("Security").Count);
+        label.Typed = "gpu";
+        Assert.True(label.Changed);
+        label.Typed = "";
+        Assert.False(label.Pending);
+        Assert.False(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
+    public async Task A_runner_box_is_off_while_its_runner_type_shows_standard()
+    {
+        var (editor, _, _, _) = await OpenOwn(
+            """{"security":{"code_scanning_default_setup":{"runner_type":"standard","runner_label":"gpu"},"code_quality_setup":{"runner_type":"labeled"},"dependabot_runner_settings":{"runner_type":"standard"}}}""",
+            """{"security":{"code_scanning_default_setup.runner_type":OWN,"code_scanning_default_setup.runner_label":OWN,"code_quality_setup.runner_type":OWN,"dependabot_runner_settings.runner_type":BASE}}""");
+        var scanning = Find(editor, "code_scanning_default_setup.runner_label");
+        var quality = Find(editor, "code_quality_setup.runner_label");
+        var group = Find(editor, "dependabot_runner_settings.runner_group");
+
+        // Standard runners, set here or in the base, turn the box off; it keeps its value and its way back.
+        Assert.Equal((false, true, false), (scanning.Enabled, quality.Enabled, group.Enabled));
+        // Screen readers hear why a box is off before where its value comes from.
+        Assert.Equal($"Used only with labeled runners. Leave it empty for no label. {scanning.Note}", scanning.TypedHelp);
+        Assert.Equal(quality.Note, quality.TypedHelp);
+        Assert.Equal(("gpu", "Remove"), (scanning.Typed, scanning.ResetLabel));
+
+        // The box follows the runner type as it changes, and tells its view.
+        List<string?> told = [];
+        scanning.PropertyChanged += (_, e) => told.Add(e.PropertyName);
+        Choose(editor, "code_scanning_default_setup.runner_type", "Labeled");
+        Assert.True(scanning.Enabled);
+        Assert.Contains(string.Empty, told);
+        Find(editor, "code_scanning_default_setup.runner_type").Undo();
+        Assert.False(scanning.Enabled);
+        Choose(editor, "dependabot_runner_settings.runner_type", "Labeled");
+        Assert.True(group.Enabled);
+        Choose(editor, "code_quality_setup.runner_type", "Standard");
+        Assert.False(quality.Enabled);
+
+        // With no runner type at all, the box stays on.
+        var type = Find(editor, "code_quality_setup.runner_type");
+        type.Undo();
+        type.ResetCommand.Execute(null);
+        Assert.Equal(("Removed when saved", true), (type.Note, quality.Enabled));
+    }
+
+    [AvaloniaFact]
     public async Task Undo_and_discard_put_a_typed_value_back()
     {
         var (profiles, _, _) = await OpenOrgs();
@@ -607,13 +689,17 @@ public sealed class ProfileEditorTests : ViewModelTests
         var own = folders.Write("orgs.yaml", "environments: [{ name: npm }]\n");
         var cli = new FakeCli().On($"profile {own} --json", Documents.Resolved(own, own));
         // The sync ahead of the save changes the file before the save's turn comes.
+        var client = new RepottedClient(cli);
         var editor = new ProfileViewModel(
-            new RepottedClient(cli),
+            client,
             new ProfileListingDocument("orgs", own, null, null),
-            exclusive: write =>
+            ProfileStore.Profile(client, new ProfileFolder(client, folders.Settings)) with
             {
-                File.AppendAllText(own, "# pulled by a sync\n");
-                return write();
+                Write = write =>
+                {
+                    File.AppendAllText(own, "# pulled by a sync\n");
+                    return write();
+                },
             });
         await editor.LoadCommand.ExecuteAsync(null);
         editor.Tab("Environments").Entries[0].Editor.Name = "pages";
@@ -716,13 +802,16 @@ public sealed class ProfileEditorTests : ViewModelTests
     /// <summary>
     /// Opens orgs.yaml as it resolves to <paramref name="profile"/>, with each
     /// section's sources as <paramref name="sources"/> gives them, where OWN
-    /// stands for orgs.yaml. It extends base.yaml, which sets nothing it shows.
+    /// stands for orgs.yaml and BASE for base.yaml. It extends base.yaml, which
+    /// resolved alone sets nothing it shows.
     /// </summary>
     private async Task<(ProfileViewModel Editor, FakeCli Cli, string Own, string Resolved)> OpenOwn(string profile, string sources)
     {
         var @base = folders.Write("base.yaml", "repository: {}\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
-        var given = JsonNode.Parse(sources.Replace("OWN", Json(own), StringComparison.Ordinal))!.AsObject();
+        var given = JsonNode.Parse(sources
+            .Replace("OWN", Json(own), StringComparison.Ordinal)
+            .Replace("BASE", Json(@base), StringComparison.Ordinal))!.AsObject();
         var all = new JsonObject();
         var drafts = new JsonObject();
         foreach (var section in (string[])["repository", "merge", "actions", "security", "custom_properties", "pages", "autolinks", "rulesets", "environments"])

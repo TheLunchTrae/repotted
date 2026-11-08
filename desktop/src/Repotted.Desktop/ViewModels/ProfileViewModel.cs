@@ -47,6 +47,7 @@ internal sealed partial class SettingResultsViewModel(string tab, string title, 
 /// </summary>
 /// <param name="Load">Resolves the file.</param>
 /// <param name="Save">Writes edits to the file, which the CLI checks first.</param>
+/// <param name="Write">Runs a save's write, such as in its turn with the syncs of the profiles folder.</param>
 /// <param name="SaveLabel">The save button's label.</param>
 /// <param name="OwnLabel">The legend's name for values the file sets itself.</param>
 /// <param name="Summary">The line under the heading, given what the file extends, if anything, and its name.</param>
@@ -54,15 +55,17 @@ internal sealed partial class SettingResultsViewModel(string tab, string title, 
 internal sealed record ProfileStore(
     Func<string, CancellationToken, Task<ResolvedProfile>> Load,
     Func<string, IReadOnlyList<ProfileChange>, IReadOnlyList<EntryChange>, CancellationToken, Task<ResolvedProfile>> Save,
+    Func<Func<Task>, Task> Write,
     string SaveLabel,
     string OwnLabel,
     Func<string?, string, string> Summary,
     bool Drafts = true)
 {
-    /// <summary>A profile file.</summary>
-    public static ProfileStore Profile(RepottedClient client) => new(
+    /// <summary>A profile file in <paramref name="folder"/>, which each save writes in its turn with the folder's syncs.</summary>
+    public static ProfileStore Profile(RepottedClient client, ProfileFolder folder) => new(
         client.ProfileAsync,
         client.SaveProfileAsync,
+        folder.WriteAsync,
         "Save profile",
         "Set in this profile",
         (@base, file) => @base is null ? $"Saved to {file}." : $"Extends {@base}. Saved to {file}.");
@@ -75,18 +78,14 @@ internal sealed record ProfileStore(
 /// </summary>
 /// <param name="client">Reads and saves the profile.</param>
 /// <param name="listing">The profile in the folder.</param>
+/// <param name="store">Where it reads and saves, and how a save's write takes its turn.</param>
 /// <param name="saved">Runs after each save, such as to sync the folder with its config repository.</param>
-/// <param name="exclusive">Runs the write itself, such as once a sync of the folder ends; the write runs at once when null.</param>
-/// <param name="store">Where it reads and saves; a profile file when null.</param>
 internal sealed partial class ProfileViewModel(
     RepottedClient client,
     ProfileListingDocument listing,
-    Func<Task>? saved = null,
-    Func<Func<Task>, Task>? exclusive = null,
-    ProfileStore? store = null) : ViewModelBase
+    ProfileStore store,
+    Func<Task>? saved = null) : ViewModelBase
 {
-    private readonly ProfileStore store = store ?? ProfileStore.Profile(client);
-
     public string SaveLabel => store.SaveLabel;
 
     public string OwnLabel => store.OwnLabel;
@@ -567,7 +566,7 @@ internal sealed partial class ProfileViewModel(
                     }
                 }
             }
-            await (exclusive is null ? Write() : exclusive(Write)).ConfigureAwait(true);
+            await store.Write(Write).ConfigureAwait(true);
             if (profile is null)
             {
                 return;
@@ -710,6 +709,15 @@ internal sealed partial class ProfileViewModel(
                         ])),
                 ]));
         }
+        // A row that another setting can turn off follows that setting's row.
+        var rows = Settings.ToList();
+        foreach (var row in rows)
+        {
+            if (row.Field.OffWhen is { } off)
+            {
+                row.ControlledBy = rows.Single(other => other.Field.Section == row.Field.Section && other.Field.Key == off.Key);
+            }
+        }
         Tabs.Add(EntriesTab("Rulesets", "rulesets"));
         Tabs.Add(EntriesTab("Environments", "environments"));
         SelectedTab = Tabs.FirstOrDefault(tab => tab.Name == selected) ?? Tabs[0];
@@ -787,9 +795,14 @@ internal sealed partial class ProfileViewModel(
     /// A setting that must stand alone in its section, such as Pages'
     /// <c>absent</c>, can't be saved beside the others there: setting one
     /// leaves the others out of this profile's file, and the other way round.
+    /// A row that the changed setting can turn off shows it again.
     /// </summary>
     private void OnRowChanged(SettingViewModel row)
     {
+        foreach (var other in Settings.Where(other => other.ControlledBy == row))
+        {
+            other.Refresh();
+        }
         if (row.OwnAfterSave)
         {
             foreach (var other in Settings.Where(other => other != row

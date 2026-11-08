@@ -59,8 +59,8 @@ internal sealed record ExcludedViewModel(string Key);
 /// <param name="repository">The repository, as owner/name.</param>
 /// <param name="profile">The profile to start from, or null to start from the repository as it is.</param>
 /// <param name="close">Leaves the page.</param>
+/// <param name="folder">The profiles folder, where saving one-off edits to the profile writes in its turn with the folder's syncs.</param>
 /// <param name="profileSaved">Runs after one-off edits are saved to the profile, such as to list and sync the profiles again.</param>
-/// <param name="exclusive">Runs a write to the profiles folder, such as saving one-off edits to a profile, where no sync runs meanwhile.</param>
 /// <param name="desktop">Opens the App's installation settings, to grant what a locked change needs.</param>
 /// <param name="installUrl">Where the App is installed, for a repository it isn't installed on.</param>
 internal sealed partial class ApplyViewModel(
@@ -69,8 +69,8 @@ internal sealed partial class ApplyViewModel(
     string repository,
     ProfileListingDocument? profile,
     Action close,
+    ProfileFolder folder,
     Func<Task>? profileSaved = null,
-    Func<Func<Task>, Task>? exclusive = null,
     IDesktop? desktop = null,
     Uri? installUrl = null) : ViewModelBase
 {
@@ -349,7 +349,7 @@ internal sealed partial class ApplyViewModel(
             Show(plan);
             if (Edits is null)
             {
-                Edits = new ProfileViewModel(client, Listing(), EditsSavedAsync, store: Store());
+                Edits = new ProfileViewModel(client, Listing(), Store(), EditsSavedAsync);
                 Edits.PropertyChanged += (_, e) =>
                 {
                     if (e.PropertyName is nameof(ProfileViewModel.ChangeCount) or nameof(ProfileViewModel.Saving)
@@ -412,6 +412,8 @@ internal sealed partial class ApplyViewModel(
     private ProfileStore Store() => new(
         async (path, cancellationToken) => (await client.StagedAsync(path, cancellationToken).ConfigureAwait(true)).Layers,
         client.SaveStagedEditsAsync,
+        // Only the app writes the staged file, which is not in the profiles folder, so a save waits for no sync.
+        write => write(),
         "Save edits",
         "One-off edit",
         (@base, _) => @base is null
@@ -505,7 +507,7 @@ internal sealed partial class ApplyViewModel(
             }
             staged = saved;
         }
-        await (exclusive is null ? Save() : exclusive(Save)).ConfigureAwait(true);
+        await folder.WriteAsync(Save).ConfigureAwait(true);
         if (profileSaved is not null)
         {
             await profileSaved().ConfigureAwait(true);

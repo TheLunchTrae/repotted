@@ -119,7 +119,10 @@ rulesets, and environments. A setting's own options sit indented under it,
 such as who can create pull requests under **Pull requests**. Names and
 numbers, such as a branch or a pull request limit, are typed in a box. Until
 what you type is valid, the app says what's wrong and won't save the profile;
-**Undo** puts the box back.
+**Undo** puts the box back. A box that goes with one choice of the setting
+above it, such as **Runner label** with a **Runner type** of **Labeled**, is
+off while another choice applies, and keeps its value. Leave a runner label
+empty for no label.
 Topics, custom properties, autolinks, and a few lists, such as the actions a
 repository allows, are edited in the YAML.
 

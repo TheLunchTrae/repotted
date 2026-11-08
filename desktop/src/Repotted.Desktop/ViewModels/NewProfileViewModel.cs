@@ -35,12 +35,17 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         StringComparer.OrdinalIgnoreCase);
 
     private readonly RepottedClient client;
+
+    /// <summary>The folder's path when the form opened, where the file goes.</summary>
     private readonly string folder;
+
+    /// <summary>Where moving a finished capture to its name takes its turn with saves and syncs.</summary>
+    private readonly ProfileFolder profileFolder;
+
     private readonly Func<string, IReadOnlyList<string>, Task> created;
     private readonly Action cancel;
     private readonly Action released;
     private readonly ISet<string> captures;
-    private readonly Func<Func<Task>, Task> exclusive;
 
     /// <summary>The profile file this form's capture will make, while it runs.</summary>
     private string? capturing;
@@ -51,7 +56,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     private bool disposed;
 
     /// <param name="client">Captures a repository.</param>
-    /// <param name="folder">The profiles folder, where the file goes.</param>
+    /// <param name="folder">The profiles folder, where the file goes, and which runs the move of a capture apart from saves and syncs.</param>
     /// <param name="bases">The profiles a new one can extend.</param>
     /// <param name="repositories">The repositories a new one can be captured from, by full name.</param>
     /// <param name="repository">A repository to capture, when the form opens for one.</param>
@@ -59,26 +64,24 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     /// <param name="cancel">Closes the form.</param>
     /// <param name="released">Runs once the form gives up a name it held, so another form can take it.</param>
     /// <param name="captures">The profile files that captures still running will make, which every form shares.</param>
-    /// <param name="exclusive">Runs work apart from saves and syncs, so none of them reads or writes the folder meanwhile.</param>
     public NewProfileViewModel(
         RepottedClient client,
-        string folder,
+        ProfileFolder folder,
         IReadOnlyList<ProfileItemViewModel> bases,
         IReadOnlyList<string> repositories,
         string? repository,
         Func<string, IReadOnlyList<string>, Task> created,
         Action cancel,
         Action released,
-        ISet<string> captures,
-        Func<Func<Task>, Task> exclusive)
+        ISet<string> captures)
     {
         this.client = client;
-        this.folder = folder;
+        this.folder = folder.Path;
+        profileFolder = folder;
         this.created = created;
         this.cancel = cancel;
         this.released = released;
         this.captures = captures;
-        this.exclusive = exclusive;
         Bases = bases;
         Repositories = repositories;
         Base = bases.Count > 0 ? bases[0] : null;
@@ -283,7 +286,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
                     // overwrite checks and then renames, which replaces a file written
                     // in between. Only reading GitHub runs outside, since it takes long.
                     var placed = false;
-                    await exclusive(() =>
+                    await profileFolder.WriteAsync(() =>
                     {
                         if (!disposed)
                         {
