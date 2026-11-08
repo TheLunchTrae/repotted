@@ -167,8 +167,8 @@ are, and a choice left unset leaves that key to GitHub.
   once the profile is saved.
 - Saving writes each edited entry whole through `--ruleset` or
   `--environment`, which is why an outside edit to that entry since it was
-  opened is lost, as [the user guide](../user/desktop.md#edit-a-profile)
-  warns.
+  opened is lost. [State machines](state-machines.md#profile-editor) lists
+  where that happens.
 
 A new profile starts empty, extends another profile in the folder, or is
 captured with `repotted capture --output`. The app never replaces a file
