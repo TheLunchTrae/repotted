@@ -15,7 +15,15 @@ internal sealed record SettingGroupViewModel(string Title, string Description, I
 /// marked as set here, inherited, or not managed, and the edits waiting to be
 /// saved to its file.
 /// </summary>
-internal sealed partial class ProfileViewModel(RepottedClient client, ProfileListingDocument listing) : ViewModelBase
+/// <param name="client">Reads and saves the profile.</param>
+/// <param name="listing">The profile in the folder.</param>
+/// <param name="saved">Runs after each save, such as to sync the folder with its config repository.</param>
+/// <param name="exclusive">Runs the write itself, such as once a sync of the folder ends; the write runs at once when null.</param>
+internal sealed partial class ProfileViewModel(
+    RepottedClient client,
+    ProfileListingDocument listing,
+    Func<Task>? saved = null,
+    Func<Func<Task>, Task>? exclusive = null) : ViewModelBase
 {
     public string Name => listing.Name;
 
@@ -125,8 +133,14 @@ internal sealed partial class ProfileViewModel(RepottedClient client, ProfileLis
         SaveError = null;
         try
         {
-            var profile = await client.SaveProfileAsync(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
-            Show(profile, await BaseAsync(profile).ConfigureAwait(true));
+            ResolvedProfile? profile = null;
+            async Task Write() => profile = await client.SaveProfileAsync(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
+            await (exclusive is null ? Write() : exclusive(Write)).ConfigureAwait(true);
+            Show(profile!, await BaseAsync(profile!).ConfigureAwait(true));
+            if (saved is not null)
+            {
+                await saved().ConfigureAwait(true);
+            }
         }
         catch (Exception error)
         {

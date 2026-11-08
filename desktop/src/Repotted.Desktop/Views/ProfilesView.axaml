@@ -5,25 +5,45 @@
              x:Class="Repotted.Desktop.Views.ProfilesView"
              x:DataType="vm:ProfilesViewModel">
   <DockPanel>
-    <!-- The folder the profiles come from -->
+    <!-- Where the profiles come from, and how the last sync went -->
     <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
             Padding="32,10" IsVisible="{Binding !ShowEmpty}">
-      <Grid ColumnDefinitions="*,Auto,Auto">
-        <TextBlock Classes="muted small" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                   ToolTip.Tip="{Binding Folder}">
-          <Run Text="Profiles folder:" /> <Run Classes="mono" Text="{Binding Folder}" />
-        </TextBlock>
-        <Button Grid.Column="1" Classes="link" Margin="16,0,0,0" Content="Change folder"
-                Command="{Binding ChangeFolderCommand}" />
-        <Button Grid.Column="2" Classes="link" Margin="16,0,0,0" Content="Refresh"
-                Command="{Binding RefreshCommand}" />
-      </Grid>
+      <StackPanel Spacing="4">
+        <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+          <TextBlock Classes="muted small" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                     ToolTip.Tip="{Binding Folder}">
+            <Run Text="{Binding SourceLabel}" /> <Run Classes="mono" Text="{Binding SourceText}" />
+          </TextBlock>
+          <Button Grid.Column="1" Classes="link" Margin="16,0,0,0" Content="Change folder"
+                  Command="{Binding ChangeFolderCommand}" />
+          <Button Grid.Column="2" Classes="link" Margin="16,0,0,0" Content="{Binding RepositoryLabel}"
+                  Command="{Binding StartConnectCommand}" />
+          <Button Grid.Column="3" Classes="link" Margin="16,0,0,0" Content="{Binding RefreshLabel}"
+                  Command="{Binding RefreshCommand}" />
+        </Grid>
+        <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding SyncNote}" IsVisible="{Binding ShowSyncDone}"
+                   AutomationProperties.LiveSetting="Polite" />
+        <SelectableTextBlock Classes="small" TextWrapping="Wrap" Text="{Binding SyncNote}" IsVisible="{Binding ShowSyncProblem}"
+                             Foreground="{DynamicResource RemoveBrush}" AutomationProperties.LiveSetting="Assertive" />
+      </StackPanel>
     </Border>
 
     <!-- Shown in every state, the empty folder included, because the usual folder to choose is a new one -->
     <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
             Padding="32,10" IsVisible="{Binding HasNotice}">
       <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Notice}" />
+    </Border>
+    <!-- A file changed both here and on GitHub waits for a side -->
+    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+            Padding="32,10" IsVisible="{Binding HasConflicts}">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Classes="small" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource DriftBrush}"
+                   Text="{Binding ConflictMessage}" AutomationProperties.LiveSetting="Polite" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0">
+          <Button Classes="quiet" Content="Keep mine" Command="{Binding KeepMineCommand}" />
+          <Button Classes="quiet" Content="Use GitHub's" Command="{Binding UseGitHubsCommand}" />
+        </StackPanel>
+      </Grid>
     </Border>
     <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
             Padding="32,10" IsVisible="{Binding HasCaptured}">
@@ -38,6 +58,7 @@
         <StackPanel Orientation="Horizontal" Spacing="8">
           <Button Classes="quiet" Content="Try again" Command="{Binding RefreshCommand}" />
           <Button Classes="quiet" Content="Change folder" Command="{Binding ChangeFolderCommand}" />
+          <Button Classes="quiet" Content="{Binding RepositoryLabel}" Command="{Binding StartConnectCommand}" />
         </StackPanel>
       </StackPanel>
 
@@ -45,17 +66,24 @@
         <TextBlock Classes="h1" Text="Profiles" />
         <TextBlock Text="{Binding EmptyMessage}" TextWrapping="Wrap" />
         <TextBlock Classes="muted" TextWrapping="Wrap"
-                   Text="A profile is a YAML file. Start a new one here, capture one from a repository, or choose a folder that already has profiles, such as a clone of your setup repository." />
+                   Text="A profile is a YAML file. Start a new one here, capture one from a repository, choose a folder that already has profiles, or keep them in a GitHub repository so they follow you to any computer." />
         <StackPanel Orientation="Horizontal" Spacing="8">
           <Button Classes="primary" Content="New profile" Command="{Binding StartNewCommand}" CommandParameter="{x:Null}" />
           <Button Classes="quiet" Content="Choose a folder" Command="{Binding ChangeFolderCommand}" />
-          <Button Classes="quiet" Content="Refresh" Command="{Binding RefreshCommand}" />
+          <Button Classes="quiet" Content="{Binding RepositoryLabel}" Command="{Binding StartConnectCommand}" />
+          <Button Classes="quiet" Content="{Binding RefreshLabel}" Command="{Binding RefreshCommand}" />
         </StackPanel>
       </StackPanel>
 
       <ContentControl Content="{Binding Creating}" IsVisible="{Binding ShowCreating}">
         <ContentControl.DataTemplates>
           <DataTemplate DataType="vm:NewProfileViewModel"><views:NewProfileView /></DataTemplate>
+        </ContentControl.DataTemplates>
+      </ContentControl>
+
+      <ContentControl Content="{Binding Connecting}" IsVisible="{Binding ShowConnecting}">
+        <ContentControl.DataTemplates>
+          <DataTemplate DataType="vm:ConfigRepositoryViewModel"><views:ConfigRepositoryView /></DataTemplate>
         </ContentControl.DataTemplates>
       </ContentControl>
 

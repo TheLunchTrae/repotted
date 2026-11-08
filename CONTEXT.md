@@ -8,6 +8,8 @@
   repository settings, merge methods, Actions policy, rulesets, or deployment
   environments. Each section
   has one adapter that reads it and plans its writes.
+- **Config repository**: a GitHub repository that holds a folder of profiles.
+  **Sync** brings a local folder and the config repository in line.
 - **Capture**: reading a repository into a profile that describes it as it is.
 - **Plan**: the changes, in order, that bring a repository in line with a
   profile, with the writes each one makes. Planning only reads.

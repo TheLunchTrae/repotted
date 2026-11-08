@@ -70,6 +70,19 @@ internal sealed record PlanDocument(
 /// <summary>What <c>repotted capture --json</c> prints: the repository's setup as a profile, and what it could not read.</summary>
 internal sealed record CaptureDocument(string Repository, JsonElement Profile, IReadOnlyList<string> Warnings);
 
+/// <summary>
+/// What <c>repotted sync --json</c> prints: where the folder synced to, and
+/// the files it pulled, pushed and left in conflict, by path in the folder.
+/// </summary>
+internal sealed record SyncDocument(
+    string Repository,
+    string Path,
+    string Branch,
+    string? Commit,
+    IReadOnlyList<string> Pulled,
+    IReadOnlyList<string> Pushed,
+    IReadOnlyList<string> Conflicts);
+
 /// <summary>The <c>error</c> member of a failure.</summary>
 internal sealed record ErrorDetail(string Kind, string Message);
 
@@ -97,6 +110,7 @@ internal sealed record LoginEvent(
 [JsonSerializable(typeof(ResolvedProfileDocument))]
 [JsonSerializable(typeof(PlanDocument))]
 [JsonSerializable(typeof(CaptureDocument))]
+[JsonSerializable(typeof(SyncDocument))]
 [JsonSerializable(typeof(FailureDocument))]
 [JsonSerializable(typeof(LoginEvent))]
 internal sealed partial class CliJson : JsonSerializerContext;

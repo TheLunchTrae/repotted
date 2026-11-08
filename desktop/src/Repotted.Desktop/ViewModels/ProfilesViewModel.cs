@@ -22,9 +22,11 @@ internal sealed class ProfileItemViewModel(ProfileListingDocument listing, strin
 
 /// <summary>
 /// The profiles in the profiles folder, which the user picks and the app
-/// remembers. It starts as Documents/Repotted. Each profile opens in an editor,
-/// and an editor keeps its unsaved edits while another profile is open. A new
-/// profile starts empty, from another profile, or from a repository.
+/// remembers. It starts as Documents/Repotted. Profiles can live in a GitHub
+/// config repository instead: the app then works in its own copy of them,
+/// syncs it on every refresh, and commits each save. Each profile opens in an
+/// editor, and an editor keeps its unsaved edits while another profile is
+/// open. A new profile starts empty, from another profile, or from a repository.
 /// </summary>
 /// <param name="client">Lists, reads and saves profiles, and captures new ones.</param>
 /// <param name="desktop">Asks for a folder.</param>
@@ -49,15 +51,98 @@ internal sealed partial class ProfilesViewModel(
 
     private int refreshes;
 
+    /// <summary>
+    /// The sync that runs last, which the next one waits for, so a save made
+    /// during a refresh commits after it. The view model runs on the UI thread.
+    /// </summary>
+    private Task lastSync = Task.CompletedTask;
+
+    private const string SyncRecord = ".repotted-sync.json";
+
     public ObservableCollection<ProfileItemViewModel> Items { get; } = [];
 
     /// <summary>Every profile without a problem, whatever the search, for a compare.</summary>
     [ObservableProperty]
     public partial IReadOnlyList<ProfileItemViewModel> Usable { get; private set; } = [];
 
+    /// <summary>The folder the app lists and edits: the profiles folder, or its copy of the config repository.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile))]
-    public partial string Folder { get; private set; } = settings.Load().ProfilesFolder ?? AppSettings.DefaultProfilesFolder();
+    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile), nameof(SourceText), nameof(EmptyMessage))]
+    public partial string Folder { get; private set; } = StartFolder(settings);
+
+    /// <summary>The config repository profiles live in, as <c>owner/name</c>; null when they live in a local folder.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UsesRepository), nameof(SourceLabel), nameof(SourceText), nameof(RepositoryLabel), nameof(RefreshLabel), nameof(ListLabel), nameof(EmptyMessage))]
+    public partial string? Repository { get; private set; } = settings.Load().ConfigRepository;
+
+    /// <summary>The folder in the config repository; empty for its root.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SourceText), nameof(EmptyMessage))]
+    public partial string RepositoryPath { get; private set; } = settings.Load().ConfigPath ?? "";
+
+    public bool UsesRepository => Repository is not null;
+
+    public string SourceLabel => UsesRepository ? "GitHub repository:" : "Profiles folder:";
+
+    /// <summary>Where the profiles live, as the user named it.</summary>
+    public string SourceText => Repository is null ? Folder : RepositoryPath.Length == 0 ? Repository : $"{Repository}/{RepositoryPath}";
+
+    public string RepositoryLabel => UsesRepository ? "Change repository" : "Use a GitHub repository";
+
+    public string RefreshLabel => UsesRepository ? "Sync now" : "Refresh";
+
+    /// <summary>The heading over the list of profiles in the sidebar.</summary>
+    public string ListLabel => UsesRepository ? "In this repository" : "In this folder";
+
+    private static string StartFolder(AppSettings settings)
+    {
+        var saved = settings.Load();
+        return saved.ConfigRepository is { } repository
+            ? settings.ConfigFolder(repository, saved.ConfigPath ?? "")
+            : saved.ProfilesFolder ?? AppSettings.DefaultProfilesFolder();
+    }
+
+    /// <summary>How the last sync with the config repository went; null when there is nothing to say.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSyncNote), nameof(ShowSyncDone), nameof(ShowSyncProblem))]
+    public partial string? SyncNote { get; private set; }
+
+    /// <summary>Whether the note shows under the list; a failure that leaves nothing to list shows as the error instead.</summary>
+    public bool ShowSyncNote => SyncNote is not null && Error is null;
+
+    public bool ShowSyncDone => ShowSyncNote && !SyncFailed;
+
+    public bool ShowSyncProblem => ShowSyncNote && SyncFailed;
+
+    /// <summary>Whether the last sync failed, so the folder may be behind GitHub or hold saves GitHub does not have yet.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSyncDone), nameof(ShowSyncProblem))]
+    public partial bool SyncFailed { get; private set; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(KeepMineCommand), nameof(UseGitHubsCommand))]
+    public partial bool Syncing { get; private set; }
+
+    /// <summary>The files that changed both here and on GitHub since the last sync, which wait for the user to pick a side.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasConflicts), nameof(ConflictMessage))]
+    public partial IReadOnlyList<string> Conflicts { get; private set; } = [];
+
+    public bool HasConflicts => Conflicts.Count > 0;
+
+    public string ConflictMessage => Conflicts.Count == 1
+        ? $"{Conflicts[0]} changed here and on GitHub since the last sync. Keep which version?"
+        : $"These files changed here and on GitHub since the last sync: {string.Join(", ", Conflicts)}. Keep which versions?";
+
+    /// <summary>The form that moves the profiles to a config repository, which stands in for the editor until it closes.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowConnecting))]
+    public partial ConfigRepositoryViewModel? Connecting { get; private set; }
+
+    public bool ShowConnecting => Connecting is not null;
+
+    // However the form closes, a first sync it started stops with it.
+    partial void OnConnectingChanged(ConfigRepositoryViewModel? oldValue, ConfigRepositoryViewModel? newValue) => oldValue?.Dispose();
 
     [ObservableProperty]
     public partial ProfileItemViewModel? Selected { get; set; }
@@ -71,7 +156,7 @@ internal sealed partial class ProfilesViewModel(
     public partial bool Loading { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasError), nameof(ShowEmpty), nameof(ShowProfile))]
+    [NotifyPropertyChangedFor(nameof(HasError), nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowSyncNote), nameof(ShowSyncDone), nameof(ShowSyncProblem))]
     public partial string? Error { get; set; }
 
     public bool HasError => Error is not null;
@@ -82,9 +167,9 @@ internal sealed partial class ProfilesViewModel(
 
     public bool HasProfiles => Count > 0;
 
-    public bool ShowEmpty => !Loading && Error is null && Count == 0 && Creating is null;
+    public bool ShowEmpty => !Loading && Error is null && Count == 0 && Creating is null && Connecting is null;
 
-    public bool ShowProfile => !Loading && Error is null && Current is not null && Creating is null;
+    public bool ShowProfile => !Loading && Error is null && Current is not null && Creating is null && Connecting is null;
 
     /// <summary>The new profile form, which stands in for the editor until it closes.</summary>
     [ObservableProperty]
@@ -108,6 +193,7 @@ internal sealed partial class ProfilesViewModel(
     public void StartNew(string? repository)
     {
         Captured = null;
+        Connecting = null;
         // Nothing stays selected, so choosing any profile in the list leaves the form.
         Selected = null;
         forms.RemoveAll(form => form.Holding is null);
@@ -143,7 +229,166 @@ internal sealed partial class ProfilesViewModel(
         }
     }
 
-    public string EmptyMessage => $"No profiles in {Folder} yet.";
+    public string EmptyMessage => $"No profiles in {SourceText} yet.";
+
+    /// <summary>Opens the form that makes a GitHub repository the place profiles live.</summary>
+    [RelayCommand]
+    public void StartConnect()
+    {
+        Creating = null;
+        Captured = null;
+        Selected = null;
+        Connecting = new ConfigRepositoryViewModel(
+            client,
+            settings,
+            repositories(),
+            Repository is null ? null : (Repository, RepositoryPath),
+            Repository is null && Count > 0 ? Folder : null,
+            ConnectedAsync,
+            CancelConnect);
+    }
+
+    /// <summary>Closes the repository form, back to the profile that was open.</summary>
+    public void CancelConnect()
+    {
+        if (Connecting is null)
+        {
+            return;
+        }
+        Connecting = null;
+        Selected = Items.FirstOrDefault(item => item.Listing.File == Current?.File);
+    }
+
+    private async Task ConnectedAsync(string repository, string path, SyncDocument result, IReadOnlyList<string> skipped)
+    {
+        Notice = skipped.Count == 0
+            ? null
+            : $"Did not add {string.Join(", ", skipped)} from the profiles folder, because {repository} already had {(skipped.Count == 1 ? "a file" : "files")} of that name.";
+        try
+        {
+            settings.Save(settings.Load() with { ConfigRepository = repository, ConfigPath = path });
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            Notice = $"Repotted could not remember this repository for next time: {error.Message}";
+        }
+        Connecting = null;
+        Repository = repository;
+        RepositoryPath = path;
+        Folder = settings.ConfigFolder(repository, path);
+        ShowSync(result);
+        Selected = null;
+        await LoadAsync(sync: false).ConfigureAwait(true);
+    }
+
+    /// <summary>Keeps this computer's version of each file in conflict, and commits it.</summary>
+    [RelayCommand(CanExecute = nameof(CanSettle))]
+    private Task KeepMineAsync() => SettleAsync("local");
+
+    /// <summary>Takes GitHub's version of each file in conflict, over this computer's.</summary>
+    [RelayCommand(CanExecute = nameof(CanSettle))]
+    private Task UseGitHubsAsync() => SettleAsync("remote");
+
+    private bool CanSettle() => !Syncing;
+
+    /// <summary>Settles the files the banner names; a file that came into conflict since then waits for its own choice.</summary>
+    private async Task SettleAsync(string prefer)
+    {
+        if (await SyncAsync(prefer, Conflicts).ConfigureAwait(true) is not null)
+        {
+            await LoadAsync(sync: false).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>Commits a save to the config repository, and shows what the sync brought back from GitHub.</summary>
+    private async Task SavedAsync()
+    {
+        if (await SyncAsync(null, null).ConfigureAwait(true) is { Pulled.Count: > 0 })
+        {
+            await LoadAsync(sync: false).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Runs a save once the sync before it ends, and holds the next sync until
+    /// it ends, so a sync never reads a file a save is writing.
+    /// </summary>
+    private async Task ExclusiveAsync(Func<Task> work)
+    {
+        var previous = lastSync;
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lastSync = done.Task;
+        try
+        {
+            await previous.ConfigureAwait(true);
+            await work().ConfigureAwait(true);
+        }
+        finally
+        {
+            done.SetResult();
+        }
+    }
+
+    /// <summary>
+    /// Syncs the folder with the config repository, if profiles live in one,
+    /// and says how it went. Null when it failed, or the profiles moved
+    /// elsewhere while it ran.
+    /// </summary>
+    private async Task<SyncDocument?> SyncAsync(string? prefer, IReadOnlyList<string>? only)
+    {
+        if (Repository is null)
+        {
+            return null;
+        }
+        var folder = Folder;
+        var previous = lastSync;
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lastSync = done.Task;
+        try
+        {
+            await previous.ConfigureAwait(true);
+            if (folder != Folder)
+            {
+                return null;
+            }
+            Syncing = true;
+            var result = await client.SyncAsync(folder, null, null, prefer, only, CancellationToken.None).ConfigureAwait(true);
+            if (folder != Folder)
+            {
+                return null;
+            }
+            ShowSync(result);
+            return result;
+        }
+        catch (Exception error) when (error is CliException or CliNotFoundException or IOException or UnauthorizedAccessException)
+        {
+            if (folder == Folder)
+            {
+                SyncFailed = true;
+                SyncNote = $"Not synced with GitHub. Saves stay on this computer until a sync works. {error.Message}";
+            }
+            return null;
+        }
+        finally
+        {
+            Syncing = false;
+            done.SetResult();
+        }
+    }
+
+    private void ShowSync(SyncDocument result)
+    {
+        SyncFailed = false;
+        Conflicts = result.Conflicts;
+        var committed = result.Pushed.Count switch
+        {
+            0 => null,
+            1 => $"Committed {result.Pushed[0]} to {result.Branch}.",
+            var count => $"Committed {count} files to {result.Branch}.",
+        };
+        // The banner asks about the conflicts, so the note only says what did sync.
+        SyncNote = committed ?? (result.Conflicts.Count > 0 ? $"Everything else is in sync with {result.Branch}." : $"In sync with {result.Branch} on GitHub.");
+    }
 
     /// <summary>Narrows the sidebar list by name.</summary>
     [ObservableProperty]
@@ -176,15 +421,18 @@ internal sealed partial class ProfilesViewModel(
     {
         if (!editors.TryGetValue(listing.File, out var editor))
         {
-            editor = new ProfileViewModel(client, listing);
+            editor = new ProfileViewModel(client, listing, SavedAsync, ExclusiveAsync);
             editors[listing.File] = editor;
             _ = editor.LoadCommand.ExecuteAsync(null);
         }
         Current = editor;
     }
 
+    /// <summary>Lists the profiles again, after a sync with the config repository when they live in one.</summary>
     [RelayCommand]
-    public async Task RefreshAsync()
+    public Task RefreshAsync() => LoadAsync(sync: true);
+
+    private async Task LoadAsync(bool sync)
     {
         // A refresh started later, such as for a newly chosen folder, wins over one still running.
         var refresh = ++refreshes;
@@ -193,8 +441,25 @@ internal sealed partial class ProfilesViewModel(
         Error = null;
         try
         {
+            if (Repository is not null)
+            {
+                if (sync)
+                {
+                    await SyncAsync(null, null).ConfigureAwait(true);
+                    if (refresh != refreshes)
+                    {
+                        return;
+                    }
+                }
+                // A copy that never synced has nothing to show, only why.
+                if (!File.Exists(Path.Combine(folder, SyncRecord)))
+                {
+                    Error = SyncNote ?? $"Repotted has not synced with {SourceText} yet.";
+                    return;
+                }
+            }
             // The default folder is the app's to make; a folder the user picked already exists.
-            if (settings.Load().ProfilesFolder is null)
+            else if (settings.Load().ProfilesFolder is null)
             {
                 Directory.CreateDirectory(folder);
             }
@@ -297,16 +562,21 @@ internal sealed partial class ProfilesViewModel(
         Notice = null;
         Captured = null;
         Creating = null;
+        Connecting = null;
         try
         {
-            settings.Save(settings.Load() with { ProfilesFolder = folder });
+            settings.Save(settings.Load() with { ProfilesFolder = folder, ConfigRepository = null, ConfigPath = null });
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
             Notice = $"Repotted could not remember this folder for next time: {error.Message}";
         }
         Folder = folder;
-        OnPropertyChanged(nameof(EmptyMessage));
+        Repository = null;
+        RepositoryPath = "";
+        Conflicts = [];
+        SyncNote = null;
+        SyncFailed = false;
         Selected = null;
         await RefreshAsync().ConfigureAwait(true);
     }
