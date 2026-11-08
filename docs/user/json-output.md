@@ -35,8 +35,36 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   the whole object, which GitHub writes at once. `edited` is true when the
   value is a one-off edit, which you undo rather than exclude. The file
   `--out` saves leaves `staged` and `exclusions` out.
+  With `--staged` and a batch folder, `plan` prints
+  `{ batch, id, profile, plans, left_out, failures }`, the same document
+  `--out` saves. `batch` is the folder's real path, `id` tells the batch from
+  one started again in the same folder, and `profile` is the profile new
+  repositories start from, or null. Each of `plans` is one repository's
+  staged plan, as above, with `file`, its staged apply, and `digest`, that
+  file's SHA-256 when it was planned. `left_out` lists `{ repository, file }`
+  for each repository left out of the batch, and `failures` lists
+  `{ repository, file, error }` for each one that could not be planned, where
+  `error` is `{ kind, message, status }`: `kind` as for any failure below,
+  and `status` the HTTP status GitHub answered with, or null. `plan` exits 1
+  when any repository could not be planned, and still prints and saves the
+  rest.
 - `apply` needs `--yes`, since a program has no terminal to confirm in, and
   prints `{ repository, applied }` with the changes it made.
+  For a batch's plan, it prints `{ batch, results }`, one result for each
+  repository it was asked to apply, in order, as `{ repository, status,
+  ended }`. `ended` is true when the repository's staged apply ended and it
+  left the batch. `status` is `applied`, with `applied`, the changes made;
+  `in_line`, when the plan had no changes and planning again still finds
+  none; `locked`, with `locks`, not tried; `left_out`, when the batch no
+  longer holds it as reviewed, since it was left out or taken out, or the
+  batch ended or started again, not tried; `changed`, when its staged apply
+  changed after the review, not tried;
+  `stopped`, after an earlier failure with `--stop-on-failure`, not tried;
+  `stale`, with `message` and `current`, as for a stale plan; `apply_failed`,
+  with `message`, `applied`, `failed` and `reason`, as for a write that fails
+  partway; or `failed`, with `error` as in a batch plan's `failures`. It exits
+  1 when any repository is `locked`, `changed`, `stopped`, `stale`,
+  `apply_failed` or `failed`.
 - `profile` prints `{ chain, profile, drafts, warnings, sources }`. `chain` is
   the profile file, then each one it extends, as real paths, with links
   resolved. `profile` is the resolved profile without its
@@ -66,6 +94,18 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   it names, and a staged plan's `warnings` do too. `sources` is as in `profile`,
   without the excluded values, so a value whose file is `chain[0]` is a
   one-off edit. With `--discard`, it prints `{ discarded }`, the file's path.
+  On a batch folder, `stage` prints `{ folder, id, profile, members }`:
+  `folder` is the batch's real path, `id` as in its plan, `profile` the
+  profile its new repositories start from, or null, and each member is `{ repository, file, left_out, joined }`,
+  where `joined` is true for a staged apply that joined the batch as it was.
+  With `--everywhere`, the document also has `changed`, the repositories whose
+  staged apply changed, and `refused`, as `{ repository, message }`, those
+  that kept theirs. With `--repo`, it prints that repository's staged apply,
+  as above; with `--repo` and `--discard`,
+  `{ repository, file, kept, batch }`, where `kept` is true for a staged
+  apply that joined the batch, which stays, and `batch` is the batch as it is now, or
+  null when it ended; and with `--discard` alone, `{ discarded }`, the
+  folder's path.
 - `profiles` prints `{ profiles }`, each as `{ name, file, extends, problem }`,
   sorted by file name: the `.yaml` and `.yml` files directly in the folder.
   `file` is a real path, with links resolved, as in `profile`'s `chain`.

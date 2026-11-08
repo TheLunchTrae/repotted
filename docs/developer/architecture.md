@@ -255,6 +255,25 @@ target; a settings field maps to its setting, or to the group it is in, since
 GitHub writes a group at once and may tie its fields together. A test excludes
 every key a wide plan names and checks that its change leaves the plan.
 
+## Batches
+
+A batch (`packages/core/src/batch.ts`) is a folder whose `batch.yaml` lists
+staged applies, one for each repository, with paths relative to the folder.
+It adds no engine of its own: each member is planned with `planStagedApply`
+and applied with `applyPlan`, so it keeps every property of a staged apply,
+and a repository still has one staged apply at a time, since a batch starts a
+new one with `createStagedApply`, which never replaces a file, or joins one
+in progress. Members are planned a few at a time and applied one at a time,
+in the manifest's order, and a member's failure is a result of its own rather
+than the batch's. The saved batch plan records the batch's id and each staged apply's
+SHA-256, and apply writes a member, and ends its staged apply, only while the
+file still has it, so a plan reviewed before an edit is never applied and the
+edit is never discarded. Apply also reads the manifest before each member, so
+a member left out or taken out after the review, or a batch that ended or
+started again, is not applied. A member with no changes is planned again too,
+so it ends only when the repository still matches. Discarding checks that each
+listed file is its member's staged apply before it removes any.
+
 ## The CLI and the MCP server
 
 `packages/cli/src/commands.ts` holds the commands behind a small `Io`

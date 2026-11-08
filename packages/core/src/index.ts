@@ -29,3 +29,20 @@ export {
   saveStagedEdits,
 } from './staged.js';
 export type { StagedApply, StagedEdit, StagedPlan } from './staged.js';
+export {
+  addToBatch,
+  applyBatch,
+  batchMemberFile,
+  chosenMembers,
+  createBatch,
+  discardBatch,
+  discardBatchMember,
+  editEverywhere,
+  isBatchPlan,
+  isUnfinished,
+  leaveOut,
+  parseBatchPlan,
+  planBatch,
+  readBatch,
+} from './batch.js';
+export type { Batch, BatchPlan, MemberResult } from './batch.js';

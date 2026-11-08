@@ -1,4 +1,4 @@
-import { copyFile, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
@@ -9,7 +9,7 @@ import { parsePlan, profileFileJsonSchema } from '@repotted/core';
 
 import { type GitHub, GitHubError, responseError } from '../../core/src/github.js';
 import { FakeGitRepository } from '../../core/tests/fake-git.js';
-import { answered, FakeGitHub } from '../../core/tests/fake-github.js';
+import { answered, FakeFleet, FakeGitHub } from '../../core/tests/fake-github.js';
 import { installUrl, NotSignedInError } from '../src/auth.js';
 import { type Io, run } from '../src/commands.js';
 
@@ -264,6 +264,264 @@ describe('--json', () => {
     expect(missing.code).toBe(1);
     expect(document(missing)).toMatchObject({ error: { kind: 'error' } });
     expect(missing.err).toBe('');
+  });
+});
+
+describe('batch', () => {
+  async function batchPlace(): Promise<{ profile: string; folder: string }> {
+    const root = await realpath(await mkdtemp(path.join(directory, 'batch-')));
+    const profile = path.join(root, 'profile.yaml');
+    await writeFile(profile, 'repository: { has_wiki: false }\n');
+    return { profile, folder: path.join(root, 'batch') };
+  }
+
+  test('starts a batch, leaves a value out everywhere, plans each repository and applies them one at a time', async () => {
+    const { profile, folder } = await batchPlace();
+    const fakes = [new FakeGitHub({}, 'lunch/app'), new FakeGitHub({}, 'lunch/web')];
+    const github = new FakeFleet(fakes);
+
+    const started = await cliWith(
+      github,
+      {},
+      'stage',
+      folder,
+      '--batch',
+      '--new',
+      'lunch/app',
+      '--new',
+      'lunch/web',
+      '--profile',
+      profile,
+      '--json',
+    );
+    expect(started).toMatchObject({ code: 0, err: '' });
+    const id = /"id":"([^"]+)"/u.exec(started.out)?.[1];
+    expect(id).toBeDefined();
+    expect(document(started)).toEqual({
+      folder,
+      id,
+      profile,
+      members: [
+        { repository: 'lunch/app', file: path.join(folder, 'lunch', 'app.yaml'), left_out: false, joined: false },
+        { repository: 'lunch/web', file: path.join(folder, 'lunch', 'web.yaml'), left_out: false, joined: false },
+      ],
+    });
+
+    // One repository's one-off edit, then a value left out of every repository.
+    const edited = await cliWith(
+      github,
+      {},
+      'stage',
+      folder,
+      '--repo',
+      'lunch/web',
+      '--set',
+      'repository.has_projects=false',
+      '--json',
+    );
+    expect(document(edited)).toMatchObject({
+      repository: 'lunch/web',
+      profile: { repository: { has_projects: false } },
+    });
+    const everywhere = await cliWith(
+      github,
+      {},
+      'stage',
+      folder,
+      '--exclude',
+      'repository.has_wiki',
+      '--everywhere',
+      '--json',
+    );
+    expect(document(everywhere)).toMatchObject({ changed: ['lunch/app', 'lunch/web'], refused: [] });
+
+    const plans = path.join(folder, '..', 'plans.json');
+    const planned = await cliWith(github, {}, 'plan', '--staged', folder, '--out', plans, '--json');
+    expect(planned.code).toBe(0);
+    expect(document(planned)).toMatchObject({
+      batch: folder,
+      id,
+      profile,
+      plans: [
+        { repository: 'lunch/app', changes: [], locks: [], staged: { exclude: ['repository.has_wiki'] } },
+        { repository: 'lunch/web', changes: [{ fields: [{ field: 'has_projects' }] }], locks: [] },
+      ],
+      left_out: [],
+      failures: [],
+    });
+
+    const applied = await cliWith(github, {}, 'apply', plans, '--yes', '--json');
+    expect(applied.code).toBe(0);
+    expect(document(applied)).toMatchObject({
+      batch: folder,
+      results: [
+        { repository: 'lunch/app', status: 'in_line', ended: true },
+        { repository: 'lunch/web', status: 'applied', ended: true },
+      ],
+    });
+    expect(fakes.map((fake) => fake.writes)).toEqual([
+      [],
+      [{ method: 'PATCH', path: '/repos/lunch/web', body: { has_projects: false } }],
+    ]);
+    // The batch ended with its last repository.
+    expect(
+      await stat(folder).then(
+        () => 'there',
+        () => 'gone',
+      ),
+    ).toBe('gone');
+  });
+
+  test('says in text how each repository went, and exits 1 when one did not finish', async () => {
+    const { profile, folder } = await batchPlace();
+    const app = new FakeGitHub({}, 'lunch/app');
+    const github = new FakeFleet([app]);
+    await cliWith(
+      github,
+      {},
+      'stage',
+      folder,
+      '--batch',
+      '--new',
+      'lunch/app',
+      '--new',
+      'lunch/gone',
+      '--profile',
+      profile,
+    );
+    const plans = path.join(folder, 'plans.json');
+
+    // A repository that could not be planned exits 1, though the rest are planned and saved.
+    const planned = await cliWith(github, {}, 'plan', '--staged', folder, '--out', plans);
+    expect(planned.code).toBe(1);
+    expect(planned.out).toContain('lunch/app: 1 change');
+    expect(planned.err).toContain('lunch/gone could not be planned: Not Found');
+
+    const left = await cliWith(github, {}, 'stage', folder, '--leave-out', 'lunch/gone');
+    expect(left.out).toBe('lunch/app\nlunch/gone (left out)\n');
+
+    app.fail('PATCH /repos/lunch/app', answered(422, 'Validation failed'));
+    const confirmed: string[] = [];
+    const failed = await cliWith(
+      github,
+      {
+        interactive: true,
+        confirm: (question) => {
+          confirmed.push(question);
+          return Promise.resolve(true);
+        },
+      },
+      'apply',
+      plans,
+    );
+    expect(confirmed).toEqual(['Apply 1 change to 1 repository, one at a time? [y/N] ']);
+    expect(failed.code).toBe(1);
+    expect(failed.err).toContain('lunch/app: Failed to update');
+    expect(failed.err).toContain(
+      `1 repository did not finish. Review what is left with: repotted plan --staged ${folder}`,
+    );
+
+    const discarded = await cliWith(github, {}, 'stage', folder, '--discard', '--json');
+    expect(document(discarded)).toEqual({ discarded: folder });
+  });
+
+  test('applies only the repositories named, stops after a failure when asked, and takes one out', async () => {
+    const { profile, folder } = await batchPlace();
+    const fakes = ['app', 'web', 'api'].map((name) => new FakeGitHub({}, `lunch/${name}`));
+    const github = new FakeFleet(fakes);
+    await cliWith(
+      github,
+      {},
+      'stage',
+      folder,
+      '--batch',
+      '--new',
+      'lunch/app',
+      '--new',
+      'lunch/web',
+      '--new',
+      'lunch/api',
+      '--profile',
+      profile,
+    );
+    const plans = path.join(folder, '..', 'plans.json');
+    await cliWith(github, {}, 'plan', '--staged', folder, '--out', plans);
+
+    const missing = await cliWith(github, {}, 'apply', plans, '--yes', '--only', 'lunch/none');
+    expect(missing).toMatchObject({ code: 1, out: '' });
+    expect(missing.err).toContain('no plan for lunch/none');
+
+    fakes[0]?.fail('PATCH /repos/lunch/app', answered(422, 'Validation failed'));
+    const stopped = await cliWith(
+      github,
+      {},
+      'apply',
+      plans,
+      '--yes',
+      '--only',
+      'lunch/app',
+      '--only',
+      'LUNCH/web',
+      '--stop-on-failure',
+      '--json',
+    );
+    expect(stopped.code).toBe(1);
+    expect(document(stopped)).toMatchObject({
+      results: [
+        { repository: 'lunch/app', status: 'apply_failed' },
+        { repository: 'lunch/web', status: 'stopped' },
+      ],
+    });
+    expect(fakes.map((fake) => fake.writes.length)).toEqual([1, 0, 0]);
+
+    const taken = await cliWith(github, {}, 'stage', folder, '--repo', 'lunch/api', '--discard', '--json');
+    expect(document(taken)).toMatchObject({
+      repository: 'lunch/api',
+      file: path.join(folder, 'lunch', 'api.yaml'),
+      kept: false,
+      batch: { members: [{ repository: 'lunch/app' }, { repository: 'lunch/web' }] },
+    });
+    const profiled = await cliWith(github, {}, 'stage', folder, '--discard', '--profile', profile);
+    expect(profiled.code).toBe(2);
+    const everywhere = await cliWith(
+      github,
+      {},
+      'stage',
+      folder,
+      '--exclude',
+      'repository.has_wiki',
+      '--everywhere',
+      '--save-to-profile',
+    );
+    expect(everywhere.code).toBe(2);
+  });
+
+  test('refuses options that belong to the other kind of staged apply', async () => {
+    const { profile, folder } = await batchPlace();
+    const github = new FakeGitHub();
+    const file = path.join(folder, '..', 'one.yaml');
+
+    const several = await cli(github, 'stage', file, '--new', 'lunch/app', '--new', 'lunch/web', '--json');
+    expect(several.code).toBe(2);
+    expect(document(several)).toMatchObject({ error: { kind: 'usage' } });
+    expect(several.out).toContain('--batch');
+    const joined = await cli(github, 'stage', file, '--new', 'lunch/app', '--join', file);
+    expect(joined.err).toContain('--join is for a batch folder');
+
+    await mkdir(folder);
+    expect((await cli(github, 'stage', folder)).err).toContain('holds no batch');
+    await cli(github, 'stage', folder, '--batch', '--new', 'lunch/app', '--profile', profile);
+    const unnamed = await cli(github, 'stage', folder, '--set', 'repository.has_wiki=true');
+    expect(unnamed.code).toBe(2);
+    expect(unnamed.err).toContain('--repo');
+    const profiled = await cli(github, 'stage', folder, '--new', 'lunch/web', '--profile', profile);
+    expect(profiled.err).toContain('--profile needs --batch');
+    const named = await cli(github, 'plan', 'lunch/app', '--staged', folder);
+    expect(named.code).toBe(2);
+
+    const single = await savePlan(github, 'single-for-batch-options.json');
+    const onlyOne = await cli(github, 'apply', single, '--yes', '--only', 'lunch/app');
+    expect(onlyOne.err).toContain('--only and --stop-on-failure are for a batch plan');
   });
 });
 
