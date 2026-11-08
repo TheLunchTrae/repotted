@@ -113,6 +113,7 @@ internal sealed partial class EntryViewModel : ViewModelBase
         { ReplacedBy: not null } => "Replaced by its finished draft once saved",
         { IsNew: true, IsDraft: true } => "New draft, not saved yet",
         { IsNew: true } => "New, not saved yet",
+        { Changed: true, SavedDraft: true, IsDraft: false, InBase: true } => "Finished, applies once saved, and the base profile's draft comes back",
         { Changed: true, SavedDraft: true, IsDraft: false } => "Finished, applies once saved",
         { Changed: true, IsDraft: true } => "Draft, changed, not saved yet",
         { Changed: true } => "Changed, not saved yet",

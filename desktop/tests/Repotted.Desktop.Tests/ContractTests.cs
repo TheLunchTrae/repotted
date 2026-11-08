@@ -332,6 +332,8 @@ public sealed class ContractTests
                 enforcement: active
               - name: Later
                 draft: true
+              - name: Next
+                draft: true
 
             """.ReplaceLineEndings("\n"));
         folders.Write(
@@ -349,6 +351,9 @@ public sealed class ContractTests
               - name: Edited
                 draft: true
                 enforcement: disabled
+              - name: Next
+                draft: true
+                enforcement: evaluate
 
             """.ReplaceLineEndings("\n"));
         var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken), item => item.Name == "orgs");
@@ -381,6 +386,12 @@ public sealed class ContractTests
         edited.IsDraft = false;
         Assert.Equal("The profile already has a ruleset named Edited.", edited.Problem);
         edited.IsDraft = true;
+        rulesets.Undo();
+
+        // Finishing this file's draft of a base's draft brings the base's back as a draft.
+        var next = rulesets.Entries.Single(entry => entry.SavedName == "Next");
+        next.Editor.IsDraft = false;
+        Assert.Equal("Finished, applies once saved, and the base profile's draft comes back", next.Note);
         rulesets.Undo();
 
         // Taking out this profile's draft brings back the base's, and choosing the saved value keeps a new draft.
