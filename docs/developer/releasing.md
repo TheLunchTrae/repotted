@@ -15,7 +15,8 @@ prereleases do not publish, and promoting one later does not start the
 workflow. The workflow runs the gate on that commit, as Quality does but
 without mise's tool cache, packs `packages/cli` with `pnpm pack`, which builds
 the bundle and replaces the `workspace:` range, and publishes the tarball to
-npm with trusted publishing and provenance.
+npm with trusted publishing and provenance. Releases published close together
+publish one at a time, in turn.
 
 npm accepts the publish only from a trusted publisher: this repository,
 `publish.yml`, and the `npm` environment. npm adds a trusted publisher only to

@@ -8,9 +8,12 @@ on:
 permissions:
   contents: read
 
+# Every published release joins this group, desktop ones too, so a queue of
+# one would cancel a waiting publish when a third release arrives.
 concurrency:
   group: publish
   cancel-in-progress: false
+  queue: max
 
 jobs:
   verify:
