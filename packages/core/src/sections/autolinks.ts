@@ -46,6 +46,7 @@ export function planAutolinks(desired: readonly AutolinkEntry[], live: LiveAutol
           section: 'autolinks',
           action: 'delete',
           target: entry.key_prefix,
+          entry: { name: entry.key_prefix },
           fields: [],
           request: { method: 'DELETE', path: `${path}/${current.id}` },
         });
@@ -66,6 +67,7 @@ export function planAutolinks(desired: readonly AutolinkEntry[], live: LiveAutol
       section: 'autolinks',
       action: 'create',
       target: entry.key_prefix,
+      entry: { name: entry.key_prefix },
       fields: current === undefined ? [] : fields,
       request: { method: 'POST', path, body: wanted },
     });

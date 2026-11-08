@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Repotted.Desktop.Services;
 
 namespace Repotted.Desktop.ViewModels;
@@ -64,7 +63,7 @@ internal sealed record DiffLine(DiffKind Kind, string Text, string? Tag = null, 
 /// fills in never show. This only shapes what the app shows; the plan decides
 /// what differs.
 /// </summary>
-internal static partial class PlanDiff
+internal static class PlanDiff
 {
     private static readonly string[] SettingsSections = ["repository", "merge", "actions", "security", "custom_properties", "pages"];
 
@@ -93,8 +92,8 @@ internal static partial class PlanDiff
             {
                 _ when SettingsSections.Contains(name) && value is JsonObject settings => SettingsUnits(name, settings, section, plan.Warnings),
                 ("rulesets" or "environments" or "labels", JsonArray entries) =>
-                    EntryUnits(entries, section, "name", ignoreCase: name != "rulesets", name == "environments", plan.Warnings, $"Skipped {name[..^1]}"),
-                ("autolinks", JsonArray entries) => EntryUnits(entries, section, "key_prefix", ignoreCase: false, policies: false, plan.Warnings, null),
+                    EntryUnits(entries, section, "name", plan.Warnings, $"Skipped {name[..^1]}"),
+                ("autolinks", JsonArray entries) => EntryUnits(entries, section, "key_prefix", plan.Warnings, null),
                 _ => null,
             };
             if (units is null)
@@ -201,41 +200,30 @@ internal static partial class PlanDiff
     }
 
     /// <summary>
-    /// The entries of a list, one unit each. A created entry has nothing now,
-    /// and a deleted one has its name now and <c>absent: true</c> after. An
-    /// environment's branch policy is a change of its own, named
-    /// <c>environment: type pattern</c>; GitHub can't change an autolink, so the
-    /// plan deletes one and makes it again with the fields that differ.
+    /// The entries of a list, one unit each, with the changes that name each
+    /// entry as the profile writes it. A created entry has nothing now, and a
+    /// deleted one has its name now and <c>absent: true</c> after. An
+    /// environment's branch policy is a change of its own; GitHub can't change
+    /// an autolink, so the plan deletes one and makes it again with the fields
+    /// that differ.
     /// </summary>
     private static List<Unit> EntryUnits(
         JsonArray entries,
         IReadOnlyList<IndexedChange> changes,
         string key,
-        bool ignoreCase,
-        bool policies,
         IReadOnlyList<string> warnings,
         string? skipped)
     {
-        var comparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        var names = entries.OfType<JsonObject>().Select(entry => entry[key]?.GetValue<string>() ?? "").ToList();
-        // A branch policy belongs to the longest environment name it starts
-        // with, and a target that is an environment's own name is that one's.
-        bool Policy(string name, string target) =>
-            target.StartsWith($"{name}: ", comparison)
-            && !names.Any(other => string.Equals(other, target, comparison)
-                || (other.Length > name.Length && target.StartsWith($"{other}: ", comparison)));
         List<Unit> units = [];
         foreach (var entry in entries.OfType<JsonObject>())
         {
             var name = entry[key]?.GetValue<string>() ?? "";
-            var own = changes.Where(item => string.Equals(item.Change.Target, name, comparison)).ToList();
-            var branchPolicies = policies
-                ? changes.Where(item => Policy(name, item.Change.Target)).ToList()
-                : [];
+            var named = changes.Where(item => item.Change.Entry?.Name == name).ToList();
+            var own = named.Where(item => item.Change.Entry?.BranchPolicy is null).ToList();
+            var branchPolicies = named.Where(item => item.Change.Entry?.BranchPolicy is not null).ToList();
             JsonObject? now = (JsonObject)entry.DeepClone();
             var after = (JsonObject)entry.DeepClone();
-            var remade = own.Any(item => item.Change.Action == "create" && item.Change.Fields.Count > 0)
-                && own.Any(item => item.Change.Action == "delete");
+            var remade = own.Any(item => item.Change.Action == "create") && own.Any(item => item.Change.Action == "delete");
             foreach (var item in own)
             {
                 switch (item.Change.Action)
@@ -267,11 +255,10 @@ internal static partial class PlanDiff
             }
             foreach (var item in branchPolicies)
             {
-                if (now is null || PolicyName().Match(item.Change.Target[(name.Length + 2)..]) is not { Success: true } match)
+                if (now is null || item.Change.Entry?.BranchPolicy is not { Name: var pattern, Type: var type })
                 {
                     continue;
                 }
-                var (type, pattern) = (match.Groups["type"].Value, match.Groups["pattern"].Value);
                 var list = now["branch_policies"] as JsonArray ?? [];
                 now["branch_policies"] = list;
                 if (item.Change.Action == "create")
@@ -302,9 +289,6 @@ internal static partial class PlanDiff
         }
         return units;
     }
-
-    [GeneratedRegex("^(?<type>branch|tag) (?<pattern>.+)$")]
-    private static partial Regex PolicyName();
 
     /// <summary>
     /// A unit's lines: the same where both sides agree, removed and added where

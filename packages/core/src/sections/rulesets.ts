@@ -168,6 +168,7 @@ export function planRulesets(desired: readonly RulesetEntry[], live: LiveRuleset
           section: 'rulesets',
           action: 'delete',
           target: entry.name,
+          entry: { name: entry.name },
           fields: [],
           request: { method: 'DELETE', path: `${base}/${current.id}` },
         });
@@ -178,6 +179,7 @@ export function planRulesets(desired: readonly RulesetEntry[], live: LiveRuleset
         section: 'rulesets',
         action: 'create',
         target: entry.name,
+        entry: { name: entry.name },
         fields: bodyChanges(body, undefined),
         request: { method: 'POST', path: base, body },
       });
@@ -187,6 +189,7 @@ export function planRulesets(desired: readonly RulesetEntry[], live: LiveRuleset
         section: 'rulesets',
         action: 'update',
         target: entry.name,
+        entry: { name: entry.name },
         fields: bodyChanges(body, current.ruleset),
         request: { method: 'PUT', path: `${base}/${current.id}`, body },
       });

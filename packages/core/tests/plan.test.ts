@@ -370,6 +370,37 @@ drafts:
     expect(github.writes).toEqual([]);
   });
 
+  test('applies a saved plan whose changes name the list entries they act on', async () => {
+    const github = new FakeGitHub({
+      autolinks: [{ id: 1, key_prefix: 'JIRA-', url_template: 'https://old.example/<num>', is_alphanumeric: true }],
+    });
+    const plan = await createPlan(github, repo, {
+      autolinks: [{ key_prefix: 'JIRA-', url_template: 'https://jira.example/<num>' }],
+      rulesets: [{ name: 'Main', rules: [{ type: 'deletion' }] }],
+      environments: [
+        {
+          name: 'Prod: EU',
+          deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+          branch_policies: [{ name: 'v*', type: 'tag' }],
+        },
+      ],
+      labels: [{ name: 'bug', color: 'd73a4a' }],
+    });
+    expect(plan.changes.map((change) => [change.section, change.entry])).toEqual([
+      ['autolinks', { name: 'JIRA-' }],
+      ['autolinks', { name: 'JIRA-' }],
+      ['rulesets', { name: 'Main' }],
+      ['environments', { name: 'Prod: EU' }],
+      ['environments', { name: 'Prod: EU', branch_policy: { name: 'v*', type: 'tag' } }],
+      ['labels', { name: 'bug' }],
+    ]);
+
+    // Apply compares the saved changes with a new plan's, so reading one back must keep each entry.
+    const saved = parsePlan(JSON.parse(JSON.stringify(plan)));
+    expect(saved.changes).toEqual(plan.changes);
+    expect(await applyPlan(github, saved)).toHaveLength(plan.changes.length);
+  });
+
   test('never runs requests edited into a saved plan', async () => {
     const github = new FakeGitHub();
     const plan = await createPlan(github, repo, { repository: { has_wiki: false } });

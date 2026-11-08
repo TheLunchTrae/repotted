@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { Change, Section, SectionPlan } from './change.js';
+import type { Change, Section, SectionPlan, SettingsSection } from './change.js';
 import { type GitHub, GitHubError, type Method, repoPath, type RepoRef } from './github.js';
 import { fieldChanges } from './match.js';
 import { requiredPermission } from './permissions.js';
@@ -188,7 +188,7 @@ export async function readEndpoints(
 
 /** The change that brings one setting in line, if it needs one. */
 export function planEndpoint(
-  section: Section,
+  section: SettingsSection,
   endpoint: Endpoint,
   desired: unknown,
   live: EndpointValue,

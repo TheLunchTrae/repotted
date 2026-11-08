@@ -11,6 +11,17 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   file.
 - `plan` prints the plan, the same document `--out` saves:
   `{ repository, desired, changes, skipped, warnings, access, locks }`.
+  Each change is `{ section, action, target, fields, request }`: `action` is
+  `create`, `update` or `delete`, `target` names what it writes for people to
+  read, `fields` lists what it changes as `{ field, from, to }`, and `request`
+  is the write it makes. A change to an autolink, ruleset, environment or
+  label also has `entry`, `{ name }`, the entry it acts on as the profile
+  writes it: an autolink's key prefix, or the entry's name. A change to one
+  of an environment's branch policies names the environment there, with
+  `branch_policy` as `{ name, type }`. Find a change's entry by `entry` rather
+  than by `target`, since two targets can read the same. GitHub can't edit an
+  autolink, so a plan changes one with a `delete` and a `create` of the same
+  `entry`, and the `create`'s `fields` say what differs.
   `skipped` lists the profile's drafts as `{ section, target }`, where
   `target` is a draft setting's key, a draft autolink's key prefix, or a
   draft entry's name. `access` is `{ role, app }`: `role` is your role on the

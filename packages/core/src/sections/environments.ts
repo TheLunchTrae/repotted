@@ -199,6 +199,7 @@ export function planEnvironments(
           section: 'environments',
           action: 'delete',
           target: name,
+          entry: { name: entry.name },
           fields: [],
           request: { method: 'DELETE', path },
         });
@@ -214,6 +215,7 @@ export function planEnvironments(
         section: 'environments',
         action: current === undefined ? 'create' : 'update',
         target: name,
+        entry: { name: entry.name },
         fields: bodyChanges(body, current?.settings),
         request: { method: 'PUT', path, body },
       });
@@ -230,6 +232,7 @@ export function planEnvironments(
           section: 'environments',
           action: 'create',
           target: `${name}: ${type} ${policy.name}`,
+          entry: { name: entry.name, branch_policy: { name: policy.name, type } },
           fields: [
             { field: 'name', to: policy.name },
             { field: 'type', to: type },
@@ -245,6 +248,7 @@ export function planEnvironments(
         section: 'environments',
         action: 'delete',
         target: `${name}: ${policy.type} ${policy.name}`,
+        entry: { name: entry.name, branch_policy: { name: policy.name, type: policy.type } },
         fields: [],
         request: { method: 'DELETE', path: `${path}/deployment-branch-policies/${policy.id}` },
       });

@@ -15,7 +15,8 @@
 - **Plan**: the changes, in order, that bring a repository in line with a
   profile, with the writes each one makes. Planning only reads.
 - **Change**: one create, update, or delete of one target, such as the merge
-  methods or a ruleset, with the fields it changes.
+  methods or a ruleset, with the fields it changes. A change to an autolink,
+  ruleset, environment, or label names that entry.
 - **Apply**: making a reviewed plan's changes. Apply plans again first and
   writes only when that yields the same changes.
 - **Stale plan**: a plan the repository has drifted from since it was made.

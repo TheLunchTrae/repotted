@@ -34,7 +34,9 @@ CLI and the MCP server over that engine.
 
 - Apply writes only what a reviewed plan lists. It plans again and refuses
   when the result differs; it never executes requests read from a saved plan.
-  Keep that property when you change the plan format or the engine.
+  Keep that property when you change the plan format or the engine: a new
+  member of a change also goes into `savedChange`, as
+  [Plans](docs/developer/architecture.md#plans) explains.
 - A profile manages only what it names. Settings, rulesets, environments, and
   labels it leaves out stay as they are; a ruleset, environment, or label is
   deleted only by an `absent: true` entry.

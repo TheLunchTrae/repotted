@@ -155,9 +155,9 @@ internal static class PlanSections
     }
 
     /// <summary>
-    /// A section of named entries: rulesets, environments or labels. A new entry is
-    /// one row, a changed one a row for each part that differs, and an entry
-    /// the profile removes one row.
+    /// A section of named entries: autolinks, rulesets, environments or
+    /// labels. A new entry is one row, a changed one a row for each part that
+    /// differs, and an entry the profile removes one row.
     /// </summary>
     private static CompareSectionViewModel Entries(
         string title,
@@ -172,30 +172,31 @@ internal static class PlanSections
         {
             return new CompareSectionViewModel(title, [], [], $"Repotted could not read the {name}: {skipped[$"Skipped {name}: ".Length..]}", skippedBy: skipped);
         }
-        // GitHub matches environment names without regard to case, and a
-        // branch policy's target starts with its environment's name.
-        var environments = name == "environments";
-        var comparer = environments ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        // Each change names its entry as the profile writes it.
         List<CompareRow> differences = [];
-        HashSet<string> touched = new(comparer);
+        HashSet<string> touched = new(StringComparer.Ordinal);
         var section = Changes(plan).Where(item => item.Change.Section == name).ToList();
         foreach (var (change, index, locked) in section)
         {
             var exclusion = leaveOut(index, null);
-            touched.Add(change.Target);
+            var named = change.Entry;
+            if (named is not null)
+            {
+                touched.Add(named.Name);
+            }
             // GitHub can't change an autolink, so the plan deletes one and makes it
-            // again, and the row shows what differs.
-            var remade = change.Action == "delete"
-                && section.Any(other => other.Change.Action == "create" && other.Change.Target == change.Target && other.Change.Fields.Count > 0);
-            if (remade)
+            // again, and the create's row shows what differs.
+            var remade = named is not null
+                && section.Any(other => other.Change.Action == "delete" && other.Change.Entry == named)
+                && section.Any(other => other.Change.Action == "create" && other.Change.Entry == named);
+            if (remade && change.Action == "delete")
             {
                 continue;
             }
-            // An environment's branch policy is named "environment: type pattern".
-            var policy = environments && change.Target.Contains(": ", StringComparison.Ordinal);
+            var policy = named?.BranchPolicy is not null;
             switch (change.Action)
             {
-                case "create" when name == "autolinks" && change.Fields.Count > 0:
+                case "create" when remade:
                     foreach (var field in change.Fields)
                     {
                         foreach (var difference in Differences(field))
@@ -238,8 +239,7 @@ internal static class PlanSections
         foreach (var entry in entries.OfType<JsonObject>())
         {
             var entryName = entry[key]?.GetValue<string>() ?? "";
-            if (touched.Contains(entryName)
-                || (environments && touched.Any(target => target.StartsWith($"{entryName}: ", StringComparison.OrdinalIgnoreCase))))
+            if (touched.Contains(entryName))
             {
                 continue;
             }

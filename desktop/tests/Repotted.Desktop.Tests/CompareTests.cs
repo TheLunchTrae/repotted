@@ -229,7 +229,7 @@ public sealed class CompareTests : ViewModelTests
               {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"quality"}]}}]}]}
             """,
             """
-            {"section":"rulesets","action":"update","target":"Main",
+            {"section":"rulesets","action":"update","target":"Main","entry":{"name":"Main"},
              "fields":[{"field":"rules",
                "from":[{"type":"pull_request","parameters":{"allowed_merge_methods":["rebase","squash"]}},{"type":"non_fast_forward"}],
                "to":[{"type":"pull_request","parameters":{"allowed_merge_methods":["squash","rebase"]}},
@@ -253,13 +253,13 @@ public sealed class CompareTests : ViewModelTests
         var compare = await Compare(Plan(
             """{"environments":[{"name":"NPM","wait_timer":5,"branch_policies":[{"name":"v*","type":"tag"}]},{"name":"staging"}]}""",
             """
-            {"section":"environments","action":"update","target":"npm",
+            {"section":"environments","action":"update","target":"npm","entry":{"name":"NPM"},
              "fields":[{"field":"wait_timer","from":0,"to":5},
                {"field":"deployment_branch_policy","from":null,"to":{"protected_branches":false,"custom_branch_policies":true}}],
              "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/environments/npm","body":{}}},
-            {"section":"environments","action":"delete","target":"npm: branch main","fields":[],
+            {"section":"environments","action":"delete","target":"npm: branch main","entry":{"name":"NPM","branch_policy":{"name":"main","type":"branch"}},"fields":[],
              "request":{"method":"DELETE","path":"/repos/TheLunchTrae/repotted/environments/npm/deployment-branch-policies/3"}},
-            {"section":"environments","action":"create","target":"npm: tag v*",
+            {"section":"environments","action":"create","target":"npm: tag v*","entry":{"name":"NPM","branch_policy":{"name":"v*","type":"tag"}},
              "fields":[{"field":"name","to":"v*"},{"field":"type","to":"tag"}],
              "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/environments/npm/deployment-branch-policies","body":{"name":"v*","type":"tag"}}}
             """));
@@ -279,6 +279,25 @@ public sealed class CompareTests : ViewModelTests
     }
 
     [AvaloniaFact]
+    public async Task An_environment_whose_name_holds_a_colon_is_an_environment_of_its_own()
+    {
+        // "Prod: EU" reads like one of Prod's branch policies, but its entry names it.
+        var compare = await Compare(Plan(
+            """{"environments":[{"name":"Prod"},{"name":"Prod: EU"}]}""",
+            """
+            {"section":"environments","action":"create","target":"Prod: EU","entry":{"name":"Prod: EU"},
+             "fields":[{"field":"wait_timer","to":0}],
+             "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/environments/Prod%3A%20EU","body":{}}}
+            """));
+
+        var environments = compare.Sections.Single();
+        Assert.Equal(
+            [new CompareRow(CompareKind.Adds, "Prod: EU", "new environment", "Not on GitHub", "Created")],
+            environments.Rows);
+        Assert.Equal("1 environment matches.", environments.Summary);
+    }
+
+    [AvaloniaFact]
     public async Task Labels_show_each_rename_change_creation_and_deletion()
     {
         var compare = await Compare(Plan(
@@ -287,12 +306,12 @@ public sealed class CompareTests : ViewModelTests
               {"name":"priority: high","color":"b60205"},{"name":"wontfix","absent":true},{"name":"bug"}]}
             """,
             """
-            {"section":"labels","action":"delete","target":"wontfix","fields":[],
+            {"section":"labels","action":"delete","target":"wontfix","entry":{"name":"wontfix"},"fields":[],
              "request":{"method":"DELETE","path":"/repos/TheLunchTrae/repotted/labels/wontfix"}},
-            {"section":"labels","action":"update","target":"type: feature",
+            {"section":"labels","action":"update","target":"type: feature","entry":{"name":"type: feature"},
              "fields":[{"field":"name","from":"enhancement","to":"type: feature"}],
              "request":{"method":"PATCH","path":"/repos/TheLunchTrae/repotted/labels/enhancement","body":{"new_name":"type: feature"}}},
-            {"section":"labels","action":"create","target":"priority: high","fields":[],
+            {"section":"labels","action":"create","target":"priority: high","entry":{"name":"priority: high"},"fields":[],
              "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/labels","body":{"name":"priority: high","color":"b60205"}}}
             """));
 
@@ -315,7 +334,7 @@ public sealed class CompareTests : ViewModelTests
              "rulesets":[{"name":"Main"},{"name":"main"},{"name":"Main: Tags"}]}
             """,
             """
-            {"section":"rulesets","action":"update","target":"Main: Tags",
+            {"section":"rulesets","action":"update","target":"Main: Tags","entry":{"name":"Main: Tags"},
              "fields":[{"field":"enforcement","from":"disabled","to":"active"}],
              "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/rulesets/8","body":{}}}
             """));
@@ -408,9 +427,9 @@ public sealed class CompareTests : ViewModelTests
                 "request":{"method":"PATCH","path":"/repos/TheLunchTrae/repotted","body":{} } },
                {"section":"pages","action":"create","target":"GitHub Pages site","fields":[],
                 "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/pages","body":{"build_type":"workflow"} } },
-               {"section":"autolinks","action":"delete","target":"JIRA-","fields":[],
+               {"section":"autolinks","action":"delete","target":"JIRA-","entry":{"name":"JIRA-"},"fields":[],
                 "request":{"method":"DELETE","path":"/repos/TheLunchTrae/repotted/autolinks/1"} },
-               {"section":"autolinks","action":"create","target":"JIRA-",
+               {"section":"autolinks","action":"create","target":"JIRA-","entry":{"name":"JIRA-"},
                 "fields":[{"field":"url_template","from":"https://old.example.com/<num>","to":"https://jira.example.com/<num>"}],
                 "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/autolinks","body":{} } }],
              "skipped":[],"warnings":["Skipped security.dependabot_runner_settings.runner_labels: GitHub keeps none with standard runners"],
