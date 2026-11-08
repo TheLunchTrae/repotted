@@ -106,6 +106,8 @@ Click **New profile** and choose what it starts from:
   Capturing only reads from GitHub. The profile appears in the list, and in
   a GitHub repository that keeps your profiles, only once the capture
   finishes. A capture that fails or that you cancel leaves nothing behind.
+  If the app quits during a capture, the folder can keep a file whose name
+  starts with a dot and ends in `.repotted-capture`. It is safe to delete.
 
 The app never overwrites a file that is already in the folder.
 

@@ -40,6 +40,10 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     private readonly Action cancel;
     private readonly Action released;
     private readonly ISet<string> captures;
+    private readonly Func<Func<Task>, Task> exclusive;
+
+    /// <summary>The profile file this form's capture will make, while it runs.</summary>
+    private string? capturing;
 
     /// <summary>Stops a capture once the form closes, however it closes.</summary>
     private readonly CancellationTokenSource closed = new();
@@ -55,6 +59,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     /// <param name="cancel">Closes the form.</param>
     /// <param name="released">Runs once the form gives up a name it held, so another form can take it.</param>
     /// <param name="captures">The profile files that captures still running will make, which every form shares.</param>
+    /// <param name="exclusive">Runs work apart from saves and syncs, so none of them reads or writes the folder meanwhile.</param>
     public NewProfileViewModel(
         RepottedClient client,
         string folder,
@@ -64,7 +69,8 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         Func<string, IReadOnlyList<string>, Task> created,
         Action cancel,
         Action released,
-        ISet<string> captures)
+        ISet<string> captures,
+        Func<Func<Task>, Task> exclusive)
     {
         this.client = client;
         this.folder = folder;
@@ -72,6 +78,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         this.cancel = cancel;
         this.released = released;
         this.captures = captures;
+        this.exclusive = exclusive;
         Bases = bases;
         Repositories = repositories;
         Base = bases.Count > 0 ? bases[0] : null;
@@ -193,10 +200,11 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         return InUse(name);
     }
 
-    /// <summary>Why the folder has no room for <paramref name="name"/>: a file of that name, or a capture making one.</summary>
+    /// <summary>Why the folder has no room for <paramref name="name"/>: a file of that name, or another capture making one.</summary>
     private string? InUse(string name) =>
         Taken(name) is { } taken ? $"{taken} is already in this folder."
-        : captures.Contains(Path.Combine(folder, $"{name}.yaml")) ? $"Another capture is making {name}.yaml."
+        : Path.Combine(folder, $"{name}.yaml") is var file && captures.Contains(file) && !string.Equals(file, capturing, StringComparison.OrdinalIgnoreCase)
+            ? $"Another capture is making {name}.yaml."
         : null;
 
     public bool HasProblem => Problem is not null;
@@ -268,26 +276,24 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
                     // commits, and no list shows, a capture still under way.
                     hold = Hold(fileName);
                     captures.Add(file);
+                    capturing = file;
                     warnings = await client.CaptureAsync(Repository!, hold, closed.Token).ConfigureAwait(true);
-                    if (disposed)
+                    // Apart from saves and syncs, so a pull cannot write the name between
+                    // the check and the move: on macOS and Linux a move that does not
+                    // overwrite checks and then renames, which replaces a file written
+                    // in between. Only reading GitHub runs outside, since it takes long.
+                    var placed = false;
+                    await exclusive(() =>
                     {
-                        return;
-                    }
-                    // A sync may have brought in a file of this name while GitHub was
-                    // read. One of the same name makes the move fail; one that differs
-                    // only in case would not on every disk, so it is checked first.
-                    if (Taken(name) is { } other && other != fileName)
+                        if (!disposed)
+                        {
+                            Error = Place(name, hold, file);
+                            placed = Error is null;
+                        }
+                        return Task.CompletedTask;
+                    }).ConfigureAwait(true);
+                    if (!placed)
                     {
-                        Error = $"{other} is already in this folder.";
-                        return;
-                    }
-                    try
-                    {
-                        File.Move(hold, file, overwrite: false);
-                    }
-                    catch (IOException) when (Taken(name) is { } taken)
-                    {
-                        Error = $"{taken} is already in this folder.";
                         return;
                     }
                     break;
@@ -313,15 +319,46 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         }
         finally
         {
+            Working = false;
             if (hold is not null)
             {
-                // A capture that failed or was stopped leaves nothing behind, and
-                // any capture gives up the name once it ends.
-                File.Delete(hold);
+                // Any capture gives up the name once it ends.
                 captures.Remove(file);
+                capturing = null;
                 released();
+                // A capture that failed or was stopped leaves nothing behind, unless the
+                // file cannot go; it then holds no name, as when the app quits.
+                try
+                {
+                    File.Delete(hold);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                }
             }
-            Working = false;
+        }
+    }
+
+    /// <summary>
+    /// Moves a finished capture to the profile's name, and says why it cannot:
+    /// a sync may have brought in a file of that name while GitHub was read.
+    /// One of the same name makes the move fail; one that differs only in case
+    /// would not on every disk, so it is checked first.
+    /// </summary>
+    private string? Place(string name, string hold, string file)
+    {
+        if (Taken(name) is { } other && other != Path.GetFileName(file))
+        {
+            return $"{other} is already in this folder.";
+        }
+        try
+        {
+            File.Move(hold, file, overwrite: false);
+            return null;
+        }
+        catch (IOException) when (Taken(name) is { } taken)
+        {
+            return $"{taken} is already in this folder.";
         }
     }
 

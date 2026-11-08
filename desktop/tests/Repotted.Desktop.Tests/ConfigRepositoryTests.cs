@@ -518,6 +518,54 @@ public sealed class ConfigRepositoryTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_finished_capture_waits_for_a_sync_under_way_before_it_takes_its_name()
+    {
+        var copy = Synced();
+        var file = Path.Combine(copy, "base.yaml");
+        File.WriteAllText(file, "repository: { has_wiki: false }\n");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var made = Path.Combine(copy, "app.yaml");
+        var captured = new TaskCompletionSource();
+        var pulling = new TaskCompletionSource();
+        var cli = new FakeCli()
+            .On(Command(copy), Sync())
+            .On(folders.List(copy), Listing(file))
+            .On($"profile {file} --json", Documents.ResolvedBase(file))
+            .OnCapture("lunch/app", async (output, _) =>
+            {
+                await captured.Task;
+                File.WriteAllText(output, "repository:\n  has_wiki: true\n");
+                return """{"repository":"lunch/app","profile":{},"warnings":[]}""";
+            });
+        var profiles = Profiles(cli);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        profiles.StartNew("lunch/app");
+        var form = profiles.Creating!;
+        var capturing = form.CreateCommand.ExecuteAsync(null);
+        // A sync that pulls a profile of the same name, and is still running when the capture ends.
+        cli.On(Command(copy), async _ =>
+        {
+            await pulling.Task;
+            File.WriteAllText(made, "repository: { has_issues: true }\n");
+            return Sync(pulled: ["app.yaml"]);
+        });
+        var syncing = profiles.RefreshAsync();
+
+        captured.SetResult();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(File.Exists(made));
+        Assert.True(form.Working);
+        pulling.SetResult();
+        await syncing;
+        await capturing;
+
+        Assert.Equal("app.yaml is already in this folder.", form.Error);
+        Assert.Equal("repository: { has_issues: true }\n", File.ReadAllText(made));
+        Assert.Empty(Directory.EnumerateFiles(copy, "*.repotted-capture"));
+    }
+
+    [AvaloniaFact]
     public async Task Reconnecting_adds_the_local_profiles_the_repository_does_not_have()
     {
         var copy = Synced();

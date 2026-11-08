@@ -170,7 +170,7 @@ public sealed class ContractTests
         var @base = new ProfileItemViewModel(Assert.Single(listings), null);
         string? made = null;
         NewProfileViewModel Form(string name) =>
-            new(client, folder, [@base], [], null, (file, _) => Task.FromResult(made = file), () => { }, () => { }, new HashSet<string>()) { Name = name };
+            new(client, folder, [@base], [], null, (file, _) => Task.FromResult(made = file), () => { }, () => { }, new HashSet<string>(), work => work()) { Name = name };
 
         var extending = Form("extending");
         extending.Extends = true;

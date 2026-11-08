@@ -229,9 +229,10 @@ is one, and the sync state the page shows.
 
 Saves and the page's syncs share one chain (`ExclusiveAsync` and
 `SyncAsync`), so a sync never reads a file a save is writing. The connect
-form's first sync runs outside it. So do captures, which write a
-dot-prefixed file that no sync reads; the profile syncs once it is whole, as
-the [New profile form](#new-profile-form) describes.
+form's first sync runs outside it. So does a capture's read of GitHub, which
+writes a dot-prefixed file that no sync reads; only the move of the finished
+capture to the profile's name joins the chain, and the profile syncs once it
+is whole, as the [New profile form](#new-profile-form) describes.
 
 ## Profile editor
 
@@ -324,18 +325,27 @@ starts from can't change while it works. A capture writes a file of its own,
 app capturing one name never share it. The profile takes its name only once
 the capture is whole. `ProfilesViewModel` keeps the names of the captures
 still running, in open and closed forms alike, and those names are held
-until each capture ends.
+against every other form until each capture ends.
 
-| State                      | Event                                                       | Next                                                                                                                      |
-| -------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Editing                    | Create                                                      | Checks the name again, since the folder may have changed. A file of that name, or a capture running, refuses it.          |
-| Creating, empty or extends | The file is written                                         | Created; the list opens it.                                                                                               |
-| Creating, capture          | Start                                                       | Holding: `repotted capture --output` writes the capture's file.                                                           |
-| Holding                    | The capture ends                                            | The capture's file moves to the profile's name: Created, and the name is no longer held.                                  |
-| Holding                    | The capture ends, and a file of that name came in meanwhile | Editing, with "is already in this folder"; the file that came in stays, and the capture's file is removed.                |
-| Holding                    | The capture fails                                           | Editing, with the error; the capture's file is removed.                                                                   |
-| Holding                    | The form closes                                             | The capture is stopped and its file removed, also when the app is left.                                                   |
-| Holding                    | The app quits                                               | The capture's file may stay behind. It holds no name, and no later capture writes to it, so it stays until it is deleted. |
+The move to the profile's name runs in the chain that keeps saves and syncs
+apart, after any sync under way, so a pull can't write that name between the
+check and the move. On macOS and Linux, .NET's move that doesn't overwrite
+checks for the file and then renames, so it can still replace a file of that
+name that another program writes at that moment; on Windows the move refuses
+it.
+
+| State                      | Event                                                      | Next                                                                                                                      |
+| -------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Editing                    | Create                                                     | Checks the name again, since the folder may have changed. A file of that name, or another capture running, refuses it.    |
+| Creating, empty or extends | The file is written                                        | Created; the list opens it.                                                                                               |
+| Creating, capture          | Start                                                      | Holding: `repotted capture --output` writes the capture's file.                                                           |
+| Holding                    | The capture ends                                           | Placing, once any save or sync under way ends; no sync starts until it does.                                              |
+| Placing                    | The name is free                                           | The capture's file moves to the profile's name: Created, and the name is no longer held.                                  |
+| Placing                    | A file of that name came in meanwhile                      | Editing, with "is already in this folder"; the file that came in stays, and the capture's file is removed.                |
+| Holding                    | The capture fails                                          | Editing, with the error; the capture's file is removed.                                                                   |
+| Holding or placing         | The form closes                                            | The capture is stopped, or its move skipped, and its file removed, also when the app is left.                             |
+| Any end of a capture       | Its file can't be removed, such as when the folder is gone | The name is no longer held and the form is editable again; the file stays, as when the app quits.                         |
+| Holding                    | The app quits                                              | The capture's file may stay behind. It holds no name, and no later capture writes to it, so it stays until it is deleted. |
 
 ## Connect form
 

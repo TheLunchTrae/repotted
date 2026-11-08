@@ -2113,7 +2113,7 @@ public sealed class ViewModelTests : IDisposable
     public void A_profile_extends_another_only_once_one_is_chosen()
     {
         using var form = new NewProfileViewModel(
-            new RepottedClient(new FakeCli()), folders.Profiles, [], [], null, (_, _) => Task.CompletedTask, () => { }, () => { }, new HashSet<string>())
+            new RepottedClient(new FakeCli()), folders.Profiles, [], [], null, (_, _) => Task.CompletedTask, () => { }, () => { }, new HashSet<string>(), work => work())
         {
             Name = "libraries",
             Extends = true,
@@ -2262,6 +2262,61 @@ public sealed class ViewModelTests : IDisposable
         Assert.Equal("repository:\n  has_wiki: false\n", File.ReadAllText(made));
         Assert.Equal(made, profiles.Current?.File);
         Assert.True(form.Editable);
+    }
+
+    [AvaloniaFact]
+    public async Task A_capture_is_not_held_against_its_own_form()
+    {
+        var (profiles, cli, _) = await OpenOrgs("TheLunchTrae/one", "TheLunchTrae/two");
+        var finish = new Dictionary<string, TaskCompletionSource> { ["TheLunchTrae/one"] = new(), ["TheLunchTrae/two"] = new() };
+        foreach (var (repository, done) in finish)
+        {
+            cli.OnCapture(repository, async (_, _) =>
+            {
+                await done.Task;
+                return NotFound;
+            });
+        }
+        profiles.StartNew("TheLunchTrae/one");
+        var first = profiles.Creating!.CreateCommand.ExecuteAsync(null);
+        profiles.Creating!.CancelCommand.Execute(null);
+        profiles.StartNew("TheLunchTrae/two");
+        var form = profiles.Creating!;
+        var second = form.CreateCommand.ExecuteAsync(null);
+
+        // The closed form's capture ends first, and the open form checks its name again.
+        finish["TheLunchTrae/one"].SetResult();
+        await first;
+
+        Assert.Null(form.Problem);
+        finish["TheLunchTrae/two"].SetResult();
+        await second;
+    }
+
+    [AvaloniaFact]
+    public async Task A_capture_whose_file_cannot_go_still_lets_go_of_its_name()
+    {
+        var cli = new FakeCli()
+            .On(folders.List(), Documents.NoProfiles)
+            .OnCapture("TheLunchTrae/repotted", output =>
+            {
+                File.WriteAllText(output, "repository:\n");
+                // The folder goes while GitHub is read, so the file can't be removed.
+                Directory.Delete(folders.Profiles, recursive: true);
+                return NotFound;
+            });
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => ["TheLunchTrae/repotted"]);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        profiles.StartNew("TheLunchTrae/repotted");
+        var form = profiles.Creating!;
+
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.Equal("Not Found", form.Error);
+        Assert.False(form.Working);
+        profiles.StartNew(null);
+        profiles.Creating!.Name = "repotted";
+        Assert.Null(profiles.Creating.Problem);
     }
 
     [AvaloniaFact]

@@ -356,7 +356,7 @@ internal sealed partial class ProfilesViewModel(
         Connecting = null;
         // Nothing stays selected, so choosing any profile in the list leaves the form.
         Selected = null;
-        Creating = new NewProfileViewModel(client, Folder, Usable, repositories(), repository, CreatedAsync, CancelNew, Released, captures);
+        Creating = new NewProfileViewModel(client, Folder, Usable, repositories(), repository, CreatedAsync, CancelNew, Released, captures, ExclusiveAsync);
     }
 
     /// <summary>
@@ -488,8 +488,10 @@ internal sealed partial class ProfilesViewModel(
     }
 
     /// <summary>
-    /// Runs a save once the sync before it ends, and holds the next sync until
-    /// it ends, so a sync never reads a file a save is writing.
+    /// Runs work that writes the folder, such as a save or the move of a
+    /// finished capture to its profile's name, once the sync before it ends,
+    /// and holds the next sync until it ends. So a sync never reads a file
+    /// being written, and never pulls a file over one being moved into place.
     /// </summary>
     private async Task ExclusiveAsync(Func<Task> work)
     {
