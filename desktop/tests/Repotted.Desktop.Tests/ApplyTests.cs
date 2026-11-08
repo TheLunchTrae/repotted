@@ -64,7 +64,7 @@ public sealed class ApplyTests : IDisposable
         $$"""
         {"chain":[{{Json(@base)}}],"profile":{"repository":{"has_issues":true,"has_wiki":false} },
          "sources":{"repository":{"has_issues":{{Json(@base)}},"has_wiki":{{Json(@base)}} },
-           "merge":{},"actions":{},"rulesets":{},"environments":{} } }
+           "merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{} } }
         """;
 
     private const string WikiChange =
@@ -459,6 +459,29 @@ public sealed class ApplyTests : IDisposable
         cli.On(Planned, () => Plan());
         await page.Apply.ReviewAgainCommand.ExecuteAsync(null);
         Assert.Null(page.Apply.DraftsNote);
+    }
+
+    [AvaloniaFact]
+    public async Task A_one_off_edit_over_the_profile_shows_the_profile_value_under_it()
+    {
+        // The staged file turns issues off, over orgs, which turns them on.
+        var over = Staged()
+            .Replace($"\"has_issues\":{Json(@base)}", $"\"has_issues\":{Json(file)}", StringComparison.Ordinal)
+            .Replace("\"has_issues\":true", "\"has_issues\":false", StringComparison.Ordinal);
+        var cli = Cli().On(Read, over);
+        var page = Open(cli);
+        await page.Apply.OpenAsync();
+        var editor = page.Apply.Edits!;
+
+        // The wiki comes from orgs, as the staged apply resolves it.
+        var wiki = Setting(editor, "has_wiki");
+        Assert.Equal(SettingOrigin.Inherited, wiki.Origin);
+        Assert.Equal(("orgs", false), (wiki.Inherited?.From, wiki.Inherited?.Value.GetValue<bool>()));
+
+        // Issues are the one-off edit's own, and orgs' value is what undoing it brings back.
+        var issues = Setting(editor, "has_issues");
+        Assert.Equal(SettingOrigin.Own, issues.Origin);
+        Assert.Equal(("orgs", true), (issues.Inherited?.From, issues.Inherited?.Value.GetValue<bool>()));
     }
 
     [AvaloniaFact]
