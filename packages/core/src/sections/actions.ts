@@ -1,9 +1,93 @@
 import { z } from 'zod';
 
 import type { Change, SectionPlan } from '../change.js';
+import type { Endpoint } from '../endpoints.js';
 import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
 import type { ActionsSettings } from '../schema.js';
+
+/** Actions settings at endpoints of their own, which apply after the policy. */
+export const actionsEndpoints: readonly Endpoint[] = [
+  {
+    kind: 'field',
+    key: 'access_level',
+    path: '/actions/permissions/access',
+    target: 'access from other repositories',
+    method: 'PUT',
+  },
+  {
+    kind: 'field',
+    key: 'approval_policy',
+    path: '/actions/permissions/fork-pr-contributor-approval',
+    target: 'approval for fork pull request workflows',
+    method: 'PUT',
+  },
+  {
+    kind: 'object',
+    key: 'fork_pr_workflows_private_repos',
+    path: '/actions/permissions/fork-pr-workflows-private-repos',
+    target: 'fork pull request workflows in private repositories',
+    method: 'PUT',
+    fields: [
+      'run_workflows_from_fork_pull_requests',
+      'send_write_tokens_to_workflows',
+      'send_secrets_and_variables',
+      'require_approval_for_fork_pr_workflows',
+    ],
+    carries: [
+      'run_workflows_from_fork_pull_requests',
+      'send_write_tokens_to_workflows',
+      'send_secrets_and_variables',
+      'require_approval_for_fork_pr_workflows',
+    ],
+  },
+  {
+    kind: 'object',
+    key: 'artifact_and_log_retention',
+    path: '/actions/permissions/artifact-and-log-retention',
+    target: 'artifact and log retention',
+    method: 'PUT',
+    fields: ['days'],
+    carries: ['days'],
+  },
+  {
+    kind: 'field',
+    key: 'max_cache_retention_days',
+    path: '/actions/cache/retention-limit',
+    target: 'cache retention',
+    method: 'PUT',
+  },
+  {
+    kind: 'field',
+    key: 'max_cache_size_gb',
+    path: '/actions/cache/storage-limit',
+    target: 'cache storage',
+    method: 'PUT',
+  },
+  {
+    kind: 'object',
+    key: 'oidc_customization_sub',
+    path: '/actions/oidc/customization/sub',
+    target: 'OIDC subject claim',
+    method: 'PUT',
+    fields: ['use_default', 'include_claim_keys', 'use_immutable_subject'],
+    carries: ['use_default', 'include_claim_keys', 'use_immutable_subject'],
+    // GitHub uses the claim keys only in place of the default subject.
+    adjust: (desired) => {
+      if (desired['include_claim_keys'] === undefined) {
+        return { desired };
+      }
+      if (desired['use_default'] === true) {
+        const { include_claim_keys: _keys, ...rest } = desired;
+        return {
+          desired: rest,
+          dropped: { fields: ['include_claim_keys'], reason: 'GitHub ignores claim keys while use_default is true' },
+        };
+      }
+      return { desired: { ...desired, use_default: false } };
+    },
+  },
+];
 
 const livePermissions = z.object({
   enabled: z.boolean(),

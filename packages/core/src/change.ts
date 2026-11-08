@@ -7,7 +7,19 @@ export interface Request {
   readonly body?: unknown;
 }
 
-export type Section = 'repository' | 'merge' | 'actions' | 'rulesets' | 'environments';
+export const sections = [
+  'repository',
+  'merge',
+  'actions',
+  'security',
+  'custom_properties',
+  'pages',
+  'autolinks',
+  'rulesets',
+  'environments',
+] as const;
+
+export type Section = (typeof sections)[number];
 
 /** One write that brings part of a repository in line with its profile. */
 export interface Change {

@@ -5,9 +5,10 @@
 - **Base profile**: a profile that others build on with `extends`. A profile
   that extends it is an **override**.
 - **Section**: one area of a repository's setup that a profile can manage:
-  repository settings, merge methods, Actions policy, rulesets, or deployment
-  environments. Each section
-  has one adapter that reads it and plans its writes.
+  repository settings, merge methods, Actions settings, security settings,
+  custom properties, GitHub Pages, autolinks, rulesets, or deployment
+  environments. Each section has one adapter that reads it and plans its
+  writes.
 - **Config repository**: a GitHub repository that holds a folder of profiles.
   **Sync** brings a local folder and the config repository in line.
 - **Capture**: reading a repository into a profile that describes it as it is.

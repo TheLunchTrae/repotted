@@ -10,7 +10,11 @@ job, so the rules about what Repotted may write live in one place.
 
 `packages/core/src/schema.ts` defines a profile with zod. Its keys are the
 fields that the GitHub REST API's write endpoints take, so GitHub's REST docs
-describe each key. Most sections capture the API's response as it is.
+describe each key. A setting at an endpoint of its own is kept under that
+endpoint's key, with the endpoint's fields inside it when there are several;
+`endpoints.ts` reads and plans those settings, and
+[Settings coverage](settings-coverage.md) lists each with its endpoint. Most
+sections capture the API's response as it is.
 Environments are the exception: `sections/environments.ts` turns GitHub's
 protection rules into `wait_timer`, `reviewers`, and `prevent_self_review`,
 and reads `branch_policies` from a separate endpoint. The schema's objects are
@@ -21,8 +25,10 @@ are.
 `packages/core/src/profile.ts` loads a profile and the chain of profiles it
 `extends`, merges them, and only then validates the result. Validating after
 the merge lets a base profile rely on what the profiles that extend it add.
-Settings merge key by key. A ruleset or environment replaces the base's entry
-of the same name whole. The resolved profile records which file sets each value,
+Settings merge key by key, and so do the keys inside an object of settings,
+such as `selected_actions`. A ruleset, environment, or autolink replaces the
+base's entry of the same name or prefix whole, and `pages: { absent: true }`
+replaces a base's site. The resolved profile records which file sets each value,
 which `repotted profile --json` reports and the desktop app shows.
 
 `editProfile` in the same file edits a profile in place for
@@ -89,7 +95,13 @@ is not checked. Either failure stops planning, so apply never sees it.
 
 A section that GitHub won't let Repotted read gives a warning, and the other
 sections still plan: rulesets on a GitHub plan that doesn't support them, or
-environments with a token that can't list them.
+environments with a token that can't list them. The same holds for each
+setting at an endpoint of its own. A setting the repository doesn't have
+gives a warning with GitHub's reason, and one GitHub refuses with a `403`
+gives a warning that names the permission it needs, from `permissions.ts`.
+`capture` warns only about the refused ones, since a feature the repository
+lacks is no news. A `403` on a write stops apply, and the failure names the
+permission too.
 
 ## Apply
 

@@ -15,9 +15,11 @@ diagnostic and not a failure. `--help` and `--version` still print text.
 - `profile` prints `{ chain, profile, sources }`. `chain` is the profile
   file, then each one it extends, as real paths, with links resolved. `profile` is the
   resolved profile, and `sources` names the file that sets each value:
-  `repository`, `merge` and `actions` by key, with `selected_actions` keys as
-  `selected_actions.<key>` under `actions`, and `rulesets` and `environments`
-  by name. A value whose file is `chain[0]` is set in the profile itself.
+  `repository`, `merge`, `actions`, `security`, `custom_properties` and
+  `pages` by key, with the keys inside an object of settings as
+  `<object>.<key>`, such as `selected_actions.verified_allowed` under
+  `actions`, `autolinks` by key prefix, and `rulesets` and `environments` by
+  name. A value whose file is `chain[0]` is set in the profile itself.
 - `profiles` prints `{ profiles }`, each as `{ name, file, extends, problem }`,
   sorted by file name: the `.yaml` and `.yml` files directly in the folder.
   `file` is a real path, with links resolved, as in `profile`'s `chain`.
