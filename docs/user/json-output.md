@@ -15,8 +15,9 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   setting's key, a draft autolink's key prefix, or a draft entry's name.
   With `--staged`, the document also has `staged`, as
   `{ file, repository, base, exclude }` from `stage` below, and
-  `exclusions`, which says what leaves each change out of the staged apply. Each exclusion is `{ change, field, key, edited }`: `change`
-  is the change's index in `changes`, `field` is the field it leaves out, or
+  `exclusions`, which says what leaves each change out of the staged apply.
+  Each exclusion is `{ change, field, key, edited }`: `change` is the
+  change's index in `changes`, `field` is the field it leaves out, or
   null for a whole ruleset, environment, autolink or Pages site, and `key`
   is what `stage --exclude` takes. A field inside an object of settings gives
   the whole object, which GitHub writes at once. `edited` is true when the
