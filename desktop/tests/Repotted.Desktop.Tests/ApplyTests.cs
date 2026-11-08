@@ -465,8 +465,48 @@ public sealed class ApplyTests : IDisposable
         Assert.Equal("Repotted is still working on this apply, so you can sign out once it is done.", apply.Error);
         planned.SetResult(Plan());
         await planning;
+        // The note goes once the run ends, so it never stands beside what comes after.
+        Assert.Null(apply.Error);
         Assert.True(apply.CanLeave);
         Assert.True(await apply.ConfirmLeaveAsync("sign out"));
+    }
+
+    [AvaloniaFact]
+    public async Task A_wait_to_leave_goes_on_once_the_run_ends()
+    {
+        var (page, cli) = await Reviewing();
+        var apply = page.Apply;
+        var planned = new TaskCompletionSource<string>();
+        cli.On(Planned, _ => planned.Task);
+        var planning = apply.ReviewAgainCommand.ExecuteAsync(null);
+
+        // A lost sign-in waits for the run, since it can't be stopped partway.
+        var leaving = apply.ConfirmLeaveAsync("sign in again", wait: true);
+
+        Assert.False(leaving.IsCompleted);
+        Assert.Null(apply.Error);
+        planned.SetResult(Plan());
+        await planning;
+        Assert.True(await leaving);
+    }
+
+    [AvaloniaFact]
+    public async Task Discarding_the_apply_answers_a_question_about_leaving()
+    {
+        var (page, _) = await Reviewing();
+        var apply = page.Apply;
+        Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        var leaving = apply.ConfirmLeaveAsync("sign out");
+        Assert.True(apply.AskingToLeave);
+
+        apply.DiscardCommand.Execute(null);
+        await apply.ConfirmDiscardCommand.ExecuteAsync(null);
+
+        // The edits went with the apply, so leaving goes on.
+        Assert.Equal(ApplyStep.Discarded, apply.Step);
+        Assert.True(await leaving);
+        Assert.False(apply.AskingToLeave);
+        Assert.Equal(1, page.Closed);
     }
 
     [AvaloniaFact]
@@ -879,6 +919,57 @@ public sealed class ApplyTests : IDisposable
         Assert.Null(shell.Apply);
         Assert.True(shell.ShowingRepositories);
         Assert.True(shell.Repositories.HasUnfinishedApply);
+    }
+
+    [AvaloniaFact]
+    public async Task Closing_the_window_asks_about_unsaved_one_off_edits()
+    {
+        var (window, shell, _) = await ShowList("light");
+        shell.Repositories.ChangeSettingsCommand.Execute(null);
+        await WaitFor(() => shell.Apply?.Step == ApplyStep.Reviewing);
+        var apply = shell.Apply!;
+        Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(window.IsVisible);
+        Assert.True(apply.AskingToLeave);
+        Assert.Contains("To quit, save or undo your one-off edits first.", Texts(window));
+
+        apply.StayHereCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(window.IsVisible);
+        Assert.True(apply.EditsUnsaved);
+
+        window.Close();
+        apply.Edits!.DiscardCommand.Execute(null);
+        await WaitFor(() => !window.IsVisible);
+    }
+
+    [AvaloniaFact]
+    public async Task Closing_the_window_while_the_apply_writes_stays_and_says_why()
+    {
+        var (window, shell, cli) = await ShowList("light");
+        shell.Repositories.ChangeSettingsCommand.Execute(null);
+        await WaitFor(() => shell.Apply?.Step == ApplyStep.Reviewing);
+        var apply = shell.Apply!;
+        var written = new TaskCompletionSource();
+        cli.OnceReady($"apply {plan} --yes --json", Applied, written.Task);
+        apply.ApplyCommand.Execute(null);
+        var applying = apply.ConfirmApplyCommand.ExecuteAsync(null);
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(window.IsVisible);
+        Assert.Contains("Repotted is still working on this apply, so you can quit once it is done.", Texts(window));
+        written.SetResult();
+        await applying;
+        Assert.Equal(ApplyStep.Applied, apply.Step);
+        Assert.Null(apply.Error);
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(window.IsVisible);
     }
 
     private static async Task WaitFor(Func<bool> condition)

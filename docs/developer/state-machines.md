@@ -225,22 +225,25 @@ no other change, apply or discard starts until it ends.
 | Confirming discard                        | Discard apply                                 | Discarded: the file and plan are removed and the page closes. A refused discard returns with the error.                      |
 
 Leaving the page, whether by Back to repositories, by choosing Repositories in
-the sidebar again, or by quitting, signing out or a lost sign-in, goes by
-`CanLeave`: not while a change, a plan or an apply runs, nor while the one-off
-edits are read, saved or unsaved. Choosing Profiles in the sidebar shows that
-page and leaves the apply open behind it, to come back to.
+the sidebar again, or by closing the window, signing out or a lost sign-in,
+goes by `CanLeave`: not while a change, a plan or an apply runs, nor while the
+one-off edits are read, saved or unsaved. A discarded apply can always leave.
+Choosing Profiles in the sidebar shows that page and leaves the apply open
+behind it, to come back to.
 
-| When leaving                                   | What happens                                                                                                                              |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| The page can close                             | It closes; an unfinished staged apply stays to resume.                                                                                    |
-| A run is going, or the edits are read or saved | The page shows itself and says the act waits until Repotted is done, and nothing leaves. A run that finds the sign-in lost then leads on. |
-| One-off edits are unsaved                      | The page shows its edits and asks to save or undo them first.                                                                             |
-| Asking, and the edits are saved                | The saved edits are planned again, then the act goes on, so the page never stays behind with an old plan.                                 |
-| Asking, and the edits are undone               | The act goes on.                                                                                                                          |
-| Asking, and Stay here, or another act asks     | The act is put aside and the edits stay as they are; a later question replaces an open one.                                               |
+| When leaving                                            | What happens                                                                                                  |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| The page can close                                      | It closes; an unfinished staged apply stays to resume.                                                        |
+| A run is going, or the edits are read or saved          | The page shows itself, says the act waits until Repotted is done, and stays. The note goes when the run ends. |
+| The same, for a lost sign-in                            | The check waits for the run to end, then goes on as below, since the app can't leave a run partway.           |
+| One-off edits are unsaved                               | The page shows its edits and asks to save or undo them first.                                                 |
+| Asking, and the edits are saved                         | The saved edits are planned again, then the act goes on, so the page never stays behind with an old plan.     |
+| Asking, and the edits are undone or the apply discarded | The act goes on.                                                                                              |
+| Asking, and Stay here, or another act asks              | The act is put aside and the edits stay as they are; a later question replaces an open one.                   |
 
 Unsaved profile changes on the Profiles page are asked about after the apply.
-Opening another apply while one is open does nothing.
+A lost sign-in that asked either question checks the sign-in again once it is
+answered. Opening another apply while one is open does nothing.
 
 ## Config repository sync
 

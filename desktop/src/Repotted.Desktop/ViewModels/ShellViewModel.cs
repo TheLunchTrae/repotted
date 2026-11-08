@@ -160,13 +160,13 @@ internal sealed partial class ShellViewModel : ViewModelBase
     /// page, brought into view, has asked and the changes are saved or
     /// discarded.
     /// </summary>
-    public async Task<bool> ConfirmLeaveAsync(string act)
+    public async Task<bool> ConfirmLeaveAsync(string act, bool wait = false)
     {
         // An apply that is running, or holds unsaved one-off edits, shows itself and says what it needs.
         if (Apply is { CanLeave: false } apply)
         {
             Page = 0;
-            if (!await apply.ConfirmLeaveAsync(act).ConfigureAwait(true))
+            if (!await apply.ConfirmLeaveAsync(act, wait).ConfigureAwait(true))
             {
                 return false;
             }
@@ -178,6 +178,9 @@ internal sealed partial class ShellViewModel : ViewModelBase
         Page = 1;
         return await Profiles.ConfirmLeaveAsync(act).ConfigureAwait(true);
     }
+
+    /// <summary>Whether leaving the app would ask first, or wait, for unsaved changes or an apply.</summary>
+    public bool MustAskToLeave => Profiles.HasUnsaved || Apply is { CanLeave: false };
 
     public string SearchHint => ShowingProfiles ? "Find a profile" : "Find a repository";
 

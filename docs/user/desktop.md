@@ -214,7 +214,8 @@ in its app data folder, below.
 One-off edits you haven't saved keep the apply open. If you quit or sign out
 then, the apply asks you to save or undo them first, and goes on once you do;
 **Stay here** keeps them as they are. While Repotted is still working on the
-apply, such as comparing or writing, it says so and waits for that to finish.
+apply, such as comparing or writing, closing the window or signing out says so
+and leaves you on the apply; try again once it is done.
 
 The command line does the same with [`repotted stage`](cli.md#stage-an-apply), if you prefer
 it or want to script it.

@@ -107,8 +107,9 @@ internal sealed partial class MainViewModel : ViewModelBase
             {
                 return;
             }
-            var asked = shell.Profiles.HasUnsaved;
-            if (!await shell.ConfirmLeaveAsync(account is Account.SignedIn other ? $"continue as {other.Login}" : "sign in again").ConfigureAwait(true)
+            var asked = shell.MustAskToLeave;
+            // An apply that is running is waited for, since the app can't leave it partway.
+            if (!await shell.ConfirmLeaveAsync(account is Account.SignedIn other ? $"continue as {other.Login}" : "sign in again", wait: true).ConfigureAwait(true)
                 // The question may have given way to closing the app.
                 || Page != shell)
             {

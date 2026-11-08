@@ -222,10 +222,13 @@ internal sealed partial class ApplyViewModel(
     /// <summary>
     /// Whether the page can close: not while the command line runs for it,
     /// since a run must not outlive the page, nor with one-off edits not saved.
+    /// A discarded apply has closed, and its edits went with it.
     /// </summary>
-    public bool CanLeave =>
-        Step is not (ApplyStep.Starting or ApplyStep.Planning or ApplyStep.Applying)
-        && !Working && !EditsUnsaved && !EditsBusy;
+    public bool CanLeave => Step == ApplyStep.Discarded || (!Busy && !EditsUnsaved);
+
+    /// <summary>Whether the command line runs for the page, which can't be stopped partway.</summary>
+    private bool Busy =>
+        Step is ApplyStep.Starting or ApplyStep.Planning or ApplyStep.Applying || Working || EditsBusy;
 
     /// <summary>Opens the staged apply to the repository: an unfinished one waits for a choice, and otherwise a new one starts.</summary>
     public async Task OpenAsync()
@@ -387,12 +390,29 @@ internal sealed partial class ApplyViewModel(
 
     partial void OnWorkingChanged(bool value) => SettleLeave();
 
-    /// <summary>The question about leaving settles once its edits are saved, and planned again, or undone.</summary>
+    /// <summary>
+    /// The question about leaving settles once its edits are saved, and
+    /// planned again, or undone, or the apply is discarded. A wait to leave
+    /// goes on once nothing runs, and the note that it waited goes.
+    /// </summary>
     private void SettleLeave()
     {
         if (leave is { } answer && CanLeave)
         {
             answer.TrySetResult(true);
+        }
+        if (!Busy)
+        {
+            if (idle is { } done)
+            {
+                idle = null;
+                done.TrySetResult();
+            }
+            if (busyNote is not null && Error == busyNote)
+            {
+                Error = null;
+            }
+            busyNote = null;
         }
     }
 
@@ -570,21 +590,28 @@ internal sealed partial class ApplyViewModel(
     /// <summary>
     /// Whether the app may leave the page to <paramref name="act"/>, such as
     /// "sign out". While the command line runs for the page, it says so and
-    /// stays, since the run can't be stopped partway; the run's own end, such
-    /// as a sign-in it finds lost, then leads on. Unsaved one-off edits wait
-    /// on a question until they are saved and planned again, or undone, or the
-    /// question is put aside.
+    /// stays, since the run can't be stopped partway, or with
+    /// <paramref name="wait"/> waits for the run to end, as a lost sign-in
+    /// does. Unsaved one-off edits wait on a question until they are saved and
+    /// planned again, or undone, or the apply is discarded, or the question
+    /// is put aside.
     /// </summary>
-    public async Task<bool> ConfirmLeaveAsync(string act)
+    public async Task<bool> ConfirmLeaveAsync(string act, bool wait = false)
     {
+        while (Busy)
+        {
+            if (!wait)
+            {
+                busyNote = $"Repotted is still working on this apply, so you can {act} once it is done.";
+                Error = busyNote;
+                return false;
+            }
+            idle ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await idle.Task.ConfigureAwait(true);
+        }
         if (CanLeave)
         {
             return true;
-        }
-        if (!EditsUnsaved || EditsBusy || Working || Step is ApplyStep.Starting or ApplyStep.Planning or ApplyStep.Applying)
-        {
-            Error = $"Repotted is still working on this apply, so you can {act} once it is done.";
-            return false;
         }
         leave?.TrySetResult(false);
         var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -604,6 +631,11 @@ internal sealed partial class ApplyViewModel(
             }
         }
     }
+
+    private TaskCompletionSource? idle;
+
+    /// <summary>The note that leaving waits for a run, which goes once the run ends.</summary>
+    private string? busyNote;
 
     /// <summary>Puts the question about leaving aside; the edits stay as they are.</summary>
     [RelayCommand]
