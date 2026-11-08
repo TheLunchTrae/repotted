@@ -450,6 +450,9 @@ public sealed class CompareTests : ViewModelTests
              new CompareRow(CompareKind.Matches, "Dependabot runners", "dependabot_runner_settings.runner_type", "Standard", "Standard")],
             compare.Sections[0].Rows);
         Assert.Equal(
+            ["Skipped security.dependabot_runner_settings.runner_labels: GitHub keeps none with standard runners"],
+            compare.Warnings);
+        Assert.Equal(
             [new CompareRow(CompareKind.Matches, "team", "team", "platform", "platform")],
             compare.Sections[1].Rows);
         Assert.Equal(

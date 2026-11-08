@@ -522,6 +522,12 @@ drafts:
       'Skipped environment "slow": why',
       'Excluding rulesets/Main leaves nothing out',
     ]);
+    // A saved plan keeps every member, and one saved before warnings were data keeps each as its message.
+    expect(parsePlan(JSON.parse(JSON.stringify({ ...plan, warnings }))).warnings).toEqual(warnings);
+    const older = { ...plan, warnings: ['Skipped pages: GitHub refused to read GitHub Pages'] };
+    expect(parsePlan(JSON.parse(JSON.stringify(older))).warnings).toEqual([
+      { message: 'Skipped pages: GitHub refused to read GitHub Pages' },
+    ]);
   });
 
   test('sets the Actions policy before its selected-actions list', async () => {

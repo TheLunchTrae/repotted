@@ -357,14 +357,19 @@ const savedPlan = z.object({
   // Plans saved before drafts existed have none.
   skipped: z.array(z.object({ section: z.enum(sections), target: z.string() })).default([]),
   warnings: z.array(
-    z.object({
-      section: z.enum(sections).exactOptional(),
-      key: z.string().exactOptional(),
-      field: z.string().exactOptional(),
-      cause: z.enum(skipCauses).exactOptional(),
-      exclusion: z.string().exactOptional(),
-      message: z.string(),
-    }),
+    z.union([
+      z.object({
+        section: z.enum(sections).exactOptional(),
+        key: z.string().exactOptional(),
+        field: z.string().exactOptional(),
+        cause: z.enum(skipCauses).exactOptional(),
+        exclusion: z.string().exactOptional(),
+        message: z.string(),
+      }),
+      // Plans saved before warnings were data give each as text. Apply
+      // compares only changes, so such a warning is kept as its message.
+      z.string().transform((message): Warning => ({ message })),
+    ]),
   ),
 });
 

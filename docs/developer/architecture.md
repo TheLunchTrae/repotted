@@ -196,9 +196,10 @@ alone a ruleset it doesn't name.
 
 Each warning is a `Warning` from `change.ts`, data rather than text. One that
 skips something names where, by section, key and field, and why, by `cause`:
-`refused` and `unavailable` come from `Unavailable`, `not_applicable` from a
-plan step that sees a setting doesn't apply with the others, and
-`unloadable` from the capture's schema checks. Its `message` is the reason
+`refused` and `unavailable` mostly come from `Unavailable`, `not_applicable`
+from a plan step that sees a setting doesn't apply with the others, and
+`unloadable` from a capture that can't hold what GitHub reports, as when a
+setting fails its schema. Its `message` is the reason
 alone. A warning without a cause skips nothing, such as the note on a change
 of visibility, and its `message` is the whole text. Readers go by these
 members, never by the wording, since a reason that GitHub words, such as
