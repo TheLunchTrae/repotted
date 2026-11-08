@@ -141,6 +141,20 @@ profile sets it, the base's value applies again. **Undo** reverts a change you
 haven't saved, and **Discard** reverts them all. **Show YAML** shows the profile's
 file as it is saved.
 
+To find a setting, type in **Search settings** above the tabs, or press
+<kbd>Ctrl</kbd>+<kbd>F</kbd>, or <kbd>⌘</kbd>+<kbd>F</kbd> on macOS. The search
+looks across every settings tab at once and matches a setting's name, its
+description and notes, the names of its choices, its profile key such as
+`allow_squash_merge`, its tab and section, and common words for it such as
+"CodeQL" or "DCO". Searching a setting also finds the options under it, and an
+option that matches shows under its setting. Rulesets and environments aren't
+searched. **Managed** shows only the settings this profile or a profile it
+extends sets, **Not saved yet** shows only the settings you've changed and not
+saved, drafts included, and **Drafts** shows only the settings with a draft.
+Each works with or without a search. A setting you edit stays in the list until
+you change the search or a filter. Escape clears the search, and **Clear**
+clears the search and turns the filters off, which brings the tabs back.
+
 Rulesets and environments open in their own editor. The editor changes only
 what you edit, so anything it doesn't show stays as the YAML has it.
 **Leave it to GitHub** clears a choice, so each repository keeps its own. For
@@ -207,8 +221,13 @@ working takes you back to the sign-in page, since saving needs no sign-in.
 On the **Repositories** page, select a repository, pick a profile under
 **Compare with a profile**, and click **Compare**. The app shows each
 difference by section, with what GitHub has now and what the profile sets.
-Settings that already match are folded away; click **Show everything** to see
-them. Comparing only reads from GitHub.
+**Differs from GitHub** is on at first, so only what differs shows; turn it
+off to see the settings and entries that already match. To find something in a
+long comparison, type in **Search this compare**, or press
+<kbd>Ctrl</kbd>+<kbd>F</kbd>, or <kbd>⌘</kbd>+<kbd>F</kbd> on macOS. It matches a
+setting the way the profile editor's search does, and a ruleset or environment
+by its name. Escape clears the search, and a section Repotted couldn't read
+stays in view when you search for its name. Comparing only reads from GitHub.
 
 A padlock marks each difference the app can't change, with what it needs,
 such as **Needs Actions write**. The Repotted App's installation may not
@@ -216,6 +235,7 @@ have been granted that permission, or you may not be an admin on the
 repository. **Review App access**, above the differences, opens the
 installation's settings on GitHub, where its owner can grant what's missing,
 or **Install the App** when it isn't installed on the repository.
+**Can't change**, beside the search, shows only those differences.
 Limits of the repository's GitHub plan or its owner's policies don't show
 here; GitHub reports them only when a change is made.
 

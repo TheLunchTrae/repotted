@@ -10,6 +10,36 @@ namespace Repotted.Desktop.ViewModels;
 /// <summary>A group of setting rows under its heading.</summary>
 internal sealed record SettingGroupViewModel(string Title, string Description, IReadOnlyList<SettingViewModel> Settings);
 
+/// <summary>A setting row in the search results, shown when the search and filters find it or a sub-option of it.</summary>
+internal sealed partial class SettingResultViewModel(SettingViewModel setting) : ViewModelBase
+{
+    public SettingViewModel Setting { get; } = setting;
+
+    [ObservableProperty]
+    public partial bool Shown { get; set; }
+}
+
+/// <summary>
+/// One group of settings in the search results, with the tab it is on. It
+/// holds every row of the group and shows only those found, so a new search
+/// shows and hides rows rather than building them again.
+/// </summary>
+internal sealed partial class SettingResultsViewModel(string tab, string title, IReadOnlyList<SettingResultViewModel> rows)
+    : ViewModelBase
+{
+    public string Tab { get; } = tab;
+
+    public string Title { get; } = title;
+
+    public IReadOnlyList<SettingResultViewModel> Rows { get; } = rows;
+
+    /// <summary>The settings shown in this group now.</summary>
+    public IEnumerable<SettingViewModel> Settings => Rows.Where(row => row.Shown).Select(row => row.Setting);
+
+    [ObservableProperty]
+    public partial bool Shown { get; set; }
+}
+
 /// <summary>
 /// Where a profile editor reads and saves its file, and how it names what it
 /// edits: a profile, or the one-off edits of a staged apply, which is a
@@ -193,6 +223,121 @@ internal sealed partial class ProfileViewModel(
     /// <summary>Whether the file, as last loaded or saved, sets any setting, ruleset or environment itself.</summary>
     public bool SetsAnything =>
         Settings.Any(setting => setting.Origin == SettingOrigin.Own) || Entries.Any(entry => entry.Origin == SettingOrigin.Own);
+
+    /// <summary>What is typed in the settings search.</summary>
+    [ObservableProperty]
+    public partial string Query { get; set; } = "";
+
+    partial void OnQueryChanged(string value) => Find();
+
+    /// <summary>Whether only settings the profile manages show: set here or by a profile it extends.</summary>
+    [ObservableProperty]
+    public partial bool OnlyManaged { get; set; }
+
+    partial void OnOnlyManagedChanged(bool value) => Find();
+
+    /// <summary>Whether only settings with a change, text or draft change waiting to be saved show.</summary>
+    [ObservableProperty]
+    public partial bool OnlyUnsaved { get; set; }
+
+    partial void OnOnlyUnsavedChanged(bool value) => Find();
+
+    /// <summary>Whether only settings with a draft show: this profile's own, or a base profile's.</summary>
+    [ObservableProperty]
+    public partial bool OnlyDrafts { get; set; }
+
+    partial void OnOnlyDraftsChanged(bool value) => Find();
+
+    /// <summary>Whether a search or filter is on, so the settings it found show in place of the tabs.</summary>
+    public bool Filtering { get; private set; }
+
+    /// <summary>
+    /// Every settings group across the settings tabs, each showing what the
+    /// search and filters found. A sub-option shows under the setting it
+    /// belongs to, so that setting comes with it. The rows are made once for
+    /// each load of the profile, the first time a search or filter is on, and
+    /// what shows changes only when the search or a filter changes, not when a
+    /// row changes, so a row doesn't vanish as you edit it.
+    /// </summary>
+    public IReadOnlyList<SettingResultsViewModel> Results { get; private set; } = [];
+
+    /// <summary>How many settings were found, or that none were.</summary>
+    public string ResultsSummary { get; private set; } = "";
+
+    public bool HasResults => Results.Any(group => group.Shown);
+
+    /// <summary>The search and filters <see cref="Find"/> last showed, so a change that finds the same, such as a trailing space, does nothing.</summary>
+    private string? found;
+
+    /// <summary>Set while <see cref="ClearFilters"/> turns several things off, so it finds once.</summary>
+    private bool clearing;
+
+    [RelayCommand]
+    private void ClearFilters()
+    {
+        clearing = true;
+        Query = "";
+        OnlyManaged = false;
+        OnlyUnsaved = false;
+        OnlyDrafts = false;
+        clearing = false;
+        Find();
+    }
+
+    /// <summary>Finds the settings that match the search and every filter that is on.</summary>
+    /// <param name="again">Finds even when the search and filters are the same, as when the rows are new.</param>
+    private void Find(bool again = false)
+    {
+        var words = SettingSearch.Words(Query);
+        var key = $"{OnlyManaged} {OnlyUnsaved} {OnlyDrafts} {string.Join(' ', words)}";
+        if (clearing || (!again && key == found))
+        {
+            return;
+        }
+        found = key;
+        Filtering = words.Length > 0 || OnlyManaged || OnlyUnsaved || OnlyDrafts;
+        var count = 0;
+        if (Filtering)
+        {
+            if (Results.Count == 0)
+            {
+                Results = [.. Tabs.Where(tab => tab.IsSettings).SelectMany(tab => tab.Groups.Select(group =>
+                    new SettingResultsViewModel(tab.Name, group.Title, [.. group.Settings.Select(row => new SettingResultViewModel(row))])))];
+                OnPropertyChanged(nameof(Results));
+            }
+            foreach (var group in Results)
+            {
+                var fits = group.Rows.Where(row => Fits(row.Setting, words)).ToList();
+                count += fits.Count;
+                var parents = fits.Select(row => SettingSearch.Parent(row.Setting.Field)).OfType<SettingField>()
+                    .ToHashSet(ReferenceEqualityComparer.Instance);
+                foreach (var row in group.Rows)
+                {
+                    row.Shown = fits.Contains(row) || parents.Contains(row.Setting.Field);
+                }
+                group.Shown = fits.Count > 0;
+            }
+        }
+        ResultsSummary = count switch
+        {
+            0 when words.Length > 0 => $"No settings match \u201c{Query.Trim()}\u201d.",
+            0 when OnlyUnsaved && Entries.Any(entry => entry.Changed) => "No settings match these filters. Unsaved changes to rulesets and environments are on their own tabs.",
+            0 when OnlyDrafts && Entries.Any(entry => entry.IsDraft) => "No settings match these filters. Drafts of rulesets and environments are on their own tabs.",
+            0 => "No settings match these filters.",
+            1 => "1 setting found.",
+            _ => $"{count} settings found.",
+        };
+        foreach (var name in (string[])[nameof(Filtering), nameof(ResultsSummary), nameof(HasResults)])
+        {
+            OnPropertyChanged(name);
+        }
+    }
+
+    private bool Fits(SettingViewModel row, string[] words) =>
+        SettingSearch.Matches(row.Field, words)
+        && (!OnlyManaged || row.Managed)
+        && (!OnlyUnsaved || row.HasChanges)
+        && (!OnlyDrafts || row.HasDraft);
 
     private IEnumerable<SettingViewModel> Settings =>
         Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings);
@@ -495,6 +640,10 @@ internal sealed partial class ProfileViewModel(
         DraftWarnings = profile.Warnings ?? [];
         ChangeCount = 0;
         Yaml = ReadText(profile.File);
+        // The rows are new, so what a search found is found again among them.
+        Results = [];
+        OnPropertyChanged(nameof(Results));
+        Find(again: true);
 
         ProfileTabViewModel EntriesTab(string name, string section)
         {
