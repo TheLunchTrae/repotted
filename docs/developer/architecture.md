@@ -305,6 +305,12 @@ are, and a choice left unset leaves that key to GitHub.
   is inherited. When one differs, the save waits for the user to keep their
   version or reload, as [State machines](state-machines.md#profile-editor)
   describes.
+- The editor also resolves the profile it extends alone, for the value each
+  setting falls back to. It keeps that base beside the text of the files it
+  resolves from, the same copy the save check compares, and resolves it again
+  only when one of them differs, so a save or a reload runs the CLI once.
+  Keeping it in the editor, rather than having `profile --json` print the base
+  as well, leaves the documents scripts read as they are.
 - When a refresh no longer lists the file of an editor with unsaved changes,
   the editor stays in the cache as removed and the list shows it. A save
   writes the text the editor read back as a new file first, then saves the

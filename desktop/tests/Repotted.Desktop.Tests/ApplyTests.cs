@@ -45,17 +45,21 @@ public sealed class ApplyTests : IDisposable
 
     private static string List(IEnumerable<string> keys) => $"[{string.Join(',', keys.Select(key => Json(key)))}]";
 
-    /// <summary>A staged apply over orgs, which sets issues and the wiki; the staged file turns squash merges off.</summary>
+    /// <summary>
+    /// A staged apply over orgs, which sets issues and the wiki; the staged
+    /// file turns squash merges off. A wiki left out is gone from it.
+    /// </summary>
     private string Staged(bool fromProfile = true, params string[] exclude)
     {
         var from = fromProfile ? @base : file;
         var chain = fromProfile ? $"[{Json(file)},{Json(@base)}]" : $"[{Json(file)}]";
+        var (wikiValue, wikiSource) = !exclude.Contains("repository.has_wiki") ? (",\"has_wiki\":false", $",\"has_wiki\":{Json(from)}") : ("", "");
         return $$"""
             {"file":{{Json(file)}},"repository":"{{Repository}}","base":{{(fromProfile ? Json(@base) : "null")}},
              "exclude":{{List(exclude)}},"chain":{{chain}},
-             "profile":{"repository":{"has_issues":true,"has_wiki":false},"merge":{"allow_squash_merge":false} },
+             "profile":{"repository":{"has_issues":true{{wikiValue}} },"merge":{"allow_squash_merge":false} },
              {{Documents.NoDrafts}},
-             "sources":{"repository":{"has_issues":{{Json(from)}},"has_wiki":{{Json(from)}} },
+             "sources":{"repository":{"has_issues":{{Json(from)}}{{wikiSource}} },
                "merge":{"allow_squash_merge":{{Json(file)}} },"actions":{},"security":{},"custom_properties":{},
                "pages":{},"autolinks":{},"rulesets":{},"environments":{},
                {{Documents.NoDraftSources}} } }
@@ -415,6 +419,52 @@ public sealed class ApplyTests : IDisposable
 
         Assert.Equal(3, apply.ChangeCount);
         Assert.Empty(apply.Excluded);
+    }
+
+    [AvaloniaFact]
+    public async Task Leaving_a_change_out_shows_the_staged_apply_it_returns_without_reading_it_again()
+    {
+        var (page, cli) = await Reviewing();
+        var apply = page.Apply;
+        var exclude = $"stage {file} --exclude=repository.has_wiki --json";
+        cli.On(exclude, Staged(true, "repository.has_wiki"))
+            .On(Planned, () => Plan(wikiLeftOut: true));
+        cli.Calls.Clear();
+
+        await apply.LeaveOutCommand.ExecuteAsync(Row(apply, "repository.has_wiki"));
+
+        // The exclusion's own answer is the edits as they are now, and the base profile is as it was.
+        Assert.Equal([exclude, Planned], cli.Calls);
+        Assert.Equal(SettingOrigin.NotManaged, Setting(apply.Edits!, "has_wiki").Origin);
+    }
+
+    [AvaloniaFact]
+    public async Task A_profile_that_changes_while_a_change_runs_still_stops_a_save_over_it()
+    {
+        var (page, cli) = await Reviewing();
+        var apply = page.Apply;
+        // The staged apply inherits the Main ruleset from orgs.
+        var staged = Staged(true, "repository.has_wiki")
+            .Replace("\"merge\":{\"allow_squash_merge\":false} }", "\"merge\":{\"allow_squash_merge\":false},\"rulesets\":[{\"name\":\"Main\",\"enforcement\":\"active\"}] }", StringComparison.Ordinal)
+            .Replace("\"rulesets\":{},\"environments\":{},", $"\"rulesets\":{{\"Main\":{Json(@base)}}},\"environments\":{{}},", StringComparison.Ordinal);
+        cli.On($"stage {file} --exclude=repository.has_wiki --json", () =>
+            {
+                // The CLI writes the staged file, and a sync changes orgs meanwhile.
+                File.AppendAllText(file, "exclude: [repository.has_wiki]\n");
+                File.AppendAllText(@base, "# synced\n");
+                return staged;
+            })
+            .On(Planned, () => Plan(wikiLeftOut: true));
+        await apply.LeaveOutCommand.ExecuteAsync(Row(apply, "repository.has_wiki"));
+        var editor = apply.Edits!;
+        var main = editor.Tabs.Single(tab => tab.List == "rulesets").Entries.Single();
+        Assert.False(main.Own);
+
+        ((RulesetEditorViewModel)main.Editor).Enforcement.Options[1].ChooseCommand.Execute(null);
+        editor.CheckFile();
+
+        // The staged file the change wrote reads as the edits show it; orgs, which changed under them, does not.
+        Assert.Equal(@base, editor.ChangedFile);
     }
 
     [AvaloniaFact]

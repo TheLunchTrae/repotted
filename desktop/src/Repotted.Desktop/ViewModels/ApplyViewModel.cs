@@ -459,20 +459,29 @@ internal sealed partial class ApplyViewModel(
     /// <summary>Leaves a row's change out of this apply; the profile keeps it.</summary>
     [RelayCommand(CanExecute = nameof(CanChange))]
     private Task LeaveOutAsync(CompareRow? row) =>
-        row?.LeaveOut is { Edited: false } exclusion ? ChangeAsync(() => client.ExcludeAsync(file, exclusion.Key, true, CancellationToken.None)) : Task.CompletedTask;
+        row?.LeaveOut is { Edited: false } exclusion ? ChangeAsync(_ => client.ExcludeAsync(file, exclusion.Key, true, CancellationToken.None)) : Task.CompletedTask;
 
     /// <summary>Puts something left out back into this apply.</summary>
     [RelayCommand(CanExecute = nameof(CanChange))]
     private Task PutBackAsync(ExcludedViewModel? excluded) =>
-        excluded is null ? Task.CompletedTask : ChangeAsync(() => client.ExcludeAsync(file, excluded.Key, false, CancellationToken.None));
+        excluded is null ? Task.CompletedTask : ChangeAsync(_ => client.ExcludeAsync(file, excluded.Key, false, CancellationToken.None));
 
     /// <summary>Saves the one-off edits to the profile the apply starts from, which then sets them itself.</summary>
     [RelayCommand(CanExecute = nameof(CanSaveToProfile))]
-    private Task SaveToProfileAsync() => ChangeAsync(async () =>
+    private Task SaveToProfileAsync() => ChangeAsync(async texts =>
     {
         StagedApply? staged = null;
         // The profile is a file of the profiles folder, so no sync reads it while it is written.
-        async Task Save() => staged = await client.SaveStagedToProfileAsync(file, CancellationToken.None).ConfigureAwait(true);
+        // It is read again here, before a sync after the save can change it.
+        async Task Save()
+        {
+            var saved = await client.SaveStagedToProfileAsync(file, CancellationToken.None).ConfigureAwait(true);
+            if (saved.Base is { } written)
+            {
+                texts[written] = ProfileViewModel.ReadFile(written);
+            }
+            staged = saved;
+        }
         await (exclusive is null ? Save() : exclusive(Save)).ConfigureAwait(true);
         if (profileSaved is not null)
         {
@@ -483,17 +492,27 @@ internal sealed partial class ApplyViewModel(
 
     private bool CanSaveToProfile() => CanChange() && HasBase && Edits?.SetsAnything == true;
 
-    /// <summary>Changes the staged apply, then reads the edits and plans again; a refused change leaves the review as it was.</summary>
-    private async Task ChangeAsync(Func<Task<StagedApply>> change)
+    /// <summary>
+    /// Changes the staged apply, then shows the edits as the staged apply it
+    /// returns and plans again; a refused change leaves the review as it was.
+    /// <paramref name="change"/> gets the text of each file under the edits
+    /// from before it, and reads again any file it writes besides the staged
+    /// file, so a file it doesn't write that changes meanwhile, such as by a
+    /// sync, still counts as changed since.
+    /// </summary>
+    private async Task ChangeAsync(Func<Dictionary<string, string?>, Task<StagedApply>> change)
     {
         Working = true;
         Error = null;
         try
         {
-            await change().ConfigureAwait(true);
+            Dictionary<string, string?> texts = Edits?.ReadChain() ?? [];
+            var staged = await change(texts).ConfigureAwait(true);
             if (Edits is not null)
             {
-                await Edits.LoadAsync().ConfigureAwait(true);
+                // Every change writes the staged file, and only this page writes it.
+                texts[file] = ProfileViewModel.ReadFile(file);
+                await Edits.ShowAsync(staged.Layers, texts).ConfigureAwait(true);
                 OnEditsChanged();
             }
         }
