@@ -47,17 +47,10 @@
     </Setter>
   </Style>
 
-  <!-- A button's text is its label, in the platform's casing: title style on
-       macOS, as written elsewhere. AccessText keeps access keys working. Put
-       names and other data in a TextBlock inside the button instead, so they
-       keep their own casing. -->
-  <Style Selector="Button, ToggleButton">
-    <Setter Property="ContentTemplate">
-      <DataTemplate x:DataType="x:String">
-        <AccessText Text="{Binding Converter={x:Static theme:ControlLabel.Converter}}" />
-      </DataTemplate>
-    </Setter>
-  </Style>
+  <!-- A button's text is its label, in the platform's casing: ControlLabel
+       gives text content an access-key label in title style on macOS and as
+       written elsewhere. Put names and other data in a TextBlock inside the
+       button instead, so they keep their own casing. -->
 
   <!-- Buttons -->
   <Style Selector="Button">

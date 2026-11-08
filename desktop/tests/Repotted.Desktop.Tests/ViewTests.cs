@@ -403,6 +403,8 @@ public sealed class ViewTests : IDisposable
             .Select(button => AutomationProperties.GetName(button))
             .ToList();
         Assert.Equal(["Main: Set here", "Tags: From base"], rows);
+        Assert.Contains("Main", text);
+        Assert.DoesNotContain(text, line => line.Contains("Avalonia.Controls", StringComparison.Ordinal));
         Save(window, $"rulesets-{theme}");
 
         // A row opens its ruleset with focus on its name, and every choice says what it leaves to GitHub.
@@ -739,7 +741,9 @@ public sealed class ViewTests : IDisposable
         var option = new ToggleButton { Content = "Pull request title", Classes = { "seg" } };
         var box = new CheckBox { Content = "Keep mine" };
         var radio = new RadioButton { Content = "Keep mine" };
-        var window = new Window { Content = new StackPanel { Children = { button, option, box, radio } } };
+        var row = new TextBlock { Text = "Protect main" };
+        var entry = new Button { Content = new Grid { Children = { row } } };
+        var window = new Window { Content = new StackPanel { Children = { button, option, box, radio, entry } } };
         window.Show();
         Dispatcher.UIThread.RunJobs();
 
@@ -750,6 +754,11 @@ public sealed class ViewTests : IDisposable
         Assert.Equal(Label("Pull request title"), Assert.IsType<AccessText>(option.Presenter?.Child).Text);
         Assert.Null(box.ContentTemplate);
         Assert.Null(radio.ContentTemplate);
+
+        // A button whose content is a control shows that control, not its type name.
+        Assert.Null(entry.ContentTemplate);
+        Assert.True(row.IsEffectivelyVisible);
+        Assert.Same(entry.Content, entry.Presenter?.Child);
     }
 
     private async Task<Window> Show(string theme, FakeCli cli, FakeDesktop? desktop = null)

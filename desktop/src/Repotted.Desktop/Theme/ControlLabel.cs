@@ -1,3 +1,7 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
 using Avalonia.Data.Converters;
 using Avalonia.Markup.Xaml;
 
@@ -34,6 +38,37 @@ internal static class ControlLabel
     /// <summary>Converts a bound label to the platform's casing.</summary>
     public static IValueConverter Converter { get; } =
         new FuncValueConverter<object?, object?>(value => value is string label ? For(label) : value);
+
+    private static readonly IDataTemplate Template =
+        new FuncDataTemplate<string>((label, _) => new AccessText { Text = For(label) }, supportsRecycling: false);
+
+    /// <summary>
+    /// Shows the text of every Button and ToggleButton as an access-key label
+    /// in the platform's casing. Checkboxes and radio buttons, which derive
+    /// from them, keep sentence case. A button whose content is a control, such
+    /// as an entry row's grid, keeps no content template, since any template
+    /// would show that control as its type name.
+    /// </summary>
+    public static void ApplyToButtons() =>
+        ContentControl.ContentProperty.Changed.AddClassHandler<Button>((button, change) =>
+        {
+            if (button.GetType() != typeof(Button) && button.GetType() != typeof(ToggleButton))
+            {
+                return;
+            }
+
+            if (change.NewValue is string)
+            {
+                if (button.ContentTemplate is null)
+                {
+                    button.SetCurrentValue(ContentControl.ContentTemplateProperty, Template);
+                }
+            }
+            else if (ReferenceEquals(button.ContentTemplate, Template))
+            {
+                button.ClearValue(ContentControl.ContentTemplateProperty);
+            }
+        });
 
     /// <summary>A label in the casing of the platform the app runs on.</summary>
     public static string For(string label) => UsesTitleStyle ? TitleStyle(label) : label;
