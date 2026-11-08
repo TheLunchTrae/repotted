@@ -7,7 +7,16 @@ import { captureEndpoints, planEndpoint, readEndpoints } from './endpoints.js';
 import { type GitHub, GitHubError, parseRepo, repoPattern, type RepoRef } from './github.js';
 import { type Lock, requiredPermission } from './permissions.js';
 import type { Drafts } from './profile.js';
-import { identifyingRepositoryFields, profile, type Profile } from './schema.js';
+import {
+  actionsSettings,
+  identifyingRepositoryFields,
+  mergeSettings,
+  profile,
+  type Profile,
+  repositorySettings,
+  securityAndAnalysis,
+  securitySettings,
+} from './schema.js';
 import { actionsEndpoints, planActions, readActions } from './sections/actions.js';
 import { describeAutolink, planAutolinks, readAutolinks } from './sections/autolinks.js';
 import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';
@@ -123,6 +132,39 @@ export async function createPlan(
 }
 
 /**
+ * The captured settings that a profile can hold. GitHub may report a value
+ * that no profile takes, such as an option newer than the schema, so a
+ * setting that fails its schema is left out with a warning, and the capture
+ * still loads.
+ */
+function loadable(
+  name: string,
+  schema: z.ZodObject,
+  settings: Readonly<Record<string, unknown>>,
+  warnings: string[],
+): Record<string, unknown> {
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(settings)) {
+    const setting = { [key]: value };
+    const result = schema.safeParse(setting);
+    if (result.success) {
+      kept[key] = value;
+      continue;
+    }
+    const problems = result.error.issues.map((issue) => {
+      const reported: unknown = issue.path.reduce<unknown>(
+        (inner, part) => (typeof inner === 'object' && inner !== null ? Reflect.get(inner, part) : undefined),
+        setting,
+      );
+      const at = z.core.toDotPath(issue.path.slice(1));
+      return `${JSON.stringify(reported)}${at === '' ? '' : ` at ${at}`} (${issue.message})`;
+    });
+    warnings.push(`Skipped ${name}.${key}: a profile cannot hold ${problems.join('; ')}`);
+  }
+  return kept;
+}
+
+/**
  * Reads every section into a profile that describes the repository as it
  * is. Settings that name the repository, such as its description, stay out,
  * so the profile can describe other repositories too.
@@ -132,11 +174,17 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
   const live = await readRepository(github, repo);
   const repositoryEndpointSettings = captureEndpoints('repository', repositoryEndpoints, live.endpoints);
   warnings.push(...repositoryEndpointSettings.warnings);
-  const repository = Object.fromEntries(
-    Object.entries({ ...live.repository, ...repositoryEndpointSettings.settings }).filter(
-      ([key]) => !identifyingRepositoryFields.has(key),
+  const repository = loadable(
+    'repository',
+    repositorySettings,
+    Object.fromEntries(
+      Object.entries({ ...live.repository, ...repositoryEndpointSettings.settings }).filter(
+        ([key]) => !identifyingRepositoryFields.has(key),
+      ),
     ),
+    warnings,
   );
+  const merge = loadable('merge', mergeSettings, live.merge, warnings);
 
   const securityEndpointSettings = captureEndpoints(
     'security',
@@ -144,11 +192,20 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     await readEndpoints(github, repo, securityEndpoints),
   );
   warnings.push(...securityEndpointSettings.warnings);
-  const securityAndAnalysis = liveSecurityAndAnalysis(live.securityAndAnalysis);
-  const security = {
-    ...(securityAndAnalysis === undefined ? {} : { security_and_analysis: securityAndAnalysis }),
-    ...securityEndpointSettings.settings,
-  };
+  const reported = liveSecurityAndAnalysis(live.securityAndAnalysis);
+  const security = loadable(
+    'security',
+    securitySettings,
+    {
+      ...(reported === undefined
+        ? {}
+        : {
+            security_and_analysis: loadable('security.security_and_analysis', securityAndAnalysis, reported, warnings),
+          }),
+      ...securityEndpointSettings.settings,
+    },
+    warnings,
+  );
 
   const actionsEndpointSettings = captureEndpoints(
     'actions',
@@ -156,7 +213,12 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     await readEndpoints(github, repo, actionsEndpoints),
   );
   warnings.push(...actionsEndpointSettings.warnings);
-  const actions = { ...(await readActions(github, repo)), ...actionsEndpointSettings.settings };
+  const actions = loadable(
+    'actions',
+    actionsSettings,
+    { ...(await readActions(github, repo)), ...actionsEndpointSettings.settings },
+    warnings,
+  );
 
   const properties = await readCustomProperties(github, repo);
   const pages = await readPages(github, repo);
@@ -182,7 +244,7 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
   return {
     profile: {
       repository,
-      merge: live.merge,
+      merge,
       actions,
       ...(Object.keys(security).length > 0 ? { security } : {}),
       ...(Object.keys(customProperties).length > 0 ? { custom_properties: customProperties } : {}),

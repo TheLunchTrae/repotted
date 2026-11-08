@@ -2,7 +2,7 @@ import type { Change, SectionPlan } from '../change.js';
 import { type Endpoint, type EndpointValue, planEndpoint } from '../endpoints.js';
 import { repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
-import { securityAndAnalysis, type SecuritySettings } from '../schema.js';
+import { securityAndAnalysis, securityFields, type SecuritySettings } from '../schema.js';
 
 /**
  * GitHub reports JavaScript and TypeScript apart for code scanning but takes
@@ -55,8 +55,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     path: '/code-scanning/default-setup',
     target: 'code scanning default setup',
     method: 'PATCH',
-    fields: ['state', 'runner_type', 'runner_label', 'query_suite', 'threat_model', 'languages'],
-    carries: [],
+    fields: Object.keys(securityFields.code_scanning_default_setup.shape),
     identifying: ['languages'],
     fromGitHub: combineScriptLanguages,
   },
@@ -66,8 +65,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     path: '/code-scanning/ai-scan',
     target: 'code scanning AI Scan',
     method: 'PATCH',
-    fields: ['pr_scan'],
-    carries: [],
+    fields: Object.keys(securityFields.code_scanning_ai_scan.shape),
   },
   {
     kind: 'object',
@@ -75,8 +73,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     path: '/code-quality/setup',
     target: 'code quality setup',
     method: 'PATCH',
-    fields: ['state', 'runner_type', 'runner_label', 'languages', 'ai_findings_option'],
-    carries: [],
+    fields: Object.keys(securityFields.code_quality_setup.shape),
     identifying: ['languages'],
   },
   {
@@ -85,8 +82,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     path: '/dependabot/runner-settings',
     target: 'Dependabot runners',
     method: 'PUT',
-    fields: ['runner_type', 'runner_labels', 'runner_group'],
-    carries: ['runner_type', 'runner_labels', 'runner_group'],
+    fields: Object.keys(securityFields.dependabot_runner_settings.shape),
     // No group reads as an empty one, the way GitHub reports it.
     fromGitHub: (value) => (value['runner_group'] === null ? { ...value, runner_group: '' } : value),
     // GitHub keeps no runner labels or group with standard runners, and

@@ -148,7 +148,10 @@ gives a warning with GitHub's reason, and one GitHub refuses with a `403`
 gives a warning that names the permission it needs, from `permissions.ts`.
 `capture` warns only about the refused ones, since a feature the repository
 lacks is no news. A `403` on a write stops apply, and the failure names the
-permission too.
+permission too. `captureProfile` also parses each setting it captures with
+that setting's schema, and leaves out, with a warning, one that fails, such
+as an option GitHub added after `schema.ts`, so a captured profile always
+loads.
 
 Before anything is written, `readAccess` in `repositories.ts` reads the
 account's role from the repository and, with a Repotted App token, the

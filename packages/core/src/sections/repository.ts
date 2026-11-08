@@ -8,6 +8,7 @@ import {
   type MergeSettings,
   mergeSettingsProblems,
   type Profile,
+  repositoryEndpointFields,
   repositoryFields,
   type RepositorySettings,
 } from '../schema.js';
@@ -29,7 +30,7 @@ export const repositoryEndpoints: readonly Endpoint[] = [
     path: '/interaction-limits/pulls/creation-cap',
     target: 'pull request creation cap',
     method: 'PATCH',
-    fields: ['enabled', 'max_open_pull_requests', 'include_drafts'],
+    fields: Object.keys(repositoryEndpointFields.pull_request_creation_cap.shape),
     carries: ['enabled'],
   },
 ];

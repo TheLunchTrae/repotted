@@ -5,7 +5,7 @@ import { describe, expect, test } from 'vitest';
 
 import { GitHubError, parseRepo } from '../src/github.js';
 import { ApplyError, applyPlan, captureProfile, createPlan, describeFailure } from '../src/plan.js';
-import { editProfile, resolveProfile } from '../src/profile.js';
+import { editProfile, parseProfile, resolveProfile, stringifyProfile } from '../src/profile.js';
 import { profile as profileSchema, type Profile } from '../src/schema.js';
 import { FakeGitHub, type FakeState } from './fake-github.js';
 
@@ -304,6 +304,40 @@ describe('capture of every section', () => {
     expect(profile.custom_properties).toEqual({ team: 'platform' });
     expect(profile.security).toMatchObject({ vulnerability_alerts: true, automated_security_fixes: true });
     expect((await createPlan(github, repo, profile)).changes).toEqual([]);
+  });
+
+  test('leaves out, with a warning, a value GitHub reports that a profile cannot hold', async () => {
+    const state = offered();
+    const github = new FakeGitHub({
+      ...state,
+      settings: {
+        ...state.settings,
+        '/code-scanning/default-setup': { state: 'configured', query_suite: 'security-and-quality' },
+        '/actions/permissions/fork-pr-contributor-approval': { approval_policy: 'everyone_new' },
+      },
+    });
+    github.state.repository['pull_request_creation_policy'] = 'maintainers_only';
+    github.state.repository['merge_commit_title'] = 'COMMIT_TITLE';
+    github.state.repository['security_and_analysis'] = {
+      secret_scanning: { status: 'enabled' },
+      secret_scanning_push_protection: { status: 'paused' },
+    };
+
+    const { profile, warnings } = await captureProfile(github, repo);
+    expect(warnings).toEqual([
+      'Skipped repository.pull_request_creation_policy: a profile cannot hold "maintainers_only" (Invalid option: expected one of "all"|"collaborators_only")',
+      'Skipped merge.merge_commit_title: a profile cannot hold "COMMIT_TITLE" (Invalid option: expected one of "PR_TITLE"|"MERGE_MESSAGE")',
+      'Skipped security.security_and_analysis.secret_scanning_push_protection: a profile cannot hold "paused" at status (Invalid option: expected one of "enabled"|"disabled")',
+      'Skipped security.code_scanning_default_setup: a profile cannot hold "security-and-quality" at query_suite (Invalid option: expected one of "default"|"extended")',
+      'Skipped actions.approval_policy: a profile cannot hold "everyone_new" (Invalid option: expected one of "first_time_contributors_new_to_github"|"first_time_contributors"|"all_external_contributors")',
+    ]);
+    expect(profile.repository).not.toHaveProperty('pull_request_creation_policy');
+    expect(profile.merge).not.toHaveProperty('merge_commit_title');
+    expect(profile.merge).toHaveProperty('merge_commit_message', 'PR_TITLE');
+    expect(profile.security).not.toHaveProperty('code_scanning_default_setup');
+    expect(profile.security?.security_and_analysis).toEqual({ secret_scanning: { status: 'enabled' } });
+    expect(profile.actions).not.toHaveProperty('approval_policy');
+    await expect(parseProfile(stringifyProfile(profile), tmpdir())).resolves.toBeDefined();
   });
 });
 

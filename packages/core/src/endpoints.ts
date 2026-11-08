@@ -39,8 +39,14 @@ export type Endpoint =
 interface ObjectEndpoint {
   readonly kind: 'object';
   readonly method: 'PUT' | 'PATCH';
+  /** The endpoint's fields, which its zod object in the profile schema names. */
   readonly fields: readonly string[];
-  readonly carries: readonly string[];
+  /**
+   * The fields a write takes from the live value when the profile leaves
+   * them out: by default every field for a PUT, which replaces what it is
+   * sent, and none for a PATCH.
+   */
+  readonly carries?: readonly string[];
   /** Fields that describe one repository, which a capture leaves out. */
   readonly identifying?: readonly string[];
   /** Puts what GitHub reports in the form a profile and a write use. */
@@ -213,8 +219,9 @@ export function planEndpoint(
     const fields = fieldChanges(wanted, current);
     if (fields.length > 0) {
       // GitHub takes no null for a field it leaves unset, so one stays out.
+      const carries = endpoint.carries ?? (endpoint.method === 'PUT' ? endpoint.fields : []);
       const carried = Object.fromEntries(
-        endpoint.carries
+        carries
           .filter((field) => current[field] !== undefined && current[field] !== null)
           .map((field) => [field, current[field]]),
       );
