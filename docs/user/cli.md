@@ -78,6 +78,15 @@ on a GitHub plan that lacks them, `plan` warns you and still plans the rest.
 When GitHub refuses to read or change a setting, the warning or error names
 the GitHub App permission it needs.
 
+`plan` also marks each change Repotted can't make, as in
+`(locked: Needs Pages write)`. With a Repotted App sign-in, it checks the
+permissions the App's installation was granted and your role on the
+repository. Repotted treats every change as needing admin on the repository.
+Another token, such as the GitHub CLI's or Actions' `GITHUB_TOKEN`, can't see
+the App, so `plan` marks only what your role rules out. Limits of the repository's GitHub plan or its
+owner's policies show only when `apply` fails. `apply` still tries every
+change; the marks only tell you ahead of time.
+
 ## Work with profiles
 
 `npx repotted profiles <folder>` lists the profiles in a folder and says why

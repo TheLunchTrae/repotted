@@ -191,6 +191,15 @@ difference by section, with what GitHub has now and what the profile sets.
 Settings that already match are folded away; click **Show everything** to see
 them. Comparing only reads from GitHub.
 
+A padlock marks each difference the app can't change, with what it needs,
+such as **Needs Actions write**. The Repotted App's installation may not
+have been granted that permission, or you may not be an admin on the
+repository. **Review App access**, above the differences, opens the
+installation's settings on GitHub, where its owner can grant what's missing,
+or **Install the App** when it isn't installed on the repository.
+Limits of the repository's GitHub plan or its owner's policies don't show
+here; GitHub reports them only when a change is made.
+
 The app doesn't apply profiles. To make the changes a comparison shows, use
 [`repotted plan` and `repotted apply`](cli.md#plan-and-apply) on the command
 line.

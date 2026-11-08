@@ -64,12 +64,30 @@ internal sealed record PlanChangeDocument(
     string Target,
     IReadOnlyList<FieldChangeDocument> Fields);
 
-/// <summary>What <c>repotted plan --json</c> prints: the resolved profile and the writes that bring the repository in line.</summary>
+/// <summary>
+/// What the GitHub App may do on the repository: <paramref name="Status"/> is
+/// <c>installed</c>, <c>not_installed</c> or <c>unknown</c>, and
+/// <paramref name="SettingsUrl"/> is the installation's settings page, when installed.
+/// </summary>
+internal sealed record AppAccessDocument(string Status, string? SettingsUrl = null);
+
+/// <summary>What the account and its App may change on the repository; a null role is one GitHub did not report.</summary>
+internal sealed record AccessDocument(string? Role, AppAccessDocument App);
+
+/// <summary>A change Repotted cannot make, by its index in the plan's changes, and why.</summary>
+internal sealed record LockDocument(int Change, string Reason);
+
+/// <summary>
+/// What <c>repotted plan --json</c> prints: the resolved profile, the writes
+/// that bring the repository in line, and the writes Repotted cannot make.
+/// </summary>
 internal sealed record PlanDocument(
     string Repository,
     JsonElement Desired,
     IReadOnlyList<PlanChangeDocument> Changes,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    AccessDocument Access,
+    IReadOnlyList<LockDocument> Locks);
 
 /// <summary>What <c>repotted capture --json</c> prints: the repository's setup as a profile, and what it could not read.</summary>
 internal sealed record CaptureDocument(string Repository, JsonElement Profile, IReadOnlyList<string> Warnings);

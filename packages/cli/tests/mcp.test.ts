@@ -75,6 +75,27 @@ describe('MCP server', () => {
     expect(planned.text).toContain('has_wiki: true -> false');
   });
 
+  test('marks the changes the App may not make', async () => {
+    const github = new FakeGitHub({
+      account: {
+        login: 'lunch',
+        name: null,
+        repositories: [],
+        installations: [
+          {
+            id: 1,
+            permissions: { administration: 'read' },
+            repositories: [{ full_name: 'lunch/app', private: false }],
+          },
+        ],
+      },
+    });
+    const client = await connect(github);
+    const planned = await call(client, 'plan', { repository: 'lunch/app', profile: 'repository: { has_wiki: false }' });
+
+    expect(planned.text).toContain('(locked: Needs Administration write)');
+  });
+
   test('lists the drafts a plan leaves out', async () => {
     const client = await connect(new FakeGitHub());
     const planned = await call(client, 'plan', {

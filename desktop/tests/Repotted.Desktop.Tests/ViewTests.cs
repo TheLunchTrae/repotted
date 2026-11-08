@@ -583,6 +583,41 @@ public sealed class ViewTests : IDisposable
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
+    public async Task A_compare_shows_what_Repotted_cannot_change_and_where_to_grant_it(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
+        var desktop = new FakeDesktop();
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base))
+            .On($"plan TheLunchTrae/repotted --profile {own} --json", Documents.Plan(
+                access: Documents.ActionsRead,
+                locks: """{"change":5,"reason":"Needs Actions write"}""",
+                changes: Documents.Oidc)), desktop);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        var repositories = shell.Repositories;
+        repositories.Selected = repositories.Rows.Single(row => row.Name == "repotted");
+        repositories.CompareWith = shell.Profiles.Usable.Single(item => item.Name == "orgs");
+        repositories.CompareCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+
+        var text = Texts(window);
+        Assert.Contains("Repotted can't change 2 differences below. Each says what it needs.", text);
+        Assert.Contains(Label("Review App access"), text);
+        Assert.Contains("Needs Actions write", text);
+        Save(window, $"compare-locked-{theme}");
+
+        var names = window.GetVisualDescendants().OfType<ListBoxItem>()
+            .Select(item => ControlAutomationPeer.CreatePeerForElement(item).GetName())
+            .ToList();
+        Assert.Contains(names, name => name.EndsWith(". Repotted can't change it: Needs Actions write", StringComparison.Ordinal));
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
     public async Task A_new_profile_starts_from_nothing_another_profile_or_a_repository(string theme)
     {
         var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");

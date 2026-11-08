@@ -2067,6 +2067,82 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_compare_marks_the_differences_Repotted_cannot_change()
+    {
+        var desktop = new FakeDesktop();
+        var compare = await Compare(
+            Documents.Plan(access: Documents.ActionsRead, locks: """{"change":5,"reason":"Needs Actions write"}""", changes: Documents.Oidc),
+            desktop);
+
+        var actions = compare.Sections.Single(section => section.Title == "Actions").Rows;
+        Assert.Equal(
+            [("default_workflow_permissions", null), ("oidc_customization_sub.use_default", "Needs Actions write"),
+             ("oidc_customization_sub.include_claim_keys", "Needs Actions write")],
+            actions.Select(row => (row.Key, row.Lock)));
+        Assert.Equal(
+            "Use the default subject claim, oidc_customization_sub.use_default: GitHub has On, the profile sets Off. "
+                + "Repotted can't change it: Needs Actions write",
+            actions[1].AccessibleName);
+        Assert.True(compare.HasLocks);
+        Assert.Equal("Repotted can't change 2 differences below. Each says what it needs.", compare.LockSummary);
+        Assert.True(compare.HasAccessUrl);
+
+        await compare.ReviewAccessCommand.ExecuteAsync(null);
+
+        Assert.Equal([new Uri("https://github.com/settings/installations/7")], desktop.Opened);
+    }
+
+    [AvaloniaFact]
+    public async Task A_compare_marks_a_locked_change_in_any_section()
+    {
+        const string plan = """
+            {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"workflow"}},
+             "changes":[{"section":"pages","action":"create","target":"GitHub Pages site","fields":[],
+               "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/pages","body":{"build_type":"workflow"} } }],
+             "warnings":[],
+             "access":{"role":"admin","app":{"status":"installed","permissions":{"administration":"write"},"settings_url":null}},
+             "locks":[{"change":0,"reason":"Needs Pages write"}]}
+            """;
+        var compare = await Compare(plan);
+
+        Assert.Equal("Needs Pages write", compare.Sections.Single().Rows.Single().Lock);
+        Assert.Equal("Repotted can't change 1 difference below. It says what it needs.", compare.LockSummary);
+        Assert.False(compare.HasAccessUrl);
+    }
+
+    [AvaloniaFact]
+    public async Task A_compare_offers_the_install_page_when_the_App_is_not_on_the_repository()
+    {
+        var desktop = new FakeDesktop();
+        var compare = await Compare(
+            Documents.Plan(
+                access: """{"role":"admin","app":{"status":"not_installed"}}""",
+                locks: """{"change":0,"reason":"Needs the GitHub App installed on this repository"}"""),
+            desktop);
+
+        Assert.Equal("Install the App", compare.AccessLabel);
+        await compare.ReviewAccessCommand.ExecuteAsync(null);
+        Assert.Equal([Documents.InstallUrl], desktop.Opened);
+    }
+
+    [AvaloniaFact]
+    public async Task A_compare_locks_nothing_when_the_access_is_unknown_and_links_only_https()
+    {
+        var unknown = await Compare(Documents.Plan(changes: Documents.Oidc));
+
+        Assert.False(unknown.HasLocks);
+        Assert.False(unknown.HasAccessUrl);
+        Assert.DoesNotContain(unknown.Sections.SelectMany(section => section.Rows), row => row.IsLocked);
+
+        var elsewhere = await Compare(Documents.Plan(
+            access: Documents.ActionsRead.Replace("https://github.com", "http://github.com", StringComparison.Ordinal),
+            locks: """{"change":0,"reason":"Needs Administration write"}"""));
+
+        Assert.Equal("Repotted can't change 1 difference below. It says what it needs.", elsewhere.LockSummary);
+        Assert.False(elsewhere.HasAccessUrl);
+    }
+
+    [AvaloniaFact]
     public async Task A_changed_ruleset_shows_a_dropped_rule_and_a_new_order()
     {
         var compare = await Compare(Plan(
@@ -2207,7 +2283,7 @@ public sealed class ViewModelTests : IDisposable
     }
 
     private static string Plan(string desired, string changes) =>
-        $$"""{"repository":"TheLunchTrae/repotted","desired":{{desired}},"changes":[{{changes}}],"warnings":[]}""";
+        $$"""{"repository":"TheLunchTrae/repotted","desired":{{desired}},"changes":[{{changes}}],"warnings":[],"access":{{Documents.Unknown}},"locks":[]}""";
 
     [AvaloniaFact]
     public async Task A_compare_covers_security_pages_and_autolinks()
@@ -2231,7 +2307,8 @@ public sealed class ViewModelTests : IDisposable
                {"section":"autolinks","action":"create","target":"JIRA-",
                 "fields":[{"field":"url_template","from":"https://old.example.com/<num>","to":"https://jira.example.com/<num>"}],
                 "request":{"method":"POST","path":"/repos/TheLunchTrae/repotted/autolinks","body":{} } }],
-             "warnings":["Skipped security.dependabot_runner_settings.runner_labels: GitHub keeps none with standard runners"]}
+             "warnings":["Skipped security.dependabot_runner_settings.runner_labels: GitHub keeps none with standard runners"],
+             "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
         compare.ToggleEverythingCommand.Execute(null);
@@ -2261,7 +2338,8 @@ public sealed class ViewModelTests : IDisposable
     {
         const string plan = """
             {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"workflow"}},"changes":[],
-             "warnings":["Skipped pages: GitHub refused to read GitHub Pages (Forbidden); that needs the Pages read permission"]}
+             "warnings":["Skipped pages: GitHub refused to read GitHub Pages (Forbidden); that needs the Pages read permission"],
+             "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
 
@@ -2278,7 +2356,8 @@ public sealed class ViewModelTests : IDisposable
              "changes":[{"section":"pages","action":"update","target":"GitHub Pages site",
                "fields":[{"field":"source","from":{"branch":"gh-pages","path":"/"},"to":{"branch":"main","path":"/"}}],
                "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/pages","body":{} } }],
-             "warnings":[]}
+             "warnings":[],
+             "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
         compare.ToggleEverythingCommand.Execute(null);
@@ -2294,7 +2373,8 @@ public sealed class ViewModelTests : IDisposable
     {
         const string plan = """
             {"repository":"TheLunchTrae/repotted","desired":{"pages":{"build_type":"legacy"}},"changes":[],
-             "warnings":["Skipped pages: a new site built from a branch needs source.branch, or build_type: workflow"]}
+             "warnings":["Skipped pages: a new site built from a branch needs source.branch, or build_type: workflow"],
+             "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
 
@@ -2306,7 +2386,8 @@ public sealed class ViewModelTests : IDisposable
     {
         const string plan = """
             {"repository":"TheLunchTrae/repotted","desired":{"custom_properties":{"rulesets":"strict"}},"changes":[],
-             "warnings":["Skipped rulesets: GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"]}
+             "warnings":["Skipped rulesets: GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"],
+             "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
         compare.ToggleEverythingCommand.Execute(null);
@@ -2316,12 +2397,14 @@ public sealed class ViewModelTests : IDisposable
             compare.Sections.Single(section => section.Title == "Custom properties").Rows);
     }
 
-    private static async Task<CompareViewModel> Compare(string plan)
+    private static async Task<CompareViewModel> Compare(string plan, FakeDesktop? desktop = null)
     {
         var compare = new CompareViewModel(
             new RepottedClient(new FakeCli().On("plan TheLunchTrae/repotted --profile orgs.yaml --json", plan)),
+            desktop ?? new FakeDesktop(),
             "TheLunchTrae/repotted",
-            new ProfileListingDocument("orgs", "orgs.yaml", null, null));
+            new ProfileListingDocument("orgs", "orgs.yaml", null, null),
+            Documents.InstallUrl);
         await compare.LoadCommand.ExecuteAsync(null);
         Assert.Null(compare.Error);
         return compare;

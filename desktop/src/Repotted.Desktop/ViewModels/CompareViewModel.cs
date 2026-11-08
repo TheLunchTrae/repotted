@@ -53,9 +53,15 @@ internal sealed partial class CompareSectionViewModel(
 /// A profile compared with a repository: what the profile would change, by
 /// section, as the plan has it. It only reads; nothing here writes to GitHub.
 /// </summary>
-internal sealed partial class CompareViewModel(RepottedClient client, string repository, ProfileListingDocument profile)
+internal sealed partial class CompareViewModel(
+    RepottedClient client,
+    IDesktop desktop,
+    string repository,
+    ProfileListingDocument profile,
+    Uri? installUrl = null)
     : ViewModelBase
 {
+
     public string Repository => repository;
 
     public string ProfileName => profile.Name;
@@ -67,6 +73,25 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
     public IReadOnlyList<string> Warnings { get; private set; } = [];
 
     public bool HasWarnings => Warnings.Count > 0;
+
+    /// <summary>How many differences Repotted cannot change, as the plan's locks have it.</summary>
+    public int Locked => Sections.Sum(section => section.Differences.Count(row => row.IsLocked));
+
+    public bool HasLocks => Locked > 0;
+
+    public string LockSummary => Locked == 1
+        ? "Repotted can't change 1 difference below. It says what it needs."
+        : $"Repotted can't change {Locked} differences below. Each says what it needs.";
+
+    /// <summary>
+    /// Where to grant what's missing: the settings page of the GitHub App's
+    /// installation on the repository, or the App's install page when it isn't installed there.
+    /// </summary>
+    public Uri? AccessUrl { get; private set; }
+
+    public string AccessLabel { get; private set; } = "Review App access";
+
+    public bool HasAccessUrl => HasLocks && AccessUrl is not null;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowResult))]
@@ -137,10 +162,19 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
             {
                 section.ShowEverything = ShowEverything;
             }
+            var installed = plan.Access.App.Status != "not_installed";
+            AccessLabel = installed ? "Review App access" : "Install the App";
+            AccessUrl = Https(installed ? plan.Access.App.SettingsUrl : installUrl?.ToString());
             OnPropertyChanged(nameof(Sections));
             OnPropertyChanged(nameof(Warnings));
             OnPropertyChanged(nameof(HasWarnings));
             OnPropertyChanged(nameof(Summary));
+            OnPropertyChanged(nameof(Locked));
+            OnPropertyChanged(nameof(HasLocks));
+            OnPropertyChanged(nameof(LockSummary));
+            OnPropertyChanged(nameof(AccessUrl));
+            OnPropertyChanged(nameof(AccessLabel));
+            OnPropertyChanged(nameof(HasAccessUrl));
             Loaded = true;
         }
         // A compare runs unawaited when it opens, so every failure shows here.
@@ -153,6 +187,12 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
             Loading = false;
         }
     }
+
+    [RelayCommand]
+    private Task ReviewAccessAsync() => AccessUrl is { } url ? desktop.OpenUrlAsync(url) : Task.CompletedTask;
+
+    private static Uri? Https(string? address) =>
+        Uri.TryCreate(address, UriKind.Absolute, out var url) && url.Scheme == Uri.UriSchemeHttps ? url : null;
 
     private static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 
@@ -205,14 +245,14 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
         }
         List<CompareRow> differences = [];
         HashSet<string> changed = new(StringComparer.Ordinal);
-        foreach (var change in plan.Changes.Where(change => names.Contains(change.Section)))
+        foreach (var (change, locked) in Changes(plan).Where(item => names.Contains(item.Change.Section)))
         {
             // Making or taking down a whole thing, such as a Pages site, changes no one field.
             if (change.Fields.Count == 0)
             {
                 differences.Add(change.Action == "delete"
-                    ? new CompareRow(CompareKind.Removes, change.Target, "absent: true", CompareRow.OnGitHub, "Deleted")
-                    : new CompareRow(CompareKind.Adds, change.Target, $"new {change.Target}", CompareRow.NotOnGitHub, CompareRow.Created));
+                    ? new CompareRow(CompareKind.Removes, change.Target, "absent: true", CompareRow.OnGitHub, "Deleted", locked)
+                    : new CompareRow(CompareKind.Adds, change.Target, $"new {change.Target}", CompareRow.NotOnGitHub, CompareRow.Created, locked));
                 changed.Add($"{change.Section}.absent");
                 continue;
             }
@@ -222,7 +262,7 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
                 foreach (var difference in Differences(field))
                 {
                     var setting = Field(change.Section, difference.Path);
-                    differences.Add(Row(difference, Label(setting, difference.Path), difference.Path, value => Show(setting, difference.Path, value)));
+                    differences.Add(Row(difference, Label(setting, difference.Path), difference.Path, value => Show(setting, difference.Path, value), locked));
                 }
             }
         }
@@ -270,14 +310,14 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
         var comparer = environments ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         List<CompareRow> differences = [];
         HashSet<string> touched = new(comparer);
-        var section = plan.Changes.Where(change => change.Section == name).ToList();
-        foreach (var change in section)
+        var section = Changes(plan).Where(item => item.Change.Section == name).ToList();
+        foreach (var (change, locked) in section)
         {
             touched.Add(change.Target);
             // GitHub can't change an autolink, so the plan deletes one and makes it
             // again, and the row shows what differs.
             var remade = change.Action == "delete"
-                && section.Any(other => other.Action == "create" && other.Target == change.Target && other.Fields.Count > 0);
+                && section.Any(other => other.Change.Action == "create" && other.Change.Target == change.Target && other.Change.Fields.Count > 0);
             if (remade)
             {
                 continue;
@@ -291,7 +331,7 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
                     {
                         foreach (var difference in Differences(field))
                         {
-                            differences.Add(Row(difference, change.Target, difference.Path, CompareRows.Show));
+                            differences.Add(Row(difference, change.Target, difference.Path, CompareRows.Show, locked));
                         }
                     }
                     break;
@@ -302,19 +342,20 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
                         change.Target,
                         policy ? "new branch policy" : $"new {noun}",
                         CompareRow.NotOnGitHub,
-                        rules is null ? CompareRow.Created : Rules(CompareRows.Node(rules.To))));
+                        rules is null ? CompareRow.Created : Rules(CompareRows.Node(rules.To)),
+                        locked));
                     break;
                 case "delete":
                     differences.Add(policy
-                        ? new CompareRow(CompareKind.Removes, change.Target, "branch_policies", CompareRow.OnGitHub, Removed)
-                        : new CompareRow(CompareKind.Removes, change.Target, "absent: true", CompareRow.OnGitHub, "Deleted"));
+                        ? new CompareRow(CompareKind.Removes, change.Target, "branch_policies", CompareRow.OnGitHub, Removed, locked)
+                        : new CompareRow(CompareKind.Removes, change.Target, "absent: true", CompareRow.OnGitHub, "Deleted", locked));
                     break;
                 default:
                     foreach (var field in change.Fields)
                     {
                         foreach (var difference in Differences(field))
                         {
-                            differences.Add(Row(difference, change.Target, difference.Path, CompareRows.Show));
+                            differences.Add(Row(difference, change.Target, difference.Path, CompareRows.Show, locked));
                         }
                     }
                     break;
@@ -364,12 +405,17 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
             onGitHub: field.From.ValueKind != JsonValueKind.Undefined,
             inProfile: field.To.ValueKind != JsonValueKind.Undefined);
 
-    private static CompareRow Row(Difference difference, string label, string key, Func<JsonNode?, string> show) => difference.Kind switch
-    {
-        CompareKind.Adds => new CompareRow(CompareKind.Adds, label, key, CompareRow.NotOnGitHub, show(difference.Wanted)),
-        CompareKind.Removes => new CompareRow(CompareKind.Removes, label, key, show(difference.Now), Removed),
-        var kind => new CompareRow(kind, label, key, show(difference.Now), show(difference.Wanted)),
-    };
+    private static CompareRow Row(Difference difference, string label, string key, Func<JsonNode?, string> show, string? locked) =>
+        difference.Kind switch
+        {
+            CompareKind.Adds => new CompareRow(CompareKind.Adds, label, key, CompareRow.NotOnGitHub, show(difference.Wanted), locked),
+            CompareKind.Removes => new CompareRow(CompareKind.Removes, label, key, show(difference.Now), Removed, locked),
+            var kind => new CompareRow(kind, label, key, show(difference.Now), show(difference.Wanted), locked),
+        };
+
+    /// <summary>The plan's changes, each with the reason Repotted cannot make it, or null when it can.</summary>
+    private static IEnumerable<(PlanChangeDocument Change, string? Locked)> Changes(PlanDocument plan) =>
+        plan.Changes.Select((change, index) => (change, plan.Locks.FirstOrDefault(item => item.Change == index)?.Reason));
 
     /// <summary>
     /// Whether a change covers a setting: it names the setting, or an object
