@@ -342,6 +342,50 @@ describe('capture of every section', () => {
     const loaded = await parseProfile(stringifyProfile(profile), tmpdir());
     // Half of a commit message pair would not pass on a repository with the other half's default.
     await expect(createPlan(new FakeGitHub(offered()), repo, loaded.profile)).resolves.toBeDefined();
+    // The repository it came from plans too, though its own pair is one a profile cannot hold.
+    expect((await createPlan(github, repo, loaded.profile)).changes).toEqual([]);
+  });
+
+  test('leaves out, with a warning, a whole ruleset or environment a profile cannot hold', async () => {
+    const github = new FakeGitHub({
+      rulesets: [
+        {
+          id: 1,
+          name: 'Queue',
+          target: 'branch',
+          enforcement: 'active',
+          bypass_actors: [],
+          rules: [{ type: 'deletion' }, { type: 'merge_queue', parameters: { merge_method: 'FAST_FORWARD' } }],
+        },
+        {
+          id: 2,
+          name: 'Keep',
+          target: 'branch',
+          enforcement: 'active',
+          bypass_actors: [],
+          rules: [{ type: 'deletion' }],
+        },
+      ],
+      environments: [
+        {
+          name: 'slow',
+          wait_timer: 50_000,
+          prevent_self_review: false,
+          reviewers: [],
+          deployment_branch_policy: null,
+          branch_policies: [],
+        },
+      ],
+    });
+
+    const { profile, warnings } = await captureProfile(github, repo);
+    expect(warnings).toEqual([
+      'Skipped ruleset "Queue": a profile cannot hold "FAST_FORWARD" at rules[1].parameters.merge_method (Invalid option: expected one of "MERGE"|"SQUASH"|"REBASE")',
+      'Skipped environment "slow": a profile cannot hold 50000 at wait_timer (Too big: expected number to be <=43200)',
+    ]);
+    expect(profile.rulesets?.map((entry) => entry.name)).toEqual(['Keep']);
+    expect(profile.environments).toEqual([]);
+    await expect(parseProfile(stringifyProfile(profile), tmpdir())).resolves.toBeDefined();
   });
 
   test("reads GitHub's nulls for unset fields as unset, and writes no empty security_and_analysis", async () => {

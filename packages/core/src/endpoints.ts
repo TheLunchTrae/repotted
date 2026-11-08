@@ -248,6 +248,26 @@ export function planEndpoint(
 }
 
 /**
+ * Why a profile cannot hold a value GitHub reports, naming each part that
+ * fails and where it is, or undefined when it can.
+ */
+export function unloadable(schema: z.ZodType, value: unknown): string | undefined {
+  const result = schema.safeParse(value);
+  if (result.success) {
+    return undefined;
+  }
+  const problems = result.error.issues.map((issue) => {
+    const reported: unknown = issue.path.reduce<unknown>(
+      (inner, part) => (typeof inner === 'object' && inner !== null ? Reflect.get(inner, part) : undefined),
+      value,
+    );
+    const at = z.core.toDotPath(issue.path);
+    return `${JSON.stringify(reported)}${at === '' ? '' : ` at ${at}`} (${issue.message})`;
+  });
+  return `a profile cannot hold ${problems.join('; ')}`;
+}
+
+/**
  * The captured settings that a profile can hold. GitHub may report a value
  * that no profile takes, such as an option newer than the schema, so a
  * setting that fails its schema is left out with a warning, and the capture
@@ -261,21 +281,13 @@ export function loadable(
 ): Record<string, unknown> {
   const kept: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(settings)) {
-    const setting = { [key]: value };
-    const result = schema.safeParse(setting);
-    if (result.success) {
+    const field: unknown = schema.shape[key];
+    const problem = unloadable(field instanceof z.ZodType ? field : z.never(), value);
+    if (problem === undefined) {
       kept[key] = value;
-      continue;
+    } else {
+      warnings.push(`Skipped ${name}.${key}: ${problem}`);
     }
-    const problems = result.error.issues.map((issue) => {
-      const reported: unknown = issue.path.reduce<unknown>(
-        (inner, part) => (typeof inner === 'object' && inner !== null ? Reflect.get(inner, part) : undefined),
-        setting,
-      );
-      const at = z.core.toDotPath(issue.path.slice(1));
-      return `${JSON.stringify(reported)}${at === '' ? '' : ` at ${at}`} (${issue.message})`;
-    });
-    warnings.push(`Skipped ${name}.${key}: a profile cannot hold ${problems.join('; ')}`);
   }
   return kept;
 }

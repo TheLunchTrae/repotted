@@ -3,18 +3,20 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 
 import { type Change, type Section, sections } from './change.js';
-import { captureEndpoints, loadable, planEndpoint, readEndpoints } from './endpoints.js';
+import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadable } from './endpoints.js';
 import { type GitHub, GitHubError, parseRepo, repoPattern, type RepoRef } from './github.js';
 import { type Lock, requiredPermission } from './permissions.js';
 import type { Drafts } from './profile.js';
 import {
   actionsSettings,
   commitPairs,
+  environment,
   identifyingRepositoryFields,
   mergeSettings,
   profile,
   type Profile,
   repositorySettings,
+  ruleset,
   securityAndAnalysis,
   securitySettings,
 } from './schema.js';
@@ -133,6 +135,30 @@ export async function createPlan(
 }
 
 /**
+ * The captured rulesets or environments that a profile can hold. One that
+ * fails its schema is left out whole, with a warning: a ruleset without one
+ * of its rules would have that rule removed on apply, while a profile leaves
+ * a ruleset it does not name alone.
+ */
+function loadableEntries<Entry extends { readonly name: string }>(
+  kind: string,
+  schema: z.ZodType,
+  entries: readonly Entry[],
+  warnings: string[],
+): Entry[] {
+  const kept: Entry[] = [];
+  for (const entry of entries) {
+    const problem = unloadable(schema, entry);
+    if (problem === undefined) {
+      kept.push(entry);
+    } else {
+      warnings.push(`Skipped ${kind} "${entry.name}": ${problem}`);
+    }
+  }
+  return kept;
+}
+
+/**
  * Reads every section into a profile that describes the repository as it
  * is. Settings that name the repository, such as its description, stay out,
  * so the profile can describe other repositories too.
@@ -221,6 +247,17 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     warnings.push(`Skipped environments: ${environments.reason}`);
   }
   const customProperties = properties.available ? captureCustomProperties(properties.values) : {};
+  const capturedRulesets = rulesets.available
+    ? loadableEntries(
+        'ruleset',
+        ruleset,
+        rulesets.rulesets.map((entry) => entry.ruleset),
+        warnings,
+      )
+    : undefined;
+  const capturedEnvironments = environments.available
+    ? loadableEntries('environment', environment, environments.environments.map(describeEnvironment), warnings)
+    : undefined;
   return {
     profile: {
       repository,
@@ -232,8 +269,8 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
       ...(autolinks.available && autolinks.autolinks.length > 0
         ? { autolinks: autolinks.autolinks.map(describeAutolink) }
         : {}),
-      ...(rulesets.available ? { rulesets: rulesets.rulesets.map((entry) => entry.ruleset) } : {}),
-      ...(environments.available ? { environments: environments.environments.map(describeEnvironment) } : {}),
+      ...(capturedRulesets === undefined ? {} : { rulesets: capturedRulesets }),
+      ...(capturedEnvironments === undefined ? {} : { environments: capturedEnvironments }),
     },
     warnings,
   };

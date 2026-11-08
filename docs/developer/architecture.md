@@ -137,7 +137,8 @@ never less protected in between:
 anything is written. `mergeSettingsProblems` in `schema.ts` runs on the
 profile alone when it loads, and again at plan time with the profile laid over
 the live settings; `commitPairs` lists the title and message pairs the
-repository settings page offers. A setting GitHub leaves out of its response
+repository settings page offers. At plan time a pair the profile doesn't
+name is left out of the check, since no write sends it. A setting GitHub leaves out of its response
 is not checked. Either failure stops planning, so apply never sees it.
 
 A section that GitHub won't let Repotted read gives a warning, and the other
@@ -154,7 +155,10 @@ as an option GitHub added after `schema.ts`, so a captured profile always
 loads. The fields of an endpoint's object and of `security_and_analysis` are
 parsed one by one, so only the field that fails is left out. A commit message
 setting goes with its title setting, and the other way round, since GitHub
-takes them only as a pair.
+takes them only as a pair. A ruleset or environment that fails its schema is
+left out whole, with a warning: without one of its rules, a ruleset would
+have that rule removed on apply, while a profile leaves alone a ruleset it
+doesn't name.
 
 Before anything is written, `readAccess` in `repositories.ts` reads the
 account's role from the repository and, with a Repotted App token, the
