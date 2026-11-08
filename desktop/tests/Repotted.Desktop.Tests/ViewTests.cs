@@ -309,6 +309,54 @@ public sealed class ViewTests : IDisposable
         Assert.False(window.IsVisible);
     }
 
+    [AvaloniaFact]
+    public async Task Closing_the_window_stays_on_cancel_or_a_failed_save_and_closes_once_saved()
+    {
+        var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrulesets:\n  - name: Old tags\n    absent: true\nenvironments:\n  - name: npm\n");
+        var cli = new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base));
+        var window = await Show("light", cli);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        var save = $$"""profile {{own}} --drop-environment=npm --environment={"name":"pages"} --json""";
+
+        // Cancel keeps the window and the change.
+        window.Close();
+        shell.Profiles.StayHereCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(window.IsVisible);
+        Assert.False(shell.Profiles.HasLeaving);
+        Assert.True(editor.HasChanges);
+
+        // A save that fails keeps the window open, with why.
+        cli.On(save, """{"error":{"kind":"error","message":"The file could not be written"}}""", exitCode: 1);
+        window.Close();
+        await shell.Profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(window.IsVisible);
+        Assert.Contains("could not be written", editor.SaveError, StringComparison.Ordinal);
+
+        // A save that goes through closes it.
+        cli.On(save, () =>
+        {
+            File.WriteAllText(own, "extends: base.yaml\nrulesets:\n  - name: Old tags\n    absent: true\nenvironments:\n  - name: pages\n");
+            return Documents.Resolved(own, @base);
+        });
+        window.Close();
+        await shell.Profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(window.IsVisible);
+        Assert.Contains(save, cli.Calls);
+    }
+
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
     public async Task Rulesets_and_environments_open_in_an_editor(string theme)

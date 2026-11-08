@@ -1063,6 +1063,140 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_second_way_out_takes_over_the_question_and_the_first_stays()
+    {
+        var (profiles, cli, _) = await OpenOrgs();
+        Choose(profiles.Current!, "has_wiki", "On");
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        var start = profiles.StartConnectCommand.ExecuteAsync(null);
+
+        await change;
+        Assert.Equal(folders.Profiles, profiles.Folder);
+        Assert.Equal("orgs has unsaved changes. Save them before you connect a repository?", profiles.LeavingMessage);
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await start;
+        Assert.NotNull(profiles.Connecting);
+        Assert.Equal(folders.Profiles, profiles.Folder);
+    }
+
+    [AvaloniaFact]
+    public async Task The_question_waits_while_its_save_runs()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        Choose(profiles.Current!, "has_wiki", "On");
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+        var written = new TaskCompletionSource<string>();
+        cli.On($"profile {files.Own} --set repository.has_wiki=true --json", _ => written.Task);
+
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        var save = profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+
+        Assert.False(profiles.SaveAndLeaveCommand.CanExecute(null));
+        Assert.False(profiles.DiscardAndLeaveCommand.CanExecute(null));
+        Assert.False(profiles.StayHereCommand.CanExecute(null));
+        written.SetResult(Documents.Resolved(files.Own, files.Base, wiki: true));
+        await save;
+        await change;
+        Assert.Equal(other, profiles.Folder);
+        Assert.True(profiles.StayHereCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
+    public async Task A_failed_save_opens_the_profile_it_could_not_save_even_under_a_search()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        cli.On(
+            $"profile {files.Own} --set repository.has_wiki=true --json",
+            """{"error":{"kind":"error","message":"The file could not be written"}}""",
+            exitCode: 1);
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+
+        // Another profile is open.
+        profiles.Selected = profiles.Items.Single(item => item.Name == "base");
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await change;
+        Assert.Same(editor, profiles.Current);
+        Assert.Equal("orgs", profiles.Selected?.Name);
+
+        // The search hides it.
+        profiles.Selected = profiles.Items.Single(item => item.Name == "base");
+        profiles.Filter = "base";
+        change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await change;
+        Assert.Same(editor, profiles.Current);
+        Assert.True(profiles.ShowProfile);
+        Assert.Equal(folders.Profiles, profiles.Folder);
+    }
+
+    [AvaloniaFact]
+    public async Task Discard_stays_while_a_profile_is_still_loading()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        File.AppendAllText(files.Own, "# pulled by a sync\n");
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.True(editor.OutOfDate);
+        var resolve = new TaskCompletionSource<string>();
+        cli.On($"profile {files.Own} --json", _ => resolve.Task);
+        var reload = editor.ReloadCommand.ExecuteAsync(null);
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        profiles.DiscardAndLeaveCommand.Execute(null);
+
+        await change;
+        Assert.Equal(folders.Profiles, profiles.Folder);
+        resolve.SetResult(Documents.Resolved(files.Own, files.Base));
+        await reload;
+    }
+
+    [AvaloniaFact]
+    public async Task Cancelling_a_quit_keeps_a_new_profile_form()
+    {
+        var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
+        var cli = new FakeCli()
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base));
+        var shell = new ShellViewModel(new Account.SignedIn("TheLunchTrae", null, null, null), new RepottedClient(cli), new FakeDesktop(), folders.Settings);
+        await shell.RefreshAsync();
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        Choose(shell.Profiles.Current!, "has_wiki", "On");
+        shell.Profiles.StartNew(null);
+        var form = shell.Profiles.Creating!;
+        form.Name = "half typed";
+
+        var quit = shell.ConfirmQuitAsync();
+        Assert.Same(form, shell.Profiles.Creating);
+        shell.Profiles.StayHereCommand.Execute(null);
+
+        Assert.False(await quit);
+        Assert.Same(form, shell.Profiles.Creating);
+        Assert.Equal("half typed", form.Name);
+    }
+
+    [AvaloniaFact]
     public async Task Discarding_puts_rulesets_and_environments_back()
     {
         var (profiles, _, _) = await OpenOrgs();

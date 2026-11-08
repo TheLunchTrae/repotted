@@ -108,7 +108,6 @@ internal sealed partial class ShellViewModel : ViewModelBase
             return Task.FromResult(true);
         }
         Page = 1;
-        Profiles.CancelNew();
         return Profiles.ConfirmLeaveAsync("quit");
     }
 

@@ -156,17 +156,18 @@ internal sealed partial class ProfilesViewModel(
 
     public bool HasUnsaved => editors.Values.Any(editor => editor.HasChanges);
 
+    /// <summary>The profiles with unsaved changes when the question was asked, which it names.</summary>
+    private List<string> leavingNames = [];
+
     public string LeavingMessage
     {
         get
         {
-            var names = Unsaved.Select(editor => editor.Name).Order(StringComparer.Ordinal).ToList();
-            var who = names.Count switch
+            var who = leavingNames.Count switch
             {
-                0 => "Nothing has",
-                1 => $"{names[0]} has",
-                2 => $"{names[0]} and {names[1]} have",
-                _ => $"{names.Count} profiles have",
+                1 => $"{leavingNames[0]} has",
+                2 => $"{leavingNames[0]} and {leavingNames[1]} have",
+                _ => $"{leavingNames.Count} profiles have",
             };
             return $"{who} unsaved changes. Save them before you {Leaving}?";
         }
@@ -187,7 +188,9 @@ internal sealed partial class ProfilesViewModel(
         leave?.TrySetResult(false);
         var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         leave = answer;
+        leavingNames = [.. Unsaved.Select(editor => editor.Name).Order(StringComparer.Ordinal)];
         Leaving = act;
+        OnPropertyChanged(nameof(LeavingMessage));
         try
         {
             return await answer.Task.ConfigureAwait(true);
@@ -203,32 +206,38 @@ internal sealed partial class ProfilesViewModel(
     }
 
     /// <summary>Saves every unsaved profile, and goes on only when each save went through.</summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanAnswer))]
     private async Task SaveAndLeaveAsync()
     {
         if (leave is not { } answer)
         {
             return;
         }
-        foreach (var editor in Unsaved)
+        SavingToLeave = true;
+        try
         {
-            if (editor.SaveCommand.CanExecute(null))
+            foreach (var editor in Unsaved)
             {
-                await editor.SaveCommand.ExecuteAsync(null).ConfigureAwait(true);
+                if (editor.SaveCommand.CanExecute(null))
+                {
+                    await editor.SaveCommand.ExecuteAsync(null).ConfigureAwait(true);
+                }
             }
         }
-        // A profile that could not be saved opens, with why, and nothing moves on.
-        if (Unsaved.FirstOrDefault() is { } left)
+        finally
         {
-            Selected = Items.FirstOrDefault(item => item.Listing.File == left.File);
-            answer.TrySetResult(false);
-            return;
+            SavingToLeave = false;
         }
-        answer.TrySetResult(true);
+        Settle(answer);
     }
 
+    /// <summary>True while Save on the question runs; the question's buttons wait for it.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveAndLeaveCommand), nameof(DiscardAndLeaveCommand), nameof(StayHereCommand))]
+    public partial bool SavingToLeave { get; private set; }
+
     /// <summary>Discards every unsaved change and goes on.</summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanAnswer))]
     private void DiscardAndLeave()
     {
         if (leave is not { } answer)
@@ -237,14 +246,45 @@ internal sealed partial class ProfilesViewModel(
         }
         foreach (var editor in Unsaved)
         {
-            editor.DiscardCommand.Execute(null);
+            // An editor that is loading or saving can't discard yet, and keeps the question open.
+            if (editor.DiscardCommand.CanExecute(null))
+            {
+                editor.DiscardCommand.Execute(null);
+            }
         }
-        answer.TrySetResult(true);
+        Settle(answer);
     }
 
     /// <summary>Stays where the profiles are, with every unsaved change kept.</summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanAnswer))]
     private void StayHere() => leave?.TrySetResult(false);
+
+    /// <summary>The question's buttons wait while Save runs, so nothing moves on under a save.</summary>
+    private bool CanAnswer() => !SavingToLeave;
+
+    /// <summary>
+    /// Goes on when no profile has unsaved changes left; otherwise opens the
+    /// first that does, with why, and stays.
+    /// </summary>
+    private void Settle(TaskCompletionSource<bool> answer)
+    {
+        if (Unsaved.FirstOrDefault() is not { } left)
+        {
+            answer.TrySetResult(true);
+            return;
+        }
+        if (Items.FirstOrDefault(item => item.Listing.File == left.File) is { } shown)
+        {
+            Selected = shown;
+        }
+        else if (all.FirstOrDefault(item => item.Listing.File == left.File) is { } hidden)
+        {
+            // The search hides it, but it opens all the same.
+            Creating = null;
+            Open(hidden.Listing);
+        }
+        answer.TrySetResult(false);
+    }
 
     /// <summary>The form that moves the profiles to a config repository, which stands in for the editor until it closes.</summary>
     [ObservableProperty]
