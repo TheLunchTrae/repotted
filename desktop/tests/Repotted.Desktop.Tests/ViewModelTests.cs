@@ -978,7 +978,9 @@ public sealed class ViewModelTests : IDisposable
         orgsDesktop.Folder = other;
         cli.On(folders.List(other), Documents.NoProfiles);
 
-        await profiles.ChangeFolderCommand.ExecuteAsync(null);
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await change.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.Empty(profiles.Items);
         Assert.Null(profiles.Current);
@@ -1082,6 +1084,41 @@ public sealed class ViewModelTests : IDisposable
         await start;
         Assert.NotNull(profiles.Connecting);
         Assert.Equal(folders.Profiles, profiles.Folder);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_removed_profile_with_edits_is_asked_about_before_the_folder_changes(bool save)
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.True(editor.Removed);
+        cli.On($"profile {files.Own} --set repository.has_wiki=true --json", Documents.Resolved(files.Own, files.Base, wiki: true));
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        Assert.Equal("orgs has unsaved changes. Save them before you change the folder?", profiles.LeavingMessage);
+        if (save)
+        {
+            await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        }
+        else
+        {
+            profiles.DiscardAndLeaveCommand.Execute(null);
+        }
+        await change.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(other, profiles.Folder);
+        // Save puts the file back with the edits; Discard lets it go.
+        Assert.Equal(save, File.Exists(files.Own));
     }
 
     [AvaloniaFact]
