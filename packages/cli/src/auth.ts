@@ -8,6 +8,7 @@ import {
   defaultEnvironment,
   type DeviceCode,
   type FlowEnvironment,
+  GrantRefusedError,
   refreshToken,
   requestDeviceCode,
   type StoredToken,
@@ -47,11 +48,18 @@ export function tokenVariables(env: NodeJS.ProcessEnv = process.env): string[] {
 export class NotSignedInError extends AuthError {
   /** Why a sign-in that should exist could not be used, such as an unreadable keychain; empty when there is none. */
   readonly problems: readonly string[];
+  /**
+   * Whether the sign-in is gone: there is none, or GitHub refused it. False
+   * when a passing problem, such as an unreadable keychain or a refresh that
+   * could not reach GitHub, hides a sign-in that may work on the next try.
+   */
+  readonly lost: boolean;
 
-  constructor(message: string, problems: readonly string[] = []) {
+  constructor(message: string, problems: readonly string[] = [], lost = true) {
     super(message);
     this.name = 'NotSignedInError';
     this.problems = problems;
+    this.lost = lost;
   }
 }
 
@@ -136,16 +144,40 @@ function usable(token: StoredToken, now: number): boolean {
   return token.expires_at === undefined || token.expires_at - now > expiryMargin;
 }
 
+// How long a run whose refresh GitHub refused waits for a concurrent run to store its token.
+const refusedRefreshWait = 1000;
+
+/**
+ * A usable token in the store other than `stored`, as a run that refreshed
+ * first leaves there. Undefined when there is none, or the store can't be
+ * read now, which leaves the refresh's own failure to report.
+ */
+async function newerToken(
+  store: TokenStore,
+  stored: StoredToken,
+  environment: FlowEnvironment,
+): Promise<string | undefined> {
+  try {
+    const latest = await store.read();
+    return latest !== undefined && latest.access_token !== stored.access_token && usable(latest, environment.now())
+      ? latest.access_token
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Turns the stored sign-in into a token that works now, refreshing it when
  * it is about to expire. Without a token, `problem` says why the sign-in no
- * longer works, if there was one.
+ * longer works, if there was one, and `lost` whether GitHub refused it rather
+ * than a passing failure stopping the refresh.
  */
 async function signedInToken(
   store: TokenStore,
   env: NodeJS.ProcessEnv,
   environment: FlowEnvironment,
-): Promise<{ token?: string; problem?: string }> {
+): Promise<{ token?: string; problem?: string; lost?: boolean }> {
   const stored = await store.read();
   if (stored === undefined) {
     return {};
@@ -158,20 +190,34 @@ async function signedInToken(
     stored.refresh_token === undefined ||
     (stored.refresh_expires_at !== undefined && stored.refresh_expires_at <= now)
   ) {
-    return { problem: 'The Repotted sign-in expired.' };
+    return { problem: 'The Repotted sign-in expired.', lost: true };
   }
+  let refreshed = false;
   try {
     const fresh = await refreshToken(appClientId(env), stored.refresh_token, environment);
+    refreshed = true;
     await store.write(fresh);
     return { token: fresh.access_token };
   } catch (error) {
     // A refresh token works once. Another run may have refreshed it first and
-    // stored the result, so take that before giving up.
-    const latest = await store.read();
-    if (latest !== undefined && latest.access_token !== stored.access_token && usable(latest, environment.now())) {
-      return { token: latest.access_token };
+    // stored the result, so take that before giving up. When GitHub refused
+    // this refresh, that run may still be storing its token, so look again
+    // after a moment.
+    const refused = !refreshed && error instanceof GrantRefusedError;
+    let newer = await newerToken(store, stored, environment);
+    if (newer === undefined && refused) {
+      await environment.sleep(refusedRefreshWait);
+      newer = await newerToken(store, stored, environment);
     }
-    return { problem: sentence(`The Repotted sign-in could not be refreshed: ${describe(error)}`) };
+    if (newer !== undefined) {
+      return { token: newer };
+    }
+    return {
+      problem: sentence(`The Repotted sign-in could not be refreshed: ${describe(error)}`),
+      // A refresh token works once, so one spent on a token the keychain
+      // would not keep is as gone as one GitHub refused.
+      lost: refreshed || refused,
+    };
   }
 }
 
@@ -191,6 +237,7 @@ export async function resolveToken(sources: TokenSources = {}): Promise<string> 
     }
   }
   const problems: string[] = [];
+  let lost = true;
   try {
     const signedIn = await signedInToken(sources.store ?? keychain, env, sources.environment ?? defaultEnvironment);
     if (signedIn.token !== undefined) {
@@ -198,9 +245,11 @@ export async function resolveToken(sources: TokenSources = {}): Promise<string> 
     }
     if (signedIn.problem !== undefined) {
       problems.push(signedIn.problem);
+      lost = signedIn.lost === true;
     }
   } catch (error) {
     problems.push(sentence(`Could not read the OS keychain: ${describe(error)}`));
+    lost = false;
   }
   try {
     const token = await (sources.ghToken ?? ghCliToken)();
@@ -213,6 +262,7 @@ export async function resolveToken(sources: TokenSources = {}): Promise<string> 
   throw new NotSignedInError(
     [...problems, 'Not signed in to GitHub. Run repotted login, or set GITHUB_TOKEN.'].join(' '),
     problems,
+    lost,
   );
 }
 

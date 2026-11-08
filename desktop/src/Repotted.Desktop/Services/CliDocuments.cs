@@ -89,6 +89,9 @@ internal sealed record ErrorDetail(string Kind, string Message);
 /// <summary>Any document that may hold a failure.</summary>
 internal sealed record FailureDocument(ErrorDetail? Error = null);
 
+/// <summary>What <c>repotted logout --json</c> prints: whether there was a sign-in to remove.</summary>
+internal sealed record LogoutDocument(bool Removed);
+
 /// <summary>One line of <c>repotted login --json</c>.</summary>
 internal sealed record LoginEvent(
     string Event,
@@ -113,4 +116,5 @@ internal sealed record LoginEvent(
 [JsonSerializable(typeof(SyncDocument))]
 [JsonSerializable(typeof(FailureDocument))]
 [JsonSerializable(typeof(LoginEvent))]
+[JsonSerializable(typeof(LogoutDocument))]
 internal sealed partial class CliJson : JsonSerializerContext;

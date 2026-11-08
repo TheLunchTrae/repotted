@@ -10,7 +10,11 @@ job, so the rules about what Repotted may write live in one place.
 
 `packages/core/src/schema.ts` defines a profile with zod. Its keys are the
 fields that the GitHub REST API's write endpoints take, so GitHub's REST docs
-describe each key. Most sections capture the API's response as it is.
+describe each key. A setting at an endpoint of its own is kept under that
+endpoint's key, with the endpoint's fields inside it when there are several;
+`endpoints.ts` reads and plans those settings, and
+[Settings coverage](settings-coverage.md) lists each with its endpoint. Most
+sections capture the API's response as it is.
 Environments are the exception: `sections/environments.ts` turns GitHub's
 protection rules into `wait_timer`, `reviewers`, and `prevent_self_review`,
 and reads `branch_policies` from a separate endpoint. The schema's objects are
@@ -21,8 +25,10 @@ are.
 `packages/core/src/profile.ts` loads a profile and the chain of profiles it
 `extends`, merges them, and only then validates the result. Validating after
 the merge lets a base profile rely on what the profiles that extend it add.
-Settings merge key by key. A ruleset or environment replaces the base's entry
-of the same name whole. The resolved profile records which file sets each value,
+Settings merge key by key, and so do the keys inside an object of settings,
+such as `selected_actions`. A ruleset, environment, or autolink replaces the
+base's entry of the same name or prefix whole, and `pages: { absent: true }`
+replaces a base's site. The resolved profile records which file sets each value,
 which `repotted profile --json` reports and the desktop app shows.
 
 `editProfile` in the same file edits a profile in place for
@@ -89,7 +95,13 @@ is not checked. Either failure stops planning, so apply never sees it.
 
 A section that GitHub won't let Repotted read gives a warning, and the other
 sections still plan: rulesets on a GitHub plan that doesn't support them, or
-environments with a token that can't list them.
+environments with a token that can't list them. The same holds for each
+setting at an endpoint of its own. A setting the repository doesn't have
+gives a warning with GitHub's reason, and one GitHub refuses with a `403`
+gives a warning that names the permission it needs, from `permissions.ts`.
+`capture` warns only about the refused ones, since a feature the repository
+lacks is no news. A `403` on a write stops apply, and the failure names the
+permission too.
 
 ## Apply
 
@@ -135,15 +147,19 @@ and exist once. `Services/RepottedCli.cs` runs the CLI as a child process,
 streams its JSON Lines, and kills the run whenever whatever started it ends.
 `Services/RepottedClient.cs` reads each document strictly with source-generated
 System.Text.Json, so a renamed or missing member is an error rather than a
-null.
+null. A failure with `kind: signed_out`, from any command, raises
+`SignInLost`, and `MainViewModel` then checks the sign-in again, so a sign-in
+that stops working mid-session leads back to the sign-in page, while one that
+still works keeps the app.
 
 `ContractTests.cs` in `csharp:test` runs the built CLI and reads what it
-prints for the commands that need no GitHub: signed-out `status`, `profiles`,
-`profile`, and profile saves through `--set`, `--ruleset`, and
-`--environment`. A change to those documents that the app doesn't expect
-fails the gate. The `capture`, `plan`, `repos`, and `login` documents
-need GitHub, so the app's tests read hand-written examples of them, and only the
-strict parsing guards them against the real CLI.
+prints for the commands that need no GitHub: signed-out `status`,
+`profiles`, `profile`, and profile saves through `--set`, `--ruleset`, and
+`--environment`. A change to those documents that the app
+doesn't expect fails the gate. The `capture`, `plan`, `repos`, and `login`
+documents need GitHub, and `logout` would remove a real sign-in, so the app's
+tests read hand-written examples of them, and only the strict parsing guards
+them against the real CLI.
 
 Each package ships the CLI beside the app as `repotted-cli`, a Node single
 executable application that `packages/cli/sea.ts` builds: the CLI and its

@@ -29,6 +29,16 @@ export interface FakeState {
   environments: StoredEnvironment[];
   environmentsUnreadable: boolean;
   branchPoliciesUnreadable: boolean;
+  /**
+   * Settings at endpoints of their own, by path under the repository, as
+   * GitHub sends them. A path left out is one GitHub does not offer on the
+   * repository. Dependabot alerts are a boolean, and the Pages site is null
+   * when the repository has none.
+   */
+  settings: Record<string, unknown>;
+  /** Requests GitHub refuses, as `GET /pages`, the way it refuses a token without the permission. */
+  refused: string[];
+  autolinks: { id: number; key_prefix: string; url_template: string; is_alphanumeric: boolean }[];
   account: FakeAccount;
 }
 
@@ -92,6 +102,8 @@ function storedRules(value: unknown): StoredRuleset['rules'] {
   });
 }
 
+const unhandled = Symbol('unhandled');
+
 function paging(query: URLSearchParams): { perPage: number; page: number } {
   return { perPage: Number(query.get('per_page') ?? '30'), page: Number(query.get('page') ?? '1') };
 }
@@ -123,6 +135,7 @@ export class FakeGitHub implements GitHub {
         merge_commit_message: 'PR_TITLE',
         squash_merge_commit_title: 'COMMIT_OR_PR_TITLE',
         squash_merge_commit_message: 'COMMIT_MESSAGES',
+        topics: [],
       },
       actions: { enabled: true, allowed_actions: 'all', sha_pinning_required: false },
       selected: {},
@@ -132,6 +145,9 @@ export class FakeGitHub implements GitHub {
       environments: [],
       environmentsUnreadable: false,
       branchPoliciesUnreadable: false,
+      settings: {},
+      refused: [],
+      autolinks: [],
       account: { login: 'lunch', name: null, repositories: [] },
       ...state,
     };
@@ -158,6 +174,13 @@ export class FakeGitHub implements GitHub {
     if (environment !== null) {
       return this.handleEnvironment(method, decodeURIComponent(environment[1] ?? ''), environment, query, body);
     }
+    if (route.startsWith(`${base}/`) && this.state.refused.includes(`${method} ${route.slice(base.length)}`)) {
+      throw new GitHubError(403, 'Resource not accessible by integration');
+    }
+    const setting = this.handleSetting(method, route.slice(base.length), body);
+    if (setting !== unhandled) {
+      return setting;
+    }
     const key = `${method} ${rulesetId === undefined ? route : `${base}/rulesets/:id`}`;
 
     switch (key) {
@@ -174,6 +197,13 @@ export class FakeGitHub implements GitHub {
           }
         }
         const next = { ...this.state.repository, ...patch };
+        // Security and analysis changes only the features the request names.
+        if (patch['security_and_analysis'] !== undefined) {
+          next['security_and_analysis'] = {
+            ...record(this.state.repository['security_and_analysis'] ?? {}),
+            ...record(patch['security_and_analysis']),
+          };
+        }
         if (
           next['allow_merge_commit'] === false &&
           next['allow_squash_merge'] === false &&
@@ -267,6 +297,158 @@ export class FakeGitHub implements GitHub {
         throw new GitHubError(404, `Not Found: ${method} ${path}`);
       }
     }
+  }
+
+  /** Serves the settings at endpoints of their own, or says the path is not one. */
+  private handleSetting(method: Method, relative: string, body: unknown): unknown {
+    const { settings } = this.state;
+    const stored = (): unknown => {
+      if (!Object.hasOwn(settings, relative)) {
+        throw new GitHubError(404, `Not Found: ${method} ${relative}`);
+      }
+      return settings[relative];
+    };
+    if (relative === '/topics') {
+      if (method === 'PUT') {
+        this.state.repository['topics'] = record(body)['names'];
+      }
+      return { names: this.state.repository['topics'] };
+    }
+    if (relative === '/vulnerability-alerts') {
+      stored();
+      if (method === 'GET' && settings[relative] !== true) {
+        throw new GitHubError(404, 'Vulnerability alerts are disabled.');
+      }
+      if (method === 'DELETE') {
+        settings[relative] = false;
+        if (record(settings['/automated-security-fixes'] ?? {})['enabled'] === true) {
+          settings['/automated-security-fixes'] = { enabled: false, paused: false };
+        }
+      } else if (method === 'PUT') {
+        settings[relative] = true;
+      }
+      return undefined;
+    }
+    if (['/immutable-releases', '/automated-security-fixes', '/private-vulnerability-reporting'].includes(relative)) {
+      const current = record(stored());
+      if (method === 'PUT' || method === 'DELETE') {
+        if (
+          relative === '/automated-security-fixes' &&
+          method === 'PUT' &&
+          settings['/vulnerability-alerts'] !== true
+        ) {
+          throw new GitHubError(422, 'Dependabot alerts must be enabled first');
+        }
+        settings[relative] = { ...current, enabled: method === 'PUT' };
+        return undefined;
+      }
+      // GitHub answers 404 while immutable releases are off, and for
+      // security updates while Dependabot alerts are off.
+      if (
+        (relative === '/immutable-releases' && current['enabled'] !== true) ||
+        (relative === '/automated-security-fixes' && settings['/vulnerability-alerts'] !== true)
+      ) {
+        throw new GitHubError(404, 'Not Found');
+      }
+      return current;
+    }
+    if (relative === '/properties/values') {
+      const values = stored();
+      if (!Array.isArray(values)) {
+        throw new GitHubError(500, 'Bad fake state');
+      }
+      if (method === 'PATCH') {
+        const properties: unknown = record(body)['properties'];
+        for (const item of Array.isArray(properties) ? properties : []) {
+          const { property_name: name, value } = record(item);
+          const current: unknown = settings[relative];
+          const list: unknown[] = Array.isArray(current) ? current : [];
+          settings[relative] = [
+            ...list.filter((entry) => record(entry)['property_name'] !== name),
+            { property_name: name, value },
+          ];
+        }
+        return undefined;
+      }
+      return values;
+    }
+    if (relative === '/autolinks' || relative.startsWith('/autolinks/')) {
+      return this.handleAutolinks(method, relative, body);
+    }
+    if (relative === '/pages') {
+      const site = stored();
+      if (method === 'POST') {
+        if (site !== null) {
+          throw new GitHubError(409, 'GitHub Pages is already enabled.');
+        }
+        settings[relative] = { build_type: 'legacy', cname: null, https_enforced: true, ...record(body) };
+        return settings[relative];
+      }
+      if (site === null) {
+        throw new GitHubError(404, 'Not Found');
+      }
+      if (method === 'DELETE') {
+        settings[relative] = null;
+        return undefined;
+      }
+      if (method === 'PUT') {
+        settings[relative] = { ...record(site), ...record(body) };
+        return undefined;
+      }
+      return site;
+    }
+    if (!Object.hasOwn(settings, relative)) {
+      return unhandled;
+    }
+    if (method === 'GET') {
+      return settings[relative];
+    }
+    const next = record(body);
+    if (
+      relative === '/dependabot/runner-settings' &&
+      next['runner_type'] === 'standard' &&
+      Object.keys(next).length > 1
+    ) {
+      throw new GitHubError(422, 'runner_labels and runner_group are only for self-hosted and labeled runners');
+    }
+    // A PUT replaces the settings; a PATCH changes the fields it sends.
+    settings[relative] = method === 'PUT' ? next : { ...record(settings[relative]), ...next };
+    if (relative === '/dependabot/runner-settings') {
+      // GitHub always reports the labels and group, empty when there are none.
+      settings[relative] = { runner_labels: [], runner_group: '', ...record(settings[relative]) };
+    }
+    return undefined;
+  }
+
+  private handleAutolinks(method: Method, relative: string, body: unknown): unknown {
+    const id = relative.split('/')[2];
+    if (method === 'GET' && id === undefined) {
+      return this.state.autolinks;
+    }
+    if (method === 'POST' && id === undefined) {
+      const next = record(body);
+      const prefix = String(next['key_prefix']);
+      if (this.state.autolinks.some((item) => item.key_prefix === prefix)) {
+        throw new GitHubError(422, 'Validation Failed: key_prefix already exists');
+      }
+      const created = {
+        id: this.nextId++,
+        key_prefix: prefix,
+        url_template: String(next['url_template']),
+        is_alphanumeric: next['is_alphanumeric'] !== false,
+      };
+      this.state.autolinks.push(created);
+      return created;
+    }
+    if (method === 'DELETE' && id !== undefined) {
+      const before = this.state.autolinks.length;
+      this.state.autolinks = this.state.autolinks.filter((item) => item.id !== Number(id));
+      if (this.state.autolinks.length === before) {
+        throw new GitHubError(404, 'Not Found');
+      }
+      return undefined;
+    }
+    throw new GitHubError(404, `Not Found: ${method} ${relative}`);
   }
 
   private listEnvironments(query: URLSearchParams): unknown {

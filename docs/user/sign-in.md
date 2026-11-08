@@ -20,15 +20,24 @@ Credential Manager on Windows, and the Secret Service, such as GNOME Keyring
 or KWallet, on Linux. The sign-in lasts as long as you use Repotted at least
 once every six months.
 
-To sign out, run `npx repotted logout`. Without Node, run the copy of the CLI
-that comes with the desktop app instead, from its default install folder:
+To sign out of the desktop app, click **Sign out** under your account in the
+sidebar. On the command line, run `npx repotted logout`. Without Node, run the
+copy of the CLI that comes with the desktop app instead, from its default
+install folder:
 
 - macOS: `/Applications/Repotted.app/Contents/MacOS/repotted-cli logout`
 - Windows, in PowerShell:
   `& "$env:LOCALAPPDATA\Programs\Repotted\repotted-cli.exe" logout`
 
+Signing out removes only the Repotted sign-in. With a token in
+`GITHUB_TOKEN` or `GH_TOKEN`, or a GitHub CLI sign-in, Repotted goes on using
+that token, so the desktop app offers **Sign out** only when it uses the
+Repotted sign-in.
+
 To take away the App's access completely, revoke it in your GitHub settings
-under **Applications**.
+under **Applications**. If the desktop app is open when its sign-in stops
+working, such as after you revoke the App's access, it returns to its
+sign-in page.
 
 ## Give the App your repositories
 
