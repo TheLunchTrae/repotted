@@ -142,6 +142,15 @@ gives a warning that names the permission it needs, from `permissions.ts`.
 lacks is no news. A `403` on a write stops apply, and the failure names the
 permission too.
 
+Before anything is written, `readAccess` in `repositories.ts` reads the
+account's role from the repository and, with a Repotted App token, the
+permissions of the App's installation that covers it. `lockChanges` in
+`permissions.ts` sets those against each change and returns the ones Repotted
+can't make, by index. The CLI adds both to the plan document as `access` and
+`locks`, outside `changes`, so the plan that apply compares is unchanged.
+Apply checks neither: GitHub decides at the write, and `failureReason` in
+`plan.ts` turns a lasting `403` or `422` into a short reason.
+
 ## Apply
 
 `applyPlan` takes a reviewed plan, plans again from the plan's saved profile,

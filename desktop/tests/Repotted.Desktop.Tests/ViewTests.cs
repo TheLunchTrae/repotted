@@ -190,7 +190,7 @@ public sealed class ViewTests : IDisposable
 
         shell.Page = 1;
         shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
-        var projects = shell.Profiles.Current!.Tabs[0].Groups[0].Settings.Single(setting => setting.Key == "has_projects");
+        var projects = shell.Profiles.Current!.Tabs[0].Groups.SelectMany(group => group.Settings).Single(setting => setting.Key == "has_projects");
         projects.Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
 
         var text = Texts(window);
@@ -212,6 +212,65 @@ public sealed class ViewTests : IDisposable
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
+    public async Task The_settings_tabs_show_sub_options_notes_and_typed_values(string theme)
+    {
+        var @base = folders.Write("base.yaml", "security:\n  vulnerability_alerts: true\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository:\n  has_wiki: true\n  pull_request_creation_cap:\n    enabled: true\n    max_open_pull_requests: 3\npages:\n  build_type: legacy\n  source:\n    branch: main\n");
+        string Path(string file) => System.Text.Json.JsonSerializer.Serialize(file);
+        var resolved = $$$"""
+            {"chain":[{{{Path(own)}}},{{{Path(@base)}}}],
+             "profile":{
+               "repository":{"has_wiki":true,"pull_request_creation_cap":{"enabled":true,"max_open_pull_requests":3}},
+               "security":{"vulnerability_alerts":true,"security_and_analysis":{"secret_scanning":{"status":"enabled"} } },
+               "pages":{"build_type":"legacy","source":{"branch":"main"} } },
+             "sources":{
+               "repository":{"has_wiki":{{{Path(own)}}},"pull_request_creation_cap.enabled":{{{Path(own)}}},
+                 "pull_request_creation_cap.max_open_pull_requests":{{{Path(own)}}} },
+               "merge":{},"actions":{},
+               "security":{"vulnerability_alerts":{{{Path(@base)}}},"security_and_analysis.secret_scanning":{{{Path(own)}}} },
+               "custom_properties":{},
+               "pages":{"build_type":{{{Path(own)}}},"source.branch":{{{Path(own)}}} },
+               "autolinks":{},"rulesets":{},"environments":{} } }
+            """;
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", resolved)
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
+        window.Height = 1500;
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+
+        var text = Texts(window);
+        Assert.Contains("Restricting editing to collaborators has no API, so it is set on GitHub only.", text);
+        Assert.Contains("Who can create pull requests", text);
+        var limit = window.GetVisualDescendants().OfType<TextBox>()
+            .Single(box => AutomationProperties.GetName(box) == "Open pull requests allowed");
+        Assert.Equal("3", limit.Text);
+        Save(window, $"settings-repository-{theme}");
+
+        editor.SelectedTab = editor.Tab("Security");
+        text = Texts(window);
+        Assert.Contains("Malware alerts, Dependabot rules, and preventing direct dismissals have no API here, so they are set on GitHub or in a security configuration.", text);
+        Assert.Contains("From base", text);
+        Save(window, $"settings-security-{theme}");
+
+        editor.SelectedTab = editor.Tab("Actions");
+        Save(window, $"settings-actions-{theme}");
+
+        editor.SelectedTab = editor.Tab("Pages");
+        var branch = editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == "source.branch");
+        branch.Typed = "";
+        text = Texts(window);
+        Assert.Contains("Enter a value, or remove the setting from this profile.", text);
+        Save(window, $"settings-pages-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
     public async Task A_save_over_a_changed_file_asks_which_version_to_keep(string theme)
     {
         var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
@@ -228,8 +287,8 @@ public sealed class ViewTests : IDisposable
         shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
         var editor = shell.Profiles.Current!;
         editor.ShowYaml = false;
-        editor.SelectedTab = editor.Tabs[4];
-        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        editor.SelectedTab = editor.Tab("Environments");
+        editor.Tab("Environments").Entries[0].Editor.Name = "pages";
         File.AppendAllText(own, "# pulled by a sync\n");
 
         await editor.SaveCommand.ExecuteAsync(null);
@@ -290,8 +349,8 @@ public sealed class ViewTests : IDisposable
         shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
         var editor = shell.Profiles.Current!;
         editor.ShowYaml = false;
-        editor.SelectedTab = editor.Tabs[4];
-        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        editor.SelectedTab = editor.Tab("Environments");
+        editor.Tab("Environments").Entries[0].Editor.Name = "pages";
         // Another page open, so the question brings the profiles back into view.
         shell.Page = 0;
 
@@ -327,7 +386,7 @@ public sealed class ViewTests : IDisposable
         shell.Page = 1;
         shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
         var editor = shell.Profiles.Current!;
-        editor.Tabs[4].Entries[0].Editor.Name = "pages";
+        editor.Tab("Environments").Entries[0].Editor.Name = "pages";
         var save = $$"""profile {{own}} --drop-environment=npm --environment={"name":"pages"} --json""";
 
         // Cancel keeps the window and the change.
@@ -381,7 +440,7 @@ public sealed class ViewTests : IDisposable
                  {"name":"npm","reviewers":[{"type":"User","id":1}],"prevent_self_review":true,
                   "deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true},
                   "branch_policies":[{"name":"main"},{"name":"v*","type":"tag"}]}]},
-             "sources":{"repository":{},"merge":{},"actions":{},
+             "sources":{"repository":{},"merge":{},"actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
                "rulesets":{"Main":{{{Path(own)}}},"Tags":{{{Path(@base)}}} },
                "environments":{"npm":{{{Path(own)}}} } } }
             """;
@@ -396,7 +455,7 @@ public sealed class ViewTests : IDisposable
         shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
         var editor = shell.Profiles.Current!;
         editor.ShowYaml = false;
-        editor.SelectedTab = editor.Tabs[3];
+        editor.SelectedTab = editor.Tab("Rulesets");
 
         var text = Texts(window);
         Assert.Contains(Label("New ruleset"), text);
@@ -413,17 +472,17 @@ public sealed class ViewTests : IDisposable
         window.GetVisualDescendants().OfType<Button>().First(button => AutomationProperties.GetName(button) == "Main: Set here").Focus();
         window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
         Dispatcher.UIThread.RunJobs();
-        var main = (RulesetEditorViewModel)editor.Tabs[3].Editing!.Editor;
+        var main = (RulesetEditorViewModel)editor.Tab("Rulesets").Editing!.Editor;
         var nameBox = window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "Ruleset name");
         Assert.Same(nameBox, window.FocusManager?.GetFocusedElement());
 
         // Moving between tabs shows the open editor again, and leaves focus on the tabs.
-        window.GetVisualDescendants().OfType<ListBoxItem>().Single(item => item.DataContext == editor.Tabs[3]).Focus();
+        window.GetVisualDescendants().OfType<ListBoxItem>().Single(item => item.DataContext == editor.Tab("Rulesets")).Focus();
         window.KeyPressQwerty(PhysicalKey.ArrowLeft, RawInputModifiers.None);
         Dispatcher.UIThread.RunJobs();
         window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
         Dispatcher.UIThread.RunJobs();
-        Assert.Same(editor.Tabs[3], editor.SelectedTab);
+        Assert.Same(editor.Tab("Rulesets"), editor.SelectedTab);
         Assert.IsType<ListBoxItem>(window.FocusManager?.GetFocusedElement());
         main.Enforcement.Options[1].ChooseCommand.Execute(null);
         text = Texts(window);
@@ -440,15 +499,15 @@ public sealed class ViewTests : IDisposable
         Save(window, $"ruleset-{theme}");
 
         // Back puts focus on the row it left, and a base's ruleset keeps its name here.
-        editor.Tabs[3].BackCommand.Execute(null);
+        editor.Tab("Rulesets").BackCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
         Assert.Equal("Main: Changed, not saved yet", AutomationProperties.GetName((Control)window.FocusManager!.GetFocusedElement()!));
-        editor.Tabs[3].Entries[1].OpenCommand.Execute(null);
+        editor.Tab("Rulesets").Entries[1].OpenCommand.Execute(null);
         Assert.Contains("A base profile names this one, so this profile keeps its name and sets the rest.", Texts(window));
         Assert.True(window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "Ruleset name").IsReadOnly);
 
-        editor.SelectedTab = editor.Tabs[4];
-        editor.Tabs[4].Entries[0].OpenCommand.Execute(null);
+        editor.SelectedTab = editor.Tab("Environments");
+        editor.Tab("Environments").Entries[0].OpenCommand.Execute(null);
         text = Texts(window);
         Assert.Contains(Label("Back to environments"), text);
         Assert.Contains("Which ones", text);
@@ -494,7 +553,7 @@ public sealed class ViewTests : IDisposable
         window.Height = 1100;
         Save(window, $"drafts-settings-{theme}");
 
-        editor.SelectedTab = editor.Tabs[3];
+        editor.SelectedTab = editor.Tab("Rulesets");
         Dispatcher.UIThread.RunJobs();
         var rows = window.GetVisualDescendants().OfType<Button>()
             .Where(button => button.Classes.Contains("entry"))
@@ -505,7 +564,7 @@ public sealed class ViewTests : IDisposable
             rows);
         Save(window, $"drafts-rulesets-{theme}");
 
-        editor.Tabs[3].Entries[3].OpenCommand.Execute(null);
+        editor.Tab("Rulesets").Entries[3].OpenCommand.Execute(null);
         text = Texts(window);
         Assert.Contains("Save as a draft", text);
         Assert.Contains("Saved as a draft: compare and apply leave it out, and it may be unfinished. Turn this off to finish it, once it is valid.", text);
@@ -578,6 +637,41 @@ public sealed class ViewTests : IDisposable
         Dispatcher.UIThread.RunJobs();
         Assert.Null(shell.Compare);
         Assert.True(shell.ShowingRepositories);
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task A_compare_shows_what_Repotted_cannot_change_and_where_to_grant_it(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
+        var desktop = new FakeDesktop();
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base))
+            .On($"plan TheLunchTrae/repotted --profile {own} --json", Documents.Plan(
+                access: Documents.ActionsRead,
+                locks: """{"change":5,"reason":"Needs Actions write"}""",
+                changes: Documents.Oidc)), desktop);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        var repositories = shell.Repositories;
+        repositories.Selected = repositories.Rows.Single(row => row.Name == "repotted");
+        repositories.CompareWith = shell.Profiles.Usable.Single(item => item.Name == "orgs");
+        repositories.CompareCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+
+        var text = Texts(window);
+        Assert.Contains("Repotted can't change 2 differences below. Each says what it needs.", text);
+        Assert.Contains(Label("Review App access"), text);
+        Assert.Contains("Needs Actions write", text);
+        Save(window, $"compare-locked-{theme}");
+
+        var names = window.GetVisualDescendants().OfType<ListBoxItem>()
+            .Select(item => ControlAutomationPeer.CreatePeerForElement(item).GetName())
+            .ToList();
+        Assert.Contains(names, name => name.EndsWith(". Repotted can't change it: Needs Actions write", StringComparison.Ordinal));
     }
 
     [AvaloniaTheory]

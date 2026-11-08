@@ -5,49 +5,63 @@
              x:Class="Repotted.Desktop.Views.ProfileView"
              x:DataType="vm:ProfileViewModel">
   <UserControl.Resources>
-    <!-- One setting: where its value comes from, its choices, a way back, and any draft of it. -->
+    <!--
+      One setting: where its value comes from, its choices or a box to type it
+      in, a way back, and any draft of it. A sub-option sits indented under its setting, and a
+      note says what the setting can't do here. Choices too long to sit beside
+      the label go under it.
+    -->
     <DataTemplate x:Key="SettingRow" x:DataType="vm:SettingViewModel">
-      <Border Classes="field">
-        <Grid RowDefinitions="Auto,Auto">
-          <Grid ColumnDefinitions="4,*,Auto,150">
-            <Border Classes="rail" Classes.own="{Binding OwnAfterSave}" Classes.inherited="{Binding InheritedAfterSave}"
-                    Classes.changed="{Binding Changed}" />
-            <StackPanel Grid.Column="1" Margin="16,10" VerticalAlignment="Center" Spacing="2">
-              <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="14.5" />
-              <TextBlock Classes="mono muted" FontSize="12.5" Text="{Binding Key}" />
+      <Border Classes="field" Classes.nested="{Binding Nested}">
+        <Grid ColumnDefinitions="4,*,Auto,150" RowDefinitions="Auto,Auto,Auto">
+          <Border Grid.RowSpan="3" Classes="rail" Classes.own="{Binding OwnAfterSave}" Classes.inherited="{Binding InheritedAfterSave}"
+                  Classes.changed="{Binding Changed}" />
+          <StackPanel Grid.Column="1" Classes="setting" Classes.nested="{Binding Nested}" VerticalAlignment="Center" Spacing="2">
+            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="14.5" TextWrapping="Wrap" />
+            <TextBlock Classes="mono muted" FontSize="12.5" Text="{Binding Key}" TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding Key}" />
+            <TextBlock Classes="muted small" Text="{Binding FieldNote}" IsVisible="{Binding HasFieldNote}"
+                       TextWrapping="Wrap" Margin="0,2,0,0" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4" IsVisible="{Binding IsTyped}">
+            <TextBox Classes="setting" Text="{Binding Typed}" Classes.number="{Binding IsNumber}"
+                     AutomationProperties.Name="{Binding TypedName}"
+                     AutomationProperties.HelpText="{Binding TypedHelp}" />
+            <TextBlock Classes="problem small" Text="{Binding TypedProblem}" IsVisible="{Binding HasTypedProblem}"
+                       TextWrapping="Wrap" MaxWidth="240" />
+          </StackPanel>
+          <Border Grid.Row="{Binding OptionsRow}" Grid.Column="{Binding OptionsColumn}" Grid.ColumnSpan="{Binding OptionsSpan}"
+                  Classes="seg" Classes.wide="{Binding Wide}" Classes.nested="{Binding Nested}" IsVisible="{Binding IsChoice}">
+            <ItemsControl ItemsSource="{Binding Options}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:OptionViewModel">
+                  <!-- A toggle, so screen readers hear which option is chosen. -->
+                  <ToggleButton Classes="seg" Classes.on="{Binding Selected}" Classes.dim="{Binding Dim}"
+                                IsChecked="{Binding Selected, Mode=OneWay}"
+                                Content="{Binding Label}" Command="{Binding ChooseCommand}"
+                                AutomationProperties.Name="{Binding AccessibleName}"
+                                AutomationProperties.HelpText="{Binding Note}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Border>
+          <StackPanel Grid.Column="3" Margin="16,0" VerticalAlignment="Center" Spacing="2">
+            <TextBlock Classes="muted small" Text="{Binding Note}" TextTrimming="CharacterEllipsis" />
+            <StackPanel Orientation="Horizontal" Spacing="12">
+              <Button Classes="link" FontSize="13" HorizontalAlignment="Left" Content="{Binding ResetLabel}"
+                      IsVisible="{Binding CanReset}" Command="{Binding ResetCommand}"
+                      AutomationProperties.Name="{Binding ResetName}" />
+              <Button Classes="link" FontSize="13" HorizontalAlignment="Left" Content="Save as draft"
+                      IsVisible="{Binding CanSaveAsDraft}" Command="{Binding SaveAsDraftCommand}"
+                      AutomationProperties.Name="{Binding Label, StringFormat='Save the change to {0} as a draft'}"
+                      AutomationProperties.HelpText="Keeps the value in the profile without applying it, and puts the setting back as it was." />
             </StackPanel>
-            <Border Grid.Column="2" Classes="seg">
-              <ItemsControl ItemsSource="{Binding Options}">
-                <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:OptionViewModel">
-                    <!-- A toggle, so screen readers hear which option is chosen. -->
-                    <ToggleButton Classes="seg" Classes.on="{Binding Selected}" Classes.dim="{Binding Dim}"
-                                  IsChecked="{Binding Selected, Mode=OneWay}"
-                                  Content="{Binding Label}" Command="{Binding ChooseCommand}"
-                                  AutomationProperties.Name="{Binding AccessibleName}"
-                                  AutomationProperties.HelpText="{Binding Note}" />
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </Border>
-            <StackPanel Grid.Column="3" Margin="16,0" VerticalAlignment="Center" Spacing="2">
-              <TextBlock Classes="muted small" Text="{Binding Note}" TextTrimming="CharacterEllipsis" />
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <Button Classes="link" FontSize="13" HorizontalAlignment="Left" Content="{Binding ResetLabel}"
-                        IsVisible="{Binding CanReset}" Command="{Binding ResetCommand}"
-                        AutomationProperties.Name="{Binding ResetName}" />
-                <Button Classes="link" FontSize="13" HorizontalAlignment="Left" Content="Save as draft"
-                        IsVisible="{Binding CanSaveAsDraft}" Command="{Binding SaveAsDraftCommand}"
-                        AutomationProperties.Name="{Binding Label, StringFormat='Save the change to {0} as a draft'}"
-                        AutomationProperties.HelpText="Keeps the value in the profile without applying it, and puts the setting back as it was." />
-              </StackPanel>
-            </StackPanel>
-          </Grid>
+          </StackPanel>
           <!-- The draft: saved with the profile, left out of compare and apply until it is finished. -->
-          <Grid Grid.Row="1" ColumnDefinitions="4,Auto,*,Auto" IsVisible="{Binding HasDraft}" Margin="0,0,0,10">
+          <Grid Grid.Row="2" Grid.ColumnSpan="4" ColumnDefinitions="4,Auto,*,Auto" IsVisible="{Binding HasDraft}" Margin="0,0,0,10">
             <Border Grid.Column="1" Classes="pill none" Margin="16,0,10,0">
               <StackPanel Orientation="Horizontal"><Ellipse /><TextBlock Text="Draft" /></StackPanel>
             </Border>
@@ -195,12 +209,15 @@
       <Grid ColumnDefinitions="*,Auto" Margin="32,16,32,24" IsVisible="{Binding ShowEditor}"
             IsEnabled="{Binding !Saving}">
         <DockPanel>
-          <!-- Tabs, each with how many values the profile manages there -->
+          <!--
+            Tabs, each with how many values the profile manages there. They
+            wrap onto a second line when the YAML leaves too little room.
+          -->
           <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <ListBox Classes="tabs" ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}"
-                     AutomationProperties.Name="Sections">
+                     AutomationProperties.Name="Sections" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
               <ListBox.ItemsPanel>
-                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
               </ListBox.ItemsPanel>
               <ListBox.Styles>
                 <Style Selector="ListBoxItem" x:DataType="vm:ProfileTabViewModel">

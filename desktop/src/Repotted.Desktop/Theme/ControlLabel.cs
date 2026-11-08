@@ -76,10 +76,16 @@ internal static class ControlLabel
     /// <summary>
     /// Apple's title style: every word capitalized except minor words in the
     /// middle. A word that already has a capital, such as GitHub, macOS, or
-    /// YAML, is a name and stays as written.
+    /// YAML, is a name and stays as written, and so is a path.
     /// </summary>
     internal static string TitleStyle(string label)
     {
+        // A label that starts with a slash is a path, as in "/docs", and stays as written.
+        if (label.StartsWith('/'))
+        {
+            return label;
+        }
+
         var words = label.Split(' ');
         for (var i = 0; i < words.Length; i++)
         {

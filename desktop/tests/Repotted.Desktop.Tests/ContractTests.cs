@@ -94,6 +94,40 @@ public sealed class ContractTests
         Assert.Equal("# Ours\nextends: base.yaml\nrepository:\n  has_wiki: false\n", await File.ReadAllTextAsync(orgs.File, cancellationToken));
     }
 
+    [Fact]
+    public async Task The_cli_saves_every_kind_of_setting_the_app_edits()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        folders.Write("base.yaml", "security: { security_and_analysis: { secret_scanning: { status: enabled } } }\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
+
+        var resolved = await client.ProfileAsync(own, cancellationToken);
+        Assert.EndsWith("base.yaml", resolved.Sources["security"]["security_and_analysis.secret_scanning"], StringComparison.Ordinal);
+        Assert.Empty(resolved.Sources["pages"]);
+
+        var saved = await client.SaveProfileAsync(
+            own,
+            [
+                new("repository.pull_request_creation_cap.max_open_pull_requests", JsonValue.Create(3)),
+                new("security.security_and_analysis.secret_scanning_push_protection", new JsonObject { ["status"] = "enabled" }),
+                new("actions.max_cache_size_gb", JsonValue.Create(5)),
+                new("pages.source.branch", JsonValue.Create("main")),
+                new("repository.description", JsonValue.Create("")),
+            ],
+            [],
+            cancellationToken);
+        Assert.Equal(own, saved.Sources["repository"]["pull_request_creation_cap.max_open_pull_requests"]);
+        Assert.Equal(own, saved.Sources["security"]["security_and_analysis.secret_scanning_push_protection"]);
+        Assert.Equal(own, saved.Sources["pages"]["source.branch"]);
+        Assert.Equal(own, saved.Sources["repository"]["description"]);
+        var values = saved.Values;
+        Assert.Equal(3, SettingViewModel.Find(values.GetProperty("repository"), "pull_request_creation_cap.max_open_pull_requests")!.GetValue<int>());
+        Assert.Equal("main", SettingViewModel.Find(values.GetProperty("pages"), "source.branch")!.GetValue<string>());
+        Assert.Equal("", SettingViewModel.Find(values.GetProperty("repository"), "description")!.GetValue<string>());
+    }
+
     [AvaloniaFact]
     public async Task The_cli_saves_the_rulesets_and_environments_the_app_edits()
     {

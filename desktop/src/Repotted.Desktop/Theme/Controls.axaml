@@ -393,6 +393,34 @@
   <Style Selector="Border.rail.changed">
     <Setter Property="Background" Value="{DynamicResource DriftRailBrush}" />
   </Style>
+  <Style Selector="StackPanel.setting">
+    <Setter Property="Margin" Value="16,10" />
+  </Style>
+  <!-- A sub-option, indented under the setting it belongs to. -->
+  <Style Selector="StackPanel.setting.nested">
+    <Setter Property="Margin" Value="40,10,16,10" />
+  </Style>
+  <Style Selector="Border.field.nested">
+    <Setter Property="MinHeight" Value="52" />
+  </Style>
+  <!-- Choices that go under the setting's label line up with it. -->
+  <Style Selector="Border.seg.wide">
+    <Setter Property="Margin" Value="16,0,16,12" />
+  </Style>
+  <Style Selector="Border.seg.wide.nested">
+    <Setter Property="Margin" Value="40,0,16,12" />
+  </Style>
+  <Style Selector="TextBox.setting">
+    <Setter Property="Width" Value="220" />
+    <Setter Property="FontSize" Value="14" />
+  </Style>
+  <Style Selector="TextBox.setting.number">
+    <Setter Property="Width" Value="96" />
+    <Setter Property="HorizontalAlignment" Value="Right" />
+  </Style>
+  <Style Selector="TextBlock.problem">
+    <Setter Property="Foreground" Value="{DynamicResource RemoveBrush}" />
+  </Style>
 
   <!-- An entry row that opens its editor. -->
   <Style Selector="Button.entry">
@@ -465,6 +493,24 @@
     <Setter Property="Height" Value="16" />
     <Setter Property="CornerRadius" Value="2" />
     <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- A padlock beside what Repotted can't change, drawn in the text's muted color. -->
+  <Style Selector="Path.lock">
+    <Setter Property="Data" Value="M4,6.5 V4.5 A3,3 0 0 1 10,4.5 V6.5 M2.5,6.5 H11.5 V13 H2.5 Z" />
+    <Setter Property="Stroke" Value="{DynamicResource MutedBrush}" />
+    <Setter Property="StrokeThickness" Value="1.4" />
+    <Setter Property="StrokeJoin" Value="Round" />
+    <Setter Property="Width" Value="14" />
+    <Setter Property="Height" Value="14" />
+    <Setter Property="Stretch" Value="None" />
+  </Style>
+  <Style Selector="Border.locks">
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="14,10" />
   </Style>
 
   <!-- Segmented choice: the chosen option is solid. -->
