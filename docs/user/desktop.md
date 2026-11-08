@@ -114,7 +114,24 @@ The app never overwrites a file that is already in the folder.
 ### Edit a profile
 
 Open a profile to edit it. Its tabs follow the parts of a repository's setup:
-repository settings, merge settings, Actions, rulesets, and environments.
+repository settings, merge settings, Actions, security, GitHub Pages,
+rulesets, and environments. A setting's own options sit indented under it,
+such as who can create pull requests under **Pull requests**. Names and
+numbers, such as a branch or a pull request limit, are typed in a box. Until
+what you type is valid, the app says what's wrong and won't save the profile;
+**Undo** puts the box back.
+Topics, custom properties, autolinks, and a few lists, such as the actions a
+repository allows, are edited in the YAML.
+
+Some options on GitHub's settings pages have no API, so no profile can set
+them. Where one belongs to a setting, a note under that setting says so, such
+as wiki's "Restrict editing to collaborators only" option under **Wiki**. Set
+those on GitHub itself.
+
+On the **Pages** tab, **Take the site down** deletes the Pages site on each
+repository that follows the profile. A profile that takes the site down sets
+nothing else for Pages, so choosing it takes out the profile's other Pages
+settings, and setting any of them takes it out again.
 
 A profile manages only what it names. A setting you leave unset keeps whatever
 value each repository has. When a profile extends another, each setting shows
@@ -173,6 +190,15 @@ On the **Repositories** page, select a repository, pick a profile under
 difference by section, with what GitHub has now and what the profile sets.
 Settings that already match are folded away; click **Show everything** to see
 them. Comparing only reads from GitHub.
+
+A padlock marks each difference the app can't change, with what it needs,
+such as **Needs Actions write**. The Repotted App's installation may not
+have been granted that permission, or you may not be an admin on the
+repository. **Review App access**, above the differences, opens the
+installation's settings on GitHub, where its owner can grant what's missing,
+or **Install the App** when it isn't installed on the repository.
+Limits of the repository's GitHub plan or its owner's policies don't show
+here; GitHub reports them only when a change is made.
 
 The app doesn't apply profiles. To make the changes a comparison shows, use
 [`repotted plan` and `repotted apply`](cli.md#plan-and-apply) on the command

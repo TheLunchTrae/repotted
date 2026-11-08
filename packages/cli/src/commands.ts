@@ -13,15 +13,18 @@ import {
   describeFailure,
   describeSkipped,
   editProfile,
+  failureReason,
   type EntryEdit,
   formatPlan,
   type GitHub,
   GitHubError,
   listProfiles,
   listRepositories,
+  lockChanges,
   parsePlan,
   parseRepo,
   type ProfileEdit,
+  readAccess,
   resolveProfile,
   skippedDrafts,
   StalePlanError,
@@ -142,15 +145,20 @@ async function plan(io: Io, args: string[]): Promise<number> {
     throw new UsageError('plan needs --profile.');
   }
   const desired = await resolveProfile(values.profile);
-  const result = await createPlan(await io.github(), repo, desired.profile, skippedDrafts(desired.drafts));
+  const github = await io.github();
+  const result = await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts));
+  // Apply checks neither: GitHub decides at the write.
+  const access = await readAccess(github, repo);
+  const locks = lockChanges(access, result.changes);
+  const document = { ...result, access, locks };
   if (values.out !== undefined) {
-    await writeFile(values.out, `${JSON.stringify(result, null, 2)}\n`);
+    await writeFile(values.out, `${JSON.stringify(document, null, 2)}\n`);
   }
   if (values.json === true) {
-    json(io, result);
+    json(io, document);
     return 0;
   }
-  io.out(`${formatPlan(result)}\n`);
+  io.out(`${formatPlan(result, locks)}\n`);
   if (values.out !== undefined) {
     io.err(`Saved the plan to ${values.out}. Apply it with: repotted apply ${values.out}\n`);
   }
@@ -212,6 +220,7 @@ async function apply(io: Io, args: string[]): Promise<number> {
             message: describeFailure(error),
             applied: error.applied,
             failed: error.failed,
+            reason: failureReason(error),
           },
         });
       } else {

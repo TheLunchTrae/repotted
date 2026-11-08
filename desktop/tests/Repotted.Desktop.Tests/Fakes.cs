@@ -214,7 +214,7 @@ internal static class Documents
          "sources":{
            "repository":{"has_issues":{{{Json(@base)}}},"has_wiki":{{{Json(own)}}} },
            "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(own)}}} },
-           "actions":{},
+           "actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
            "rulesets":{"Protect main":{{{Json(@base)}}},"Old tags":{{{Json(own)}}} },
            "environments":{"npm":{{{Json(own)}}} } } }
         """;
@@ -226,7 +226,7 @@ internal static class Documents
          "profile":{"repository":{"has_issues":true},"merge":{"allow_rebase_merge":true,"allow_squash_merge":true}},
          "sources":{"repository":{"has_issues":{{{Json(@base)}}} },
            "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(@base)}}} },
-           "actions":{},"rulesets":{},"environments":{} } }
+           "actions":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{} } }
         """;
 
     /// <summary>
@@ -237,7 +237,12 @@ internal static class Documents
     /// removes. Block Force Pushes, the npm environment and the rest match,
     /// and Tags: Old, which the profile removes, is already gone.
     /// </summary>
-    public static string Plan(string repository = "TheLunchTrae/repotted", string warnings = "") =>
+    public static string Plan(
+        string repository = "TheLunchTrae/repotted",
+        string warnings = "",
+        string access = Unknown,
+        string locks = "",
+        string changes = "") =>
         $$$"""
         {"repository":"{{{repository}}}",
          "desired":{
@@ -270,9 +275,30 @@ internal static class Documents
               "to":[{"type":"pull_request","parameters":{"allowed_merge_methods":["rebase"]}}]}],
             "request":{"method":"PUT","path":"/repos/{{{repository}}}/rulesets/7","body":{} } },
            {"section":"rulesets","action":"delete","target":"Main: Block Deletion","fields":[],
-            "request":{"method":"DELETE","path":"/repos/{{{repository}}}/rulesets/9"}}],
-         "warnings":[{{{warnings}}}]}
+            "request":{"method":"DELETE","path":"/repos/{{{repository}}}/rulesets/9"}}{{{changes}}}],
+         "warnings":[{{{warnings}}}],
+         "access":{{{access}}},
+         "locks":[{{{locks}}}]}
         """;
+
+    /// <summary>
+    /// A sixth change for <see cref="Plan"/>: the OIDC subject claim, which
+    /// needs Actions write where the others need Administration.
+    /// </summary>
+    public const string Oidc = """
+        ,{"section":"actions","action":"update","target":"OIDC subject claim",
+          "fields":[{"field":"oidc_customization_sub","from":{"use_default":true},"to":{"use_default":false,"include_claim_keys":["repo","context"]}}],
+          "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/actions/oidc/customization/sub","body":{} } }
+        """;
+
+    /// <summary>The App installed with Administration but only Actions read, so it can't change the OIDC subject claim.</summary>
+    public const string ActionsRead = """
+        {"role":"admin","app":{"status":"installed","permissions":{"administration":"write","metadata":"read","actions":"read"},
+         "settings_url":"https://github.com/settings/installations/7"}}
+        """;
+
+    /// <summary>Access read with a token that can't see the App, which locks nothing.</summary>
+    public const string Unknown = """{"role":"admin","app":{"status":"unknown"}}""";
 
     private static string Json(string text) => $"\"{System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(text)}\"";
 
@@ -308,4 +334,11 @@ internal static class Documents
 
     public const string Done =
         """{"event":"signed_in","install_url":"https://github.com/apps/repotted-app/installations/new","token_variable":null}""";
+}
+
+internal static class ProfileTabs
+{
+    /// <summary>A profile editor's tab by its name, as the tab bar shows it.</summary>
+    public static ViewModels.ProfileTabViewModel Tab(this ViewModels.ProfileViewModel editor, string name) =>
+        editor.Tabs.Single(tab => tab.Name == name);
 }

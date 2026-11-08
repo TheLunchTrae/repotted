@@ -40,6 +40,8 @@ export interface FakeState {
   refused: string[];
   autolinks: { id: number; key_prefix: string; url_template: string; is_alphanumeric: boolean }[];
   account: FakeAccount;
+  /** The signed-in account's `permissions` flags on the repository. */
+  viewer: { admin: boolean; maintain: boolean; push: boolean; triage: boolean; pull: boolean };
 }
 
 export interface FakeRepository {
@@ -53,7 +55,19 @@ export interface FakeRepository {
 export interface FakeAccount {
   login: string;
   name: string | null;
-  installations?: { id: number; repositories: FakeRepository[] }[];
+  installations?: FakeInstallation[];
+  repositories: FakeRepository[];
+}
+
+/**
+ * An installation of the App. `account` defaults to the owner of its first
+ * repository, `selection` to `selected`, and `permissions` to none.
+ */
+export interface FakeInstallation {
+  id: number;
+  account?: string;
+  selection?: 'all' | 'selected';
+  permissions?: Record<string, string>;
   repositories: FakeRepository[];
 }
 
@@ -149,6 +163,7 @@ export class FakeGitHub implements GitHub {
       refused: [],
       autolinks: [],
       account: { login: 'lunch', name: null, repositories: [] },
+      viewer: { admin: true, maintain: true, push: true, triage: true, pull: true },
       ...state,
     };
   }
@@ -185,7 +200,13 @@ export class FakeGitHub implements GitHub {
 
     switch (key) {
       case `GET ${base}`:
-        return { id: 1, full_name: 'lunch/app', visibility: 'public', ...this.state.repository };
+        return {
+          id: 1,
+          full_name: 'lunch/app',
+          visibility: 'public',
+          ...this.state.repository,
+          permissions: this.state.viewer,
+        };
       case `PATCH ${base}`: {
         const patch = record(body);
         for (const [title, message] of [
@@ -277,7 +298,13 @@ export class FakeGitHub implements GitHub {
         const { perPage, page } = paging(new URLSearchParams(query));
         return {
           total_count: installations.length,
-          installations: installations.slice((page - 1) * perPage, page * perPage).map(({ id }) => ({ id })),
+          installations: installations.slice((page - 1) * perPage, page * perPage).map((item) => ({
+            id: item.id,
+            account: { login: item.account ?? item.repositories[0]?.full_name.split('/')[0] ?? 'lunch' },
+            repository_selection: item.selection ?? 'selected',
+            permissions: item.permissions ?? {},
+            html_url: `https://github.com/settings/installations/${item.id}`,
+          })),
         };
       }
       case 'GET /user/repos': {
