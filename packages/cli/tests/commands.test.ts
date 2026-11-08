@@ -478,7 +478,7 @@ describe('batch', () => {
     expect(document(taken)).toMatchObject({
       repository: 'lunch/api',
       file: path.join(folder, 'lunch', 'api.yaml'),
-      discarded: true,
+      kept: false,
       batch: { members: [{ repository: 'lunch/app' }, { repository: 'lunch/web' }] },
     });
     const profiled = await cliWith(github, {}, 'stage', folder, '--discard', '--profile', profile);

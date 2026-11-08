@@ -102,8 +102,8 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   staged apply changed, and `refused`, as `{ repository, message }`, those
   that kept theirs. With `--repo`, it prints that repository's staged apply,
   as above; with `--repo` and `--discard`,
-  `{ repository, file, discarded, batch }`, where `discarded` is false for a
-  joined staged apply, which stays, and `batch` is the batch as it is now, or
+  `{ repository, file, kept, batch }`, where `kept` is true for a staged
+  apply that joined the batch, which stays, and `batch` is the batch as it is now, or
   null when it ended; and with `--discard` alone, `{ discarded }`, the
   folder's path.
 - `profiles` prints `{ profiles }`, each as `{ name, file, extends, problem }`,
