@@ -10,9 +10,20 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   profile the YAML holds. With `--output`, it also writes the YAML to that
   file.
 - `plan` prints the plan, the same document `--out` saves:
-  `{ repository, desired, changes, skipped, warnings }`. `skipped` lists the
-  profile's drafts as `{ section, target }`, where `target` is a draft
-  setting's key, a draft autolink's key prefix, or a draft entry's name.
+  `{ repository, desired, changes, skipped, warnings, access, locks }`.
+  `skipped` lists the profile's drafts as `{ section, target }`, where
+  `target` is a draft setting's key, a draft autolink's key prefix, or a
+  draft entry's name. `access` is `{ role, app }`: `role` is your role on the
+  repository (`admin`, `maintain`, `write`, `triage` or `read`), or null when
+  GitHub doesn't say. `app` is `{ status: installed, permissions,
+  settings_url }` when the Repotted App is installed on the repository, with
+  the permissions its installation was granted, by GitHub's key, and the
+  installation's settings page; `{ status: not_installed }` when it isn't;
+  and `{ status: unknown }` with a token that can't read installations, such
+  as `GITHUB_TOKEN`. `locks` lists `{ change, reason }`, where `change` is an
+  index into `changes` and `reason` says what the change needs, such as
+  `Needs Pages write`. Unknown access locks nothing. `apply` ignores `access`
+  and `locks`.
 - `apply` needs `--yes`, since a program has no terminal to confirm in, and
   prints `{ repository, applied }` with the changes it made.
 - `profile` prints `{ chain, profile, drafts, warnings, sources }`. `chain` is
@@ -69,7 +80,10 @@ diagnostic and not a failure. `--help` and `--version` still print text.
 A failure prints `{ error: { kind, message } }` and exits 1, or 2 for misuse,
 which has `kind: usage`. A stale plan has `kind: stale_plan` and `current`, the
 plan the repository needs now. A write that fails partway has
-`kind: apply_failed`, with the changes in `applied` and the one in `failed`.
+`kind: apply_failed`, with the changes in `applied` and the one in `failed`,
+and `reason`: what GitHub refused it for, when GitHub refused it for good with
+a `403` or `422`, such as `Needs Pages write` or the repository's plan not
+supporting the setting, and null otherwise, as for a rate limit.
 A command that finds no sign-in, or whose sign-in or token GitHub rejects,
 has `kind: signed_out`; `status` says which. Anything else, such as an invalid
 profile, a network error, or a keychain that would not open, has

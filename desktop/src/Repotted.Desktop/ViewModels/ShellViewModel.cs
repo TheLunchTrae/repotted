@@ -13,6 +13,7 @@ namespace Repotted.Desktop.ViewModels;
 internal sealed partial class ShellViewModel : ViewModelBase
 {
     private readonly RepottedClient client;
+    private readonly IDesktop desktop;
     private readonly Func<Task> signOut;
 
     /// <summary><paramref name="signOut"/> removes the sign-in and leaves the app.</summary>
@@ -25,6 +26,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
     {
         Account = account;
         this.client = client;
+        this.desktop = desktop;
         this.signOut = signOut;
         // Each list reaches the other: a new profile is captured from a listed repository.
         RepositoriesViewModel? repositories = null;
@@ -71,7 +73,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
 
     private void OpenCompare(string repository, ProfileListingDocument profile)
     {
-        Compare = new CompareViewModel(client, repository, profile);
+        Compare = new CompareViewModel(client, desktop, repository, profile);
         _ = Compare.LoadCommand.ExecuteAsync(null);
     }
 

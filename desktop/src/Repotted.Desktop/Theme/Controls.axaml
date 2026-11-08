@@ -474,6 +474,24 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
+  <!-- A padlock beside what Repotted can't change, drawn in the text's muted color. -->
+  <Style Selector="Path.lock">
+    <Setter Property="Data" Value="M4,6.5 V4.5 A3,3 0 0 1 10,4.5 V6.5 M2.5,6.5 H11.5 V13 H2.5 Z" />
+    <Setter Property="Stroke" Value="{DynamicResource MutedBrush}" />
+    <Setter Property="StrokeThickness" Value="1.4" />
+    <Setter Property="StrokeJoin" Value="Round" />
+    <Setter Property="Width" Value="14" />
+    <Setter Property="Height" Value="14" />
+    <Setter Property="Stretch" Value="None" />
+  </Style>
+  <Style Selector="Border.locks">
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="14,10" />
+  </Style>
+
   <!-- Segmented choice: the chosen option is solid. -->
   <Style Selector="Border.seg">
     <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />

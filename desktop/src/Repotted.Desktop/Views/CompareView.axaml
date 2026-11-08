@@ -53,6 +53,17 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
+        <!-- Changes the App or the account's role can't make, before anyone tries to apply them -->
+        <Border DockPanel.Dock="Top" Classes="locks" Margin="0,0,0,12" IsVisible="{Binding HasLocks}">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <Path Classes="lock" VerticalAlignment="Center" Margin="0,0,10,0" />
+            <TextBlock Grid.Column="1" Classes="small" TextWrapping="Wrap" VerticalAlignment="Center"
+                       Text="{Binding LockSummary}" />
+            <Button Grid.Column="2" Classes="link" Margin="16,0,0,0" Content="Review App access"
+                    Command="{Binding ReviewAccessCommand}" IsVisible="{Binding HasAccessUrl}" />
+          </Grid>
+        </Border>
+
         <ScrollViewer>
           <Border Classes="fields" VerticalAlignment="Top" Margin="0,0,0,32">
             <StackPanel>
@@ -103,6 +114,10 @@
                                 <StackPanel Grid.Column="1" Margin="16,10" VerticalAlignment="Center" Spacing="2">
                                   <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="14.5" TextWrapping="Wrap" />
                                   <TextBlock Classes="mono muted" FontSize="12.5" Text="{Binding Key}" TextWrapping="Wrap" />
+                                  <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0" IsVisible="{Binding IsLocked}">
+                                    <Path Classes="lock" VerticalAlignment="Center" />
+                                    <TextBlock Classes="muted small" Text="{Binding Lock}" TextWrapping="Wrap" />
+                                  </StackPanel>
                                 </StackPanel>
                                 <TextBlock Grid.Column="2" Margin="16,10" VerticalAlignment="Center" TextWrapping="Wrap"
                                            Classes.gone="{Binding NowGoes}" Text="{Binding Now}" />

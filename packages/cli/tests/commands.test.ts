@@ -186,6 +186,52 @@ describe('--json', () => {
     });
   });
 
+  test('marks the changes the App may not make, in the plan and its text', async () => {
+    const github = new FakeGitHub({
+      account: {
+        login: 'lunch',
+        name: null,
+        repositories: [],
+        installations: [
+          {
+            id: 4,
+            permissions: { administration: 'read' },
+            repositories: [{ full_name: 'lunch/app', private: false, permissions: { admin: true } }],
+          },
+        ],
+      },
+    });
+    const profile = path.join(directory, 'wiki.yaml');
+    await writeFile(profile, 'repository: { has_wiki: false }\n');
+
+    const planned = await cli(github, 'plan', 'lunch/app', '--profile', profile, '--json');
+    expect(document(planned)).toMatchObject({
+      access: {
+        role: 'admin',
+        app: { status: 'installed', settings_url: 'https://github.com/settings/installations/4' },
+      },
+      locks: [{ change: 0, reason: 'Needs Administration write' }],
+    });
+    expect((await cli(github, 'plan', 'lunch/app', '--profile', profile)).out).toContain(
+      '~ update repository settings (locked: Needs Administration write)',
+    );
+  });
+
+  test("gives GitHub's reason for a write it refuses for good", async () => {
+    const file = await savePlan(new FakeGitHub(), 'refused.json');
+    const refusing = new FakeGitHub();
+    refusing.request = (method, requestPath, body) =>
+      method === 'GET'
+        ? FakeGitHub.prototype.request.call(refusing, method, requestPath, body)
+        : Promise.reject(new GitHubError(403, 'Resource not accessible by integration'));
+
+    const result = await cli(refusing, 'apply', file, '--yes', '--json');
+
+    expect(document(result)).toMatchObject({
+      error: { kind: 'apply_failed', applied: [], reason: 'Needs Administration write' },
+    });
+  });
+
   test('reports failures and misuse as JSON errors with their exit codes', async () => {
     const github = new FakeGitHub();
     const file = await savePlan(github, 'unconfirmed.json');

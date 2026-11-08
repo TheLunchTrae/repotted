@@ -1896,6 +1896,49 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_compare_marks_the_differences_Repotted_cannot_change()
+    {
+        var desktop = new FakeDesktop();
+        var compare = await Compare(
+            Documents.Plan(access: Documents.ActionsRead, locks: """{"change":5,"reason":"Needs Actions write"}""", changes: Documents.Oidc),
+            desktop);
+
+        var actions = compare.Sections.Single(section => section.Title == "Actions").Rows;
+        Assert.Equal(
+            [("default_workflow_permissions", null), ("oidc_customization_sub.use_default", "Needs Actions write"),
+             ("oidc_customization_sub.include_claim_keys", "Needs Actions write")],
+            actions.Select(row => (row.Key, row.Lock)));
+        Assert.Equal(
+            "oidc_customization_sub.use_default, oidc_customization_sub.use_default: GitHub has true, the profile sets false. "
+                + "Repotted can't change it: Needs Actions write",
+            actions[1].AccessibleName);
+        Assert.True(compare.HasLocks);
+        Assert.Equal("Repotted can't change 2 differences below. Each says what it needs.", compare.LockSummary);
+        Assert.True(compare.HasAccessUrl);
+
+        await compare.ReviewAccessCommand.ExecuteAsync(null);
+
+        Assert.Equal([new Uri("https://github.com/settings/installations/7")], desktop.Opened);
+    }
+
+    [AvaloniaFact]
+    public async Task A_compare_locks_nothing_when_the_access_is_unknown_and_links_only_https()
+    {
+        var unknown = await Compare(Documents.Plan(changes: Documents.Oidc));
+
+        Assert.False(unknown.HasLocks);
+        Assert.False(unknown.HasAccessUrl);
+        Assert.DoesNotContain(unknown.Sections.SelectMany(section => section.Rows), row => row.IsLocked);
+
+        var elsewhere = await Compare(Documents.Plan(
+            access: Documents.ActionsRead.Replace("https://github.com", "http://github.com", StringComparison.Ordinal),
+            locks: """{"change":0,"reason":"Needs Administration write"}"""));
+
+        Assert.Equal("Repotted can't change 1 difference below. It says what it needs.", elsewhere.LockSummary);
+        Assert.False(elsewhere.HasAccessUrl);
+    }
+
+    [AvaloniaFact]
     public async Task A_changed_ruleset_shows_a_dropped_rule_and_a_new_order()
     {
         var compare = await Compare(Plan(
@@ -2036,12 +2079,13 @@ public sealed class ViewModelTests : IDisposable
     }
 
     private static string Plan(string desired, string changes) =>
-        $$"""{"repository":"TheLunchTrae/repotted","desired":{{desired}},"changes":[{{changes}}],"warnings":[]}""";
+        $$"""{"repository":"TheLunchTrae/repotted","desired":{{desired}},"changes":[{{changes}}],"warnings":[],"access":{{Documents.Unknown}},"locks":[]}""";
 
-    private static async Task<CompareViewModel> Compare(string plan)
+    private static async Task<CompareViewModel> Compare(string plan, FakeDesktop? desktop = null)
     {
         var compare = new CompareViewModel(
             new RepottedClient(new FakeCli().On("plan TheLunchTrae/repotted --profile orgs.yaml --json", plan)),
+            desktop ?? new FakeDesktop(),
             "TheLunchTrae/repotted",
             new ProfileListingDocument("orgs", "orgs.yaml", null, null));
         await compare.LoadCommand.ExecuteAsync(null);

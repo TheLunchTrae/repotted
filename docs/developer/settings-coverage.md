@@ -61,7 +61,9 @@ warning names the permission it needs. A `403` on a write stops apply, and
 `describeFailure` names the permission too. Both come from
 `requiredPermission` in `packages/core/src/permissions.ts`, which records the
 permission GitHub's docs give for each endpoint that needs more than
-Administration.
+Administration. The same tables let `lockChanges` mark a planned change the
+App's installation wasn't granted, so a new endpoint that needs another
+permission gets its row there.
 
 ## What a profile covers
 

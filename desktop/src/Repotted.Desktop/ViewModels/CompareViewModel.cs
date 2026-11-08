@@ -53,7 +53,11 @@ internal sealed partial class CompareSectionViewModel(
 /// A profile compared with a repository: what the profile would change, by
 /// section, as the plan has it. It only reads; nothing here writes to GitHub.
 /// </summary>
-internal sealed partial class CompareViewModel(RepottedClient client, string repository, ProfileListingDocument profile)
+internal sealed partial class CompareViewModel(
+    RepottedClient client,
+    IDesktop desktop,
+    string repository,
+    ProfileListingDocument profile)
     : ViewModelBase
 {
     public string Repository => repository;
@@ -67,6 +71,20 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
     public IReadOnlyList<string> Warnings { get; private set; } = [];
 
     public bool HasWarnings => Warnings.Count > 0;
+
+    /// <summary>How many differences Repotted cannot change, as the plan's locks have it.</summary>
+    public int Locked => Sections.Sum(section => section.Differences.Count(row => row.IsLocked));
+
+    public bool HasLocks => Locked > 0;
+
+    public string LockSummary => Locked == 1
+        ? "Repotted can't change 1 difference below. It says what it needs."
+        : $"Repotted can't change {Locked} differences below. Each says what it needs.";
+
+    /// <summary>The settings page of the GitHub App's installation on the repository, where its owner reviews what the App may do.</summary>
+    public Uri? AccessUrl { get; private set; }
+
+    public bool HasAccessUrl => HasLocks && AccessUrl is not null;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowResult))]
@@ -137,10 +155,18 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
             {
                 section.ShowEverything = ShowEverything;
             }
+            AccessUrl = Uri.TryCreate(plan.Access.App.SettingsUrl, UriKind.Absolute, out var url) && url.Scheme == Uri.UriSchemeHttps
+                ? url
+                : null;
             OnPropertyChanged(nameof(Sections));
             OnPropertyChanged(nameof(Warnings));
             OnPropertyChanged(nameof(HasWarnings));
             OnPropertyChanged(nameof(Summary));
+            OnPropertyChanged(nameof(Locked));
+            OnPropertyChanged(nameof(HasLocks));
+            OnPropertyChanged(nameof(LockSummary));
+            OnPropertyChanged(nameof(AccessUrl));
+            OnPropertyChanged(nameof(HasAccessUrl));
             Loaded = true;
         }
         // A compare runs unawaited when it opens, so every failure shows here.
@@ -153,6 +179,9 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
             Loading = false;
         }
     }
+
+    [RelayCommand]
+    private Task ReviewAccessAsync() => AccessUrl is { } url ? desktop.OpenUrlAsync(url) : Task.CompletedTask;
 
     private static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 
@@ -185,7 +214,7 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
     {
         List<CompareRow> differences = [];
         HashSet<string> changed = new(StringComparer.Ordinal);
-        foreach (var change in plan.Changes.Where(change => names.Contains(change.Section)))
+        foreach (var (change, locked) in Changes(plan).Where(item => names.Contains(item.Change.Section)))
         {
             foreach (var field in change.Fields)
             {
@@ -193,7 +222,7 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
                 foreach (var difference in Differences(field))
                 {
                     var setting = Field(change.Section, difference.Path);
-                    differences.Add(Row(difference, Label(setting, difference.Path), difference.Path, value => Show(setting, value)));
+                    differences.Add(Row(difference, Label(setting, difference.Path), difference.Path, value => Show(setting, value), locked));
                 }
             }
         }
@@ -238,7 +267,7 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
         var comparer = environments ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         List<CompareRow> differences = [];
         HashSet<string> touched = new(comparer);
-        foreach (var change in plan.Changes.Where(change => change.Section == name))
+        foreach (var (change, locked) in Changes(plan).Where(item => item.Change.Section == name))
         {
             touched.Add(change.Target);
             // An environment's branch policy is named "environment: type pattern".
@@ -252,19 +281,20 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
                         change.Target,
                         policy ? "new branch policy" : $"new {noun}",
                         CompareRow.NotOnGitHub,
-                        rules is null ? CompareRow.Created : Rules(CompareRows.Node(rules.To))));
+                        rules is null ? CompareRow.Created : Rules(CompareRows.Node(rules.To)),
+                        locked));
                     break;
                 case "delete":
                     differences.Add(policy
-                        ? new CompareRow(CompareKind.Removes, change.Target, "branch_policies", CompareRow.OnGitHub, Removed)
-                        : new CompareRow(CompareKind.Removes, change.Target, "absent: true", CompareRow.OnGitHub, "Deleted"));
+                        ? new CompareRow(CompareKind.Removes, change.Target, "branch_policies", CompareRow.OnGitHub, Removed, locked)
+                        : new CompareRow(CompareKind.Removes, change.Target, "absent: true", CompareRow.OnGitHub, "Deleted", locked));
                     break;
                 default:
                     foreach (var field in change.Fields)
                     {
                         foreach (var difference in Differences(field))
                         {
-                            differences.Add(Row(difference, change.Target, difference.Path, CompareRows.Show));
+                            differences.Add(Row(difference, change.Target, difference.Path, CompareRows.Show, locked));
                         }
                     }
                     break;
@@ -314,12 +344,17 @@ internal sealed partial class CompareViewModel(RepottedClient client, string rep
             onGitHub: field.From.ValueKind != JsonValueKind.Undefined,
             inProfile: field.To.ValueKind != JsonValueKind.Undefined);
 
-    private static CompareRow Row(Difference difference, string label, string key, Func<JsonNode?, string> show) => difference.Kind switch
-    {
-        CompareKind.Adds => new CompareRow(CompareKind.Adds, label, key, CompareRow.NotOnGitHub, show(difference.Wanted)),
-        CompareKind.Removes => new CompareRow(CompareKind.Removes, label, key, show(difference.Now), Removed),
-        var kind => new CompareRow(kind, label, key, show(difference.Now), show(difference.Wanted)),
-    };
+    private static CompareRow Row(Difference difference, string label, string key, Func<JsonNode?, string> show, string? locked) =>
+        difference.Kind switch
+        {
+            CompareKind.Adds => new CompareRow(CompareKind.Adds, label, key, CompareRow.NotOnGitHub, show(difference.Wanted), locked),
+            CompareKind.Removes => new CompareRow(CompareKind.Removes, label, key, show(difference.Now), Removed, locked),
+            var kind => new CompareRow(kind, label, key, show(difference.Now), show(difference.Wanted), locked),
+        };
+
+    /// <summary>The plan's changes, each with the reason Repotted cannot make it, or null when it can.</summary>
+    private static IEnumerable<(PlanChangeDocument Change, string? Locked)> Changes(PlanDocument plan) =>
+        plan.Changes.Select((change, index) => (change, plan.Locks.FirstOrDefault(item => item.Change == index)?.Reason));
 
     /// <summary>A section's settings by key, with <c>selected_actions</c> opened up as the editor shows it.</summary>
     private static IEnumerable<(string Key, JsonNode? Value)> Flat(JsonObject? section)
