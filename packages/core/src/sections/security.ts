@@ -55,7 +55,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     path: '/code-scanning/default-setup',
     target: 'code scanning default setup',
     method: 'PATCH',
-    fields: Object.keys(securityFields.code_scanning_default_setup.shape),
+    schema: securityFields.code_scanning_default_setup,
     identifying: ['languages'],
     fromGitHub: combineScriptLanguages,
   },
@@ -65,7 +65,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     path: '/code-scanning/ai-scan',
     target: 'code scanning AI Scan',
     method: 'PATCH',
-    fields: Object.keys(securityFields.code_scanning_ai_scan.shape),
+    schema: securityFields.code_scanning_ai_scan,
   },
   {
     kind: 'object',
@@ -73,7 +73,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     path: '/code-quality/setup',
     target: 'code quality setup',
     method: 'PATCH',
-    fields: Object.keys(securityFields.code_quality_setup.shape),
+    schema: securityFields.code_quality_setup,
     identifying: ['languages'],
   },
   {
@@ -82,7 +82,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     path: '/dependabot/runner-settings',
     target: 'Dependabot runners',
     method: 'PUT',
-    fields: Object.keys(securityFields.dependabot_runner_settings.shape),
+    schema: securityFields.dependabot_runner_settings,
     // No group reads as an empty one, the way GitHub reports it.
     fromGitHub: (value) => (value['runner_group'] === null ? { ...value, runner_group: '' } : value),
     // GitHub keeps no runner labels or group with standard runners, and

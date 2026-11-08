@@ -318,6 +318,7 @@ describe('capture of every section', () => {
     });
     github.state.repository['pull_request_creation_policy'] = 'maintainers_only';
     github.state.repository['merge_commit_title'] = 'COMMIT_TITLE';
+    github.state.repository['merge_commit_message'] = 'PR_BODY';
     github.state.repository['security_and_analysis'] = {
       secret_scanning: { status: 'enabled' },
       secret_scanning_push_protection: { status: 'paused' },
@@ -327,17 +328,65 @@ describe('capture of every section', () => {
     expect(warnings).toEqual([
       'Skipped repository.pull_request_creation_policy: a profile cannot hold "maintainers_only" (Invalid option: expected one of "all"|"collaborators_only")',
       'Skipped merge.merge_commit_title: a profile cannot hold "COMMIT_TITLE" (Invalid option: expected one of "PR_TITLE"|"MERGE_MESSAGE")',
+      'Skipped merge.merge_commit_message: GitHub takes it only with merge_commit_title, which is left out',
+      'Skipped security.code_scanning_default_setup.query_suite: a profile cannot hold "security-and-quality" (Invalid option: expected one of "default"|"extended")',
       'Skipped security.security_and_analysis.secret_scanning_push_protection: a profile cannot hold "paused" at status (Invalid option: expected one of "enabled"|"disabled")',
-      'Skipped security.code_scanning_default_setup: a profile cannot hold "security-and-quality" at query_suite (Invalid option: expected one of "default"|"extended")',
       'Skipped actions.approval_policy: a profile cannot hold "everyone_new" (Invalid option: expected one of "first_time_contributors_new_to_github"|"first_time_contributors"|"all_external_contributors")',
     ]);
     expect(profile.repository).not.toHaveProperty('pull_request_creation_policy');
     expect(profile.merge).not.toHaveProperty('merge_commit_title');
-    expect(profile.merge).toHaveProperty('merge_commit_message', 'PR_TITLE');
-    expect(profile.security).not.toHaveProperty('code_scanning_default_setup');
+    expect(profile.merge).not.toHaveProperty('merge_commit_message');
+    expect(profile.security?.code_scanning_default_setup).toEqual({ state: 'configured' });
     expect(profile.security?.security_and_analysis).toEqual({ secret_scanning: { status: 'enabled' } });
     expect(profile.actions).not.toHaveProperty('approval_policy');
-    await expect(parseProfile(stringifyProfile(profile), tmpdir())).resolves.toBeDefined();
+    const loaded = await parseProfile(stringifyProfile(profile), tmpdir());
+    // Half of a commit message pair would not pass on a repository with the other half's default.
+    await expect(createPlan(new FakeGitHub(offered()), repo, loaded.profile)).resolves.toBeDefined();
+  });
+
+  test("reads GitHub's nulls for unset fields as unset, and writes no empty security_and_analysis", async () => {
+    const state = offered();
+    const github = new FakeGitHub({
+      ...state,
+      settings: {
+        ...state.settings,
+        // As GitHub documents them while neither is configured.
+        '/code-scanning/default-setup': {
+          state: 'not-configured',
+          languages: [],
+          runner_type: null,
+          runner_label: null,
+          query_suite: 'default',
+          threat_model: 'remote',
+          updated_at: null,
+          schedule: null,
+        },
+        '/code-quality/setup': {
+          state: 'not-configured',
+          languages: [],
+          runner_type: null,
+          runner_label: null,
+          ai_findings_option: null,
+          updated_at: null,
+          schedule: null,
+        },
+      },
+    });
+    github.state.repository['security_and_analysis'] = { secret_scanning: { status: 'paused' } };
+
+    const { profile, warnings } = await captureProfile(github, repo);
+    expect(warnings).toEqual([
+      'Skipped security.security_and_analysis.secret_scanning: a profile cannot hold "paused" at status (Invalid option: expected one of "enabled"|"disabled")',
+    ]);
+    expect(profile.security).not.toHaveProperty('security_and_analysis');
+    expect(profile.security?.code_scanning_default_setup).toEqual({
+      state: 'not-configured',
+      runner_label: null,
+      query_suite: 'default',
+      threat_model: 'remote',
+    });
+    expect(profile.security?.code_quality_setup).toEqual({ state: 'not-configured', runner_label: null });
+    expect((await createPlan(github, repo, profile)).changes).toEqual([]);
   });
 });
 

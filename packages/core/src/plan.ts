@@ -3,12 +3,13 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 
 import { type Change, type Section, sections } from './change.js';
-import { captureEndpoints, planEndpoint, readEndpoints } from './endpoints.js';
+import { captureEndpoints, loadable, planEndpoint, readEndpoints } from './endpoints.js';
 import { type GitHub, GitHubError, parseRepo, repoPattern, type RepoRef } from './github.js';
 import { type Lock, requiredPermission } from './permissions.js';
 import type { Drafts } from './profile.js';
 import {
   actionsSettings,
+  commitPairs,
   identifyingRepositoryFields,
   mergeSettings,
   profile,
@@ -132,39 +133,6 @@ export async function createPlan(
 }
 
 /**
- * The captured settings that a profile can hold. GitHub may report a value
- * that no profile takes, such as an option newer than the schema, so a
- * setting that fails its schema is left out with a warning, and the capture
- * still loads.
- */
-function loadable(
-  name: string,
-  schema: z.ZodObject,
-  settings: Readonly<Record<string, unknown>>,
-  warnings: string[],
-): Record<string, unknown> {
-  const kept: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(settings)) {
-    const setting = { [key]: value };
-    const result = schema.safeParse(setting);
-    if (result.success) {
-      kept[key] = value;
-      continue;
-    }
-    const problems = result.error.issues.map((issue) => {
-      const reported: unknown = issue.path.reduce<unknown>(
-        (inner, part) => (typeof inner === 'object' && inner !== null ? Reflect.get(inner, part) : undefined),
-        setting,
-      );
-      const at = z.core.toDotPath(issue.path.slice(1));
-      return `${JSON.stringify(reported)}${at === '' ? '' : ` at ${at}`} (${issue.message})`;
-    });
-    warnings.push(`Skipped ${name}.${key}: a profile cannot hold ${problems.join('; ')}`);
-  }
-  return kept;
-}
-
-/**
  * Reads every section into a profile that describes the repository as it
  * is. Settings that name the repository, such as its description, stay out,
  * so the profile can describe other repositories too.
@@ -184,7 +152,19 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
     ),
     warnings,
   );
-  const merge = loadable('merge', mergeSettings, live.merge, warnings);
+  const loadableMerge = loadable('merge', mergeSettings, live.merge, warnings);
+  // GitHub takes a commit message setting only with its title setting, so
+  // when one of a pair is left out, the other goes too.
+  const merge: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(loadableMerge)) {
+    const pair = commitPairs.find(({ title, message }) => key === title || key === message);
+    const other = pair === undefined ? undefined : key === pair.title ? pair.message : pair.title;
+    if (other !== undefined && other in live.merge && !(other in loadableMerge)) {
+      warnings.push(`Skipped merge.${key}: GitHub takes it only with ${other}, which is left out`);
+    } else {
+      merge[key] = value;
+    }
+  }
 
   const securityEndpointSettings = captureEndpoints(
     'security',
@@ -193,15 +173,15 @@ export async function captureProfile(github: GitHub, repo: RepoRef): Promise<{ p
   );
   warnings.push(...securityEndpointSettings.warnings);
   const reported = liveSecurityAndAnalysis(live.securityAndAnalysis);
+  const securityAndAnalysisSettings =
+    reported === undefined ? {} : loadable('security.security_and_analysis', securityAndAnalysis, reported, warnings);
   const security = loadable(
     'security',
     securitySettings,
     {
-      ...(reported === undefined
+      ...(Object.keys(securityAndAnalysisSettings).length === 0
         ? {}
-        : {
-            security_and_analysis: loadable('security.security_and_analysis', securityAndAnalysis, reported, warnings),
-          }),
+        : { security_and_analysis: securityAndAnalysisSettings }),
       ...securityEndpointSettings.settings,
     },
     warnings,

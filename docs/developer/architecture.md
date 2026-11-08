@@ -151,7 +151,10 @@ lacks is no news. A `403` on a write stops apply, and the failure names the
 permission too. `captureProfile` also parses each setting it captures with
 that setting's schema, and leaves out, with a warning, one that fails, such
 as an option GitHub added after `schema.ts`, so a captured profile always
-loads.
+loads. The fields of an endpoint's object and of `security_and_analysis` are
+parsed one by one, so only the field that fails is left out. A commit message
+setting goes with its title setting, and the other way round, since GitHub
+takes them only as a pair.
 
 Before anything is written, `readAccess` in `repositories.ts` reads the
 account's role from the repository and, with a Repotted App token, the

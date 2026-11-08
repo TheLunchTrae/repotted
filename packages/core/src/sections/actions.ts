@@ -28,7 +28,7 @@ export const actionsEndpoints: readonly Endpoint[] = [
     path: '/actions/permissions/fork-pr-workflows-private-repos',
     target: 'fork pull request workflows in private repositories',
     method: 'PUT',
-    fields: Object.keys(actionsEndpointFields.fork_pr_workflows_private_repos.shape),
+    schema: actionsEndpointFields.fork_pr_workflows_private_repos,
   },
   {
     kind: 'object',
@@ -36,7 +36,7 @@ export const actionsEndpoints: readonly Endpoint[] = [
     path: '/actions/permissions/artifact-and-log-retention',
     target: 'artifact and log retention',
     method: 'PUT',
-    fields: Object.keys(actionsEndpointFields.artifact_and_log_retention.shape),
+    schema: actionsEndpointFields.artifact_and_log_retention,
   },
   {
     kind: 'field',
@@ -58,7 +58,7 @@ export const actionsEndpoints: readonly Endpoint[] = [
     path: '/actions/oidc/customization/sub',
     target: 'OIDC subject claim',
     method: 'PUT',
-    fields: Object.keys(actionsEndpointFields.oidc_customization_sub.shape),
+    schema: actionsEndpointFields.oidc_customization_sub,
     // GitHub uses the claim keys only in place of the default subject.
     adjust: (desired) => {
       if (desired['include_claim_keys'] === undefined) {

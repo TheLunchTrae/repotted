@@ -30,7 +30,7 @@ export const repositoryEndpoints: readonly Endpoint[] = [
     path: '/interaction-limits/pulls/creation-cap',
     target: 'pull request creation cap',
     method: 'PATCH',
-    fields: Object.keys(repositoryEndpointFields.pull_request_creation_cap.shape),
+    schema: repositoryEndpointFields.pull_request_creation_cap,
     carries: ['enabled'],
   },
 ];

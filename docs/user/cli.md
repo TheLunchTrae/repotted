@@ -48,7 +48,7 @@ methods to its rulesets and environments, and writes them as a profile. It
 leaves out settings that name the repository, such as its description and
 topics, so the profile suits other repositories too. When GitHub reports a
 value that a profile can't hold, such as an option newer than Repotted, the
-capture leaves that setting out and warns about it, so the profile always
+capture leaves that value out and warns about it, so the profile always
 loads. Without `--output`, it prints the profile. Capturing only reads from
 GitHub.
 
