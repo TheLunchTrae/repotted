@@ -159,6 +159,39 @@ the caller can say where the repository stands.
 Keep these properties when you change the plan format or the engine; see the
 Safety section of [AGENTS.md](../../AGENTS.md).
 
+## Staged applies
+
+A staged apply (`packages/core/src/staged.ts`) is a profile layer in a file of
+its own. The file names the repository in `apply_to`, extends the profile it
+starts from with `extends`, and holds one-off edits as profile keys, so
+`resolveProfile` lays it over the profile the way an override lays over a
+base: settings key by key, and a ruleset or environment whole by name. Its
+`exclude` list then takes values out of the resolved profile. Planning and
+applying use the engine unchanged, so a staged apply keeps every property of
+[Apply](#apply): the saved plan holds the profile it was made from, and apply
+plans again from that.
+
+The profile chain reads the staged file through a `LayerSchema`: a schema
+that checks the whole file, its own keys included, and yields the profile
+layer. `editLayer` edits it the way `editProfile` edits a profile, with
+`exclude` as a key of its own and a last check that the exclusions still leave a
+valid profile, so a failed edit leaves the file as it was. An exclusion and an edit
+of the same value are refused, since the result would depend on which one
+wins.
+
+Saving edits to the profile writes the layer's settings and entries into the
+profile with `editProfile`, then clears them from the staged file. Between the
+two writes, both files set the same values, so the staged apply resolves the
+same whichever write fails. A staged apply that starts from the repository has
+no profile to save to.
+
+`planStagedApply` also names the exclusion that leaves out each change of the
+plan, so a program can offer to leave out a row without knowing how plan
+fields map to profile keys. A change to a list entry maps to the entry by its
+target; a settings field maps to its setting, or to the group it is in, since
+GitHub writes a group at once and may tie its fields together. A test excludes
+every key a wide plan names and checks that its change leaves the plan.
+
 ## The CLI and the MCP server
 
 `packages/cli/src/commands.ts` holds the commands behind a small `Io`

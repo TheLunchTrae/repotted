@@ -163,6 +163,32 @@ Turning an entry into a draft doesn't delete it from GitHub. Like any entry a
 profile stops naming, it keeps its current state there, unless a base profile
 names an entry of that name, which then applies again.
 
+## Staged apply
+
+A staged apply is a file (`packages/core/src/staged.ts`); its state is the
+file and the plan made from it. Each edit is checked whole before the file
+changes, so every failed event below leaves the file as it was.
+
+| State    | Event                                                 | Next                                                                                                                                         |
+| -------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| None     | Start in a new file                                   | Staged, with no edits.                                                                                                                       |
+| None     | Start where a file exists                             | None: `createStagedApply` refuses, so a staged apply is never replaced.                                                                      |
+| None     | Start from a profile that doesn't resolve             | None: nothing is written.                                                                                                                    |
+| Staged   | An edit or exclusion                                  | Staged, with the edit.                                                                                                                       |
+| Staged   | An edit the profile makes invalid                     | Staged as before: `editStagedApply` throws.                                                                                                  |
+| Staged   | An exclusion and an edit of the same value            | Staged as before: the file check refuses it.                                                                                                 |
+| Staged   | An exclusion that names no section, setting, or entry | Staged as before.                                                                                                                            |
+| Staged   | A draft, or an exclusion of `drafts`                  | Staged as before: a staged apply holds no drafts, since all it sets applies.                                                                 |
+| Staged   | The profile it starts from changes                    | Staged: it resolves over the new profile; a plan already made keeps the old one.                                                             |
+| Staged   | Plan                                                  | Reviewed: a plan from the resolved profile, as in [Plan and apply](#plan-and-apply). The profile's drafts stay out, as in [Drafts](#drafts). |
+| Staged   | Save edits to the profile                             | Staged, with no edits and its exclusions; it resolves the same.                                                                              |
+| Staged   | Save when it starts from the repository               | Staged as before: there is no profile to save to.                                                                                            |
+| Staged   | Discard                                               | None: the file is removed, and the profile stays as it is.                                                                                   |
+| Reviewed | Apply                                                 | As in [Plan and apply](#plan-and-apply): stale, partly applied, or applied.                                                                  |
+
+Applying does not end the staged apply: the file stays until it is
+discarded, so a stale or partly applied apply can be planned again from it.
+
 ## Config repository sync
 
 `syncFolder` (`packages/core/src/sync.ts`) brings a folder and a folder in a

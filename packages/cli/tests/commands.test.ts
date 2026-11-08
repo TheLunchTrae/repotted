@@ -1,4 +1,4 @@
-import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
@@ -629,5 +629,76 @@ describe('sync', () => {
     expect(document(result)).toMatchObject({ error: { kind: 'usage' } });
     const alone = await cliWith(new FakeGitRepository(), {}, 'sync', directory, '--only', 'a.yaml', '--json');
     expect(alone.code).toBe(2);
+  });
+});
+
+describe('stage', () => {
+  test('starts a staged apply, edits and exclusions over its profile, and applies the reviewed plan', async () => {
+    const profile = path.join(directory, 'staged-base.yaml');
+    await writeFile(profile, 'repository: { has_wiki: false, has_issues: false }\n');
+    const file = path.join(directory, 'staged.yaml');
+    const github = new FakeGitHub();
+
+    const started = await cli(github, 'stage', file, '--new', 'lunch/app', '--profile', profile, '--json');
+    expect(started).toMatchObject({ code: 0, err: '' });
+    expect(document(started)).toMatchObject({ repository: 'lunch/app', exclude: [] });
+
+    const edited = await cli(
+      github,
+      'stage',
+      file,
+      '--set',
+      'repository.has_projects=false',
+      '--exclude',
+      'repository.has_issues',
+      '--json',
+    );
+    expect(document(edited)).toMatchObject({
+      profile: { repository: { has_wiki: false, has_projects: false } },
+      exclude: ['repository.has_issues'],
+    });
+
+    const planFile = path.join(directory, 'staged-plan.json');
+    const planned = await cli(github, 'plan', 'lunch/app', '--staged', file, '--out', planFile, '--json');
+    expect(planned.code).toBe(0);
+    // The document says what the plan applies and what leaves each change out; the plan file is the plan alone.
+    expect(document(planned)).toMatchObject({
+      staged: { repository: 'lunch/app', base: await realpath(profile), exclude: ['repository.has_issues'] },
+      exclusions: [
+        { change: 0, field: 'has_projects', key: 'repository.has_projects', edited: true },
+        { change: 0, field: 'has_wiki', key: 'repository.has_wiki', edited: false },
+      ],
+    });
+    expect(await readFile(planFile, 'utf8')).not.toContain('exclusions');
+    const applied = await cli(github, 'apply', planFile, '--yes', '--json');
+    expect(applied.code).toBe(0);
+    expect(github.writes).toEqual([
+      { method: 'PATCH', path: '/repos/lunch/app', body: { has_wiki: false, has_projects: false } },
+    ]);
+    expect(await readFile(profile, 'utf8')).toBe('repository: { has_wiki: false, has_issues: false }\n');
+
+    const discarded = await cli(github, 'stage', file, '--discard', '--json');
+    expect(discarded.code).toBe(0);
+    expect(await readFile(file, 'utf8').catch(() => 'gone')).toBe('gone');
+  });
+
+  test('refuses a plan for another repository than the staged apply names', async () => {
+    const file = path.join(directory, 'staged-other.yaml');
+    await cli(new FakeGitHub(), 'stage', file, '--new', 'lunch/app');
+
+    const result = await cli(new FakeGitHub(), 'plan', 'lunch/other', '--staged', file);
+    expect(result.code).toBe(2);
+    expect(result.err).toContain('applies to lunch/app');
+  });
+
+  test('names the drafts of its profile, which its plan leaves out', async () => {
+    const profile = path.join(directory, 'staged-drafts-base.yaml');
+    await writeFile(profile, 'repository: { has_wiki: false }\ndrafts:\n  repository: { has_projects: false }\n');
+    const file = path.join(directory, 'staged-drafts.yaml');
+
+    const started = await cli(new FakeGitHub(), 'stage', file, '--new', 'lunch/app', '--profile', profile);
+    expect(started.err).toContain('Drafts of its profile, left out: repository.has_projects');
+    const planned = await cli(new FakeGitHub(), 'plan', '--staged', file, '--json');
+    expect(JSON.parse(planned.out)).toMatchObject({ skipped: [{ section: 'repository', target: 'has_projects' }] });
   });
 });

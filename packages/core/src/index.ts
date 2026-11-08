@@ -17,3 +17,12 @@ export { editProfile, listProfiles, parseProfile, resolveProfile, stringifyProfi
 export type { EntryEdit, ProfileEdit } from './profile.js';
 export { currentUser, listRepositories } from './repositories.js';
 export { syncFolder } from './sync.js';
+export {
+  createStagedApply,
+  discardStagedApply,
+  editStagedApply,
+  planStagedApply,
+  resolveStagedApply,
+  saveStagedEdits,
+} from './staged.js';
+export type { StagedApply, StagedEdit, StagedPlan } from './staged.js';

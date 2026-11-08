@@ -1,7 +1,7 @@
 # JSON output
 
-`--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `sync`, `repos`,
-`status` and `logout` prints exactly one JSON document on stdout, for scripts
+`--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `stage`, `sync`,
+`repos`, `status` and `logout` prints exactly one JSON document on stdout, for scripts
 and programs such as the desktop app. Repotted writes nothing to stderr in this mode;
 anything that appears there, such as a deprecation notice from the GitHub client, is
 diagnostic and not a failure. `--help` and `--version` still print text.
@@ -13,6 +13,15 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `{ repository, desired, changes, skipped, warnings }`. `skipped` lists the
   profile's drafts as `{ section, target }`, where `target` is a draft
   setting's key, a draft autolink's key prefix, or a draft entry's name.
+  With `--staged`, the document also has `staged`, as `stage` prints it
+  below, and `exclusions`, which says what leaves each change out of the
+  staged apply. Each exclusion is `{ change, field, key, edited }`: `change`
+  is the change's index in `changes`, `field` is the field it leaves out, or
+  null for a whole ruleset, environment, autolink or Pages site, and `key`
+  is what `stage --exclude` takes. A field inside an object of settings gives
+  the whole object, which GitHub writes at once. `edited` is true when the
+  value is a one-off edit, which you undo rather than exclude. The plan file
+  holds the plan alone.
 - `apply` needs `--yes`, since a program has no terminal to confirm in, and
   prints `{ repository, applied }` with the changes it made.
 - `profile` prints `{ chain, profile, drafts, warnings, sources }`. `chain` is
@@ -30,6 +39,18 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `actions`, `autolinks` by key prefix, `rulesets` and `environments` by
   name, and `drafts` the same way for drafts. A value whose file is
   `chain[0]` is set in the profile itself.
+- `stage` prints
+  `{ file, repository, base, exclude, chain, profile, drafts, warnings, sources }`.
+  `file` is the staged apply's real path, first in `chain`, and `repository`
+  is the one it applies to. `base` is the real path of the profile it starts
+  from, or null when it starts from the repository as it is. `exclude` lists
+  what it leaves out, as the file holds it. `profile` is what its plan brings
+  the repository to: the profile with the one-off edits laid over it and the
+  excluded values left out. `drafts` and `warnings` are the drafts of the
+  profile it starts from, which its plan leaves out, as in `profile`; a
+  staged apply holds no drafts of its own. `sources` is as in `profile`,
+  without the excluded values, so a value whose file is `chain[0]` is a
+  one-off edit. With `--discard`, it prints `{ discarded }`, the file's path.
 - `profiles` prints `{ profiles }`, each as `{ name, file, extends, problem }`,
   sorted by file name: the `.yaml` and `.yml` files directly in the folder.
   `file` is a real path, with links resolved, as in `profile`'s `chain`.
