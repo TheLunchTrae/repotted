@@ -20,7 +20,7 @@ import { resolveProfile } from '../src/profile.js';
 import type { Profile } from '../src/schema.js';
 import { EnvironmentSettingsError } from '../src/sections/environments.js';
 import { MergeSettingsError } from '../src/sections/repository.js';
-import { FakeGitHub } from './fake-github.js';
+import { answered, FakeGitHub } from './fake-github.js';
 
 const loadProfile = async (file: string): Promise<Profile> => (await resolveProfile(file)).profile;
 
@@ -387,9 +387,7 @@ drafts:
       repository: { has_wiki: false },
       rulesets: [{ name: 'Broken', target: 'branch', enforcement: 'active', bypass_actors: [], rules: [] }],
     });
-    const request = github.request.bind(github);
-    github.request = (method, requestPath, body) =>
-      method === 'POST' ? Promise.reject(new Error('boom')) : request(method, requestPath, body);
+    github.fail(/^POST /u, new Error('boom'));
 
     const failure = await rejection(applyPlan(github, plan));
     expect(failure).toBeInstanceOf(ApplyError);
@@ -399,7 +397,10 @@ drafts:
   });
 
   test('skips rulesets on a plan that does not support them and still plans the rest', async () => {
-    const github = new FakeGitHub({ rulesetsUnavailable: true });
+    const github = new FakeGitHub().fail(
+      'GET /repos/lunch/app/rulesets',
+      answered(403, 'Upgrade to GitHub Pro or make this repository public to enable this feature.'),
+    );
     const plan = await createPlan(github, repo, await loadProfile(path.join(examples, 'base.yaml')));
 
     expect(plan.changes.some((change) => change.section === 'rulesets')).toBe(false);
@@ -504,7 +505,10 @@ drafts:
   });
 
   test('skips environments it cannot read and still plans the rest', async () => {
-    const github = new FakeGitHub({ environmentsUnreadable: true });
+    const github = new FakeGitHub().fail(
+      'GET /repos/lunch/app/environments',
+      answered(403, 'Resource not accessible by integration'),
+    );
     const plan = await createPlan(github, repo, {
       repository: { has_wiki: false },
       environments: [{ name: 'npm', wait_timer: 5 }],
@@ -516,7 +520,6 @@ drafts:
 
   test('skips environments when it cannot read their deployment patterns', async () => {
     const github = new FakeGitHub({
-      branchPoliciesUnreadable: true,
       environments: [
         {
           name: 'npm',
@@ -527,7 +530,10 @@ drafts:
           branch_policies: [],
         },
       ],
-    });
+    }).fail(
+      'GET /repos/lunch/app/environments/npm/deployment-branch-policies',
+      answered(403, 'Resource not accessible by integration'),
+    );
     const plan = await createPlan(github, repo, { environments: [{ name: 'npm', wait_timer: 5 }] });
 
     expect(plan.changes).toEqual([]);

@@ -71,13 +71,10 @@ describe('readAccess', () => {
   test('leaves the App unknown for a token GitHub refuses the installation list to, but not on a rate limit', async () => {
     expect((await readAccess(withInstallations(undefined), app)).app).toEqual({ status: 'unknown' });
 
-    const limited = withInstallations([]);
-    limited.request = (method, path) =>
-      path.startsWith('/user/installations')
-        ? Promise.reject(
-            responseError(403, { message: 'API rate limit exceeded for user ID 7.' }, { 'x-ratelimit-remaining': '0' }),
-          )
-        : FakeGitHub.prototype.request.call(limited, method, path);
+    const limited = withInstallations([]).fail(
+      'GET /user/installations',
+      responseError(403, { message: 'API rate limit exceeded for user ID 7.' }, { 'x-ratelimit-remaining': '0' }),
+    );
     const failure = await readAccess(limited, app).then(
       () => null,
       (error: unknown) => error,

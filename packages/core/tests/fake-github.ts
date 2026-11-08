@@ -25,10 +25,7 @@ export interface FakeState {
   selected: Record<string, unknown>;
   workflow: Record<string, unknown>;
   rulesets: StoredRuleset[];
-  rulesetsUnavailable: boolean;
   environments: StoredEnvironment[];
-  environmentsUnreadable: boolean;
-  branchPoliciesUnreadable: boolean;
   /**
    * Settings at endpoints of their own, by path under the repository, as
    * GitHub sends them. A path left out is one GitHub does not offer on the
@@ -36,8 +33,6 @@ export interface FakeState {
    * when the repository has none.
    */
   settings: Record<string, unknown>;
-  /** Requests GitHub refuses, as `GET /pages`, the way it refuses a token without the permission. */
-  refused: string[];
   autolinks: { id: number; key_prefix: string; url_template: string; is_alphanumeric: boolean }[];
   account: FakeAccount;
   /** The signed-in account's `permissions` flags on the repository. */
@@ -117,11 +112,17 @@ function storedRules(value: unknown): StoredRuleset['rules'] {
 }
 
 /** An error as GitHub sends it, with a link to its docs, read as `createGitHub` reads one. */
-function answered(status: number, message: string): GitHubError {
+export function answered(status: number, message: string): GitHubError {
   return responseError(status, { message, documentation_url: 'https://docs.github.com/rest', status: String(status) });
 }
 
 const unhandled = Symbol('unhandled');
+
+interface Failure {
+  readonly match: string | RegExp;
+  readonly error: Error;
+  remaining: number;
+}
 
 function paging(query: URLSearchParams): { perPage: number; page: number } {
   return { perPage: Number(query.get('per_page') ?? '30'), page: Number(query.get('page') ?? '1') };
@@ -134,6 +135,7 @@ function paging(query: URLSearchParams): { perPage: number; page: number } {
 export class FakeGitHub implements GitHub {
   readonly state: FakeState;
   readonly calls: Call[] = [];
+  private readonly failures: Failure[] = [];
   private nextId = 100;
 
   constructor(state: Partial<FakeState> = {}) {
@@ -160,12 +162,8 @@ export class FakeGitHub implements GitHub {
       selected: {},
       workflow: { default_workflow_permissions: 'write', can_approve_pull_request_reviews: false },
       rulesets: [],
-      rulesetsUnavailable: false,
       environments: [],
-      environmentsUnreadable: false,
-      branchPoliciesUnreadable: false,
       settings: {},
-      refused: [],
       autolinks: [],
       account: { login: 'lunch', name: null, repositories: [] },
       viewer: { admin: true, maintain: true, push: true, triage: true, pull: true },
@@ -177,8 +175,30 @@ export class FakeGitHub implements GitHub {
     return this.calls.filter((call) => call.method !== 'GET');
   }
 
+  /**
+   * Fails the requests `match` names with `error`, before the fake serves
+   * them: the next `times` of them, or every one. A string names a request
+   * as `GET /repos/lunch/app/pages`, without its query; a pattern is tested
+   * against the method and the whole path. The first failure that matches
+   * wins.
+   */
+  fail(match: string | RegExp, error: Error, times = Infinity): this {
+    this.failures.push({ match, error, remaining: times });
+    return this;
+  }
+
   request(method: Method, path: string, body?: unknown): Promise<unknown> {
     this.calls.push(body === undefined ? { method, path } : { method, path, body });
+    const request = `${method} ${path}`;
+    const failure = this.failures.find(
+      (item) =>
+        item.remaining > 0 &&
+        (typeof item.match === 'string' ? item.match === request.split('?')[0] : item.match.test(request)),
+    );
+    if (failure !== undefined) {
+      failure.remaining -= 1;
+      return Promise.reject(failure.error);
+    }
     return Promise.resolve(this.handle(method, path, body));
   }
 
@@ -193,9 +213,6 @@ export class FakeGitHub implements GitHub {
     ).exec(route);
     if (environment !== null) {
       return this.handleEnvironment(method, decodeURIComponent(environment[1] ?? ''), environment, query, body);
-    }
-    if (route.startsWith(`${base}/`) && this.state.refused.includes(`${method} ${route.slice(base.length)}`)) {
-      throw answered(403, 'Resource not accessible by integration');
     }
     const setting = this.handleSetting(method, route.slice(base.length), body);
     if (setting !== unhandled) {
@@ -484,9 +501,6 @@ export class FakeGitHub implements GitHub {
   }
 
   private listEnvironments(query: URLSearchParams): unknown {
-    if (this.state.environmentsUnreadable) {
-      throw answered(403, 'Resource not accessible by integration');
-    }
     const { perPage, page } = paging(query);
     // GitHub reports settings as protection rules and leaves out a rule at its default.
     return {
@@ -543,9 +557,6 @@ export class FakeGitHub implements GitHub {
     }
     const policyId = match[3];
     if (method === 'GET' && policyId === undefined) {
-      if (this.state.branchPoliciesUnreadable) {
-        throw answered(403, 'Resource not accessible by integration');
-      }
       const { perPage, page } = paging(new URLSearchParams(query));
       return {
         total_count: found.branch_policies.length,
@@ -613,9 +624,6 @@ export class FakeGitHub implements GitHub {
   }
 
   private listRulesets(query: URLSearchParams): unknown {
-    if (this.state.rulesetsUnavailable) {
-      throw answered(403, 'Upgrade to GitHub Pro or make this repository public to enable this feature.');
-    }
     const { perPage, page } = paging(query);
     return this.state.rulesets
       .slice((page - 1) * perPage, page * perPage)

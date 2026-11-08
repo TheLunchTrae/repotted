@@ -271,16 +271,13 @@ merge: { allow_rebase_merge: false }
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     const github = new FakeGitHub();
     const { plan } = await planStagedApply(github, files.staged);
-    const request = github.request.bind(github);
-    github.request = (method, requestPath, body) =>
-      method === 'POST' ? Promise.reject(new Error('boom')) : request(method, requestPath, body);
+    github.fail(/^POST /u, new Error('boom'), 1);
 
     const failure = await rejection(applyPlan(github, plan));
     expect(failure instanceof ApplyError ? failure.applied.map((change) => change.target) : []).toEqual([
       'repository settings',
     ]);
     // The staged apply is untouched, so planning it again shows what is left.
-    github.request = request;
     expect(targets((await planStagedApply(github, files.staged)).plan.changes)).toEqual(['create Main']);
   });
 

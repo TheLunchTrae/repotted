@@ -7,7 +7,10 @@ import { GitHubError, parseRepo } from '../src/github.js';
 import { ApplyError, applyPlan, captureProfile, createPlan, describeFailure } from '../src/plan.js';
 import { editProfile, parseProfile, resolveProfile, stringifyProfile } from '../src/profile.js';
 import { profile as profileSchema, type Profile } from '../src/schema.js';
-import { FakeGitHub, type FakeState } from './fake-github.js';
+import { actionsEndpoints } from '../src/sections/actions.js';
+import { repositoryEndpoints } from '../src/sections/repository.js';
+import { securityEndpoints } from '../src/sections/security.js';
+import { answered, FakeGitHub, type FakeState } from './fake-github.js';
 
 const repo = parseRepo('lunch/app');
 
@@ -26,6 +29,12 @@ function offered(): Partial<FakeState> {
       '/dependabot/runner-settings': { runner_type: 'standard', runner_labels: [], runner_group: '' },
       '/actions/permissions/access': { access_level: 'none' },
       '/actions/permissions/fork-pr-contributor-approval': { approval_policy: 'first_time_contributors' },
+      '/actions/permissions/fork-pr-workflows-private-repos': {
+        run_workflows_from_fork_pull_requests: false,
+        send_write_tokens_to_workflows: false,
+        send_secrets_and_variables: false,
+        require_approval_for_fork_pr_workflows: false,
+      },
       '/actions/permissions/artifact-and-log-retention': { days: 90, maximum_allowed_days: 400 },
       '/actions/cache/retention-limit': { max_cache_retention_days: 7 },
       '/actions/cache/storage-limit': { max_cache_size_gb: 10 },
@@ -53,6 +62,10 @@ const everything: Profile = {
   actions: {
     access_level: 'user',
     approval_policy: 'all_external_contributors',
+    fork_pr_workflows_private_repos: {
+      run_workflows_from_fork_pull_requests: true,
+      require_approval_for_fork_pr_workflows: true,
+    },
     artifact_and_log_retention: { days: 30 },
     max_cache_retention_days: 3,
     max_cache_size_gb: 5,
@@ -64,6 +77,12 @@ const everything: Profile = {
 };
 
 describe('settings at their own endpoints', () => {
+  test('offers every endpoint setting in the repository the tests of every setting use', () => {
+    const paths = [...repositoryEndpoints, ...securityEndpoints, ...actionsEndpoints].map((endpoint) => endpoint.path);
+
+    expect(Object.keys(offered().settings ?? {})).toEqual(expect.arrayContaining(paths));
+  });
+
   test('brings every setting in line, after which the plan is empty', async () => {
     const github = new FakeGitHub(offered());
 
@@ -81,6 +100,7 @@ describe('settings at their own endpoints', () => {
       'PUT /repos/lunch/app/dependabot/runner-settings',
       'PUT /repos/lunch/app/actions/permissions/access',
       'PUT /repos/lunch/app/actions/permissions/fork-pr-contributor-approval',
+      'PUT /repos/lunch/app/actions/permissions/fork-pr-workflows-private-repos',
       'PUT /repos/lunch/app/actions/permissions/artifact-and-log-retention',
       'PUT /repos/lunch/app/actions/cache/retention-limit',
       'PUT /repos/lunch/app/actions/cache/storage-limit',
@@ -92,6 +112,14 @@ describe('settings at their own endpoints', () => {
     ]);
     // The creation cap keeps its live setting for drafts, which the profile leaves out.
     expect(plan.changes[2]?.request.body).toEqual({ enabled: true, max_open_pull_requests: 3 });
+    // A PUT replaces the fork settings, so it carries the live ones the profile leaves out.
+    const fork = plan.changes.find((change) => change.request.path.endsWith('/fork-pr-workflows-private-repos'));
+    expect(fork?.request.body).toEqual({
+      run_workflows_from_fork_pull_requests: true,
+      send_write_tokens_to_workflows: false,
+      send_secrets_and_variables: false,
+      require_approval_for_fork_pr_workflows: true,
+    });
 
     await applyPlan(github, plan);
     expect((await createPlan(github, repo, everything)).changes).toEqual([]);
@@ -207,7 +235,12 @@ describe('settings GitHub does not offer or refuses', () => {
   });
 
   test('names the permission a refused read needs', async () => {
-    const github = new FakeGitHub({ ...offered(), refused: ['GET /pages', 'GET /actions/oidc/customization/sub'] });
+    const github = new FakeGitHub(offered())
+      .fail('GET /repos/lunch/app/pages', answered(403, 'Resource not accessible by integration'))
+      .fail(
+        'GET /repos/lunch/app/actions/oidc/customization/sub',
+        answered(403, 'Resource not accessible by integration'),
+      );
 
     const plan = await createPlan(github, repo, {
       pages: { build_type: 'workflow' },
@@ -224,7 +257,10 @@ describe('settings GitHub does not offer or refuses', () => {
   });
 
   test('names the permission a refused write needs', async () => {
-    const github = new FakeGitHub({ ...offered(), refused: ['PATCH /properties/values'] });
+    const github = new FakeGitHub(offered()).fail(
+      'PATCH /repos/lunch/app/properties/values',
+      answered(403, 'Resource not accessible by integration'),
+    );
 
     const error = await createPlan(github, repo, { custom_properties: { team: 'web' } }).then((plan) =>
       applyPlan(github, plan).then(
