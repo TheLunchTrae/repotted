@@ -274,6 +274,35 @@ saved.
 | Any, in a section  | A setting that must stand alone there is set        | Each other setting this profile's file would hold there is left out: removed when set here, undone when only changed. Pages' `absent` is such a setting.           |
 | Any, in a section  | Another setting is set beside one that stands alone | The setting that stands alone is left out the same way, since the CLI refuses a file that holds both. Undoing one side doesn't bring the other back; Discard does. |
 
+### Settings search
+
+The profile editor's search and its **Managed**, **Not saved yet** and
+**Drafts** filters
+live on `ProfileViewModel`; `SettingSearch` holds the text each setting is
+found by, built once from `ProfileFields`. The result rows are made once for
+each load of the profile, the first time a search or filter is on; a search
+then shows and hides them, and one that finds the same changes nothing.
+
+| State   | Event                                      | Next                                                                                                                                |
+| ------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Tabs    | Type a search, or turn on a filter         | Results: the settings that fit, across every settings tab, with a matched sub-option's setting shown above it. The tabs are hidden. |
+| Results | Change the search or a filter              | Results, found again; Tabs when the search is blank and both filters are off.                                                       |
+| Results | Edit, undo or remove a setting, or Discard | Results, unchanged: a row that no longer fits stays until the search or a filter changes, so it doesn't vanish while being edited.  |
+| Results | The profile loads, reloads or saves        | Results, found again among the new rows.                                                                                            |
+| Results | Escape in the search box                   | The search is cleared: Results while a filter is on, otherwise Tabs.                                                                |
+| Results | **Clear**                                  | Tabs, with the search cleared and both filters off.                                                                                 |
+
+The compare view's search and its **Differs from GitHub** and **Can't
+change** filters live on `CompareViewModel` and each
+`CompareSectionViewModel`. A row is shown when it differs (or that filter is
+off), is locked (or that filter is off), and matches every word searched.
+While a search or **Can't change** is on, a section with no row shown is
+hidden, unless Repotted couldn't read it and the search finds its title; the
+view says so when a search finds nothing. A section's rows are replaced only
+when what it shows changes. **Can't change** is offered only while a difference is locked, so
+loading a comparison with nothing locked turns it off. Loading a comparison
+finds again with the current search and filters.
+
 ### Each ruleset or environment
 
 | State                                     | Event                                                             | Next                                                                                                                                                                                                                                                                      |

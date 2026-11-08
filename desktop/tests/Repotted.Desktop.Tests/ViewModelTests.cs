@@ -928,6 +928,125 @@ public sealed class ViewModelTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task The_settings_search_finds_names_keys_notes_synonyms_and_sub_options_on_every_tab()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        var editor = profiles.Current!;
+
+        editor.Query = "squash";
+        Assert.True(editor.Filtering);
+        Assert.Equal(
+            ["Merge / Merge methods: Allow squash merging, Squash commit title, Squash commit message"],
+            Found(editor));
+        Assert.Equal("3 settings found.", editor.ResultsSummary);
+
+        // A key as the profile writes it, in any case.
+        editor.Query = "WEB_COMMIT_SIGNOFF";
+        Assert.Equal(["Repository / Pull requests: Require sign-off on web commits"], Found(editor));
+        // A synonym GitHub's label doesn't use.
+        editor.Query = "dco";
+        Assert.Equal(["Repository / Pull requests: Require sign-off on web commits"], Found(editor));
+        // A note under the label.
+        editor.Query = "restricting editing";
+        Assert.Equal(["Repository / Features: Wiki"], Found(editor));
+        // A sub-option shows under the setting it belongs to.
+        editor.Query = "draft pull";
+        Assert.Equal(["Repository / Features: Pull requests, Count draft pull requests"], Found(editor));
+        // Searching a setting finds its sub-options too.
+        editor.Query = "secret protection";
+        Assert.Equal(
+            ["Security / Secret scanning: Secret Protection, Push protection, AI detection, Non-provider patterns, Validity checks, Delegated alert dismissal, Delegated bypass"],
+            Found(editor));
+
+        editor.Query = "nothing like this";
+        Assert.False(editor.HasResults);
+        Assert.Equal("No settings match \u201cnothing like this\u201d.", editor.ResultsSummary);
+
+        editor.Query = "  ";
+        Assert.False(editor.Filtering);
+        Assert.False(editor.HasResults);
+    }
+
+    [AvaloniaFact]
+    public async Task The_settings_filters_narrow_the_search_and_keep_a_row_while_it_is_edited()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+
+        editor.OnlyManaged = true;
+        Assert.Equal(
+            ["Repository / Features: Issues, Wiki", "Merge / Merge methods: Allow squash merging, Allow rebase merging"],
+            Found(editor));
+        editor.Query = "wiki";
+        Assert.Equal(["Repository / Features: Wiki"], Found(editor));
+        // The result rows are made once, and a search that finds the same changes nothing.
+        var made = editor.Results;
+        var wiki = made.SelectMany(group => group.Rows).Single(row => row.Shown);
+        editor.Query = "Wiki ";
+        Assert.Same(made, editor.Results);
+        Assert.True(wiki.Shown);
+        editor.Query = "wik";
+        Assert.Same(made, editor.Results);
+        Assert.Same(wiki, made.SelectMany(group => group.Rows).Single(row => row.Shown));
+
+        editor.ClearFiltersCommand.Execute(null);
+        Choose(editor, "has_projects", "Off");
+        editor.OnlyUnsaved = true;
+        Assert.Equal(["Repository / Features: Projects"], Found(editor));
+        // Undoing the change leaves the row where it is, so it doesn't vanish under the pointer.
+        Find(editor, "has_projects").Undo();
+        Assert.Equal(["Repository / Features: Projects"], Found(editor));
+        editor.OnlyUnsaved = false;
+        editor.OnlyUnsaved = true;
+        Assert.Equal("No settings match these filters.", editor.ResultsSummary);
+
+        // A save shows the saved profile's rows, and the search finds those.
+        editor.OnlyUnsaved = false;
+        editor.Query = "wiki";
+        cli.On($"profile {files.Own} --set repository.has_wiki=true --json", Documents.Resolved(files.Own, files.Base, wiki: true));
+        Choose(editor, "has_wiki", "On");
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Same(Find(editor, "has_wiki"), Assert.Single(Assert.Single(editor.Results, group => group.Shown).Settings));
+
+        editor.ClearFiltersCommand.Execute(null);
+        Assert.False(editor.Filtering);
+        Assert.Equal("", editor.Query);
+    }
+
+    [AvaloniaFact]
+    public async Task The_drafts_filter_shows_settings_with_a_draft_and_points_to_drafted_entries()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        cli.On($"profile {files.Own} --json", Documents.ResolvedWithDrafts(files.Own, files.Base));
+        var editor = profiles.Current!;
+        await editor.LoadCommand.ExecuteAsync(null);
+
+        editor.OnlyDrafts = true;
+        Assert.Equal(["Repository / Features: Projects"], Found(editor));
+        editor.Query = "wiki";
+        Assert.False(editor.HasResults);
+        Assert.Equal("No settings match \u201cwiki\u201d.", editor.ResultsSummary);
+        editor.Query = "";
+        editor.OnlyManaged = true;
+        // Projects has only a draft, which doesn't apply, so the profile doesn't manage it yet.
+        Assert.Equal(
+            "No settings match these filters. Drafts of rulesets and environments are on their own tabs.",
+            editor.ResultsSummary);
+
+        // Saving a draft is a change waiting to be saved, so Not saved yet shows it.
+        editor.ClearFiltersCommand.Execute(null);
+        Choose(editor, "has_wiki", "On");
+        Find(editor, "has_wiki").SaveAsDraftCommand.Execute(null);
+        editor.OnlyUnsaved = true;
+        Assert.Equal(["Repository / Features: Wiki"], Found(editor));
+    }
+
+    /// <summary>What the search and filters found, as "Tab / Group: Setting, Setting".</summary>
+    private static List<string> Found(ProfileViewModel editor) =>
+        [.. editor.Results.Where(group => group.Shown)
+            .Select(group => $"{group.Tab} / {group.Title}: {string.Join(", ", group.Settings.Select(setting => setting.Label))}")];
+
+    [AvaloniaFact]
     public async Task Numbers_and_text_save_once_they_are_valid()
     {
         var (profiles, cli, files) = await OpenOrgs();
@@ -2120,7 +2239,7 @@ public sealed class ViewModelTests : IDisposable
     {
         var compare = await Compare(Documents.Plan());
 
-        compare.ToggleEverythingCommand.Execute(null);
+        compare.DifferencesOnly = false;
 
         var settings = compare.Sections[0].Rows;
         Assert.Equal(
@@ -2128,7 +2247,6 @@ public sealed class ViewModelTests : IDisposable
              ("Allow rebase merging", CompareKind.Matches)],
             settings.Select(row => (row.Label, row.Kind)));
         Assert.Equal(("On", "On"), (settings[1].Now, settings[1].Wanted));
-        Assert.Equal("Show differences only", compare.EverythingLabel);
         Assert.Equal("5 differences in 3 sections. Matching settings show below them.", compare.Summary);
     }
 
@@ -2156,6 +2274,55 @@ public sealed class ViewModelTests : IDisposable
         await compare.ReviewAccessCommand.ExecuteAsync(null);
 
         Assert.Equal([new Uri("https://github.com/settings/installations/7")], desktop.Opened);
+    }
+
+    [AvaloniaFact]
+    public async Task The_cant_change_filter_shows_only_the_locked_differences_and_works_with_the_search()
+    {
+        var compare = await Compare(
+            Documents.Plan(access: Documents.ActionsRead, locks: """{"change":5,"reason":"Needs Actions write"}""", changes: Documents.Oidc));
+        List<string> Shown() => [.. compare.Sections.Where(section => section.Shown).SelectMany(section => section.Rows).Select(row => row.Key)];
+
+        compare.LockedOnly = true;
+        Assert.Equal(["oidc_customization_sub.use_default", "oidc_customization_sub.include_claim_keys"], Shown());
+        Assert.All(compare.Sections, section => Assert.False(section.HasSummary));
+        // Showing matching settings too adds nothing, since only a difference can be locked.
+        compare.DifferencesOnly = false;
+        Assert.Equal(["oidc_customization_sub.use_default", "oidc_customization_sub.include_claim_keys"], Shown());
+
+        // "Actions" also finds the unlocked default permissions row, which the filter leaves out.
+        compare.Query = "actions";
+        Assert.Equal(["oidc_customization_sub.use_default", "oidc_customization_sub.include_claim_keys"], Shown());
+        compare.LockedOnly = false;
+        Assert.Contains("default_workflow_permissions", Shown());
+        compare.LockedOnly = true;
+        compare.Query = "squash";
+        Assert.True(compare.NothingFound);
+        Assert.Equal("No difference Repotted can't change matches \u201csquash\u201d.", compare.NothingFoundMessage);
+
+        compare.Query = "";
+        compare.LockedOnly = false;
+        Assert.Contains("allow_squash_merge", Shown());
+    }
+
+    [AvaloniaFact]
+    public async Task A_compare_turns_the_cant_change_filter_off_when_nothing_is_locked_any_more()
+    {
+        const string command = "plan TheLunchTrae/repotted --profile orgs.yaml --json";
+        var cli = new FakeCli().On(
+            command, Documents.Plan(access: Documents.ActionsRead, locks: """{"change":5,"reason":"Needs Actions write"}""", changes: Documents.Oidc));
+        var compare = new CompareViewModel(
+            new RepottedClient(cli), new FakeDesktop(), "TheLunchTrae/repotted",
+            new ProfileListingDocument("orgs", "orgs.yaml", null, null), Documents.InstallUrl);
+        await compare.LoadCommand.ExecuteAsync(null);
+        compare.LockedOnly = true;
+
+        cli.On(command, Documents.Plan(changes: Documents.Oidc));
+        await compare.LoadCommand.ExecuteAsync(null);
+
+        Assert.False(compare.HasLocks);
+        Assert.False(compare.LockedOnly);
+        Assert.All(compare.Sections, section => Assert.True(section.Shown));
     }
 
     [AvaloniaFact]
@@ -2206,6 +2373,43 @@ public sealed class ViewModelTests : IDisposable
 
         Assert.Equal("Repotted can't change 1 difference below. It says what it needs.", elsewhere.LockSummary);
         Assert.False(elsewhere.HasAccessUrl);
+    }
+
+    [AvaloniaFact]
+    public async Task Searching_a_compare_finds_rows_by_setting_section_and_entry()
+    {
+        var compare = await Compare(Documents.Plan());
+        List<string> Shown() => [.. compare.Sections.Where(section => section.Shown).SelectMany(section => section.Rows).Select(row => row.Label)];
+
+        compare.Query = "squash";
+        Assert.Equal(["Allow squash merging"], Shown());
+        // A search that finds the same rows keeps the rows on screen as they are.
+        var rows = compare.Sections.Single(section => section.Shown).Rows;
+        compare.Query = "squash ";
+        Assert.Same(rows, compare.Sections.Single(section => section.Shown).Rows);
+        // Found by the setting's synonym and its group's description, which the row doesn't show.
+        compare.Query = "github_token";
+        Assert.Equal(["Default permissions"], Shown());
+        // Found by a ruleset's name.
+        compare.Query = "require pr";
+        Assert.Equal(["Main: Require PR"], Shown());
+        // Found by the section's title.
+        compare.Query = "environments";
+        Assert.Empty(Shown());
+        Assert.True(compare.NothingFound);
+        Assert.Equal("No differences match \u201cenvironments\u201d.", compare.NothingFoundMessage);
+
+        compare.DifferencesOnly = false;
+        Assert.Equal(["npm"], Shown());
+        Assert.False(compare.NothingFound);
+        compare.Query = "wiki";
+        Assert.Equal(["Wiki"], Shown());
+        // The line that counts matching settings counts rows a search may not find, so it hides.
+        Assert.All(compare.Sections, section => Assert.False(section.HasSummary));
+
+        compare.ClearSearchCommand.Execute(null);
+        Assert.Contains(compare.Sections, section => section.HasSummary);
+        Assert.All(compare.Sections, section => Assert.True(section.Shown));
     }
 
     [AvaloniaFact]
@@ -2262,7 +2466,7 @@ public sealed class ViewModelTests : IDisposable
             environments.Rows);
         Assert.Equal("1 environment matches.", environments.Summary);
         Assert.Equal("npm: tag v*, new branch policy: not on GitHub, the profile creates it", environments.Rows[3].AccessibleName);
-        environments.ShowEverything = true;
+        compare.DifferencesOnly = false;
         Assert.Equal("staging, environment: matches the profile", environments.Rows[^1].AccessibleName);
     }
 
@@ -2280,7 +2484,7 @@ public sealed class ViewModelTests : IDisposable
              "request":{"method":"PUT","path":"/repos/TheLunchTrae/repotted/rulesets/8","body":{}}}
             """));
 
-        compare.ToggleEverythingCommand.Execute(null);
+        compare.DifferencesOnly = false;
 
         Assert.Contains(
             new CompareRow(CompareKind.Matches, "Allowed action patterns", "selected_actions.patterns_allowed", "actions/*", "actions/*"),
@@ -2377,7 +2581,7 @@ public sealed class ViewModelTests : IDisposable
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
-        compare.ToggleEverythingCommand.Execute(null);
+        compare.DifferencesOnly = false;
 
         Assert.Equal(
             ["Security", "Custom properties", "GitHub Pages", "Autolinks"],
@@ -2426,7 +2630,7 @@ public sealed class ViewModelTests : IDisposable
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
-        compare.ToggleEverythingCommand.Execute(null);
+        compare.DifferencesOnly = false;
 
         Assert.Equal(
             [new CompareRow(CompareKind.Changes, "Branch", "source.branch", "gh-pages", "main"),
@@ -2456,11 +2660,29 @@ public sealed class ViewModelTests : IDisposable
              "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
             """;
         var compare = await Compare(plan);
-        compare.ToggleEverythingCommand.Execute(null);
+        compare.DifferencesOnly = false;
 
         Assert.Equal(
             [new CompareRow(CompareKind.Matches, "rulesets", "rulesets", "strict", "strict")],
             compare.Sections.Single(section => section.Title == "Custom properties").Rows);
+    }
+
+    [AvaloniaFact]
+    public async Task A_search_keeps_a_section_it_could_not_read_when_it_finds_its_title()
+    {
+        const string plan = """
+            {"repository":"TheLunchTrae/repotted","desired":{"repository":{"has_wiki":false},"rulesets":[{"name":"Main"}]},"changes":[],
+             "warnings":["Skipped rulesets: GitHub refused to read rulesets (Forbidden); that needs the Administration read permission"],
+             "access":{"role":"admin","app":{"status":"unknown"}},"locks":[]}
+            """;
+        var compare = await Compare(plan);
+        var rulesets = compare.Sections.Single(section => section.Skipped);
+
+        compare.Query = "rulesets";
+        Assert.True(rulesets.Shown);
+        Assert.False(compare.NothingFound);
+        compare.Query = "wiki";
+        Assert.False(rulesets.Shown);
     }
 
     private static async Task<CompareViewModel> Compare(string plan, FakeDesktop? desktop = null)

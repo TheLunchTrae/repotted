@@ -271,6 +271,59 @@ public sealed class ViewTests : IDisposable
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
+    public async Task The_settings_search_shows_what_it_found_on_every_tab(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\nmerge:\n  allow_rebase_merge: true\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository:\n  has_wiki: false\nmerge:\n  allow_squash_merge: false\n");
+        var window = await Show(theme, new FakeCli()
+            .On("status --json", Documents.SignedIn)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
+        window.Height = 1100;
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        Dispatcher.UIThread.RunJobs();
+        var search = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "SettingsSearch");
+
+        // The shortcut moves to the search, and Escape clears it.
+        window.KeyPressQwerty(PhysicalKey.F, OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(search.IsFocused);
+        window.KeyTextInput("merge");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("merge", editor.Query);
+
+        var text = Texts(window);
+        Assert.Contains("Merge methods", text);
+        Assert.Contains("Delete head branches after merge", text);
+        Assert.DoesNotContain(Label("Rulesets"), text);
+        Assert.Contains(Label("Clear"), text);
+        Save(window, $"settings-search-{theme}");
+
+        window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("", editor.Query);
+        Assert.Contains(Label("Rulesets"), Texts(window));
+
+        editor.OnlyManaged = true;
+        text = Texts(window);
+        Assert.Contains("4 settings found.", text);
+        Assert.Contains("Allow rebase merging", text);
+        Assert.DoesNotContain("Projects", text);
+        Save(window, $"settings-managed-{theme}");
+
+        editor.OnlyManaged = false;
+        editor.Query = "nothing like this";
+        Assert.Contains("No settings match \u201cnothing like this\u201d.", Texts(window));
+        Save(window, $"settings-search-empty-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
     public async Task A_save_over_a_changed_file_asks_which_version_to_keep(string theme)
     {
         var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
@@ -629,7 +682,32 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("merge, squash, rebase", text);
         Assert.Contains(Label("Back to repositories"), text);
         Assert.DoesNotContain("Issues", text);
+        // Nothing is locked, so the filter for what Repotted can't change isn't offered.
+        Assert.DoesNotContain(Label("Can't change"), text);
         Save(window, $"compare-{theme}");
+
+        // The find shortcut goes to this page's search, not the profile editor's, which the shell also keeps.
+        var search = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "CompareSearch");
+        window.KeyPressQwerty(PhysicalKey.F, OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(search.IsFocused);
+
+        // A search finds rows by what the setting is about, and turning off the differences filter adds what matches.
+        var compare = shell.Compare!;
+        compare.Query = "merg";
+        text = Texts(window);
+        Assert.Contains("Allow squash merging", text);
+        Assert.DoesNotContain("Default permissions", text);
+        Save(window, $"compare-search-{theme}");
+        compare.DifferencesOnly = false;
+        Assert.Contains("Allow rebase merging", Texts(window));
+        Save(window, $"compare-search-everything-{theme}");
+        // Escape clears the search and leaves the filter as it is.
+        window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("", compare.Query);
+        Assert.False(compare.DifferencesOnly);
+        compare.DifferencesOnly = true;
 
         // Every row says what the profile does to it, for screen readers.
         var names = window.GetVisualDescendants().OfType<ListBoxItem>()
@@ -678,6 +756,15 @@ public sealed class ViewTests : IDisposable
         Assert.Contains(Label("Review App access"), text);
         Assert.Contains("Needs Actions write", text);
         Save(window, $"compare-locked-{theme}");
+
+        // The filter for what Repotted can't change shows only the locked rows.
+        Assert.Contains(Label("Can't change"), text);
+        shell.Compare!.LockedOnly = true;
+        text = Texts(window);
+        Assert.Contains("Use the default subject claim", text);
+        Assert.DoesNotContain("Default permissions", text);
+        Save(window, $"compare-locked-only-{theme}");
+        shell.Compare.LockedOnly = false;
 
         var names = window.GetVisualDescendants().OfType<ListBoxItem>()
             .Select(item => ControlAutomationPeer.CreatePeerForElement(item).GetName())
