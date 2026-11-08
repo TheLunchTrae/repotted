@@ -36,6 +36,7 @@ jobs:
       - name: Check out the release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Full history, so the next step can prove the commit is on main.
           fetch-depth: 0
           persist-credentials: false
       - name: Require a commit on main
