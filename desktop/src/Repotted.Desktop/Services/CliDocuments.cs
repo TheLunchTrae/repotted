@@ -34,6 +34,10 @@ internal sealed record ProfileSourcesDocument(
     IReadOnlyDictionary<string, string> Repository,
     IReadOnlyDictionary<string, string> Merge,
     IReadOnlyDictionary<string, string> Actions,
+    IReadOnlyDictionary<string, string> Security,
+    IReadOnlyDictionary<string, string> CustomProperties,
+    IReadOnlyDictionary<string, string> Pages,
+    IReadOnlyDictionary<string, string> Autolinks,
     IReadOnlyDictionary<string, string> Rulesets,
     IReadOnlyDictionary<string, string> Environments);
 

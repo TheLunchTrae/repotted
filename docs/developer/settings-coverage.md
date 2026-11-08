@@ -191,7 +191,9 @@ custom patterns, whose delete removes their alerts unless told otherwise.
 ## Settings with no API
 
 These options appear on a repository's settings pages, but no REST endpoint
-at the repository's level sets them, so no profile can. "Config only" means
+at the repository's level sets them, so no profile can. In the desktop app,
+each one that belongs to a setting the app shows is a note under that
+setting, not a control. "Config only" means
 they can be set only through an organization's or enterprise's code security
 configurations. "Read only" means the API reports them but can't set them.
 

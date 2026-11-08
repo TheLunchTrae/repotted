@@ -400,6 +400,34 @@
   <Style Selector="Border.rail.changed">
     <Setter Property="Background" Value="{DynamicResource DriftRailBrush}" />
   </Style>
+  <Style Selector="StackPanel.setting">
+    <Setter Property="Margin" Value="16,10" />
+  </Style>
+  <!-- A sub-option, indented under the setting it belongs to. -->
+  <Style Selector="StackPanel.setting.nested">
+    <Setter Property="Margin" Value="40,10,16,10" />
+  </Style>
+  <Style Selector="Border.field.nested">
+    <Setter Property="MinHeight" Value="52" />
+  </Style>
+  <!-- Choices that go under the setting's label line up with it. -->
+  <Style Selector="Border.seg.wide">
+    <Setter Property="Margin" Value="16,0,16,12" />
+  </Style>
+  <Style Selector="Border.seg.wide.nested">
+    <Setter Property="Margin" Value="40,0,16,12" />
+  </Style>
+  <Style Selector="TextBox.setting">
+    <Setter Property="Width" Value="220" />
+    <Setter Property="FontSize" Value="14" />
+  </Style>
+  <Style Selector="TextBox.setting.number">
+    <Setter Property="Width" Value="96" />
+    <Setter Property="HorizontalAlignment" Value="Right" />
+  </Style>
+  <Style Selector="TextBlock.problem">
+    <Setter Property="Foreground" Value="{DynamicResource RemoveBrush}" />
+  </Style>
 
   <!-- An entry row that opens its editor. -->
   <Style Selector="Button.entry">
