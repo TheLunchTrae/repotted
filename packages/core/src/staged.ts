@@ -568,10 +568,20 @@ function planExclusions(plan: Plan, own: StagedFile): PlanExclusion[] {
   });
 }
 
-/** Plans a staged apply: the changes that bring its repository to its profile, and what leaves each out. */
-export async function planStagedApply(github: GitHub, file: string): Promise<StagedPlan> {
+/**
+ * Plans a staged apply: the changes that bring its repository to its
+ * profile, and what leaves each out. `accept` sees the staged apply as the
+ * plan's one read of its file finds it, before GitHub is read, and throws
+ * to refuse it.
+ */
+export async function planStagedApply(
+  github: GitHub,
+  file: string,
+  accept: (staged: StagedApply) => void = () => undefined,
+): Promise<StagedPlan> {
   const read = await resolveLayer(file, stagedLayer);
   const resolved = staged(read);
+  accept(resolved);
   const created = await createPlan(
     github,
     parseRepo(resolved.repository),

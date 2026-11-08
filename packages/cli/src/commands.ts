@@ -195,15 +195,16 @@ async function plan(io: Io, args: string[]): Promise<number> {
     if (positionals.length > 1) {
       throw new UsageError('Expected at most one repository.');
     }
-    // One read of the staged file gives both the repository and the plan.
-    github = await io.github();
-    stagedPlan = await planStagedApply(github, values.staged);
-    const { repository } = stagedPlan.staged;
     const [named] = positionals;
-    if (named !== undefined && named.toLowerCase() !== repository.toLowerCase()) {
-      throw new UsageError(`${values.staged} applies to ${repository}, not ${named}.`);
-    }
-    repo = parseRepo(repository);
+    const file = values.staged;
+    github = await io.github();
+    // Checked on the plan's own read of the file, before GitHub is read.
+    stagedPlan = await planStagedApply(github, file, ({ repository }) => {
+      if (named !== undefined && named.toLowerCase() !== repository.toLowerCase()) {
+        throw new UsageError(`${file} applies to ${repository}, not ${named}.`);
+      }
+    });
+    repo = parseRepo(stagedPlan.staged.repository);
     result = stagedPlan.plan;
   }
   // Apply checks neither: GitHub decides at the write.
