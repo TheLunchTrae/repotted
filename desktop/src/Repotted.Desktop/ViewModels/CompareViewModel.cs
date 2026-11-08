@@ -7,15 +7,54 @@ using Repotted.Desktop.Services;
 namespace Repotted.Desktop.ViewModels;
 
 /// <summary>A section of a compare: the rows that differ, the rows that match, and a line for the rest.</summary>
-internal sealed partial class CompareSectionViewModel(
-    string title,
-    IReadOnlyList<CompareRow> differences,
-    IReadOnlyList<CompareRow> matching,
-    string summary,
-    string? skippedBy = null)
-    : ViewModelBase
+internal sealed partial class CompareSectionViewModel : ViewModelBase
 {
-    public string Title => title;
+    private readonly IReadOnlyList<CompareRow> differences;
+
+    private readonly IReadOnlyList<CompareRow> matching;
+
+    private readonly string? skippedBy;
+
+    /// <summary>The text each row is found by, as <see cref="SettingSearch"/> compares it.</summary>
+    private readonly Dictionary<CompareRow, string> terms = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>The words searched for; none when the search is blank.</summary>
+    private IReadOnlyList<string> words = [];
+
+    /// <summary>The section's title as the search compares it, which finds a section the plan could not read.</summary>
+    private readonly string titleTerms;
+
+    private bool differencesOnly = true;
+
+    private bool lockedOnly;
+
+    /// <summary>
+    /// A section of rows. A row is found by its label, its key, and what
+    /// <c>terms</c> gives for it, such as the setting's description, synonyms
+    /// and tab; without <c>terms</c>, as for rulesets, by the section's title.
+    /// </summary>
+    public CompareSectionViewModel(
+        string title,
+        IReadOnlyList<CompareRow> differences,
+        IReadOnlyList<CompareRow> matching,
+        string summary,
+        string? skippedBy = null,
+        Func<CompareRow, string>? terms = null)
+    {
+        Title = title;
+        this.differences = differences;
+        this.matching = matching;
+        Summary = summary;
+        this.skippedBy = skippedBy;
+        titleTerms = SettingSearch.Normalize(title);
+        foreach (var row in differences.Concat(matching))
+        {
+            this.terms[row] = SettingSearch.Normalize($"{row.Label} {row.Key} {(terms is null ? title : terms(row))}");
+        }
+        Rows = differences;
+    }
+
+    public string Title { get; }
 
     public IReadOnlyList<CompareRow> Differences => differences;
 
@@ -37,16 +76,55 @@ internal sealed partial class CompareSectionViewModel(
         (_, var count) => $"{count} changes",
     };
 
-    /// <summary>The rows on screen: the differences, and the matching rows when everything shows.</summary>
-    public IReadOnlyList<CompareRow> Rows => ShowEverything ? [.. differences, .. matching] : differences;
+    /// <summary>
+    /// The rows on screen: the differences, with the matching rows when they
+    /// aren't filtered out, only the locked ones when those alone are asked
+    /// for, and of those only what the search finds. It changes only in
+    /// <see cref="Filter"/>, and only when the rows it holds change.
+    /// </summary>
+    public IReadOnlyList<CompareRow> Rows { get; private set; }
 
-    public string Summary => summary;
+    /// <summary>
+    /// Whether the section shows: always when nothing narrows it, and
+    /// otherwise when it has a row to show, or when it could not be read and
+    /// the search finds its title, so a search doesn't hide what went unchecked.
+    /// </summary>
+    public bool Shown { get; private set; } = true;
 
-    public bool HasSummary => summary.Length > 0;
+    public string Summary { get; }
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Rows))]
-    public partial bool ShowEverything { get; set; }
+    /// <summary>
+    /// The line for the rest, such as how many settings match, which a search
+    /// or the locked filter hides since it counts rows they may leave out. A
+    /// section the plan could not read always keeps its line, which says why.
+    /// </summary>
+    public bool HasSummary => Summary.Length > 0 && (Skipped || (words.Count == 0 && !lockedOnly));
+
+    /// <summary>Shows what fits the compare's filters and has every word of <paramref name="search"/>.</summary>
+    public void Filter(bool differencesOnly, bool lockedOnly, IReadOnlyList<string> search)
+    {
+        this.differencesOnly = differencesOnly;
+        this.lockedOnly = lockedOnly;
+        words = search;
+        IReadOnlyList<CompareRow> rows =
+        [
+            .. (differencesOnly ? differences : differences.Concat(matching))
+                .Where(row => (!lockedOnly || row.IsLocked) && SettingSearch.Matches(terms[row], words)),
+        ];
+        if (!rows.SequenceEqual(Rows, ReferenceEqualityComparer.Instance))
+        {
+            Rows = rows;
+            OnPropertyChanged(nameof(Rows));
+        }
+        var shown = (words.Count == 0 && !lockedOnly) || rows.Count > 0
+            || (Skipped && !lockedOnly && SettingSearch.Matches(titleTerms, words));
+        if (shown != Shown)
+        {
+            Shown = shown;
+            OnPropertyChanged(nameof(Shown));
+        }
+        OnPropertyChanged(nameof(HasSummary));
+    }
 }
 
 /// <summary>
@@ -113,18 +191,47 @@ internal sealed partial class CompareViewModel(
 
     public bool ShowResult => !Loading && Error is null && Loaded;
 
+    /// <summary>Whether only what the profile would change shows, and matching settings are folded away; on at first.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(EverythingLabel), nameof(Summary))]
-    public partial bool ShowEverything { get; set; }
+    [NotifyPropertyChangedFor(nameof(Summary))]
+    public partial bool DifferencesOnly { get; set; } = true;
 
-    public string EverythingLabel => ShowEverything ? "Show differences only" : "Show everything";
+    partial void OnDifferencesOnlyChanged(bool value) => Find();
 
-    partial void OnShowEverythingChanged(bool value)
+    /// <summary>Whether only the differences Repotted can't change show; off at first, and only offered when there are some.</summary>
+    [ObservableProperty]
+    public partial bool LockedOnly { get; set; }
+
+    partial void OnLockedOnlyChanged(bool value) => Find();
+
+    /// <summary>What is typed in the compare's search.</summary>
+    [ObservableProperty]
+    public partial string Query { get; set; } = "";
+
+    partial void OnQueryChanged(string value) => Find();
+
+    /// <summary>Whether the search finds nothing, so a line says so in place of the rows.</summary>
+    public bool NothingFound => SettingSearch.Words(Query).Length > 0 && !Sections.Any(section => section.Shown);
+
+    public string NothingFoundMessage => (LockedOnly, DifferencesOnly) switch
     {
+        (true, _) => $"No difference Repotted can't change matches \u201c{Query.Trim()}\u201d.",
+        (_, true) => $"No differences match \u201c{Query.Trim()}\u201d.",
+        _ => $"Nothing in this compare matches \u201c{Query.Trim()}\u201d.",
+    };
+
+    [RelayCommand]
+    private void ClearSearch() => Query = "";
+
+    private void Find()
+    {
+        var words = SettingSearch.Words(Query);
         foreach (var section in Sections)
         {
-            section.ShowEverything = value;
+            section.Filter(DifferencesOnly, LockedOnly, words);
         }
+        OnPropertyChanged(nameof(NothingFound));
+        OnPropertyChanged(nameof(NothingFoundMessage));
     }
 
     public string Summary
@@ -137,7 +244,7 @@ internal sealed partial class CompareViewModel(
             {
                 return $"{profile.Name} does not set anything Repotted compares.";
             }
-            var rest = ShowEverything ? "Matching settings show below them." : "Matching settings are folded away.";
+            var rest = DifferencesOnly ? "Matching settings are folded away." : "Matching settings show below them.";
             return (differences, Sections.Any(section => section.Skipped)) switch
             {
                 (0, false) => $"{repository} already has everything {profile.Name} sets.",
@@ -146,9 +253,6 @@ internal sealed partial class CompareViewModel(
             };
         }
     }
-
-    [RelayCommand]
-    private void ToggleEverything() => ShowEverything = !ShowEverything;
 
     /// <summary>A draft as the plan names it: the ruleset Later, or a setting's path.</summary>
     private static string Describe(SkippedDocument draft) => draft.Section switch
@@ -170,13 +274,18 @@ internal sealed partial class CompareViewModel(
             Sections = Build(plan);
             // A section the plan could not read says so in its own place.
             Warnings = [.. plan.Warnings.Where(warning => !Sections.Any(section => section.SkippedBy == warning))];
-            foreach (var section in Sections)
-            {
-                section.ShowEverything = ShowEverything;
-            }
             var installed = plan.Access.App.Status != "not_installed";
             AccessLabel = installed ? "Review App access" : "Install the App";
             AccessUrl = Https(installed ? plan.Access.App.SettingsUrl : installUrl?.ToString());
+            // The locked filter is only offered while something is locked, so a compare with nothing locked shows everything again.
+            if (!HasLocks && LockedOnly)
+            {
+                LockedOnly = false;
+            }
+            else
+            {
+                Find();
+            }
             OnPropertyChanged(nameof(Sections));
             OnPropertyChanged(nameof(Warnings));
             OnPropertyChanged(nameof(HasWarnings));
@@ -305,7 +414,9 @@ internal sealed partial class CompareViewModel(
             1 => "1 setting matches.",
             var count => $"{count} settings match.",
         };
-        return new CompareSectionViewModel(title, differences, matching, summary);
+        // A row is found by what the editor's setting is found by, such as its description and synonyms.
+        return new CompareSectionViewModel(title, differences, matching, summary, terms: row =>
+            names.Select(name => Field(name, row.Key)).OfType<SettingField>().Select(SettingSearch.Terms).FirstOrDefault() ?? title);
     }
 
     /// <summary>

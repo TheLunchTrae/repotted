@@ -221,10 +221,38 @@
             IsEnabled="{Binding !Saving}">
         <DockPanel>
           <!--
+            The settings search and filters. While either is on, what they
+            found on every settings tab shows in place of the tabs.
+          -->
+          <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBox x:Name="SettingsSearch" Classes="search" Width="300" Margin="0,0,12,0" VerticalAlignment="Center"
+                     PlaceholderText="Search settings" Text="{Binding Query}"
+                     AutomationProperties.Name="Search settings"
+                     AutomationProperties.HelpText="Finds settings by name, description, or API field name, on every settings tab.">
+              <TextBox.InnerRightContent>
+                <Border Classes="kbd" Margin="6,0,0,0" IsHitTestVisible="False">
+                  <TextBlock x:Name="SearchShortcut" Classes="mono muted" FontSize="12" Text="Ctrl F" />
+                </Border>
+              </TextBox.InnerRightContent>
+            </TextBox>
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <ToggleButton Classes="chip" Content="Managed" IsChecked="{Binding OnlyManaged}"
+                            AutomationProperties.HelpText="Shows only settings this profile or a profile it extends sets." />
+              <ToggleButton Classes="chip" Content="Not saved yet" IsChecked="{Binding OnlyUnsaved}"
+                            AutomationProperties.HelpText="Shows only settings with a change waiting to be saved." />
+              <ToggleButton Classes="chip" Content="Drafts" IsChecked="{Binding OnlyDrafts}"
+                            AutomationProperties.HelpText="Shows only settings with a draft, saved in this profile or a profile it extends." />
+              <Button Classes="link" Margin="4,0,0,0" Content="Clear" IsVisible="{Binding Filtering}"
+                      Command="{Binding ClearFiltersCommand}" AutomationProperties.Name="Clear the search and filters" />
+            </StackPanel>
+          </WrapPanel>
+
+          <!--
             Tabs, each with how many values the profile manages there. They
             wrap onto a second line when the YAML leaves too little room.
           -->
-          <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+          <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+                  IsVisible="{Binding !Filtering}">
             <ListBox Classes="tabs" ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}"
                      AutomationProperties.Name="Sections" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
               <ListBox.ItemsPanel>
@@ -244,6 +272,13 @@
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>
+          </Border>
+
+          <!-- What the search and filters found, in place of the tabs -->
+          <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+                  Padding="0,0,0,10" IsVisible="{Binding Filtering}">
+            <TextBlock Classes="muted" Text="{Binding ResultsSummary}" TextWrapping="Wrap"
+                       AutomationProperties.LiveSetting="Polite" />
           </Border>
 
           <!-- What the rails mean -->
@@ -266,266 +301,288 @@
             </StackPanel>
           </StackPanel>
 
-          <ScrollViewer>
-            <ContentControl Content="{Binding SelectedTab}" Margin="0,8,16,0">
-              <ContentControl.DataTemplates>
-                <DataTemplate DataType="vm:ProfileTabViewModel">
-                  <Panel>
-                    <!-- A section's settings, in groups -->
-                    <ItemsControl ItemsSource="{Binding Groups}" IsVisible="{Binding IsSettings}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:SettingGroupViewModel">
-                          <StackPanel Margin="0,12,0,8" Spacing="4">
-                            <TextBlock Classes="h2" Text="{Binding Title}" />
-                            <TextBlock Classes="muted small" Text="{Binding Description}" TextWrapping="Wrap"
-                                       Margin="0,0,0,8" />
-                            <Border Classes="fields">
-                              <ItemsControl ItemsSource="{Binding Settings}" ItemTemplate="{StaticResource SettingRow}"
-                                            Margin="0,-1,0,0" />
-                            </Border>
-                          </StackPanel>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <!-- The rulesets or environments the profile names -->
-                    <StackPanel Spacing="10" Margin="0,12,0,0" IsVisible="{Binding IsEntries}">
-                      <StackPanel Spacing="10" IsVisible="{Binding ShowList}" PropertyChanged="OnListPropertyChanged">
-                        <Grid ColumnDefinitions="*,Auto">
-                          <TextBlock Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding Help}" />
-                          <Button Grid.Column="1" Classes="quiet" Margin="16,0,0,0" Content="{Binding NewLabel}"
-                                  Command="{Binding NewCommand}" />
-                        </Grid>
-                        <TextBlock Classes="muted" Text="The profile names none." IsVisible="{Binding !HasEntries}" />
-                        <Border Classes="fields" IsVisible="{Binding HasEntries}">
-                          <ItemsControl ItemsSource="{Binding Entries}" Margin="0,-1,0,0">
-                            <ItemsControl.ItemTemplate>
-                              <DataTemplate x:DataType="vm:EntryViewModel">
-                                <Border Classes="field" MinHeight="48">
-                                  <Button Classes="entry" Command="{Binding OpenCommand}"
-                                          AutomationProperties.Name="{Binding AccessibleName}">
-                                    <Grid ColumnDefinitions="4,Auto,*,Auto,Auto">
-                                      <Border Classes="rail" Classes.own="{Binding Own}" Classes.inherited="{Binding !Own}"
-                                              Classes.changed="{Binding Changed}" />
-                                      <TextBlock Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"
-                                                 FontSize="14.5" Text="{Binding Name}" TextTrimming="CharacterEllipsis" MaxWidth="360"
-                                                 Classes.gone="{Binding Dropped}" />
-                                      <Border Grid.Column="2" Classes="pill none" Margin="10,0,16,0" IsVisible="{Binding IsDraft}">
-                                        <StackPanel Orientation="Horizontal"><Ellipse /><TextBlock Text="Draft" /></StackPanel>
-                                      </Border>
-                                      <TextBlock Grid.Column="3" Margin="16,0" Classes="muted small" VerticalAlignment="Center"
-                                                 Text="{Binding Note}" TextTrimming="CharacterEllipsis" MaxWidth="420" />
-                                      <TextBlock Grid.Column="4" Margin="0,0,16,0" Classes="muted" VerticalAlignment="Center"
-                                                 Text="&#x203A;" FontSize="18" />
-                                    </Grid>
-                                  </Button>
-                                </Border>
-                              </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                          </ItemsControl>
-                        </Border>
-                      </StackPanel>
-
-                      <!-- One entry, open in its editor -->
-                      <StackPanel Spacing="12" IsVisible="{Binding !ShowList}">
-                        <Button Classes="link" HorizontalAlignment="Left" Content="{Binding BackLabel}"
-                                Command="{Binding BackCommand}" />
-                        <ContentControl Content="{Binding Editing}">
-                          <ContentControl.DataTemplates>
-                            <DataTemplate DataType="vm:EntryViewModel">
-                              <StackPanel Spacing="12">
-                                <Grid ColumnDefinitions="*,Auto">
-                                  <StackPanel Spacing="2">
-                                    <TextBlock Classes="h2" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Classes="muted small" Text="{Binding Note}" TextWrapping="Wrap"
-                                               AutomationProperties.LiveSetting="Polite" />
-                                  </StackPanel>
-                                  <StackPanel Grid.Column="1" VerticalAlignment="Top">
-                                    <Button Classes="quiet" Content="{Binding DropLabel}"
-                                            IsVisible="{Binding CanDrop}" Command="{Binding DropCommand}"
-                                            AutomationProperties.HelpText="Takes it out of this profile, once the profile is saved." />
-                                    <Button Classes="quiet" Content="Put it back" IsVisible="{Binding Dropped}"
-                                            Command="{Binding PutBackCommand}"
-                                            AutomationProperties.HelpText="Keeps it in this profile, as it is saved." />
-                                  </StackPanel>
-                                </Grid>
-                                <ContentControl Content="{Binding Editor}" IsEnabled="{Binding Editable}" />
-                              </StackPanel>
+          <ScrollViewer x:Name="Scroller">
+            <Panel>
+              <ItemsControl ItemsSource="{Binding Results}" Margin="0,8,16,0" IsVisible="{Binding Filtering}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SettingResultsViewModel">
+                    <StackPanel Margin="0,12,0,8" Spacing="4" IsVisible="{Binding Shown}">
+                      <TextBlock Classes="muted small" Text="{Binding Tab}" />
+                      <TextBlock Classes="h2" Text="{Binding Title}" Margin="0,0,0,8" />
+                      <Border Classes="fields">
+                        <ItemsControl ItemsSource="{Binding Rows}" Margin="0,-1,0,0">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SettingResultViewModel">
+                              <ContentControl Content="{Binding Setting}" ContentTemplate="{StaticResource SettingRow}"
+                                              IsVisible="{Binding Shown}" />
                             </DataTemplate>
-                            <DataTemplate DataType="vm:RulesetEditorViewModel">
-                              <StackPanel Spacing="16">
-                                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource EntryHead}" />
-                                <StackPanel Spacing="16" IsVisible="{Binding Manages}">
-                                  <Border Classes="fields">
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </Border>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <ContentControl Content="{Binding SelectedTab}" Margin="0,8,16,0" IsVisible="{Binding !Filtering}">
+                <ContentControl.DataTemplates>
+                  <DataTemplate DataType="vm:ProfileTabViewModel">
+                    <Panel>
+                      <!-- A section's settings, in groups -->
+                      <ItemsControl ItemsSource="{Binding Groups}" IsVisible="{Binding IsSettings}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:SettingGroupViewModel">
+                            <StackPanel Margin="0,12,0,8" Spacing="4">
+                              <TextBlock Classes="h2" Text="{Binding Title}" />
+                              <TextBlock Classes="muted small" Text="{Binding Description}" TextWrapping="Wrap"
+                                         Margin="0,0,0,8" />
+                              <Border Classes="fields">
+                                <ItemsControl ItemsSource="{Binding Settings}" ItemTemplate="{StaticResource SettingRow}"
+                                              Margin="0,-1,0,0" />
+                              </Border>
+                            </StackPanel>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+
+                      <!-- The rulesets or environments the profile names -->
+                      <StackPanel Spacing="10" Margin="0,12,0,0" IsVisible="{Binding IsEntries}">
+                        <StackPanel Spacing="10" IsVisible="{Binding ShowList}" PropertyChanged="OnListPropertyChanged">
+                          <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding Help}" />
+                            <Button Grid.Column="1" Classes="quiet" Margin="16,0,0,0" Content="{Binding NewLabel}"
+                                    Command="{Binding NewCommand}" />
+                          </Grid>
+                          <TextBlock Classes="muted" Text="The profile names none." IsVisible="{Binding !HasEntries}" />
+                          <Border Classes="fields" IsVisible="{Binding HasEntries}">
+                            <ItemsControl ItemsSource="{Binding Entries}" Margin="0,-1,0,0">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:EntryViewModel">
+                                  <Border Classes="field" MinHeight="48">
+                                    <Button Classes="entry" Command="{Binding OpenCommand}"
+                                            AutomationProperties.Name="{Binding AccessibleName}">
+                                      <Grid ColumnDefinitions="4,Auto,*,Auto,Auto">
+                                        <Border Classes="rail" Classes.own="{Binding Own}" Classes.inherited="{Binding !Own}"
+                                                Classes.changed="{Binding Changed}" />
+                                        <TextBlock Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"
+                                                   FontSize="14.5" Text="{Binding Name}" TextTrimming="CharacterEllipsis" MaxWidth="360"
+                                                   Classes.gone="{Binding Dropped}" />
+                                        <Border Grid.Column="2" Classes="pill none" Margin="10,0,16,0" IsVisible="{Binding IsDraft}">
+                                          <StackPanel Orientation="Horizontal"><Ellipse /><TextBlock Text="Draft" /></StackPanel>
+                                        </Border>
+                                        <TextBlock Grid.Column="3" Margin="16,0" Classes="muted small" VerticalAlignment="Center"
+                                                   Text="{Binding Note}" TextTrimming="CharacterEllipsis" MaxWidth="420" />
+                                        <TextBlock Grid.Column="4" Margin="0,0,16,0" Classes="muted" VerticalAlignment="Center"
+                                                   Text="&#x203A;" FontSize="18" />
+                                      </Grid>
+                                    </Button>
+                                  </Border>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </Border>
+                        </StackPanel>
+
+                        <!-- One entry, open in its editor -->
+                        <StackPanel Spacing="12" IsVisible="{Binding !ShowList}">
+                          <Button Classes="link" HorizontalAlignment="Left" Content="{Binding BackLabel}"
+                                  Command="{Binding BackCommand}" />
+                          <ContentControl Content="{Binding Editing}">
+                            <ContentControl.DataTemplates>
+                              <DataTemplate DataType="vm:EntryViewModel">
+                                <StackPanel Spacing="12">
+                                  <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Spacing="2">
+                                      <TextBlock Classes="h2" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                      <TextBlock Classes="muted small" Text="{Binding Note}" TextWrapping="Wrap"
+                                                 AutomationProperties.LiveSetting="Polite" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Top">
+                                      <Button Classes="quiet" Content="{Binding DropLabel}"
+                                              IsVisible="{Binding CanDrop}" Command="{Binding DropCommand}"
+                                              AutomationProperties.HelpText="Takes it out of this profile, once the profile is saved." />
+                                      <Button Classes="quiet" Content="Put it back" IsVisible="{Binding Dropped}"
+                                              Command="{Binding PutBackCommand}"
+                                              AutomationProperties.HelpText="Keeps it in this profile, as it is saved." />
+                                    </StackPanel>
+                                  </Grid>
+                                  <ContentControl Content="{Binding Editor}" IsEnabled="{Binding Editable}" />
+                                </StackPanel>
+                              </DataTemplate>
+                              <DataTemplate DataType="vm:RulesetEditorViewModel">
+                                <StackPanel Spacing="16">
+                                  <ContentControl Content="{Binding}" ContentTemplate="{StaticResource EntryHead}" />
+                                  <StackPanel Spacing="16" IsVisible="{Binding Manages}">
+                                    <Border Classes="fields">
+                                      <StackPanel Margin="0,-1,0,0">
+                                        <ContentControl Content="{Binding Target}" ContentTemplate="{StaticResource ChoiceRow}" />
+                                        <ContentControl Content="{Binding Enforcement}" ContentTemplate="{StaticResource ChoiceRow}" />
+                                        <ContentControl Content="{Binding Bypass}" ContentTemplate="{StaticResource ChoiceRow}" />
+                                        <Border Classes="field">
+                                          <Grid ColumnDefinitions="180,*" Margin="16,10">
+                                            <StackPanel Spacing="2">
+                                              <TextBlock Text="Branches and tags" FontWeight="SemiBold" FontSize="14" />
+                                              <TextBlock Classes="muted small" TextWrapping="Wrap" Margin="0,0,12,0"
+                                                         Text="One pattern per line. ~DEFAULT_BRANCH is the default branch, and ~ALL is every one. Leave both empty to keep the repository's own." />
+                                            </StackPanel>
+                                            <Grid Grid.Column="1" ColumnDefinitions="*,16,*">
+                                              <StackPanel Spacing="4">
+                                                <TextBlock Classes="small" Text="Include" />
+                                                <TextBox Classes="mono" AcceptsReturn="True" MinHeight="64" Text="{Binding Include}"
+                                                         AutomationProperties.Name="Patterns to include" />
+                                              </StackPanel>
+                                              <StackPanel Grid.Column="2" Spacing="4">
+                                                <TextBlock Classes="small" Text="Exclude" />
+                                                <TextBox Classes="mono" AcceptsReturn="True" MinHeight="64" Text="{Binding Exclude}"
+                                                         AutomationProperties.Name="Patterns to exclude" />
+                                              </StackPanel>
+                                            </Grid>
+                                          </Grid>
+                                        </Border>
+                                      </StackPanel>
+                                    </Border>
+
+                                    <StackPanel Spacing="6">
+                                      <TextBlock Classes="h2" Text="Rules" />
+                                      <TextBlock Classes="muted small" TextWrapping="Wrap" IsVisible="{Binding LeavesRules}"
+                                                 Text="The YAML leaves this ruleset's rules as GitHub has them. Turn one on here and the profile lists every rule the ruleset keeps, so GitHub drops any other." />
+                                      <TextBlock Classes="muted small" TextWrapping="Wrap" IsVisible="{Binding HasOthers}"
+                                                 Text="{Binding OthersNote}" />
+                                    </StackPanel>
+                                    <Border Classes="fields">
+                                      <ItemsControl ItemsSource="{Binding Rules}" Margin="0,-1,0,0">
+                                        <ItemsControl.DataTemplates>
+                                          <DataTemplate DataType="vm:PullRequestRuleViewModel">
+                                            <Border Classes="field">
+                                              <StackPanel Margin="16,12" Spacing="10">
+                                                <CheckBox IsChecked="{Binding Enabled}" AutomationProperties.HelpText="{Binding Description}">
+                                                  <StackPanel Spacing="2">
+                                                    <TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
+                                                    <TextBlock Classes="muted small" Text="{Binding Description}" TextWrapping="Wrap" />
+                                                  </StackPanel>
+                                                </CheckBox>
+                                                <StackPanel Margin="28,0,0,0" Spacing="8" IsVisible="{Binding Enabled}">
+                                                  <StackPanel Orientation="Horizontal" Spacing="12">
+                                                    <NumericUpDown Classes.dim="{Binding Approvals.Dim}" Value="{Binding Approvals.Number}"
+                                                                   Minimum="0" Maximum="10" Increment="1" FormatString="0" Width="120"
+                                                                   AutomationProperties.Name="{Binding Approvals.Label}"
+                                                                   AutomationProperties.HelpText="{Binding Approvals.HelpText}" />
+                                                    <TextBlock Text="{Binding Approvals.Label}" VerticalAlignment="Center" />
+                                                  </StackPanel>
+                                                  <ItemsControl ItemsSource="{Binding Checks}" ItemTemplate="{StaticResource FlagRow}" />
+                                                  <StackPanel Spacing="4">
+                                                    <TextBlock Classes="small" Text="Allowed merge methods" />
+                                                    <StackPanel Orientation="Horizontal" Spacing="16">
+                                                      <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Merge}" Content="Merge"
+                                                                AutomationProperties.Name="Allowed merge method: Merge"
+                                                                AutomationProperties.HelpText="{Binding Methods.HelpText}" />
+                                                      <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Squash}" Content="Squash"
+                                                                AutomationProperties.Name="Allowed merge method: Squash"
+                                                                AutomationProperties.HelpText="{Binding Methods.HelpText}" />
+                                                      <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Rebase}" Content="Rebase"
+                                                                AutomationProperties.Name="Allowed merge method: Rebase"
+                                                                AutomationProperties.HelpText="{Binding Methods.HelpText}" />
+                                                    </StackPanel>
+                                                  </StackPanel>
+                                                  <TextBlock Classes="small" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Problem}"
+                                                             IsVisible="{Binding Problem, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                </StackPanel>
+                                              </StackPanel>
+                                            </Border>
+                                          </DataTemplate>
+                                          <DataTemplate DataType="vm:StatusChecksRuleViewModel">
+                                            <Border Classes="field">
+                                              <StackPanel Margin="16,12" Spacing="10">
+                                                <CheckBox IsChecked="{Binding Enabled}" AutomationProperties.HelpText="{Binding Description}">
+                                                  <StackPanel Spacing="2">
+                                                    <TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
+                                                    <TextBlock Classes="muted small" Text="{Binding Description}" TextWrapping="Wrap" />
+                                                  </StackPanel>
+                                                </CheckBox>
+                                                <StackPanel Margin="28,0,0,0" Spacing="8" IsVisible="{Binding Enabled}">
+                                                  <StackPanel Spacing="4">
+                                                    <TextBlock Classes="small" Text="Checks that must pass, one per line" />
+                                                    <TextBox Classes="mono" AcceptsReturn="True" MinHeight="64" MaxWidth="480"
+                                                             HorizontalAlignment="Left" MinWidth="320" Text="{Binding Contexts}"
+                                                             AutomationProperties.Name="Checks that must pass" />
+                                                  </StackPanel>
+                                                  <ContentControl Content="{Binding Strict}" ContentTemplate="{StaticResource FlagRow}" />
+                                                  <TextBlock Classes="small" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Problem}"
+                                                             IsVisible="{Binding Problem, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                </StackPanel>
+                                              </StackPanel>
+                                            </Border>
+                                          </DataTemplate>
+                                          <DataTemplate DataType="vm:RuleViewModel">
+                                            <Border Classes="field">
+                                              <CheckBox Margin="16,12" IsChecked="{Binding Enabled}"
+                                                        AutomationProperties.HelpText="{Binding Description}">
+                                                <StackPanel Spacing="2">
+                                                  <TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
+                                                  <TextBlock Classes="muted small" Text="{Binding Description}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                              </CheckBox>
+                                            </Border>
+                                          </DataTemplate>
+                                        </ItemsControl.DataTemplates>
+                                      </ItemsControl>
+                                    </Border>
+                                  </StackPanel>
+                                </StackPanel>
+                              </DataTemplate>
+                              <DataTemplate DataType="vm:EnvironmentEditorViewModel">
+                                <StackPanel Spacing="16">
+                                  <ContentControl Content="{Binding}" ContentTemplate="{StaticResource EntryHead}" />
+                                  <Border Classes="fields" IsVisible="{Binding Manages}">
                                     <StackPanel Margin="0,-1,0,0">
-                                      <ContentControl Content="{Binding Target}" ContentTemplate="{StaticResource ChoiceRow}" />
-                                      <ContentControl Content="{Binding Enforcement}" ContentTemplate="{StaticResource ChoiceRow}" />
-                                      <ContentControl Content="{Binding Bypass}" ContentTemplate="{StaticResource ChoiceRow}" />
-                                      <Border Classes="field">
+                                      <Border Classes="field" MinHeight="56">
+                                        <Grid ColumnDefinitions="180,*" Margin="16,10">
+                                          <TextBlock Text="Wait timer" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                                            <TextBox Width="120" Text="{Binding WaitTimer}" PlaceholderText="Not set"
+                                                     AutomationProperties.Name="Wait timer in minutes"
+                                                     AutomationProperties.HelpText="Leave it empty and the repository keeps its own." />
+                                            <TextBlock Classes="muted small" VerticalAlignment="Center"
+                                                       Text="Minutes before a deployment starts. Empty leaves the repository's own." />
+                                          </StackPanel>
+                                        </Grid>
+                                      </Border>
+                                      <ContentControl Content="{Binding Reviewers}" ContentTemplate="{StaticResource ChoiceRow}" />
+                                      <ContentControl Content="{Binding SelfReview}" ContentTemplate="{StaticResource ChoiceRow}" />
+                                      <ContentControl Content="{Binding Deployments}" ContentTemplate="{StaticResource ChoiceRow}" />
+                                      <Border Classes="field" IsVisible="{Binding ShowPatterns}">
                                         <Grid ColumnDefinitions="180,*" Margin="16,10">
                                           <StackPanel Spacing="2">
-                                            <TextBlock Text="Branches and tags" FontWeight="SemiBold" FontSize="14" />
+                                            <TextBlock Text="Which ones" FontWeight="SemiBold" FontSize="14" />
                                             <TextBlock Classes="muted small" TextWrapping="Wrap" Margin="0,0,12,0"
-                                                       Text="One pattern per line. ~DEFAULT_BRANCH is the default branch, and ~ALL is every one. Leave both empty to keep the repository's own." />
+                                                       Text="Name patterns, one per line, such as main or releases/*." />
                                           </StackPanel>
                                           <Grid Grid.Column="1" ColumnDefinitions="*,16,*">
                                             <StackPanel Spacing="4">
-                                              <TextBlock Classes="small" Text="Include" />
-                                              <TextBox Classes="mono" AcceptsReturn="True" MinHeight="64" Text="{Binding Include}"
-                                                       AutomationProperties.Name="Patterns to include" />
+                                              <TextBlock Classes="small" Text="Branches" />
+                                              <TextBox Classes="mono" AcceptsReturn="True" MinHeight="64" Text="{Binding Branches}"
+                                                       AutomationProperties.Name="Branches that may deploy" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="2" Spacing="4">
-                                              <TextBlock Classes="small" Text="Exclude" />
-                                              <TextBox Classes="mono" AcceptsReturn="True" MinHeight="64" Text="{Binding Exclude}"
-                                                       AutomationProperties.Name="Patterns to exclude" />
+                                              <TextBlock Classes="small" Text="Tags" />
+                                              <TextBox Classes="mono" AcceptsReturn="True" MinHeight="64" Text="{Binding Tags}"
+                                                       AutomationProperties.Name="Tags that may deploy" />
                                             </StackPanel>
                                           </Grid>
                                         </Grid>
                                       </Border>
                                     </StackPanel>
                                   </Border>
-
-                                  <StackPanel Spacing="6">
-                                    <TextBlock Classes="h2" Text="Rules" />
-                                    <TextBlock Classes="muted small" TextWrapping="Wrap" IsVisible="{Binding LeavesRules}"
-                                               Text="The YAML leaves this ruleset's rules as GitHub has them. Turn one on here and the profile lists every rule the ruleset keeps, so GitHub drops any other." />
-                                    <TextBlock Classes="muted small" TextWrapping="Wrap" IsVisible="{Binding HasOthers}"
-                                               Text="{Binding OthersNote}" />
-                                  </StackPanel>
-                                  <Border Classes="fields">
-                                    <ItemsControl ItemsSource="{Binding Rules}" Margin="0,-1,0,0">
-                                      <ItemsControl.DataTemplates>
-                                        <DataTemplate DataType="vm:PullRequestRuleViewModel">
-                                          <Border Classes="field">
-                                            <StackPanel Margin="16,12" Spacing="10">
-                                              <CheckBox IsChecked="{Binding Enabled}" AutomationProperties.HelpText="{Binding Description}">
-                                                <StackPanel Spacing="2">
-                                                  <TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
-                                                  <TextBlock Classes="muted small" Text="{Binding Description}" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                              </CheckBox>
-                                              <StackPanel Margin="28,0,0,0" Spacing="8" IsVisible="{Binding Enabled}">
-                                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                                  <NumericUpDown Classes.dim="{Binding Approvals.Dim}" Value="{Binding Approvals.Number}"
-                                                                 Minimum="0" Maximum="10" Increment="1" FormatString="0" Width="120"
-                                                                 AutomationProperties.Name="{Binding Approvals.Label}"
-                                                                 AutomationProperties.HelpText="{Binding Approvals.HelpText}" />
-                                                  <TextBlock Text="{Binding Approvals.Label}" VerticalAlignment="Center" />
-                                                </StackPanel>
-                                                <ItemsControl ItemsSource="{Binding Checks}" ItemTemplate="{StaticResource FlagRow}" />
-                                                <StackPanel Spacing="4">
-                                                  <TextBlock Classes="small" Text="Allowed merge methods" />
-                                                  <StackPanel Orientation="Horizontal" Spacing="16">
-                                                    <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Merge}" Content="Merge"
-                                                              AutomationProperties.Name="Allowed merge method: Merge"
-                                                              AutomationProperties.HelpText="{Binding Methods.HelpText}" />
-                                                    <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Squash}" Content="Squash"
-                                                              AutomationProperties.Name="Allowed merge method: Squash"
-                                                              AutomationProperties.HelpText="{Binding Methods.HelpText}" />
-                                                    <CheckBox Classes.dim="{Binding Methods.Dim}" IsChecked="{Binding Methods.Rebase}" Content="Rebase"
-                                                              AutomationProperties.Name="Allowed merge method: Rebase"
-                                                              AutomationProperties.HelpText="{Binding Methods.HelpText}" />
-                                                  </StackPanel>
-                                                </StackPanel>
-                                                <TextBlock Classes="small" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Problem}"
-                                                           IsVisible="{Binding Problem, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                              </StackPanel>
-                                            </StackPanel>
-                                          </Border>
-                                        </DataTemplate>
-                                        <DataTemplate DataType="vm:StatusChecksRuleViewModel">
-                                          <Border Classes="field">
-                                            <StackPanel Margin="16,12" Spacing="10">
-                                              <CheckBox IsChecked="{Binding Enabled}" AutomationProperties.HelpText="{Binding Description}">
-                                                <StackPanel Spacing="2">
-                                                  <TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
-                                                  <TextBlock Classes="muted small" Text="{Binding Description}" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                              </CheckBox>
-                                              <StackPanel Margin="28,0,0,0" Spacing="8" IsVisible="{Binding Enabled}">
-                                                <StackPanel Spacing="4">
-                                                  <TextBlock Classes="small" Text="Checks that must pass, one per line" />
-                                                  <TextBox Classes="mono" AcceptsReturn="True" MinHeight="64" MaxWidth="480"
-                                                           HorizontalAlignment="Left" MinWidth="320" Text="{Binding Contexts}"
-                                                           AutomationProperties.Name="Checks that must pass" />
-                                                </StackPanel>
-                                                <ContentControl Content="{Binding Strict}" ContentTemplate="{StaticResource FlagRow}" />
-                                                <TextBlock Classes="small" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Problem}"
-                                                           IsVisible="{Binding Problem, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                              </StackPanel>
-                                            </StackPanel>
-                                          </Border>
-                                        </DataTemplate>
-                                        <DataTemplate DataType="vm:RuleViewModel">
-                                          <Border Classes="field">
-                                            <CheckBox Margin="16,12" IsChecked="{Binding Enabled}"
-                                                      AutomationProperties.HelpText="{Binding Description}">
-                                              <StackPanel Spacing="2">
-                                                <TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
-                                                <TextBlock Classes="muted small" Text="{Binding Description}" TextWrapping="Wrap" />
-                                              </StackPanel>
-                                            </CheckBox>
-                                          </Border>
-                                        </DataTemplate>
-                                      </ItemsControl.DataTemplates>
-                                    </ItemsControl>
-                                  </Border>
                                 </StackPanel>
-                              </StackPanel>
-                            </DataTemplate>
-                            <DataTemplate DataType="vm:EnvironmentEditorViewModel">
-                              <StackPanel Spacing="16">
-                                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource EntryHead}" />
-                                <Border Classes="fields" IsVisible="{Binding Manages}">
-                                  <StackPanel Margin="0,-1,0,0">
-                                    <Border Classes="field" MinHeight="56">
-                                      <Grid ColumnDefinitions="180,*" Margin="16,10">
-                                        <TextBlock Text="Wait timer" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
-                                          <TextBox Width="120" Text="{Binding WaitTimer}" PlaceholderText="Not set"
-                                                   AutomationProperties.Name="Wait timer in minutes"
-                                                   AutomationProperties.HelpText="Leave it empty and the repository keeps its own." />
-                                          <TextBlock Classes="muted small" VerticalAlignment="Center"
-                                                     Text="Minutes before a deployment starts. Empty leaves the repository's own." />
-                                        </StackPanel>
-                                      </Grid>
-                                    </Border>
-                                    <ContentControl Content="{Binding Reviewers}" ContentTemplate="{StaticResource ChoiceRow}" />
-                                    <ContentControl Content="{Binding SelfReview}" ContentTemplate="{StaticResource ChoiceRow}" />
-                                    <ContentControl Content="{Binding Deployments}" ContentTemplate="{StaticResource ChoiceRow}" />
-                                    <Border Classes="field" IsVisible="{Binding ShowPatterns}">
-                                      <Grid ColumnDefinitions="180,*" Margin="16,10">
-                                        <StackPanel Spacing="2">
-                                          <TextBlock Text="Which ones" FontWeight="SemiBold" FontSize="14" />
-                                          <TextBlock Classes="muted small" TextWrapping="Wrap" Margin="0,0,12,0"
-                                                     Text="Name patterns, one per line, such as main or releases/*." />
-                                        </StackPanel>
-                                        <Grid Grid.Column="1" ColumnDefinitions="*,16,*">
-                                          <StackPanel Spacing="4">
-                                            <TextBlock Classes="small" Text="Branches" />
-                                            <TextBox Classes="mono" AcceptsReturn="True" MinHeight="64" Text="{Binding Branches}"
-                                                     AutomationProperties.Name="Branches that may deploy" />
-                                          </StackPanel>
-                                          <StackPanel Grid.Column="2" Spacing="4">
-                                            <TextBlock Classes="small" Text="Tags" />
-                                            <TextBox Classes="mono" AcceptsReturn="True" MinHeight="64" Text="{Binding Tags}"
-                                                     AutomationProperties.Name="Tags that may deploy" />
-                                          </StackPanel>
-                                        </Grid>
-                                      </Grid>
-                                    </Border>
-                                  </StackPanel>
-                                </Border>
-                              </StackPanel>
-                            </DataTemplate>
-                          </ContentControl.DataTemplates>
-                        </ContentControl>
+                              </DataTemplate>
+                            </ContentControl.DataTemplates>
+                          </ContentControl>
+                        </StackPanel>
                       </StackPanel>
-                    </StackPanel>
-                  </Panel>
-                </DataTemplate>
-              </ContentControl.DataTemplates>
-            </ContentControl>
+                    </Panel>
+                  </DataTemplate>
+                </ContentControl.DataTemplates>
+              </ContentControl>
+            </Panel>
           </ScrollViewer>
         </DockPanel>
 

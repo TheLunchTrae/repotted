@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
@@ -8,7 +9,58 @@ namespace Repotted.Desktop.Views;
 
 internal sealed partial class ProfileView : UserControl
 {
-    public ProfileView() => InitializeComponent();
+    private ProfileViewModel? watched;
+
+    public ProfileView()
+    {
+        InitializeComponent();
+        _ = new FindShortcut(this, SettingsSearch, SearchShortcut);
+    }
+
+    /// <summary>
+    /// Follows the open profile while the page is on screen, so a new search
+    /// starts at the top of what it found. Profiles outlive the page in a
+    /// cache, so the page lets go of a profile when it leaves the screen.
+    /// </summary>
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        Watch(this.IsAttachedToVisualTree() ? DataContext as ProfileViewModel : null);
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Watch(DataContext as ProfileViewModel);
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        Watch(null);
+    }
+
+    private void Watch(ProfileViewModel? profile)
+    {
+        if (watched is not null)
+        {
+            watched.PropertyChanged -= OnProfileChanged;
+        }
+        watched = profile;
+        if (watched is not null)
+        {
+            watched.PropertyChanged += OnProfileChanged;
+        }
+    }
+
+    private void OnProfileChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ProfileViewModel.Query) or nameof(ProfileViewModel.OnlyManaged)
+            or nameof(ProfileViewModel.OnlyUnsaved) or nameof(ProfileViewModel.OnlyDrafts))
+        {
+            Scroller.Offset = default;
+        }
+    }
 
     /// <summary>Puts focus in an entry's editor once it opens, so the keyboard follows the open.</summary>
     private void OnEntryNameAttached(object? sender, VisualTreeAttachmentEventArgs e)
