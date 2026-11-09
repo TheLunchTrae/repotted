@@ -69,6 +69,10 @@ function document(result: Result): unknown {
  * same on every machine.
  */
 async function fixture(name: string, result: Result, names: Record<string, string> = {}): Promise<void> {
+  // An empty name would stand for every string.
+  if (Object.keys(names).includes('')) {
+    throw new Error(`fixture ${name} names an empty string`);
+  }
   const roots = Object.entries({ ...names, [directory]: '<tests>', [await realpath(directory)]: '<tests>' }).sort(
     ([a], [b]) => b.length - a.length,
   );
@@ -514,6 +518,7 @@ describe('batch', () => {
         { repository: 'lunch/web', status: 'stopped' },
       ],
     });
+    await fixture('batch-apply-stopped', stopped, { [path.dirname(folder)]: '<batch>' });
     expect(fakes.map((fake) => fake.writes.length)).toEqual([1, 0, 0]);
 
     const taken = await cliWith(github, {}, 'stage', folder, '--repo', 'lunch/api', '--discard', '--json');
@@ -640,6 +645,7 @@ describe('account commands', () => {
     const removed = await cliWith(new FakeGitHub(), { signOut: () => Promise.resolve(true) }, 'logout', '--json');
     expect(removed).toMatchObject({ code: 0, err: '' });
     expect(document(removed)).toEqual({ removed: true });
+    await fixture('logout', removed);
 
     const none = await cliWith(new FakeGitHub(), { signOut: () => Promise.resolve(false) }, 'logout', '--json');
     expect(document(none)).toEqual({ removed: false });
@@ -664,6 +670,7 @@ describe('account commands', () => {
       token_variable: null,
       install_url: installUrl,
     });
+    await fixture('status-rejected', result);
 
     const fromVariable = await cliWith(github, { env: { GH_TOKEN: 'token' } }, 'status', '--json');
     expect(document(fromVariable)).toEqual({
@@ -765,6 +772,8 @@ describe('account commands', () => {
       expires_at: '2026-01-01T00:00:00.000Z',
     });
     expect(lines[1]).toMatchObject({ event: 'signed_in' });
+    // One document a line, which the app reads as each comes.
+    await expect(printed).toMatchFileSnapshot(path.join(fixtures, 'login.jsonl'));
   });
 
   const code = {
@@ -1046,8 +1055,8 @@ describe('sync', () => {
     });
     expect(settled.code).toBe(0);
     expect(document(settled)).toMatchObject({ pushed: ['base.yaml'], conflicts: [] });
-    await fixture('sync-conflict', conflicted, { [folder]: '<folder>' });
-    await fixture('sync', settled, { [folder]: '<folder>' });
+    await fixture('sync-conflict', conflicted);
+    await fixture('sync', settled);
     expect(github.files()).toEqual({ 'base.yaml': '# mine\n' });
   });
 
@@ -1178,5 +1187,6 @@ describe('stage', () => {
     expect(started.err).toContain('Drafts of its profile, left out: repository.has_projects');
     const planned = await cli(new FakeGitHub(), 'plan', '--staged', file, '--json');
     expect(JSON.parse(planned.out)).toMatchObject({ skipped: [{ section: 'repository', target: 'has_projects' }] });
+    await fixture('staged-plan-skipped', planned);
   });
 });

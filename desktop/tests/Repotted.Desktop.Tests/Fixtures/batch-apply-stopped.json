@@ -1,0 +1,37 @@
+{
+  "batch": "<batch>/batch",
+  "results": [
+    {
+      "repository": "lunch/app",
+      "ended": false,
+      "status": "apply_failed",
+      "message": "Failed to update repository settings after 0 of the plan's changes: Validation failed\nNothing after the failed change was written. Plan again to see where the repository stands.",
+      "applied": [],
+      "failed": {
+        "section": "repository",
+        "action": "update",
+        "target": "repository settings",
+        "fields": [
+          {
+            "field": "has_wiki",
+            "from": true,
+            "to": false
+          }
+        ],
+        "request": {
+          "method": "PATCH",
+          "path": "/repos/lunch/app",
+          "body": {
+            "has_wiki": false
+          }
+        }
+      },
+      "reason": "Validation failed"
+    },
+    {
+      "repository": "lunch/web",
+      "ended": false,
+      "status": "stopped"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "repository": "lunch/app",
+  "desired": {
+    "repository": {
+      "has_wiki": false
+    }
+  },
+  "changes": [
+    {
+      "section": "repository",
+      "action": "update",
+      "target": "repository settings",
+      "fields": [
+        {
+          "field": "has_wiki",
+          "from": true,
+          "to": false
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "path": "/repos/lunch/app",
+        "body": {
+          "has_wiki": false
+        }
+      }
+    }
+  ],
+  "skipped": [
+    {
+      "section": "repository",
+      "target": "has_projects"
+    }
+  ],
+  "warnings": [],
+  "access": {
+    "role": "admin",
+    "app": {
+      "status": "unknown"
+    }
+  },
+  "locks": [],
+  "staged": {
+    "file": "<tests>/staged-drafts.yaml",
+    "repository": "lunch/app",
+    "base": "<tests>/staged-drafts-base.yaml",
+    "exclude": []
+  },
+  "exclusions": [
+    {
+      "change": 0,
+      "field": "has_wiki",
+      "key": "repository.has_wiki",
+      "edited": false
+    }
+  ]
+}
