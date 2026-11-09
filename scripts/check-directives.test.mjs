@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execPath } from 'node:process';
@@ -7,7 +7,8 @@ import { promisify } from 'node:util';
 import { afterAll, expect, test } from 'vitest';
 
 const script = path.join(import.meta.dirname, 'check-directives.mjs');
-const directory = await mkdtemp(path.join(tmpdir(), 'repotted-directives-'));
+// A real path: on macOS the temp folder is a symlink, and the child's cwd() is the real path it names files relative to.
+const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-directives-')));
 
 afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
