@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { argv, cwd, exit, stderr } from 'node:process';
 
@@ -112,7 +112,8 @@ function violationsFor(source, fileName) {
 }
 
 const arguments_ = argv.slice(2);
-const targets = arguments_.length === 0 ? [cwd()] : arguments_.map((target) => path.resolve(target));
+// Real paths, as cwd() is, so a file is named relative to it however its folder was spelled.
+const targets = arguments_.length === 0 ? [cwd()] : await Promise.all(arguments_.map((target) => realpath(target)));
 const files = [];
 
 for (const target of targets) {

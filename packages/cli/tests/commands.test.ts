@@ -14,7 +14,8 @@ import { installUrl, NotSignedInError } from '../src/auth.js';
 import { type Io, run } from '../src/commands.js';
 
 const examples = path.join(import.meta.dirname, '../../../examples');
-const directory = await mkdtemp(path.join(tmpdir(), 'repotted-cli-'));
+// A real path: the CLI prints the real path of each file it reads, and macOS's temp folder is a symlink.
+const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-cli-')));
 const fixtures = path.join(import.meta.dirname, '../../../desktop/tests/Repotted.Desktop.Tests/Fixtures');
 
 afterAll(async () => {
@@ -73,9 +74,7 @@ async function fixture(name: string, result: Result, names: Record<string, strin
   if (Object.keys(names).includes('')) {
     throw new Error(`fixture ${name} names an empty string`);
   }
-  const roots = Object.entries({ ...names, [directory]: '<tests>', [await realpath(directory)]: '<tests>' }).sort(
-    ([a], [b]) => b.length - a.length,
-  );
+  const roots = Object.entries({ ...names, [directory]: '<tests>' }).sort(([a], [b]) => b.length - a.length);
   const value: unknown = JSON.parse(result.out, (_key, value: unknown) => {
     if (typeof value !== 'string') {
       return value;
@@ -311,7 +310,7 @@ describe('--json', () => {
 
 describe('batch', () => {
   async function batchPlace(): Promise<{ profile: string; folder: string }> {
-    const root = await realpath(await mkdtemp(path.join(directory, 'batch-')));
+    const root = await mkdtemp(path.join(directory, 'batch-'));
     const profile = path.join(root, 'profile.yaml');
     await writeFile(profile, 'repository: { has_wiki: false }\n');
     return { profile, folder: path.join(root, 'batch') };
@@ -1121,7 +1120,7 @@ describe('stage', () => {
     expect(planned.code).toBe(0);
     // The document says what the plan applies and what leaves each change out; the plan file is the plan alone.
     expect(document(planned)).toMatchObject({
-      staged: { repository: 'lunch/app', base: await realpath(profile), exclude: ['repository.has_issues'] },
+      staged: { repository: 'lunch/app', base: profile, exclude: ['repository.has_issues'] },
       exclusions: [
         { change: 0, field: 'has_projects', key: 'repository.has_projects', edited: true },
         { change: 0, field: 'has_wiki', key: 'repository.has_wiki', edited: false },
