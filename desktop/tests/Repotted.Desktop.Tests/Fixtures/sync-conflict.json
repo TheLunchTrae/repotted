@@ -1,0 +1,11 @@
+{
+  "repository": "lunch/config",
+  "path": "",
+  "branch": "main",
+  "commit": "62d36fd8043be0c7e686abed4047d8127e89a0b5",
+  "pulled": [],
+  "pushed": [],
+  "conflicts": [
+    "base.yaml"
+  ]
+}

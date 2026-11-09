@@ -1,0 +1,10 @@
+{
+  "source": "installations",
+  "repositories": [
+    {
+      "full_name": "lunch/app",
+      "private": true,
+      "archived": false
+    }
+  ]
+}

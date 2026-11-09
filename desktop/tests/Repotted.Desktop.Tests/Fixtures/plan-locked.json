@@ -1,0 +1,47 @@
+{
+  "repository": "lunch/app",
+  "desired": {
+    "repository": {
+      "has_wiki": false
+    }
+  },
+  "changes": [
+    {
+      "section": "repository",
+      "action": "update",
+      "target": "repository settings",
+      "fields": [
+        {
+          "field": "has_wiki",
+          "from": true,
+          "to": false
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "path": "/repos/lunch/app",
+        "body": {
+          "has_wiki": false
+        }
+      }
+    }
+  ],
+  "skipped": [],
+  "warnings": [],
+  "access": {
+    "role": "admin",
+    "app": {
+      "status": "installed",
+      "permissions": {
+        "administration": "read"
+      },
+      "settings_url": "https://github.com/settings/installations/4"
+    }
+  },
+  "locks": [
+    {
+      "change": 0,
+      "reason": "Needs Administration write"
+    }
+  ]
+}

@@ -346,11 +346,23 @@ settings the app edits in `ViewModels/ProfileFields.cs` against it: every
 setting in the schema is a field there or on the test's list of settings left
 to the YAML, and each field with choices offers exactly the values the schema
 allows. Labels, groups and notes stay in `ProfileFields.cs`, since they are
-the app's own words. The `capture`, `plan`, `repos`, and `login` documents
-need GitHub, and `logout` would remove a real sign-in, so the app's tests
-read hand-written examples of them, and only the strict parsing guards them
-against the real CLI. The app reads a warning's `cause`, `section`, `key`,
-`field` and `exclusion` to place it, and `WarningDocument.Text` in
+the app's own words. The documents that need GitHub, such as `capture`,
+`plan`, `apply`, `repos`, `sync` and the staged and batch ones, come from the
+CLI's own tests instead: `commands.test.ts` saves what each prints against
+the in-memory GitHub to `desktop/tests/Repotted.Desktop.Tests/Fixtures`, with
+the test folder's paths and random ids as placeholders, and
+`CliFixtureTests.cs` reads each through `RepottedClient`, as the app does,
+and checks what the app takes from it. A change to one fails the CLI's tests
+until its fixture is written again with `pnpm vitest run -u`, and then fails
+the app's tests if the app reads it differently: a renamed member that a
+fixture carries, even one the app doesn't require, or a changed value such as
+a status. The same test checks that every fixture in the folder has a test.
+Vitest leaves a file it no longer writes in place, so a removed `fixture()`
+call needs its file and test removed by hand, and an incremental local build
+can keep a renamed fixture in its output folder until it is cleaned. The
+view-model tests keep hand-written documents, for the states they need. The
+app reads a warning's `cause`, `section`, `key`, `field` and `exclusion` to
+place it, and `WarningDocument.Text` in
 `Services/CliDocuments.cs` builds the line it lists the way `describeWarning`
 does, so a change to that line changes both. The app ships its own CLI, so
 every member that CLI always prints is required, and a hand-written example

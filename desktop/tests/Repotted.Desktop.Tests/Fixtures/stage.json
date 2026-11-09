@@ -1,0 +1,45 @@
+{
+  "file": "<tests>/staged.yaml",
+  "repository": "lunch/app",
+  "base": "<tests>/staged-base.yaml",
+  "exclude": [],
+  "chain": [
+    "<tests>/staged.yaml",
+    "<tests>/staged-base.yaml"
+  ],
+  "profile": {
+    "repository": {
+      "has_issues": false,
+      "has_wiki": false
+    }
+  },
+  "drafts": {},
+  "warnings": [],
+  "sources": {
+    "repository": {
+      "has_issues": "<tests>/staged-base.yaml",
+      "has_wiki": "<tests>/staged-base.yaml"
+    },
+    "merge": {},
+    "actions": {},
+    "security": {},
+    "custom_properties": {},
+    "pages": {},
+    "autolinks": {},
+    "rulesets": {},
+    "environments": {},
+    "labels": {},
+    "drafts": {
+      "repository": {},
+      "merge": {},
+      "actions": {},
+      "security": {},
+      "custom_properties": {},
+      "pages": {},
+      "autolinks": {},
+      "rulesets": {},
+      "environments": {},
+      "labels": {}
+    }
+  }
+}

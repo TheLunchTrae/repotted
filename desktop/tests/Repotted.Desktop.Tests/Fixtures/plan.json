@@ -1,0 +1,648 @@
+{
+  "repository": "lunch/app",
+  "desired": {
+    "repository": {
+      "has_projects": false,
+      "allow_auto_merge": false,
+      "allow_update_branch": true,
+      "delete_branch_on_merge": true,
+      "web_commit_signoff_required": true
+    },
+    "merge": {
+      "allow_merge_commit": false,
+      "allow_squash_merge": false,
+      "allow_rebase_merge": true
+    },
+    "actions": {
+      "enabled": true,
+      "allowed_actions": "all",
+      "default_workflow_permissions": "read",
+      "can_approve_pull_request_reviews": false
+    },
+    "rulesets": [
+      {
+        "name": "Main: Block Creation and Deletion",
+        "bypass_actors": [],
+        "conditions": {
+          "ref_name": {
+            "include": [
+              "~DEFAULT_BRANCH"
+            ],
+            "exclude": []
+          }
+        },
+        "rules": [
+          {
+            "type": "creation"
+          },
+          {
+            "type": "deletion"
+          }
+        ]
+      },
+      {
+        "name": "Main: Block Force Pushes",
+        "bypass_actors": [],
+        "conditions": {
+          "ref_name": {
+            "include": [
+              "~DEFAULT_BRANCH"
+            ],
+            "exclude": []
+          }
+        },
+        "rules": [
+          {
+            "type": "non_fast_forward"
+          }
+        ]
+      },
+      {
+        "name": "Main: Require PR",
+        "bypass_actors": [],
+        "conditions": {
+          "ref_name": {
+            "include": [
+              "~DEFAULT_BRANCH"
+            ],
+            "exclude": []
+          }
+        },
+        "rules": [
+          {
+            "type": "pull_request",
+            "parameters": {
+              "allowed_merge_methods": [
+                "rebase"
+              ],
+              "required_approving_review_count": 0
+            }
+          }
+        ]
+      },
+      {
+        "name": "Main: Require Approval",
+        "bypass_actors": [
+          {
+            "actor_id": 5,
+            "actor_type": "RepositoryRole",
+            "bypass_mode": "exempt"
+          }
+        ],
+        "conditions": {
+          "ref_name": {
+            "include": [
+              "~DEFAULT_BRANCH"
+            ],
+            "exclude": []
+          }
+        },
+        "rules": [
+          {
+            "type": "pull_request",
+            "parameters": {
+              "required_approving_review_count": 1
+            }
+          }
+        ]
+      },
+      {
+        "name": "Main: Require Code Owner Review",
+        "bypass_actors": [
+          {
+            "actor_id": 5,
+            "actor_type": "RepositoryRole",
+            "bypass_mode": "exempt"
+          }
+        ],
+        "conditions": {
+          "ref_name": {
+            "include": [
+              "~DEFAULT_BRANCH"
+            ],
+            "exclude": []
+          }
+        },
+        "rules": [
+          {
+            "type": "pull_request",
+            "parameters": {
+              "require_code_owner_review": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "changes": [
+    {
+      "section": "repository",
+      "action": "update",
+      "target": "repository settings",
+      "fields": [
+        {
+          "field": "has_projects",
+          "from": true,
+          "to": false
+        },
+        {
+          "field": "allow_update_branch",
+          "from": false,
+          "to": true
+        },
+        {
+          "field": "delete_branch_on_merge",
+          "from": false,
+          "to": true
+        },
+        {
+          "field": "web_commit_signoff_required",
+          "from": false,
+          "to": true
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "path": "/repos/lunch/app",
+        "body": {
+          "has_projects": false,
+          "allow_update_branch": true,
+          "delete_branch_on_merge": true,
+          "web_commit_signoff_required": true
+        }
+      }
+    },
+    {
+      "section": "merge",
+      "action": "update",
+      "target": "merge methods",
+      "fields": [
+        {
+          "field": "allow_merge_commit",
+          "from": true,
+          "to": false
+        },
+        {
+          "field": "allow_squash_merge",
+          "from": true,
+          "to": false
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "path": "/repos/lunch/app",
+        "body": {
+          "allow_merge_commit": false,
+          "allow_squash_merge": false
+        }
+      }
+    },
+    {
+      "section": "actions",
+      "action": "update",
+      "target": "workflow permissions",
+      "fields": [
+        {
+          "field": "default_workflow_permissions",
+          "from": "write",
+          "to": "read"
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "path": "/repos/lunch/app/actions/permissions/workflow",
+        "body": {
+          "default_workflow_permissions": "read",
+          "can_approve_pull_request_reviews": false
+        }
+      }
+    },
+    {
+      "section": "rulesets",
+      "action": "create",
+      "target": "Main: Block Creation and Deletion",
+      "entry": {
+        "name": "Main: Block Creation and Deletion"
+      },
+      "fields": [
+        {
+          "field": "name",
+          "to": "Main: Block Creation and Deletion"
+        },
+        {
+          "field": "target",
+          "to": "branch"
+        },
+        {
+          "field": "enforcement",
+          "to": "active"
+        },
+        {
+          "field": "bypass_actors",
+          "to": []
+        },
+        {
+          "field": "conditions",
+          "to": {
+            "ref_name": {
+              "include": [
+                "~DEFAULT_BRANCH"
+              ],
+              "exclude": []
+            }
+          }
+        },
+        {
+          "field": "rules",
+          "to": [
+            {
+              "type": "creation"
+            },
+            {
+              "type": "deletion"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/repos/lunch/app/rulesets",
+        "body": {
+          "name": "Main: Block Creation and Deletion",
+          "target": "branch",
+          "enforcement": "active",
+          "bypass_actors": [],
+          "conditions": {
+            "ref_name": {
+              "include": [
+                "~DEFAULT_BRANCH"
+              ],
+              "exclude": []
+            }
+          },
+          "rules": [
+            {
+              "type": "creation"
+            },
+            {
+              "type": "deletion"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "section": "rulesets",
+      "action": "create",
+      "target": "Main: Block Force Pushes",
+      "entry": {
+        "name": "Main: Block Force Pushes"
+      },
+      "fields": [
+        {
+          "field": "name",
+          "to": "Main: Block Force Pushes"
+        },
+        {
+          "field": "target",
+          "to": "branch"
+        },
+        {
+          "field": "enforcement",
+          "to": "active"
+        },
+        {
+          "field": "bypass_actors",
+          "to": []
+        },
+        {
+          "field": "conditions",
+          "to": {
+            "ref_name": {
+              "include": [
+                "~DEFAULT_BRANCH"
+              ],
+              "exclude": []
+            }
+          }
+        },
+        {
+          "field": "rules",
+          "to": [
+            {
+              "type": "non_fast_forward"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/repos/lunch/app/rulesets",
+        "body": {
+          "name": "Main: Block Force Pushes",
+          "target": "branch",
+          "enforcement": "active",
+          "bypass_actors": [],
+          "conditions": {
+            "ref_name": {
+              "include": [
+                "~DEFAULT_BRANCH"
+              ],
+              "exclude": []
+            }
+          },
+          "rules": [
+            {
+              "type": "non_fast_forward"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "section": "rulesets",
+      "action": "create",
+      "target": "Main: Require PR",
+      "entry": {
+        "name": "Main: Require PR"
+      },
+      "fields": [
+        {
+          "field": "name",
+          "to": "Main: Require PR"
+        },
+        {
+          "field": "target",
+          "to": "branch"
+        },
+        {
+          "field": "enforcement",
+          "to": "active"
+        },
+        {
+          "field": "bypass_actors",
+          "to": []
+        },
+        {
+          "field": "conditions",
+          "to": {
+            "ref_name": {
+              "include": [
+                "~DEFAULT_BRANCH"
+              ],
+              "exclude": []
+            }
+          }
+        },
+        {
+          "field": "rules",
+          "to": [
+            {
+              "type": "pull_request",
+              "parameters": {
+                "dismiss_stale_reviews_on_push": false,
+                "require_code_owner_review": false,
+                "require_last_push_approval": false,
+                "required_approving_review_count": 0,
+                "required_review_thread_resolution": false,
+                "allowed_merge_methods": [
+                  "rebase"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/repos/lunch/app/rulesets",
+        "body": {
+          "name": "Main: Require PR",
+          "target": "branch",
+          "enforcement": "active",
+          "bypass_actors": [],
+          "conditions": {
+            "ref_name": {
+              "include": [
+                "~DEFAULT_BRANCH"
+              ],
+              "exclude": []
+            }
+          },
+          "rules": [
+            {
+              "type": "pull_request",
+              "parameters": {
+                "dismiss_stale_reviews_on_push": false,
+                "require_code_owner_review": false,
+                "require_last_push_approval": false,
+                "required_approving_review_count": 0,
+                "required_review_thread_resolution": false,
+                "allowed_merge_methods": [
+                  "rebase"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "section": "rulesets",
+      "action": "create",
+      "target": "Main: Require Approval",
+      "entry": {
+        "name": "Main: Require Approval"
+      },
+      "fields": [
+        {
+          "field": "name",
+          "to": "Main: Require Approval"
+        },
+        {
+          "field": "target",
+          "to": "branch"
+        },
+        {
+          "field": "enforcement",
+          "to": "active"
+        },
+        {
+          "field": "bypass_actors",
+          "to": [
+            {
+              "actor_id": 5,
+              "actor_type": "RepositoryRole",
+              "bypass_mode": "exempt"
+            }
+          ]
+        },
+        {
+          "field": "conditions",
+          "to": {
+            "ref_name": {
+              "include": [
+                "~DEFAULT_BRANCH"
+              ],
+              "exclude": []
+            }
+          }
+        },
+        {
+          "field": "rules",
+          "to": [
+            {
+              "type": "pull_request",
+              "parameters": {
+                "dismiss_stale_reviews_on_push": false,
+                "require_code_owner_review": false,
+                "require_last_push_approval": false,
+                "required_approving_review_count": 1,
+                "required_review_thread_resolution": false
+              }
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/repos/lunch/app/rulesets",
+        "body": {
+          "name": "Main: Require Approval",
+          "target": "branch",
+          "enforcement": "active",
+          "bypass_actors": [
+            {
+              "actor_id": 5,
+              "actor_type": "RepositoryRole",
+              "bypass_mode": "exempt"
+            }
+          ],
+          "conditions": {
+            "ref_name": {
+              "include": [
+                "~DEFAULT_BRANCH"
+              ],
+              "exclude": []
+            }
+          },
+          "rules": [
+            {
+              "type": "pull_request",
+              "parameters": {
+                "dismiss_stale_reviews_on_push": false,
+                "require_code_owner_review": false,
+                "require_last_push_approval": false,
+                "required_approving_review_count": 1,
+                "required_review_thread_resolution": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "section": "rulesets",
+      "action": "create",
+      "target": "Main: Require Code Owner Review",
+      "entry": {
+        "name": "Main: Require Code Owner Review"
+      },
+      "fields": [
+        {
+          "field": "name",
+          "to": "Main: Require Code Owner Review"
+        },
+        {
+          "field": "target",
+          "to": "branch"
+        },
+        {
+          "field": "enforcement",
+          "to": "active"
+        },
+        {
+          "field": "bypass_actors",
+          "to": [
+            {
+              "actor_id": 5,
+              "actor_type": "RepositoryRole",
+              "bypass_mode": "exempt"
+            }
+          ]
+        },
+        {
+          "field": "conditions",
+          "to": {
+            "ref_name": {
+              "include": [
+                "~DEFAULT_BRANCH"
+              ],
+              "exclude": []
+            }
+          }
+        },
+        {
+          "field": "rules",
+          "to": [
+            {
+              "type": "pull_request",
+              "parameters": {
+                "dismiss_stale_reviews_on_push": false,
+                "require_code_owner_review": true,
+                "require_last_push_approval": false,
+                "required_approving_review_count": 0,
+                "required_review_thread_resolution": false
+              }
+            }
+          ]
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/repos/lunch/app/rulesets",
+        "body": {
+          "name": "Main: Require Code Owner Review",
+          "target": "branch",
+          "enforcement": "active",
+          "bypass_actors": [
+            {
+              "actor_id": 5,
+              "actor_type": "RepositoryRole",
+              "bypass_mode": "exempt"
+            }
+          ],
+          "conditions": {
+            "ref_name": {
+              "include": [
+                "~DEFAULT_BRANCH"
+              ],
+              "exclude": []
+            }
+          },
+          "rules": [
+            {
+              "type": "pull_request",
+              "parameters": {
+                "dismiss_stale_reviews_on_push": false,
+                "require_code_owner_review": true,
+                "require_last_push_approval": false,
+                "required_approving_review_count": 0,
+                "required_review_thread_resolution": false
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "skipped": [],
+  "warnings": [],
+  "access": {
+    "role": "admin",
+    "app": {
+      "status": "unknown"
+    }
+  },
+  "locks": []
+}
