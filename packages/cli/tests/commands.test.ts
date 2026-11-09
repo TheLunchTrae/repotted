@@ -216,6 +216,7 @@ describe('--json', () => {
     expect(document(result)).toMatchObject({
       error: { kind: 'apply_failed', applied: changes.slice(0, 2), failed: changes[2] },
     });
+    await fixture('apply-partway', result);
   });
 
   test('marks the changes the App may not make, in the plan and its text', async () => {

@@ -1,0 +1,91 @@
+{
+  "error": {
+    "kind": "apply_failed",
+    "message": "Failed to update workflow permissions after 2 of the plan's changes: Server Error\nAlready applied:\n  ~ update repository settings\n  ~ update merge methods\nNothing after the failed change was written. Plan again to see where the repository stands.",
+    "applied": [
+      {
+        "section": "repository",
+        "action": "update",
+        "target": "repository settings",
+        "fields": [
+          {
+            "field": "has_projects",
+            "from": true,
+            "to": false
+          },
+          {
+            "field": "allow_update_branch",
+            "from": false,
+            "to": true
+          },
+          {
+            "field": "delete_branch_on_merge",
+            "from": false,
+            "to": true
+          },
+          {
+            "field": "web_commit_signoff_required",
+            "from": false,
+            "to": true
+          }
+        ],
+        "request": {
+          "method": "PATCH",
+          "path": "/repos/lunch/app",
+          "body": {
+            "has_projects": false,
+            "allow_update_branch": true,
+            "delete_branch_on_merge": true,
+            "web_commit_signoff_required": true
+          }
+        }
+      },
+      {
+        "section": "merge",
+        "action": "update",
+        "target": "merge methods",
+        "fields": [
+          {
+            "field": "allow_merge_commit",
+            "from": true,
+            "to": false
+          },
+          {
+            "field": "allow_squash_merge",
+            "from": true,
+            "to": false
+          }
+        ],
+        "request": {
+          "method": "PATCH",
+          "path": "/repos/lunch/app",
+          "body": {
+            "allow_merge_commit": false,
+            "allow_squash_merge": false
+          }
+        }
+      }
+    ],
+    "failed": {
+      "section": "actions",
+      "action": "update",
+      "target": "workflow permissions",
+      "fields": [
+        {
+          "field": "default_workflow_permissions",
+          "from": "write",
+          "to": "read"
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "path": "/repos/lunch/app/actions/permissions/workflow",
+        "body": {
+          "default_workflow_permissions": "read",
+          "can_approve_pull_request_reviews": false
+        }
+      }
+    },
+    "reason": null
+  }
+}

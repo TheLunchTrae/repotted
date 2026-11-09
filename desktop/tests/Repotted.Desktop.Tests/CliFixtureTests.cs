@@ -18,10 +18,11 @@ public sealed class CliFixtureTests
 
     private static readonly string Folder = Path.Combine(AppContext.BaseDirectory, "Fixtures");
 
-    /// <summary>Every fixture the tests here read. Vitest never says when it stops writing one, so this does.</summary>
+    /// <summary>Every fixture in the folder, each of which a test here reads.</summary>
     private static readonly string[] Names =
     [
         "apply-failed.json",
+        "apply-partway.json",
         "apply-stale.json",
         "apply.json",
         "batch-apply-stopped.json",
@@ -194,6 +195,16 @@ public sealed class CliFixtureTests
         Assert.StartsWith("Failed to update repository settings", failed.Message, StringComparison.Ordinal);
         Assert.Empty(failed.Changes);
         Assert.Equal("repository settings", failed.Failed?.Target);
+    }
+
+    [Fact]
+    public async Task Apply_that_fails_after_some_changes()
+    {
+        var result = await Answering("apply plan.json --yes --json", "apply-partway.json", exitCode: 1).ApplyAsync("plan.json", None);
+
+        var failed = Assert.IsType<ApplyResult.PartlyApplied>(result);
+        Assert.Equal(["repository settings", "merge methods"], failed.Changes.Select(change => change.Target));
+        Assert.Equal("workflow permissions", failed.Failed?.Target);
     }
 
     [Fact]
