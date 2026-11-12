@@ -1,50 +1,80 @@
-name: Build Desktop
+name: Release Desktop
+run-name: ${{ inputs.dry_run && format('Release Desktop dry run on {0}', github.ref_name) || 'Release Desktop' }}
 
-# Quality builds and tests the app on every pull request; packaging runs only
-# for a release or by hand.
+# The owner starts a release with Run workflow on main; nothing else does. A
+# dry run also works on any branch, to build test packages.
 on:
-  # A release starts from a pushed tag, not a published release: releases are
-  # immutable once published, so the workflow attaches the packages to a draft
-  # and the owner publishes it.
-  push:
-    tags:
-      - desktop-v*
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run, which builds, and on main signs, but attests and releases nothing
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# A newer manual run on the same ref cancels the one before it. The event is
-# in the group, so a manual run on a desktop-v tag never cancels the release.
+# Releases wait their turn instead of replacing a waiting run, so the next
+# release's checks see the version the one before it released. Dry runs wait
+# in a group of their own for each branch, so they never hold up a release.
 concurrency:
-  group: desktop-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
+  group: ${{ inputs.dry_run && format('release-desktop-dry-run-{0}', github.ref) || 'release-desktop' }}
+  cancel-in-progress: false
+  queue: max
 
 jobs:
   verify:
     name: Verify the release
-    if: github.repository == 'TheLunchTrae/repotted' && github.event_name == 'push'
+    if: github.repository == 'TheLunchTrae/repotted'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     env:
       MISE_LOCKED: '1'
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
-      RELEASE_TAG: ${{ github.ref_name }}
+    defaults:
+      run:
+        shell: bash
     steps:
-      - name: Require a desktop version tag
-        run: '[[ "$RELEASE_TAG" =~ ^desktop-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]'
-      - name: Check out the release commit
+      - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Full history, so the next step can prove the commit is on main.
-          fetch-depth: 0
           persist-credentials: false
-      - name: Require a commit on main
-        run: git merge-base --is-ancestor HEAD refs/remotes/origin/main
-      - name: Require the tag to match the app version
+      # A dry run reports what a release would refuse, then goes on.
+      - name: Require an unreleased version on main
+        id: version
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          refuse() {
+            if [[ $DRY_RUN == true ]]; then
+              echo "::warning::$1"
+            else
+              echo "::error::$1"
+              exit 1
+            fi
+          }
           version="$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' desktop/src/Repotted.Desktop/Repotted.Desktop.csproj)"
-          test "desktop-v$version" = "$RELEASE_TAG"
+          if ! [[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::The app's project file has Version $version, not a stable version such as 1.2.3."
+            exit 1
+          fi
+          [[ $GITHUB_REF == refs/heads/main ]] || refuse "A release runs only on main, not $GITHUB_REF."
+          # 200 is found and 404 is absent; any other answer stops the run, so
+          # a failed request is never read as absent.
+          code="$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/ref/tags/desktop-v$version" || true)"
+          case $code in
+            200) refuse "Tag desktop-v$version already exists. Bump Version in the app's project file to release." ;;
+            404) ;;
+            *)
+              echo "::error::Checking for tag desktop-v$version answered $code."
+              exit 1
+              ;;
+          esac
+          echo "version=$version" >>"$GITHUB_OUTPUT"
       # No cache: a release builds only from the locked, checksummed downloads.
       - name: Run the mandatory gate
         uses: ./.github/actions/gate
@@ -54,11 +84,6 @@ jobs:
   package:
     name: Package for ${{ matrix.os }} ${{ matrix.arch }}
     needs: verify
-    # A manual run builds without verify; a release needs it.
-    if: >-
-      !cancelled() &&
-      (needs.verify.result == 'success' ||
-      (needs.verify.result == 'skipped' && github.event_name == 'workflow_dispatch'))
     strategy:
       fail-fast: false
       matrix:
@@ -75,12 +100,15 @@ jobs:
     runs-on: ${{ matrix.runner }}
     # Notarization alone may wait up to 30 minutes.
     timeout-minutes: 90
-    # Only a release's macOS jobs reach the signing secrets: only a tag push
-    # requests the environment, and the environment admits desktop-v tags alone.
-    environment: ${{ github.event_name == 'push' && matrix.os == 'macos' && 'macos-release' || '' }}
+    # Only macOS jobs on main reach the signing secrets: only they request the
+    # environment, and the environment admits main alone. A dry run on main
+    # signs and notarizes too, so it proves a release would; one on another
+    # branch builds a Mac app signed ad hoc.
+    environment: ${{ matrix.os == 'macos' && github.ref == 'refs/heads/main' && 'release-desktop-macos' || '' }}
     env:
       MISE_LOCKED: '1'
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+      SIGN: ${{ matrix.os == 'macos' && github.ref == 'refs/heads/main' }}
     defaults:
       run:
         shell: bash
@@ -94,16 +122,16 @@ jobs:
         with:
           version: '2026.10.19'
           install: true
-          cache: ${{ github.event_name == 'workflow_dispatch' }}
+          cache: ${{ github.ref != 'refs/heads/main' }}
       - name: Import the Developer ID certificate
-        if: github.event_name == 'push' && matrix.os == 'macos'
+        if: env.SIGN == 'true'
         env:
           CERTIFICATE: ${{ secrets.DEVELOPER_ID_APPLICATION_P12 }}
           CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
           TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           if [[ -z $CERTIFICATE || -z $CERTIFICATE_PASSWORD || -z $TEAM_ID ]]; then
-            echo "::error::A release needs DEVELOPER_ID_APPLICATION_P12, DEVELOPER_ID_APPLICATION_P12_PASSWORD and APPLE_TEAM_ID in the macos-release environment."
+            echo "::error::Signing needs DEVELOPER_ID_APPLICATION_P12, DEVELOPER_ID_APPLICATION_P12_PASSWORD and APPLE_TEAM_ID in the release-desktop-macos environment."
             exit 1
           fi
           keychain="$RUNNER_TEMP/signing.keychain-db"
@@ -126,14 +154,14 @@ jobs:
       - name: Build the app
         run: mise run desktop:package
       - name: Notarize and staple the DMG
-        if: github.event_name == 'push' && matrix.os == 'macos'
+        if: env.SIGN == 'true'
         env:
           KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
           KEY_ID: ${{ vars.APP_STORE_CONNECT_API_KEY_ID }}
           ISSUER_ID: ${{ vars.APP_STORE_CONNECT_API_ISSUER_ID }}
         run: |
           if [[ -z $KEY || -z $KEY_ID || -z $ISSUER_ID ]]; then
-            echo "::error::A release needs APP_STORE_CONNECT_API_KEY_P8, APP_STORE_CONNECT_API_KEY_ID and APP_STORE_CONNECT_API_ISSUER_ID in the macos-release environment."
+            echo "::error::Notarizing needs APP_STORE_CONNECT_API_KEY_P8, APP_STORE_CONNECT_API_KEY_ID and APP_STORE_CONNECT_API_ISSUER_ID in the release-desktop-macos environment."
             exit 1
           fi
           key="$RUNNER_TEMP/notary.p8"
@@ -151,7 +179,7 @@ jobs:
           xcrun stapler validate "$dmg"
           spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
       - name: Remove the signing keychain
-        if: always() && github.event_name == 'push' && matrix.os == 'macos'
+        if: always() && env.SIGN == 'true'
         run: |
           if [[ -n ${MACOS_SIGNING_KEYCHAIN:-} ]]; then
             security delete-keychain "$MACOS_SIGNING_KEYCHAIN"
@@ -168,10 +196,11 @@ jobs:
 
   # Only this job can sign attestations. It builds nothing and checks out
   # nothing, so the build steps and the Apple secrets never meet that identity.
+  # A dry run attests nothing, so a test build leaves no record of a release.
   attest:
     name: Attest the packages
     needs: package
-    if: github.event_name == 'push' && !cancelled() && needs.package.result == 'success'
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -192,14 +221,27 @@ jobs:
         with:
           subject-path: release/*
 
-  upload:
-    name: Attach to a draft release
-    needs: attest
-    if: github.event_name == 'push' && !cancelled() && needs.attest.result == 'success'
+  # The release starts as a draft, so its files are attached before it is
+  # published and becomes immutable. Publishing creates the tag at the
+  # verified commit. Its environment holds no secrets, so the job that can
+  # write to the repository never reaches the Apple ones.
+  release:
+    name: Tag and release
+    needs:
+      - verify
+      - attest
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 15
+    environment: release-desktop
     permissions:
       contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.verify.outputs.version }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Download the packages
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -207,16 +249,50 @@ jobs:
           pattern: desktop-*
           merge-multiple: true
           path: release
-      - name: Attach the packages and their checksums
+      - name: Create and publish the release
         working-directory: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          tag="desktop-v$VERSION"
           sha256sum -- * >SHA256SUMS.txt
-          # A re-run finds the draft from the first run and replaces its files.
-          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
-              --title "Repotted ${RELEASE_TAG#desktop-v}" --notes "Repotted desktop app ${RELEASE_TAG#desktop-v}."
+          status() {
+            curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/$1" || true
+          }
+          # Verify checked the tag, but a re-run of this job doesn't verify
+          # again. A re-run after GitHub published the release finds it done.
+          case "$(status "git/ref/tags/$tag")" in
+            404) ;;
+            200)
+              if [[ "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha)" == "$GITHUB_SHA" &&
+                "$(status "releases/tags/$tag")" == 200 ]]; then
+                echo "$tag is already released at this run's commit."
+                exit 0
+              fi
+              echo "::error::Tag $tag already exists, so this run can't release it."
+              exit 1
+              ;;
+            *)
+              echo "::error::Checking for tag $tag failed."
+              exit 1
+              ;;
+          esac
+          # A draft left by an earlier attempt may name another commit.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.draft and .tag_name == \"$tag\") | .id" |
+            while read -r id; do
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+            done
+          previous="$(
+            {
+              gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/desktop-v" --jq '.[].ref | ltrimstr("refs/tags/desktop-v")'
+              echo "$VERSION"
+            } | sort -uV | awk -v current="$VERSION" '$0 == current { exit } /^[0-9]+\.[0-9]+\.[0-9]+$/ { last = $0 } END { print last }'
+          )"
+          notes=(--generate-notes)
+          if [[ -n $previous ]]; then
+            notes+=(--notes-start-tag "desktop-v$previous")
           fi
-          gh release upload "$RELEASE_TAG" ./* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release create "$tag" ./* --draft --target "$GITHUB_SHA" --title "Repotted $VERSION" "${notes[@]}"
+          if ! gh release edit "$tag" --draft=false --latest; then
+            echo "::error::GitHub refused to publish $tag. A tag ruleset that blocks creating desktop-v* tags stops the release; the draft stays, and re-running this job replaces it."
+            exit 1
+          fi
