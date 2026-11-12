@@ -7,7 +7,7 @@ importers:
     configDependencies: {}
     packageManagerDependencies:
       pnpm:
-        specifier: 12.18.0
+        specifier: ^12.18.0
         version: 12.18.0
 
 packages:
@@ -163,56 +163,56 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  minimatch: 11.0.3
+  minimatch: ^11.0.3
 
 importers:
 
   .:
     devDependencies:
       '@types/node':
-        specifier: 26.6.6
+        specifier: ^26.6.6
         version: 26.6.6
       esbuild:
-        specifier: 0.28.2
+        specifier: ^0.28.2
         version: 0.28.2
       eslint-plugin-regexp:
-        specifier: 3.3.1
+        specifier: ^3.3.1
         version: 3.3.1(eslint@10.14.0(jiti@2.7.0))
       knip:
-        specifier: 6.43.0
+        specifier: ^6.43.0
         version: 6.43.0
       oxfmt:
-        specifier: 0.74.0
+        specifier: ^0.74.0
         version: 0.74.0
       oxlint:
-        specifier: 1.89.0
+        specifier: ^1.89.0
         version: 1.89.0(oxlint-tsgolint@7.0.2005)
       oxlint-tsgolint:
-        specifier: 7.0.2005
+        specifier: ^7.0.2005
         version: 7.0.2005
       typescript:
-        specifier: 6.0.3
+        specifier: ~6.0.3
         version: 6.0.3
       vitest:
-        specifier: 5.1.0
+        specifier: ^5.1.0
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
 
   packages/cli:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: 1.32.2
+        specifier: ~1.32.2
         version: 1.32.2(zod@4.6.7)
       '@napi-rs/keyring':
-        specifier: 2.1.2
+        specifier: ~2.1.2
         version: 2.1.2
       '@octokit/core':
-        specifier: 7.0.8
+        specifier: ~7.0.8
         version: 7.0.8
       yaml:
-        specifier: 2.9.1
+        specifier: ~2.9.1
         version: 2.9.1
       zod:
-        specifier: 4.6.7
+        specifier: ~4.6.7
         version: 4.6.7
     devDependencies:
       '@repotted/core':
@@ -222,13 +222,13 @@ importers:
   packages/core:
     dependencies:
       '@octokit/core':
-        specifier: 7.0.8
+        specifier: ~7.0.8
         version: 7.0.8
       yaml:
-        specifier: 2.9.1
+        specifier: ~2.9.1
         version: 2.9.1
       zod:
-        specifier: 4.6.7
+        specifier: ~4.6.7
         version: 4.6.7
 
 packages:

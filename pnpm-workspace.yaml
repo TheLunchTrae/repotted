@@ -1,12 +1,9 @@
 packages:
   - packages/*
 
-# mise pins pnpm, and package.json's packageManager names the same version,
-# so a mismatch is an error rather than a download.
-pmOnFail: error
-
-# New dependencies land exact-pinned, matching the manifest policy.
-saveExact: true
+# New dependencies land with a caret range; pnpm-lock.yaml holds the exact
+# versions that installs use.
+savePrefix: '^'
 
 # Delay newly resolved versions for three days; OpenSSF reports that most
 # malicious packages are classified by OSV.dev within that window. A frozen
@@ -17,7 +14,7 @@ minimumReleaseAge: 4320
 # eslint, which the regexp lint plugin needs, still asks for minimatch 10, and
 # minimatch below 11.0.1 has GHSA-g3hv-75wg-m249. No eslint release asks for 11.
 overrides:
-  minimatch: 11.0.3
+  minimatch: ^11.0.3
 
 # Dependency install scripts stay off. esbuild's only checks its binary, which
 # pnpm already installs from esbuild's platform package.

@@ -217,8 +217,9 @@ app.
 
 Before handoff, run `mise run standards:check`. Run `mise run ts:lock` after
 changing declared dependencies and commit `pnpm-lock.yaml`.
-`pnpm-workspace.yaml` pins new dependencies exactly, holds back versions younger
-than three days, and allows no dependency install scripts; an exception goes in
+[Versions](docs/developer/development.md#versions) gives the version range
+for each kind of dependency. `pnpm-workspace.yaml` holds back versions younger
+than three days and allows no dependency install scripts; an exception goes in
 `minimumReleaseAgeExclude` or `allowBuilds` and needs the owner's approval.
 
 Source uses `.ts`, with `.js` extensions on relative imports. Use named
@@ -239,7 +240,7 @@ exports and keep module bindings immutable. Tests live in each package's
 
 `desktop/` is the desktop app: C# on .NET 10 with Avalonia. The `csharp:*`
 mise tasks run from there, and `csharp:standards:check` is part of
-`standards:check`. mise pins the exact SDK, so the analyzers and
+`standards:check`. mise's lockfile pins the exact SDK, so the analyzers and
 `dotnet format` match CI; `desktop/global.json` only sets the floor for
 builds outside mise.
 

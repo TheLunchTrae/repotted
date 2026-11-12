@@ -1,8 +1,9 @@
 # Node runs the workspace, the tests, the build and the desktop app's CLI;
-# pnpm installs the workspace. package.json's packageManager names the same pnpm.
+# pnpm installs the workspace. package.json's devEngines allows the same pnpm
+# major.
 [tools]
-node = "26.13.0"
-pnpm = "12.18.0"
+node = "26"
+pnpm = "12"
 
 [tasks."ts:install"]
 description = "Install the locked TypeScript dependencies with pnpm"

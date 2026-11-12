@@ -1,7 +1,7 @@
-# The desktop app in desktop/. The SDK is pinned here, so CI and local runs
-# build with the same analyzers and format with the same dotnet format.
+# The desktop app in desktop/. mise.lock pins the exact SDK, so CI and local
+# runs build with the same analyzers and format with the same dotnet format.
 [tools]
-dotnet = "10.0.403"
+dotnet = "10"
 
 # Every dotnet call that mise runs, locally and in CI, skips the first-run
 # banner and sends no telemetry.
