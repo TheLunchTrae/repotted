@@ -217,12 +217,10 @@ app.
 
 Before handoff, run `mise run standards:check`. Run `mise run ts:lock` after
 changing declared dependencies and commit `pnpm-lock.yaml`.
-Manifests state version ranges and the lockfiles pin exact versions;
-[Versions](docs/developer/development.md#versions) gives the range for each
-kind of dependency. `pnpm-workspace.yaml` gives new dependencies a caret range,
-holds back versions younger than three days, and allows no dependency install
-scripts; an exception goes in `minimumReleaseAgeExclude` or `allowBuilds` and
-needs the owner's approval.
+[Versions](docs/developer/development.md#versions) gives the version range
+for each kind of dependency. `pnpm-workspace.yaml` holds back versions younger
+than three days and allows no dependency install scripts; an exception goes in
+`minimumReleaseAgeExclude` or `allowBuilds` and needs the owner's approval.
 
 Source uses `.ts`, with `.js` extensions on relative imports. Use named
 exports and keep module bindings immutable. Tests live in each package's
