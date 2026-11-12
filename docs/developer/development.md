@@ -38,6 +38,30 @@ builds from the locked, checksummed downloads alone.
 [AGENTS.md](../../AGENTS.md) lists the narrower checks to run for each kind of
 change.
 
+## Versions
+
+Manifests and tool configs state version ranges, and lockfiles pin the exact
+versions, so CI and a fresh install get what the lockfiles name while a newer
+tool on your machine still works.
+
+- mise names each tool's major version, and Python's minor version, and
+  `.config/mise/mise.lock` pins the exact release. `mise lock --bump` moves the
+  lockfile to the newest release in each range.
+- `devEngines` in `package.json` accepts pnpm 12 from 12.18.0 and fails on
+  another major version, whose lockfile format can differ.
+- Dev dependencies use caret ranges, and `savePrefix` in `pnpm-workspace.yaml`
+  gives new dependencies one. TypeScript and oxlint-tsgolint use tilde ranges,
+  since their minor releases can change type checking.
+- The published CLI's dependencies, and core's copies of them, use tilde
+  ranges. `npx` installs them without a lockfile, so users get patch releases
+  but no new minor version until a change raises the range and the gate tests
+  it.
+- NuGet versions in `desktop/Directory.Packages.props` are minimums, and the
+  `packages.lock.json` files pin the exact packages. Outside mise,
+  `desktop/global.json` rolls forward to the newest .NET 10 SDK feature band.
+- Actions stay pinned to commit SHAs, and the gate pins mise's own version,
+  since a change to either runs code that no review has seen.
+
 ## Build and run the CLI
 
 `mise run ts:build` (or `pnpm run build`) writes `packages/cli/dist/repotted.js`

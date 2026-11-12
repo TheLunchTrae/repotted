@@ -8,7 +8,7 @@ lockfile = true
 lockfile_platforms = ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"]
 
 [tools]
-gitleaks = "8.30.1"
+gitleaks = "8"
 
 [tasks.secrets]
 description = "Scan the working tree for secrets"

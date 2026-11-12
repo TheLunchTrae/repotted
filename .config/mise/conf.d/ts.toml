@@ -1,8 +1,9 @@
 # Node runs the workspace, the tests, the build and the desktop app's CLI;
-# pnpm installs the workspace. package.json's packageManager names the same pnpm.
+# pnpm installs the workspace. package.json's devEngines allows the same pnpm
+# major.
 [tools]
-node = "26.13.0"
-pnpm = "12.18.0"
+node = "26"
+pnpm = "12"
 
 [tasks."ts:install"]
 description = "Install the locked TypeScript dependencies with pnpm"
@@ -70,13 +71,13 @@ depends = ["ts:build"]
 # The workspace's Node is the newest; this task alone runs the oldest one that
 # packages/cli/package.json's engines allows, locally and in CI, and fails
 # when engines names another major version.
-tools = { node = "22.23.4" }
+tools = { node = "22" }
 run = """
 set -eu
 oldest="$(node -p "require('./packages/cli/package.json').engines.node.replace('>=', '')")"
 running="$(node -p "process.versions.node.split('.')[0]")"
 if [ "$running" != "$oldest" ]; then
-  echo "ts:node:check runs Node $running, but engines allows Node $oldest; set the task's node to the newest $oldest release." >&2
+  echo "ts:node:check runs Node $running, but engines allows Node $oldest; set the task's node to $oldest." >&2
   exit 1
 fi
 node packages/cli/tests/node-smoke.mjs
