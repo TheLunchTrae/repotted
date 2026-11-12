@@ -26,20 +26,19 @@ Desktop releases are titled Repotted and a version, such as Repotted 0.1.0.
 check a download.
 
 Each package in a release also has an attestation, a signed record of the
-release build that made it. To check that a download came from the release
-build for its version, run this with the
+release build that made it. To check that a download came from a release
+build, run this with the
 [GitHub CLI](https://cli.github.com/), signed in to any GitHub account, with
-the file's version in place of both `<version>`s:
+the file's version in place of `<version>`:
 
 ```sh
 gh attestation verify Repotted-<version>-macos-arm64.dmg \
   --repo TheLunchTrae/repotted \
-  --signer-workflow TheLunchTrae/repotted/.github/workflows/desktop.yml \
-  --source-ref refs/tags/desktop-v<version>
+  --signer-workflow TheLunchTrae/repotted/.github/workflows/release-desktop.yml \
+  --source-ref refs/heads/main
 ```
 
-The command fails unless the release build for that version made that exact
-file.
+The command fails unless a release build on `main` made that exact file.
 
 The app includes its own copy of the Repotted CLI, so you don't need Node or
 npm to use it.

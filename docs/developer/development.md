@@ -31,10 +31,10 @@ Quality and both release workflows run it through one composite action,
 `.github/actions/gate`, which installs the pinned tools first; the task graph
 installs the locked dependencies where a task first needs them. Quality also
 runs `csharp:test` on macOS and Windows through the same action, since the
-app's code differs by platform. Only Quality and a manual packaging run cache
-mise's tools, and only Quality's Windows job caches NuGet's packages, the one
-place that beats a cold restore; a release builds from the locked, checksummed
-downloads alone.
+app's code differs by platform. Only Quality and the packaging in a Release
+Desktop dry run off `main` cache mise's tools, and only Quality's Windows job
+caches NuGet's packages, the one place that beats a cold restore; a release
+builds from the locked, checksummed downloads alone.
 [AGENTS.md](../../AGENTS.md) lists the narrower checks to run for each kind of
 change.
 

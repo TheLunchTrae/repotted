@@ -44,8 +44,8 @@ CLI and the MCP server over that engine.
   Never run `apply` against a real repository, and never change a real
   repository's settings, rulesets, or branch protection, without the owner's
   explicit yes for that repository and that plan.
-- Do not publish to npm, push a release tag, or publish a release without the
-  owner's explicit yes.
+- Do not run Release CLI or Release Desktop, publish to npm, push a tag, or
+  publish a release without the owner's explicit yes.
 
 ## Commands
 
@@ -209,8 +209,9 @@ Select checks for the change:
 `ts:sea:check` builds the single executable, on Linux in CI, and checks its
 startup snapshot, so the gate catches a CLI or core change that breaks it. A
 change to the desktop packaging, or to what `sea.ts` does on macOS or Windows,
-such as signing or picking the keychain module, also needs a manual Build
-Desktop run, since only its macOS and Windows runners package the app.
+such as signing or picking the keychain module, also needs a Release Desktop
+dry run on its branch, since only its macOS and Windows runners package the
+app.
 
 Before handoff, run `mise run standards:check`. Run `mise run ts:lock` after
 changing declared dependencies and commit `pnpm-lock.yaml`.

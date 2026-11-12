@@ -629,35 +629,36 @@ can't wait for input.
 Only the sign-in, captures and the connect form pass a cancellation token.
 Other calls run until the CLI exits, which every command does on its own.
 
-## CLI releases
+## Releases
 
-`.github/workflows/publish.yml` publishes the CLI, as
-[Releasing](releasing.md#the-cli) describes. Every published release starts a
-run, and every run joins one concurrency group, so a run holds the group from
-its start to its end, including the wait for the `npm` approval. Runs for
-desktop releases and prereleases wait their turn too, then skip every job.
+Release CLI and Release Desktop release the CLI and the desktop app, as
+[Releasing](releasing.md) describes. Each workflow has one concurrency group,
+so a run waits for the one before it to end, and its checks then see what that
+run released. A release run moves through these states; a dry run stops after
+Built and attests, publishes, and releases nothing. Re-running a failed job
+reuses the run's commit and artifacts, which last 3 days; GitHub allows a
+re-run for 30 days.
 
-| State                | Event                               | Next                                                                                                                                                                              |
-| -------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Queued               | The run before it ends              | Verifying, in the order the releases were published.                                                                                                                              |
-| Queued               | 100 runs are already waiting        | The new run is cancelled, and its version isn't published.                                                                                                                        |
-| Verifying            | A check of the release fails        | Failed. Nothing is published, and the next queued run starts.                                                                                                                     |
-| Verifying            | The checks pass                     | Waiting for approval.                                                                                                                                                             |
-| Waiting for approval | The owner approves                  | Publishing.                                                                                                                                                                       |
-| Waiting for approval | The owner rejects, or the wait ends | Failed. Nothing is published, and the next queued run starts.                                                                                                                     |
-| Publishing           | npm accepts the tarball             | Published.                                                                                                                                                                        |
-| Publishing           | npm refuses it                      | Failed. Re-running the failed job waits its turn and the approval again, then publishes the verified tarball, which lasts 3 days; after that, re-running all jobs verifies again. |
+| State     | Event                                                | Next                                                                                                                                                     |
+| --------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Queued    | The run before it ends                               | Verifying.                                                                                                                                               |
+| Queued    | 100 runs are already waiting                         | The new run is cancelled.                                                                                                                                |
+| Verifying | Not on `main`, or the version's tag exists           | Failed. Nothing is built.                                                                                                                                |
+| Verifying | The CLI's version is already on npm                  | Failed. Nothing is built.                                                                                                                                |
+| Verifying | The gate fails                                       | Failed. Nothing is built.                                                                                                                                |
+| Verifying | The checks and the gate pass                         | Built: the CLI tarball, or the packages for each platform.                                                                                               |
+| Built     | A desktop platform fails                             | No attestation or release; re-running the failed job builds that platform again.                                                                         |
+| Built     | The attestation fails                                | Nothing is published; re-running the failed job attests the same files while the artifacts last, and otherwise re-running all jobs builds them again.    |
+| Attested  | npm refuses the CLI                                  | Failed. No tag or release exists; re-running the failed job publishes the attested tarball while the artifact lasts.                                     |
+| Attested  | npm accepts the CLI, or the desktop attestation ends | Releasing.                                                                                                                                               |
+| Releasing | Creating the draft, or attaching a file, fails       | No tag exists. Re-running the job deletes any draft the attempt left and starts again.                                                                   |
+| Releasing | GitHub refuses to publish the draft                  | The draft stays without a tag, as when a ruleset blocks creating the tag. Re-running the job, once the cause is fixed, replaces the draft and publishes. |
+| Releasing | The release is published                             | Released. Publishing creates the tag at the run's commit, and an immutable release can't change, so a fix needs the next version.                        |
 
-## Desktop releases
-
-`.github/workflows/desktop.yml` packages the app, as
-[Releasing](releasing.md#the-desktop-app) describes. Three states matter when a
-run fails. Re-running a failed job reuses the run's packages, which last 3
-days; after that, re-running all jobs builds, signs, and attests them again.
-
-| State    | Event                 | Next                                                                                                                    |
-| -------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Packaged | A platform fails      | No attestation or upload; re-running the failed job continues the same tag, and the attestation and upload then follow. |
-| Packaged | The attestation fails | No upload; re-running the failed job attests the same packages, and the upload then creates the draft.                  |
-| Attested | The upload fails      | Re-running the failed job attaches the attested packages, replacing any files the first try left on the draft.          |
-| Draft    | The owner publishes   | Released. A published release is immutable, so a fix needs the next version's tag.                                      |
+Two failures need the release job itself, not a new run. When npm has the CLI
+but its release is missing, a new run refuses the version, so re-run the
+failed release job: it downloads the tarball from npm, so it needs no
+artifact. When a desktop release job fails after its artifacts expire, a new
+run on `main` builds, attests, and releases the version again, since its tag
+doesn't exist; the first run's attestations then name packages that were
+never released.
