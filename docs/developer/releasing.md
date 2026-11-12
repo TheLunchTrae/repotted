@@ -89,14 +89,15 @@ Windows, in `artifacts/desktop`.
 
 To build test installers from a branch, run Release Desktop on it with
 **Dry run** selected. The run uses no Developer ID and notarizes nothing. It
-checks that the packages build, that the CLI starts under the hardened
-runtime, and that the macOS app launches, then keeps the packages as run
-artifacts for 3 days. The macOS app in such a package is signed ad hoc, so
-Gatekeeper refuses it until it is allowed in System Settings. Pull requests
-don't package the app. Quality builds and tests it on each one, on Linux,
-macOS and Windows, and builds and checks the compiled CLI on Linux, so run a
-dry run on the branch of a pull request that changes the packaging or what
-`sea.ts` does on macOS or Windows.
+checks that the packages build, that the CLI starts, and that the macOS app
+launches, then keeps the packages as run artifacts for 3 days. The macOS app in
+such a package is signed ad hoc and without the hardened runtime, since the
+hardened runtime refuses to load ad hoc libraries, so only a run on `main`
+checks the app under it. Gatekeeper refuses the ad hoc app until it is allowed
+in System Settings. Pull requests don't package the app. Quality builds and
+tests it on each one, on Linux, macOS and Windows, and builds and checks the
+compiled CLI on Linux, so run a dry run on the branch of a pull request that
+changes the packaging or what `sea.ts` does on macOS or Windows.
 
 Signing runs only in the `release-desktop-macos` environment, which holds:
 
