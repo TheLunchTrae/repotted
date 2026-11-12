@@ -5,10 +5,10 @@
 # GitHub work; its keychain module ships beside it.
 #
 # With MACOS_SIGNING_IDENTITY set to a Developer ID Application identity in
-# the keychain, the bundle and the DMG are signed for notarization. Without it
-# the bundle is signed ad hoc, with the same entitlements, so every build
-# checks that the CLI runs under the hardened runtime; Gatekeeper still
-# refuses that app until it is allowed by hand.
+# the keychain, the bundle and the DMG are signed for notarization, under the
+# hardened runtime. Without it the bundle is signed ad hoc and without the
+# hardened runtime, whose library validation refuses every ad hoc library;
+# Gatekeeper still refuses that app until it is allowed by hand.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -102,24 +102,68 @@ sed "s/@VERSION@/$version/g" "$packaging/macos/Info.plist" >"$app/Contents/Info.
 
 identity="${MACOS_SIGNING_IDENTITY:-}"
 timestamp=--timestamp
+runtime=runtime
 if [[ -z $identity ]]; then
-  echo "MACOS_SIGNING_IDENTITY is not set, so the app is signed ad hoc and the DMG is not signed."
+  echo "MACOS_SIGNING_IDENTITY is not set, so the app is signed ad hoc without the hardened runtime and the DMG is not signed."
   identity=-
   timestamp=--timestamp=none
+  runtime=
 fi
 sign() {
-  codesign --force "$timestamp" --options runtime --sign "$identity" ${MACOS_SIGNING_KEYCHAIN:+--keychain "$MACOS_SIGNING_KEYCHAIN"} "$@"
+  codesign --force "$timestamp" ${runtime:+--options "$runtime"} --sign "$identity" ${MACOS_SIGNING_KEYCHAIN:+--keychain "$MACOS_SIGNING_KEYCHAIN"} "$@"
 }
 # Each file first, then the bundle, which signs its executable, Repotted;
 # --deep would give every file the app's entitlements.
-# That includes the keychain module, so the CLI loads it signed by the same team.
+# That includes the keychain module, so the CLI loads it signed by the same
+# identity.
 find "$app/Contents/MacOS" -type f ! -name Repotted ! -name repotted-cli -print0 |
   while IFS= read -r -d '' file; do sign "$file"; done
 sign --entitlements "$packaging/macos/repotted-cli.entitlements" "$app/Contents/MacOS/repotted-cli"
 sign --entitlements "$packaging/macos/Repotted.entitlements" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
-# The hardened runtime must still let the CLI's V8 JIT and load its keychain module,
-# and let the app load its native libraries: a launch that fails exits early.
+# Under the hardened runtime, library validation loads only libraries signed
+# by the loading executable's team, and an ad hoc signature has no team.
+# GitHub's macOS runners launched such apps anyway, so the launch below can't
+# be trusted to catch a mismatch. Each executable must carry the runtime
+# exactly when asked for, and then a team that every Mach-O file shares.
+signature() {
+  codesign --display --verbose=2 "$1" 2>&1 || {
+    echo "Can't read the signature of $1." >&2
+    exit 1
+  }
+}
+for exe in Repotted repotted-cli; do
+  detail="$(signature "$app/Contents/MacOS/$exe")"
+  flags="$(sed -n 's/^CodeDirectory .*flags=0x[0-9a-f]*(\([^)]*\)).*/\1/p' <<<"$detail")"
+  if [[ ,$flags, != *,runtime,* ]]; then
+    if [[ -n $runtime ]]; then
+      echo "$exe isn't signed under the hardened runtime (flags: ${flags:-none})." >&2
+      exit 1
+    fi
+    continue
+  elif [[ -z $runtime ]]; then
+    echo "$exe is signed ad hoc under the hardened runtime, so it can't load any library." >&2
+    exit 1
+  fi
+  exe_team="$(sed -n 's/^TeamIdentifier=//p' <<<"$detail")"
+  if [[ -z $exe_team || $exe_team == 'not set' ]]; then
+    echo "$exe runs under the hardened runtime without a team, so it can't load any library." >&2
+    exit 1
+  fi
+  find "$app/Contents/MacOS" -type f -print0 |
+    while IFS= read -r -d '' file; do
+      [[ "$(file -b "$file")" == Mach-O* ]] || continue
+      file_detail="$(signature "$file")"
+      file_team="$(sed -n 's/^TeamIdentifier=//p' <<<"$file_detail")"
+      if [[ $file_team != "$exe_team" ]]; then
+        echo "$exe runs under the hardened runtime with team $exe_team, so it can't load $file, signed with team ${file_team:-none}." >&2
+        exit 1
+      fi
+    done
+done
+# The CLI must still JIT and load its keychain module, under the hardened
+# runtime when signed, and the app must load its native libraries: a launch
+# that fails exits early.
 smoke "$app/Contents/MacOS/repotted-cli"
 "$app/Contents/MacOS/Repotted" &
 launched=$!

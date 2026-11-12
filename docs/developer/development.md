@@ -88,6 +88,6 @@ mise run desktop:package
 
 On a Mac that writes `Repotted.app` and a DMG to `artifacts/desktop`, and in
 Git Bash on Windows an installer, both for the machine's own architecture. The
-Mac app is signed ad hoc unless `MACOS_SIGNING_IDENTITY` names a Developer ID
-identity. Releases build the same way; see
-[Releasing](releasing.md#the-desktop-app).
+Mac app is signed ad hoc, without the hardened runtime, unless
+`MACOS_SIGNING_IDENTITY` names a Developer ID identity. Releases build the same
+way; see [Releasing](releasing.md#the-desktop-app).
