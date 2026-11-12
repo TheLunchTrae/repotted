@@ -7,8 +7,8 @@ whole release: it checks, builds, attests, publishes, creates the tag, and
 publishes the GitHub release with its files. No other event starts either
 workflow, and nothing else creates their tags.
 
-Both workflows take the version from a file on `main`, so a version bump lands
-in its own pull request. A run refuses a version whose tag already exists.
+Both workflows take the version from a file on `main`, which a pull request
+bumps before the release. A run refuses a version whose tag already exists.
 
 Both take one input, **Dry run**. A dry run does everything a release does up
 to the release itself, and attests, publishes, tags, and releases nothing. On
@@ -16,10 +16,9 @@ to the release itself, and attests, publishes, tags, and releases nothing. On
 another branch it builds test packages. A dry run makes no attestation, so
 test builds leave no record that could pass for a release's.
 
-Every release job runs with read-only contents except the one that creates the
-release, the only job that can write to the repository. The tag and release
-are created with the workflow's own token, so they show as made by
-github-actions.
+Only the job that creates the release can write to the repository; every
+other job can at most read it. The tag and release are created with the
+workflow's own token, so they show as made by github-actions.
 
 ## The CLI
 
@@ -37,8 +36,10 @@ the `v` tag and a release with the tarball and `SHA256SUMS.txt`, with notes
 generated since the last `v` tag. The release is never set as the latest, so
 the latest release stays the desktop app, which is the one people download.
 
-The release job attaches the tarball that npm serves rather than the run's
-artifact, so it can be re-run after that artifact expires.
+The publish job skips the upload when npm already has this exact tarball, as
+after an attempt that timed out once npm had it, so re-running it goes on to
+the release. The release job attaches the tarball that npm serves rather than
+the run's artifact, so it can be re-run after that artifact expires.
 
 npm accepts the publish only from a trusted publisher: this repository,
 `release-cli.yml`, and the `release-cli` environment, which holds nothing.
@@ -118,8 +119,10 @@ To release the app, bump `Version` in the project file.
 
 The workflows rely on these settings, which the owner sets:
 
-- **Actions policy**: `release-*.yml` runs only from manual dispatch, started
-  by the owner.
+- **Who can release**: anyone with write access can run a workflow, so only
+  the owner, as the repository's one writer, starts a release. The
+  environments can also require the owner's approval for each job that runs
+  in them.
 - **Environments**: `release-cli` and `release-desktop`, each limited to the
   `main` branch, with the Apple values above in `release-desktop`.
 - **npm**: the `repotted` package's trusted publisher names this repository,
@@ -133,8 +136,9 @@ The workflows rely on these settings, which the owner sets:
 
 ## When a run fails
 
-Re-running a failed job retries the same commit. The release job starts by
-deleting a draft left by an earlier attempt for the same tag, so each attempt
-creates the release afresh at its own run's commit.
+Re-running a failed job retries the same commit. The release job finishes at
+once when its tag already holds the release at that commit, and otherwise
+deletes any draft an earlier attempt left for the tag, so each attempt creates
+the release afresh at its own run's commit.
 [State machines](state-machines.md#releases) lists each failure and what
 re-running does.

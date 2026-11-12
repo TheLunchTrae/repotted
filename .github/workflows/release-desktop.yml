@@ -1,4 +1,5 @@
 name: Release Desktop
+run-name: ${{ inputs.dry_run && format('Release Desktop dry run on {0}', github.ref_name) || 'Release Desktop' }}
 
 # The owner starts a release with Run workflow on main; nothing else does. A
 # dry run also works on any branch, to build test packages.
@@ -6,17 +7,18 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Dry run, which builds and signs but attests and releases nothing
+        description: Dry run, which builds, and on main signs, but attests and releases nothing
         type: boolean
         default: false
 
 permissions:
   contents: read
 
-# Runs wait their turn instead of replacing a waiting run, so the next run's
-# checks see the version the one before it released.
+# Releases wait their turn instead of replacing a waiting run, so the next
+# release's checks see the version the one before it released. Dry runs wait
+# in a group of their own for each branch, so they never hold up a release.
 concurrency:
-  group: release-desktop
+  group: ${{ inputs.dry_run && format('release-desktop-dry-run-{0}', github.ref) || 'release-desktop' }}
   cancel-in-progress: false
   queue: max
 
@@ -251,10 +253,33 @@ jobs:
         run: |
           tag="desktop-v$VERSION"
           sha256sum -- * >SHA256SUMS.txt
+          status() {
+            curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/$1" || true
+          }
+          # Verify checked the tag, but a re-run of this job doesn't verify
+          # again. A re-run after GitHub published the release finds it done.
+          case "$(status "git/ref/tags/$tag")" in
+            404) ;;
+            200)
+              if [[ "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha)" == "$GITHUB_SHA" &&
+                "$(status "releases/tags/$tag")" == 200 ]]; then
+                echo "$tag is already released at this run's commit."
+                exit 0
+              fi
+              echo "::error::Tag $tag already exists, so this run can't release it."
+              exit 1
+              ;;
+            *)
+              echo "::error::Checking for tag $tag failed."
+              exit 1
+              ;;
+          esac
           # A draft left by an earlier attempt may name another commit.
-          while [[ "$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || true)" == true ]]; do
-            gh release delete "$tag" --yes
-          done
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.draft and .tag_name == \"$tag\") | .id" |
+            while read -r id; do
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+            done
           previous="$(
             {
               gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/desktop-v" --jq '.[].ref | ltrimstr("refs/tags/desktop-v")'

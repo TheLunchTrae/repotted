@@ -14,10 +14,13 @@ rulesets:
           required_status_checks:
             - context: quality
 
-# The environment the publish workflow deploys from, open only to release
-# tags. Its required reviewer is set on GitHub and kept as it is.
+# The environments the release workflows deploy from, open only to main.
 environments:
-  - name: npm
+  - name: release-cli
     deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
     branch_policies:
-      - { name: 'v*', type: tag }
+      - { name: main }
+  - name: release-desktop
+    deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
+    branch_policies:
+      - { name: main }
