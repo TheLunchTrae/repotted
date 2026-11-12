@@ -98,7 +98,7 @@ macOS and Windows, and builds and checks the compiled CLI on Linux, so run a
 dry run on the branch of a pull request that changes the packaging or what
 `sea.ts` does on macOS or Windows.
 
-Signing runs only in the `release-desktop` environment, which holds:
+Signing runs only in the `release-desktop-macos` environment, which holds:
 
 | Name                                    | Kind     | Value                                                                                                                                                                                |
 | --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -109,9 +109,11 @@ Signing runs only in the `release-desktop` environment, which holds:
 | `APP_STORE_CONNECT_API_KEY_ID`          | Variable | The Key ID shown beside that API key                                                                                                                                                 |
 | `APP_STORE_CONNECT_API_ISSUER_ID`       | Variable | The Issuer ID shown above the team keys                                                                                                                                              |
 
-The macOS package jobs request the environment only on `main`, and the release
-job runs in it too. A run on `main` without these values fails rather than
-release an unsigned Mac app.
+Only the macOS package jobs request that environment, and only on `main`. A
+run on `main` without these values fails rather than release an unsigned Mac
+app. The release job, the only one that can write to the repository, runs in
+the `release-desktop` environment, which holds nothing, so it never reaches
+the Apple secrets.
 
 To release the app, bump `Version` in the project file.
 
@@ -123,8 +125,9 @@ The workflows rely on these settings, which the owner sets:
   the owner, as the repository's one writer, starts a release. The
   environments can also require the owner's approval for each job that runs
   in them.
-- **Environments**: `release-cli` and `release-desktop`, each limited to the
-  `main` branch, with the Apple values above in `release-desktop`.
+- **Environments**: `release-cli`, `release-desktop-macos`, and
+  `release-desktop`, each limited to the `main` branch, with the Apple values
+  above in `release-desktop-macos` alone.
 - **npm**: the `repotted` package's trusted publisher names this repository,
   `release-cli.yml`, and the `release-cli` environment, and its publishing
   access requires two-factor authentication and disallows tokens.

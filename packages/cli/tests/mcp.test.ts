@@ -51,7 +51,7 @@ describe('MCP server', () => {
     expect(id).toBeDefined();
 
     const applied = await call(client, 'apply', { plan_id: id });
-    expect(applied).toEqual({ text: 'Applied 13 changes to lunch/app.', isError: false });
+    expect(applied).toEqual({ text: 'Applied 15 changes to lunch/app.', isError: false });
 
     const again = await call(client, 'plan', { repository: 'lunch/app', profile_path: 'repotted.yaml' });
     expect(again.text).toBe('lunch/app matches the profile.');

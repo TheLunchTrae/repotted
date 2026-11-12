@@ -122,8 +122,10 @@ drafts:
       'create Main: Require Code Owner Review',
       'create Main: Require Status Checks',
       'create release-cli',
+      'create release-desktop-macos',
       'create release-desktop',
       'create release-cli: branch main',
+      'create release-desktop-macos: branch main',
       'create release-desktop: branch main',
     ]);
 
@@ -807,6 +809,7 @@ describe('capture', () => {
     expect(profile.rulesets).toHaveLength(6);
     expect(profile.environments).toEqual([
       expect.objectContaining({ name: 'release-cli', branch_policies: [{ name: 'main', type: 'branch' }] }),
+      expect.objectContaining({ name: 'release-desktop-macos', branch_policies: [{ name: 'main', type: 'branch' }] }),
       expect.objectContaining({ name: 'release-desktop', branch_policies: [{ name: 'main', type: 'branch' }] }),
     ]);
     expect((await createPlan(github, repo, profile)).changes).toEqual([]);

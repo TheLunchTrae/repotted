@@ -104,7 +104,7 @@ jobs:
     # environment, and the environment admits main alone. A dry run on main
     # signs and notarizes too, so it proves a release would; one on another
     # branch builds a Mac app signed ad hoc.
-    environment: ${{ matrix.os == 'macos' && github.ref == 'refs/heads/main' && 'release-desktop' || '' }}
+    environment: ${{ matrix.os == 'macos' && github.ref == 'refs/heads/main' && 'release-desktop-macos' || '' }}
     env:
       MISE_LOCKED: '1'
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
@@ -131,7 +131,7 @@ jobs:
           TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           if [[ -z $CERTIFICATE || -z $CERTIFICATE_PASSWORD || -z $TEAM_ID ]]; then
-            echo "::error::Signing needs DEVELOPER_ID_APPLICATION_P12, DEVELOPER_ID_APPLICATION_P12_PASSWORD and APPLE_TEAM_ID in the release-desktop environment."
+            echo "::error::Signing needs DEVELOPER_ID_APPLICATION_P12, DEVELOPER_ID_APPLICATION_P12_PASSWORD and APPLE_TEAM_ID in the release-desktop-macos environment."
             exit 1
           fi
           keychain="$RUNNER_TEMP/signing.keychain-db"
@@ -161,7 +161,7 @@ jobs:
           ISSUER_ID: ${{ vars.APP_STORE_CONNECT_API_ISSUER_ID }}
         run: |
           if [[ -z $KEY || -z $KEY_ID || -z $ISSUER_ID ]]; then
-            echo "::error::Notarizing needs APP_STORE_CONNECT_API_KEY_P8, APP_STORE_CONNECT_API_KEY_ID and APP_STORE_CONNECT_API_ISSUER_ID in the release-desktop environment."
+            echo "::error::Notarizing needs APP_STORE_CONNECT_API_KEY_P8, APP_STORE_CONNECT_API_KEY_ID and APP_STORE_CONNECT_API_ISSUER_ID in the release-desktop-macos environment."
             exit 1
           fi
           key="$RUNNER_TEMP/notary.p8"
@@ -223,7 +223,8 @@ jobs:
 
   # The release starts as a draft, so its files are attached before it is
   # published and becomes immutable. Publishing creates the tag at the
-  # verified commit.
+  # verified commit. Its environment holds no secrets, so the job that can
+  # write to the repository never reaches the Apple ones.
   release:
     name: Tag and release
     needs:

@@ -20,6 +20,10 @@ environments:
     deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
     branch_policies:
       - { name: main }
+  - name: release-desktop-macos
+    deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
+    branch_policies:
+      - { name: main }
   - name: release-desktop
     deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
     branch_policies:
