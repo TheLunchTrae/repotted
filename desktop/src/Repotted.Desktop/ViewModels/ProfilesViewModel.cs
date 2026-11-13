@@ -1023,8 +1023,9 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     /// Deletes the profile the question names, in the folder's turn with
     /// saves and syncs, so no sync reads the folder partway. Its editor goes
     /// with it, unsaved changes and all. For a config repository, a sync then
-    /// commits the deletion, as it commits a save. The list is read again, and
-    /// the next profile opens.
+    /// commits the deletion, as it commits a save. The list is read again. A
+    /// deleted profile that was open stays closed, as if closed, so none opens
+    /// in its place; another open profile stays open.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanConfirmDelete))]
     private async Task ConfirmDeleteAsync()
@@ -1068,9 +1069,12 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
                     if (askedAbout is [var asked] && asked.File == file)
                     {
                         leave?.TrySetResult(false);
+                        // Settled now, not when the close's continuation runs, so the reload below opens none either way.
+                        closing = false;
                     }
-                    if (ReferenceEquals(Current, editor))
+                    if (editor is not null && ReferenceEquals(Current, editor))
                     {
+                        closed = true;
                         Current = null;
                     }
                     if (ReferenceEquals(Selected, item))

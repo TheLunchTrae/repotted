@@ -271,7 +271,7 @@ changes, deleting discards them. If other profiles extend it, directly or
 through another profile, the question names them: they stop loading until you
 point them at another profile, but the app doesn't stop you, so you can delete
 a base and the profiles over it in either order. **Delete profile** deletes
-the file, and **Cancel** keeps it. The file doesn't go to the Trash or Recycle
+the file, and **Cancel** keeps it. A deleted profile that was open closes, and no other profile opens in its place. The file doesn't go to the Trash or Recycle
 Bin, so a deleted profile in a local folder can't be brought back. If the
 profile is a link to a file elsewhere, the app deletes the link and leaves the
 file.

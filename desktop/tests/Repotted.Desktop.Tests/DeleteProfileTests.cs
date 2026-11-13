@@ -40,8 +40,24 @@ public sealed class DeleteProfileTests : ViewModelTests
         Assert.True(File.Exists(files.Own));
         Assert.False(profiles.AskingDelete);
         Assert.Equal(["orgs", "team"], profiles.Items.Select(item => item.Name));
-        Assert.NotSame(editor, profiles.Current);
+        // The deleted profile was open, so none opens in its place.
+        Assert.Null(profiles.Current);
         Assert.False(profiles.HasUnsaved);
+    }
+
+    [AvaloniaFact]
+    public async Task Deleting_another_profile_leaves_the_open_one_open()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Assert.Equal("orgs", editor.Name);
+
+        profiles.Items.Single(item => item.Name == "base").DeleteCommand.Execute(null);
+        cli.On(folders.List(), $$$"""{"profiles":[{"name":"orgs","file":{{{Json(files.Own)}}},"extends":null,"problem":"Cannot read base.yaml"}]}""");
+        await profiles.ConfirmDeleteCommand.ExecuteAsync(null);
+
+        Assert.False(File.Exists(files.Base));
+        Assert.Equal("orgs", profiles.Current?.Name);
     }
 
     [AvaloniaFact]
@@ -270,6 +286,7 @@ public sealed class DeleteProfileTests : ViewModelTests
         Assert.False(profiles.HasLeaving);
         Assert.False(File.Exists(files.Own));
         Assert.Equal(["base"], profiles.Items.Select(item => item.Name));
-        Assert.NotSame(editor, profiles.Current);
+        Assert.Null(profiles.Current);
+        Assert.True(profiles.ShowNoneOpen);
     }
 }
