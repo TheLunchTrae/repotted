@@ -62,6 +62,13 @@ lists every repository your account administers. Press <kbd>Ctrl</kbd>+<kbd>K</k
 To add repositories to the list, click **Add repositories**, which opens the
 Repotted App's install page on GitHub.
 
+The list is grouped by owner: your own repositories first, then each
+organization, or other account, in name order. When there's more than one
+owner, the button beside the count, **All owners** until you change it, chooses
+whose repositories show. Untick an owner to hide its repositories, or click
+**Only personal** or **Show all**. The app remembers your choice the next time
+you open it.
+
 Select a repository to open its panel. From there you can open it on GitHub,
 compare it with a profile, or capture it as a new profile. Tick several
 repositories, or <kbd>Shift</kbd>-click or <kbd>Ctrl</kbd>-click them

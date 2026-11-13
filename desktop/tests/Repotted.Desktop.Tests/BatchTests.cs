@@ -775,10 +775,11 @@ public sealed class BatchTests : IDisposable
         var repositories = shell.Repositories;
 
         // Ticking two rows chooses both, and the panel offers a batch apply in place of one repository's details.
+        // The owner's heading comes first in the list.
         var list = window.GetVisualDescendants().OfType<ListBox>().Single(box => box.Name == "List");
-        list.Selection.Select(1);
         list.Selection.Select(2);
-        list.Selection.Deselect(0);
+        list.Selection.Select(3);
+        list.Selection.Deselect(1);
         Dispatcher.UIThread.RunJobs();
         Assert.True(repositories.Choosing);
         Assert.False(repositories.HasSelection);

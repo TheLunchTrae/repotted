@@ -10,6 +10,19 @@
     </DataTemplate>
   </UserControl.Resources>
 
+  <UserControl.Styles>
+    <!-- The owner filter shows when it hides some owners. -->
+    <Style Selector="Button.owners.filtered /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource TintBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource RailBrush}" />
+    </Style>
+    <!-- An owner's heading is part of the table, not a row to select, so it keeps its colors though disabled. -->
+    <Style Selector="ListBox.table ListBoxItem.owner /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
+    </Style>
+  </UserControl.Styles>
+
   <DockPanel>
     <!-- Heading and actions -->
     <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="32,24,32,0">
@@ -28,6 +41,44 @@
       <!-- The list -->
       <DockPanel Margin="0,0,24,0">
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,14">
+          <!-- Which owners' repositories the list shows -->
+          <Button Classes="quiet owners" Classes.filtered="{Binding OwnersFiltered}" VerticalAlignment="Center"
+                  IsVisible="{Binding CanFilterOwners}" AutomationProperties.Name="{Binding OwnersLabel, StringFormat='Owners: {0}'}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="{Binding OwnersLabel}" VerticalAlignment="Center" />
+              <Path Data="M 1,1 L 5,5 L 9,1" Stroke="{DynamicResource MutedBrush}" StrokeThickness="1.6"
+                    StrokeLineCap="Round" StrokeJoin="Round" VerticalAlignment="Center" />
+            </StackPanel>
+            <Button.Flyout>
+              <Flyout Placement="BottomEdgeAlignedLeft">
+                <StackPanel Width="280">
+                  <TextBlock Classes="muted small" FontWeight="SemiBold" Margin="2,0,0,8" Text="Show repositories owned by" />
+                  <ItemsControl ItemsSource="{Binding Owners}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:OwnerChoice">
+                        <CheckBox IsChecked="{Binding Shown}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                  AutomationProperties.Name="{Binding Description}">
+                          <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Text="{Binding Owner}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1" Classes="muted small" Margin="8,0,0,0" Text="Personal"
+                                       VerticalAlignment="Center" IsVisible="{Binding Personal}" />
+                            <TextBlock Grid.Column="2" Classes="muted small" Margin="8,0,0,0" Text="{Binding Count}"
+                                       VerticalAlignment="Center" />
+                          </Grid>
+                        </CheckBox>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Border Classes="rule" Margin="0,8" />
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Button Classes="link" Content="Only personal" IsVisible="{Binding HasPersonal}"
+                            Command="{Binding ShowOnlyPersonalCommand}" />
+                    <Button Grid.Column="2" Classes="link" Content="Show all" Command="{Binding ShowAllOwnersCommand}" />
+                  </Grid>
+                </StackPanel>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
           <Border Classes="chip" IsVisible="{Binding ShowTable}">
             <TextBlock Text="{Binding CountLabel}" />
           </Border>
@@ -72,14 +123,20 @@
                 <TextBlock Grid.Column="5" Text="Checked" />
               </Grid>
             </Border>
-            <ListBox x:Name="List" Classes="table" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}"
+            <!-- Each owner's heading, then its repositories. The view names each item for screen readers and
+                 keeps the headings out of the selection. -->
+            <ListBox x:Name="List" Classes="table" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}"
                      SelectionMode="Multiple" AutomationProperties.Name="Repositories">
-              <ListBox.Styles>
-                <Style Selector="ListBoxItem" x:DataType="vm:RepositoryRowViewModel">
-                  <Setter Property="AutomationProperties.Name" Value="{Binding Description}" />
-                </Style>
-              </ListBox.Styles>
-              <ListBox.ItemTemplate>
+              <ListBox.DataTemplates>
+                <DataTemplate x:DataType="vm:OwnerHeading">
+                  <Grid ColumnDefinitions="Auto,Auto,*" Margin="12,16,12,6">
+                    <TextBlock Text="{Binding Owner}" FontWeight="Bold" VerticalAlignment="Bottom" />
+                    <TextBlock Grid.Column="1" Classes="muted small" Margin="10,0,0,0" Text="Personal"
+                               VerticalAlignment="Bottom" IsVisible="{Binding Personal}" />
+                    <TextBlock Grid.Column="2" Classes="muted small" Text="{Binding Count}"
+                               HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+                  </Grid>
+                </DataTemplate>
                 <DataTemplate x:DataType="vm:RepositoryRowViewModel">
                   <Panel>
                     <Border Classes="selection-rail" />
@@ -87,10 +144,9 @@
                       <!-- Ticking several repositories, or Shift- or Ctrl-clicking them, chooses them for a batch apply -->
                       <CheckBox VerticalAlignment="Center" IsChecked="{Binding $parent[ListBoxItem].IsSelected}"
                                 AutomationProperties.Name="{Binding FullName, StringFormat='Choose {0}'}" />
-                      <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding FullName}">
-                        <!-- On one line, so no space falls between the owner and the name. -->
-                        <Run Text="{Binding Owner}" Foreground="{DynamicResource MutedBrush}" /><Run Text="{Binding Name}" FontWeight="Bold" />
-                      </TextBlock>
+                      <!-- The owner's heading above names the owner. -->
+                      <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding FullName}"
+                                 Text="{Binding Name}" FontWeight="Bold" />
                       <TextBlock Grid.Column="2" Classes="muted" Text="None" VerticalAlignment="Center" />
                       <ItemsControl Grid.Column="3" ItemsSource="{Binding Sections}" VerticalAlignment="Center"
                                     ItemTemplate="{StaticResource SectionBar}">
@@ -105,7 +161,7 @@
                     </Grid>
                   </Panel>
                 </DataTemplate>
-              </ListBox.ItemTemplate>
+              </ListBox.DataTemplates>
             </ListBox>
           </DockPanel>
         </Panel>

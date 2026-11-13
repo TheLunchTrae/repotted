@@ -513,7 +513,10 @@ nothing, whenever the branch no longer holds the commit that record names.
 
 The app keeps its own settings in `settings.json` in the per-user app data
 folder and never writes beside itself, since an update replaces the app's own
-folder and it may not be writable.
+folder and it may not be writable. Besides where profiles live, it remembers
+which owners' repositories the repository list shows, as
+[Desktop repository owners](state-machines.md#desktop-repository-owners)
+describes.
 
 ### Compare
 

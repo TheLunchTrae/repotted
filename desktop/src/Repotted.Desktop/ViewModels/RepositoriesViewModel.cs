@@ -2,13 +2,15 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Repotted.Desktop.Services;
+using Repotted.Desktop.Theme;
 
 namespace Repotted.Desktop.ViewModels;
 
 /// <summary>
-/// The repositories Repotted can manage, with a search filter and the selected
-/// one's details, from which it can be compared with a profile or captured
-/// as a new one.
+/// The repositories Repotted can manage, grouped by owner with the signed-in
+/// account's first, with a search, an owner filter, and the selected one's
+/// details, from which it can be compared with a profile or captured as a new
+/// one.
 /// </summary>
 internal sealed partial class RepositoriesViewModel : ViewModelBase
 {
@@ -21,8 +23,18 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     private readonly Func<string, bool> unfinished;
     private readonly Action<IReadOnlyList<string>, ProfileListingDocument?>? batch;
     private readonly Func<bool> batchUnfinished;
+    private readonly string? login;
+    private readonly AppSettings? settings;
 
     private IReadOnlyList<RepositoryRowViewModel> all = [];
+
+    // The owners the list shows, as last chosen and saved; null for every owner. An owner that is
+    // no longer in the list stays chosen until the next choice, so its repositories show again
+    // when they come back; a choice that names no owner in the list shows every owner.
+    private IReadOnlyList<string>? chosenOwners;
+
+    // Set while the owner filter's ticks are set from chosenOwners, so they are not read back as a choice.
+    private bool showingChosenOwners;
 
     /// <param name="client">Reads the list.</param>
     /// <param name="desktop">Opens pages on GitHub.</param>
@@ -34,6 +46,8 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     /// <param name="unfinished">Whether an apply to a repository waits to be resumed.</param>
     /// <param name="batch">Opens a batch apply of a profile to several repositories, or resumes the one there when none are given.</param>
     /// <param name="batchUnfinished">Whether a batch apply waits to be resumed.</param>
+    /// <param name="login">The signed-in account, whose repositories are its personal ones.</param>
+    /// <param name="settings">Remembers the owner filter between runs.</param>
     public RepositoriesViewModel(
         RepottedClient client,
         IDesktop desktop,
@@ -44,8 +58,13 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
         Action<string, ProfileListingDocument?>? apply = null,
         Func<string, bool>? unfinished = null,
         Action<IReadOnlyList<string>, ProfileListingDocument?>? batch = null,
-        Func<bool>? batchUnfinished = null)
+        Func<bool>? batchUnfinished = null,
+        string? login = null,
+        AppSettings? settings = null)
     {
+        this.login = login;
+        this.settings = settings;
+        chosenOwners = settings?.Load().RepositoryOwners;
         this.batch = batch;
         this.batchUnfinished = batchUnfinished ?? (() => false);
         this.capture = capture;
@@ -120,7 +139,31 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
 
     public string ChosenLabel => $"{Chosen.Count} repositories selected";
 
-    public ObservableCollection<RepositoryRowViewModel> Rows { get; } = [];
+    /// <summary>What the list shows: each owner's heading, then the owner's repositories that match the search.</summary>
+    public ObservableCollection<object> Items { get; } = [];
+
+    /// <summary>The repositories the list shows, in its order.</summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<RepositoryRowViewModel> Rows { get; private set; } = [];
+
+    /// <summary>The owners in the list, the signed-in account first, each ticked when the list shows its repositories.</summary>
+    public ObservableCollection<OwnerChoice> Owners { get; } = [];
+
+    /// <summary>Whether the list has more than one owner to choose among.</summary>
+    public bool CanFilterOwners => Owners.Count > 1;
+
+    /// <summary>Whether the owner filter hides some owners' repositories.</summary>
+    public bool OwnersFiltered => Owners.Any(owner => !owner.Shown);
+
+    /// <summary>The owner filter's button: which owners the list shows.</summary>
+    public string OwnersLabel => Owners.Where(owner => owner.Shown).ToList() switch
+    {
+        var shown when shown.Count == Owners.Count => ControlLabel.For("All owners"),
+        [] => ControlLabel.For("No owners"),
+        [{ Personal: true }] => ControlLabel.For("Personal"),
+        [var one] => one.Owner,
+        var shown => ControlLabel.For($"{shown.Count} owners"),
+    };
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection), nameof(HasUnfinishedApply))]
@@ -162,7 +205,9 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(CountLabel), nameof(ShowAddInHeading))]
     public partial int Count { get; set; }
 
-    public string CountLabel => $"All {Count}";
+    public string CountLabel => OwnersFiltered
+        ? $"{Owners.Where(owner => owner.Shown).Sum(owner => owner.Count)} of {Count}"
+        : $"All {Count}";
 
     public bool ShowTable => !Loading && Error is null && Count > 0;
 
@@ -200,7 +245,12 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
             all = [.. list.Repositories.Select(repository => new RepositoryRowViewModel(repository))];
             Count = all.Count;
             FromInstallations = list.FromInstallations;
-            ApplyFilter();
+            Owners.Clear();
+            foreach (var group in ByOwner(all))
+            {
+                Owners.Add(new OwnerChoice(group.Key, IsPersonal(group.Key), group.Count(), OnOwnerTicked));
+            }
+            ShowChosenOwners();
         }
         catch (Exception error) when (error is CliException or CliNotFoundException)
         {
@@ -213,6 +263,83 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     }
 
     private bool CanRefresh() => !Loading;
+
+    /// <summary>Shows only the signed-in account's own repositories.</summary>
+    [RelayCommand]
+    private void ShowOnlyPersonal()
+    {
+        chosenOwners = [.. Owners.Where(owner => owner.Personal).Select(owner => owner.Owner)];
+        ShowChosenOwners();
+        SaveOwners();
+    }
+
+    /// <summary>Whether the signed-in account has repositories of its own in the list.</summary>
+    public bool HasPersonal => Owners.Any(owner => owner.Personal);
+
+    [RelayCommand]
+    private void ShowAllOwners()
+    {
+        chosenOwners = null;
+        ShowChosenOwners();
+        SaveOwners();
+    }
+
+    private void OnOwnerTicked()
+    {
+        if (showingChosenOwners)
+        {
+            return;
+        }
+        chosenOwners = Owners.All(owner => owner.Shown) ? null : [.. Owners.Where(owner => owner.Shown).Select(owner => owner.Owner)];
+        SaveOwners();
+        OwnersChanged();
+    }
+
+    /// <summary>Ticks the owners chosen, or every owner when the choice names none in the list, and shows their repositories.</summary>
+    private void ShowChosenOwners()
+    {
+        var chosen = chosenOwners?.Where(name => Owners.Any(owner => SameOwner(owner.Owner, name))).ToList();
+        showingChosenOwners = true;
+        foreach (var owner in Owners)
+        {
+            owner.Shown = chosen is not { Count: > 0 } || chosen.Any(name => SameOwner(owner.Owner, name));
+        }
+        showingChosenOwners = false;
+        OwnersChanged();
+    }
+
+    private void OwnersChanged()
+    {
+        OnPropertyChanged(nameof(CanFilterOwners));
+        OnPropertyChanged(nameof(OwnersFiltered));
+        OnPropertyChanged(nameof(OwnersLabel));
+        OnPropertyChanged(nameof(CountLabel));
+        OnPropertyChanged(nameof(HasPersonal));
+        ApplyFilter();
+    }
+
+    /// <summary>Remembers the owner filter for the next run. Losing it costs only a choice, so a failed save is let go.</summary>
+    private void SaveOwners()
+    {
+        try
+        {
+            settings?.Save(settings.Load() with { RepositoryOwners = chosenOwners });
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    // GitHub logins ignore case.
+    private static bool SameOwner(string left, string right) => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    private bool IsPersonal(string owner) => login is not null && SameOwner(owner, login);
+
+    /// <summary>Repositories by owner: the signed-in account's first, then the others by login.</summary>
+    private IEnumerable<IGrouping<string, RepositoryRowViewModel>> ByOwner(IEnumerable<RepositoryRowViewModel> rows) =>
+        rows.GroupBy(row => row.Owner, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => !IsPersonal(group.Key))
+            .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
 
     [RelayCommand]
     private Task AddRepositoriesAsync() => installUrl is { } url ? desktop.OpenUrlAsync(url) : Task.CompletedTask;
@@ -292,11 +419,20 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     private void ApplyFilter()
     {
         var selected = Selected?.FullName;
-        Rows.Clear();
-        foreach (var row in all.Where(row => row.FullName.Contains(Filter.Trim(), StringComparison.OrdinalIgnoreCase)))
+        var words = Filter.Trim();
+        var shown = Owners.Where(owner => owner.Shown).Select(owner => owner.Owner).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        List<RepositoryRowViewModel> rows = [];
+        Items.Clear();
+        foreach (var group in ByOwner(all.Where(row => shown.Contains(row.Owner) && row.FullName.Contains(words, StringComparison.OrdinalIgnoreCase))))
         {
-            Rows.Add(row);
+            Items.Add(new OwnerHeading(group.Key, IsPersonal(group.Key), group.Count()));
+            foreach (var row in group)
+            {
+                Items.Add(row);
+                rows.Add(row);
+            }
         }
-        Selected = Rows.FirstOrDefault(row => row.FullName == selected) ?? Rows.FirstOrDefault();
+        Rows = rows;
+        Selected = rows.FirstOrDefault(row => row.FullName == selected) ?? rows.FirstOrDefault();
     }
 }

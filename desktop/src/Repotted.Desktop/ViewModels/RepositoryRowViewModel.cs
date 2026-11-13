@@ -17,7 +17,8 @@ internal sealed class RepositoryRowViewModel(RepositoryDocument repository) : Vi
 
     public string FullName { get; } = repository.FullName;
 
-    public string Owner { get; } = repository.FullName.Split('/')[0] + "/";
+    /// <summary>The login of the account or organization that owns the repository.</summary>
+    public string Owner { get; } = repository.FullName.Split('/')[0];
 
     public string Name { get; } = repository.FullName.Split('/') is [_, var name] ? name : repository.FullName;
 

@@ -64,6 +64,55 @@ public sealed class ViewTests : IDisposable
             names);
     }
 
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task The_repository_list_is_grouped_by_owner_and_filtered_by_owner(string theme)
+    {
+        var window = await Show(theme, new FakeCli().On("status --json", Documents.SignedIn).On("repos --json", Documents.OwnedRepositories));
+        var repositories = ((ShellViewModel)((MainViewModel)window.DataContext!).Page!).Repositories;
+
+        var text = Texts(window);
+        Assert.Contains("TheLunchTrae", text);
+        Assert.Contains("Personal", text);
+        Assert.Contains("lunchbox-labs", text);
+        Assert.Contains(ControlLabel.For("All owners"), text);
+        Save(window, $"repositories-owners-{theme}");
+
+        var owners = window.GetVisualDescendants().OfType<Button>().Single(button => button.Classes.Contains("owners"));
+        owners.Flyout!.ShowAt(owners);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains("Show repositories owned by", Texts(window));
+        Save(window, $"repositories-owner-filter-{theme}");
+
+        repositories.ShowOnlyPersonalCommand.Execute(null);
+        owners.Flyout.Hide();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains("2 of 5", Texts(window));
+        Save(window, $"repositories-personal-{theme}");
+    }
+
+    [AvaloniaFact]
+    public async Task Owner_headings_are_read_out_and_never_selected()
+    {
+        var window = await Show("light", new FakeCli().On("status --json", Documents.SignedIn).On("repos --json", Documents.OwnedRepositories));
+        var repositories = ((ShellViewModel)((MainViewModel)window.DataContext!).Page!).Repositories;
+        var list = window.GetVisualDescendants().OfType<ListBox>().Single(box => box.Name == "List");
+
+        var headings = window.GetVisualDescendants().OfType<ListBoxItem>().Where(item => item.DataContext is OwnerHeading).ToList();
+        Assert.Equal(
+            ["TheLunchTrae, personal, 2 repositories", "lunchbox-labs, 2 repositories", "Pixel-Garden, 1 repository"],
+            headings.Select(item => ControlAutomationPeer.CreatePeerForElement(item).GetName()));
+        Assert.All(headings, item => Assert.False(item.IsEnabled));
+
+        // Select all takes every repository and no heading.
+        list.Focus();
+        list.SelectAll();
+        Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain(list.Selection.SelectedItems, item => item is OwnerHeading);
+        Assert.Equal(5, repositories.Chosen.Count);
+        Assert.True(repositories.Choosing);
+    }
+
     [AvaloniaFact]
     public async Task The_search_shortcut_works_before_anything_has_focus()
     {

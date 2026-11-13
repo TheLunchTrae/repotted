@@ -381,6 +381,26 @@ the pass read it, such as by a save, stays as it is and joins the conflicts.
 The record is written only when a pass records, so a failed sync leaves the
 last good record in place and the next sync starts from it.
 
+## Desktop repository owners
+
+`RepositoriesViewModel` keeps the owners the repository list shows as a choice
+of logins, saved as `repository_owners` in the app's `settings.json`, or none
+for every owner. The list's owners come from each read of the list, so the
+choice can name an owner that is no longer there.
+
+| Choice                         | Event                                   | Next                                                                   |
+| ------------------------------ | --------------------------------------- | ---------------------------------------------------------------------- |
+| Every owner                    | An owner is unticked                    | The ticked owners, saved.                                              |
+| Some owners                    | The last unticked owner is ticked       | Every owner, saved as none.                                            |
+| Some owners                    | Only personal                           | The signed-in account alone, saved.                                    |
+| Any                            | Show all                                | Every owner, saved as none.                                            |
+| Some owners                    | The list is read again                  | The chosen owners in the list show; one that left stays in the choice. |
+| Names no owner now in the list | The list is read again                  | Every owner shows, and the choice stays saved until the next one.      |
+| No owners ticked               | The list is read again or the app opens | Every owner shows, since the choice names no owner in the list.        |
+
+A save that fails, such as an unwritable app data folder, is let go: the
+choice holds for this run and is lost at the next.
+
 ## Desktop profiles source
 
 `ProfileFolder` keeps the profiles folder, the config repository if there is

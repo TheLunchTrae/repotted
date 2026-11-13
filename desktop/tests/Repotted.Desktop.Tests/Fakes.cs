@@ -382,6 +382,18 @@ internal static class Documents
         ]}
         """;
 
+    /// <summary>The signed-in account's repositories and two organizations', listed by full name as the CLI lists them.</summary>
+    public const string OwnedRepositories =
+        """
+        {"source":"installations","repositories":[
+          {"full_name":"lunchbox-labs/compasslet","private":false,"archived":false},
+          {"full_name":"lunchbox-labs/tool-inspector","private":false,"archived":false},
+          {"full_name":"Pixel-Garden/site","private":true,"archived":false},
+          {"full_name":"TheLunchTrae/repotted","private":false,"archived":false},
+          {"full_name":"TheLunchTrae/test-repo","private":true,"archived":false}
+        ]}
+        """;
+
     public const string Code =
         """{"event":"code","verification_uri":"https://github.com/login/device","user_code":"ABCD-1234","expires_at":"2026-11-07T08:00:00.000Z"}""";
 
