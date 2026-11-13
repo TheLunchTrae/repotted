@@ -213,12 +213,19 @@ public sealed class ApplyTests : IDisposable
         return page;
     }
 
-    private async Task<(Page Page, FakeCli Cli)> Reviewing(bool fromProfile = true)
+    /// <summary>Opens an apply, which lands on its one-off edits, and with <paramref name="changes"/> goes on to its changes.</summary>
+    private async Task<(Page Page, FakeCli Cli)> Reviewing(bool fromProfile = true, bool changes = true)
     {
         var cli = Cli(fromProfile);
         var page = Open(cli, fromProfile);
         await page.Apply.OpenAsync();
         Assert.Equal(ApplyStep.Reviewing, page.Apply.Step);
+        Assert.True(page.Apply.ShowingEdits);
+        if (changes)
+        {
+            await page.Apply.ReviewChangesCommand.ExecuteAsync(null);
+            Assert.True(page.Apply.ShowingChanges);
+        }
         return (page, cli);
     }
 
@@ -347,6 +354,7 @@ public sealed class ApplyTests : IDisposable
         var page = Open(cli, desktop: desktop);
         var apply = page.Apply;
         await apply.OpenAsync();
+        await apply.ReviewChangesCommand.ExecuteAsync(null);
 
         // The ruleset is locked, so writing would stop at it and leave the rest unwritten.
         Assert.Equal(ApplyStep.Reviewing, apply.Step);
@@ -384,6 +392,7 @@ public sealed class ApplyTests : IDisposable
         var page = Open(cli);
         var apply = page.Apply;
         await apply.OpenAsync();
+        await apply.ReviewChangesCommand.ExecuteAsync(null);
         Assert.False(apply.ApplyCommand.CanExecute(null));
         // With no way to open a browser, no link is offered.
         Assert.False(apply.HasAccessUrl);
@@ -586,6 +595,233 @@ public sealed class ApplyTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task An_apply_opens_on_its_edits_and_review_shows_the_changes_without_planning_again()
+    {
+        var (page, cli) = await Reviewing(changes: false);
+        var apply = page.Apply;
+
+        // The plan is ready, so the edits' diff shows it, but nothing applies from the edits.
+        Assert.Contains(Planned, cli.Calls);
+        Assert.Equal("Step 1 of 2, edit, current step", apply.EditStepName);
+        Assert.True(apply.SaveToProfileCommand.CanExecute(null));
+        Assert.True(apply.ShowEditActions);
+        Assert.False(apply.ShowChangeActions);
+        Assert.False(apply.ApplyCommand.CanExecute(null));
+        Assert.False(apply.BackToEditsCommand.CanExecute(null));
+        Assert.True(apply.ReviewChangesCommand.CanExecute(null));
+
+        cli.Calls.Clear();
+        await apply.ReviewChangesCommand.ExecuteAsync(null);
+
+        // Nothing changed since the plan, so the changes show as planned.
+        Assert.Empty(cli.Calls);
+        Assert.True(apply.ShowingChanges);
+        Assert.Equal("Step 2 of 2, review and apply, current step", apply.ReviewStepName);
+        Assert.Equal("Step 1 of 2, edit, done", apply.EditStepName);
+        // Saving to the profile and discarding belong to the edits.
+        Assert.False(apply.SaveToProfileCommand.CanExecute(null));
+        Assert.True(apply.ShowChangeActions);
+        Assert.False(apply.ShowEditActions);
+        Assert.True(apply.ApplyCommand.CanExecute(null));
+        Assert.False(apply.ReviewChangesCommand.CanExecute(null));
+
+        apply.BackToEditsCommand.Execute(null);
+        Assert.True(apply.ShowingEdits);
+        Assert.False(apply.ApplyCommand.CanExecute(null));
+        Assert.Empty(cli.Calls);
+    }
+
+    [AvaloniaFact]
+    public async Task Reviewing_the_changes_saves_the_edits_to_the_apply_and_plans_them_first()
+    {
+        var (page, cli) = await Reviewing(changes: false);
+        var apply = page.Apply;
+        Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        Assert.True(apply.ReviewChangesCommand.CanExecute(null));
+
+        var save = $"stage {file} --set repository.has_issues=false --json";
+        cli.On(save, Staged());
+        cli.Calls.Clear();
+        await apply.ReviewChangesCommand.ExecuteAsync(null);
+
+        // The edits go to the staged apply only, never the profile, and the changes are what they say.
+        Assert.Equal([save, Planned], cli.Calls.Where(call => call == save || call == Planned));
+        Assert.DoesNotContain(cli.Calls, call => call.Contains("--save-to-profile", StringComparison.Ordinal));
+        Assert.False(apply.EditsUnsaved);
+        Assert.True(apply.ShowingChanges);
+        Assert.True(apply.ApplyCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
+    public async Task The_changes_wait_while_reviewing_saves_the_edits()
+    {
+        var (page, cli) = await Reviewing(changes: false);
+        var apply = page.Apply;
+        Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        var written = new TaskCompletionSource();
+        cli.OnceReady($"stage {file} --set repository.has_issues=false --json", Staged(), written.Task);
+
+        var reviewing = apply.ReviewChangesCommand.ExecuteAsync(null);
+
+        // The changes never show over edits still being saved, and nothing else starts meanwhile.
+        Assert.True(apply.Edits!.Saving);
+        Assert.True(apply.ShowingEdits);
+        Assert.False(apply.ReviewChangesCommand.CanExecute(null));
+        Assert.False(apply.DiscardCommand.CanExecute(null));
+        Assert.False(apply.CanLeave);
+        written.SetResult();
+        await reviewing;
+        Assert.True(apply.ShowingChanges);
+        Assert.True(apply.ApplyCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
+    public async Task Edits_that_fail_to_save_keep_the_edits_on_screen()
+    {
+        var (page, cli) = await Reviewing(changes: false);
+        var apply = page.Apply;
+        var editor = apply.Edits!;
+        Setting(editor, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        cli.On($"stage {file} --set repository.has_issues=false --json", "", exitCode: 1, error: "The staged apply is locked.");
+
+        await apply.ReviewChangesCommand.ExecuteAsync(null);
+
+        Assert.True(apply.ShowingEdits);
+        Assert.True(apply.EditsUnsaved);
+        Assert.NotNull(editor.SaveError);
+        Assert.DoesNotContain(Planned, cli.Calls.SkipWhile(call => call != $"stage {file} --set repository.has_issues=false --json"));
+    }
+
+    [AvaloniaFact]
+    public async Task A_plan_that_fails_after_the_edits_save_never_shows_old_changes()
+    {
+        var (page, cli) = await Reviewing(changes: false);
+        var apply = page.Apply;
+        Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        cli.On($"stage {file} --set repository.has_issues=false --json", Staged())
+            .On(Planned, "", exitCode: 1, error: "GitHub is unreachable.");
+
+        await apply.ReviewChangesCommand.ExecuteAsync(null);
+
+        Assert.Equal(ApplyStep.Failed, apply.Step);
+        Assert.False(apply.ShowReview);
+
+        // Reviewing again brings the edits back, where the apply was.
+        cli.On(Planned, () => Plan());
+        await apply.ReviewAgainCommand.ExecuteAsync(null);
+        Assert.Equal(ApplyStep.Reviewing, apply.Step);
+        Assert.True(apply.ShowingEdits);
+    }
+
+    [AvaloniaFact]
+    public async Task An_invalid_edit_holds_the_review_and_the_profile_save_until_it_is_fixed()
+    {
+        var (page, cli) = await Reviewing(changes: false);
+        var apply = page.Apply;
+        var retention = Setting(apply.Edits!, "max_cache_retention_days");
+
+        retention.Typed = "many";
+
+        // The edits can't be saved as they are, so neither action can go on from them.
+        Assert.True(apply.Edits!.HasProblem);
+        Assert.False(apply.ReviewChangesCommand.CanExecute(null));
+        Assert.False(apply.SaveToProfileCommand.CanExecute(null));
+
+        retention.Typed = "30";
+        Assert.False(apply.Edits.HasProblem);
+        Assert.True(apply.ReviewChangesCommand.CanExecute(null));
+        Assert.True(apply.SaveToProfileCommand.CanExecute(null));
+        Assert.DoesNotContain(cli.Calls, call => call.Contains("--set", StringComparison.Ordinal));
+    }
+
+    [AvaloniaFact]
+    public async Task Edits_over_a_staged_file_removed_since_keep_the_edits_on_screen()
+    {
+        var (page, cli) = await Reviewing(changes: false);
+        var apply = page.Apply;
+        var editor = apply.Edits!;
+        Setting(editor, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        File.Delete(file);
+        cli.Calls.Clear();
+
+        await apply.ReviewChangesCommand.ExecuteAsync(null);
+
+        // The save shows the file as gone first, so the changes never show over edits it didn't save.
+        Assert.True(editor.Removed);
+        Assert.True(apply.ShowingEdits);
+        Assert.True(apply.EditsUnsaved);
+        Assert.DoesNotContain(Planned, cli.Calls);
+    }
+
+    [AvaloniaFact]
+    public async Task Saving_unsaved_edits_to_the_profile_saves_them_to_the_apply_first()
+    {
+        var (page, cli) = await Reviewing(changes: false);
+        var apply = page.Apply;
+        Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        Assert.True(apply.SaveToProfileCommand.CanExecute(null));
+        var stage = $"stage {file} --set repository.has_issues=false --json";
+        var save = $"stage {file} --save-to-profile --json";
+        cli.On(stage, Staged()).On(save, Staged());
+        cli.Calls.Clear();
+
+        await apply.SaveToProfileCommand.ExecuteAsync(null);
+
+        // The profile gets what was on screen, and the apply stays on its edits.
+        Assert.Equal([stage, Planned, save, Planned], cli.Calls.Where(call => call == stage || call == save || call == Planned));
+        Assert.Equal(1, page.ProfilesSaved);
+        Assert.False(apply.EditsUnsaved);
+        Assert.True(apply.ShowingEdits);
+    }
+
+    [AvaloniaFact]
+    public async Task A_first_unsaved_edit_can_be_saved_to_the_profile()
+    {
+        // A staged apply whose every value comes from the profile, so nothing is saved as a one-off edit yet.
+        var fresh = Staged().Replace($"\"merge\":{{\"allow_squash_merge\":{Json(file)} }}", $"\"merge\":{{\"allow_squash_merge\":{Json(@base)} }}", StringComparison.Ordinal);
+        Assert.NotEqual(Staged(), fresh);
+        var cli = Cli()
+            .On(New(), () =>
+            {
+                File.WriteAllText(file, "apply_to: TheLunchTrae/repotted\n");
+                return fresh;
+            })
+            .On(Read, fresh);
+        var page = Open(cli);
+        await page.Apply.OpenAsync();
+        var apply = page.Apply;
+        Assert.False(apply.Edits!.SetsAnything);
+        Assert.False(apply.SaveToProfileCommand.CanExecute(null));
+
+        Setting(apply.Edits, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        Assert.True(apply.SaveToProfileCommand.CanExecute(null));
+        var stage = $"stage {file} --set repository.has_issues=false --json";
+        var save = $"stage {file} --save-to-profile --json";
+        cli.On(stage, Staged()).On(save, fresh);
+        cli.Calls.Clear();
+
+        await apply.SaveToProfileCommand.ExecuteAsync(null);
+
+        Assert.Equal([stage, Planned, save, Planned], cli.Calls.Where(call => call == stage || call == save || call == Planned));
+        Assert.Equal(1, page.ProfilesSaved);
+    }
+
+    [AvaloniaFact]
+    public async Task Edits_that_fail_to_save_save_nothing_to_the_profile()
+    {
+        var (page, cli) = await Reviewing(changes: false);
+        var apply = page.Apply;
+        Setting(apply.Edits!, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        cli.On($"stage {file} --set repository.has_issues=false --json", "", exitCode: 1, error: "The staged apply is locked.");
+
+        await apply.SaveToProfileCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(cli.Calls, call => call.Contains("--save-to-profile", StringComparison.Ordinal));
+        Assert.Equal(0, page.ProfilesSaved);
+        Assert.True(apply.EditsUnsaved);
+    }
+
+    [AvaloniaFact]
     public async Task Unsaved_one_off_edits_hold_the_apply_until_they_are_saved()
     {
         var (page, cli) = await Reviewing();
@@ -749,7 +985,7 @@ public sealed class ApplyTests : IDisposable
         var apply = page.Apply;
         var editor = apply.Edits!;
         Setting(editor, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
-        apply.Tab = 0;
+        Assert.True(apply.ShowingChanges);
 
         var leaving = apply.ConfirmLeaveAsync("sign out");
 
@@ -801,7 +1037,7 @@ public sealed class ApplyTests : IDisposable
     [AvaloniaFact]
     public async Task Saving_edits_to_the_profile_lists_the_profiles_again()
     {
-        var (page, cli) = await Reviewing();
+        var (page, cli) = await Reviewing(changes: false);
         var apply = page.Apply;
         Assert.True(apply.SaveToProfileCommand.CanExecute(null));
         cli.On($"stage {file} --save-to-profile --json", Staged());
@@ -1244,13 +1480,36 @@ public sealed class ApplyTests : IDisposable
         await Until(() => shell.Apply?.Step == ApplyStep.Reviewing);
         var apply = shell.Apply!;
 
+        // The apply opens on its one-off edits, with Review changes to go on.
         var text = Texts(window);
+        // The steps are labels, not controls, so they stay in sentence case on both platforms.
+        Assert.Contains("Edit", text);
+        Assert.Contains("Review and apply", text);
+        var steps = window.GetVisualDescendants().OfType<StackPanel>().Where(panel => panel.Classes.Contains("step"))
+            .Select(ControlAutomationPeer.CreatePeerForElement).ToList();
+        Assert.All(steps, step => Assert.True(step.IsControlElement()));
+        Assert.Equal(["Step 1 of 2, edit, current step", "Step 2 of 2, review and apply"], steps.Select(step => step.GetName()));
+        Assert.Contains(ControlLabel.For("Review changes"), text);
+        Assert.Contains(ControlLabel.For("Discard apply"), text);
+        Assert.Contains(ControlLabel.For("Save edits to profile"), text);
+        Assert.DoesNotContain(ControlLabel.For("Apply 3 changes"), text);
+        Assert.Contains("GitHub now", text);
+        Save(window, $"apply-start-{theme}");
+
+        await apply.ReviewChangesCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        // The button that went on hides with the edits, so focus moves to the changes' own action.
+        var focused = Assert.IsType<Button>(window.FocusManager?.GetFocusedElement());
+        Assert.Equal(ControlLabel.For("Apply 3 changes"), ControlAutomationPeer.CreatePeerForElement(focused).GetName());
+        Assert.Equal("Step 2 of 2, review and apply, current step", steps[1].GetName());
+        text = Texts(window);
         Assert.Contains($"Apply to {Repository}", text);
         Assert.Contains("Starts from orgs. Nothing changes on GitHub until you apply.", text);
         Assert.Contains(ControlLabel.For("Apply 3 changes"), text);
         Assert.Contains(ControlLabel.For("Leave out"), text);
         Assert.Contains("One-off edit", text);
-        Assert.Contains(ControlLabel.For("Discard apply"), text);
+        Assert.Contains(ControlLabel.For("Back to edits"), text);
+        Assert.DoesNotContain(ControlLabel.For("Review changes"), text);
         Assert.Contains($"Repositories / {Repository} / Apply", text);
         Save(window, $"apply-review-{theme}");
 
@@ -1297,7 +1556,7 @@ public sealed class ApplyTests : IDisposable
         Save(window, $"apply-confirm-{theme}");
         apply.CancelApplyCommand.Execute(null);
 
-        apply.Tab = 1;
+        apply.BackToEditsCommand.Execute(null);
         // The sidebar shows the plan as a diff of the profile's YAML first.
         text = Texts(window);
         Assert.Contains(ControlLabel.For("Diff"), text);
@@ -1348,7 +1607,7 @@ public sealed class ApplyTests : IDisposable
         apply.StayHereCommand.Execute(null);
         Assert.False(await quit);
         apply.Edits!.DiscardCommand.Execute(null);
-        apply.Tab = 0;
+        await apply.ReviewChangesCommand.ExecuteAsync(null);
 
         cli.On($"stage {file} --include=repository.has_wiki --json", Staged())
             .On(Planned, () => Plan())
@@ -1363,6 +1622,8 @@ public sealed class ApplyTests : IDisposable
 
         cli.On($"apply {plan} --yes --json", Stale, exitCode: 1);
         await apply.ReviewAgainCommand.ExecuteAsync(null);
+        // Reviewing again after an apply comes back to the changes it was applying.
+        Assert.True(apply.ShowingChanges);
         apply.ApplyCommand.Execute(null);
         await apply.ConfirmApplyCommand.ExecuteAsync(null);
         Save(window, $"apply-stale-{theme}");

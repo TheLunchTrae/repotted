@@ -16,7 +16,10 @@ internal enum ApplyStep
     /// <summary>Planning the staged apply against GitHub.</summary>
     Planning,
 
-    /// <summary>The plan is on screen, to edit, leave parts out of, or apply.</summary>
+    /// <summary>
+    /// The plan is ready: the one-off edits are on screen to change, or the
+    /// changes are, to leave parts out of or apply. <see cref="ApplyViewModel.Editing"/> says which.
+    /// </summary>
     Reviewing,
 
     /// <summary>Asking whether to write the reviewed plan to GitHub.</summary>
@@ -93,11 +96,13 @@ internal sealed partial class ApplyViewModel(
     [NotifyPropertyChangedFor(
         nameof(Summary), nameof(ShowStarting), nameof(ShowUnfinished), nameof(ShowPlanning), nameof(ShowReview),
         nameof(Confirming), nameof(ShowApplying), nameof(ShowResult), nameof(ShowFailed), nameof(ConfirmingDiscard),
-        nameof(CanLeave), nameof(ShowActions), nameof(CanRetry), nameof(CanEdit))]
+        nameof(CanLeave), nameof(ShowActions), nameof(ShowEditActions), nameof(ShowChangeActions), nameof(CanRetry),
+        nameof(CanEdit))]
     [NotifyCanExecuteChangedFor(
         nameof(ResumeCommand), nameof(StartOverCommand), nameof(ReviewAgainCommand), nameof(LeaveOutCommand), nameof(PutBackCommand),
         nameof(ApplyCommand), nameof(ConfirmApplyCommand), nameof(CancelApplyCommand), nameof(DiscardCommand),
-        nameof(ConfirmDiscardCommand), nameof(KeepCommand), nameof(SaveToProfileCommand), nameof(CloseCommand))]
+        nameof(ConfirmDiscardCommand), nameof(KeepCommand), nameof(SaveToProfileCommand), nameof(CloseCommand),
+        nameof(ReviewChangesCommand), nameof(BackToEditsCommand))]
     public partial ApplyStep Step { get; private set; }
 
     /// <summary>
@@ -108,7 +113,8 @@ internal sealed partial class ApplyViewModel(
     [NotifyPropertyChangedFor(nameof(CanLeave), nameof(CanEdit))]
     [NotifyCanExecuteChangedFor(
         nameof(LeaveOutCommand), nameof(PutBackCommand), nameof(ApplyCommand), nameof(DiscardCommand),
-        nameof(SaveToProfileCommand), nameof(ReviewAgainCommand), nameof(CloseCommand))]
+        nameof(SaveToProfileCommand), nameof(ReviewAgainCommand), nameof(CloseCommand), nameof(ReviewChangesCommand),
+        nameof(BackToEditsCommand))]
     public partial bool Working { get; private set; }
 
     /// <summary>The step to go back to when a discard is not confirmed.</summary>
@@ -140,6 +146,18 @@ internal sealed partial class ApplyViewModel(
 
     /// <summary>Whether the review's actions show: while it is on screen, and not while it asks about an apply or a discard.</summary>
     public bool ShowActions => Step == ApplyStep.Reviewing;
+
+    /// <summary>Whether the actions on the one-off edits show.</summary>
+    public bool ShowEditActions => ShowActions && Editing;
+
+    /// <summary>Whether the actions on the changes show.</summary>
+    public bool ShowChangeActions => ShowActions && !Editing;
+
+    /// <summary>What a screen reader says for the edit step, with whether it is the current one.</summary>
+    public string EditStepName => Editing ? "Step 1 of 2, edit, current step" : "Step 1 of 2, edit, done";
+
+    /// <summary>What a screen reader says for the review step, with whether it is the current one.</summary>
+    public string ReviewStepName => Editing ? "Step 2 of 2, review and apply" : "Step 2 of 2, review and apply, current step";
 
     /// <summary>The line under the heading.</summary>
     public string Summary => Step switch
@@ -227,17 +245,25 @@ internal sealed partial class ApplyViewModel(
     /// <summary>The last plan as a diff, which the one-off edits' YAML panel shows.</summary>
     private PlanDiffViewModel? diff;
 
-    /// <summary>The tab on screen: 0 for the changes, 1 for the one-off edits.</summary>
+    /// <summary>
+    /// Whether the review shows the one-off edits, where the apply opens, or
+    /// the changes, which Review changes shows once the edits are saved and
+    /// planned, to leave parts out of and apply.
+    /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowingChanges), nameof(ShowingEdits))]
-    public partial int Tab { get; set; }
+    [NotifyPropertyChangedFor(nameof(ShowingChanges), nameof(ShowingEdits), nameof(ShowEditActions), nameof(ShowChangeActions), nameof(EditStepName), nameof(ReviewStepName))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyCommand), nameof(ReviewChangesCommand), nameof(BackToEditsCommand), nameof(SaveToProfileCommand))]
+    public partial bool Editing { get; private set; } = true;
 
-    public bool ShowingChanges => Tab == 0;
+    public bool ShowingChanges => !Editing;
 
-    public bool ShowingEdits => Tab == 1;
+    public bool ShowingEdits => Editing;
 
     /// <summary>Whether the one-off edits hold changes not saved yet, which the plan does not have.</summary>
     public bool EditsUnsaved => Edits?.HasChanges == true;
+
+    /// <summary>Whether the one-off edits can be saved to the staged apply as they are, which an invalid edit stops.</summary>
+    private bool EditsSavable => !EditsUnsaved || Edits?.HasProblem != true;
 
     /// <summary>Whether the one-off edits are being read or saved, which runs the command line.</summary>
     private bool EditsBusy => Edits is { Loading: true } or { Saving: true };
@@ -353,7 +379,7 @@ internal sealed partial class ApplyViewModel(
                 Edits.PropertyChanged += (_, e) =>
                 {
                     if (e.PropertyName is nameof(ProfileViewModel.ChangeCount) or nameof(ProfileViewModel.Saving)
-                        or nameof(ProfileViewModel.Loading))
+                        or nameof(ProfileViewModel.Loading) or nameof(ProfileViewModel.HasProblem))
                     {
                         OnEditsChanged();
                     }
@@ -409,6 +435,7 @@ internal sealed partial class ApplyViewModel(
         ApplyCommand.NotifyCanExecuteChanged();
         ConfirmApplyCommand.NotifyCanExecuteChanged();
         SaveToProfileCommand.NotifyCanExecuteChanged();
+        ReviewChangesCommand.NotifyCanExecuteChanged();
         DiscardCommand.NotifyCanExecuteChanged();
         CloseCommand.NotifyCanExecuteChanged();
         ReviewAgainCommand.NotifyCanExecuteChanged();
@@ -457,31 +484,44 @@ internal sealed partial class ApplyViewModel(
     private Task PutBackAsync(ExcludedViewModel? excluded) =>
         excluded is null ? Task.CompletedTask : ChangeAsync(_ => client.ExcludeAsync(file, excluded.Key, false, CancellationToken.None));
 
-    /// <summary>Saves the one-off edits to the profile the apply starts from, which then sets them itself.</summary>
+    /// <summary>
+    /// Saves the one-off edits to the profile the apply starts from, which
+    /// then sets them itself. Edits not saved yet are saved to the staged
+    /// apply first, as Review changes does, so the profile gets what is on screen.
+    /// </summary>
     [RelayCommand(CanExecute = nameof(CanSaveToProfile))]
-    private Task SaveToProfileAsync() => ChangeAsync(async texts =>
+    private async Task SaveToProfileAsync()
     {
-        StagedApply? staged = null;
-        // The profile is a file of the profiles folder, so no sync reads it while it is written.
-        // It is read again here, before a sync after the save can change it.
-        async Task Save()
+        if (!await SaveEditsAsync().ConfigureAwait(true) || !CanChange() || !HasBase || Edits?.SetsAnything != true)
         {
-            var saved = await client.SaveStagedToProfileAsync(file, CancellationToken.None).ConfigureAwait(true);
-            if (saved.Base is { } written)
+            return;
+        }
+        await ChangeAsync(async texts =>
+        {
+            StagedApply? staged = null;
+            // The profile is a file of the profiles folder, so no sync reads it while it is written.
+            // It is read again here, before a sync after the save can change it.
+            async Task Save()
             {
-                texts[written] = ProfileViewModel.ReadFile(written);
+                var saved = await client.SaveStagedToProfileAsync(file, CancellationToken.None).ConfigureAwait(true);
+                if (saved.Base is { } written)
+                {
+                    texts[written] = ProfileViewModel.ReadFile(written);
+                }
+                staged = saved;
             }
-            staged = saved;
-        }
-        await folder.WriteAsync(Save).ConfigureAwait(true);
-        if (profileSaved is not null)
-        {
-            await profileSaved().ConfigureAwait(true);
-        }
-        return staged!;
-    });
+            await folder.WriteAsync(Save).ConfigureAwait(true);
+            if (profileSaved is not null)
+            {
+                await profileSaved().ConfigureAwait(true);
+            }
+            return staged!;
+        }).ConfigureAwait(true);
+    }
 
-    private bool CanSaveToProfile() => CanChange() && HasBase && Edits?.SetsAnything == true;
+    private bool CanSaveToProfile() =>
+        Step == ApplyStep.Reviewing && Editing && !Working && !EditsBusy && EditsSavable && HasBase
+        && (EditsUnsaved || Edits?.SetsAnything == true);
 
     /// <summary>
     /// Changes the staged apply, then shows the edits as the staged apply it
@@ -518,13 +558,54 @@ internal sealed partial class ApplyViewModel(
         await ReviewAsync().ConfigureAwait(true);
     }
 
+    /// <summary>
+    /// Shows the changes the apply writes. One-off edits not saved yet are
+    /// saved to the staged apply first, which plans it again, so the changes
+    /// on screen are what the edits say; the profile stays as it is. Edits
+    /// that can't be saved, or a plan that fails, keep the edits on screen.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanReviewChanges))]
+    private async Task ReviewChangesAsync()
+    {
+        if (await SaveEditsAsync().ConfigureAwait(true))
+        {
+            Editing = false;
+        }
+    }
+
+    private bool CanReviewChanges() => Step == ApplyStep.Reviewing && Editing && !Working && !EditsBusy && EditsSavable;
+
+    /// <summary>
+    /// Saves one-off edits not saved yet to the staged apply, which plans it
+    /// again, and says whether the review is back with nothing unsaved.
+    /// </summary>
+    private async Task<bool> SaveEditsAsync()
+    {
+        if (Edits is { HasChanges: true } edits)
+        {
+            if (!edits.SaveCommand.CanExecute(null))
+            {
+                return false;
+            }
+            await edits.SaveCommand.ExecuteAsync(null).ConfigureAwait(true);
+        }
+        return Step == ApplyStep.Reviewing && !EditsUnsaved;
+    }
+
+    /// <summary>Goes back to the one-off edits from the changes.</summary>
+    [RelayCommand(CanExecute = nameof(CanBackToEdits))]
+    private void BackToEdits() => Editing = true;
+
+    private bool CanBackToEdits() => Step == ApplyStep.Reviewing && !Editing && !Working;
+
     [RelayCommand(CanExecute = nameof(CanApply))]
     private void Apply() => Step = ApplyStep.Confirming;
 
     [RelayCommand]
     private Task ReviewAccessAsync() => AccessUrl is { } url && desktop is not null ? desktop.OpenUrlAsync(url) : Task.CompletedTask;
 
-    private bool CanApply() => CanChange() && ChangeCount > 0 && !HasLocks;
+    /// <summary>The apply goes from the changes, so what it writes is on screen.</summary>
+    private bool CanApply() => CanChange() && !Editing && ChangeCount > 0 && !HasLocks;
 
     [RelayCommand(CanExecute = nameof(IsConfirming))]
     private void CancelApply() => Step = ApplyStep.Reviewing;
@@ -668,7 +749,7 @@ internal sealed partial class ApplyViewModel(
         var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         leave = answer;
         Leaving = act;
-        Tab = 1;
+        Editing = true;
         try
         {
             return await answer.Task.ConfigureAwait(true);

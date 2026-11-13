@@ -288,18 +288,29 @@ To start one, select a repository on the **Repositories** page and either:
 - pick a profile and click **Apply**, to make the repository match the profile
 - click **Change settings once**, to change settings without a profile
 
-The **Changes** tab shows each change by section, with what GitHub has now and
-what it will have after the apply. From there you can:
+An apply has two steps, **Edit** and **Review and apply**, and opens on the
+first.
+
+**Edit** shows the one-off edits, in the same editor as a profile. They apply
+on top of the profile for this apply only, and can't be drafts. From there you
+can:
+
+- Click **Review changes** to go on. Edits you haven't saved are saved to the
+  apply first, never to the profile, and the changes are compared again, so
+  the review always shows what the edits say. If they can't be saved, you
+  stay on the edits with why. It waits while an edit isn't valid.
+- Click **Save edits to profile** to write the one-off edits into the profile,
+  which then sets them itself. Edits you haven't saved are saved to the apply
+  first, so the profile gets what you see.
+- Click **Discard apply** to throw the apply away, below.
+
+**Review and apply** shows each change by section, with what GitHub has now
+and what it will have after the apply. From there you can:
 
 - **Leave out** a change, for this apply only. The profile keeps it, and it
   shows under **Left out of this apply** with **Put back**.
-- Make one-off edits on the **One-off edits** tab, in the same editor as a
-  profile, and click **Save edits**. They apply on top of the profile for this
-  apply only, and the changes are compared again. A change that comes from a
-  one-off edit is marked **One-off edit**; change or undo it on that tab.
-  One-off edits can't be drafts, since they are for this apply only.
-- Click **Save edits to profile** to write the one-off edits into the profile,
-  which then sets them itself.
+- Click **Back to edits** to change the edits again. A change that comes from
+  a one-off edit is marked **One-off edit**; change or undo it there.
 
 Beside the one-off edits, **Diff** shows the whole apply as the profile's YAML:
 each line GitHub loses is red and struck through, and each line it gets is
@@ -308,7 +319,8 @@ link that counts them, such as **Show 4 unchanged lines**. A line from a
 one-off edit is marked **One-off edit**, a change GitHub will refuse has a
 padlock under it, and a setting Repotted couldn't check says why. Left-out
 changes and drafts are not in the diff; a note under it counts them. The diff
-shows saved edits, so save to see the rest. **File** shows the file as saved.
+shows saved edits; **Save edits** or **Review changes** brings in the rest.
+**File** shows the file as saved.
 
 A padlock marks each change GitHub will refuse, with what it needs, as on the
 comparison. **Apply** waits until no such change is left: leave it out, or
@@ -316,11 +328,11 @@ click **Review App access**, grant what it needs, and click **Review again**.
 Otherwise the apply would stop at that change and leave the ones after it
 unwritten.
 
-Click **Apply** and then **Apply now** to write the changes. Repotted checks
-GitHub first: if the repository changed since you reviewed it, nothing is
-written, and **Review again** shows what the apply needs now. If GitHub refuses
-a change partway, the changes before it stay written and nothing after it is;
-**Review again** shows what is left.
+On **Review and apply**, click **Apply** and then **Apply now** to write the
+changes. Repotted checks GitHub first: if the repository changed since you
+reviewed it, nothing is written, and **Review again** shows what the apply
+needs now. If GitHub refuses a change partway, the changes before it stay
+written and nothing after it is; **Review again** shows what is left.
 
 An apply you leave before it finishes is kept. The repository shows "An apply
 here is not finished." with **Resume**, which offers to pick it up or start
@@ -329,7 +341,7 @@ profile stays as it is. The app keeps unfinished applies in a `staged` folder
 in its app data folder, below, and a batch in a `batch` folder beside it.
 
 One-off edits you haven't saved keep the apply open. If you quit or sign out
-then, the apply asks you to save or undo them first, and goes on once you do;
+then, the apply shows them and asks you to save or undo them first, and goes on once you do;
 **Stay here** keeps them as they are. While Repotted is still working on the
 apply, such as comparing or writing, closing the window or signing out says so
 and leaves you on the apply; try again once it is done.
@@ -358,8 +370,9 @@ set that change keeps them, and the batch says which.
 Under it, each repository shows its status: how many changes, **Already in
 line**, **Needs access** for a change GitHub will refuse, or **Couldn't
 compare** with why. Select one to see its **Changes** and **One-off edits**
-tabs, which work as they do in an apply to one repository, with **Previous**
-and **Next** to go through them. Untick a repository to leave it out of the
+tabs: the first lists its changes, with **Leave out**, and the second its
+one-off edits, as in the steps of an apply to one repository. **Previous** and
+**Next** go through the repositories. Untick a repository to leave it out of the
 batch; its staged apply stays, and ticking it puts it back. Any change plans
 every repository again, and **Apply** waits while one-off edits are unsaved.
 
