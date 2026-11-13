@@ -38,6 +38,59 @@ public sealed class NewProfileTests : ViewModelTests
     }
 
     [AvaloniaFact]
+    public async Task A_new_profile_takes_the_owner_type_picked_unless_its_base_or_a_repository_sets_it()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        profiles.StartNew(null);
+        var form = profiles.Creating!;
+
+        // A new profile is for any owner unless one is picked.
+        Assert.True(form.OwnerAny);
+        form.Name = "mine";
+        form.OwnerOrganization = true;
+        var empty = Path.Combine(folders.Profiles, "mine.yaml");
+        cli.On(folders.List(), Listing(("base", files.Base, null), ("mine", empty, null), ("orgs", files.Own, files.Base)))
+            .On($"profile {empty} --json", Documents.ResolvedBase(empty));
+        await form.CreateCommand.ExecuteAsync(null);
+        Assert.Equal("owner_type: organization\n", File.ReadAllText(empty));
+
+        // A base for any owner takes the type picked.
+        profiles.StartNew(null);
+        form = profiles.Creating!;
+        form.Name = "personal";
+        form.Extends = true;
+        form.Base = form.Bases.Single(item => item.Name == "base");
+        Assert.False(form.OwnerFixed);
+        form.OwnerPersonal = true;
+        var personal = Path.Combine(folders.Profiles, "personal.yaml");
+        cli.On($"profile {personal} --json", Documents.ResolvedBase(personal));
+        await form.CreateCommand.ExecuteAsync(null);
+        Assert.Equal("extends: \"base.yaml\"\nowner_type: user\n", File.ReadAllText(personal));
+
+        // A base with a type gives the new profile that type.
+        cli.On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Helpers.Json(files.Base)}},"extends":null,"owner_type":"organization","problem":null}]}""");
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        profiles.StartNew(null);
+        form = profiles.Creating!;
+        form.Name = "team";
+        form.OwnerPersonal = true;
+        form.Extends = true;
+        form.Base = form.Bases.Single(item => item.Name == "base");
+        Assert.True(form.OwnerFixed);
+        Assert.Equal("base is for organizations, so this one is too.", form.OwnerNote);
+        var team = Path.Combine(folders.Profiles, "team.yaml");
+        cli.On($"profile {team} --json", Documents.ResolvedBase(team));
+        await form.CreateCommand.ExecuteAsync(null);
+        Assert.Equal("extends: \"base.yaml\"\n", File.ReadAllText(team));
+
+        // A capture takes the repository's.
+        profiles.StartNew(null);
+        profiles.Creating!.Captures = true;
+        Assert.True(profiles.Creating.OwnerFixed);
+        Assert.Equal("The repository's owner sets the type.", profiles.Creating.OwnerNote);
+    }
+
+    [AvaloniaFact]
     public async Task A_new_profile_never_takes_a_name_in_use()
     {
         var (profiles, _, _) = await OpenOrgs();
@@ -556,7 +609,7 @@ public sealed class NewProfileTests : ViewModelTests
     private const string NotFound = """{"error":{"kind":"error","message":"Not Found"}}""";
 
     private static string Listing(params (string Name, string File, string? Extends)[] profiles) =>
-        JsonSerializer.Serialize(new { profiles = profiles.Select(profile => new { name = profile.Name, file = profile.File, extends = profile.Extends, problem = (string?)null }) });
+        JsonSerializer.Serialize(new { profiles = profiles.Select(profile => new { name = profile.Name, file = profile.File, extends = profile.Extends, owner_type = (string?)null, problem = (string?)null }) });
 
     [AvaloniaFact]
     public async Task A_new_profile_starts_in_the_open_profiles_subfolder_and_extends_across_folders()

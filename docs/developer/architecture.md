@@ -51,6 +51,30 @@ name or prefix whole, and `pages: { absent: true }` replaces a base's site. The
 resolved profile records which file sets each value, which
 `repotted profile --json` reports and the desktop app shows.
 
+### Owner types
+
+`owner.ts` lists what only some owners have, as
+[Settings coverage](settings-coverage.md#owners) does, and `ownerConflicts`
+finds those parts of a profile. The `profile` schema runs it in a
+`superRefine`, and `resolveChain` validates the merged chain against it with
+the type the nearest file names, so one file's type holds for every file it
+builds on. `resolveChain` checks the chain's draft settings too, and warns of
+a draft ruleset or environment that has what the type lacks, since a draft
+entry may be unfinished. The schema's JSON Schema marks the same settings and
+values with `x-repotted-owner` and `x-repotted-owner-values`, which the
+desktop app's contract test holds its `Owners` list to.
+
+`changeOwnerType` writes the new type and the edits that `ownerConflicts`
+names in the file, drafts included: an unset setting, a dropped push ruleset,
+or a ruleset or environment written whole without what it can't have, and
+without a list that leaves empty. It runs through `editLayer`, as other edits
+do, so the file keeps its comments and gets `owner_type` first, or right
+after `extends`. It edits only the one file, so when the edit fails because a
+base file sets what the type lacks, and the file doesn't override it, the
+error names that base. `captureProfile` leaves out what the
+repository's owner lacks with `withoutOwnerConflicts` and warns of each part,
+as GitHub can report such a setting for a repository that doesn't have it.
+
 ### Drafts
 
 A [draft](../user/profiles.md#drafts) is a ruleset, environment, label or autolink
@@ -164,6 +188,10 @@ never less protected in between:
    claim, so no two changes write one label.
 
 ### Checks at plan time
+
+A profile with an owner type makes `createPlan` read the repository first and
+throw `OwnerMismatchError` when its `owner.type` is the other kind, before any
+section reads. Batch reports it per member as `owner_mismatch`.
 
 [Merge settings](../user/profiles.md#merge-settings) and
 [`prevent_self_review`](../user/profiles.md#environments) are checked before

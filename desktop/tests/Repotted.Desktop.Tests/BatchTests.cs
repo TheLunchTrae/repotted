@@ -68,7 +68,7 @@ public sealed class BatchTests : IDisposable
             this.tests = tests;
             Repositories = repositories;
             Cli = FakeCli.SignedIn()
-                .On(tests.folders.List(), $$"""{"profiles":[{"name":"orgs","file":{{Json(tests.@base)}},"extends":null,"problem":null}]}""")
+                .On(tests.folders.List(), $$"""{"profiles":[{"name":"orgs","file":{{Json(tests.@base)}},"extends":null,"owner_type":null,"problem":null}]}""")
                 .On($"profile {tests.@base} --json", tests.Base())
                 .On($"stage {Folder} --json", BatchDocument)
                 .On($"plan --staged={Folder} --out={PlanFile} --json", Planned)

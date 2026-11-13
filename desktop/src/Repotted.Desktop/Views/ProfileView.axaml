@@ -140,7 +140,13 @@
           <Border Grid.RowSpan="2" Classes="rail" Classes.own="{Binding OwnAfterSave}" Classes.inherited="{Binding InheritedAfterSave}"
                   Classes.draft="{Binding InDraft}" Classes.changed="{Binding Changed}" />
           <StackPanel Grid.Column="1" Classes="setting" Classes.nested="{Binding Nested}" VerticalAlignment="Center" Spacing="2">
-            <TextBlock Classes="dims" Text="{Binding Label}" FontWeight="SemiBold" FontSize="14.5" TextWrapping="Wrap" />
+            <WrapPanel>
+              <TextBlock Classes="dims" Text="{Binding Label}" FontWeight="SemiBold" FontSize="14.5" TextWrapping="Wrap" Margin="0,0,8,0" />
+              <!-- Who has the setting, where the profile's type doesn't already say -->
+              <Border Classes="pill none" Padding="7,0" IsVisible="{Binding HasOwnerTag}" ToolTip.Tip="{Binding OwnerTagHelp}">
+                <TextBlock FontSize="12" Text="{Binding OwnerTag}" />
+              </Border>
+            </WrapPanel>
             <TextBlock Classes="mono muted dims" FontSize="12.5" Text="{Binding Key}" TextTrimming="CharacterEllipsis"
                        ToolTip.Tip="{Binding Key}" />
             <TextBlock Classes="muted small" Text="{Binding FieldNote}" IsVisible="{Binding HasFieldNote}"
@@ -332,6 +338,12 @@
         <StackPanel Spacing="6">
           <TextBlock Classes="h1" Text="{Binding Name}" />
           <TextBlock Classes="muted" Text="{Binding Summary}" TextWrapping="Wrap" ToolTip.Tip="{Binding File}" />
+          <!-- What owns the repositories the profile is for, which opens the picker to change it -->
+          <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding OwnerChangeable}">
+            <TextBlock Classes="muted" VerticalAlignment="Center" Text="For repositories owned by" />
+            <Button Classes="quiet" Padding="8,2" Content="{Binding OwnerLabel}" Command="{Binding ToggleOwnerPickerCommand}"
+                    AutomationProperties.Name="{Binding OwnerLabel, StringFormat='For repositories owned by {0}. Change type'}" />
+          </StackPanel>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
           <Button Classes="quiet" Content="Delete profile" Margin="0,0,16,0" IsVisible="{Binding Deletable}" Command="{Binding DeleteCommand}" />
@@ -362,6 +374,55 @@
             <Button Classes="primary" Content="{Binding SaveLabel}" Command="{Binding SaveCommand}" />
           </StackPanel>
         </Grid>
+      </Border>
+
+      <!--
+        The owner type picker. A change saves at once and leaves what the new
+        type doesn't have not managed, so it says what that is first, and it
+        waits for unsaved changes to be saved or reset.
+      -->
+      <Border DockPanel.Dock="Top" Margin="32,12,32,0" Classes="panel" Padding="16" MaxWidth="560" HorizontalAlignment="Left"
+              IsVisible="{Binding OwnerPickerOpen}">
+        <StackPanel Spacing="10">
+          <TextBlock FontWeight="SemiBold" Text="For repositories owned by" />
+          <RadioButton GroupName="owner" IsChecked="{Binding PendingPersonal}"
+                       AutomationProperties.HelpText="Settings only organizations have stay hidden.">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Personal accounts" />
+              <TextBlock Classes="muted small" TextWrapping="Wrap" Text="Settings only organizations have stay hidden." />
+            </StackPanel>
+          </RadioButton>
+          <RadioButton GroupName="owner" IsChecked="{Binding PendingOrganization}"
+                       AutomationProperties.HelpText="Every setting. The ones only GitHub Enterprise Cloud has are marked.">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Organizations" />
+              <TextBlock Classes="muted small" TextWrapping="Wrap" Text="Every setting. The ones only GitHub Enterprise Cloud has are marked." />
+            </StackPanel>
+          </RadioButton>
+          <RadioButton GroupName="owner" IsChecked="{Binding PendingAny}"
+                       AutomationProperties.HelpText="For a base profile that both kinds extend. GitHub skips what a repository doesn't have.">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Any owner" />
+              <TextBlock Classes="muted small" TextWrapping="Wrap" Text="For a base profile that both kinds extend. GitHub skips what a repository doesn't have." />
+            </StackPanel>
+          </RadioButton>
+          <StackPanel Spacing="4" IsVisible="{Binding HasOwnerLeaving}">
+            <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource DriftBrush}" Text="{Binding OwnerLeavingNote}" />
+            <ItemsControl ItemsSource="{Binding OwnerLeaving}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <TextBlock Classes="small" TextWrapping="Wrap" Margin="12,0,0,0" Text="{Binding StringFormat='• {0}'}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+          <TextBlock Classes="muted small" TextWrapping="Wrap" Text="Save or reset your changes first." IsVisible="{Binding OwnerChangeWaits}" />
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Classes="quiet" Content="Cancel" Command="{Binding CloseOwnerPickerCommand}" />
+            <Button Classes="primary" Content="{Binding ChangeOwnerLabel, Converter={x:Static theme:ControlLabel.Converter}}"
+                    Command="{Binding ChangeOwnerCommand}" />
+          </StackPanel>
+        </StackPanel>
       </Border>
 
       <!-- The file is gone, and only the unsaved edits keep the profile -->
@@ -519,6 +580,15 @@
                 <TextBlock Classes="muted small" Text="Not managed" VerticalAlignment="Center" />
               </StackPanel>
             </StackPanel>
+
+            <!-- What the profile's owner type hides -->
+            <Border DockPanel.Dock="Top" Classes="panel" Padding="12,8" Margin="0,4,0,8" IsVisible="{Binding HasOwnerHidden}">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="muted small" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding OwnerHidden}" />
+                <Button Grid.Column="1" Classes="link" FontSize="13" Margin="12,0,0,0" Content="{theme:Label 'Change type'}"
+                        IsVisible="{Binding OwnerChangeable}" Command="{Binding OpenOwnerPickerCommand}" />
+              </Grid>
+            </Border>
 
             <ScrollViewer x:Name="Scroller">
               <Panel>

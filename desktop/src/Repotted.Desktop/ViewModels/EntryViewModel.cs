@@ -366,6 +366,9 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
 
     public string Noun { get; }
 
+    /// <summary>Whether a ruleset here can apply to pushes, which only organizations have.</summary>
+    public bool Pushes { get; init; } = true;
+
     public ObservableCollection<EntryViewModel> Entries { get; } = [];
 
     public bool IsSettings => Groups.Count > 0;
@@ -451,7 +454,7 @@ internal sealed partial class ProfileTabViewModel : ViewModelBase
         {
             "environments" => new EnvironmentEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed),
             "labels" => new LabelEditorViewModel(entry.Saved, entry.Renamable, Taken, old => ClaimedBy(entry, old), Changed),
-            _ => new RulesetEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed),
+            _ => new RulesetEditorViewModel(entry.Saved, entry.Renamable, Taken, Changed, Pushes),
         };
     }
 

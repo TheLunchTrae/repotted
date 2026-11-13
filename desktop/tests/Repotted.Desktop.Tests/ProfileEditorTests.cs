@@ -703,7 +703,7 @@ public sealed class ProfileEditorTests : ViewModelTests
             {"chain":[{{{Json(own)}}}],
              "profile":{"actions":{"allowed_actions":"selected","selected_actions":{"patterns_allowed":["a/*","c/*"]} } },
              "drafts":{"actions":{"selected_actions":{"patterns_allowed":["a/*","b/*"]} } },
-             "warnings":[],
+             "warnings":[],{{{Documents.AnyOwner}}},
              "sources":{"repository":{},"merge":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
                "rulesets":{},"environments":{},"labels":{},
                "actions":{"allowed_actions":{{{Json(own)}}},"selected_actions.patterns_allowed":{{{Json(own)}}} },
@@ -796,6 +796,121 @@ public sealed class ProfileEditorTests : ViewModelTests
         await editor.SaveCommand.ExecuteAsync(null);
         Assert.Contains(save, cli.Calls);
     }
+
+    [AvaloniaFact]
+    public async Task A_personal_profile_hides_what_only_organizations_have()
+    {
+        var (editor, _, _, _) = await OpenOwn("""{"owner_type":"user","pages":{"https_enforced":true}}""", """{"pages":{"https_enforced":OWN}}""");
+        var keys = Rows(editor).Select(row => row.Field.Path).ToList();
+        var hidden = ProfileFields.Sections.SelectMany(section => section.Groups).SelectMany(group => group.Fields)
+            .Count(field => field.Needs is OwnerNeed.Organization or OwnerNeed.Enterprise);
+
+        Assert.Equal("Personal accounts", editor.OwnerLabel);
+        Assert.DoesNotContain("repository.allow_forking", keys);
+        Assert.DoesNotContain("pages.public", keys);
+        Assert.DoesNotContain(keys, key => key.StartsWith("custom_properties", StringComparison.Ordinal));
+        Assert.Contains("pages.https_enforced", keys);
+        Assert.Equal($"{hidden} settings that only organizations have are hidden.", editor.OwnerHidden);
+        // A value only organizations have isn't offered either.
+        Assert.Equal(["Nowhere else", "This user's repositories"], Find(editor, "access_level").Options.Select(option => option.Label));
+        // Nor is a ruleset for pushes.
+        var ruleset = (RulesetEditorViewModel)editor.Tab("Rulesets").MakeEditor(new EntryViewModel(editor.Tab("Rulesets"), null, SettingOrigin.NotManaged, null, false));
+        Assert.Equal(["Branches", "Tags"], ruleset.Target.Options.Select(option => option.Label));
+        Assert.All(Rows(editor), row => Assert.False(row.HasOwnerTag));
+    }
+
+    [AvaloniaFact]
+    public async Task A_profile_for_any_owner_marks_what_only_some_owners_have()
+    {
+        var (editor, _, _, _) = await OpenOwn("""{"pages":{"https_enforced":true}}""", """{"pages":{"https_enforced":OWN}}""");
+
+        Assert.Equal("Any owner", editor.OwnerLabel);
+        Assert.False(editor.HasOwnerHidden);
+        Assert.Equal("Organizations", Find(editor, "allow_forking").OwnerTag);
+        Assert.Equal("Enterprise Cloud", Find(editor, "public").OwnerTag);
+        Assert.Null(Find(editor, "https_enforced").OwnerTag);
+        Assert.Equal(3, Find(editor, "access_level").Options.Count);
+    }
+
+    [AvaloniaFact]
+    public async Task An_organization_profile_marks_only_what_Enterprise_Cloud_has()
+    {
+        var (editor, _, _, _) = await OpenOwn("""{"owner_type":"organization","pages":{"public":false}}""", """{"pages":{"public":OWN}}""");
+
+        Assert.False(editor.HasOwnerHidden);
+        Assert.Null(Find(editor, "allow_forking").OwnerTag);
+        Assert.Equal("Enterprise Cloud", Find(editor, "public").OwnerTag);
+        Assert.Equal(["Nowhere else", "This organization's repositories"], Find(editor, "access_level").Options.Select(option => option.Label));
+    }
+
+    [AvaloniaFact]
+    public async Task Changing_the_owner_type_says_what_it_leaves_not_managed_and_waits_for_unsaved_changes()
+    {
+        var (editor, cli, own, _) = await OpenOwn(
+            """{"owner_type":"organization","repository":{"allow_forking":true,"has_wiki":false}}""",
+            """{"repository":{"allow_forking":OWN,"has_wiki":OWN}}""",
+            """{"user":["repository.allow_forking","rulesets/Main","drafts.pages.public","drafts.environments/staging"],"organization":[]}""");
+        var changed = new JsonObject
+        {
+            ["chain"] = new JsonArray(own),
+            ["profile"] = JsonNode.Parse("""{"owner_type":"user","repository":{"has_wiki":false}}"""),
+            ["drafts"] = new JsonObject(),
+            ["warnings"] = new JsonArray(),
+            ["owner_source"] = own,
+            ["owner_changes"] = JsonNode.Parse("""{"user":[],"organization":[]}"""),
+            ["sources"] = JsonNode.Parse(Documents.ResolvedBase(own))!["sources"]!.DeepClone(),
+        }.ToJsonString();
+        cli.On($"profile {own} --owner-type=user --json", changed);
+
+        editor.OwnerPickerOpen = true;
+        Assert.True(editor.PendingOrganization);
+        Assert.False(editor.ChangeOwnerCommand.CanExecute(null));
+        editor.PendingPersonal = true;
+        Assert.Equal("Change to personal", editor.ChangeOwnerLabel);
+        Assert.Equal(["Allow forking", "Ruleset Main", "Who can see the site (draft)", "Environment staging (draft)"], editor.OwnerLeaving);
+        Assert.Equal("Personal accounts don't have 4 things this profile sets. Changing the type leaves them not managed:", editor.OwnerLeavingNote);
+        editor.PendingAny = true;
+        Assert.False(editor.HasOwnerLeaving);
+        editor.PendingPersonal = true;
+
+        // An unsaved change would be lost, so the change waits for it.
+        Choose(editor, "has_wiki", "On");
+        Assert.True(editor.OwnerChangeWaits);
+        Assert.False(editor.ChangeOwnerCommand.CanExecute(null));
+        editor.ResetCommand.Execute(null);
+        Assert.True(editor.ChangeOwnerCommand.CanExecute(null));
+
+        await editor.ChangeOwnerCommand.ExecuteAsync(null);
+
+        Assert.Contains($"profile {own} --owner-type=user --json", cli.Calls);
+        Assert.Equal("user", editor.OwnerType);
+        Assert.False(editor.OwnerPickerOpen);
+        Assert.DoesNotContain(Rows(editor), row => row.Key == "allow_forking");
+    }
+
+    [AvaloniaFact]
+    public async Task Changing_the_owner_type_waits_for_a_file_changed_since_the_editor_read_it()
+    {
+        var (editor, cli, own, _) = await OpenOwn(
+            """{"owner_type":"organization","repository":{"has_wiki":false}}""",
+            """{"repository":{"has_wiki":OWN}}""");
+        editor.OwnerPickerOpen = true;
+        editor.PendingPersonal = true;
+        Assert.True(editor.ChangeOwnerCommand.CanExecute(null));
+        File.WriteAllText(own, "owner_type: organization\nrepository: { allow_forking: true }\n");
+
+        await editor.ChangeOwnerCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(cli.Calls, call => call.Contains("--owner-type", StringComparison.Ordinal));
+        Assert.Contains("changed since the editor read it", editor.SaveError, StringComparison.Ordinal);
+        Assert.Equal("organization", editor.OwnerType);
+        // The editor read the file again, so the change goes ahead now.
+        Assert.True(editor.OwnerPickerOpen);
+        Assert.True(editor.ChangeOwnerCommand.CanExecute(null));
+    }
+
+    private static IEnumerable<SettingViewModel> Rows(ProfileViewModel editor) =>
+        editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings);
 
     [AvaloniaFact]
     public async Task Sub_options_sit_under_their_setting_and_notes_say_what_GitHub_alone_sets()
@@ -1193,7 +1308,7 @@ public sealed class ProfileEditorTests : ViewModelTests
     /// stands for orgs.yaml and BASE for base.yaml. It extends base.yaml, which
     /// resolved alone sets nothing it shows.
     /// </summary>
-    private async Task<(ProfileViewModel Editor, FakeCli Cli, string Own, string Resolved)> OpenOwn(string profile, string sources)
+    private async Task<(ProfileViewModel Editor, FakeCli Cli, string Own, string Resolved)> OpenOwn(string profile, string sources, string? ownerChanges = null)
     {
         var @base = folders.Write("base.yaml", "repository: {}\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
@@ -1214,6 +1329,8 @@ public sealed class ProfileEditorTests : ViewModelTests
             ["profile"] = JsonNode.Parse(profile),
             ["drafts"] = new JsonObject(),
             ["warnings"] = new JsonArray(),
+            ["owner_source"] = null,
+            ["owner_changes"] = JsonNode.Parse(ownerChanges ?? """{"user":[],"organization":[]}"""),
             ["sources"] = all,
         }.ToJsonString();
         var cli = new FakeCli()

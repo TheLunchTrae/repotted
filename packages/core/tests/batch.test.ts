@@ -290,6 +290,24 @@ describe('planning a batch', () => {
     expect(fakes.flatMap((fake) => fake.writes)).toEqual([]);
   });
 
+  test('reports a member whose owner is the other kind as an owner mismatch', async () => {
+    const { profile, folder } = await place(`owner_type: organization\n${profileText}`);
+    await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
+    const { github, fakes } = fleet('lunch/app', 'lunch/web');
+    const web = fakes[1];
+    if (web === undefined) {
+      throw new Error('No fake for lunch/web');
+    }
+    web.state.ownerType = 'User';
+
+    const planned = await planBatch(github, folder);
+
+    expect(planned.plans.map((member) => member.repository)).toEqual(['lunch/app']);
+    expect(planned.failures).toMatchObject([
+      { repository: 'lunch/web', error: { kind: 'owner_mismatch', status: null } },
+    ]);
+  });
+
   test('reports a staged apply that no longer resolves as a failure of its member', async () => {
     const { folder, profile } = await place();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });

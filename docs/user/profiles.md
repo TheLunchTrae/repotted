@@ -293,6 +293,53 @@ leave out something that each profile extending it adds.
 [`examples/base.yaml`](../../examples/base.yaml) is a base profile, and
 [`examples/repotted.yaml`](../../examples/repotted.yaml) extends it.
 
+## Owner type
+
+GitHub has some settings for repositories that organizations own and not for
+ones that personal accounts own, such as who can fork a private repository,
+push rulesets, and teams. `owner_type` says which kind of owner a profile is
+for:
+
+```yaml
+owner_type: user # or organization
+```
+
+- `user` is for repositories that personal accounts own. Repotted refuses a
+  setting, value, ruleset target, rule, bypass actor, or environment reviewer
+  that only organizations have.
+- `organization` is for repositories that organizations own. It takes
+  everything, including the settings only organizations on GitHub Enterprise
+  Cloud have, such as Pages `public` and `secret_scanning_validity_checks`.
+- Leaving it out makes the profile for any owner. It takes everything, and
+  GitHub refuses what a repository's owner doesn't have when the plan applies.
+  A base profile that both kinds extend leaves it out.
+
+[Settings coverage](../developer/settings-coverage.md#owners) lists what only
+some owners have, with GitHub's docs for each. Repotted refuses a draft
+setting the type doesn't have, and warns of a draft ruleset or environment
+that has something the type doesn't, since a draft may be unfinished.
+
+Along a chain of profiles, the nearest file that names a type gives it to the
+whole chain, so a profile that extends a typed base has the base's type. A
+chain can't mix types: a personal profile can't extend an organization one.
+
+`plan`, `apply`, `batch` and the desktop app refuse a repository whose owner
+is the other kind, before they read anything else. To use a profile's
+settings for the other kind, copy the profile and change the copy's type with
+`profile <file> --owner-type user|organization|any`. The change leaves what
+the new type doesn't have not managed: it removes those settings, drops a
+push ruleset, and keeps a ruleset or environment without the rules, bypass
+actors, or team reviewers it can't have. `--json` lists what each type change
+would remove under `owner_changes` first, drafts included. A base that sets
+something the new type doesn't have, which the profile doesn't override,
+stops the change, and the message names the base, since only the base can
+drop it. A profile that extends the changed
+one takes its new type, so it stops resolving if it sets something the type
+doesn't have, until it is changed too.
+
+`capture` writes the captured repository's owner type, and leaves out, with a
+warning, anything GitHub reports that the owner doesn't have.
+
 ## How changes apply
 
 A plan lists its changes in the order they apply: repository and merge

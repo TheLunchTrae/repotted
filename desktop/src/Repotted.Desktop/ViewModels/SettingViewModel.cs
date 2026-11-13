@@ -52,7 +52,8 @@ internal sealed partial class SettingViewModel : ViewModelBase
         SettingOrigin origin,
         InheritedValue? inherited,
         Action changed,
-        SettingDraft? draft = null)
+        SettingDraft? draft = null,
+        Func<SettingOption, bool>? offers = null)
     {
         Field = field;
         Saved = saved;
@@ -60,7 +61,8 @@ internal sealed partial class SettingViewModel : ViewModelBase
         Inherited = inherited;
         SavedDraft = draft;
         this.changed = changed;
-        Options = [.. field.Options.Select(option => new OptionViewModel(this, option))];
+        // A profile for one kind of owner offers only the choices that owner has.
+        Options = [.. field.Options.Where(offers ?? (_ => true)).Select(option => new OptionViewModel(this, option))];
     }
 
     public SettingField Field { get; }
@@ -177,6 +179,16 @@ internal sealed partial class SettingViewModel : ViewModelBase
     public InheritedValue? Inherited { get; }
 
     public IReadOnlyList<OptionViewModel> Options { get; }
+
+    /// <summary>Which owners have the setting, such as Enterprise Cloud, where the profile's owner type doesn't say; null when every owner does.</summary>
+    public string? OwnerTag { get; init; }
+
+    public bool HasOwnerTag => OwnerTag is not null;
+
+    /// <summary>What screen readers hear for <see cref="OwnerTag"/>.</summary>
+    public string OwnerTagHelp => OwnerTag == "Enterprise Cloud"
+        ? "Only organizations on GitHub Enterprise Cloud have this setting."
+        : "Only organizations have this setting.";
 
     /// <summary>Whether a change to the value waits to be saved.</summary>
     public bool Changed { get; private set; }

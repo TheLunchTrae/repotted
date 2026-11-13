@@ -142,6 +142,12 @@ profile goes, including a subfolder with no profiles in it yet. It starts as
 the folder of the profile you have open. A new
 profile can extend a profile in any folder.
 
+Under **For repositories owned by**, choose what the profile is for:
+**Personal accounts**, **Organizations**, or **Any owner**, the choice for a
+base profile that both kinds extend. A profile that extends one with a type
+has that type, and a captured profile has the repository's owner type.
+[Owner type](profiles.md#owner-type) describes what each type takes.
+
 The app never overwrites a file that is already in the folder.
 
 ### Edit a profile
@@ -200,6 +206,16 @@ On the **Pages** tab, **Take the site down** deletes the Pages site on each
 repository that follows the profile. A profile that takes the site down sets
 nothing else for Pages, so choosing it takes out the profile's other Pages
 settings, and setting any of them takes it out again.
+
+The line under the profile's name says what owns the repositories it is
+for. A personal profile hides the settings and choices only organizations
+have, and a note above the tabs counts them; a ruleset there can't apply to
+pushes. An organization profile marks the settings only GitHub Enterprise
+Cloud has with **Enterprise Cloud**, and a profile for any owner also marks
+those only organizations have with **Organizations**. To change the type,
+click it, pick another, and click **Change**. The app first lists what the
+new type doesn't have, and the change leaves those settings not managed. It
+saves at once, so save or discard your changes first.
 
 A profile manages only what it names. A setting you leave unset keeps whatever
 value each repository has. When a profile extends another, each setting shows
@@ -352,6 +368,11 @@ or **Install the App** when it isn't installed on the repository.
 **Can't change**, beside the search, shows only those differences.
 Limits of the repository's GitHub plan or its owner's policies don't show
 here; GitHub reports them only when a change is made.
+
+A profile for organizations can't compare with a repository that a personal
+account owns, nor a personal profile with an organization's repository. The
+app says so, and to use the profile's settings there, copy the profile and
+change the copy's type.
 
 To make those changes, click **Apply** on the comparison, or beside
 **Compare** on the Repositories page.

@@ -207,6 +207,57 @@ pattern a line; GitHub takes at most 1000. An empty list allows no patterns.
 The editor checks each line against GitHub and searches for actions to add,
 through `repotted check-actions` and `repotted find-actions`.
 
+## Owners
+
+Some settings exist only for repositories that organizations own, and a few
+only for organizations on GitHub Enterprise Cloud. A profile's
+[owner type](../user/profiles.md#owner-type) refuses them on a personal
+profile, and the desktop app hides them there. `settingRules` and the sets
+under it in `packages/core/src/owner.ts` list them, and `Owners` in the
+desktop app mirrors them.
+
+| What                                                                           | Who has it                        | GitHub's docs                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------ | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repository.allow_forking`                                                     | Organizations                     | [Forking policy](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/managing-the-forking-policy-for-your-repository)                                 |
+| `actions.access_level: user`                                                   | Personal accounts                 | [Actions settings](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository)                    |
+| `actions.access_level: organization`                                           | Organizations                     | Same page                                                                                                                                                                                                              |
+| `actions.fork_pr_workflows_private_repos`                                      | Organizations                     | Same page                                                                                                                                                                                                              |
+| `security_and_analysis.advanced_security`, `code_security`                     | Organizations                     | [Security features](https://docs.github.com/en/enterprise-cloud@latest/code-security/getting-started/github-security-features)                                                                                         |
+| `secret_scanning_ai_detection`                                                 | Organizations                     | [AI detection](https://docs.github.com/en/code-security/secret-scanning/copilot-secret-scanning/enabling-ai-powered-generic-secret-detection)                                                                          |
+| `secret_scanning_non_provider_patterns`                                        | Organizations                     | [Non-provider patterns](https://docs.github.com/en/code-security/secret-scanning/using-advanced-secret-scanning-and-push-protection-features/non-provider-patterns/enabling-secret-scanning-for-non-provider-patterns) |
+| `secret_scanning_delegated_alert_dismissal`                                    | Organizations                     | [Delegated alert dismissal](https://docs.github.com/en/code-security/how-tos/manage-security-alerts/manage-secret-scanning-alerts/enabling-delegated-alert-dismissal-for-secret-scanning)                              |
+| `secret_scanning_delegated_bypass`, `secret_scanning_delegated_bypass_options` | Organizations                     | [Delegated bypass](https://docs.github.com/en/code-security/concepts/secret-security/delegated-bypass)                                                                                                                 |
+| `secret_scanning_validity_checks`                                              | Organizations on Enterprise Cloud | [Validity checks](https://docs.github.com/en/code-security/concepts/secret-security/validity-checks); the field is only in the Enterprise Cloud OpenAPI description                                                    |
+| `security.code_quality_setup`                                                  | Organizations                     | [Code Quality](https://docs.github.com/en/code-security/how-tos/maintain-quality-code/enable-code-quality)                                                                                                             |
+| `custom_properties`                                                            | Organizations                     | [Custom properties](https://docs.github.com/en/organizations/managing-organization-settings/managing-custom-properties-for-repositories-in-your-organization)                                                          |
+| `pages.public`                                                                 | Organizations on Enterprise Cloud | [Pages visibility](https://docs.github.com/en/enterprise-cloud@latest/pages/getting-started-with-github-pages/changing-the-visibility-of-your-github-pages-site)                                                       |
+| Ruleset `target: push`                                                         | Organizations                     | [About rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)                                                                          |
+| `merge_queue` rule                                                             | Organizations                     | [Merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)                                                       |
+| `code_quality` rule                                                            | Organizations                     | [Available rules](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)                                                           |
+| Bypass actors `OrganizationAdmin`, `Team`                                      | Organizations                     | [Creating rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository); a personal account has no teams                  |
+| Bypass actors `EnterpriseOwner`, `EnterpriseRole`                              | Organizations on Enterprise Cloud | Only in the Enterprise Cloud OpenAPI description                                                                                                                                                                       |
+| Environment reviewers of type `Team`                                           | Organizations                     | [Deployments and environments](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments); a personal account has no teams                                                       |
+
+An organization profile takes the Enterprise Cloud settings too, since
+whether an organization is on Enterprise Cloud is a plan, not a kind of
+owner: GitHub refuses them on another plan when the plan applies, as it does
+any setting a plan doesn't have.
+
+Some limits aren't checked, because GitHub's docs don't settle them or they
+turn on more than the owner:
+
+- Dependabot's `runner_group` needs an organization's runner groups, but its
+  `""` means no group, so a personal profile can still set it.
+- The commit metadata rules, such as `commit_message_pattern`, are Enterprise
+  plan rules for organization rulesets; the docs don't say whether a
+  repository ruleset takes them.
+- `visibility: internal` and `actions.access_level: enterprise` are
+  Enterprise Cloud only, and the schema doesn't take them.
+- `code_scanning_ai_scan` follows visibility as well as the owner.
+- Several security settings, such as secret scanning on a private repository,
+  depend on the repository's visibility and the owner's plan, so GitHub
+  refuses them when the plan applies.
+
 ## Permissions the Repotted App needs
 
 The Repotted App asks for Administration read and write, which most settings

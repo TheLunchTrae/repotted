@@ -373,7 +373,7 @@ public sealed class SignInTests : ViewModelTests
     {
         var file = folders.Write("base.yaml", "repository: { has_issues: true }\n");
         var cli = FakeCli.SignedIn()
-            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Json(file)}},"extends":null,"problem":null}]}""")
+            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Json(file)}},"extends":null,"owner_type":null,"problem":null}]}""")
             .On($"profile {file} --json", Documents.ResolvedBase(file))
             .On("logout --json", """{"removed":true}""");
         var main = App(cli);
@@ -485,7 +485,7 @@ public sealed class SignInTests : ViewModelTests
         var written = new TaskCompletionSource();
         var cli = new FakeCli()
             .On("repos --json", Documents.Repositories)
-            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Json(file)}},"extends":null,"problem":null}]}""")
+            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Json(file)}},"extends":null,"owner_type":null,"problem":null}]}""")
             .On($"profile {file} --json", Documents.ResolvedBase(file))
             .OnceReady($"profile {file} --set repository.has_wiki=false --json", Documents.ResolvedBase(file), written.Task);
         var shell = new ShellViewModel(

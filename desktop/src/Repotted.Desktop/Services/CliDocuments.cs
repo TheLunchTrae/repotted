@@ -27,7 +27,7 @@ internal sealed record RepositoryListDocument(string Source, IReadOnlyList<Repos
 /// A profile in the profiles folder, from <c>repotted profiles --json</c>.
 /// <c>Folder</c> is the subfolder it is in, with <c>/</c> separators, and empty for the folder itself.
 /// </summary>
-internal sealed record ProfileListingDocument(string Name, string File, string? Extends, string? Problem, string Folder = "");
+internal sealed record ProfileListingDocument(string Name, string File, string? Extends, string? Problem, string Folder = "", string? OwnerType = null);
 
 /// <summary>What <c>repotted profiles --json</c> prints.</summary>
 internal sealed record ProfileListDocument(IReadOnlyList<ProfileListingDocument> Profiles);
@@ -60,7 +60,9 @@ internal sealed record ResolvedProfileDocument(
     JsonElement Profile,
     ProfileSourcesDocument Sources,
     JsonElement Drafts,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    string? OwnerSource,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> OwnerChanges);
 
 /// <summary>
 /// What <c>repotted profile --preview --json</c> prints: what the profile

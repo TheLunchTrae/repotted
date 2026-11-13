@@ -209,10 +209,10 @@ didn't finish; plan the batch again to review what is left.
 ## Work with profiles
 
 `npx repotted profiles <folder>` lists the profiles in a folder and its
-subfolders, and says why any of them can't be used. A profile in a subfolder
-prints with its folder, such as `team/oss`, and so does a profile it extends.
-Hidden subfolders, such as `.git`, and linked ones are left out, as a sync
-leaves them out.
+subfolders, with each one's owner type, and says why any of them can't be
+used. A profile in a subfolder prints with its folder, such as `team/oss`,
+and so does a profile it extends. Hidden subfolders, such as `.git`, and
+linked ones are left out, as a sync leaves them out.
 
 `npx repotted profile <file>` prints a profile with everything it gets from the
 profiles it extends. With these options, it edits the file instead:
@@ -243,6 +243,11 @@ profiles it extends. With these options, it edits the file instead:
   `--unset drafts.unset` empties it.
 - `--preview` makes the edits without saving them, and prints what the
   profile applies before and after them.
+
+- `--owner-type user`, `--owner-type organization` and `--owner-type any`
+  change the profile's [owner type](profiles.md#owner-type), and leave what
+  the new type doesn't have not managed. It takes no other edit option, but
+  takes `--json`.
 
 You can give several options at once; they apply in order. A write right after
 a drop from the same list renames the dropped entry in place, which can also

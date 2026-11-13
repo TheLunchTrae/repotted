@@ -917,9 +917,9 @@ drafts:
   });
 
   test('cover every settings section', () => {
-    // Every section of a profile holds settings, except its lists of entries.
+    // Every section of a profile holds settings, except its owner type and its lists of entries.
     const sections = Object.keys(profile.shape).filter(
-      (key) => !['autolinks', 'rulesets', 'environments', 'labels'].includes(key),
+      (key) => !['owner_type', 'autolinks', 'rulesets', 'environments', 'labels'].includes(key),
     );
     expect(
       Object.keys(draftSettings.shape)

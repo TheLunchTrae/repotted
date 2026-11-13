@@ -9,7 +9,16 @@ import type { Change } from './change.js';
 import { replaceFile } from './files.js';
 import { type GitHub, GitHubError, parseRepo, repoPattern } from './github.js';
 import { type Access, type Lock, lockChanges } from './permissions.js';
-import { ApplyError, applyPlan, describeFailure, failureReason, parsePlan, type Plan, StalePlanError } from './plan.js';
+import {
+  ApplyError,
+  applyPlan,
+  describeFailure,
+  failureReason,
+  OwnerMismatchError,
+  parsePlan,
+  type Plan,
+  StalePlanError,
+} from './plan.js';
 import { ProfileError, resolveProfile } from './profile.js';
 import { readAccess } from './repositories.js';
 import {
@@ -551,7 +560,7 @@ export async function discardBatch(folder: string): Promise<void> {
 
 /** Why a member could not be planned or applied, as `--json` reports any failure. */
 export interface MemberError {
-  readonly kind: 'signed_out' | 'error';
+  readonly kind: 'signed_out' | 'owner_mismatch' | 'error';
   readonly message: string;
   /** The HTTP status GitHub answered with, or null when the failure was not GitHub's answer. */
   readonly status: number | null;
@@ -559,6 +568,9 @@ export interface MemberError {
 
 function memberError(error: unknown): MemberError {
   const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof OwnerMismatchError) {
+    return { kind: 'owner_mismatch', message, status: null };
+  }
   for (let current = error; current instanceof Error; current = current.cause) {
     if (current instanceof GitHubError) {
       return { kind: current.status === 401 ? 'signed_out' : 'error', message, status: current.status };

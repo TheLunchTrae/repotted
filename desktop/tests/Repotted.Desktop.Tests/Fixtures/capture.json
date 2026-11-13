@@ -1,6 +1,7 @@
 {
   "repository": "lunch/app",
   "profile": {
+    "owner_type": "organization",
     "repository": {
       "has_issues": true,
       "has_projects": true,

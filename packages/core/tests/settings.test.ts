@@ -60,7 +60,7 @@ const everything: Profile = {
     dependabot_runner_settings: { runner_type: 'labeled', runner_labels: ['dependabot'] },
   },
   actions: {
-    access_level: 'user',
+    access_level: 'organization',
     approval_policy: 'all_external_contributors',
     fork_pr_workflows_private_repos: {
       run_workflows_from_fork_pull_requests: true,

@@ -11,6 +11,7 @@ import {
   isScalar,
   isSeq,
   parse,
+  type Scalar,
   parseDocument,
   stringify,
   visit,
@@ -20,6 +21,7 @@ import {
 import { z } from 'zod';
 
 import { replaceFile } from './files.js';
+import { describeOwnerType, draftOwnerConflicts, type OwnerConflict, ownerConflicts, type OwnerType } from './owner.js';
 import {
   actionsSettings,
   type AutolinkEntry,
@@ -779,6 +781,16 @@ export interface ResolvedProfile {
   /** What stops each draft from applying as it stands. */
   readonly warnings: readonly string[];
   readonly sources: ProfileSources;
+  /** The file in the chain that sets the owner type, or null when none does. */
+  readonly owner_source: string | null;
+  /**
+   * What changing the first file's owner type to each type would leave not
+   * managed in that file, as `changeOwnerType` does: settings by their path,
+   * as `repository.allow_forking` or `drafts.pages.public`, and rulesets and
+   * environments by `rulesets/<name>`, which it drops or writes without what
+   * the type doesn't have.
+   */
+  readonly owner_changes: Readonly<Record<OwnerType, readonly string[]>>;
 }
 
 interface Link {
@@ -850,11 +862,69 @@ export interface ResolvedLayer<Read extends LayerRead> {
   readonly unmatched: readonly string[];
 }
 
+/**
+ * The owner type of a chain and the file that sets it: the nearest file that
+ * names one. Files that name different ones cannot extend each other.
+ */
+function chainOwnerType(chain: readonly Link[]): { type: OwnerType; file: string } | undefined {
+  const typed = chain.flatMap((link) =>
+    link.parsed.owner_type === undefined ? [] : [{ type: link.parsed.owner_type, file: link.file }],
+  );
+  const [first] = typed;
+  const other = typed.find((link) => link.type !== first?.type);
+  if (first !== undefined && other !== undefined) {
+    throw new ProfileError(
+      `${first.file} is for ${describeOwnerType(first.type)}, but it builds on ${other.file}, which is for ${describeOwnerType(other.type)}`,
+    );
+  }
+  return first;
+}
+
+/** The target of an owner type conflict, as `owner_changes` names it. */
+function conflictTarget({ edit }: OwnerConflict): string {
+  return 'list' in edit ? `${edit.draft === true ? 'drafts.' : ''}${edit.list}/${edit.name}` : edit.path.join('.');
+}
+
+/** The targets of owner type conflicts, as `owner_changes` names them. */
+function conflictTargets(conflicts: readonly OwnerConflict[]): string[] {
+  return [...new Set(conflicts.map(conflictTarget))];
+}
+
+/** The edits that change a profile file's owner type and leave not managed what the type doesn't have. */
+function ownerTypeEdits(layer: ProfileFile, type: OwnerType | undefined): ProfileEdit[] {
+  const conflicts = [...ownerConflicts(layer, type, { drafts: true }), ...draftOwnerConflicts(layer.drafts, type)];
+  const edits = new Map<string, ProfileEdit>();
+  for (const conflict of conflicts) {
+    // A ruleset or environment with several conflicts is written once, without all of them.
+    edits.set(conflictTarget(conflict), conflict.edit);
+  }
+  return [{ path: ['owner_type'], value: type }, ...edits.values()];
+}
+
+/** The draft rulesets and environments that owners of `type` don't have. */
+function draftEntryOwnerConflicts(drafts: Drafts, type: OwnerType | undefined): OwnerConflict[] {
+  return ownerConflicts({ rulesets: drafts.rulesets, environments: drafts.environments }, type, { drafts: true });
+}
+
+/** What changing a file's owner type to each type would leave not managed in it. */
+function ownerChanges(head: Link | undefined): Record<OwnerType, string[]> {
+  const targets = (type: OwnerType): string[] =>
+    head === undefined
+      ? []
+      : conflictTargets([
+          ...ownerConflicts(head.parsed, type),
+          ...draftOwnerConflicts(head.drafts, type),
+          ...draftEntryOwnerConflicts(head.drafts, type),
+        ]);
+  return { user: targets('user'), organization: targets('organization') };
+}
+
 function resolveChain(
   chain: readonly Link[],
   source: string,
   adjust?: Adjust,
 ): { resolved: ResolvedProfile; unmatched: readonly string[] } {
+  const owner = chainOwnerType(chain);
   const merged = chain
     .toReversed()
     .reduce<SourcedProfile>((base, { file, parsed }) => mergeLayers(base, parsed, file), { settings: {} });
@@ -872,8 +942,18 @@ function resolveChain(
     }
   }
   const drafts = toDrafts(mergedDrafts, unset);
-  const adjusted = adjust === undefined ? { data: toProfile(merged), unmatched: [] } : adjust(toProfile(merged));
+  // The owner type comes first, as a profile file has it.
+  const data: unknown =
+    owner === undefined ? toProfile(merged) : Object.assign({ owner_type: owner.type }, toProfile(merged));
+  const adjusted = adjust === undefined ? { data, unmatched: [] } : adjust(data);
   const applied = validate(adjusted.data, source);
+  // Draft settings must suit the owner type too, as they apply once finished.
+  const draftConflicts = draftOwnerConflicts(drafts, owner?.type);
+  if (draftConflicts.length > 0) {
+    throw new ProfileError(
+      `${source} is not a valid profile:\n${draftConflicts.map(({ message, path: at }) => `✖ ${message}\n  → at ${at.join('.')}`).join('\n')}`,
+    );
+  }
   return {
     resolved: {
       chain: chain.map((link) => link.file),
@@ -883,6 +963,8 @@ function resolveChain(
         ...chain.flatMap((link) => [...fileDraftWarnings(link.drafts, link.file), ...unsetWarnings(link)]),
         ...draftWarnings(drafts),
         ...renamedDraftWarnings(applied, drafts),
+        // A draft entry may be unfinished, so what its owner type lacks is a warning until it is finished.
+        ...draftEntryOwnerConflicts(drafts, owner?.type).map(({ message }) => message),
       ],
       sources: {
         ...sourcesOf(merged),
@@ -891,6 +973,8 @@ function resolveChain(
           unset: Object.fromEntries([...unset.values()].map((item) => [item.entry, item.file])),
         },
       },
+      owner_source: owner?.file ?? null,
+      owner_changes: ownerChanges(chain[0]),
     },
     unmatched: adjusted.unmatched,
   };
@@ -934,6 +1018,8 @@ export interface ProfileListing {
   readonly extends: string | null;
   /** Why the profile cannot be used, or null when it resolves. */
   readonly problem: string | null;
+  /** What owns the repositories the profile is for, or null when it is for any owner or doesn't resolve. */
+  readonly owner_type: OwnerType | null;
 }
 
 /** Adds the profiles in one folder, then those in its subfolders, to `listings`. */
@@ -943,15 +1029,23 @@ async function listFolder(root: string, folder: string, entries: Dirent[], listi
     let file = path.join(root, folder, entry.name);
     let base: string | null = null;
     let problem: string | null = null;
+    let owner: OwnerType | null = null;
     try {
       const { links } = await readChain(file, profileLayer);
       file = links[0].file;
       base = links[1]?.file ?? null;
-      resolveChain(links, file);
+      owner = resolveChain(links, file).resolved.profile.owner_type ?? null;
     } catch (error) {
       problem = error instanceof Error ? error.message : String(error);
     }
-    listings.push({ name: entry.name.replace(/\.ya?ml$/iu, ''), folder, file, extends: base, problem });
+    listings.push({
+      name: entry.name.replace(/\.ya?ml$/iu, ''),
+      folder,
+      file,
+      extends: base,
+      problem,
+      owner_type: owner,
+    });
   }
   for (const entry of entries.filter((item) => item.isDirectory() && !item.name.startsWith('.')).sort(byName)) {
     const sub = folder === '' ? entry.name : `${folder}/${entry.name}`;
@@ -1027,6 +1121,9 @@ function isDraftPath(path: readonly string[]): boolean {
 }
 
 function isEditable(path: readonly string[]): boolean {
+  if (path.length === 1 && path[0] === 'owner_type') {
+    return true;
+  }
   if (path[0] !== 'drafts') {
     return settingPath(path) === 'setting';
   }
@@ -1176,6 +1273,55 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
   }
 }
 
+/** Moves the comment and blank line over one key to another, as when a key goes in or out above it. */
+function moveLead(from: Scalar, to: Scalar): void {
+  if (from.commentBefore !== undefined && from.commentBefore !== null) {
+    // A comment the key already has stays, under the one that moves.
+    to.commentBefore =
+      to.commentBefore === undefined || to.commentBefore === null
+        ? from.commentBefore
+        : `${from.commentBefore}\n${to.commentBefore}`;
+    from.commentBefore = null;
+  }
+  if (from.spaceBefore === true) {
+    to.spaceBefore = true;
+    from.spaceBefore = false;
+  }
+}
+
+/**
+ * Sets `owner_type`. A file that doesn't name it yet gets it first, or right
+ * after `extends`, with any comment over the file's first key kept above it.
+ */
+function setOwnerType(document: Document, value: unknown): void {
+  const contents = document.contents;
+  if (document.has('owner_type') || !isMap(contents)) {
+    document.set('owner_type', value);
+    return;
+  }
+  const at = contents.items.findIndex((pair) => isScalar(pair.key) && pair.key.value === 'extends') + 1;
+  const pair = document.createPair('owner_type', value);
+  const first = contents.items[0]?.key;
+  if (at === 0 && isScalar(first) && isScalar(pair.key)) {
+    moveLead(first, pair.key);
+  }
+  contents.items.splice(at, 0, pair);
+}
+
+/** Removes `owner_type`, and leaves the comment over it to the key after it. */
+function removeOwnerType(document: Document): void {
+  const contents = document.contents;
+  if (isMap(contents)) {
+    const at = contents.items.findIndex((pair) => isScalar(pair.key) && pair.key.value === 'owner_type');
+    const key = contents.items[at]?.key;
+    const next = contents.items[at + 1]?.key;
+    if (isScalar(key) && isScalar(next)) {
+      moveLead(key, next);
+    }
+  }
+  document.delete('owner_type');
+}
+
 /** A chain's first file with edits made to its text, resolved, and not yet saved. */
 interface EditedLayer<Read extends LayerRead> {
   /** The chain as it was read, resolved. */
@@ -1208,6 +1354,10 @@ async function editChain<Read extends LayerRead>(
       throw new ProfileError(`${key} is edited more than once`);
     }
     seen.add(key);
+    if (edit.value !== undefined && edit.path.length === 1 && edit.path[0] === 'owner_type') {
+      setOwnerType(document, edit.value);
+      continue;
+    }
     if (edit.value !== undefined) {
       document.setIn(
         edit.path,
@@ -1217,6 +1367,10 @@ async function editChain<Read extends LayerRead>(
     }
     // Nothing to remove when the file does not name the setting.
     if (!document.hasIn(edit.path)) {
+      continue;
+    }
+    if (edit.path.length === 1 && edit.path[0] === 'owner_type') {
+      removeOwnerType(document);
       continue;
     }
     document.deleteIn(edit.path);
@@ -1289,6 +1443,75 @@ export interface ProfilePreview {
 export async function previewProfile(file: string, edits: readonly ProfileEdit[]): Promise<ProfilePreview> {
   const { before, result } = await editChain(file, () => edits, profileLayer);
   return { before, after: result.resolved };
+}
+
+/** Whether a file sets, itself, what an owner type conflict in a base names. */
+function overrides(own: Link, { edit }: OwnerConflict): boolean {
+  if ('list' in edit) {
+    const entries = edit.draft === true ? own.drafts[edit.list] : own.parsed[edit.list];
+    const key = edit.list === 'rulesets' ? (name: string) => name : environmentKey;
+    return (entries ?? []).some((entry) => key(entry.name) === key(edit.name));
+  }
+  const [section, ...rest] = edit.path;
+  const root: unknown = section === 'drafts' ? own.drafts : own.parsed;
+  const at = section === 'drafts' ? rest : edit.path;
+  return at.reduce<unknown>((value, key) => (isRecord(value) ? value[key] : undefined), root) !== undefined;
+}
+
+/**
+ * Why an owner type change that failed can't go ahead, when a base the file
+ * builds on sets what the type lacks and the file doesn't override it: the
+ * change edits only the file, so only the base can drop it.
+ */
+async function blockingBase(file: string, type: OwnerType | undefined, error: unknown): Promise<Error | undefined> {
+  if (type === undefined || !(error instanceof ProfileError)) {
+    return undefined;
+  }
+  // A file that no longer reads keeps the error it gave.
+  const chain = await readChain(file, profileLayer).catch(() => undefined);
+  if (chain === undefined) {
+    return undefined;
+  }
+  const [own, ...base] = chain.links;
+  // What the change removes from the file no longer overrides the base.
+  const removed = new Set(
+    [
+      ...ownerConflicts(own.parsed, type),
+      ...draftOwnerConflicts(own.drafts, type),
+      ...draftEntryOwnerConflicts(own.drafts, type),
+    ]
+      .filter((conflict) => !('list' in conflict.edit) || conflict.edit.entry === undefined)
+      .map(conflictTarget),
+  );
+  for (const link of base) {
+    const targets = conflictTargets(
+      [...ownerConflicts(link.parsed, type), ...draftOwnerConflicts(link.drafts, type)].filter(
+        (conflict) => removed.has(conflictTarget(conflict)) || !overrides(own, conflict),
+      ),
+    );
+    if (targets.length > 0) {
+      return new ProfileError(
+        `${own.file} can't be for ${describeOwnerType(type)}, because ${link.file}, which it builds on, sets ${targets.join(', ')}, which ${describeOwnerType(type)} don't have. Change ${path.basename(link.file)} first.`,
+        { cause: error },
+      );
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Makes a profile file one for owners of `type`, or for any owner when it is
+ * undefined, and leaves not managed what that type doesn't have in the file:
+ * it removes those settings, drops a push ruleset, and writes a ruleset or
+ * environment without the parts only organizations have. The base profiles
+ * stay as they are, so the file changes only when they agree with the type.
+ */
+export async function changeOwnerType(file: string, type: OwnerType | undefined): Promise<ResolvedProfile> {
+  try {
+    return (await editLayer(file, (head) => ownerTypeEdits(head.layer, type), profileLayer)).resolved;
+  } catch (error) {
+    throw (await blockingBase(file, type, error)) ?? error;
+  }
 }
 
 export function stringifyProfile(value: Profile): string {

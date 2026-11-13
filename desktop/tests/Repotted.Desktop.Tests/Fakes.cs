@@ -221,10 +221,16 @@ internal static class Documents
         ]}
         """;
 
-    /// <summary>What a resolved profile with no drafts has beside its values: no drafts, and nothing they need.</summary>
+    /// <summary>What a resolved profile for any owner with no drafts has beside its values: no drafts, nothing they need, and no owner type.</summary>
     public const string NoDrafts =
+        $$"""
+        "drafts":{},"warnings":[],{{AnyOwner}}
+        """;
+
+    /// <summary>What a resolved profile for any owner says about its owner type: none set, and changing it leaves everything managed.</summary>
+    public const string AnyOwner =
         """
-        "drafts":{},"warnings":[]
+        "owner_source":null,"owner_changes":{"user":[],"organization":[]}
         """;
 
     /// <summary>The <c>drafts</c> member of a resolved profile's sources when it has no drafts.</summary>
@@ -237,8 +243,8 @@ internal static class Documents
     public static string Profiles(string own, string @base) =>
         $$$"""
         {"profiles":[
-          {"name":"base","file":{{{Json(@base)}}},"extends":null,"problem":null},
-          {"name":"orgs","file":{{{Json(own)}}},"extends":{{{Json(@base)}}},"problem":null}
+          {"name":"base","file":{{{Json(@base)}}},"extends":null,"owner_type":null,"problem":null},
+          {"name":"orgs","file":{{{Json(own)}}},"extends":{{{Json(@base)}}},"owner_type":null,"problem":null}
         ]}
         """;
 
@@ -284,7 +290,7 @@ internal static class Documents
            "rulesets":[{"name":"Later","draft":true},{"name":"Protect main","draft":true,"enforcement":"evaluate"}],
            "environments":[{"name":"NPM","draft":true,"wait_timer":"soon"}],
            "unset":["merge.allow_squash_merge"]},
-         "warnings":["Draft environment \"NPM\": Invalid input at wait_timer"],
+         "warnings":["Draft environment \"NPM\": Invalid input at wait_timer"],{{{AnyOwner}}},
          "sources":{
            "repository":{"has_issues":{{{Json(@base)}}},"has_wiki":{{{Json(own)}}} },
            "merge":{"allow_rebase_merge":{{{Json(@base)}}},"allow_squash_merge":{{{Json(own)}}} },

@@ -72,7 +72,10 @@ internal sealed record EntryChange(string List, string Name, JsonObject? Entry, 
 /// draft settings by section, and draft entries by list.
 /// <paramref name="DraftSources"/> names the file behind each draft, and
 /// <paramref name="Warnings"/> says what stops each draft from applying as it
-/// stands.
+/// stands. <paramref name="OwnerChanges"/> says, for each owner type, what
+/// changing the file to it leaves not managed, by path, such as
+/// <c>repository.allow_forking</c>, <c>drafts.pages.public</c> or
+/// <c>rulesets/Main</c>; a staged apply's one-off edits have none.
 /// </summary>
 internal sealed record ResolvedProfile(
     IReadOnlyList<string> Chain,
@@ -80,9 +83,16 @@ internal sealed record ResolvedProfile(
     IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Sources,
     JsonElement Drafts,
     IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> DraftSources,
-    IReadOnlyList<string> Warnings)
+    IReadOnlyList<string> Warnings,
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? OwnerChanges = null)
 {
     public string File => Chain[0];
+
+    /// <summary>What owns the repositories the profile is for, <c>user</c> or <c>organization</c>, or null for any owner.</summary>
+    public string? OwnerType => Values.ValueKind == JsonValueKind.Object
+        && Values.TryGetProperty("owner_type", out var type) && type.ValueKind == JsonValueKind.String
+        ? type.GetString()
+        : null;
 
     /// <summary>The file behind one draft, by section and key or name, or null.</summary>
     public string? DraftSource(string section, string key) =>
@@ -245,6 +255,14 @@ internal sealed class RepottedClient(ICli cli)
         var run = await cli.RunAsync(arguments, null, cancellationToken).ConfigureAwait(false);
         return Read(run, CliJson.Default.SyncDocument);
     }
+
+    /// <summary>
+    /// Makes the profile file one for owners of <paramref name="type"/>,
+    /// <c>user</c> or <c>organization</c>, or for any owner when it is null,
+    /// and leaves what that type doesn't have not managed.
+    /// </summary>
+    public async Task<ResolvedProfile> ChangeOwnerTypeAsync(string file, string? type, CancellationToken cancellationToken) =>
+        await ProfileAsync(["profile", file, $"--owner-type={type ?? "any"}", "--json"], cancellationToken).ConfigureAwait(false);
 
     /// <summary>Writes <paramref name="changes"/> and <paramref name="entries"/> to the profile file, which the CLI checks first.</summary>
     public async Task<ResolvedProfile> SaveProfileAsync(
@@ -520,7 +538,8 @@ internal sealed class RepottedClient(ICli cli)
         {
             throw Unreadable(run, "the profile is incomplete.");
         }
-        return Resolved(profile.Chain, profile.Profile, profile.Sources, profile.Drafts, profile.Sources.Drafts, profile.Warnings);
+        var resolved = Resolved(profile.Chain, profile.Profile, profile.Sources, profile.Drafts, profile.Sources.Drafts, profile.Warnings);
+        return resolved with { OwnerChanges = profile.OwnerChanges };
     }
 
     /// <summary>No drafts, for the one-off edits of a staged apply.</summary>

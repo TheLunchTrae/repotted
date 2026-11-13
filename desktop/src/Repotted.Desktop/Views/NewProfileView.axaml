@@ -36,6 +36,37 @@
         </ComboBox>
       </StackPanel>
 
+      <!-- What owns the repositories the profile is for; a capture or a typed base sets it instead -->
+      <StackPanel Spacing="10" IsEnabled="{Binding Editable}">
+        <TextBlock Classes="small" FontWeight="SemiBold" Text="For repositories owned by" />
+        <StackPanel Spacing="10" IsVisible="{Binding !OwnerFixed}">
+          <RadioButton GroupName="owner" IsChecked="{Binding OwnerPersonal}"
+                       AutomationProperties.HelpText="Settings only organizations have stay hidden.">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Personal accounts" />
+              <TextBlock Classes="muted small" TextWrapping="Wrap" Text="Settings only organizations have stay hidden." />
+            </StackPanel>
+          </RadioButton>
+          <RadioButton GroupName="owner" IsChecked="{Binding OwnerOrganization}"
+                       AutomationProperties.HelpText="Every setting. The ones only GitHub Enterprise Cloud has are marked.">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Organizations" />
+              <TextBlock Classes="muted small" TextWrapping="Wrap" Text="Every setting. The ones only GitHub Enterprise Cloud has are marked." />
+            </StackPanel>
+          </RadioButton>
+          <RadioButton GroupName="owner" IsChecked="{Binding OwnerAny}"
+                       AutomationProperties.HelpText="For a base profile that both kinds extend. GitHub skips what a repository doesn't have.">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Any owner" />
+              <TextBlock Classes="muted small" TextWrapping="Wrap" Text="For a base profile that both kinds extend. GitHub skips what a repository doesn't have." />
+            </StackPanel>
+          </RadioButton>
+          <TextBlock Classes="muted small" TextWrapping="Wrap"
+                     Text="Repotted won't apply a profile to a repository whose owner is the other kind." />
+        </StackPanel>
+        <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding OwnerNote}" IsVisible="{Binding HasOwnerNote}" />
+      </StackPanel>
+
       <StackPanel Spacing="10" IsEnabled="{Binding Editable}">
         <TextBlock Classes="small" FontWeight="SemiBold" Text="Start from" />
         <RadioButton GroupName="start" IsChecked="{Binding StartsEmpty}"
