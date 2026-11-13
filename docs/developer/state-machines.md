@@ -231,6 +231,12 @@ plan beside it as `<name>.plan.json`. Leaving the page keeps the file, so an
 apply left unfinished is offered again. A change runs with `Working` set, and
 no other change, apply or discard starts until it ends.
 
+Reviewing has two views, which `Editing` picks: the one-off edits, where every
+start, resume or failed start that is reviewed again lands, and the changes,
+which Apply goes from. Planning keeps the view, so a plan after a save, a leave
+out or Review again stays where it was, and an apply that comes back Stale or
+Partly applied is reviewed again on the changes.
+
 | State                                     | Event                                         | Next                                                                                                                         |
 | ----------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | Starting                                  | No staged file for the repository             | Planning, after `stage --new`, from the chosen profile or from the repository as it is.                                      |
@@ -244,8 +250,11 @@ no other change, apply or discard starts until it ends.
 | Working                                   | The change succeeds                           | Planning, with the one-off edits showing the staged apply the change returns, which is not read again.                       |
 | Reviewing, Confirming, Confirming discard | Save the one-off edits                        | Planning, since the edits change the plan; a plan reviewed before the save is never applied.                                 |
 | Reviewing                                 | One-off edits not saved yet                   | Reviewing, with Apply, leaving out, saving to the profile and leaving the page held until saved or undone.                   |
-| Reviewing                                 | Apply, with a locked change                   | Reviewing: Apply stays held until each change the locks say GitHub refuses is left out or planned again with access.         |
-| Reviewing                                 | Apply, with changes to make and none locked   | Confirming. The one-off edits can change only in Reviewing, so none waits under a plan about to be applied.                  |
+| Reviewing, on the edits                   | Review changes, with no edits unsaved         | Reviewing, on the changes, from the plan already there; nothing runs.                                                        |
+| Reviewing, on the edits                   | Review changes, with edits unsaved            | The edits save, then Planning; on the changes only if the save and plan succeed. A refused save stays on the edits.          |
+| Reviewing, on the changes                 | Back to edits                                 | Reviewing, on the edits; nothing runs.                                                                                       |
+| Reviewing, on the changes                 | Apply, with a locked change                   | Reviewing: Apply stays held until each change the locks say GitHub refuses is left out or planned again with access.         |
+| Reviewing, on the changes                 | Apply, with changes to make and none locked   | Confirming. The one-off edits can change only in Reviewing, so none waits under a plan about to be applied.                  |
 | Confirming                                | Cancel                                        | Reviewing; nothing is written.                                                                                               |
 | Confirming                                | Apply now                                     | Applying: `apply --yes` on the reviewed plan file. It waits while the edits are read or saved.                               |
 | Applying                                  | Every change written                          | Applied: the staged file and plan are removed. A failed removal leaves the file, to be offered again.                        |
@@ -274,7 +283,7 @@ behind it, to come back to.
 | The page can close                                      | It closes; an unfinished staged apply stays to resume.                                                        |
 | A run is going, or the edits are read or saved          | The page shows itself, says the act waits until Repotted is done, and stays. The note goes when the run ends. |
 | The same, for a lost sign-in                            | The check waits for the run to end, then goes on as below, since the app can't leave a run partway.           |
-| One-off edits are unsaved                               | The page shows its edits and asks to save or undo them first.                                                 |
+| One-off edits are unsaved                               | The page goes to its edits and asks to save or undo them first.                                               |
 | Asking, and the edits are saved                         | The saved edits are planned again, then the act goes on, so the page never stays behind with an old plan.     |
 | Asking, and the edits are undone or the apply discarded | The act goes on.                                                                                              |
 | Asking, and Stay here, or another act asks              | The act is put aside and the edits stay as they are; a later question replaces an open one.                   |

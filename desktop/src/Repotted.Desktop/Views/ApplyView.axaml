@@ -12,11 +12,19 @@
         <TextBlock Classes="h1" Text="{Binding Heading}" TextWrapping="Wrap" />
         <TextBlock Classes="muted" Text="{Binding Summary}" TextWrapping="Wrap" />
       </StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom" IsVisible="{Binding ShowActions}">
+      <!-- On the one-off edits -->
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom" IsVisible="{Binding ShowEditActions}">
         <Button Classes="quiet" Content="Discard apply" Command="{Binding DiscardCommand}"
                 AutomationProperties.HelpText="Throws this apply away with its one-off edits. The profile stays as it is." />
         <Button Classes="quiet" Content="Save edits to profile" Command="{Binding SaveToProfileCommand}" IsVisible="{Binding HasBase}"
                 AutomationProperties.HelpText="Writes the one-off edits into the profile this apply starts from." />
+        <Button Classes="primary" Content="Review changes" Command="{Binding ReviewChangesCommand}"
+                AutomationProperties.HelpText="Saves the one-off edits to this apply, not the profile, and shows what it writes to GitHub." />
+      </StackPanel>
+      <!-- On the changes -->
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom" IsVisible="{Binding ShowChangeActions}">
+        <Button Classes="quiet" Content="Back to edits" Command="{Binding BackToEditsCommand}"
+                AutomationProperties.HelpText="Goes back to the one-off edits. Nothing is written." />
         <Button Classes="quiet" Content="Review again" Command="{Binding ReviewAgainCommand}"
                 AutomationProperties.HelpText="Reads the repository and the App's access again and plans the apply from them." />
         <Button Classes="primary" Content="{Binding ApplyLabel}" Command="{Binding ApplyCommand}" />
@@ -107,28 +115,24 @@
         </StackPanel>
       </StackPanel>
 
-      <!-- The review: the changes, and the one-off edits -->
+      <!-- The review: the one-off edits first, then the changes they make -->
       <DockPanel IsVisible="{Binding ShowReview}">
-        <Border DockPanel.Dock="Top" Margin="32,16,32,0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
-          <ListBox Classes="tabs" SelectedIndex="{Binding Tab}" AutomationProperties.Name="Apply">
-            <ListBox.ItemsPanel>
-              <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-            </ListBox.ItemsPanel>
-            <ListBoxItem AutomationProperties.Name="Changes">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="{Binding Source='Changes', Converter={x:Static theme:ControlLabel.Converter}}" VerticalAlignment="Center" />
-                <Border Classes="count"><TextBlock Text="{Binding ChangeCount}" /></Border>
-              </StackPanel>
-            </ListBoxItem>
-            <ListBoxItem AutomationProperties.Name="One-off edits">
-              <TextBlock Text="{Binding Source='One-off edits', Converter={x:Static theme:ControlLabel.Converter}}" VerticalAlignment="Center" />
-            </ListBoxItem>
-          </ListBox>
+        <!-- Where the review stands: editing, or reviewing the changes to apply them -->
+        <Border DockPanel.Dock="Top" Margin="32,16,32,0" Padding="0,0,0,12" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+          <StackPanel Orientation="Horizontal" Spacing="10" AutomationProperties.Name="{Binding StepName}"
+                      AutomationProperties.LiveSetting="Polite">
+            <StackPanel Classes="step" Classes.on="{Binding ShowingEdits}" Classes.done="{Binding ShowingChanges}"
+                        Orientation="Horizontal" Spacing="8">
+              <Border Classes="stepnum"><TextBlock Text="1" /></Border>
+              <TextBlock Classes="steplabel" Text="{Binding Source='Edit', Converter={x:Static theme:ControlLabel.Converter}}" />
+            </StackPanel>
+            <TextBlock Classes="muted" Text="›" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
+            <StackPanel Classes="step" Classes.on="{Binding ShowingChanges}" Orientation="Horizontal" Spacing="8">
+              <Border Classes="stepnum"><TextBlock Text="2" /></Border>
+              <TextBlock Classes="steplabel" Text="{Binding Source='Review and apply', Converter={x:Static theme:ControlLabel.Converter}}" />
+            </StackPanel>
+          </StackPanel>
         </Border>
-
-        <TextBlock DockPanel.Dock="Top" Margin="32,12,32,0" Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource DriftBrush}"
-                   Text="Save or discard your one-off edits first, so the changes show what they do."
-                   IsVisible="{Binding EditsUnsaved}" AutomationProperties.LiveSetting="Assertive" />
 
         <Panel>
           <!-- What the apply writes, and a way to leave each part out -->
@@ -170,7 +174,7 @@
                                 AutomationProperties.HelpText="Leaves this change out of this apply. The profile keeps it." />
                         <Border Classes="chip" Margin="0,0,16,0" HorizontalAlignment="Right"
                                 VerticalAlignment="Center" IsVisible="{Binding IsEdit}"
-                                ToolTip.Tip="Change or undo it under One-off edits.">
+                                ToolTip.Tip="Go back to the edits to change or undo it.">
                           <TextBlock Text="One-off edit" />
                         </Border>
                       </Panel>

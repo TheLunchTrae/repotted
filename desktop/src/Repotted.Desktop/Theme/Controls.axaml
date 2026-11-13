@@ -401,6 +401,49 @@
     <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
   </Style>
 
+  <!-- The steps of an apply's review: the one on screen, and one already passed. -->
+  <Style Selector="StackPanel.step">
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="StackPanel.step Border.stepnum">
+    <Setter Property="Width" Value="20" />
+    <Setter Property="Height" Value="20" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="StackPanel.step Border.stepnum TextBlock">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+  </Style>
+  <Style Selector="StackPanel.step TextBlock.steplabel">
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+  </Style>
+  <Style Selector="StackPanel.step.on Border.stepnum">
+    <Setter Property="Background" Value="{DynamicResource FgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource FgBrush}" />
+  </Style>
+  <Style Selector="StackPanel.step.on Border.stepnum TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource BgBrush}" />
+  </Style>
+  <Style Selector="StackPanel.step.on TextBlock.steplabel">
+    <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="StackPanel.step.done Border.stepnum">
+    <Setter Property="Background" Value="{DynamicResource TintBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource RailBrush}" />
+  </Style>
+  <Style Selector="StackPanel.step.done Border.stepnum TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource RailBrush}" />
+  </Style>
+
   <!-- Setting rows: a rail that says where the value comes from. -->
   <Style Selector="Border.fields">
     <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
