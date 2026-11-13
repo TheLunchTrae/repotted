@@ -1,8 +1,9 @@
 # The web app
 
-The web app runs at <https://repotted.dev> on one Cloudflare Worker, in
-`packages/web`. The Worker serves the app's static files and handles the
-GitHub App's web sign-in on the same origin, so the sign-in needs no
+The web app runs at <https://repotted.dev> on a Cloudflare Worker, `repotted`,
+in `packages/web`, and previews of it run on the same Worker at a
+`workers.dev` address. The Worker serves the app's static files and handles
+the GitHub App's web sign-in on the same origin, so the sign-in needs no
 cross-origin requests and the client secret stays on the server. The page is a
 placeholder that signs in and shows the signed-in user; the app's UI moves to
 it later.
@@ -19,9 +20,9 @@ it later.
 - `wrangler.jsonc`: the Worker's config. `assets.run_worker_first` sends only
   `/api/*` to the Worker; Cloudflare serves every other path from `dist/`, and a
   path with no file gets `index.html`, for the app's own routes. The Worker's
-  `workers.dev` and preview URLs are off, since GitHub returns a sign-in only
-  to the callback URLs the App lists. Its custom domain, `repotted.dev`, is set
-  in the dashboard, not here; [Deploy](#deploy) says why.
+  `workers.dev` address is off, and its Version URLs are on for
+  [previews](#deploy). The custom domain is set in the dashboard, not here;
+  [Deploy](#deploy) says why.
 
 The Worker and the page run on web platform APIs, so
 `packages/web/tsconfig.json` checks them with the DOM library in place of
@@ -87,12 +88,14 @@ referrer, and tells browsers to use only HTTPS for repotted.dev for two years.
 
 Wrangler serves the Worker and the assets together at
 `http://localhost:8787`, rebuilding on changes. Sign-in needs a GitHub App that
-lists `http://localhost:8787/api/auth/callback` as a callback URL, and its
-client ID and a client secret in `packages/web/.dev.vars`, which git ignores:
+lists `http://localhost:8787/api/auth/callback` as a callback URL, and a client
+secret for it in `packages/web/.dev.vars`, which git ignores. For an App other
+than the Repotted App, its client ID goes there too, in place of the one in
+`wrangler.jsonc`:
 
 ```sh
-REPOTTED_APP_CLIENT_ID=Iv23...
 REPOTTED_APP_CLIENT_SECRET=...
+REPOTTED_APP_CLIENT_ID=Iv23...
 ```
 
 ```sh
@@ -110,41 +113,76 @@ nothing. The gate runs it, and Vitest runs `packages/web/tests`.
 
 ## Deploy
 
-The Deploy Web workflow, `.github/workflows/deploy-web.yml`, deploys `main` to
-repotted.dev. Like the [release workflows](releasing.md), only the owner starts
-it, with **Run workflow** on `main`; no push or other event does, so a merge
-never changes the live site by itself. It runs `ts:web:check` from the locked
-downloads, then `wrangler deploy` with the client ID as a variable and the
-client secret as a secret, uploaded with the code, so no version runs without
-it. The first deploy replaces the Worker created in the dashboard.
+The Deploy Web workflow, `.github/workflows/deploy-web.yml`, deploys `main`.
+Like the [release workflows](releasing.md), only the owner starts it, with
+**Run workflow** on `main`; no push or other event does, so a merge never
+changes the site by itself. It runs `ts:web:check` from the locked downloads,
+then uploads the Worker.
 
-A run takes everything from the `deploy-web` environment, which allows only
-`main`:
+The client ID is public, so it is a variable in `wrangler.jsonc`, the same ID
+as `app.clientId` in `packages/cli/src/auth.ts`; a CLI test fails when the two
+differ. The client secret is set once on the Worker as the secret
+`REPOTTED_APP_CLIENT_SECRET`, in the dashboard or with `wrangler secret put`,
+and is rotated there. Wrangler never deletes a Worker's secrets: every deploy
+and every uploaded version, previews included, keeps the ones the version
+before it had, so the workflow never handles the secret.
 
-| Name                         | Kind     | Value                                                                             |
-| ---------------------------- | -------- | --------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`       | Secret   | A Cloudflare API token with the permission below.                                 |
-| `CLOUDFLARE_ACCOUNT_ID`      | Variable | The Cloudflare account that holds the Worker and the `repotted.dev` zone.         |
-| `REPOTTED_APP_CLIENT_ID`     | Variable | The Repotted App's client ID, as in `app.clientId` in `packages/cli/src/auth.ts`. |
-| `REPOTTED_APP_CLIENT_SECRET` | Secret   | A client secret generated in the Repotted App's settings.                         |
+Its **Publish** input picks what the upload does, as Publish picks a test build
+or a release in the release workflows:
 
-GitHub reserves names that start with `GITHUB_`, so the App's values use
-`REPOTTED_APP_`, and the Worker reads them under the same names.
+| Publish          | Command                                            | Where it runs                                      |
+| ---------------- | -------------------------------------------------- | -------------------------------------------------- |
+| Off, the default | `wrangler versions upload --preview-alias preview` | `https://preview-repotted.<subdomain>.workers.dev` |
+| On               | `wrangler deploy`                                  | <https://repotted.dev>                             |
+
+`<subdomain>` is the Cloudflare account's `workers.dev` subdomain; the run's
+summary and its environment link give the full address. A preview uploads a
+new version of the `repotted` Worker without deploying it, so repotted.dev
+keeps serving the version it had, and points the `preview` alias, one of
+Cloudflare's [Version URLs](https://developers.cloudflare.com/workers/configuration/previews/),
+at the new one. The alias keeps pointing there until the next preview; a
+publish doesn't move it.
+
+Version URLs live only on `workers.dev`, so the preview can't have an address
+on repotted.dev. Turning them on also gives every version its own public URL,
+`https://<version prefix>-repotted.<subdomain>.workers.dev`, so old versions
+stay reachable by their prefix. Sign-in works only at the alias, the one
+callback URL besides repotted.dev's that the GitHub App lists. Cloudflare Access
+can put a sign-in in front of them all. `wrangler tail` and Workers Logs don't
+show requests to Version URLs.
+
+The sign-in's cookies are named with `__Host-`, so the browser keeps them for
+the one host that set them: a sign-in on the preview never reaches
+repotted.dev, or the other way round. Each site keeps its own sign-in, and its
+own browser storage.
+
+The workflow takes its values from the `deploy-web` environment, which allows
+only `main`:
+
+| Name                    | Kind     | Value                                                                     |
+| ----------------------- | -------- | ------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | Secret   | A Cloudflare API token with the permission below.                         |
+| `CLOUDFLARE_ACCOUNT_ID` | Variable | The Cloudflare account that holds the Worker and the `repotted.dev` zone. |
 
 The API token needs one permission, from Cloudflare's
 [Workers roles](https://developers.cloudflare.com/workers/authorization/workers/):
-Workers, Editor, scoped to the `repotted` Worker. That covers deploying new
-versions with their assets, variables, and secrets, and turning off the
-`workers.dev` and preview URLs. It can't create a Worker, so the Worker is
-created once in the dashboard, named `repotted` as in `wrangler.jsonc`, before
-the first deploy replaces it.
+Workers, Editor, scoped to the `repotted` Worker. That covers uploading and
+deploying versions with their assets and variables, and setting the Worker's
+`workers.dev` address and Version URLs. Editor can't create a Worker,
+so the Worker is created once in the dashboard, named `repotted`, before the
+first deploy replaces it.
 
-The custom domain needs zone permissions that a token scoped to one Worker
-can't have, so it is attached once in the dashboard rather than in
-`wrangler.jsonc`. Wrangler changes a Worker's custom domains only for those its
-config lists; with none listed, a deploy leaves the dashboard's domain as it is.
-Had the config listed it, every deploy would set it again, and in CI would
-replace any other DNS record on `repotted.dev` without asking.
+The custom domain needs zone permissions that a token scoped to Workers can't
+have, so it is attached once in the dashboard rather than in `wrangler.jsonc`.
+Wrangler changes a Worker's custom domains only for those its config lists;
+with none listed, a deploy leaves the dashboard's domain as it is. Had the
+config listed it, every deploy would set it again, and in CI would replace any
+other DNS record on the name without asking.
+
+Uploading a version doesn't apply `wrangler.jsonc`'s `workers_dev` and
+`preview_urls`, so a preview first runs `wrangler triggers deploy`, which
+applies them as a deploy does without making a version. The Version URLs are
+then on before the first preview, with no publish needed.
 
 The Worker keeps nothing on the server between requests, so it needs no KV,
 R2, or D1, and the token no permission for them.
@@ -152,12 +190,16 @@ R2, or D1, and the token no permission for them.
 Before the first deploy:
 
 1. Add `repotted.dev` to the Cloudflare account and point its nameservers at
-   Cloudflare, so the zone is active.
-2. Create a Worker named `repotted` in the dashboard. In its **Settings**,
-   under **Domains & Routes**, add the custom domain `repotted.dev`.
+   Cloudflare, so the zone is active, and give the account a `workers.dev`
+   subdomain.
+2. Create the `repotted` Worker in the dashboard. In its **Settings**, under
+   **Domains & Routes**, add the custom domain `repotted.dev`.
 3. Create the API token above.
-4. In the Repotted App's settings, add the callback URL
-   `https://repotted.dev/api/auth/callback`, keep **Expire user authorization
-   tokens** on, and generate a client secret.
+4. In the Repotted App's settings, add the callback URLs
+   `https://repotted.dev/api/auth/callback` and
+   `https://preview-repotted.<subdomain>.workers.dev/api/auth/callback`, keep
+   **Expire user authorization tokens** on, and generate a client secret.
+   Under the Worker's **Settings**, **Variables and Secrets**, add it as the
+   secret `REPOTTED_APP_CLIENT_SECRET`.
 5. Create the `deploy-web` environment with the values above, limited to
    `main`.

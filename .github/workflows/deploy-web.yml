@@ -1,31 +1,40 @@
 name: Deploy Web
+run-name: ${{ inputs.publish && 'Deploy Web' || 'Deploy Web preview' }}
 
 # The owner starts a run with Run workflow on main; nothing else does, as with
-# the release workflows. A run builds the web app, checks the Worker bundle,
-# and deploys both to repotted.dev. The deploy-web environment holds the
-# Cloudflare and GitHub App values and allows only main.
+# the release workflows. A run builds the web app and checks the Worker bundle.
+# With Publish not selected, the default, it uploads a version of the repotted
+# Worker under the preview alias without deploying it, so repotted.dev keeps
+# its version; with Publish selected, it deploys to repotted.dev. The
+# deploy-web environment holds the Cloudflare values and allows only main.
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to repotted.dev instead of only uploading a preview
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# Deploys wait their turn instead of replacing a waiting run, so the last run
-# started is the one that stays live.
+# Runs of each kind wait their turn instead of replacing a waiting run, so the
+# last one started is the one that stays live or holds the preview alias. A
+# preview never holds up a publish.
 concurrency:
-  group: deploy-web
+  group: ${{ inputs.publish && 'deploy-web' || 'deploy-web-preview' }}
   cancel-in-progress: false
   queue: max
 
 jobs:
   deploy:
-    name: Deploy to repotted.dev
+    name: ${{ inputs.publish && 'Deploy to repotted.dev' || 'Upload a preview' }}
     if: github.repository == 'TheLunchTrae/repotted'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment:
       name: deploy-web
-      url: https://repotted.dev
+      url: ${{ inputs.publish && 'https://repotted.dev' || steps.deploy.outputs.preview-url }}
     env:
       MISE_LOCKED: '1'
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
@@ -51,25 +60,38 @@ jobs:
         with:
           cache: false
           task: ts:web:check
-      # The client secret reaches the Worker as a secret in the same upload as
-      # the code, so no version runs without it. The file is readable only by
-      # this job's user and is removed when the step ends.
-      - name: Deploy the Worker and its assets
+      # The client ID comes from wrangler.jsonc, and every upload keeps the
+      # client secret already set on the Worker.
+      - name: Upload the Worker and its assets
+        id: deploy
         working-directory: packages/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          REPOTTED_APP_CLIENT_ID: ${{ vars.REPOTTED_APP_CLIENT_ID }}
-          REPOTTED_APP_CLIENT_SECRET: ${{ secrets.REPOTTED_APP_CLIENT_SECRET }}
+          PUBLISH: ${{ inputs.publish }}
           WRANGLER_SEND_METRICS: 'false'
         run: |
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID REPOTTED_APP_CLIENT_ID REPOTTED_APP_CLIENT_SECRET; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
             if [[ -z ${!name} ]]; then
               echo "::error::The deploy-web environment has no $name."
               exit 1
             fi
           done
-          secrets="$RUNNER_TEMP/worker-secrets.json"
-          trap 'rm -f "$secrets"' EXIT
-          (umask 077 && jq -n '{REPOTTED_APP_CLIENT_SECRET: env.REPOTTED_APP_CLIENT_SECRET}' >"$secrets")
-          mise exec -- pnpm exec wrangler deploy --var "REPOTTED_APP_CLIENT_ID:$REPOTTED_APP_CLIENT_ID" --secrets-file "$secrets"
+          if [[ $PUBLISH == true ]]; then
+            mise exec -- pnpm exec wrangler deploy
+            exit 0
+          fi
+          # Applies wrangler.jsonc's workers_dev and preview_urls to the Worker,
+          # as a deploy does, without a new version, so its Version URLs are on.
+          mise exec -- pnpm exec wrangler triggers deploy
+          output="$RUNNER_TEMP/wrangler-output.json"
+          WRANGLER_OUTPUT_FILE_PATH="$output" mise exec -- pnpm exec wrangler versions upload --preview-alias preview
+          # Wrangler leaves the alias URL out when the Worker's Version URLs are
+          # off.
+          url=$(jq -r 'select(.type == "version-upload") | .preview_alias_url // empty' "$output")
+          if [[ -z $url ]]; then
+            echo "::error::Wrangler gave no preview address, so the repotted Worker's Version URLs are off. Check them under the Worker's Settings, Domains & Routes."
+            exit 1
+          fi
+          echo "preview-url=$url" >>"$GITHUB_OUTPUT"
+          echo "Preview: <$url>" >>"$GITHUB_STEP_SUMMARY"
