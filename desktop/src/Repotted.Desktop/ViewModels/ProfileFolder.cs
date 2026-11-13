@@ -83,9 +83,20 @@ internal sealed partial class ProfileFolder(RepottedClient client, AppSettings s
         ? deletedHere.Contains(Conflicts[0])
             ? $"{Conflicts[0]} was deleted here and changed on GitHub since the last sync. Keep mine keeps it deleted, and Use GitHub's brings it back."
             : $"{Conflicts[0]} changed here and on GitHub since the last sync. Keep which version?"
-        : deletedHere.Count > 0
-            ? $"These files changed or were deleted here and changed on GitHub since the last sync: {string.Join(", ", Conflicts)}. Keep which versions?"
-            : $"These files changed here and on GitHub since the last sync: {string.Join(", ", Conflicts)}. Keep which versions?";
+        : $"These files changed here and on GitHub since the last sync: {string.Join(", ", Conflicts)}.{DeletedNote()} Keep which versions?";
+
+    /// <summary>For several files in conflict, which were deleted here and what each choice does with them.</summary>
+    private string DeletedNote()
+    {
+        List<string> deleted = [.. Conflicts.Where(deletedHere.Contains)];
+        if (deleted.Count == 0)
+        {
+            return "";
+        }
+        var named = deleted.Count == 1 ? deleted[0] : $"{string.Join(", ", deleted.Take(deleted.Count - 1))} and {deleted[^1]}";
+        var (verb, it) = deleted.Count == 1 ? ("was", "it") : ("were", "them");
+        return $" {named} {verb} deleted here: Keep mine keeps {it} deleted, and Use GitHub's brings {it} back.";
+    }
 
     /// <summary>Ends once the write or sync running now, and any queued behind it, ends.</summary>
     public Task Idle => turns.Idle;

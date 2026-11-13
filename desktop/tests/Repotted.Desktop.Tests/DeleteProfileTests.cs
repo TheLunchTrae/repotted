@@ -142,4 +142,114 @@ public sealed class DeleteProfileTests : ViewModelTests
         await save;
         Assert.True(profiles.ConfirmDeleteCommand.CanExecute(null));
     }
+
+    [AvaloniaFact]
+    public async Task The_question_follows_edits_and_the_list_and_another_question_replaces_it()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        profiles.Items.Single(item => item.Name == "orgs").DeleteCommand.Execute(null);
+        Assert.Equal("This deletes orgs.yaml from the profiles folder, and it can't be undone.", profiles.DeleteDetail);
+
+        // An edit made while the question shows is named, and goes from it once undone.
+        Choose(editor, "has_wiki", "On");
+        Assert.Equal("This deletes orgs.yaml from the profiles folder, and it can't be undone. Your unsaved changes to it are discarded.", profiles.DeleteDetail);
+        editor.DiscardCommand.Execute(null);
+        Assert.Equal("This deletes orgs.yaml from the profiles folder, and it can't be undone.", profiles.DeleteDetail);
+
+        profiles.Items.Single(item => item.Name == "base").DeleteCommand.Execute(null);
+        Assert.Equal("Delete base?", profiles.DeleteQuestion);
+
+        // A refresh that no longer lists it takes the question away.
+        cli.On(folders.List(), $$$"""{"profiles":[{"name":"orgs","file":{{{Json(files.Own)}}},"extends":null,"problem":"Cannot read base.yaml"}]}""");
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.False(profiles.AskingDelete);
+        Assert.True(File.Exists(files.Base));
+    }
+
+    [AvaloniaFact]
+    public async Task Another_folder_takes_the_question_away()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var other = Directory.CreateTempSubdirectory("repotted-other-").FullName;
+        try
+        {
+            cli.On(folders.List(other), Documents.NoProfiles);
+            orgsDesktop.Folder = other;
+            profiles.Items.Single(item => item.Name == "orgs").DeleteCommand.Execute(null);
+
+            await profiles.ChangeFolderCommand.ExecuteAsync(null);
+
+            Assert.False(profiles.AskingDelete);
+            Assert.False(profiles.ConfirmDeleteCommand.CanExecute(null));
+            Assert.True(File.Exists(files.Own));
+        }
+        finally
+        {
+            Directory.Delete(other, recursive: true);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task The_question_waits_while_the_profile_loads()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var slow = new TaskCompletionSource();
+        cli.OnceReady($"profile {files.Own} --json", Documents.Resolved(files.Own, files.Base), slow.Task);
+        // A refresh reads an editor with no unsaved changes again.
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        var editor = profiles.Current!;
+        Assert.True(editor.Loading);
+
+        profiles.Items.Single(item => item.Name == "orgs").DeleteCommand.Execute(null);
+        Assert.True(profiles.AskingDelete);
+        Assert.False(profiles.ConfirmDeleteCommand.CanExecute(null));
+
+        slow.SetResult();
+        await editor.LoadCommand.ExecutionTask!;
+        Assert.True(profiles.ConfirmDeleteCommand.CanExecute(null));
+    }
+
+    [AvaloniaFact]
+    public async Task Two_files_that_could_each_be_the_profile_keep_it_and_say_so()
+    {
+        var one = folders.Write("shared.yaml", "repository: { has_issues: true }\n");
+        folders.Write("shared.yml", "repository: { has_issues: false }\n");
+        var elsewhere = Path.Combine(Path.GetTempPath(), "elsewhere", "real.yaml");
+        var cli = new FakeCli()
+            .On(folders.List(), Listing(("shared", elsewhere, null, null)))
+            .On($"profile {elsewhere} --json", Documents.ResolvedBase(elsewhere));
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), orgsDesktop, folders.Settings, () => []);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        var editor = profiles.Current;
+
+        profiles.Items.Single().DeleteCommand.Execute(null);
+        await profiles.ConfirmDeleteCommand.ExecuteAsync(null);
+
+        Assert.Equal("Repotted could not delete shared: Repotted could not tell which file in the folder is shared.", profiles.Notice);
+        Assert.True(File.Exists(one));
+        Assert.Same(editor, profiles.Current);
+        Assert.False(profiles.AskingDelete);
+    }
+
+    [AvaloniaFact]
+    public async Task A_file_that_can_not_be_deleted_stays_with_its_edits()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Only Windows keeps an open file from being deleted.");
+        var (profiles, _, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        profiles.Items.Single(item => item.Name == "orgs").DeleteCommand.Execute(null);
+
+        using (new FileStream(files.Own, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await profiles.ConfirmDeleteCommand.ExecuteAsync(null);
+        }
+
+        Assert.StartsWith("Repotted could not delete orgs: ", profiles.Notice, StringComparison.Ordinal);
+        Assert.True(File.Exists(files.Own));
+        Assert.Same(editor, profiles.Current);
+        Assert.True(editor.HasChanges);
+        Assert.False(profiles.DeleteRunning);
+    }
 }

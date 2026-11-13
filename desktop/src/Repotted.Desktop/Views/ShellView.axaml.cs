@@ -25,6 +25,7 @@ internal sealed partial class ShellView : UserControl
         Nav.AddHandler(TappedEvent, OnNavTapped, RoutingStrategies.Bubble, handledEventsToo: true);
         Nav.AddHandler(KeyDownEvent, OnNavKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
         ProfileList.KeyDown += OnProfileListKeyDown;
+        ProfileList.AddHandler(PointerPressedEvent, OnProfileListPointerPressed, RoutingStrategies.Tunnel);
         if (OperatingSystem.IsMacOS())
         {
             SearchShortcut.Text = "⌘K";
@@ -70,6 +71,20 @@ internal sealed partial class ShellView : UserControl
             && page == shown)
         {
             shell.ShowPage(page);
+        }
+    }
+
+    /// <summary>
+    /// A right-click opens a profile's menu without selecting it while the
+    /// new profile form is open, since selecting a profile closes the form
+    /// and stops a capture it runs.
+    /// </summary>
+    private void OnProfileListPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(ProfileList).Properties.IsRightButtonPressed
+            && DataContext is ViewModels.ShellViewModel { Profiles.Creating: not null })
+        {
+            e.Handled = true;
         }
     }
 

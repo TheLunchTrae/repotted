@@ -625,6 +625,40 @@ public sealed class ViewTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_profile_menu_asks_to_delete_it_and_leaves_the_new_profile_form_open()
+    {
+        var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
+        var cli = FakeCli.SignedIn()
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base));
+        var window = await Show("light", cli);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        Dispatcher.UIThread.RunJobs();
+        shell.Profiles.StartNew(null);
+        Dispatcher.UIThread.RunJobs();
+        var form = shell.Profiles.Creating;
+        Assert.NotNull(form);
+
+        var item = window.GetVisualDescendants().OfType<ListBoxItem>().Single(item => (item.DataContext as ProfileItemViewModel)?.Name == "orgs");
+        var point = item.TranslatePoint(new Point(12, 12), window)!.Value;
+        window.MouseDown(point, MouseButton.Right);
+        window.MouseUp(point, MouseButton.Right);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(form, shell.Profiles.Creating);
+        var menu = Assert.IsType<ContextMenu>(item.ContextMenu);
+        Assert.True(menu.IsOpen);
+        var delete = Assert.IsType<MenuItem>(Assert.Single(menu.Items));
+        Assert.Equal(ControlLabel.For("Delete profile"), delete.Header);
+        delete.Command!.Execute(delete.CommandParameter);
+        Assert.Equal("Delete orgs?", shell.Profiles.DeleteQuestion);
+        menu.Close();
+    }
+
+    [AvaloniaFact]
     public async Task Closing_the_window_stays_on_cancel_or_a_failed_save_and_closes_once_saved()
     {
         var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
