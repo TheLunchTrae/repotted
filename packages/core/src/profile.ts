@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs';
 import { readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -764,6 +765,8 @@ export async function parseProfile(text: string, directory: string): Promise<Res
 export interface ProfileListing {
   /** The file name without its extension. */
   readonly name: string;
+  /** The subfolder the file is in, from the listed folder, with `/` separators; '' for the folder itself. */
+  readonly folder: string;
   /** The file's real path, as \`resolveProfile\` reports it in its chain. */
   readonly file: string;
   /** The real path of the profile this one extends, or null when it extends none or cannot be read. */
@@ -772,18 +775,11 @@ export interface ProfileListing {
   readonly problem: string | null;
 }
 
-/** Lists the YAML profiles directly in a folder, by name, and whether each resolves. */
-export async function listProfiles(directory: string): Promise<ProfileListing[]> {
-  const folder = path.resolve(directory);
-  let names: string[];
-  try {
-    names = await readdir(folder);
-  } catch (error) {
-    throw new ProfileError(`Cannot read the profiles folder ${folder}`, { cause: error });
-  }
-  const listings: ProfileListing[] = [];
-  for (const name of names.filter((entry) => /\.ya?ml$/iu.test(entry)).sort()) {
-    let file = path.join(folder, name);
+/** Adds the profiles in one folder, then those in its subfolders, to `listings`. */
+async function listFolder(root: string, folder: string, entries: Dirent[], listings: ProfileListing[]): Promise<void> {
+  const byName = (a: Dirent, b: Dirent): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  for (const entry of entries.filter((item) => /\.ya?ml$/iu.test(item.name) && !item.isDirectory()).sort(byName)) {
+    let file = path.join(root, folder, entry.name);
     let base: string | null = null;
     let problem: string | null = null;
     try {
@@ -794,8 +790,36 @@ export async function listProfiles(directory: string): Promise<ProfileListing[]>
     } catch (error) {
       problem = error instanceof Error ? error.message : String(error);
     }
-    listings.push({ name: name.replace(/\.ya?ml$/iu, ''), file, extends: base, problem });
+    listings.push({ name: entry.name.replace(/\.ya?ml$/iu, ''), folder, file, extends: base, problem });
   }
+  for (const entry of entries.filter((item) => item.isDirectory() && !item.name.startsWith('.')).sort(byName)) {
+    const sub = folder === '' ? entry.name : `${folder}/${entry.name}`;
+    let inside: Dirent[];
+    try {
+      inside = await readdir(path.join(root, sub), { withFileTypes: true });
+    } catch {
+      // A subfolder that cannot be read lists nothing, rather than hiding the rest.
+      continue;
+    }
+    await listFolder(root, sub, inside, listings);
+  }
+}
+
+/**
+ * Lists the YAML profiles in a folder and its subfolders, by folder and then
+ * name, and whether each resolves. Hidden subfolders, such as .git, and linked
+ * ones are left out, as a sync leaves them out.
+ */
+export async function listProfiles(directory: string): Promise<ProfileListing[]> {
+  const root = path.resolve(directory);
+  const listings: ProfileListing[] = [];
+  let entries: Dirent[];
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    throw new ProfileError(`Cannot read the profiles folder ${root}`, { cause: error });
+  }
+  await listFolder(root, '', entries, listings);
   return listings;
 }
 

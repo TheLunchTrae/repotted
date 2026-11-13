@@ -594,13 +594,33 @@ describe('listProfiles', () => {
 
     const listings = await listProfiles(folder);
 
-    expect(listings.map(({ name, extends: base }) => [name, base])).toEqual([
-      ['app', path.join(folder, 'base.yaml')],
-      ['base', null],
-      ['broken', null],
+    expect(listings.map(({ name, folder: sub, extends: base }) => [name, sub, base])).toEqual([
+      ['app', '', path.join(folder, 'base.yaml')],
+      ['base', '', null],
+      ['broken', '', null],
     ]);
     expect(listings.map((listing) => listing.problem === null)).toEqual([true, true, false]);
     expect(listings[2]?.problem).toContain('has_wikki');
+  });
+
+  test('lists subfolders after the folder, leaving out hidden and linked ones', async () => {
+    const folder = path.join(directory, 'nested');
+    await mkdir(path.join(folder, 'team', 'apps'), { recursive: true });
+    await mkdir(path.join(folder, '.git'));
+    await writeFile(path.join(folder, 'base.yaml'), 'repository: { has_wiki: false }\n');
+    await writeFile(path.join(folder, 'team', 'oss.yaml'), 'extends: ../base.yaml\n');
+    await writeFile(path.join(folder, 'team', 'apps', 'web.yaml'), 'extends: ../oss.yaml\n');
+    await writeFile(path.join(folder, '.git', 'hidden.yaml'), '');
+    await symlink(path.join(folder, 'team'), path.join(folder, 'linked'));
+
+    const listings = await listProfiles(folder);
+
+    expect(listings.map(({ folder: sub, name, extends: base }) => [sub, name, base])).toEqual([
+      ['', 'base', null],
+      ['team', 'oss', path.join(folder, 'base.yaml')],
+      ['team/apps', 'web', path.join(folder, 'team', 'oss.yaml')],
+    ]);
+    expect(listings.every((listing) => listing.problem === null)).toBe(true);
   });
 
   test('reports real paths, matching the chain that resolveProfile reports for the same file', async () => {

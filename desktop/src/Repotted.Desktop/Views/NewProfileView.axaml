@@ -23,6 +23,19 @@
                    IsVisible="{Binding HasProblem}" AutomationProperties.LiveSetting="Assertive" />
       </StackPanel>
 
+      <!-- Shown once the profiles folder has a subfolder to choose -->
+      <StackPanel Spacing="6" IsVisible="{Binding HasPlaces}">
+        <TextBlock Classes="small" FontWeight="SemiBold" Text="Folder" />
+        <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Places}" SelectedItem="{Binding Place}"
+                  IsEnabled="{Binding Editable}" AutomationProperties.Name="Folder">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:NewProfilePlace">
+              <TextBlock Text="{Binding Label}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+      </StackPanel>
+
       <StackPanel Spacing="10" IsEnabled="{Binding Editable}">
         <TextBlock Classes="small" FontWeight="SemiBold" Text="Start from" />
         <RadioButton GroupName="start" IsChecked="{Binding StartsEmpty}"
@@ -43,7 +56,7 @@
                   IsVisible="{Binding Extends}" AutomationProperties.Name="Profile to extend">
           <ComboBox.ItemTemplate>
             <DataTemplate x:DataType="vm:ProfileItemViewModel">
-              <TextBlock Text="{Binding Name}" />
+              <TextBlock Text="{Binding Label}" />
             </DataTemplate>
           </ComboBox.ItemTemplate>
         </ComboBox>

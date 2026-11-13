@@ -21,10 +21,17 @@ internal enum NewProfileStart
     Capture,
 }
 
+/// <summary>A place a new profile can go: the profiles folder, or one of its subfolders.</summary>
+/// <param name="Path">The subfolder, with <c>/</c> separators; empty for the profiles folder itself.</param>
+internal sealed record NewProfilePlace(string Path)
+{
+    public string Label => Path.Length == 0 ? "Profiles folder" : Path;
+}
+
 /// <summary>
-/// A new profile file in the profiles folder: empty, extending another
-/// profile, or captured from a repository. It never replaces a file, and a
-/// capture only reads from GitHub.
+/// A new profile file in the profiles folder or one of its subfolders: empty,
+/// extending another profile, or captured from a repository. It never
+/// replaces a file, and a capture only reads from GitHub.
 /// </summary>
 internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
 {
@@ -36,8 +43,8 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
 
     private readonly RepottedClient client;
 
-    /// <summary>The folder's path when the form opened, where the file goes.</summary>
-    private readonly string folder;
+    /// <summary>The profiles folder's path when the form opened; the file goes there or in a subfolder of it.</summary>
+    private readonly string root;
 
     /// <summary>Where moving a finished capture to its name takes its turn with saves and syncs.</summary>
     private readonly ProfileFolder profileFolder;
@@ -64,6 +71,8 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     /// <param name="cancel">Closes the form.</param>
     /// <param name="released">Runs once the form gives up a name it held, so another form can take it.</param>
     /// <param name="captures">The profile files that captures still running will make, which every form shares.</param>
+    /// <param name="subfolders">The subfolders of the profiles folder the profile can go in, with <c>/</c> separators.</param>
+    /// <param name="subfolder">The subfolder it goes in at first; empty for the profiles folder itself.</param>
     public NewProfileViewModel(
         RepottedClient client,
         ProfileFolder folder,
@@ -73,10 +82,12 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         Func<string, IReadOnlyList<string>, Task> created,
         Action cancel,
         Action released,
-        ISet<string> captures)
+        ISet<string> captures,
+        IReadOnlyList<string>? subfolders = null,
+        string subfolder = "")
     {
         this.client = client;
-        this.folder = folder.Path;
+        root = folder.Path;
         profileFolder = folder;
         this.created = created;
         this.cancel = cancel;
@@ -84,6 +95,8 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         this.captures = captures;
         Bases = bases;
         Repositories = repositories;
+        Places = [new NewProfilePlace(""), .. (subfolders ?? []).Select(path => new NewProfilePlace(path))];
+        Place = Places.FirstOrDefault(place => place.Path == subfolder) ?? Places[0];
         Base = bases.Count > 0 ? bases[0] : null;
         Repository = repository ?? (repositories.Count > 0 ? repositories[0] : null);
         Start = repository is null ? NewProfileStart.Empty : NewProfileStart.Capture;
@@ -95,6 +108,26 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     }
 
     public IReadOnlyList<ProfileItemViewModel> Bases { get; }
+
+    /// <summary>Where the profile can go: the profiles folder, then each subfolder.</summary>
+    public IReadOnlyList<NewProfilePlace> Places { get; }
+
+    /// <summary>Whether there is a subfolder to choose, so the choice shows.</summary>
+    public bool HasPlaces => Places.Count > 1;
+
+    /// <summary>The folder the profile goes in.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FileName))]
+    public partial NewProfilePlace Place { get; set; }
+
+    // Another folder may already hold a file of the name.
+    partial void OnPlaceChanged(NewProfilePlace value) => Recheck();
+
+    /// <summary>How a message names where the file goes: this folder, or the subfolder chosen.</summary>
+    private string PlaceName => Place.Path.Length == 0 ? "this folder" : Place.Path;
+
+    /// <summary>The folder the file goes in, on disk.</summary>
+    private string Target => Place.Path.Length == 0 ? root : Path.Combine(root, Place.Path.Replace('/', Path.DirectorySeparatorChar));
 
     public IReadOnlyList<string> Repositories { get; }
 
@@ -118,7 +151,8 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
 
     partial void OnNameChanged(string value) => Problem = Check(value.Trim());
 
-    public string FileName => $"{Name.Trim()}.yaml";
+    /// <summary>The file, with its subfolder when it goes in one.</summary>
+    public string FileName => Place.Path.Length == 0 ? $"{Name.Trim()}.yaml" : $"{Place.Path}/{Name.Trim()}.yaml";
 
     /// <summary>Whether the file name shows: once there is a name, and it can be used.</summary>
     public bool ShowFileName => Name.Trim().Length > 0 && Problem is null;
@@ -205,8 +239,8 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
 
     /// <summary>Why the folder has no room for <paramref name="name"/>: a file of that name, or another capture making one.</summary>
     private string? InUse(string name) =>
-        Taken(name) is { } taken ? $"{taken} is already in this folder."
-        : Path.Combine(folder, $"{name}.yaml") is var file && captures.Contains(file) && !string.Equals(file, capturing, StringComparison.OrdinalIgnoreCase)
+        Taken(name) is { } taken ? $"{taken} is already in {PlaceName}."
+        : Path.Combine(Target, $"{name}.yaml") is var file && captures.Contains(file) && !string.Equals(file, capturing, StringComparison.OrdinalIgnoreCase)
             ? $"Another capture is making {name}.yaml."
         : null;
 
@@ -222,22 +256,24 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     /// running holds the name, through <see cref="captures"/>, and another
     /// copy of the app capturing the same name writes a file of its own.
     /// </summary>
-    private string Hold(string fileName) => Path.Combine(folder, $".{fileName}.{Path.GetRandomFileName()}.repotted-capture");
+    private string Hold(string fileName) => Path.Combine(Target, $".{fileName}.{Path.GetRandomFileName()}.repotted-capture");
 
     /// <summary>The file already in the folder under this name, as a .yaml or .yml file in any case.</summary>
-    private string? Taken(string name) =>
-        Entries().FirstOrDefault(entry =>
+    private string? Taken(string name) => Taken(Target, name);
+
+    private static string? Taken(string folder, string name) =>
+        Entries(folder).FirstOrDefault(entry =>
             string.Equals(entry, $"{name}.yaml", StringComparison.OrdinalIgnoreCase)
             || string.Equals(entry, $"{name}.yml", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>The profile file named <paramref name="name"/> as the folder lists it, which is how the CLI names it.</summary>
-    private string? Entry(string name) =>
-        Entries().FirstOrDefault(entry =>
+    /// <summary>The profile file named <paramref name="name"/> as <paramref name="folder"/> lists it, which is how the CLI names it.</summary>
+    private static string? Entry(string folder, string name) =>
+        Entries(folder).FirstOrDefault(entry =>
             string.Equals(entry, $"{name}.yaml", StringComparison.Ordinal)
             || string.Equals(entry, $"{name}.yml", StringComparison.Ordinal))
-        ?? Taken(name);
+        ?? Taken(folder, name);
 
-    private IEnumerable<string> Entries() =>
+    private static IEnumerable<string> Entries(string folder) =>
         Directory.Exists(folder)
             ? Directory.EnumerateFileSystemEntries(folder).Select(entry => Path.GetFileName(entry))
             : [];
@@ -261,7 +297,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         // The name as it was when Create was pressed, which the whole capture keeps.
         var name = Name.Trim();
         var fileName = $"{name}.yaml";
-        var file = Path.Combine(folder, fileName);
+        var file = Path.Combine(Target, fileName);
         string? hold = null;
         try
         {
@@ -290,7 +326,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
                     {
                         if (!disposed)
                         {
-                            Error = Place(name, hold, file);
+                            Error = MoveCapture(name, hold, file);
                             placed = Error is null;
                         }
                         return Task.CompletedTask;
@@ -301,10 +337,13 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
                     }
                     break;
                 case NewProfileStart.Extends:
-                    // The base's own name in the folder: the CLI follows it from the
-                    // new file's real folder, which a path from the folder as picked may not reach.
-                    var entry = Entry(Base!.Name) ?? throw new FileNotFoundException($"{Base.Name} is no longer in this folder.");
-                    Write(file, $"extends: {Quoted(entry)}\n");
+                    // The base's own name in its folder, from the new file's folder within
+                    // the profiles folder: the CLI follows it from the new file's real
+                    // folder, which a path from the folder as picked may not reach.
+                    var baseFolder = Base!.Folder.Length == 0 ? root : Path.Combine(root, Base.Folder.Replace('/', Path.DirectorySeparatorChar));
+                    var entry = Entry(baseFolder, Base.Name) ?? throw new FileNotFoundException($"{Base.Label} is no longer in the profiles folder.");
+                    var relative = Path.GetRelativePath(Target, Path.Combine(baseFolder, entry)).Replace(Path.DirectorySeparatorChar, '/');
+                    Write(file, $"extends: {Quoted(relative)}\n");
                     break;
                 default:
                     Write(file, "");
@@ -348,11 +387,11 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     /// One of the same name makes the move fail; one that differs only in case
     /// would not on every disk, so it is checked first.
     /// </summary>
-    private string? Place(string name, string hold, string file)
+    private string? MoveCapture(string name, string hold, string file)
     {
         if (Taken(name) is { } other && other != Path.GetFileName(file))
         {
-            return $"{other} is already in this folder.";
+            return $"{other} is already in {PlaceName}.";
         }
         try
         {
@@ -361,7 +400,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         }
         catch (IOException) when (Taken(name) is { } taken)
         {
-            return $"{taken} is already in this folder.";
+            return $"{taken} is already in {PlaceName}.";
         }
     }
 

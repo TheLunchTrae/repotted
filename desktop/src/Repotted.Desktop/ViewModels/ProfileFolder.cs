@@ -21,17 +21,17 @@ internal sealed partial class ProfileFolder(RepottedClient client, AppSettings s
 
     /// <summary>The folder the app lists and edits: the profiles folder, or its copy of the config repository.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SourceText), nameof(EmptyMessage))]
+    [NotifyPropertyChangedFor(nameof(SourceText), nameof(SourceName), nameof(ListName), nameof(SourceDetail), nameof(EmptyMessage))]
     public partial string Path { get; private set; } = StartFolder(settings);
 
     /// <summary>The config repository profiles live in, as <c>owner/name</c>; null when they live in a local folder.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(UsesRepository), nameof(SourceLabel), nameof(SourceText), nameof(RepositoryTitle), nameof(RepositoryLabel), nameof(FolderTitle), nameof(FolderLabel), nameof(RefreshLabel), nameof(ListLabel), nameof(EmptyMessage))]
+    [NotifyPropertyChangedFor(nameof(UsesRepository), nameof(SourceLabel), nameof(SourceText), nameof(RepositoryTitle), nameof(RepositoryLabel), nameof(FolderTitle), nameof(FolderLabel), nameof(RefreshLabel), nameof(SourceName), nameof(ListName), nameof(SourceDetail), nameof(EmptyMessage))]
     public partial string? Repository { get; private set; } = settings.Load().ConfigRepository;
 
     /// <summary>The folder in the config repository; empty for its root.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SourceText), nameof(EmptyMessage))]
+    [NotifyPropertyChangedFor(nameof(SourceText), nameof(SourceDetail), nameof(EmptyMessage))]
     public partial string RepositoryPath { get; private set; } = settings.Load().ConfigPath ?? "";
 
     public bool UsesRepository => Repository is not null;
@@ -54,8 +54,24 @@ internal sealed partial class ProfileFolder(RepottedClient client, AppSettings s
 
     public string RefreshLabel => UsesRepository ? "Sync now" : "Refresh";
 
-    /// <summary>The heading over the list of profiles in the sidebar.</summary>
-    public string ListLabel => UsesRepository ? "In this repository" : "In this folder";
+    /// <summary>
+    /// The heading over the profiles in the sidebar: the repository's name, or
+    /// the folder's, since every profile listed under it is in that one place.
+    /// </summary>
+    public string SourceName => Repository is { } repository
+        ? Split(repository).Name
+        : System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(Path)) is { Length: > 0 } name ? name : Path;
+
+    /// <summary>What a screen reader calls the profiles tree.</summary>
+    public string ListName => $"Profiles in {SourceName}";
+
+    /// <summary>The line under the heading: the repository's owner and the folder in it, or the folder the profiles folder is in.</summary>
+    public string SourceDetail => Repository is { } repository
+        ? RepositoryPath.Length == 0 ? Split(repository).Owner : $"{Split(repository).Owner} · {RepositoryPath}"
+        : System.IO.Path.GetDirectoryName(System.IO.Path.TrimEndingDirectorySeparator(Path)) ?? "";
+
+    private static (string Owner, string Name) Split(string repository) =>
+        repository.Split('/', 2) is [var owner, var name] ? (owner, name) : ("", repository);
 
     public string EmptyMessage => $"No profiles in {SourceText} yet.";
 
@@ -206,4 +222,57 @@ internal sealed partial class ProfileFolder(RepottedClient client, AppSettings s
 
     /// <summary>Whether a file the sync names, by its path in the folder, is not in the folder.</summary>
     private bool Gone(string file) => !File.Exists(System.IO.Path.Combine(Path, file));
+
+    /// <summary>
+    /// The subfolders of <paramref name="root"/> at any depth, from the root
+    /// with <c>/</c> separators, sorted. Hidden and linked subfolders are left
+    /// out, as the profile list and a sync leave them out, and so is any that
+    /// can't be read.
+    /// </summary>
+    public static List<string> Subfolders(string root)
+    {
+        List<string> found = [];
+        Walk(Readable(new DirectoryInfo(root)), "");
+        return found;
+
+        void Walk(List<DirectoryInfo>? children, string path)
+        {
+            foreach (var info in (children ?? []).OrderBy(info => info.Name, StringComparer.Ordinal))
+            {
+                // A subfolder that can't be read is left out, as the profile list leaves it out.
+                if (Readable(info) is { } inner)
+                {
+                    var sub = path.Length == 0 ? info.Name : $"{path}/{info.Name}";
+                    found.Add(sub);
+                    Walk(inner, sub);
+                }
+            }
+        }
+
+        static List<DirectoryInfo>? Readable(DirectoryInfo directory)
+        {
+            try
+            {
+                return [.. directory.EnumerateDirectories().Where(info => !info.Name.StartsWith('.') && info.LinkTarget is null)];
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                return null;
+            }
+        }
+    }
+
+    /// <summary>The YAML files in <paramref name="root"/> and its <see cref="Subfolders"/>, from the root with <c>/</c> separators.</summary>
+    public static IEnumerable<string> ProfileFiles(string root) =>
+        Subfolders(root).Prepend("").SelectMany(sub => Directory.EnumerateFiles(Native(root, sub))
+            .Select(System.IO.Path.GetFileName)
+            .OfType<string>()
+            .Where(name => !name.StartsWith('.'))
+            .Where(name => name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
+            .Order(StringComparer.Ordinal)
+            .Select(name => sub.Length == 0 ? name : $"{sub}/{name}"));
+
+    /// <summary>A path from <paramref name="root"/> with <c>/</c> separators, as a path on this computer.</summary>
+    public static string Native(string root, string relative) =>
+        relative.Length == 0 ? root : System.IO.Path.Combine(root, relative.Replace('/', System.IO.Path.DirectorySeparatorChar));
 }

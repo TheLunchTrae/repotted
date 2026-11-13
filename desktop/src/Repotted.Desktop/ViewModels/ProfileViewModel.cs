@@ -99,6 +99,12 @@ internal sealed partial class ProfileViewModel(
 
     public string Name => listing.Name;
 
+    /// <summary>The subfolder of the profiles folder the file is in; empty for the folder itself.</summary>
+    public string Folder => listing.Folder;
+
+    /// <summary>Its name with its subfolder, such as <c>team/oss</c>, as the sidebar names it.</summary>
+    public string Label => Folder.Length == 0 ? Name : $"{Folder}/{Name}";
+
     public string File => listing.File;
 
     public string FileName => Path.GetFileName(listing.File);
@@ -697,7 +703,7 @@ internal sealed partial class ProfileViewModel(
     {
         var selected = SelectedTab?.Name;
         string? Base(string file) =>
-            string.Equals(file, profile.File, StringComparison.Ordinal) ? null : Path.GetFileNameWithoutExtension(file);
+            string.Equals(file, profile.File, StringComparison.Ordinal) ? null : LabelOf(file);
         SettingOrigin Origin(string? file) => file is null
             ? SettingOrigin.NotManaged
             : Base(file) is null ? SettingOrigin.Own : SettingOrigin.Inherited;
@@ -746,7 +752,7 @@ internal sealed partial class ProfileViewModel(
         Tabs.Add(EntriesTab("Environments", "environments"));
         Tabs.Add(EntriesTab("Labels", "labels"));
         SelectedTab = Tabs.FirstOrDefault(tab => tab.Name == selected) ?? Tabs[0];
-        BaseName = profile.Chain.Count > 1 ? Path.GetFileNameWithoutExtension(profile.Chain[1]) : null;
+        BaseName = profile.Chain.Count > 1 ? LabelOf(profile.Chain[1]) : null;
         DraftWarnings = profile.Warnings;
         ChangeCount = 0;
         Yaml = ReadText(profile.File);
@@ -790,8 +796,25 @@ internal sealed partial class ProfileViewModel(
             ? JsonNode.Parse(list.GetRawText())!.AsArray().OfType<JsonObject>().Where(entry => entry["name"] is JsonValue)
             : [];
 
+    /// <summary>
+    /// A profile file as the sidebar names it, from the profiles folder, such
+    /// as <c>team/oss</c>; a file outside the folder goes by its name alone.
+    /// </summary>
+    private string LabelOf(string file)
+    {
+        var root = Path.GetDirectoryName(listing.File) ?? "";
+        foreach (var _ in Folder.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            root = Path.GetDirectoryName(root) ?? "";
+        }
+        var relative = Path.GetRelativePath(root, file);
+        return relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative)
+            ? Path.GetFileNameWithoutExtension(file)
+            : Path.ChangeExtension(relative, null).Replace(Path.DirectorySeparatorChar, '/');
+    }
+
     /// <summary>The value a base profile gives a setting, and the file that sets it there.</summary>
-    private static InheritedValue? Inherit(ResolvedProfile? @base, string section, string key)
+    private InheritedValue? Inherit(ResolvedProfile? @base, string section, string key)
     {
         if (@base is null
             || !@base.Sources[section].TryGetValue(key, out var file)
@@ -800,11 +823,11 @@ internal sealed partial class ProfileViewModel(
         {
             return null;
         }
-        return new InheritedValue(value, Path.GetFileNameWithoutExtension(file));
+        return new InheritedValue(value, LabelOf(file));
     }
 
     /// <summary>The draft a base profile has of a setting, and the file that holds it there.</summary>
-    private static DraftValue? BaseDraft(ResolvedProfile? @base, string section, string key)
+    private DraftValue? BaseDraft(ResolvedProfile? @base, string section, string key)
     {
         if (@base is null
             || !@base.Drafts.TryGetProperty(section, out var drafts)
@@ -813,7 +836,7 @@ internal sealed partial class ProfileViewModel(
         {
             return null;
         }
-        return new DraftValue(value, Path.GetFileNameWithoutExtension(file));
+        return new DraftValue(value, LabelOf(file));
     }
 
     /// <summary>

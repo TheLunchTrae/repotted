@@ -23,8 +23,11 @@ internal sealed record RepositoryDocument(string FullName, bool Private, bool Ar
 /// <summary>What <c>repotted repos --json</c> prints.</summary>
 internal sealed record RepositoryListDocument(string Source, IReadOnlyList<RepositoryDocument> Repositories);
 
-/// <summary>A profile in the profiles folder, from <c>repotted profiles --json</c>.</summary>
-internal sealed record ProfileListingDocument(string Name, string File, string? Extends, string? Problem);
+/// <summary>
+/// A profile in the profiles folder, from <c>repotted profiles --json</c>.
+/// <c>Folder</c> is the subfolder it is in, with <c>/</c> separators, and empty for the folder itself.
+/// </summary>
+internal sealed record ProfileListingDocument(string Name, string File, string? Extends, string? Problem, string Folder = "");
 
 /// <summary>What <c>repotted profiles --json</c> prints.</summary>
 internal sealed record ProfileListDocument(IReadOnlyList<ProfileListingDocument> Profiles);

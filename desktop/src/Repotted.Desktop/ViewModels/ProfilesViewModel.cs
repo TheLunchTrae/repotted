@@ -14,7 +14,7 @@ internal sealed partial class ProfileItemViewModel(
     string? baseName,
     bool removed = false,
     Action<ProfileItemViewModel>? delete = null,
-    Func<bool>? canDelete = null)
+    Func<bool>? canDelete = null) : ProfileTreeNode
 {
     public ProfileListingDocument Listing => listing;
 
@@ -27,6 +27,14 @@ internal sealed partial class ProfileItemViewModel(
     public string? BaseName => baseName;
 
     public string Name => Listing.Name;
+
+    /// <summary>The subfolder of the profiles folder it is in; empty for the folder itself.</summary>
+    public string Folder => Listing.Folder;
+
+    /// <summary>Its name with its subfolder, such as <c>team/oss</c>, which tells apart profiles of one name in two subfolders.</summary>
+    public string Label => Folder.Length == 0 ? Name : $"{Folder}/{Name}";
+
+    public override string SpokenName => Name;
 
     public bool Invalid => Listing.Problem is not null;
 
@@ -219,7 +227,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         leave = answer;
         askedAbout = only;
-        leavingNames = [.. Unsaved.Select(editor => editor.Name).Order(StringComparer.Ordinal)];
+        leavingNames = [.. Unsaved.Select(editor => editor.Label).Order(StringComparer.Ordinal)];
         Leaving = act;
         OnPropertyChanged(nameof(LeavingMessage));
         try
@@ -311,7 +319,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             // both stay as they are, and the notice names the profile instead.
             var why = left.Loading ? "is still loading" : left.Saving ? "is still saving" : "could not be saved";
             var covered = leaveNotice is { } earlier && Notice == earlier.Shown ? earlier.Covered : Notice;
-            Notice = $"{left.Name} {why}, so you cannot {Leaving} yet.";
+            Notice = $"{left.Label} {why}, so you cannot {Leaving} yet.";
             leaveNotice = (Notice, left.File, covered);
             answer.TrySetResult(false);
             return;
@@ -343,6 +351,36 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial ProfileItemViewModel? Selected { get; set; }
+
+    /// <summary>
+    /// The profiles in the sidebar as a tree: the profiles in the folder, then
+    /// each subfolder with what it holds. It shows what <see cref="Items"/> holds.
+    /// </summary>
+    public ObservableCollection<ProfileTreeNode> Tree { get; } = [];
+
+    /// <summary>
+    /// The row selected in the sidebar tree. Choosing a profile opens it, as
+    /// <see cref="Selected"/>; choosing a subfolder leaves the open profile as it is.
+    /// </summary>
+    [ObservableProperty]
+    public partial ProfileTreeNode? SelectedNode { get; set; }
+
+    partial void OnSelectedNodeChanged(ProfileTreeNode? value)
+    {
+        if (value is ProfileItemViewModel item)
+        {
+            Selected = item;
+        }
+    }
+
+    /// <summary>The subfolders closed in the tree, by path, which stay closed when the list is read again.</summary>
+    private readonly HashSet<string> collapsed = new(StringComparer.Ordinal);
+
+    /// <summary>The profiles folder <see cref="collapsed"/> is about; another folder starts with every subfolder open.</summary>
+    private string? collapsedIn;
+
+    /// <summary>The subfolders in the tree, by path.</summary>
+    private readonly Dictionary<string, ProfileFolderNode> folders = new(StringComparer.Ordinal);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowProfile), nameof(ShowNoneOpen))]
@@ -395,9 +433,12 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         DropCloseQuestion(null);
         Captured = null;
         Connecting = null;
+        // A new profile starts in the folder of the one open, unless it captures a repository.
+        var subfolder = repository is null ? Current?.Folder ?? "" : "";
         // Nothing stays selected, so choosing any profile in the list leaves the form.
         Selected = null;
-        Creating = new NewProfileViewModel(client, Folder, Usable, repositories(), repository, CreatedAsync, CancelNew, Released, captures);
+        Creating = new NewProfileViewModel(
+            client, Folder, Usable, repositories(), repository, CreatedAsync, CancelNew, Released, captures, Subfolders(), subfolder);
     }
 
     /// <summary>
@@ -422,7 +463,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             return;
         }
         Creating = null;
-        Selected = Items.FirstOrDefault(item => item.Listing.File == Current?.File);
+        Reselect(Items.FirstOrDefault(item => IsOpen(item)));
     }
 
     /// <summary>A closed form gave up the name it held, so the open one may now take it.</summary>
@@ -482,7 +523,24 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             return;
         }
         Connecting = null;
-        Selected = Items.FirstOrDefault(item => item.Listing.File == Current?.File);
+        Reselect(Items.FirstOrDefault(item => IsOpen(item)));
+    }
+
+    /// <summary>Whether <paramref name="item"/> is the open profile's row; a linked file can be listed in two folders.</summary>
+    private bool IsOpen(ProfileItemViewModel item) => Current is { } current && item.Listing.File == current.File && item.Folder == current.Folder;
+
+    /// <summary>Selects the profile already open again, leaving the subfolders open or closed as they are.</summary>
+    private void Reselect(ProfileItemViewModel? item)
+    {
+        revealing = false;
+        try
+        {
+            Selected = item;
+        }
+        finally
+        {
+            revealing = true;
+        }
     }
 
     private async Task ConnectedAsync(string repository, string path, SyncDocument result, IReadOnlyList<string> skipped)
@@ -552,8 +610,16 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
 
     public bool HasNotice => Notice is not null;
 
+    /// <summary>Whether choosing a profile opens the subfolders it is in; off while <see cref="Reselect"/> chooses the one already open again.</summary>
+    private bool revealing = true;
+
     partial void OnSelectedChanged(ProfileItemViewModel? value)
     {
+        if (revealing)
+        {
+            Reveal(value);
+        }
+        SelectedNode = value;
         if (value is not null)
         {
             DropCloseQuestion(value.Listing.File);
@@ -743,10 +809,11 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
                 return;
             }
             // A linked file is listed under its real path, so two names can share one file.
+            // A profile in a subfolder goes by its subfolder too, as the list shows it.
             var names = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var listing in listings)
             {
-                names.TryAdd(listing.File, listing.Name);
+                names.TryAdd(listing.File, listing.Folder.Length == 0 ? listing.Name : $"{listing.Folder}/{listing.Name}");
             }
             // Editors start over from the file, which may have changed outside
             // the app, unless they hold edits that are not saved yet. Those
@@ -768,7 +835,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
                 else
                 {
                     editor.Removed = true;
-                    removed.Add(new ProfileItemViewModel(new ProfileListingDocument(editor.Name, file, null, null), null, removed: true));
+                    removed.Add(new ProfileItemViewModel(new ProfileListingDocument(editor.Name, file, null, null, editor.Folder), null, removed: true));
                 }
             }
             marking = false;
@@ -785,24 +852,36 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             Usable = [.. all.Where(item => !item.Invalid && !item.Removed)];
             ReaskDelete();
             // The CLI lists real paths, and the folder's own path may not be one,
-            // so a new file is found by its name in the folder.
-            var keep = select is null
-                ? Current?.File
-                : listings.FirstOrDefault(listing => listing.Name == Path.GetFileNameWithoutExtension(select))?.File;
+            // so a new file is found by its subfolder and name in the folder.
+            // A profile just made opens its folders; the one already open keeps the tree as the user left it.
+            var made = select is not null;
+            // A linked file can be listed in two folders, so the row is found by its file and its folder.
+            (string File, string Folder)? keep = select is null
+                ? Current is { } current ? (current.File, current.Folder) : null
+                : listings.FirstOrDefault(listing =>
+                    listing.Name == Path.GetFileNameWithoutExtension(select)
+                    && listing.Folder == SubfolderOf(folder, select)) is { } listed ? (listed.File, listed.Folder) : null;
             select = null;
             Current = null;
             ApplyFilter();
             // The new profile form stays open, and nothing in the list is selected under it.
             var creating = Creating is not null;
-            if (Items.FirstOrDefault(item => item.Listing.File == keep) is { } shown)
+            if (Items.FirstOrDefault(item => (item.Listing.File, item.Folder) == keep) is { } shown)
             {
                 if (!creating)
                 {
-                    Selected = shown;
+                    if (made)
+                    {
+                        Selected = shown;
+                    }
+                    else
+                    {
+                        Reselect(shown);
+                    }
                 }
                 Open(shown.Listing);
             }
-            else if (all.FirstOrDefault(item => item.Listing.File == keep) is { } hidden)
+            else if (all.FirstOrDefault(item => (item.Listing.File, item.Folder) == keep) is { } hidden)
             {
                 // The search hides it, but it stays open.
                 Open(hidden.Listing);
@@ -849,7 +928,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
 
     public bool AskingDelete => Deleting is not null;
 
-    public string DeleteQuestion => Deleting is null ? "" : $"Delete {Deleting.Name}?";
+    public string DeleteQuestion => Deleting is null ? "" : $"Delete {Deleting.Label}?";
 
     /// <summary>What deleting takes with it: the file, any unsaved changes, and the profiles that stop loading.</summary>
     [ObservableProperty]
@@ -882,7 +961,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     }
 
     private ProfileItemViewModel? Listed(ProfileListingDocument listing) =>
-        all.FirstOrDefault(item => item.Listing.File == listing.File && item.Name == listing.Name && !item.Removed);
+        all.FirstOrDefault(item => item.Listing.File == listing.File && item.Folder == listing.Folder && item.Name == listing.Name && !item.Removed);
 
     /// <summary>
     /// Words the question again after the list or the profile's edits
@@ -919,7 +998,9 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             return;
         }
         var entry = Entry(item.Listing).Path;
-        var file = Path.GetFileName(entry ?? item.Listing.File);
+        // The file by its path in the folder, as the sync record keys it.
+        var name = Path.GetFileName(entry ?? item.Listing.File);
+        var file = item.Folder.Length == 0 ? name : $"{item.Folder}/{name}";
         List<string> parts =
         [
             Folder.Repository is not { } repository ? $"This deletes {file} from the profiles folder, and it can't be undone."
@@ -956,7 +1037,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             next = [.. listed.Where(item => item.Listing.Extends is { } over && next.Any(above => above.Listing.File == over) && found.Add(item.Listing.File))];
             through.AddRange(next);
         }
-        return ([.. direct.Select(item => item.Name).Order(StringComparer.Ordinal)], [.. through.Select(item => item.Name).Order(StringComparer.Ordinal)]);
+        return ([.. direct.Select(item => item.Label).Order(StringComparer.Ordinal)], [.. through.Select(item => item.Label).Order(StringComparer.Ordinal)]);
     }
 
     private static string Join(List<string> names) => names.Count switch
@@ -967,7 +1048,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     };
 
     /// <summary>
-    /// The file in the folder that lists as <paramref name="listing"/>. The
+    /// The file in the listing's subfolder that lists as <paramref name="listing"/>. The
     /// CLI lists a linked file under its real path, so the entry is found by
     /// name: the one whose file name the listing shares, or the only one of
     /// that name. Deleting it takes a link out of the folder, and never the
@@ -982,7 +1063,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         {
             named =
             [
-                .. Directory.EnumerateFiles(Folder.Path).Where(entry =>
+                .. Directory.EnumerateFiles(ProfileFolder.Native(Folder.Path, listing.Folder)).Where(entry =>
                     Path.GetFileNameWithoutExtension(entry) == listing.Name
                     && Path.GetExtension(entry).ToLowerInvariant() is ".yaml" or ".yml"),
             ];
@@ -1076,7 +1157,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
                     // A file gone already, such as by a sync, is as good as deleted.
                     else if (!gone)
                     {
-                        throw new IOException($"Repotted could not tell which file in the folder is {item.Name}.");
+                        throw new IOException($"Repotted could not tell which file in the folder is {item.Label}.");
                     }
                     deleted = true;
                     // The deleted profile closes now, so nothing edits or saves it while the list is read again.
@@ -1105,7 +1186,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
-                Notice = $"Repotted could not delete {item.Name}: {error.Message}";
+                Notice = $"Repotted could not delete {item.Label}: {error.Message}";
             }
             Deleting = null;
             if (!deleted || folder != Folder.Path)
@@ -1162,17 +1243,145 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         await RefreshAsync().ConfigureAwait(true);
     }
 
+    /// <summary>
+    /// The subfolders a new profile can go in: those in the profiles folder,
+    /// with or without profiles, and those of the listed profiles, which a
+    /// working copy that hasn't synced yet may not have.
+    /// </summary>
+    private List<string> Subfolders()
+    {
+        var paths = new SortedSet<string>(ProfileFolder.Subfolders(Folder.Path), StringComparer.Ordinal);
+        foreach (var item in all.Where(item => !item.Removed))
+        {
+            for (var path = item.Folder; path.Length > 0; path = path.LastIndexOf('/') is var cut and >= 0 ? path[..cut] : "")
+            {
+                paths.Add(path);
+            }
+        }
+        return [.. paths];
+    }
+
+    /// <summary>The subfolder of <paramref name="folder"/> that <paramref name="file"/> is in, as the CLI lists it.</summary>
+    private static string SubfolderOf(string folder, string file)
+    {
+        var relative = Path.GetRelativePath(folder, Path.GetDirectoryName(file) ?? folder);
+        return relative == "." ? "" : relative.Replace(Path.DirectorySeparatorChar, '/');
+    }
+
+    /// <summary>
+    /// Shows the profiles whose name or subfolder holds the filter, in the list
+    /// and in the tree. A profile the filter hides is no longer selected, though
+    /// its editor stays open.
+    /// </summary>
     private void ApplyFilter()
     {
         var keep = Selected;
+        var filter = Filter.Trim();
         Items.Clear();
-        foreach (var item in all.Where(item => item.Name.Contains(Filter.Trim(), StringComparison.OrdinalIgnoreCase)))
+        foreach (var item in all.Where(item => item.Label.Contains(filter, StringComparison.OrdinalIgnoreCase)))
         {
             Items.Add(item);
         }
-        if (keep is not null && Items.Contains(keep))
+        BuildTree(filter.Length > 0);
+        if (keep is not null && !Items.Contains(keep))
         {
-            Selected = keep;
+            Selected = null;
+        }
+        SelectedNode = Selected;
+    }
+
+    /// <summary>
+    /// Builds the tree from the list: in each folder its profiles, then its
+    /// subfolders. Subfolders open unless closed before; while filtering, every
+    /// subfolder with a match opens, and closing one is not remembered.
+    /// </summary>
+    private void BuildTree(bool filtering)
+    {
+        foreach (var node in folders.Values)
+        {
+            node.PropertyChanged -= OnFolderNodeChanged;
+        }
+        folders.Clear();
+        Tree.Clear();
+        if (collapsedIn != Folder.Path)
+        {
+            collapsed.Clear();
+            collapsedIn = Folder.Path;
+        }
+        foreach (var item in Items)
+        {
+            var parent = FolderNode(item.Folder, filtering);
+            var siblings = parent?.Children ?? Tree;
+            // Profiles come before subfolders, even one only an editor keeps in the list.
+            var at = 0;
+            while (at < siblings.Count && siblings[at] is ProfileItemViewModel)
+            {
+                at++;
+            }
+            siblings.Insert(at, item);
+            for (var node = parent; node is not null; node = Parent(node))
+            {
+                node.Count++;
+            }
+        }
+        foreach (var node in folders.Values)
+        {
+            node.PropertyChanged += OnFolderNodeChanged;
+        }
+    }
+
+    /// <summary>The tree's node for <paramref name="path"/>, made with the nodes over it the first time; null for the folder itself.</summary>
+    private ProfileFolderNode? FolderNode(string path, bool filtering)
+    {
+        if (path.Length == 0)
+        {
+            return null;
+        }
+        if (folders.TryGetValue(path, out var node))
+        {
+            return node;
+        }
+        var cut = path.LastIndexOf('/');
+        var parent = cut < 0 ? null : FolderNode(path[..cut], filtering);
+        node = new ProfileFolderNode(path) { IsExpanded = filtering || !collapsed.Contains(path) };
+        folders[path] = node;
+        (parent?.Children ?? Tree).Add(node);
+        return node;
+    }
+
+    private ProfileFolderNode? Parent(ProfileFolderNode node)
+    {
+        var cut = node.Path.LastIndexOf('/');
+        return cut < 0 ? null : folders.GetValueOrDefault(node.Path[..cut]);
+    }
+
+    /// <summary>Remembers a subfolder opened or closed, unless a filter opened it.</summary>
+    private void OnFolderNodeChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ProfileTreeNode.IsExpanded) || sender is not ProfileFolderNode node || Filter.Trim().Length > 0)
+        {
+            return;
+        }
+        if (node.IsExpanded)
+        {
+            collapsed.Remove(node.Path);
+        }
+        else
+        {
+            collapsed.Add(node.Path);
+        }
+    }
+
+    /// <summary>Opens the subfolders over a profile, so the tree shows it selected.</summary>
+    private void Reveal(ProfileItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+        for (var node = folders.GetValueOrDefault(item.Folder); node is not null; node = Parent(node))
+        {
+            node.IsExpanded = true;
         }
     }
 }

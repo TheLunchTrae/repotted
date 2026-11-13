@@ -121,8 +121,11 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   apply that joined the batch, which stays, and `batch` is the batch as it is now, or
   null when it ended; and with `--discard` alone, `{ discarded }`, the
   folder's path.
-- `profiles` prints `{ profiles }`, each as `{ name, file, extends, problem }`,
-  sorted by file name: the `.yaml` and `.yml` files directly in the folder.
+- `profiles` prints `{ profiles }`, each as `{ name, folder, file, extends, problem }`,
+  for the `.yaml` and `.yml` files in the folder and its subfolders: a folder's
+  own profiles by file name, then each subfolder's, by name. Subfolders whose
+  names start with a dot, and links to folders, are left out. `folder` is the
+  subfolder, with `/` separators, such as `team/apps`, or `""` for the folder itself.
   `file` is a real path, with links resolved, as in `profile`'s `chain`.
   `extends` is the real path of the profile it extends, or null, and
   `problem` says why the profile cannot be used, or is null.

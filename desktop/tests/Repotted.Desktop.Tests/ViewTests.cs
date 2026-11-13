@@ -203,8 +203,8 @@ public sealed class ViewTests : IDisposable
     {
         var (window, shell, editor, _) = await ShowUnsaved("light");
         shell.SettingsInWindow = false;
-        var list = window.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "ProfileList");
-        Assert.Equal(shell.Profiles.Folder.ListLabel, AutomationProperties.GetName(list));
+        var tree = window.GetVisualDescendants().OfType<TreeView>().Single(tree => tree.Name == "ProfileTree");
+        Assert.Equal(shell.Profiles.Folder.ListName, AutomationProperties.GetName(tree));
 
         var closing = editor.CloseCommand.ExecuteAsync(null);
         Dispatcher.UIThread.RunJobs();
@@ -882,7 +882,7 @@ public sealed class ViewTests : IDisposable
         Assert.Contains(ControlLabel.For("Delete profile"), Texts(window));
 
         // The list's own shortcut: Delete, or Command+Delete on macOS.
-        window.GetVisualDescendants().OfType<ListBoxItem>().Single(item => item.DataContext == shell.Profiles.Selected).Focus();
+        window.GetVisualDescendants().OfType<TreeViewItem>().Single(item => item.DataContext == shell.Profiles.Selected).Focus();
         if (OperatingSystem.IsMacOS())
         {
             window.KeyPressQwerty(PhysicalKey.Backspace, RawInputModifiers.Meta);
@@ -920,7 +920,7 @@ public sealed class ViewTests : IDisposable
         var form = shell.Profiles.Creating;
         Assert.NotNull(form);
 
-        var item = window.GetVisualDescendants().OfType<ListBoxItem>().Single(item => (item.DataContext as ProfileItemViewModel)?.Name == "orgs");
+        var item = window.GetVisualDescendants().OfType<TreeViewItem>().Single(item => (item.DataContext as ProfileItemViewModel)?.Name == "orgs");
         var point = item.TranslatePoint(new Point(12, 12), window)!.Value;
         window.MouseDown(point, MouseButton.Right);
         window.MouseUp(point, MouseButton.Right);
@@ -1236,6 +1236,66 @@ public sealed class ViewTests : IDisposable
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
+    public async Task The_sidebar_shows_subfolders_as_folders_under_the_profiles_folder(string theme)
+    {
+        Directory.CreateDirectory(Path.Combine(folders.Profiles, "team", "apps"));
+        var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var oss = folders.Write(Path.Combine("team", "oss.yaml"), "extends: ../base.yaml\n");
+        var web = folders.Write(Path.Combine("team", "apps", "web.yaml"), "extends: ../oss.yaml\n");
+        var window = await Show(theme, FakeCli.SignedIn()
+            .On(folders.List(), $$$"""
+                {"profiles":[
+                  {"name":"base","folder":"","file":{{{Json(@base)}}},"extends":null,"problem":null},
+                  {"name":"oss","folder":"team","file":{{{Json(oss)}}},"extends":{{{Json(@base)}}},"problem":null},
+                  {"name":"web","folder":"team/apps","file":{{{Json(web)}}},"extends":{{{Json(oss)}}},"problem":null}
+                ]}
+                """)
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base))
+            .On($"profile {oss} --json", Documents.ResolvedBase(oss))
+            .On($"profile {web} --json", Documents.ResolvedBase(web)));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "oss");
+        Dispatcher.UIThread.RunJobs();
+
+        var text = Texts(window);
+        // The heading names the one place the profiles come from.
+        Assert.Contains(Path.GetFileName(folders.Profiles), text);
+        Assert.Contains("team", text);
+        Assert.Contains("apps", text);
+        Assert.Contains("extends team/oss", text);
+        Assert.Equal("Profiles / team / oss", shell.Crumb);
+        var names = window.GetVisualDescendants().OfType<TreeViewItem>()
+            .Select(item => ControlAutomationPeer.CreatePeerForElement(item).GetName());
+        Assert.Equal(["base", "team, 2 profiles", "oss", "apps, 1 profile", "web"], names);
+        Save(window, $"profiles-folders-{theme}");
+
+        // The tree says what it lists.
+        var tree = window.GetVisualDescendants().OfType<TreeView>().Single();
+        Assert.Equal($"Profiles in {Path.GetFileName(folders.Profiles)}", AutomationProperties.GetName(tree));
+
+        // A subfolder can take focus, but the open profile's row stays the selected one.
+        var team = window.GetVisualDescendants().OfType<TreeViewItem>().Single(item => item.DataContext is ProfileFolderNode { Path: "team" });
+        tree.SelectedItem = team.DataContext;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(shell.Profiles.Selected, tree.SelectedItem);
+        Assert.Equal("oss", shell.Profiles.Current?.Name);
+
+        // A refresh or a search while the list shows still says how many each folder holds.
+        await shell.Profiles.RefreshCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["base", "team, 2 profiles", "oss", "apps, 1 profile", "web"], Names());
+        shell.Profiles.Filter = "web";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["team, 1 profile", "apps, 1 profile", "web"], Names());
+
+        IEnumerable<string?> Names() => window.GetVisualDescendants().OfType<TreeViewItem>()
+            .Select(item => ControlAutomationPeer.CreatePeerForElement(item).GetName());
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
     public async Task A_compare_shows_what_the_profile_would_change(string theme)
     {
         var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
@@ -1476,7 +1536,7 @@ public sealed class ViewTests : IDisposable
         Assert.True(shell.ShowingSettings);
         var text = Texts(window);
         Assert.Contains(ControlLabel.For("Keep profiles on GitHub"), text);
-        Assert.Contains($"Add the profiles from {folders.Profiles}", text);
+        Assert.Contains($"Add the profiles from {folders.Profiles} and its subfolders", text);
         Assert.Contains(ControlLabel.For("Use this repository"), text);
         Save(window, $"config-repository-form-{theme}");
     }
@@ -1509,7 +1569,7 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("orgs.yaml changed here and on GitHub since the last sync. Keep which version?", text);
         Assert.Contains(ControlLabel.For("Keep mine"), text);
         Assert.Contains(ControlLabel.For("Use GitHub's"), text);
-        Assert.Contains("In this repository", text);
+        Assert.Contains("repotted-config", text);
         Assert.Equal("Sync now", AutomationProperties.GetName(window.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "SyncButton")));
         Save(window, $"config-repository-conflict-{theme}");
 

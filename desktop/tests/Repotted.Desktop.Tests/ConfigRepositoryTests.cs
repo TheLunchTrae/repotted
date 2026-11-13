@@ -118,6 +118,47 @@ public sealed class ConfigRepositoryTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Connecting_adds_the_profiles_in_subfolders_too_and_names_any_left_out_by_path()
+    {
+        var local = folders.Write("base.yaml", "repository: { has_wiki: false }\n");
+        Directory.CreateDirectory(Path.Combine(folders.Profiles, "team", "apps"));
+        Directory.CreateDirectory(Path.Combine(folders.Profiles, ".git"));
+        folders.Write(Path.Combine("team", "oss.yaml"), "extends: ../base.yaml\n");
+        folders.Write(Path.Combine("team", "apps", "web.yaml"), "extends: ../oss.yaml\n");
+        folders.Write(Path.Combine(".git", "config.yaml"), "");
+        var copy = WorkingCopy();
+        // The repository already has team/oss.yaml, so the local one stays out.
+        Directory.CreateDirectory(Path.Combine(copy, "team"));
+        File.WriteAllText(Path.Combine(copy, "team", "oss.yaml"), "repository: { has_issues: true }\n");
+        string[] copied = [];
+        var cli = new FakeCli()
+            .On(folders.List(), Listing(local))
+            .On($"profile {local} --json", Documents.ResolvedBase(local))
+            .On(Command(copy, " --repository=lunch/config"), () =>
+            {
+                copied = [.. ProfileFolder.ProfileFiles(copy)];
+                return Sync();
+            })
+            .On(folders.List(copy), Listing(Path.Combine(copy, "base.yaml")))
+            .On($"profile {Path.Combine(copy, "base.yaml")} --json", Documents.ResolvedBase(Path.Combine(copy, "base.yaml")));
+        var profiles = Profiles(cli);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        profiles.StartConnectCommand.Execute(null);
+        var form = Assert.IsType<ConfigRepositoryViewModel>(profiles.Connecting);
+        form.Repository = "lunch/config";
+        await form.ConnectCommand.ExecuteAsync(null);
+
+        Assert.Equal(["base.yaml", "team/oss.yaml", "team/apps/web.yaml"], copied);
+        Assert.Equal("extends: ../oss.yaml\n", File.ReadAllText(Path.Combine(copy, "team", "apps", "web.yaml")));
+        Assert.Equal("repository: { has_issues: true }\n", File.ReadAllText(Path.Combine(copy, "team", "oss.yaml")));
+        Assert.False(File.Exists(Path.Combine(copy, ".git", "config.yaml")));
+        Assert.Equal(
+            "Did not add team/oss.yaml from the profiles folder, because lunch/config already had a file of that name.",
+            profiles.Notice);
+    }
+
+    [AvaloniaFact]
     public async Task Connecting_syncs_first_then_remembers_the_repository()
     {
         var local = folders.Write("base.yaml", "repository: { has_wiki: false }\n");
@@ -151,6 +192,7 @@ public sealed class ConfigRepositoryTests : IDisposable
         Assert.Equal(copy, profiles.Folder.Path);
         Assert.Equal("Kept in a GitHub repository", profiles.Folder.SourceLabel);
         Assert.Equal("lunch/config/profiles", profiles.Folder.SourceText);
+        Assert.Equal(("config", "lunch · profiles"), (profiles.Folder.SourceName, profiles.Folder.SourceDetail));
         Assert.Equal("Sync now", profiles.Folder.RefreshLabel);
         Assert.Equal("Committed base.yaml to main.", profiles.Folder.SyncNote);
         Assert.Equal(["base"], profiles.Items.Select(item => item.Name));
