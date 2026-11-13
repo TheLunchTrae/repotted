@@ -597,10 +597,9 @@ input[type='checkbox'] {
 
   .panel {
     position: static;
-    order: -1;
     min-height: 0;
     padding: 20px 16px;
     border-inline-start: 0;
-    border-bottom: 1px solid var(--border);
+    border-top: 1px solid var(--border);
   }
 }

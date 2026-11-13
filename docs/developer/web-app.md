@@ -6,8 +6,7 @@ in `packages/web`, and a preview of it runs on the same Worker at
 and handles the GitHub App's web sign-in on the same origin, so the sign-in
 needs no cross-origin requests and the client secret stays on the server. The
 page runs the [engine](#the-engine) itself and calls GitHub's API from the
-browser. It signs in and lists the user's repositories; the rest of the app
-moves to it step by step.
+browser. It signs in and lists the user's repositories.
 
 ## Layout
 
@@ -15,10 +14,10 @@ moves to it step by step.
 - `src/session.ts`: the page's access token, refreshed through the Worker.
 - `src/main.tsx`: the page's entry. It makes the session, the engine's GitHub
   client, and the account, and renders the app.
-- `src/app/`: the app's state, one class for each part, such as `Account` and
-  `Repositories`. Each keeps its state in
-  [signals](https://preactjs.com/guide/v10/signals/) and has no DOM in it, so
-  the tests drive it against the in-memory GitHub.
+- `src/app/`: the app's state. Each part, such as `Account` and
+  `Repositories`, is a class that keeps its state in
+  [signals](https://github.com/preactjs/signals) and has no DOM in it, so the
+  tests drive it against the in-memory GitHub.
 - `src/views/`: [Preact](https://preactjs.com/) components that draw that
   state and call its methods. They hold no state of their own beyond what a
   control needs, such as an open menu.
@@ -124,7 +123,8 @@ the app returns to the sign-in page with why.
 [State machines](state-machines.md#web-account) lists the transitions.
 
 The look follows the approved mock-ups: `static/app.css` holds their colors,
-each with a light and a dark value that the system's setting picks, and the
+with a light and a dark value where the two differ, which the system's
+setting picks, and the
 Atkinson Hyperlegible fonts are served from `static/fonts/`. All text is in
 sentence case: only the first word and proper names are capitalized.
 

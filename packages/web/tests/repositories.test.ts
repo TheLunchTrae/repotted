@@ -167,3 +167,18 @@ test('a refresh asked for while one runs starts no second read', async () => {
   expect(repositories.loading.value).toBe(false);
   expect(repositories.list.value).toEqual({ source: 'installations', repositories: [] });
 });
+
+test('a refresh keeps the list in use while it reads, and the selection when the new list has it', async () => {
+  const github = new FakeGitHub({ account: account(everyone) });
+  const repositories = await opened(github);
+  repositories.select(repositories.groups.value[1]?.repositories[0]);
+  github.state.account = account(['Acme/api', 'trae/dotfiles']);
+
+  const refreshing = repositories.refresh();
+  expect(repositories.loading.value).toBe(true);
+  expect(repositories.list.value?.repositories).toHaveLength(4);
+  await refreshing;
+
+  expect(repositories.list.value?.repositories).toHaveLength(2);
+  expect(repositories.selected.value?.full_name).toBe('Acme/api');
+});

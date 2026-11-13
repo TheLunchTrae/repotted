@@ -19,4 +19,4 @@ if (reason !== null) {
 }
 run(account.load(signInFailure(reason)));
 
-render(<App account={account} github={github} preferences={browserPreferences(localStorage)} />, document.body);
+render(<App account={account} github={github} preferences={browserPreferences(() => localStorage)} />, document.body);

@@ -3,9 +3,8 @@
 The Repotted web app runs at <https://repotted.dev>. It needs nothing
 installed: it runs in your browser and talks to GitHub from there.
 
-The web app is taking over from the [desktop app](desktop.md). Today it signs
-in and lists your repositories; use the desktop app or the
-[command line](cli.md) for profiles, comparing, and applying.
+The web app signs in and lists your repositories. To write profiles, compare,
+and apply, use the [desktop app](desktop.md) or the [command line](cli.md).
 
 ## Sign in
 
@@ -15,7 +14,8 @@ on its own. If GitHub stops accepting the sign-in while the app is open, the
 app returns to this page and says so.
 
 To sign out, click your account at the top right and choose **Sign out**.
-[Sign in](sign-in.md) lists the permissions the Repotted App asks for.
+[Sign in](sign-in.md#give-the-app-your-repositories) says how to choose the
+repositories the Repotted App reaches.
 
 ## Repositories
 

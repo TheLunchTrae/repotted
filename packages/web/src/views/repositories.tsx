@@ -60,8 +60,13 @@ function OwnerFilter({ repositories }: { readonly repositories: Repositories }):
 
 function RepositoryPanel({ repository }: { readonly repository: Repository }): JSX.Element {
   const [owner, name] = repository.full_name.split('/');
+  const panel = useRef<HTMLElement>(null);
+  // On a narrow screen the panel sits under the list, out of view of the row that opened it.
+  useEffect(() => {
+    panel.current?.scrollIntoView({ block: 'nearest' });
+  }, [repository.full_name]);
   return (
-    <aside class="panel" aria-label={repository.full_name}>
+    <aside class="panel" ref={panel} aria-label={repository.full_name}>
       <p class="muted small">{owner}</p>
       <h2 class="mono">{name}</h2>
       <p class="pills">
@@ -81,9 +86,10 @@ function useSearchKey(): RefObject<HTMLInputElement | null> {
   useEffect(() => {
     const focus = (event: KeyboardEvent): void => {
       const typing = event.target instanceof HTMLElement && event.target.matches('input, textarea, select');
-      if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      // Without a search on the page, the key stays the browser's.
+      if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey && input.current !== null) {
         event.preventDefault();
-        input.current?.focus();
+        input.current.focus();
       }
     };
     document.addEventListener('keydown', focus);

@@ -2,7 +2,9 @@
 
 Repotted reads and changes repositories through the Repotted GitHub App,
 named Repotted App on GitHub. The desktop app, the CLI, and the MCP server
-share one sign-in, so signing in with one signs in all three.
+share one sign-in, so signing in with one signs in all three. The
+[web app](web-app.md#sign-in) signs in with the same App from the browser,
+and keeps that sign-in in the browser alone.
 
 ## Sign in with GitHub
 

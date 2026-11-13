@@ -159,6 +159,7 @@ tab. The app draws the sign-in page in every state but Signed in.
 | Checking    | GitHub or the Worker can't be reached                    | Unreachable, with **Try again**.                                                                     |
 | Unreachable | Try again                                                | Checking.                                                                                            |
 | Signed in   | Any request in the app gets a 401                        | Signed out with "GitHub no longer accepts this sign-in."; what the page held goes with it.           |
+| Signed out  | A request that was under way gets a 401                  | Signed out, with what it already said.                                                               |
 | Signed in   | Sign out                                                 | Signing out: **Sign out** is off, and a second press sends nothing.                                  |
 | Signing out | The Worker clears the cookies                            | Signed out with "Signed out."                                                                        |
 | Signing out | The Worker can't be reached or fails                     | Signed in, with "Signing out didn't finish. Try again." in the account menu until the next sign-out. |

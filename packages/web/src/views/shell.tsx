@@ -14,7 +14,9 @@ export function useDismiss(): RefObject<HTMLDetailsElement | null> {
       if (element?.open !== true) {
         return;
       }
-      if (event instanceof KeyboardEvent ? event.key === 'Escape' : !event.composedPath().includes(element)) {
+      // Escape is the menu's only while the keyboard is in it; elsewhere it belongs to the field in use.
+      const inside = event.composedPath().includes(element);
+      if (event instanceof KeyboardEvent ? event.key === 'Escape' && inside : !inside) {
         element.open = false;
         if (event instanceof KeyboardEvent) {
           element.querySelector('summary')?.focus();
