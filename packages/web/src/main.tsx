@@ -24,6 +24,7 @@ run(account.load(signInFailure(reason)));
 // The kept files are in memory before anything reads a profile.
 const keeping = await keepFiles(
   browserFiles(() => indexedDB),
+  // Undefined in a browser without Web Locks, whatever the type says.
   navigator.locks,
 );
 

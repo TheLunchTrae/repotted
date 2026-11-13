@@ -156,3 +156,20 @@ test('a kept file that cannot be placed is left out, and the rest load', async (
   expect(await readFile('/profiles/a.yaml', 'utf8')).toBe('one');
   expect(await readFile('/profiles/c.yaml', 'utf8')).toBe('three');
 });
+
+test('a browser that has no locks, or refuses them, loads and keeps nothing, and the app still opens', async () => {
+  const load = vi.fn<FileKeeper['load']>();
+  const put = vi.fn<FileKeeper['put']>();
+  const keeper: FileKeeper = { load, put, remove: vi.fn<FileKeeper['remove']>() };
+  const refusing: SiteLocks = {
+    request: () => Promise.reject(new DOMException('The request was denied.', 'SecurityError')),
+  };
+
+  expect((await keepFiles(keeper, refusing)).value).toBe('visit-only');
+  expect((await keepFiles(keeper, undefined)).value).toBe('visit-only');
+  await mkdir('/profiles', { recursive: true });
+  await writeFile('/profiles/a.yaml', 'one');
+
+  expect(load).not.toHaveBeenCalled();
+  expect(put).not.toHaveBeenCalled();
+});

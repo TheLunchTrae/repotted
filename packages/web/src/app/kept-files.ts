@@ -106,7 +106,7 @@ export function browserFiles(indexedDB: () => IDBFactory): FileKeeper {
 /**
  * Whether the files outlast the visit:
  * - `keeping`: each change is kept.
- * - `visit-only`: the browser has no storage to give, as in some private windows.
+ * - `visit-only`: the browser has no storage or no locks to give, as in some private windows.
  * - `stopped`: a change couldn't be kept, such as when storage is full, so no later one is tried.
  * - `elsewhere`: another tab of the site keeps the files, and this one must not use them.
  */
@@ -142,10 +142,13 @@ function holdLock(locks: SiteLocks): Promise<boolean> {
  * Puts the kept files in memory, then keeps every later change, and answers
  * how that stands, which changes at most once more, to `stopped`.
  */
-export async function keepFiles(keeper: FileKeeper, locks: SiteLocks): Promise<Signal<Keeping>> {
+export async function keepFiles(keeper: FileKeeper, locks: SiteLocks | undefined): Promise<Signal<Keeping>> {
   const keeping = signal<Keeping>('keeping');
-  if (!(await holdLock(locks))) {
-    keeping.value = 'elsewhere';
+  // A browser without locks, or one that refuses them as it does a site whose
+  // data it blocks, can't say that no other tab keeps the files, so nothing is kept.
+  const held = locks === undefined ? undefined : await holdLock(locks).catch(() => undefined);
+  if (held !== true) {
+    keeping.value = held === undefined ? 'visit-only' : 'elsewhere';
     return keeping;
   }
   let kept: ReadonlyMap<string, Uint8Array>;

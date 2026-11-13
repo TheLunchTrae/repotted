@@ -233,16 +233,17 @@ IndexedDB. What is kept must be the files as they were at one moment: a sync
 record kept without one of the profiles it lists reads as that profile
 deleted here, and the next sync would delete it on GitHub.
 
-| State   | Event                                  | Next                                                                                                                                                |
-| ------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Opening | Another tab of the site holds the lock | Elsewhere: nothing is loaded or kept, and the app shows only a page that says so, with **Reload**.                                                  |
-| Opening | IndexedDB gives the kept files         | Keeping: the files are in memory, and each later change is written in order.                                                                        |
-| Opening | A kept file can't be placed in memory  | Keeping, without that file.                                                                                                                         |
-| Opening | IndexedDB can't be opened or read      | Visit only: the files last for the visit, and Settings says so.                                                                                     |
-| Keeping | A file is written or removed           | The same is done in IndexedDB, after the changes before it.                                                                                         |
-| Keeping | The engine writes a temporary file     | Nothing is kept of it.                                                                                                                              |
-| Keeping | A write to IndexedDB fails             | Stopped: no later change is written, so what is kept stays as it was before the failure. A notice on every page says so until the page is reloaded. |
-| Keeping | The tab closes                         | The lock is free for the next tab.                                                                                                                  |
+| State   | Event                                             | Next                                                                                                                                                |
+| ------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Opening | Another tab of the site holds the lock            | Elsewhere: nothing is loaded or kept, and the app shows only a page that says so, with **Reload**.                                                  |
+| Opening | IndexedDB gives the kept files                    | Keeping: the files are in memory, and each later change is written in order.                                                                        |
+| Opening | A kept file can't be placed in memory             | Keeping, without that file.                                                                                                                         |
+| Opening | IndexedDB can't be opened or read                 | Visit only: the files last for the visit, and Settings says so.                                                                                     |
+| Opening | The browser has no Web Locks, or refuses the lock | Visit only, with nothing loaded: no tab can tell that it alone keeps the files.                                                                     |
+| Keeping | A file is written or removed                      | The same is done in IndexedDB, after the changes before it.                                                                                         |
+| Keeping | The engine writes a temporary file                | Nothing is kept of it.                                                                                                                              |
+| Keeping | A write to IndexedDB fails                        | Stopped: no later change is written, so what is kept stays as it was before the failure. A notice on every page says so until the page is reloaded. |
+| Keeping | The tab closes                                    | The lock is free for the next tab.                                                                                                                  |
 
 **Failure:** a tab closed right after a change can lose that change, since
 the write to IndexedDB follows the change in memory
