@@ -58,16 +58,15 @@ settings, GitHub Apps, New GitHub App, uses too:
 - Name: Repotted App. Its slug, the name as GitHub writes it in URLs, must
   match `app.slug`. Homepage: the repository's URL.
 - Callback URLs: `https://repotted.dev/api/auth/callback` and
-  `https://preview-repotted.<subdomain>.workers.dev/api/auth/callback`, for
-  the web app and its preview, where `<subdomain>` is the Cloudflare account's
-  `workers.dev` subdomain.
+  `https://main.preview.repotted.dev/api/auth/callback`, for the web app and
+  its preview.
   Leave **Request user authorization (OAuth) during installation** off, turn
   on **Enable Device Flow**, and leave **Expire user authorization tokens**
   on; the web app can't keep a sign-in without the refresh token that
   expiring tokens bring.
 - Client secret: one, for the web app's Worker. To rotate it, generate a new
-  one, set it as the `repotted` Worker's `REPOTTED_APP_CLIENT_SECRET`, then
-  delete the old one.
+  one, set it as the `repotted` Worker's `REPOTTED_APP_CLIENT_SECRET` for
+  production and for its `main` Preview, then delete the old one.
 - Webhook: clear **Active**.
 - Repository permissions: Administration, Actions, Contents, Pages,
   Custom properties and Issues, read and write; Code scanning alerts, read; and
