@@ -1,7 +1,6 @@
 import type { Dirent } from 'node:fs';
 import { readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 
 import {
   type Document,
@@ -20,6 +19,7 @@ import {
 } from 'yaml';
 import { z } from 'zod';
 
+import { isDeepEqual } from './equal.js';
 import { replaceFile } from './files.js';
 import { describeOwnerType, draftOwnerConflicts, type OwnerConflict, ownerConflicts, type OwnerType } from './owner.js';
 import {
@@ -1192,7 +1192,7 @@ function updateMap(document: Document, map: YAMLMap, value: Readonly<Record<stri
       const at = unused.findIndex((item) => matches(isNode(item) ? item.toJSON() : item, next));
       return at === -1 ? undefined : unused.splice(at, 1)[0];
     };
-    const same = items.map((next) => take(isDeepStrictEqual, next));
+    const same = items.map((next) => take(isDeepEqual, next));
     seq.items = items.map((next, index) => {
       const item =
         same[index] ??
@@ -1216,7 +1216,7 @@ function updateMap(document: Document, map: YAMLMap, value: Readonly<Record<stri
       updateMap(document, current, next);
     } else if (isSeq(current) && Array.isArray(next)) {
       updateSeq(current, next);
-    } else if (!isNode(current) || !isDeepStrictEqual(current.toJSON(), next)) {
+    } else if (!isNode(current) || !isDeepEqual(current.toJSON(), next)) {
       map.set(
         name,
         isScalar(current) && (next === null || typeof next !== 'object') ? next : document.createNode(next),

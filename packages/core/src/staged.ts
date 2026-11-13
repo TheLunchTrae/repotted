@@ -1,10 +1,10 @@
 import { readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 
+import { isDeepEqual } from './equal.js';
 import { type GitHub, parseRepo, repoPattern } from './github.js';
 import { createPlan, type Plan, skippedDrafts } from './plan.js';
 import {
@@ -211,7 +211,7 @@ function excluding(exclude: readonly string[]): Adjust {
     const left = exclude.reduce<unknown>((current, key) => {
       const exclusion = parseExclusion(key);
       const next = exclusion === undefined ? current : withoutExclusion(current, exclusion);
-      if (isDeepStrictEqual(next, current)) {
+      if (isDeepEqual(next, current)) {
         unmatched.push(key);
       }
       return next;
@@ -485,7 +485,7 @@ export async function saveStagedEdits(file: string): Promise<StagedApply> {
   const cleared = await editLayer(
     file,
     (head) => {
-      if (!isDeepStrictEqual(head.layer, read.head.layer)) {
+      if (!isDeepEqual(head.layer, read.head.layer)) {
         throw new ProfileError(
           `${file} changed after its edits were read, so they are saved to ${before.base} but not cleared from ${file}`,
         );

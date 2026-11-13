@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
     "allowJs": false,
+    // Node runs the build scripts and Vitest its config as they are, and neither
+    // finds a .ts file by a .js name, so those import each other by .ts.
+    "allowImportingTsExtensions": true,
     "allowSyntheticDefaultImports": true,
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
@@ -34,7 +37,7 @@
     "verbatimModuleSyntax": true,
     "types": ["node"]
   },
-  "include": ["packages/*/*.ts", "packages/*/src/**/*", "packages/*/tests/**/*", "types/**/*.d.ts"],
+  "include": ["*.ts", "packages/*/*.ts", "packages/*/src/**/*", "packages/*/tests/**/*", "types/**/*.d.ts"],
   // packages/web/tsconfig.json checks the web app's browser and Worker code.
   "exclude": ["packages/web/src", "packages/web/tests"]
 }

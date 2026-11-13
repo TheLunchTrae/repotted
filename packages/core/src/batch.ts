@@ -1,10 +1,10 @@
-import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 
+import { hexDigest } from './bytes.js';
 import type { Change } from './change.js';
 import { replaceFile } from './files.js';
 import { type GitHub, GitHubError, parseRepo, repoPattern } from './github.js';
@@ -379,7 +379,7 @@ export async function createBatch(folder: string, start: BatchStart): Promise<Ba
   // The first folder mkdir made, if any, so a failed start removes what it made and nothing more.
   const made = await mkdir(folder, { recursive: true });
   const real = await realFolder(folder);
-  const empty: Batch = { folder: real, id: randomUUID(), profile, members: [] };
+  const empty: Batch = { folder: real, id: crypto.randomUUID(), profile, members: [] };
   try {
     const members = await addMembers(empty, start);
     const batch = { ...empty, members };
@@ -608,14 +608,10 @@ export interface BatchPlan {
   readonly failures: readonly { readonly repository: string; readonly file: string; readonly error: MemberError }[];
 }
 
-function digestOf(content: Uint8Array | string): string {
-  return createHash('sha256').update(content).digest('hex');
-}
-
 async function planMember(github: GitHub, member: BatchMember): Promise<MemberPlan> {
   // Read before the plan reads the file: an edit in between gives a digest
   // the file no longer has, so the plan is refused rather than applied.
-  const digest = digestOf(await readFile(member.file));
+  const digest = await hexDigest('SHA-256', await readFile(member.file));
   const planned = await planStagedApply(github, member.file, ({ repository }) => {
     if (!sameRepository(repository, member.repository)) {
       throw new ProfileError(`${member.file} applies to ${repository}, not ${member.repository}`);
@@ -782,7 +778,7 @@ function listsMember(batch: Batch, reviewed: ReviewedBatch, member: ReviewedMemb
 /** Whether the member's staged apply file is still the one reviewed. */
 async function isReviewedFile(member: ReviewedMember): Promise<boolean> {
   const content = await readFile(member.file).catch(() => undefined);
-  return content !== undefined && digestOf(content) === member.digest;
+  return content !== undefined && (await hexDigest('SHA-256', content)) === member.digest;
 }
 
 /**

@@ -1,5 +1,3 @@
-import { isDeepStrictEqual } from 'node:util';
-
 import { z } from 'zod';
 
 import {
@@ -12,6 +10,7 @@ import {
   type Warning,
 } from './change.js';
 import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadable } from './endpoints.js';
+import { isDeepEqual } from './equal.js';
 import { type GitHub, GitHubError, parseRepo, repoPath, repoPattern, type RepoRef } from './github.js';
 import { describeOwnerType, type OwnerConflict, type OwnerType, withoutOwnerConflicts } from './owner.js';
 import { type Lock, requiredPermission } from './permissions.js';
@@ -479,7 +478,7 @@ function jsonValue(value: unknown): unknown {
  */
 export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonly Change[]> {
   const current = await createPlan(github, parseRepo(reviewed.repository), reviewed.desired, reviewed.skipped);
-  if (!isDeepStrictEqual(jsonValue(current.changes), jsonValue(reviewed.changes))) {
+  if (!isDeepEqual(jsonValue(current.changes), jsonValue(reviewed.changes))) {
     throw new StalePlanError(current);
   }
   const applied: Change[] = [];

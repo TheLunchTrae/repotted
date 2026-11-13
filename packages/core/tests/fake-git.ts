@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 
 import { type GitHub, GitHubError, type Method } from '../src/github.js';
-import { blobId } from '../src/sync.js';
 
 type Tree = Map<string, { id: string; mode: string }>;
+
+/** The id git gives a file's content. */
+function blobId(content: Uint8Array): string {
+  return createHash('sha1').update(`blob ${content.byteLength}\0`).update(content).digest('hex');
+}
 
 interface Commit {
   readonly tree: string;

@@ -5,14 +5,19 @@ in `packages/web`, and a preview of it runs on the same Worker at
 <https://main.preview.repotted.dev>. The Worker serves the app's static files
 and handles the GitHub App's web sign-in on the same origin, so the sign-in
 needs no cross-origin requests and the client secret stays on the server. The
-page is a placeholder that signs in and shows the signed-in user; the app's UI
-moves to it later.
+page runs the [engine](#the-engine) itself and calls GitHub's API from the
+browser. It is a placeholder that signs in and shows the signed-in user; the
+app's UI moves to it later.
 
 ## Layout
 
 - `src/worker.ts`: the Worker. It answers only `/api/*`.
 - `src/session.ts`: the page's access token, refreshed through the Worker.
 - `src/page.ts`: the placeholder page.
+- `src/engine/`: what the engine needs to run in the page: its files, and its
+  GitHub client for the session.
+- `aliases.ts`: the engine's Node modules and what stands in for each in the
+  page. `build.ts` and the root `vitest.config.ts` both read it.
 - `static/`: the HTML, the CSS, and `_headers`, the headers Cloudflare adds to
   every static file.
 - `build.ts`: copies `static/` into `dist/` and bundles the page into
@@ -27,6 +32,32 @@ moves to it later.
 The Worker and the page run on web platform APIs, so
 `packages/web/tsconfig.json` checks them with the DOM library in place of
 Node's types; `build.ts` runs under Node and the root config checks it.
+
+## The engine
+
+The page bundles `packages/core` and calls it directly, as the CLI does, so
+the rules about what Repotted may write stay in one place. The engine's only
+Node modules are `node:fs/promises` and `node:path`; everything else it uses,
+such as hashing and base64, is on the web platform, which Node has too.
+`aliases.ts` maps those two modules for the page's bundle:
+
+- `node:fs/promises` to `src/engine/files.ts`, a tree of files in memory. It
+  has the functions the engine calls, with Node's error codes, and no links
+  or permissions. `watchFiles` reports each file written or removed, which is
+  how a store keeps what the engine writes.
+- `node:path` to `src/engine/path.ts`, POSIX paths under `/`.
+
+So a profile, a staged apply, and a batch are files at absolute paths in the
+page too, and the engine's functions take the same arguments there as under
+Node. The engine's own tests run on Node's file system;
+`tests/engine.test.ts` runs its file flows on the in-memory one, through the
+same aliases, in Vitest's `web` project. A Node module that the engine
+imports and `aliases.ts` doesn't map fails the build, which `ts:web:check`
+runs.
+
+`src/engine/github.ts` gives the engine a GitHub client that sends each
+request with the session's current access token. A browser that isn't signed
+in gets a 401, as a refused token does, so one check covers both.
 
 ## Sign-in
 

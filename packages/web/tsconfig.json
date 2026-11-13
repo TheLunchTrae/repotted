@@ -6,6 +6,13 @@
   "compilerOptions": {
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": [],
+    // The engine's Node modules, as aliases.ts maps them for the bundle, so the
+    // engine is checked here against the files and paths the page gives it.
+    "paths": {
+      "node:fs": ["./src/engine/files.ts"],
+      "node:fs/promises": ["./src/engine/files.ts"],
+      "node:path": ["./src/engine/path.ts"]
+    },
     "tsBuildInfoFile": ".tsbuildinfo"
   },
   "include": ["src/**/*", "tests/**/*"],
