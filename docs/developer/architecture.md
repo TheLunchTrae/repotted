@@ -242,7 +242,7 @@ permissions of the App's installation that covers it. `lockChanges` in
 can't make, by index. The CLI adds both to the plan document as `access` and
 `locks`, outside `changes`, so the plan that apply compares is unchanged.
 Apply checks neither: GitHub decides at the write, and `failureReason` in
-`plan.ts` turns a lasting `403` or `422` into a short reason.
+`plan.ts` turns a lasting `402`, `403` or `422` into a short reason.
 
 The engine reaches GitHub only through the `GitHub` interface in
 `github.ts`. `createGitHub` turns a refused request into a `GitHubError` read

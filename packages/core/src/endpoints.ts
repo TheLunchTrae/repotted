@@ -120,8 +120,8 @@ export async function readResource(
     if (error.status === 403) {
       return { available: false, cause: 'refused', reason: refusal(error, 'GET', path, target) };
     }
-    // 402 for a billed feature, such as Actions cache limits, on an account
-    // with no payment method on file.
+    // 402 for a billed feature, such as the Actions cache retention limit,
+    // on an account with no payment method on file.
     if (error.status === 402) {
       return {
         available: false,
