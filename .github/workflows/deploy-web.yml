@@ -6,8 +6,7 @@ run-name: ${{ inputs.publish && 'Deploy Web' || 'Deploy Web preview' }}
 # With Publish not selected, the default, it uploads a version of the repotted
 # Worker under the preview alias without deploying it, so repotted.dev keeps
 # its version; with Publish selected, it deploys to repotted.dev. The
-# deploy-web environment holds the Cloudflare and GitHub App values and allows
-# only main.
+# deploy-web environment holds the Cloudflare values and allows only main.
 on:
   workflow_dispatch:
     inputs:
@@ -61,35 +60,29 @@ jobs:
         with:
           cache: false
           task: ts:web:check
-      # The client secret reaches the Worker as a secret in the same upload as
-      # the code, so no version runs without it. The file is readable only by
-      # this job's user and is removed when the step ends.
+      # The client ID comes from wrangler.jsonc, and every upload keeps the
+      # client secret already set on the Worker.
       - name: Upload the Worker and its assets
         id: deploy
         working-directory: packages/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          REPOTTED_APP_CLIENT_ID: ${{ vars.REPOTTED_APP_CLIENT_ID }}
-          REPOTTED_APP_CLIENT_SECRET: ${{ secrets.REPOTTED_APP_CLIENT_SECRET }}
           PUBLISH: ${{ inputs.publish }}
           WRANGLER_SEND_METRICS: 'false'
         run: |
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID REPOTTED_APP_CLIENT_ID REPOTTED_APP_CLIENT_SECRET; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
             if [[ -z ${!name} ]]; then
               echo "::error::The deploy-web environment has no $name."
               exit 1
             fi
           done
-          secrets="$RUNNER_TEMP/worker-secrets.json"
-          trap 'rm -f "$secrets"' EXIT
-          (umask 077 && jq -n '{REPOTTED_APP_CLIENT_SECRET: env.REPOTTED_APP_CLIENT_SECRET}' >"$secrets")
           if [[ $PUBLISH == true ]]; then
-            mise exec -- pnpm exec wrangler deploy --var "REPOTTED_APP_CLIENT_ID:$REPOTTED_APP_CLIENT_ID" --secrets-file "$secrets"
+            mise exec -- pnpm exec wrangler deploy
             exit 0
           fi
           output="$RUNNER_TEMP/wrangler-output.json"
-          WRANGLER_OUTPUT_FILE_PATH="$output" mise exec -- pnpm exec wrangler versions upload --preview-alias preview --var "REPOTTED_APP_CLIENT_ID:$REPOTTED_APP_CLIENT_ID" --secrets-file "$secrets"
+          WRANGLER_OUTPUT_FILE_PATH="$output" mise exec -- pnpm exec wrangler versions upload --preview-alias preview
           # Wrangler leaves the alias URL out when the Worker's preview URLs are
           # off, which they are until a deploy applies wrangler.jsonc.
           url=$(jq -r 'select(.type == "version-upload") | .preview_alias_url // empty' "$output")

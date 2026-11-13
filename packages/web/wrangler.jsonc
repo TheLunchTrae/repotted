@@ -13,6 +13,11 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"],
   },
+  // The Repotted App's client ID is public, as in packages/cli/src/auth.ts.
+  // Its client secret is set once on the Worker, and every upload keeps it.
+  "vars": {
+    "REPOTTED_APP_CLIENT_ID": "Iv23liAnsCkUv2UeQoiK",
+  },
   // The custom domain is attached once in the dashboard, so deploys need no
   // zone permission and leave it alone. The workers.dev address stays off.
   // Preview URLs are on for Deploy Web's previews, which upload a version under

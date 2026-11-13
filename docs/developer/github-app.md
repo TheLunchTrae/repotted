@@ -50,7 +50,7 @@ the desktop app hold none. The gate fails if `app.clientId` is empty.
 
 The [web app](web-app.md) signs in with the App's web flow, whose code
 exchange needs a client secret. Only its Worker holds one, as a Worker secret
-that Deploy Web uploads.
+set once in Cloudflare; Deploy Web never sees it.
 
 Its settings, which a replacement App, registered under Settings, Developer
 settings, GitHub Apps, New GitHub App, uses too:
@@ -65,8 +65,9 @@ settings, GitHub Apps, New GitHub App, uses too:
   on **Enable Device Flow**, and leave **Expire user authorization tokens**
   on; the web app can't keep a sign-in without the refresh token that
   expiring tokens bring.
-- Client secret: one, for the web app's Worker. Generate a new one and update
-  `REPOTTED_APP_CLIENT_SECRET` in the `deploy-web` environment to rotate it.
+- Client secret: one, for the web app's Worker. To rotate it, generate a new
+  one, set it as the `repotted` Worker's `REPOTTED_APP_CLIENT_SECRET`, then
+  delete the old one.
 - Webhook: clear **Active**.
 - Repository permissions: Administration, Actions, Contents, Pages,
   Custom properties and Issues, read and write; Code scanning alerts, read; and

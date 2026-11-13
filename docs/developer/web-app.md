@@ -88,12 +88,14 @@ referrer, and tells browsers to use only HTTPS for repotted.dev for two years.
 
 Wrangler serves the Worker and the assets together at
 `http://localhost:8787`, rebuilding on changes. Sign-in needs a GitHub App that
-lists `http://localhost:8787/api/auth/callback` as a callback URL, and its
-client ID and a client secret in `packages/web/.dev.vars`, which git ignores:
+lists `http://localhost:8787/api/auth/callback` as a callback URL, and a client
+secret for it in `packages/web/.dev.vars`, which git ignores. For an App other
+than the Repotted App, its client ID goes there too, in place of the one in
+`wrangler.jsonc`:
 
 ```sh
-REPOTTED_APP_CLIENT_ID=Iv23...
 REPOTTED_APP_CLIENT_SECRET=...
+REPOTTED_APP_CLIENT_ID=Iv23...
 ```
 
 ```sh
@@ -115,8 +117,15 @@ The Deploy Web workflow, `.github/workflows/deploy-web.yml`, deploys `main`.
 Like the [release workflows](releasing.md), only the owner starts it, with
 **Run workflow** on `main`; no push or other event does, so a merge never
 changes the site by itself. It runs `ts:web:check` from the locked downloads,
-then uploads the Worker with the client ID as a variable and the client secret
-as a secret, in the same upload as the code, so no version runs without it.
+then uploads the Worker.
+
+The client ID is public, so it is a variable in `wrangler.jsonc`, the same ID
+as `app.clientId` in `packages/cli/src/auth.ts`; a CLI test fails when the two
+differ. The client secret is set once on the Worker as the secret
+`REPOTTED_APP_CLIENT_SECRET`, in the dashboard or with `wrangler secret put`,
+and is rotated there. Wrangler never deletes a Worker's secrets: every deploy
+and every uploaded version, previews included, keeps the ones the version
+before it had, so the workflow never handles the secret.
 
 Its **Publish** input picks what the upload does, as Publish picks a test build
 or a release in the release workflows:
@@ -150,21 +159,16 @@ own browser storage.
 The workflow takes its values from the `deploy-web` environment, which allows
 only `main`:
 
-| Name                         | Kind     | Value                                                                             |
-| ---------------------------- | -------- | --------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`       | Secret   | A Cloudflare API token with the permission below.                                 |
-| `CLOUDFLARE_ACCOUNT_ID`      | Variable | The Cloudflare account that holds the Worker and the `repotted.dev` zone.         |
-| `REPOTTED_APP_CLIENT_ID`     | Variable | The Repotted App's client ID, as in `app.clientId` in `packages/cli/src/auth.ts`. |
-| `REPOTTED_APP_CLIENT_SECRET` | Secret   | A client secret generated in the Repotted App's settings.                         |
-
-GitHub reserves names that start with `GITHUB_`, so the App's values use
-`REPOTTED_APP_`, and the Worker reads them under the same names.
+| Name                    | Kind     | Value                                                                     |
+| ----------------------- | -------- | ------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | Secret   | A Cloudflare API token with the permission below.                         |
+| `CLOUDFLARE_ACCOUNT_ID` | Variable | The Cloudflare account that holds the Worker and the `repotted.dev` zone. |
 
 The API token needs one permission, from Cloudflare's
 [Workers roles](https://developers.cloudflare.com/workers/authorization/workers/):
 Workers, Editor, scoped to the `repotted` Worker. That covers uploading and
-deploying versions with their assets, variables, and secrets, and setting the
-Worker's `workers.dev` address and Version URLs. Editor can't create a Worker,
+deploying versions with their assets and variables, and setting the Worker's
+`workers.dev` address and Version URLs. Editor can't create a Worker,
 so the Worker is created once in the dashboard, named `repotted`, before the
 first deploy replaces it.
 
@@ -195,6 +199,8 @@ Before the first deploy:
    `https://repotted.dev/api/auth/callback` and
    `https://preview-repotted.<subdomain>.workers.dev/api/auth/callback`, keep
    **Expire user authorization tokens** on, and generate a client secret.
+   Under the Worker's **Settings**, **Variables and Secrets**, add it as the
+   secret `REPOTTED_APP_CLIENT_SECRET`.
 5. Create the `deploy-web` environment with the values above, limited to
    `main`.
 6. Run Deploy Web with Publish once, which turns the Version URLs on, before
