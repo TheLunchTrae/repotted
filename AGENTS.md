@@ -45,9 +45,10 @@ CLI and the MCP server over that engine.
   repository's settings, rulesets, or branch protection, without the owner's
   explicit yes for that repository and that plan.
 - Do not run Release CLI or Release Desktop, publish to npm, push a tag, or
-  publish a release without the owner's explicit yes. A dry run of Release
-  Desktop on a pull request's branch, which [Releasing](docs/developer/releasing.md#the-desktop-app)
-  describes, releases nothing and needs no yes.
+  publish a release without the owner's explicit yes. A test build of Release
+  Desktop, with Publish not selected, on a pull request's branch, which
+  [Releasing](docs/developer/releasing.md#the-desktop-app) describes,
+  releases nothing and needs no yes.
 
 ## Commands
 
@@ -212,7 +213,7 @@ Select checks for the change:
 startup snapshot, so the gate catches a CLI or core change that breaks it. A
 change to the desktop packaging, or to what `sea.ts` does on macOS or Windows,
 such as signing or picking the keychain module, also needs a Release Desktop
-dry run on its branch, since only its macOS and Windows runners package the
+test build on its branch, since only its macOS and Windows runners package the
 app.
 
 Before handoff, run `mise run standards:check`. Run `mise run ts:lock` after
