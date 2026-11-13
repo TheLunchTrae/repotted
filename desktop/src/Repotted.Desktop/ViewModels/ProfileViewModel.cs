@@ -80,11 +80,13 @@ internal sealed record ProfileStore(
 /// <param name="listing">The profile in the folder.</param>
 /// <param name="store">Where it reads and saves, and how a save's write takes its turn.</param>
 /// <param name="saved">Runs after each save, such as to sync the folder with its config repository.</param>
+/// <param name="close">Closes the editor, which asks first about unsaved changes; null where the page holds it open.</param>
 internal sealed partial class ProfileViewModel(
     RepottedClient client,
     ProfileListingDocument listing,
     ProfileStore store,
-    Func<Task>? saved = null) : ViewModelBase
+    Func<Task>? saved = null,
+    Func<Task>? close = null) : ViewModelBase
 {
     public string SaveLabel => store.SaveLabel;
 
@@ -649,6 +651,12 @@ internal sealed partial class ProfileViewModel(
             return null;
         }
     }
+
+    /// <summary>Whether the editor can be closed, as on the Profiles page; one-off edits on the Apply and Batch pages close with their page.</summary>
+    public bool CanClose => close is not null;
+
+    [RelayCommand]
+    private Task CloseAsync() => close?.Invoke() ?? Task.CompletedTask;
 
     [RelayCommand]
     private void ToggleYaml() => ShowYaml = !ShowYaml;

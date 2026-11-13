@@ -705,4 +705,212 @@ public sealed class ProfilesTests : ViewModelTests
         Assert.Empty(profiles.Items);
         Assert.False(profiles.Loading);
     }
+
+    [AvaloniaFact]
+    public async Task Closing_a_profile_without_changes_leaves_none_open_through_a_refresh()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Assert.True(editor.CanClose);
+
+        await editor.CloseCommand.ExecuteAsync(null);
+
+        Assert.False(profiles.HasLeaving);
+        Assert.Null(profiles.Current);
+        Assert.Null(profiles.Selected);
+        Assert.True(profiles.ShowNoneOpen);
+        Assert.False(profiles.ShowProfile);
+
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.Null(profiles.Current);
+        Assert.True(profiles.ShowNoneOpen);
+
+        // Choosing a profile opens it, and a refresh then keeps it open.
+        profiles.Selected = profiles.Items.Single(item => item.Name == "base");
+        Assert.Equal("base", profiles.Current?.Name);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal("base", profiles.Current?.Name);
+    }
+
+    [AvaloniaFact]
+    public async Task Closing_a_profile_with_changes_asks_about_it_alone_and_cancel_keeps_it_open()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        profiles.Selected = profiles.Items.Single(item => item.Name == "base");
+        var other = profiles.Current!;
+        Choose(other, "has_issues", "Off");
+        profiles.Selected = profiles.Items.Single(item => item.Name == "orgs");
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        Assert.True(profiles.HasLeaving);
+        Assert.Equal("orgs has unsaved changes. Save them before you close it?", profiles.LeavingMessage);
+        profiles.StayHereCommand.Execute(null);
+        await close;
+
+        Assert.False(profiles.HasLeaving);
+        Assert.Same(editor, profiles.Current);
+        Assert.True(editor.HasChanges);
+        Assert.True(other.HasChanges);
+    }
+
+    [AvaloniaFact]
+    public async Task Discard_on_closing_drops_only_that_profiles_changes()
+    {
+        var (profiles, _, files) = await OpenOrgs();
+        profiles.Selected = profiles.Items.Single(item => item.Name == "base");
+        var other = profiles.Current!;
+        Choose(other, "has_issues", "Off");
+        profiles.Selected = profiles.Items.Single(item => item.Name == "orgs");
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await close;
+
+        Assert.Null(profiles.Current);
+        Assert.True(profiles.ShowNoneOpen);
+        Assert.False(editor.HasChanges);
+        Assert.True(other.HasChanges);
+        Assert.Equal("extends: base.yaml\nrepository: { has_wiki: false }\n", File.ReadAllText(files.Own));
+    }
+
+    [AvaloniaFact]
+    public async Task Save_on_closing_closes_once_saved_and_a_failed_save_stays_open()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        var save = $"profile {files.Own} --set repository.has_wiki=true --json";
+        cli.On(save, """{"error":{"kind":"error","message":"The file could not be written"}}""", exitCode: 1);
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await close;
+        Assert.Same(editor, profiles.Current);
+        Assert.Contains("could not be written", editor.SaveError, StringComparison.Ordinal);
+
+        cli.On(save, Documents.Resolved(files.Own, files.Base, wiki: true));
+        close = editor.CloseCommand.ExecuteAsync(null);
+        await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await close;
+        Assert.Contains(save, cli.Calls);
+        Assert.Null(profiles.Current);
+        Assert.True(profiles.ShowNoneOpen);
+    }
+
+    [AvaloniaFact]
+    public async Task Opening_another_profile_takes_back_the_question_about_closing()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        profiles.Selected = profiles.Items.Single(item => item.Name == "base");
+        await close.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.False(profiles.HasLeaving);
+        Assert.Equal("base", profiles.Current?.Name);
+        Assert.True(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
+    public async Task A_way_out_while_closing_asks_about_every_profile()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        profiles.Selected = profiles.Items.Single(item => item.Name == "base");
+        var other = profiles.Current!;
+        Choose(other, "has_issues", "Off");
+        profiles.Selected = profiles.Items.Single(item => item.Name == "orgs");
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        var folder = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(folder);
+        orgsDesktop.Folder = folder;
+        cli.On(folders.List(folder), Documents.NoProfiles);
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        await close.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Same(editor, profiles.Current);
+        Assert.Equal("base and orgs have unsaved changes. Save them before you change the folder?", profiles.LeavingMessage);
+
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await change;
+        Assert.False(other.HasChanges);
+        Assert.False(editor.HasChanges);
+        Assert.Equal(folder, profiles.Folder.Path);
+        Assert.True(File.Exists(files.Own));
+    }
+
+    [AvaloniaFact]
+    public async Task The_new_profile_form_takes_back_the_question_about_closing()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        profiles.StartNew(null);
+        await close.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.False(profiles.HasLeaving);
+        Assert.True(profiles.ShowCreating);
+        Assert.True(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
+    public async Task A_refresh_while_closing_keeps_the_profile_and_the_question()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.True(profiles.HasLeaving);
+        Assert.Same(editor, profiles.Current);
+
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await close;
+        Assert.Null(profiles.Current);
+        Assert.True(profiles.ShowNoneOpen);
+    }
+
+    [AvaloniaFact]
+    public async Task Discard_on_closing_a_removed_profile_leaves_none_open()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.True(editor.Removed);
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await close.WaitAsync(TimeSpan.FromSeconds(5));
+        // Discarding a removed profile's edits lists the folder again, which opens nothing in its place.
+        await Until(() => !profiles.Loading && profiles.Items.All(item => item.Name != "orgs"));
+
+        Assert.Null(profiles.Current);
+        Assert.True(profiles.ShowNoneOpen);
+    }
+
+    [AvaloniaFact]
+    public async Task Choosing_a_folder_after_closing_opens_its_first_profile()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        await profiles.Current!.CloseCommand.ExecuteAsync(null);
+        orgsDesktop.Folder = folders.Profiles;
+
+        await profiles.ChangeFolderCommand.ExecuteAsync(null);
+
+        Assert.NotNull(profiles.Current);
+        Assert.False(profiles.ShowNoneOpen);
+    }
 }

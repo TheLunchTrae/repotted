@@ -438,6 +438,38 @@ public sealed class ConfigRepositoryTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Save_on_closing_a_profile_closes_it_after_a_sync_that_pulls_a_file()
+    {
+        var copy = Synced();
+        var file = Path.Combine(copy, "base.yaml");
+        File.WriteAllText(file, "repository:\n  has_issues: true\n");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var save = $"profile {file} --set repository.has_wiki=false --json";
+        var cli = new FakeCli()
+            .On(Command(copy), Sync())
+            .On(folders.List(copy), Listing(file))
+            .On($"profile {file} --json", Documents.ResolvedBase(file))
+            .On(save, Documents.ResolvedBase(file));
+        var profiles = Profiles(cli);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        profiles.Selected = profiles.Items.Single();
+        var editor = profiles.Current!;
+        editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki")
+            .Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        // The sync after the save pulls another file, so the listing after it
+        // opens a new editor for the saved profile while the question waits.
+        cli.On(Command(copy), Sync(pulled: ["other.yaml"]));
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await close.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Contains(save, cli.Calls);
+        Assert.Null(profiles.Current);
+        Assert.True(profiles.ShowNoneOpen);
+    }
+
+    [AvaloniaFact]
     public async Task Sign_out_comes_back_after_a_save_whose_sync_pulls_a_file()
     {
         var copy = Synced();

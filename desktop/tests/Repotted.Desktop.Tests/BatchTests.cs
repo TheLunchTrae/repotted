@@ -481,6 +481,8 @@ public sealed class BatchTests : IDisposable
         batch.Selected = repotted;
         await Until(() => repotted.Edits is { Loading: false });
         var edits = repotted.Edits!;
+        // One-off edits close with the batch, so the editor offers no close of its own.
+        Assert.False(edits.CanClose);
         Assert.Equal("Save edits", edits.SaveLabel);
 
         edits.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == "has_issues")

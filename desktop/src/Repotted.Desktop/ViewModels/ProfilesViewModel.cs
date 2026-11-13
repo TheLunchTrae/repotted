@@ -153,8 +153,11 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         leaveNotice = null;
     }
 
-    /// <summary>The profiles whose editors hold unsaved changes.</summary>
-    private List<ProfileViewModel> Unsaved => [.. editors.Values.Where(editor => editor.HasChanges)];
+    /// <summary>The editors the question asks about: the one closing, or null for every editor.</summary>
+    private IReadOnlyList<ProfileViewModel>? askedAbout;
+
+    /// <summary>The profiles the question asks about whose editors hold unsaved changes.</summary>
+    private List<ProfileViewModel> Unsaved => [.. (askedAbout ?? (IEnumerable<ProfileViewModel>)editors.Values).Where(editor => editor.HasChanges)];
 
     public bool HasUnsaved => editors.Values.Any(editor => editor.HasChanges);
 
@@ -178,12 +181,14 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     /// <summary>
     /// Asks what to do with unsaved changes before <paramref name="act"/>,
     /// such as "change the folder", and answers whether to go on: true when
-    /// nothing is unsaved, or once every change is saved or discarded.
+    /// nothing is unsaved, or once every change is saved or discarded. The
+    /// question asks about <paramref name="only"/> when given, and otherwise
+    /// about every editor.
     /// </summary>
-    public async Task<bool> ConfirmLeaveAsync(string act)
+    public async Task<bool> ConfirmLeaveAsync(string act, IReadOnlyList<ProfileViewModel>? only = null)
     {
         ClearLeaveNotice();
-        if (!HasUnsaved)
+        if (!(only ?? (IEnumerable<ProfileViewModel>)editors.Values).Any(editor => editor.HasChanges))
         {
             return true;
         }
@@ -191,6 +196,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         leave?.TrySetResult(false);
         var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         leave = answer;
+        askedAbout = only;
         leavingNames = [.. Unsaved.Select(editor => editor.Name).Order(StringComparer.Ordinal)];
         Leaving = act;
         OnPropertyChanged(nameof(LeavingMessage));
@@ -203,6 +209,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             if (leave == answer)
             {
                 leave = null;
+                askedAbout = null;
                 Leaving = null;
             }
         }
@@ -302,7 +309,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
 
     /// <summary>The form that moves the profiles to a config repository, which stands in for the editor until it closes.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowConnecting))]
+    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowNoneOpen), nameof(ShowConnecting))]
     public partial ConfigRepositoryViewModel? Connecting { get; private set; }
 
     public bool ShowConnecting => Connecting is not null;
@@ -314,21 +321,21 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     public partial ProfileItemViewModel? Selected { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowProfile))]
+    [NotifyPropertyChangedFor(nameof(ShowProfile), nameof(ShowNoneOpen))]
     public partial ProfileViewModel? Current { get; private set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile))]
+    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowNoneOpen))]
     public partial bool Loading { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasError), nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowSyncNote), nameof(ShowSyncDone), nameof(ShowSyncProblem))]
+    [NotifyPropertyChangedFor(nameof(HasError), nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowNoneOpen), nameof(ShowSyncNote), nameof(ShowSyncDone), nameof(ShowSyncProblem))]
     public partial string? Error { get; set; }
 
     public bool HasError => Error is not null;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile), nameof(HasProfiles))]
+    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowNoneOpen), nameof(HasProfiles))]
     public partial int Count { get; set; }
 
     public bool HasProfiles => Count > 0;
@@ -337,9 +344,12 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
 
     public bool ShowProfile => !Loading && Error is null && Current is not null && Creating is null && Connecting is null;
 
+    /// <summary>Whether the folder has profiles and none is open, such as after one is closed.</summary>
+    public bool ShowNoneOpen => !Loading && Error is null && Count > 0 && Current is null && Creating is null && Connecting is null;
+
     /// <summary>The new profile form, which stands in for the editor until it closes.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowCreating))]
+    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(ShowProfile), nameof(ShowNoneOpen), nameof(ShowCreating))]
     public partial NewProfileViewModel? Creating { get; private set; }
 
     public bool ShowCreating => Creating is not null;
@@ -358,6 +368,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     [RelayCommand]
     public void StartNew(string? repository)
     {
+        DropCloseQuestion(null);
         Captured = null;
         Connecting = null;
         // Nothing stays selected, so choosing any profile in the list leaves the form.
@@ -455,6 +466,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         }
         Connecting = null;
         Folder.UseRepository(repository, path, result);
+        closed = false;
         Selected = null;
         await LoadAsync(sync: false).ConfigureAwait(true);
     }
@@ -510,6 +522,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     {
         if (value is not null)
         {
+            DropCloseQuestion(value.Listing.File);
             if (leaveNotice is { } shown && shown.File == value.Listing.File)
             {
                 ClearLeaveNotice();
@@ -528,12 +541,68 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     {
         if (!editors.TryGetValue(listing.File, out var editor))
         {
-            editor = new ProfileViewModel(client, listing, ProfileStore.Profile(client, Folder), SavedAsync);
-            editors[listing.File] = editor;
-            editor.PropertyChanged += OnEditorChanged;
-            _ = editor.LoadCommand.ExecuteAsync(null);
+            var opened = new ProfileViewModel(client, listing, ProfileStore.Profile(client, Folder), SavedAsync, () => CloseAsync(listing.File));
+            editors[listing.File] = opened;
+            opened.PropertyChanged += OnEditorChanged;
+            _ = opened.LoadCommand.ExecuteAsync(null);
+            editor = opened;
         }
+        closed = false;
         Current = editor;
+    }
+
+    /// <summary>Whether the user closed the open profile, so a refresh opens none in its place.</summary>
+    private bool closed;
+
+    /// <summary>Whether a close waits on the question about unsaved changes, so a refresh meanwhile opens no other profile.</summary>
+    private bool closing;
+
+    /// <summary>
+    /// Closes the open profile, back to the list with none open. Unsaved
+    /// changes to it ask first, and the editor keeps them on Cancel; the other
+    /// editors keep theirs as they are.
+    /// </summary>
+    private async Task CloseAsync(string file)
+    {
+        if (Current is not { } editor || editor.File != file)
+        {
+            return;
+        }
+        // Choosing another profile while the question waits takes it back, so
+        // going on means this profile's changes are settled. A refresh in the
+        // meantime can have opened a new editor for the same file.
+        bool confirmed;
+        closing = true;
+        try
+        {
+            confirmed = await ConfirmLeaveAsync("close it", [editor]).ConfigureAwait(true);
+        }
+        finally
+        {
+            closing = false;
+        }
+        if (!confirmed)
+        {
+            return;
+        }
+        closed = true;
+        Captured = null;
+        Selected = null;
+        Current = null;
+    }
+
+    /// <summary>
+    /// Takes back a question about closing a profile once the user chooses
+    /// another profile, or the new profile form, since that is no longer the
+    /// profile on screen. A question about every editor stays. A refresh
+    /// while the question waits opens no other profile in its place.
+    /// </summary>
+    private void DropCloseQuestion(string? opening)
+    {
+        if (askedAbout is [var asked] && asked.File != opening)
+        {
+            leave?.TrySetResult(false);
+        }
     }
 
     /// <summary>
@@ -693,7 +762,8 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
                 // The search hides it, but it stays open.
                 Open(hidden.Listing);
             }
-            else if (Items.FirstOrDefault() is { } first)
+            // A profile the user closed, or is closing, leaves none open until they choose one.
+            else if (!closed && !closing && Items.FirstOrDefault() is { } first)
             {
                 if (!creating)
                 {
@@ -743,6 +813,8 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             Notice = $"Repotted could not remember this folder for next time: {error.Message}";
         }
         Folder.UseFolder(folder);
+        // Another folder, or the same one chosen again, opens its first profile.
+        closed = false;
         Selected = null;
         await RefreshAsync().ConfigureAwait(true);
     }

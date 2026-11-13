@@ -223,6 +223,13 @@ saved**. **Save profile** puts the file back with your changes, and
 **Discard** lets the profile go. If the profile was renamed on GitHub, saving
 brings it back under its old name, beside the renamed one.
 
+**Close profile** above the profile's name closes it, as does
+<kbd>Ctrl</kbd>+<kbd>W</kbd>, or <kbd>⌘</kbd>+<kbd>W</kbd> on macOS, and
+leaves no profile open until you choose one from the list. If the profile has
+unsaved changes, a banner asks first: **Save** saves them and closes it,
+**Discard** drops them and closes it, and **Cancel** keeps it open with your
+changes.
+
 Unsaved changes stay with the app until you save or discard them. If you
 click **Change folder**, **Use a GitHub repository**, **Change repository** or
 **Sign out**, or quit, while a profile has unsaved changes, a banner on the
