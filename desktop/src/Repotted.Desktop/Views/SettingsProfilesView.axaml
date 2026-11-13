@@ -1,0 +1,74 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Repotted.Desktop.ViewModels"
+             xmlns:views="using:Repotted.Desktop.Views"
+             x:Class="Repotted.Desktop.Views.SettingsProfilesView"
+             x:DataType="vm:ShellViewModel">
+  <StackPanel Spacing="12">
+    <!-- A folder that couldn't be used, said where it was chosen -->
+    <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Profiles.Notice}"
+               IsVisible="{Binding Profiles.HasNotice}" AutomationProperties.LiveSetting="Assertive" />
+    <!-- Changing the folder or the repository waits until unsaved changes are saved or discarded -->
+    <Border Classes="settings" Padding="18,12" IsVisible="{Binding Profiles.HasLeavingAll}">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Classes="small" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource DriftBrush}"
+                   Text="{Binding Profiles.LeavingMessage}" AutomationProperties.LiveSetting="Assertive" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0">
+          <Button Classes="quiet" Content="Save" Command="{Binding Profiles.SaveAndLeaveCommand}" />
+          <Button Classes="quiet" Content="Discard" Command="{Binding Profiles.DiscardAndLeaveCommand}" />
+          <Button Classes="quiet" Content="Cancel" Command="{Binding Profiles.StayHereCommand}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Classes="settings" IsVisible="{Binding !Profiles.ShowConnecting}">
+      <StackPanel>
+        <!-- Where they are now, and how the last sync went -->
+        <Border Classes="settingrow first">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="3" Margin="0,0,16,0">
+              <TextBlock FontWeight="SemiBold" Text="{Binding Profiles.Folder.SourceLabel}" />
+              <SelectableTextBlock Classes="mono" FontSize="13.5" TextWrapping="Wrap" Text="{Binding Profiles.Folder.SourceText}"
+                                   ToolTip.Tip="{Binding Profiles.Folder.Path}" />
+              <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding Profiles.Folder.SyncNote}"
+                         IsVisible="{Binding Profiles.ShowSyncDone}" AutomationProperties.LiveSetting="Polite" />
+              <SelectableTextBlock FontSize="13.5" TextWrapping="Wrap" Text="{Binding Profiles.Folder.SyncNote}"
+                                   IsVisible="{Binding Profiles.ShowSyncProblem}" Foreground="{DynamicResource RemoveBrush}" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="quiet" VerticalAlignment="Center" Content="{Binding Profiles.Folder.RefreshLabel}"
+                    Command="{Binding Profiles.RefreshCommand}" />
+          </Grid>
+        </Border>
+        <Border Classes="settingrow">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="3" Margin="0,0,16,0">
+              <TextBlock FontWeight="SemiBold" Text="{Binding Profiles.Folder.RepositoryTitle}" />
+              <TextBlock Classes="muted small" TextWrapping="Wrap"
+                         Text="Profiles follow you to any computer and keep their history." />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="quiet" VerticalAlignment="Center" Content="{Binding Profiles.Folder.RepositoryLabel}"
+                    Command="{Binding Profiles.StartConnectCommand}" />
+          </Grid>
+        </Border>
+        <Border Classes="settingrow">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="3" Margin="0,0,16,0">
+              <TextBlock FontWeight="SemiBold" Text="{Binding Profiles.Folder.FolderTitle}" />
+              <TextBlock Classes="muted small" TextWrapping="Wrap"
+                         Text="Keep the YAML files in a folder, such as Documents/Repotted." />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="quiet" VerticalAlignment="Center" Content="{Binding Profiles.Folder.FolderLabel}"
+                    Command="{Binding Profiles.ChangeFolderCommand}" />
+          </Grid>
+        </Border>
+      </StackPanel>
+    </Border>
+
+    <!-- The repository form, in place of the rows while it is open; its own margin is the page's -->
+    <ContentControl Margin="-32,-24" Content="{Binding Profiles.Connecting}" IsVisible="{Binding Profiles.ShowConnecting}">
+      <ContentControl.DataTemplates>
+        <DataTemplate DataType="vm:ConfigRepositoryViewModel"><views:ConfigRepositoryView /></DataTemplate>
+      </ContentControl.DataTemplates>
+    </ContentControl>
+  </StackPanel>
+</UserControl>

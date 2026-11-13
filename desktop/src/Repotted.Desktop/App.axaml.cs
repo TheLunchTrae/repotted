@@ -1,5 +1,7 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Repotted.Desktop.Services;
 using Repotted.Desktop.Theme;
@@ -28,8 +30,36 @@ internal sealed partial class App : Application
             window.DataContext = main;
             desktop.MainWindow = window;
             desktop.Exit += (_, _) => main.Stop();
+            if (OperatingSystem.IsMacOS())
+            {
+                AddSettingsToAppMenu(main);
+            }
             _ = main.StartAsync();
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Puts Settings… at the top of the macOS app menu, above the Hide and Quit
+    /// items macOS adds, with Command+comma, where Mac apps keep their
+    /// settings. It opens them while signed in. A menu of the app's own also
+    /// drops Avalonia's About item.
+    /// </summary>
+    private void AddSettingsToAppMenu(MainViewModel main)
+    {
+        var settings = new NativeMenuItem("Settings…")
+        {
+            Gesture = new KeyGesture(Key.OemComma, KeyModifiers.Meta),
+            IsEnabled = false,
+        };
+        settings.Click += (_, _) => (main.Page as ShellViewModel)?.OpenSettings();
+        main.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.Page))
+            {
+                settings.IsEnabled = main.Page is ShellViewModel;
+            }
+        };
+        NativeMenu.SetMenu(this, new NativeMenu { Items = { settings } });
     }
 }

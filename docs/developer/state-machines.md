@@ -119,6 +119,32 @@ sign out are the question in
 [Leaving with unsaved changes](#leaving-with-unsaved-changes), on the
 **Profiles** page.
 
+## Desktop navigation
+
+`ShellViewModel.Page` is the page the signed-in app shows: 0 for the
+repositories, with a compare, an apply or a batch standing in for the list,
+1 for the profiles, and 2 for the settings where they are a page. The sidebar
+binds `NavPage`, which is Page for the first two and -1 on the settings, and
+`SettingsNavPage`, which is 0 only on the settings. Each ignores the -1 its
+list sets as the other list takes the selection.
+
+`SettingsInWindow` is true on macOS. There the settings never become a page:
+`OpenSettings` raises `SettingsWindowRequested`, and `ShellView` opens a
+`SettingsWindow` over the main window, or brings the open one forward. The
+window shows `SettingsTab`, 0 for the account and 1 for the profiles, and
+closes when the shell leaves the visual tree, as when signing out replaces it.
+
+| State                    | Event                                                                  | Next                                                                                                                                                                                                                                                       |
+| ------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any page                 | Repositories or Profiles in the sidebar                                | That page. Leaving the repositories closes a compare, and an apply or batch that can leave, as in [Desktop apply](#desktop-apply).                                                                                                                         |
+| Any page                 | Settings, Ctrl+comma, or the account menu, on Windows                  | The settings page, closing a compare as above.                                                                                                                                                                                                             |
+| Any page                 | Repotted > Settings…, Command+comma, or the account menu, on macOS     | The page stays; the settings window opens or comes forward.                                                                                                                                                                                                |
+| Any page                 | Use a GitHub repository or Change repository, wherever it is           | After [Leaving with unsaved changes](#leaving-with-unsaved-changes), the connect form opens in the settings, at the Profiles tab on macOS; the profiles page says so and offers Show settings.                                                             |
+| The connect form is open | It connects or is cancelled                                            | The settings show where the profiles are kept again.                                                                                                                                                                                                       |
+| Any page                 | A way out asks about unsaved profiles, or one opens after the question | The profiles page, which shows the question or the profile; on macOS the settings window closes and the main window comes forward, since the settings window stays above it. An apply or batch that cannot leave shows the repositories page the same way. |
+| The settings window      | Command+W or its close button                                          | Closed; the next open makes a new one.                                                                                                                                                                                                                     |
+| The settings window      | The shell is replaced                                                  | Closed.                                                                                                                                                                                                                                                    |
+
 ## Plan and apply
 
 `createPlan` only reads. `applyPlan` (`packages/core/src/plan.ts`) plans
@@ -611,16 +637,18 @@ Changing the folder, connecting or changing the repository, closing the
 window, signing out, and a lost sign-in that would replace the app go through
 `ProfilesViewModel.ConfirmLeaveAsync`, which asks only when a cached editor
 has unsaved changes. [Closing](#closing) a profile goes through it too, and
-asks only about that profile. Closing the window, signing out, and a lost
-sign-in show the **Profiles** page first, through
-`ShellViewModel.ConfirmLeaveAsync`. Closing the window cancels the close and
-closes again once the question settles.
+asks only about that profile. The question shows on the **Profiles** page.
+The settings show it too when it asks about every profile, as changing the
+folder or the repository does, since those start there. Closing
+the window, signing out, and a lost sign-in show the **Profiles** page first,
+through `ShellViewModel.ConfirmLeaveAsync`. Closing the window cancels the
+close and closes again once the question settles.
 
 | State            | Event                                                                                                   | Next                                                                                                                                                                                                                                                                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Idle             | Change folder, connect a repository, close the window, sign out, or a lost sign-in                      | Asking, when any editor has unsaved changes. Otherwise it goes on. The question names the profiles that had unsaved changes when it was asked.                                                                                                                                                                                               |
 | Asking           | Save                                                                                                    | Saving: each changed editor saves in turn, and Save, Discard and Cancel wait until the saves end.                                                                                                                                                                                                                                            |
-| Saving           | Every save ends                                                                                         | It goes on when no editor has changes left; otherwise it opens the first one that does, with its error, its Out of date choice, or that its file is gone, even when a search hides it, and stays.                                                                                                                                            |
+| Saving           | Every save ends                                                                                         | It goes on when no editor has changes left; otherwise it opens the first one that does on the profiles page, with its error, its Out of date choice, or that its file is gone, even when a search hides it, and stays.                                                                                                                       |
 | Asking           | Discard                                                                                                 | Every changed editor that can discard does. It goes on when none has changes left; an editor still loading keeps its changes, opens, and it stays.                                                                                                                                                                                           |
 | Saving or asking | A save failed, or an editor still loading kept its changes, while a capture runs                        | It stays, but opens nothing, since that would close the new profile form and stop its capture. A notice names the profile and why, such as "orgs could not be saved, so you cannot change the folder yet.", over any notice already showing. It goes once that profile opens or a way out asks again, and the notice it covered shows again. |
 | Asking           | Cancel                                                                                                  | Idle, with nothing changed. A new profile form that was open stays open.                                                                                                                                                                                                                                                                     |

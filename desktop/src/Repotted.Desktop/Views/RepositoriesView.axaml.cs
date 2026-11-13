@@ -9,6 +9,7 @@ internal sealed partial class RepositoriesView : UserControl
     public RepositoriesView()
     {
         InitializeComponent();
+        _ = new FindShortcut(this, RepositorySearch, SearchShortcut);
         // An owner's heading is disabled, so it can't be clicked, focused or reached with the arrow keys.
         List.ContainerPrepared += (_, e) =>
         {

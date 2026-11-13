@@ -43,8 +43,271 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("TheLunchTrae/github-setup", text);
         Assert.Contains("No profile", text);
         Assert.Contains(ControlLabel.For("Add repositories"), text);
-        Assert.Contains(ControlLabel.For("Sign out"), text);
+        Assert.Contains("Find a repository", text);
+        // The account sits at the top right, and its menu holds what it does.
+        Assert.Contains("TheLunchTrae", text);
+        Assert.DoesNotContain(ControlLabel.For("Sign out"), text);
         Save(window, $"repositories-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task The_account_menu_offers_the_settings_and_signing_out(string theme)
+    {
+        var window = await Show(theme, FakeCli.SignedIn());
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.SettingsInWindow = false;
+        var view = window.GetVisualDescendants().OfType<ShellView>().Single();
+        var account = view.FindControl<Button>("AccountButton")!;
+        var menu = view.FindControl<StackPanel>("AccountMenu")!;
+
+        account.Flyout!.ShowAt(account);
+        Dispatcher.UIThread.RunJobs();
+
+        var text = menu.GetVisualDescendants().OfType<TextBlock>().Where(block => block.IsEffectivelyVisible)
+            .Select(block => block.Text).ToHashSet();
+        Assert.Contains("TheLunchTrae", text);
+        Assert.Contains("Signed in with the Repotted App.", text);
+        Assert.Contains(ControlLabel.For("Add repositories"), text);
+        Assert.Contains("Settings", text);
+        Assert.Contains(ShellViewModel.SettingsShortcut, text);
+        Assert.Contains(ControlLabel.For("Sign out"), text);
+        Save(window, $"account-menu-{theme}");
+
+        // Choosing an item closes the menu.
+        var settings = menu.GetVisualDescendants().OfType<Button>()
+            .Single(button => AutomationProperties.GetName(button) == "Settings");
+        settings.Command!.Execute(null);
+        settings.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(account.Flyout.IsOpen);
+        Assert.True(shell.ShowingSettings);
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task The_settings_page_holds_the_account_and_where_profiles_are_kept(string theme)
+    {
+        var window = await Show(theme, FakeCli.SignedIn());
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        // Settings are a page off macOS, and a window on it.
+        shell.SettingsInWindow = false;
+        Dispatcher.UIThread.RunJobs();
+
+        Click(window, "Settings");
+
+        Assert.True(shell.ShowingSettings);
+        Assert.Equal("Settings", shell.Crumb);
+        Assert.Equal(-1, window.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "Nav").SelectedIndex);
+        var text = Texts(window);
+        Assert.Contains("For the whole app, on this computer.", text);
+        Assert.Contains("TheLunchTrae", text);
+        Assert.Contains("Signed in with the Repotted App.", text);
+        Assert.Contains(ControlLabel.For("Sign out"), text);
+        Assert.Contains("Kept in a folder on this computer", text);
+        Assert.Contains(folders.Profiles, text);
+        Assert.Contains(ControlLabel.For("Use a GitHub repository…"), text);
+        Assert.Contains(ControlLabel.For("Change folder…"), text);
+        Save(window, $"settings-page-{theme}");
+
+        // The sidebar leads back.
+        Click(window, "Repositories");
+        Assert.True(shell.ShowingRepositories);
+        Assert.Equal(-1, window.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "SettingsNav").SelectedIndex);
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task On_macOS_the_settings_open_in_a_window_with_a_tab_for_each_pane(string theme)
+    {
+        var window = await Show(theme, FakeCli.SignedIn());
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.SettingsInWindow = true;
+        var view = window.GetVisualDescendants().OfType<ShellView>().Single();
+        Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain(window.GetVisualDescendants().OfType<ListBox>(), list => list.Name == "SettingsNav" && list.IsEffectivelyVisible);
+
+        shell.OpenSettings();
+        Dispatcher.UIThread.RunJobs();
+
+        var settings = Assert.IsType<SettingsWindow>(view.Settings);
+        Assert.True(shell.ShowingRepositories);
+        Assert.Equal("Account", settings.Title);
+        settings.Width = 640;
+        var account = Texts(settings);
+        Assert.Contains("TheLunchTrae", account);
+        Assert.Contains(ControlLabel.For("Sign out"), account);
+        Save(settings, $"settings-window-account-{theme}");
+
+        shell.SettingsTab = 1;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Profiles", settings.Title);
+        var profiles = Texts(settings);
+        Assert.Contains("Kept in a folder on this computer", profiles);
+        Assert.DoesNotContain("TheLunchTrae", profiles);
+        Save(settings, $"settings-window-profiles-{theme}");
+
+        // Opening them again brings the same window forward, and the shell's end closes it.
+        shell.OpenSettings();
+        Assert.Same(settings, view.Settings);
+        ((MainViewModel)window.DataContext!).Page = null;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(view.Settings);
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task The_settings_ask_about_unsaved_profiles_and_a_failed_save_shows_the_profile(string theme)
+    {
+        var (window, shell, editor, save) = await ShowUnsaved(theme, new FakeDesktop { Folder = Path.Combine(folders.Profiles, "other") });
+        shell.SettingsInWindow = false;
+        shell.OpenSettings();
+        Dispatcher.UIThread.RunJobs();
+
+        // Changing the folder from the settings asks there.
+        var change = shell.Profiles.ChangeFolderCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(shell.ShowingSettings);
+        var text = Texts(window);
+        Assert.Contains(shell.Profiles.LeavingMessage, text);
+        Assert.Contains(ControlLabel.For("Save"), text);
+        Assert.Contains(ControlLabel.For("Discard"), text);
+        Assert.Contains(ControlLabel.For("Cancel"), text);
+        Save(window, $"settings-leaving-{theme}");
+
+        // Cancel stays in the settings, with the change kept.
+        shell.Profiles.StayHereCommand.Execute(null);
+        await change.WaitAsync(TimeSpan.FromSeconds(5));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(shell.ShowingSettings);
+        Assert.False(shell.Profiles.HasLeaving);
+        Assert.True(editor.HasChanges);
+        Assert.Equal(folders.Profiles, shell.Profiles.Folder.Path);
+
+        // A save that fails shows the profile with why, and the folder stays.
+        save.Fail();
+        change = shell.Profiles.ChangeFolderCommand.ExecuteAsync(null);
+        await shell.Profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await change.WaitAsync(TimeSpan.FromSeconds(5));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(shell.ShowingProfiles);
+        Assert.Same(editor, shell.Profiles.Current);
+        Assert.Contains("could not be written", editor.SaveError, StringComparison.Ordinal);
+        Assert.Contains("could not be written", string.Join("\n", Texts(window)), StringComparison.Ordinal);
+        Assert.Equal(folders.Profiles, shell.Profiles.Folder.Path);
+    }
+
+    [AvaloniaFact]
+    public async Task Closing_a_profile_asks_only_on_the_profiles_page_and_not_in_the_settings()
+    {
+        var (window, shell, editor, _) = await ShowUnsaved("light");
+        shell.SettingsInWindow = false;
+        var list = window.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "ProfileList");
+        Assert.Equal(shell.Profiles.Folder.ListLabel, AutomationProperties.GetName(list));
+
+        var closing = editor.CloseCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(shell.Profiles.HasLeaving);
+        Assert.False(shell.Profiles.HasLeavingAll);
+        Assert.Contains(shell.Profiles.LeavingMessage, Texts(window));
+
+        // The settings don't show the profile, so they don't ask about closing it.
+        shell.OpenSettings();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(shell.ShowingSettings);
+        Assert.DoesNotContain(shell.Profiles.LeavingMessage, Texts(window));
+
+        shell.Profiles.StayHereCommand.Execute(null);
+        await closing.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
+    public async Task On_macOS_signing_out_from_the_settings_window_asks_in_the_main_window()
+    {
+        var (window, shell, editor, _) = await ShowUnsaved("light");
+        shell.SettingsInWindow = true;
+        shell.Page = 0;
+        var view = window.GetVisualDescendants().OfType<ShellView>().Single();
+        shell.OpenSettings();
+        Dispatcher.UIThread.RunJobs();
+        Assert.NotNull(view.Settings);
+
+        var signingOut = shell.SignOutCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        // The settings window would cover the question, so it closes and the profiles page asks.
+        Assert.Null(view.Settings);
+        Assert.True(window.IsActive);
+        Assert.True(shell.ShowingProfiles);
+        Assert.True(shell.Profiles.HasLeaving);
+        Assert.Contains(shell.Profiles.LeavingMessage, Texts(window));
+
+        shell.Profiles.StayHereCommand.Execute(null);
+        await signingOut.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Same(shell, ((MainViewModel)window.DataContext!).Page);
+        Assert.True(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
+    public async Task The_account_menu_works_from_the_keyboard()
+    {
+        var window = await Show("light", FakeCli.SignedIn());
+        var view = window.GetVisualDescendants().OfType<ShellView>().Single();
+        var account = view.FindControl<Button>("AccountButton")!;
+        var menu = view.FindControl<StackPanel>("AccountMenu")!;
+        Assert.Equal("Account, TheLunchTrae", AutomationProperties.GetName(account));
+
+        account.Flyout!.ShowAt(account);
+        Dispatcher.UIThread.RunJobs();
+        var items = menu.GetVisualDescendants().OfType<Button>()
+            .Where(button => button.Classes.Contains("menuitem") && button.IsEffectivelyVisible).ToList();
+        Assert.Equal(3, items.Count);
+        Button Focused() => items.Single(item => item.IsFocused);
+        void Press(Key key) => (TopLevel.GetTopLevel(Focused())!.FocusManager!.GetFocusedElement() as Control)!
+            .RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key });
+
+        // It opens on the first item, and the arrows go round.
+        Assert.Same(items[0], Focused());
+        Press(Key.Down);
+        Assert.Same(items[1], Focused());
+        Press(Key.End);
+        Assert.Same(items[2], Focused());
+        Press(Key.Down);
+        Assert.Same(items[0], Focused());
+        Press(Key.Up);
+        Assert.Same(items[2], Focused());
+        Press(Key.Home);
+        Assert.Same(items[0], Focused());
+    }
+
+    /// <summary>The profiles page with orgs open and an unsaved change to it, and its save, which can be made to fail.</summary>
+    private async Task<(Window Window, ShellViewModel Shell, ProfileViewModel Editor, FailingSave Save)> ShowUnsaved(
+        string theme, FakeDesktop? desktop = null)
+    {
+        var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nenvironments:\n  - name: npm\n");
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        var cli = FakeCli.SignedIn()
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On(folders.List(other), Documents.NoProfiles)
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base));
+        var window = await Show(theme, cli, desktop);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        editor.Tab("Environments").Entries[0].Editor.Name = "pages";
+        Dispatcher.UIThread.RunJobs();
+        return (window, shell, editor, new FailingSave(cli, $$"""profile {{own}} --drop-environment=npm --environment={"name":"pages"} --json"""));
+    }
+
+    private sealed record FailingSave(FakeCli Cli, string Call)
+    {
+        public void Fail() => Cli.On(Call, """{"error":{"kind":"error","message":"The file could not be written"}}""", exitCode: 1);
     }
 
     [AvaloniaFact]
@@ -136,16 +399,31 @@ public sealed class ViewTests : IDisposable
     }
 
     [AvaloniaFact]
-    public async Task The_search_shortcut_works_before_anything_has_focus()
+    public async Task The_find_shortcut_works_before_anything_has_focus()
     {
         var window = await Show("light", FakeCli.SignedIn());
-        var search = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "SearchBox");
+        var search = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "RepositorySearch");
         Assert.Null(window.FocusManager?.GetFocusedElement());
 
-        window.KeyPressQwerty(PhysicalKey.K, OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control);
+        window.KeyPressQwerty(PhysicalKey.F, OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control);
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(search.IsFocused);
+    }
+
+    [AvaloniaFact]
+    public async Task The_settings_shortcut_opens_the_settings_from_any_page()
+    {
+        var window = await Show("light", FakeCli.SignedIn());
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.SettingsInWindow = false;
+        shell.Page = 1;
+        Dispatcher.UIThread.RunJobs();
+
+        window.KeyPressQwerty(PhysicalKey.Comma, OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(shell.ShowingSettings);
     }
 
     [AvaloniaTheory]
@@ -952,7 +1230,7 @@ public sealed class ViewTests : IDisposable
 
         var text = Texts(window);
         Assert.Contains($"No profiles in {folders.Profiles} yet.", text);
-        Assert.Contains(ControlLabel.For("Choose a folder"), text);
+        Assert.Contains(ControlLabel.For("Change folder…"), text);
         Save(window, $"profiles-empty-{theme}");
     }
 
@@ -1188,11 +1466,14 @@ public sealed class ViewTests : IDisposable
             .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Json(file)}},"extends":null,"problem":null}]}""")
             .On($"profile {file} --json", Documents.ResolvedBase(file)));
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.SettingsInWindow = false;
         shell.Page = 1;
 
         shell.Profiles.StartConnectCommand.Execute(null);
         shell.Profiles.Connecting!.Repository = "TheLunchTrae/repotted-config";
 
+        // The form opens in the settings, where the repository is chosen.
+        Assert.True(shell.ShowingSettings);
         var text = Texts(window);
         Assert.Contains(ControlLabel.For("Keep profiles on GitHub"), text);
         Assert.Contains($"Add the profiles from {folders.Profiles}", text);
@@ -1219,22 +1500,32 @@ public sealed class ViewTests : IDisposable
             .On($"profile {@base} --json", Documents.ResolvedBase(@base));
         var window = await Show(theme, cli);
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.SettingsInWindow = false;
         shell.Page = 1;
         await shell.Profiles.RefreshCommand.ExecuteAsync(null);
         shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
 
         var text = Texts(window);
-        Assert.Contains("GitHub repository:", text);
-        Assert.Contains("TheLunchTrae/repotted-config", text);
         Assert.Contains("orgs.yaml changed here and on GitHub since the last sync. Keep which version?", text);
         Assert.Contains(ControlLabel.For("Keep mine"), text);
         Assert.Contains(ControlLabel.For("Use GitHub's"), text);
-        Assert.Contains(ControlLabel.For("Sync now"), text);
         Assert.Contains("In this repository", text);
-        Assert.Contains("Everything else is in sync with main.", text);
+        Assert.Equal("Sync now", AutomationProperties.GetName(window.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "SyncButton")));
         Save(window, $"config-repository-conflict-{theme}");
 
-        // A ruleset that turns the commit away says what to change, under the list.
+        // The settings say where they live and how the sync went.
+        shell.OpenSettings();
+        var settings = Texts(window);
+        Assert.Contains("Kept in a GitHub repository", settings);
+        Assert.Contains("TheLunchTrae/repotted-config", settings);
+        Assert.Contains(ControlLabel.For("Sync now"), settings);
+        Assert.Contains("Everything else is in sync with main.", settings);
+        Assert.Contains(ControlLabel.For("Change repository…"), settings);
+        Assert.Contains(ControlLabel.For("Choose folder…"), settings);
+        Save(window, $"config-repository-settings-{theme}");
+        shell.Page = 1;
+
+        // A ruleset that turns the commit away says what to change, in a banner on the profiles page.
         cli.On(
             $"sync {copy} --json",
             """{"error":{"kind":"error","message":"GitHub refused the commit to main in TheLunchTrae/repotted-config: Repository rule violations found. A ruleset or branch protection on main, such as one that requires pull requests, needs a bypass for you or the Repotted App."}}""",

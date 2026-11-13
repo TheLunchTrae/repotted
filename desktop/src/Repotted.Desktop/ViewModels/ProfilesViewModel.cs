@@ -92,7 +92,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     /// <summary>Where the profiles live, and the sync state the page shows; every save and sync takes its turn there.</summary>
     public ProfileFolder Folder { get; }
 
-    /// <summary>Whether the note shows under the list; a failure that leaves nothing to list shows as the error instead.</summary>
+    /// <summary>Whether the sync note shows; a failure that leaves nothing to list shows as the error instead.</summary>
     public bool ShowSyncNote => Folder.SyncNote is not null && Error is null;
 
     public bool ShowSyncDone => ShowSyncNote && !Folder.SyncFailed;
@@ -142,10 +142,17 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     /// repository, and quitting each drop every editor, so each asks first.
     /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasLeaving), nameof(LeavingMessage))]
+    [NotifyPropertyChangedFor(nameof(HasLeaving), nameof(HasLeavingAll), nameof(LeavingMessage))]
     public partial string? Leaving { get; private set; }
 
     public bool HasLeaving => Leaving is not null;
+
+    /// <summary>
+    /// Whether the question asks about every editor, as changing the folder or
+    /// the repository does; the settings show only that one, since closing a
+    /// profile asks about a profile they don't show.
+    /// </summary>
+    public bool HasLeavingAll => Leaving is not null && askedAbout is null;
 
     /// <summary>The answer to the question about unsaved changes: true to go on, false to stay.</summary>
     private TaskCompletionSource<bool>? leave;
@@ -319,6 +326,8 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             Creating = null;
             Open(hidden.Listing);
         }
+        // The question may have been asked from the settings, so the profile it opened comes into view.
+        ShowProfiles?.Invoke();
         answer.TrySetResult(false);
     }
 
@@ -430,7 +439,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Opens the form that makes a GitHub repository the place profiles live.</summary>
+    /// <summary>Opens the form that makes a GitHub repository the place profiles live, in the settings.</summary>
     /// <remarks>
     /// Unsaved changes are settled first: connecting moves this folder's
     /// files to the repository, and the editors close once it connects.
@@ -453,7 +462,17 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             Folder.Repository is null && Count > 0 ? Folder.Path : null,
             ConnectedAsync,
             CancelConnect);
+        OpenSettings?.Invoke();
     }
+
+    /// <summary>Opens the settings, where the folder or repository is chosen; set by the shell.</summary>
+    public Action? OpenSettings { get; set; }
+
+    /// <summary>Brings the profiles page, and the window it is in, into view; set by the shell.</summary>
+    public Action? ShowProfiles { get; set; }
+
+    [RelayCommand]
+    private void ShowSettings() => OpenSettings?.Invoke();
 
     /// <summary>Closes the repository form, back to the profile that was open.</summary>
     public void CancelConnect()

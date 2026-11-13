@@ -9,19 +9,19 @@ namespace Repotted.Desktop.Tests;
 public sealed class RepositoriesTests : ViewModelTests
 {
     [AvaloniaFact]
-    public async Task Search_filters_the_list_and_keeps_the_selection()
+    public async Task The_find_box_filters_the_list_and_keeps_the_selection()
     {
         var main = App(FakeCli.SignedIn());
         await main.StartAsync();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
         shell.Repositories.Selected = shell.Repositories.Rows[1];
 
-        shell.Search = "REPO";
+        shell.Repositories.Filter = "REPO";
 
         Assert.Equal(["TheLunchTrae/repotted", "TheLunchTrae/test-repo"], shell.Repositories.Rows.Select(row => row.FullName));
         Assert.Equal("TheLunchTrae/repotted", shell.Repositories.Selected?.FullName);
 
-        shell.Search = "nothing like it";
+        shell.Repositories.Filter = "nothing like it";
         Assert.Empty(shell.Repositories.Rows);
         Assert.False(shell.Repositories.HasSelection);
         Assert.Equal(3, shell.Repositories.Count);

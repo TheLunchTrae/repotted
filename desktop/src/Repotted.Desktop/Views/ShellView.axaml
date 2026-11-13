@@ -6,20 +6,56 @@
              x:Class="Repotted.Desktop.Views.ShellView"
              x:DataType="vm:ShellViewModel">
   <Grid RowDefinitions="44,*" ColumnDefinitions="248,*">
-    <!-- Header: where you are, and the search -->
+    <!-- Header: where you are, and the account -->
     <Border Grid.ColumnSpan="2" Background="{DynamicResource SurfaceBrush}"
-            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,0">
+            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,0,10,0">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Text="{Binding Crumb}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-        <TextBox x:Name="SearchBox" Grid.Column="1" Classes="search" VerticalAlignment="Center"
-                 PlaceholderText="{Binding SearchHint}" Text="{Binding Search}"
-                 AutomationProperties.Name="{Binding SearchHint}">
-          <TextBox.InnerRightContent>
-            <Border Classes="kbd" Margin="6,0,0,0" IsHitTestVisible="False">
-              <TextBlock x:Name="SearchShortcut" Classes="mono muted" FontSize="12" Text="Ctrl K" />
+        <TextBlock Text="{Binding Crumb}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis" />
+        <Button x:Name="AccountButton" Grid.Column="1" Classes="account" VerticalAlignment="Center"
+                AutomationProperties.Name="{Binding AccountMenuName}" ToolTip.Tip="{Binding SignedInWith}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Border Classes="avatar">
+              <TextBlock Text="{Binding Initials}" FontSize="11" FontWeight="Bold"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
-          </TextBox.InnerRightContent>
-        </TextBox>
+            <TextBlock Text="{Binding Account.Login}" FontSize="13.5" VerticalAlignment="Center" />
+            <Path Classes="icon chevron" />
+          </StackPanel>
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedRight" FlyoutPresenterClasses="menu">
+              <StackPanel x:Name="AccountMenu" Width="260" Spacing="2">
+                <Grid ColumnDefinitions="Auto,*" Margin="10,8,10,10">
+                  <Border Classes="avatar" VerticalAlignment="Top">
+                    <TextBlock Text="{Binding Initials}" FontSize="12" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
+                  <StackPanel Grid.Column="1" Margin="10,0,0,0" Spacing="2">
+                    <TextBlock Text="{Binding Account.Login}" FontWeight="Bold" FontSize="13.5" />
+                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding SignedInWith}"
+                               IsVisible="{Binding SignedInWith, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  </StackPanel>
+                </Grid>
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,0,0,4" />
+                <Button Classes="menuitem" Content="Add repositories"
+                        IsVisible="{Binding Repositories.CanAddRepositories}"
+                        Command="{Binding Repositories.AddRepositoriesCommand}" />
+                <Button Classes="menuitem" Command="{Binding OpenSettingsCommand}"
+                        AutomationProperties.Name="{Binding SettingsLabel}">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="{Binding SettingsLabel}" />
+                    <TextBlock Grid.Column="1" Classes="muted mono" FontSize="12.5" Margin="16,0,0,0"
+                               Text="{x:Static vm:ShellViewModel.SettingsShortcut}" />
+                  </Grid>
+                </Button>
+                <StackPanel Spacing="2" IsVisible="{Binding ShowSignOut}">
+                  <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,4" />
+                  <Button Classes="menuitem" Content="Sign out" Command="{Binding SignOutCommand}" />
+                </StackPanel>
+              </StackPanel>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
       </Grid>
     </Border>
 
@@ -31,27 +67,23 @@
           <views:BrandMark />
           <TextBlock Text="Repotted" FontWeight="Bold" FontSize="17" VerticalAlignment="Center" />
         </StackPanel>
+
+        <!-- Windows keeps the settings at the foot of the navigation; macOS opens them in a window. -->
         <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
-                Padding="8,14,8,0">
-          <StackPanel Spacing="8">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-              <Border Classes="avatar">
-                <TextBlock Text="{Binding Initials}" FontSize="12" FontWeight="Bold"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-              </Border>
-              <TextBlock Text="{Binding Account.Login}" FontWeight="Bold" FontSize="13.5" VerticalAlignment="Center" />
-            </StackPanel>
-            <TextBlock Classes="muted" FontSize="13.5" TextWrapping="Wrap" Text="{Binding SignedInWith}"
-                       IsVisible="{Binding SignedInWith, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-            <Button Classes="link" Content="Add repositories" HorizontalAlignment="Left"
-                    IsVisible="{Binding Repositories.CanAddRepositories}"
-                    Command="{Binding Repositories.AddRepositoriesCommand}" />
-            <Button Classes="link" Content="Sign out" HorizontalAlignment="Left"
-                    IsVisible="{Binding ShowSignOut}" Command="{Binding SignOutCommand}" />
-          </StackPanel>
+                Padding="0,10,0,0" IsVisible="{Binding !SettingsInWindow}">
+          <ListBox x:Name="SettingsNav" Classes="nav" SelectedIndex="{Binding SettingsNavPage}"
+                   AutomationProperties.Name="Settings">
+            <ListBoxItem AutomationProperties.Name="Settings">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <Path Classes="icon gear" />
+                <TextBlock Text="Settings" />
+              </StackPanel>
+            </ListBoxItem>
+          </ListBox>
         </Border>
+
         <DockPanel>
-          <ListBox x:Name="Nav" DockPanel.Dock="Top" Classes="nav" SelectedIndex="{Binding Page}" AutomationProperties.Name="Main">
+          <ListBox x:Name="Nav" DockPanel.Dock="Top" Classes="nav" SelectedIndex="{Binding NavPage}" AutomationProperties.Name="Main">
             <ListBoxItem AutomationProperties.Name="Repositories">
               <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Text="Repositories" />
@@ -72,10 +104,21 @@
           <DockPanel IsVisible="{Binding ShowingProfiles}" Margin="0,18,0,12">
             <Button DockPanel.Dock="Bottom" Classes="quiet" HorizontalAlignment="Stretch" Margin="0,12,0,0"
                     Content="New profile" Command="{Binding Profiles.StartNewCommand}" CommandParameter="{x:Null}" />
-            <TextBlock DockPanel.Dock="Top" Classes="muted small" Margin="12,0,12,6" FontWeight="SemiBold"
-                       Text="{Binding Profiles.Folder.ListLabel}" IsVisible="{Binding Profiles.HasProfiles}" />
+            <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,6" IsVisible="{Binding Profiles.HasProfiles}">
+              <Grid ColumnDefinitions="*,Auto" Margin="12,0,0,0">
+                <TextBlock Classes="muted small" FontWeight="SemiBold" VerticalAlignment="Center"
+                           Text="{Binding Profiles.Folder.ListLabel}" />
+                <Button x:Name="SyncButton" Grid.Column="1" Classes="iconbutton" Command="{Binding Profiles.RefreshCommand}"
+                        ToolTip.Tip="{Binding Profiles.Folder.RefreshLabel}"
+                        AutomationProperties.Name="{Binding Profiles.Folder.RefreshLabel}">
+                  <Path Classes="icon sync" />
+                </Button>
+              </Grid>
+              <TextBox x:Name="ProfileFilter" Classes="search side" PlaceholderText="Find a profile"
+                       Text="{Binding Profiles.Filter}" AutomationProperties.Name="Find a profile" />
+            </StackPanel>
             <ListBox x:Name="ProfileList" Classes="nav" ItemsSource="{Binding Profiles.Items}" SelectedItem="{Binding Profiles.Selected}"
-                     AutomationProperties.Name="Profiles in this folder">
+                     AutomationProperties.Name="{Binding Profiles.Folder.ListLabel}">
               <ListBox.Styles>
                 <Style Selector="ListBoxItem" x:DataType="vm:ProfileItemViewModel">
                   <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
@@ -134,6 +177,9 @@
     </DockPanel>
     <Panel Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowingProfiles}">
       <views:ProfilesView DataContext="{Binding Profiles}" />
+    </Panel>
+    <Panel Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowingSettings}">
+      <views:SettingsView />
     </Panel>
   </Grid>
 </UserControl>
