@@ -27,6 +27,8 @@
 
 :root {
   color-scheme: light dark;
+  /* A control scrolled to, such as by the keyboard, clears the editor's save bar. */
+  scroll-padding-bottom: 96px;
   --bg: light-dark(#f7fff8, #111a14);
   --surface: light-dark(#ffffff, #1a261e);
   --sunken: light-dark(#eef8f0, #152019);
@@ -954,6 +956,117 @@ select.field {
 .notice ul {
   margin: 6px 0 0;
   padding-inline-start: 20px;
+}
+
+/* The profile editor */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -1px;
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: 500 15px/1.3 var(--sans);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--fg);
+}
+
+.tab[aria-selected='true'] {
+  border-bottom-color: var(--rail);
+  color: var(--fg);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--drift);
+}
+
+.setting {
+  display: grid;
+  gap: 6px;
+  padding: 12px 18px;
+  border-inline-start: 3px solid transparent;
+}
+
+.setting + .setting {
+  border-top: 1px solid var(--border);
+}
+
+.setting-nested {
+  padding-inline-start: 42px;
+}
+
+.setting-unsaved {
+  border-inline-start-color: var(--drift);
+}
+
+.setting-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.setting-actions {
+  min-width: 72px;
+  text-align: end;
+}
+
+.field-number {
+  width: 9rem;
+}
+
+.field-lines {
+  flex: 1 1 100%;
+  max-width: 34rem;
+  padding: 8px 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.field[aria-invalid='true'] {
+  border-color: var(--remove);
+}
+
+.segments:has(input:disabled) {
+  opacity: 0.55;
+}
+
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: end;
+  gap: 8px 12px;
+  margin: 0 -24px -48px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.save-bar .problem {
+  flex: 1 1 100%;
+}
+
+.save-bar .small {
+  margin-inline-end: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {

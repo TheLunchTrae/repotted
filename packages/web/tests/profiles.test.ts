@@ -627,3 +627,54 @@ test('a profile deleted here and changed on GitHub is a conflict that either sid
   await profiles.keep('local');
   expect(github.files()['profiles/base.yaml']).toBeUndefined();
 });
+
+test('unsaved changes outlast a look at another profile, hold a move back, and are committed by a save', async () => {
+  const github = repository();
+  const profiles = await connected(github);
+  const [first, second] = profiles.listings.value;
+  await profiles.select(first);
+  const editor = profiles.editor.value;
+  const wiki = editor?.sections.value
+    .flatMap((section) => section.groups.flatMap((group) => group.rows))
+    .find((row) => row.field.key === 'has_wiki')?.field;
+  if (editor === undefined || wiki === undefined) {
+    throw new Error('The open profile should have an editor with a wiki setting.');
+  }
+
+  await editor.set(wiki, true);
+  await profiles.select(second);
+  expect([...profiles.unsaved.value]).toEqual([`${copy}/base.yaml`]);
+  await profiles.keepInBrowser();
+  expect(profiles.connectError.value).toBe('Save or reset your unsaved changes first.');
+  expect(profiles.source.value.kind).toBe('repository');
+
+  // A sync reads the profile again and lays the change over it.
+  await profiles.refresh();
+  await profiles.select(first);
+  expect(profiles.editor.value).toBe(editor);
+  expect(editor.dirty.value).toBe(true);
+
+  await profiles.save();
+  expect(github.files()['profiles/base.yaml']).toBe('repository:\n  has_wiki: true\n');
+  expect(profiles.unsaved.value.size).toBe(0);
+  expect(profiles.opened.value?.text).toContain('has_wiki: true');
+});
+
+test('a deleted profile takes its unsaved changes with it', async () => {
+  await inBrowser({ 'base.yaml': base });
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  await profiles.refresh();
+  const [listed] = profiles.listings.value;
+  await profiles.select(listed);
+  const editor = profiles.editor.value;
+  const field = editor?.sections.value[0]?.groups[1]?.rows[0]?.field;
+  if (listed === undefined || editor === undefined || field === undefined) {
+    throw new Error('The open profile should have an editor.');
+  }
+  await editor.set(field, false);
+
+  await profiles.remove(listed);
+
+  expect(profiles.unsaved.value.size).toBe(0);
+  expect(profiles.editor.value).toBeUndefined();
+});

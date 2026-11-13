@@ -157,6 +157,13 @@ turn, so a slow read holds nothing up.
 [State machines](state-machines.md#web-profiles-source) lists the
 transitions.
 
+`ProfileEditor` (`src/app/profile-editor.ts`) is the open profile's settings
+and its unsaved changes. `setting-fields.ts` lists the settings it offers,
+tab by tab, with what each depends on; a test sets every one through the
+engine, so a setting the engine doesn't take fails there. A change is
+previewed with the engine's `previewProfile` and saved with `editProfile`,
+which writes only the settings that changed and keeps the file's comments.
+
 `keepFiles` (`src/app/kept-files.ts`) keeps the in-memory files across
 visits: it loads what IndexedDB holds into memory before the app draws, then
 writes each change there in order, by the file's path. So a working copy,

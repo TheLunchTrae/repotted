@@ -3,9 +3,10 @@
 The Repotted web app runs at <https://repotted.dev>. It needs nothing
 installed: it runs in your browser and talks to GitHub from there.
 
-The web app signs in, lists your repositories, and makes, captures, shows,
-and deletes profiles. To edit a profile's settings, compare, and apply, use
-the [desktop app](desktop.md) or the [command line](cli.md).
+The web app signs in, lists your repositories, and makes, captures, edits,
+and deletes profiles. To edit rulesets, environments, and labels, and to
+compare and apply, use the [desktop app](desktop.md) or the
+[command line](cli.md).
 
 Use Repotted in one tab at a time. A second tab says that Repotted is open
 in another one, so that two tabs can't save over each other's profiles;
@@ -80,6 +81,45 @@ has that type, and a captured profile has the repository's owner type.
 
 Repotted never replaces a profile that is already there, whatever the case of
 its name.
+
+### Edit a profile
+
+Open a profile to edit it. Its tabs follow the parts of a repository's
+setup: **Repository**, **Merge**, **Actions**, **Security**, and **Pages**. A
+setting's own options sit indented under it. Names and numbers are typed in a
+box; until what you type is valid, the page says what's wrong and won't save,
+and **Reset** beside the setting puts it back.
+
+A profile manages only what it names. A setting that says **Not managed**
+keeps whatever value each repository has. When a profile extends another,
+each setting says which profile it comes from, and setting it here overrides
+the base profile. To stop setting a value in this profile, click **Remove**
+beside it; if a base profile sets it, the base's value applies again.
+
+Options that GitHub only offers with a certain value of the setting above
+them follow that setting. Where GitHub hides them, the tab does too, and the
+setting above says how many hidden ones the profile still names. Where GitHub
+greys them out, they stay in place and are off. Either way the profile keeps
+their values.
+
+On the **Pages** tab, **Take the site down** deletes the Pages site on each
+repository that follows the profile. Choosing it takes out the profile's
+other Pages settings, and setting any of them takes it out again.
+
+The bar under the settings saves them. **Save** writes your changes to the
+profile, and commits them when profiles are kept on GitHub; only the settings
+you changed are written, so a change made elsewhere to another setting
+stays. If the changes can't make a valid profile, such as one with every
+merge method off, the bar says why and **Save** waits. **Reset** in the bar
+puts the whole profile back as it was saved.
+
+Changes you haven't saved stay while you look at another profile, which is
+marked **Not saved** in the list. Moving your profiles to another place waits
+until you save or reset them. Deleting a profile discards its unsaved
+changes.
+
+Topics, custom properties, autolinks, rulesets, environments, and labels are
+not edited here yet.
 
 ### Delete a profile
 
