@@ -749,8 +749,8 @@ Other calls run until the CLI exits, which every command does on its own.
 Release CLI and Release Desktop release the CLI and the desktop app, as
 [Releasing](releasing.md) describes. Releases of each wait in one concurrency
 group, so a run's checks see what the run before it released; test builds,
-runs without Publish selected, wait in a group for each branch. A release run,
-one with Publish selected, moves through these states. A test build stops
+runs with Publish not selected, wait in a group for each branch. A release
+run, one with Publish selected, moves through these states. A test build stops
 after Packaged, reports a refused version as a warning, and attests,
 publishes, and releases nothing. Re-running a failed job reuses the run's
 commit and artifacts, which last 3 days; GitHub allows a re-run for 30 days.

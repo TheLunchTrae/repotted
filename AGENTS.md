@@ -46,8 +46,9 @@ CLI and the MCP server over that engine.
   explicit yes for that repository and that plan.
 - Do not run Release CLI or Release Desktop, publish to npm, push a tag, or
   publish a release without the owner's explicit yes. A test build of Release
-  Desktop (Publish off) on a pull request's branch, which [Releasing](docs/developer/releasing.md#the-desktop-app)
-  describes, releases nothing and needs no yes.
+  Desktop, with Publish not selected, on a pull request's branch, which
+  [Releasing](docs/developer/releasing.md#the-desktop-app) describes,
+  releases nothing and needs no yes.
 
 ## Commands
 

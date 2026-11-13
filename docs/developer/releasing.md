@@ -2,22 +2,23 @@
 
 The repository releases two things: the CLI on npm with `v` tags, and the
 desktop app with `desktop-v` tags. Each has one workflow that the owner runs
-from the Actions tab with **Run workflow** on `main` and **Publish** selected,
-and that run does the whole release: it checks, builds, attests, publishes, creates the tag, and
-publishes the GitHub release with its files. No other event starts either
-workflow, and nothing else creates their tags.
+from the Actions tab with **Run workflow** on `main` and **Publish**
+selected, and that run does the whole release: it checks, builds, attests,
+publishes, creates the tag, and publishes the GitHub release with its files.
+No other event starts either workflow, and nothing else creates their tags.
 
 Both workflows take the version from a file on `main`, which a pull request
-bumps before the release. A run refuses a version whose tag already exists.
+bumps before the release. A release refuses a version whose tag already
+exists.
 
-Both take one input, **Publish**, which is off by default. Only a run with
-Publish selected is the official release. A run without it is a test build:
-it does everything a release does up to the release itself, and attests,
-publishes, tags, and releases nothing. On `main` it reports what a release
-would refuse as warnings and goes on; on another branch it builds test
+Both take one input, **Publish**, which is not selected by default. Only a
+run on `main` with Publish selected is the official release; one with it
+selected on another branch fails before it builds anything. A run without it
+is a test build: it does everything a release does up to the release itself,
+and attests, publishes, tags, and releases nothing. It reports what a release
+would refuse as warnings and goes on, so on another branch it builds test
 packages. A test build makes no attestation, so it leaves no record that could
-pass for a release's. A run with Publish selected on any branch but `main`
-fails before it builds anything.
+pass for a release's.
 
 Only the job that creates the release can write to the repository; every
 other job can at most read it. The tag and release are created with the
@@ -64,8 +65,8 @@ silicon and Intel and on Windows for x64:
   installs for the current user. Windows SmartScreen warns about it until it
   is signed.
 
-A test build on `main` signs and notarizes the Mac builds too, so it shows that a
-release would, then keeps the packages as run artifacts for 3 days.
+A test build on `main` signs and notarizes the Mac builds too, so it shows
+that a release would, then keeps the packages as run artifacts for 3 days.
 
 A release then records a build provenance attestation for each package with
 `actions/attest`, which [the user guide](../user/desktop.md#install) shows how
@@ -91,7 +92,7 @@ executable, with its keychain module as `repotted-keyring.node`.
 Windows, in `artifacts/desktop`.
 
 To build test installers from a branch, run Release Desktop on it with
-**Publish** left off. The run uses no Developer ID and notarizes nothing. It
+**Publish** not selected. The run uses no Developer ID and notarizes nothing. It
 checks that the packages build, that the CLI starts, and that the macOS app
 launches, then keeps the packages as run artifacts for 3 days. The macOS app in
 such a package is signed ad hoc and without the hardened runtime, since the
@@ -99,9 +100,9 @@ hardened runtime refuses to load ad hoc libraries, so only a run on `main`
 builds the app under it, as notarization requires. Gatekeeper refuses the ad
 hoc app until it is allowed in System Settings. Pull requests don't package the
 app. Quality builds and tests it on each one, on Linux, macOS and Windows, and
-builds and checks the compiled CLI on Linux, so run a test build on the branch of
-a pull request that changes the packaging or what `sea.ts` does on macOS or
-Windows.
+builds and checks the compiled CLI on Linux, so run a test build on the
+branch of a pull request that changes the packaging or what `sea.ts` does on
+macOS or Windows.
 
 Signing runs only in the `release-desktop-macos` environment, which holds:
 

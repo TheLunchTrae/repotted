@@ -2,8 +2,9 @@ name: Release CLI
 run-name: ${{ inputs.publish && 'Release CLI' || format('Release CLI test build on {0}', github.ref_name) }}
 
 # The owner starts a run with Run workflow; nothing else does. With Publish
-# off, the default, the run is a test build: it checks and packs, and attests,
-# publishes and releases nothing. With Publish on, a run on main releases.
+# not selected, the default, the run is a test build: it checks and packs, and
+# attests, publishes and releases nothing. With Publish selected, a run on
+# main releases.
 on:
   workflow_dispatch:
     inputs:
