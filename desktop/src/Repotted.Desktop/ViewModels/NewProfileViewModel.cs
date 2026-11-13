@@ -123,10 +123,10 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     // Another folder may already hold a file of the name.
     partial void OnPlaceChanged(NewProfilePlace value) => Recheck();
 
-    /// <summary>The folder the file goes in, on disk.</summary>
     /// <summary>How a message names where the file goes: this folder, or the subfolder chosen.</summary>
     private string PlaceName => Place.Path.Length == 0 ? "this folder" : Place.Path;
 
+    /// <summary>The folder the file goes in, on disk.</summary>
     private string Target => Place.Path.Length == 0 ? root : Path.Combine(root, Place.Path.Replace('/', Path.DirectorySeparatorChar));
 
     public IReadOnlyList<string> Repositories { get; }

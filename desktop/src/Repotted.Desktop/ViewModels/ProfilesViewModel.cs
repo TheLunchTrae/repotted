@@ -526,10 +526,10 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         Reselect(Items.FirstOrDefault(item => IsOpen(item)));
     }
 
-    /// <summary>Selects the profile already open again, leaving the subfolders open or closed as they are.</summary>
     /// <summary>Whether <paramref name="item"/> is the open profile's row; a linked file can be listed in two folders.</summary>
     private bool IsOpen(ProfileItemViewModel item) => Current is { } current && item.Listing.File == current.File && item.Folder == current.Folder;
 
+    /// <summary>Selects the profile already open again, leaving the subfolders open or closed as they are.</summary>
     private void Reselect(ProfileItemViewModel? item)
     {
         revealing = false;

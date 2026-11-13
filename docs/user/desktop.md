@@ -93,7 +93,7 @@ profiles are kept there.
 Subfolders of the profiles folder show as folders, with the number of
 profiles in each, so you can group profiles by team or purpose. Click a
 folder's arrow to open or close it; while the app is open, it keeps closed
-the ones you closed. Folders whose names start with a dot, and links to
+the ones you closed until you change the profiles folder. Folders whose names start with a dot, and links to
 other folders, are left out. Every other `.yaml` and `.yml` file under the
 profiles folder counts as a profile, so a folder that also holds other YAML,
 such as a whole repository's clone, lists those files as profiles with a
