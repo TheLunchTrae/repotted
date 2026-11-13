@@ -9,8 +9,8 @@ import worker from '../src/worker.js';
 
 const origin = 'https://repotted.dev';
 const env = {
-  REPOTTED_CLIENT_ID: 'Iv1.client',
-  REPOTTED_CLIENT_SECRET: 'client-secret',
+  REPOTTED_APP_CLIENT_ID: 'Iv1.client',
+  REPOTTED_APP_CLIENT_SECRET: 'client-secret',
 };
 
 interface Browser {
