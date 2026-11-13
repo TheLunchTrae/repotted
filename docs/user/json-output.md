@@ -80,7 +80,8 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   partway; or `failed`, with `error` as in a batch plan's `failures`. It exits
   1 when any repository is `locked`, `changed`, `stopped`, `stale`,
   `apply_failed` or `failed`.
-- `profile` prints `{ chain, profile, drafts, warnings, sources }`. `chain` is
+- `profile` prints
+  `{ chain, profile, drafts, warnings, sources, owner_source, owner_changes }`. `chain` is
   the profile file, then each one it extends, as real paths, with links
   resolved. `profile` is the resolved profile without its
   [drafts](profiles.md#drafts): what a plan applies. `drafts` holds them, as
@@ -96,9 +97,15 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `actions`, `autolinks` by key prefix, `rulesets`, `environments` and
   `labels` by name, and `drafts` the same way for drafts, with `unset` by
   each key it lists. A value whose file is `chain[0]` is set in the profile
-  itself. With `--preview`, `profile` prints `{ before, after }` instead: what
-  the profile applies before and after the edits, each as profile YAML, and
-  saves nothing.
+  itself. `profile.owner_type` is the chain's [owner type](profiles.md#owner-type),
+  and `owner_source` the file in `chain` that names it, or null for a profile
+  for any owner. `owner_changes` has a `user` and an `organization` list: what
+  changing `chain[0]` to that type would leave not managed there, as settings
+  by path, such as `repository.allow_forking` or `drafts.pages.public`, and
+  rulesets and environments as `rulesets/<name>` and `environments/<name>`, or
+  `drafts.rulesets/<name>` and `drafts.environments/<name>` for drafts. With
+  `--preview`, `profile` prints `{ before, after }` instead: what the profile
+  applies before and after the edits, each as profile YAML, and saves nothing.
 - `stage` prints
   `{ file, repository, base, exclude, chain, profile, drafts, warnings, sources }`.
   `file` is the staged apply's real path, first in `chain`, and `repository`
@@ -126,14 +133,16 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   apply that joined the batch, which stays, and `batch` is the batch as it is now, or
   null when it ended; and with `--discard` alone, `{ discarded }`, the
   folder's path.
-- `profiles` prints `{ profiles }`, each as `{ name, folder, file, extends, problem }`,
+- `profiles` prints `{ profiles }`, each as `{ name, folder, file, extends, problem, owner_type }`,
   for the `.yaml` and `.yml` files in the folder and its subfolders: a folder's
   own profiles by file name, then each subfolder's, by name. Subfolders whose
   names start with a dot, and links to folders, are left out. `folder` is the
   subfolder, with `/` separators, such as `team/apps`, or `""` for the folder itself.
   `file` is a real path, with links resolved, as in `profile`'s `chain`.
   `extends` is the real path of the profile it extends, or null, and
-  `problem` says why the profile cannot be used, or is null.
+  `problem` says why the profile cannot be used, or is null. `owner_type` is
+  the chain's owner type, `user` or `organization`, or null for any owner or
+  a profile with a problem.
 - `schema` prints the JSON Schema of a profile file, in Draft 7: the same
   document as without `--json`, on one line.
   [The command line](cli.md#edit-profiles-with-completion) says how an editor
@@ -240,6 +249,9 @@ stale if it changes an autolink, ruleset, environment or label. A write that fai
 and `reason`: what GitHub refused it for, when GitHub refused it for good with
 a `403` or `422`, such as `Needs Pages write` or the repository's plan not
 supporting the setting, and null otherwise, as for a rate limit.
+A plan for a repository whose owner is the other kind from the profile's
+[owner type](profiles.md#owner-type) has `kind: owner_mismatch`, in `plan`,
+`apply` and a batch member's `error` alike.
 A command that finds no sign-in, or whose sign-in or token GitHub rejects,
 has `kind: signed_out`; `status` says which. Anything else, such as an invalid
 profile, a network error, or a keychain that would not open, has

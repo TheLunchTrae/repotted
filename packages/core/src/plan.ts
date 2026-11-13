@@ -12,7 +12,8 @@ import {
   type Warning,
 } from './change.js';
 import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadable } from './endpoints.js';
-import { type GitHub, GitHubError, parseRepo, repoPattern, type RepoRef } from './github.js';
+import { type GitHub, GitHubError, parseRepo, repoPath, repoPattern, type RepoRef } from './github.js';
+import { describeOwnerType, type OwnerConflict, type OwnerType, withoutOwnerConflicts } from './owner.js';
 import { type Lock, requiredPermission } from './permissions.js';
 import type { Drafts } from './profile.js';
 import {
@@ -36,7 +37,7 @@ import { describeEnvironment, planEnvironments, readEnvironments } from './secti
 import { describeLabel, planLabels, readLabels } from './sections/labels.js';
 import { describePages, planPages, readPages } from './sections/pages.js';
 import { captureCustomProperties, planCustomProperties, readCustomProperties } from './sections/properties.js';
-import { planRepository, readRepository, repositoryEndpoints } from './sections/repository.js';
+import { planRepository, readRepository, repositoryEndpoints, repositoryOwnerType } from './sections/repository.js';
 import { planRulesets, readRulesets } from './sections/rulesets.js';
 import { liveSecurityAndAnalysis, planSecurity, securityEndpoints } from './sections/security.js';
 
@@ -89,6 +90,25 @@ export function skippedDrafts(drafts: Drafts): Skipped[] {
 }
 
 /**
+ * A profile for one kind of owner, planned for a repository of the other
+ * kind. The profile would set what the repository doesn't have, so the
+ * plan stops before it reads anything else.
+ */
+export class OwnerMismatchError extends Error {
+  readonly profile: OwnerType;
+  readonly repository: OwnerType;
+
+  constructor(repo: RepoRef, profile: OwnerType, repository: OwnerType) {
+    super(
+      `This profile is for ${describeOwnerType(profile)}, and ${repo.owner}/${repo.name} belongs to ${repository === 'user' ? 'a personal account' : 'an organization'}. To use its settings there, make a copy of the profile and change the copy's type to ${describeOwnerType(repository)}.`,
+    );
+    this.name = 'OwnerMismatchError';
+    this.profile = profile;
+    this.repository = repository;
+  }
+}
+
+/**
  * Reads only the sections the profile mentions and plans the writes that
  * bring them in line. Settings and rulesets the profile does not name are
  * left alone. `skipped` lists the profile's drafts, which `desired` never
@@ -100,6 +120,12 @@ export async function createPlan(
   desired: Profile,
   skipped: readonly Skipped[] = [],
 ): Promise<Plan> {
+  if (desired.owner_type !== undefined) {
+    const owner = repositoryOwnerType(await github.request('GET', repoPath(repo)));
+    if (owner !== undefined && owner !== desired.owner_type) {
+      throw new OwnerMismatchError(repo, desired.owner_type, owner);
+    }
+  }
   const changes: Change[] = [];
   const warnings: Warning[] = [];
   const add = (plan: { changes: readonly Change[]; warnings: readonly Warning[] }): void => {
@@ -202,6 +228,20 @@ function loadableEntries<Entry extends { readonly name: string }>(
     }
   }
   return kept;
+}
+
+/** Where in a profile an owner type conflict is, as a warning names it. */
+function conflictWarning({ edit }: OwnerConflict): Pick<Warning, 'section' | 'key' | 'field'> {
+  if ('list' in edit) {
+    return { section: edit.list, key: edit.name };
+  }
+  const [section, key, field] = edit.path;
+  const known = sections.find((each) => each === section);
+  return {
+    ...(known === undefined ? {} : { section: known }),
+    ...(key === undefined ? {} : { key }),
+    ...(field === undefined ? {} : { field }),
+  };
 }
 
 /**
@@ -316,21 +356,32 @@ export async function captureProfile(
   const capturedLabels = labels.available
     ? loadableEntries('labels', label, labels.labels.map(describeLabel), warnings)
     : undefined;
+  const captured: Profile = {
+    ...(live.owner === undefined ? {} : { owner_type: live.owner }),
+    repository,
+    merge,
+    actions,
+    ...(Object.keys(security).length > 0 ? { security } : {}),
+    ...(Object.keys(customProperties).length > 0 ? { custom_properties: customProperties } : {}),
+    ...(pages.available && pages.site !== null ? { pages: describePages(pages.site) } : {}),
+    ...(autolinks.available && autolinks.autolinks.length > 0
+      ? { autolinks: autolinks.autolinks.map(describeAutolink) }
+      : {}),
+    ...(capturedRulesets === undefined ? {} : { rulesets: capturedRulesets }),
+    ...(capturedEnvironments === undefined ? {} : { environments: capturedEnvironments }),
+    ...(capturedLabels === undefined || capturedLabels.length === 0 ? {} : { labels: capturedLabels }),
+  };
+  // GitHub may report what the owner doesn't have, such as allow_forking for a personal account.
+  const { value: profile, dropped } = withoutOwnerConflicts(captured, live.owner);
+  for (const conflict of dropped) {
+    warnings.push({
+      ...conflictWarning(conflict),
+      cause: 'unloadable',
+      message: `${conflict.message}, so it is left out`,
+    });
+  }
   return {
-    profile: {
-      repository,
-      merge,
-      actions,
-      ...(Object.keys(security).length > 0 ? { security } : {}),
-      ...(Object.keys(customProperties).length > 0 ? { custom_properties: customProperties } : {}),
-      ...(pages.available && pages.site !== null ? { pages: describePages(pages.site) } : {}),
-      ...(autolinks.available && autolinks.autolinks.length > 0
-        ? { autolinks: autolinks.autolinks.map(describeAutolink) }
-        : {}),
-      ...(capturedRulesets === undefined ? {} : { rulesets: capturedRulesets }),
-      ...(capturedEnvironments === undefined ? {} : { environments: capturedEnvironments }),
-      ...(capturedLabels === undefined || capturedLabels.length === 0 ? {} : { labels: capturedLabels }),
-    },
+    profile,
     warnings,
   };
 }

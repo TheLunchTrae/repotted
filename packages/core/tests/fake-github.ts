@@ -45,6 +45,8 @@ export interface FakeState {
   /** Labels as GitHub stores them, where an empty description is null. */
   labels: StoredLabel[];
   account: FakeAccount;
+  /** What owns the repository, as GitHub's `owner.type` says. */
+  ownerType: 'User' | 'Organization';
   /** The signed-in account's `permissions` flags on the repository. */
   viewer: { admin: boolean; maintain: boolean; push: boolean; triage: boolean; pull: boolean };
 }
@@ -181,6 +183,7 @@ export class FakeGitHub implements GitHub {
       autolinks: [],
       labels: [],
       account: { login: 'lunch', name: null, repositories: [] },
+      ownerType: 'Organization',
       viewer: { admin: true, maintain: true, push: true, triage: true, pull: true },
       ...state,
     };
@@ -244,6 +247,7 @@ export class FakeGitHub implements GitHub {
         return {
           id: 1,
           full_name: this.fullName,
+          owner: { login: this.fullName.split('/')[0], type: this.state.ownerType },
           visibility: 'public',
           ...this.state.repository,
           permissions: this.state.viewer,

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { ownerConflicts, ownerTypes, settingRules } from './owner.js';
+
 // Field names are the GitHub REST API's own, so a profile maps onto requests
 // without translation and the REST docs describe every key.
 
@@ -636,8 +638,12 @@ function addDuplicateNameIssues(
   }
 }
 
+/** What owns the repositories a profile is for; a profile without it is for any owner. */
+export const ownerType = z.enum(ownerTypes);
+
 export const profile = z
   .object({
+    owner_type: ownerType,
     repository: repositorySettings,
     merge: mergeSettings,
     actions: actionsSettings,
@@ -665,6 +671,9 @@ export const profile = z
     addDuplicateNameIssues(value.environments ?? [], 'Environment', 'environments', context, environmentKey);
     addDuplicateNameIssues(value.labels ?? [], 'Label', 'labels', context, labelKey);
     addRenameIssues(value.labels ?? [], context);
+    for (const conflict of ownerConflicts(value, value.owner_type)) {
+      context.addIssue({ code: 'custom', message: conflict.message, path: [...conflict.path] });
+    }
   });
 
 /**
@@ -721,6 +730,7 @@ export const draftSettings = z
 export const profileFile = z
   .object({
     extends: z.string().min(1).optional(),
+    owner_type: ownerType.optional(),
     repository: repositorySettings.optional(),
     merge: mergeSettings.optional(),
     actions: actionsSettings.optional(),
@@ -735,6 +745,44 @@ export const profileFile = z
   })
   .strict();
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The properties an object schema allows at `key`, in its own `properties`
+ * or in any branch of a union, as Pages' site is.
+ */
+function propertySchemas(schema: Record<string, unknown>, key: string): Record<string, unknown>[] {
+  const properties = schema['properties'];
+  const own = isObject(properties) ? properties[key] : undefined;
+  const branches = [schema['anyOf'], schema['oneOf']].flatMap((list): unknown[] => (Array.isArray(list) ? list : []));
+  return [
+    ...(isObject(own) ? [own] : []),
+    ...branches.flatMap((branch) => (isObject(branch) ? propertySchemas(branch, key) : [])),
+  ];
+}
+
+/**
+ * Marks each setting that only some owners have with `x-repotted-owner`,
+ * the owner it needs, and each value that only some owners have under
+ * `x-repotted-owner-values`, so tools that read the schema, such as the
+ * desktop app's tests, know them.
+ */
+function markOwners(schema: Record<string, unknown>): void {
+  for (const rule of settingRules) {
+    const targets = rule.path.reduce((found, key) => found.flatMap((item) => propertySchemas(item, key)), [schema]);
+    for (const target of targets) {
+      if (rule.value === undefined) {
+        target['x-repotted-owner'] = rule.needs;
+      } else {
+        const values = target['x-repotted-owner-values'];
+        target['x-repotted-owner-values'] = { ...(isObject(values) ? values : {}), [rule.value]: rule.needs };
+      }
+    }
+  }
+}
+
 /**
  * The JSON Schema of a profile file, for editors and other tools that read
  * profiles. It holds each key and the values it takes, but not the checks
@@ -742,12 +790,14 @@ export const profileFile = z
  * Repotted makes. It is Draft 7, which editors' YAML support reads.
  */
 export function profileFileJsonSchema(): Record<string, unknown> {
-  return z.toJSONSchema(profileFile, {
+  const schema = z.toJSONSchema(profileFile, {
     target: 'draft-07',
     io: 'input',
     // `undefined` is `unmarked`: an entry branch that leaves a marking key out.
     unrepresentable: ({ zodSchema }) => (zodSchema._zod.def.type === 'undefined' ? { not: {} } : 'throw'),
   });
+  markOwners(schema);
+  return schema;
 }
 
 export type RepositorySettings = z.infer<typeof repositorySettings>;

@@ -63,7 +63,7 @@ public sealed class ConfigRepositoryTests : IDisposable
     private static string Listing(params string[] files) =>
         JsonSerializer.Serialize(new
         {
-            profiles = files.Select(file => new { name = Path.GetFileNameWithoutExtension(file), file, extends = (string?)null, problem = (string?)null }),
+            profiles = files.Select(file => new { name = Path.GetFileNameWithoutExtension(file), file, extends = (string?)null, owner_type = (string?)null, problem = (string?)null }),
         });
 
     [Fact]

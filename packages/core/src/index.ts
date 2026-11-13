@@ -11,12 +11,14 @@ export {
   describeWarning,
   failureReason,
   formatPlan,
+  OwnerMismatchError,
   parsePlan,
   skippedDrafts,
   StalePlanError,
 } from './plan.js';
 export type { Plan } from './plan.js';
 export {
+  changeOwnerType,
   editProfile,
   listProfiles,
   parseProfile,
@@ -24,6 +26,8 @@ export {
   resolveProfile,
   stringifyProfile,
 } from './profile.js';
+export { ownerTypes } from './owner.js';
+export type { OwnerType } from './owner.js';
 export type { EntryEdit, ProfileEdit } from './profile.js';
 export { lockChanges } from './permissions.js';
 export { profileFileJsonSchema } from './schema.js';

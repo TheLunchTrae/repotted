@@ -14,7 +14,7 @@ namespace Repotted.Desktop.Tests;
 public sealed class ContractTests
 {
     /// <summary>The top-level keys of a profile file that hold no settings, or entries that editors of their own edit.</summary>
-    private static readonly HashSet<string> NotSettings = ["extends", "drafts", "rulesets", "environments", "labels"];
+    private static readonly HashSet<string> NotSettings = ["extends", "owner_type", "drafts", "rulesets", "environments", "labels"];
 
     /// <summary>
     /// The settings the app leaves to the YAML, each with everything under it.
@@ -64,6 +64,49 @@ public sealed class ContractTests
         Assert.Equal(
             choices.Select(field => Describe(field.Path, Values(settings[field.Path]) ?? [])),
             choices.Select(field => Describe(field.Path, field.Options.Select(option => option.Value))));
+    }
+
+    [Fact]
+    public async Task The_app_hides_what_the_schema_says_only_some_owners_have()
+    {
+        var run = await Cli().RunAsync(["schema", "--json"], null, TestContext.Current.CancellationToken);
+        Assert.Equal((0, ""), (run.ExitCode, run.Error));
+        var schema = JsonNode.Parse(run.Output)!.AsObject();
+
+        var settings = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        var values = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        void Marks(string path, JsonObject node)
+        {
+            if (node["x-repotted-owner"] is { } owner)
+            {
+                settings[path] = owner.GetValue<string>();
+            }
+            if (node["x-repotted-owner-values"] is JsonObject marked)
+            {
+                foreach (var (value, need) in marked)
+                {
+                    values[$"{path}={value}"] = need!.GetValue<string>();
+                }
+            }
+            foreach (var (key, child) in Properties(node))
+            {
+                Marks($"{path}.{key}", child);
+            }
+        }
+        foreach (var (key, section) in Properties(schema).Where(property => !NotSettings.Contains(property.Key)))
+        {
+            Marks(key, section);
+        }
+
+        Assert.Equal(
+            settings,
+            new SortedDictionary<string, string>(Owners.Settings.ToDictionary(pair => pair.Key, pair => pair.Value.ToString().ToLowerInvariant()), StringComparer.Ordinal));
+        Assert.Equal(
+            values,
+            new SortedDictionary<string, string>(
+                Owners.Values.SelectMany(setting => setting.Value.Select(value => ($"{setting.Key}={value.Key}", value.Value.ToString().ToLowerInvariant())))
+                    .ToDictionary(pair => pair.Item1, pair => pair.Item2),
+                StringComparer.Ordinal));
     }
 
     /// <summary>

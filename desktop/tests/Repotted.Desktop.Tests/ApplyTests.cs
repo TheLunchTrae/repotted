@@ -1711,7 +1711,7 @@ public sealed class ApplyTests : IDisposable
         var cli = Cli()
             .On("status --json", Documents.SignedIn)
             .On("repos --json", Documents.Repositories)
-            .On(folders.List(), $$"""{"profiles":[{"name":"orgs","file":{{Json(@base)}},"extends":null,"problem":null}]}""");
+            .On(folders.List(), $$"""{"profiles":[{"name":"orgs","file":{{Json(@base)}},"extends":null,"owner_type":null,"problem":null}]}""");
         // A change of settings once starts from the repository as it is.
         cli.On(New(fromProfile: false), () =>
         {

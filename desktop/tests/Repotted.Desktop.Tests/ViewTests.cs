@@ -554,6 +554,60 @@ public sealed class ViewTests : IDisposable
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
+    public async Task A_profile_shows_its_owner_type_and_what_the_type_hides_or_marks(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository: {}\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nowner_type: organization\npages:\n  https_enforced: true\n  public: false\n");
+        string Resolved(string type, string changes) => $$$"""
+            {"chain":[{{{Json(own)}}},{{{Json(@base)}}}],
+             "profile":{"owner_type":"{{{type}}}","pages":{"https_enforced":true,"public":false}},
+             "drafts":{},"warnings":[],"owner_source":{{{Json(own)}}},"owner_changes":{{{changes}}},
+             "sources":{"repository":{},"merge":{},"actions":{},"security":{},"custom_properties":{},
+               "pages":{"https_enforced":{{{Json(own)}}},"public":{{{Json(own)}}} },
+               "autolinks":{},"rulesets":{},"environments":{},"labels":{},
+               {{{Documents.NoDraftSources}}} } }
+            """;
+        var cli = FakeCli.SignedIn()
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Resolved("organization", """{"user":["pages.public","repository.allow_forking"],"organization":[]}"""))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base))
+            .On($"profile {own} --owner-type=user --json", Resolved("user", """{"user":[],"organization":[]}""").Replace(",\"public\":false", "", StringComparison.Ordinal));
+        var window = await Show(theme, cli);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        editor.SelectedTab = editor.Tab("Pages");
+
+        var text = Texts(window);
+        Assert.Contains("For repositories owned by", text);
+        Assert.Contains("Organizations", text);
+        Assert.Contains("Enterprise Cloud", text);
+        Save(window, $"owner-organization-{theme}");
+
+        editor.OwnerPickerOpen = true;
+        editor.PendingPersonal = true;
+        text = Texts(window);
+        Assert.Contains("Personal accounts don't have 2 things this profile sets. Changing the type leaves them not managed:", text);
+        Assert.Contains("• Who can see the site", text);
+        Assert.Contains(ControlLabel.For("Change to personal"), text);
+        Save(window, $"owner-change-{theme}");
+
+        await editor.ChangeOwnerCommand.ExecuteAsync(null);
+        text = Texts(window);
+        Assert.Contains(editor.OwnerHidden!, text);
+        Assert.DoesNotContain("Who can see the site", text);
+        Save(window, $"owner-personal-{theme}");
+
+        shell.Profiles.StartNew(null);
+        text = Texts(window);
+        Assert.Contains("Personal accounts", text);
+        Assert.Contains("Repotted won't apply a profile to a repository whose owner is the other kind.", text);
+        Save(window, $"owner-new-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
     public async Task The_settings_tabs_show_sub_options_notes_and_typed_values(string theme)
     {
         var @base = folders.Write("base.yaml", "security:\n  vulnerability_alerts: true\n");
@@ -858,7 +912,7 @@ public sealed class ViewTests : IDisposable
         editor.Tabs[0].Groups.SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki")
             .Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
         File.Delete(own);
-        cli.On(folders.List(), $$$"""{"profiles":[{"name":"base","file":{{{Json(@base)}}},"extends":null,"problem":null}]}""");
+        cli.On(folders.List(), $$$"""{"profiles":[{"name":"base","file":{{{Json(@base)}}},"extends":null,"owner_type":null,"problem":null}]}""");
 
         await shell.Profiles.RefreshCommand.ExecuteAsync(null);
 
@@ -1640,7 +1694,7 @@ public sealed class ViewTests : IDisposable
         folders.Write("base.yaml", "repository:\n  has_issues: true\n");
         var file = Path.Combine(folders.Profiles, "base.yaml");
         var window = await Show(theme, FakeCli.SignedIn()
-            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Json(file)}},"extends":null,"problem":null}]}""")
+            .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Json(file)}},"extends":null,"owner_type":null,"problem":null}]}""")
             .On($"profile {file} --json", Documents.ResolvedBase(file)));
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
         shell.SettingsInWindow = false;

@@ -502,6 +502,25 @@ The one-off edits on the Apply page use the same editor without drafts: it
 offers no Save as draft, Preview or draft banner, and shows the YAML pane,
 which a profile's editor hides until **Show YAML**.
 
+### The owner type
+
+The editor shows only what the profile's owner type has, and leaves out the
+rows of the rest when it makes them, so they are never part of a save. The
+type changes only through the picker, which writes at once with
+`profile <file> --owner-type`.
+
+| State    | Event                                                  | Next                                                                                               |
+| -------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Closed   | The type is clicked                                    | Open, with the profile's type picked.                                                              |
+| Open     | Another type is picked                                 | Open, listing what `owner_changes` says that type leaves not managed.                              |
+| Open     | Change, with unsaved changes                           | Not offered: the change would lose them, so it waits for a save or Reset.                          |
+| Open     | Change, with the file changed since the editor read it | Open, with the file read again and a note to check what the change leaves; nothing is written.     |
+| Open     | Change                                                 | Changing, in the queue that keeps saves and syncs apart.                                           |
+| Changing | It succeeds                                            | Closed, and the editor shows the file as the CLI resolved it, then a sync for a config repository. |
+| Changing | It fails, as when a base sets what the new type lacks  | Open, with the error naming the base; the file is as it was.                                       |
+| Open     | A load or save shows the file again                    | Open, listing what the file as shown would leave not managed.                                      |
+| Open     | Cancel                                                 | Closed.                                                                                            |
+
 ### Each setting
 
 A `SettingViewModel` is one row of a settings tab. Its value comes from the
@@ -766,6 +785,10 @@ it.
 | Holding                    | Another folder, a repository, signing out, a lost sign-in or quitting asks about unsaved changes | The capture runs on while the question waits, and still makes its profile in the folder it started in. Going on closes the form; a question that can't settle keeps it, with a notice. |
 | Any end of a capture       | Its file can't be removed, such as when the folder is gone                                       | The name is no longer held and the form is editable again; the file stays, as when the app quits.                                                                                      |
 | Holding                    | The app quits                                                                                    | The capture's file may stay behind. It holds no name, and no later capture writes to it, so it stays until it is deleted.                                                              |
+
+The form's owner type goes into the file it writes as `owner_type`, except
+for a capture, which writes the repository's own, and a profile that extends
+a typed base, which takes the base's and writes none.
 
 ## Connect form
 

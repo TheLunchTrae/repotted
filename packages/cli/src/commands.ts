@@ -32,6 +32,7 @@ import {
   describeFoundAction,
   describeSkipped,
   describeWarning,
+  changeOwnerType,
   editProfile,
   previewProfile,
   failureReason,
@@ -40,6 +41,9 @@ import {
   formatPlan,
   type GitHub,
   GitHubError,
+  OwnerMismatchError,
+  type OwnerType,
+  ownerTypes,
   type Plan,
   listProfiles,
   listRepositories,
@@ -113,6 +117,8 @@ Commands:
           [--drop-draft-ruleset name] [--drop-draft-environment name] [--drop-draft-label name]
           [--preview]                             --preview shows what applies before and after the edits,
                                                  and saves nothing
+  profile <file> --owner-type user|organization|any  Change who the profile is for; what that owner
+                                                 doesn't have is no longer managed
   stage <file> --new owner/repo [--profile file] Start a staged apply: one-off edits for one apply, over a
                                                  profile or over the repository as it is
   stage <file> [--set key=json] [--unset key]    Show a staged apply resolved; edit it as profile does, and
@@ -497,6 +503,7 @@ async function profiles(io: Io, args: string[]): Promise<number> {
   const labels = new Map(listings.map((listing) => [listing.file, label(listing)]));
   for (const listing of listings) {
     const notes = [
+      listing.owner_type === null ? '' : `for ${listing.owner_type === 'user' ? 'personal accounts' : 'organizations'}`,
       listing.extends === null
         ? ''
         : `extends ${labels.get(listing.extends) ?? path.basename(listing.extends, path.extname(listing.extends))}`,
@@ -630,6 +637,17 @@ function profileEdits(tokens: readonly { kind: string; name?: string; value?: st
   return edits;
 }
 
+function parseOwnerType(value: string): OwnerType | undefined {
+  if (value === 'any') {
+    return undefined;
+  }
+  const found = ownerTypes.find((type) => type === value);
+  if (found === undefined) {
+    throw new UsageError('--owner-type is user, organization or any');
+  }
+  return found;
+}
+
 async function profile(io: Io, args: string[]): Promise<number> {
   const { positionals, values, tokens } = parseArgs({
     args,
@@ -648,11 +666,19 @@ async function profile(io: Io, args: string[]): Promise<number> {
       'drop-label': { type: 'string', multiple: true },
       'drop-draft-label': { type: 'string', multiple: true },
       preview: { type: 'boolean' },
+      'owner-type': { type: 'string' },
       json: { type: 'boolean' },
     },
   });
   const file = only(positionals, 'profile file');
   const edits = profileEdits(tokens);
+  const owner = values['owner-type'];
+  if (owner !== undefined && edits.length > 0) {
+    throw new UsageError('--owner-type changes a profile on its own; make other edits in another run');
+  }
+  if (owner !== undefined && values.preview === true) {
+    throw new UsageError('--owner-type saves at once, so --preview does not take it');
+  }
   if (values.preview === true) {
     const { before, after } = await previewProfile(file, edits);
     const texts = { before: stringifyProfile(before.profile), after: stringifyProfile(after.profile) };
@@ -664,7 +690,15 @@ async function profile(io: Io, args: string[]): Promise<number> {
     }
     return 0;
   }
-  const resolved = edits.length === 0 ? await resolveProfile(file) : await editProfile(file, edits);
+  const resolved =
+    owner !== undefined
+      ? await changeOwnerType(file, parseOwnerType(owner))
+      : edits.length === 0
+        ? await resolveProfile(file)
+        : await editProfile(file, edits);
+  if (owner !== undefined) {
+    edits.push({ path: ['owner_type'], value: owner });
+  }
   if (values.json === true) {
     json(io, resolved);
     return 0;
@@ -1225,12 +1259,15 @@ function rateLimited(error: unknown): boolean {
 
 /**
  * The JSON failure kind: misuse, a sign-in that is missing or that GitHub
- * refuses, or anything else, including a passing problem such as an
+ * refuses, a profile for the other kind of owner, or anything else, including a passing problem such as an
  * unreadable keychain, which the next try may not meet.
  */
-function failureKind(error: unknown, misused: boolean): 'usage' | 'signed_out' | 'error' {
+function failureKind(error: unknown, misused: boolean): 'usage' | 'signed_out' | 'owner_mismatch' | 'error' {
   if (misused) {
     return 'usage';
+  }
+  if (error instanceof OwnerMismatchError) {
+    return 'owner_mismatch';
   }
   return (error instanceof NotSignedInError && error.lost) || (error instanceof GitHubError && error.status === 401)
     ? 'signed_out'

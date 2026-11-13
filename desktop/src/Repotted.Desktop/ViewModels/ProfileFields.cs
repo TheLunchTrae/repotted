@@ -31,6 +31,9 @@ internal sealed record SettingField(string Section, string Key, string Label, IR
     /// <summary>How the CLI names it, such as <c>repository.has_wiki</c>.</summary>
     public string Path => $"{Section}.{Key}";
 
+    /// <summary>Who has the setting, or null when every owner does.</summary>
+    public OwnerNeed? Needs => Owners.Need(Path);
+
     public SettingKind Kind { get; init; } = SettingKind.Choice;
 
     /// <summary>Whether it belongs to the setting above it, as GitHub's settings page shows it.</summary>

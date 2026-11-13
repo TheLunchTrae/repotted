@@ -20,11 +20,12 @@ internal sealed partial class RulesetEditorViewModel : EntryEditorViewModel
     private readonly JsonObject? savedRefName;
     private readonly IReadOnlyList<JsonObject> savedRules;
 
-    public RulesetEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool> taken, Action changed)
+    /// <summary>An editor for <paramref name="saved"/>, or a new ruleset; <paramref name="pushes"/> says whether it can apply to pushes, which only organizations have.</summary>
+    public RulesetEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool> taken, Action changed, bool pushes = true)
         : base(saved, renamable, taken, changed)
     {
         var start = Start;
-        Target = new("Applies to", [("Branches", "branch"), ("Tags", "tag"), ("Pushes", "push")], start, "target", Touched, fallback: 0);
+        Target = new("Applies to", [("Branches", "branch"), ("Tags", "tag"), .. pushes ? [("Pushes", "push")] : Array.Empty<(string, string)>()], start, "target", Touched, fallback: 0);
         Enforcement = new("Enforcement", [("Active", "active"), ("Evaluate", "evaluate"), ("Disabled", "disabled")], start, "enforcement", Touched, fallback: 0);
         var bypass = start["bypass_actors"] as JsonArray;
         Bypass = new(

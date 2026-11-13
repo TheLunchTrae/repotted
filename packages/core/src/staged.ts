@@ -67,7 +67,7 @@ function parseExclusion(key: string): Exclusion | undefined {
     const name = key.slice(slash + 1);
     return isList(list) && name !== '' ? { kind: 'entry', list, name } : undefined;
   }
-  if (Object.hasOwn(profileFile.shape, key) && key !== 'extends' && key !== 'drafts') {
+  if (Object.hasOwn(profileFile.shape, key) && !['extends', 'drafts', 'owner_type'].includes(key)) {
     return { kind: 'section', section: key };
   }
   const parts = key.split('.');

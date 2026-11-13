@@ -9,6 +9,10 @@
   custom properties, GitHub Pages, autolinks, rulesets, deployment
   environments, or labels. Each section has one adapter that reads it and plans its
   writes.
+- **Owner type**: what owns the repositories a profile is for, a personal
+  account (`user`) or an organization. A profile without one is for any
+  owner. A typed profile takes only what that owner has, and plans refuse a
+  repository whose owner is the other kind.
 - **Config repository**: a GitHub repository that holds a folder of profiles.
   **Sync** brings a local folder and the config repository in line.
 - **Capture**: reading a repository into a profile that describes it as it is.

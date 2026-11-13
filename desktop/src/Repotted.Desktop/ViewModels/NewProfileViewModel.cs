@@ -158,7 +158,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     public bool ShowFileName => Name.Trim().Length > 0 && Problem is null;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StartsEmpty), nameof(Extends), nameof(Captures), nameof(CreateLabel))]
+    [NotifyPropertyChangedFor(nameof(StartsEmpty), nameof(Extends), nameof(Captures), nameof(CreateLabel), nameof(BaseOwner), nameof(OwnerFixed), nameof(OwnerNote), nameof(HasOwnerNote))]
     [NotifyCanExecuteChangedFor(nameof(CreateCommand))]
     public partial NewProfileStart Start { get; set; }
 
@@ -190,8 +190,60 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BaseOwner), nameof(OwnerFixed), nameof(OwnerNote), nameof(HasOwnerNote))]
     [NotifyCanExecuteChangedFor(nameof(CreateCommand))]
     public partial ProfileItemViewModel? Base { get; set; }
+
+    /// <summary>
+    /// What owns the repositories the new profile is for, <c>user</c> or
+    /// <c>organization</c>, or null for any owner, when the form picks it:
+    /// a capture takes it from the repository, and a profile that extends one
+    /// with a type has that type.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OwnerPersonal), nameof(OwnerOrganization), nameof(OwnerAny))]
+    public partial string? OwnerType { get; set; }
+
+    // Radio buttons bind one of these each.
+    public bool OwnerPersonal
+    {
+        get => OwnerType == "user";
+        set => PickOwner(value, "user");
+    }
+
+    public bool OwnerOrganization
+    {
+        get => OwnerType == "organization";
+        set => PickOwner(value, "organization");
+    }
+
+    public bool OwnerAny
+    {
+        get => OwnerType is null;
+        set => PickOwner(value, null);
+    }
+
+    private void PickOwner(bool picked, string? type)
+    {
+        if (picked)
+        {
+            OwnerType = type;
+        }
+    }
+
+    /// <summary>The owner type of the profile to extend, which the new one then has, or null when it has none.</summary>
+    public string? BaseOwner => Extends ? Base?.Listing.OwnerType : null;
+
+    /// <summary>Whether the type isn't the form's to pick: a capture or a typed base sets it.</summary>
+    public bool OwnerFixed => Captures || BaseOwner is not null;
+
+    /// <summary>What sets the type when the form doesn't pick it.</summary>
+    public string? OwnerNote =>
+        Captures ? "The repository's owner sets the type."
+        : BaseOwner is { } owner ? $"{Base!.Name} is for {Owners.Label(owner).ToLowerInvariant()}, so this one is too."
+        : null;
+
+    public bool HasOwnerNote => OwnerNote is not null;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(CreateCommand))]
@@ -343,10 +395,11 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
                     var baseFolder = Base!.Folder.Length == 0 ? root : Path.Combine(root, Base.Folder.Replace('/', Path.DirectorySeparatorChar));
                     var entry = Entry(baseFolder, Base.Name) ?? throw new FileNotFoundException($"{Base.Label} is no longer in the profiles folder.");
                     var relative = Path.GetRelativePath(Target, Path.Combine(baseFolder, entry)).Replace(Path.DirectorySeparatorChar, '/');
-                    Write(file, $"extends: {Quoted(relative)}\n");
+                    // A typed base gives the new profile its type, so only an untyped one takes the form's.
+                    Write(file, $"extends: {Quoted(relative)}\n{(Base.Listing.OwnerType is null ? OwnerLine() : "")}");
                     break;
                 default:
-                    Write(file, "");
+                    Write(file, OwnerLine());
                     break;
             }
             await created(file, warnings).ConfigureAwait(true);
@@ -417,6 +470,9 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
             closed.Dispose();
         }
     }
+
+    /// <summary>The line that gives the new profile the type the form picked; none for any owner.</summary>
+    private string OwnerLine() => OwnerType is null ? "" : $"owner_type: {OwnerType}\n";
 
     /// <summary>Creates the file, and fails rather than replace one.</summary>
     private static void Write(string file, string text)

@@ -84,6 +84,11 @@ internal sealed partial class SettingResultsViewModel(string tab, string title, 
 /// where the file can't hold drafts, as a staged apply's one-off edits can't,
 /// so Save as draft, Preview and the draft banner are not offered.
 /// </param>
+/// <param name="ChangeOwner">
+/// Changes the file's owner type, <c>user</c>, <c>organization</c> or null
+/// for any owner, leaving what that type doesn't have not managed; null where
+/// the file's type isn't its own to change, as a staged apply's.
+/// </param>
 internal sealed record ProfileStore(
     Func<string, CancellationToken, Task<ResolvedProfile>> Load,
     Func<string, IReadOnlyList<ProfileChange>, IReadOnlyList<EntryChange>, CancellationToken, Task<ResolvedProfile>> Save,
@@ -91,7 +96,8 @@ internal sealed record ProfileStore(
     string SaveLabel,
     string OwnLabel,
     Func<string?, string, string> Summary,
-    Func<string, IReadOnlyList<ProfileChange>, IReadOnlyList<EntryChange>, CancellationToken, Task<ProfilePreview>>? Preview = null)
+    Func<string, IReadOnlyList<ProfileChange>, IReadOnlyList<EntryChange>, CancellationToken, Task<ProfilePreview>>? Preview = null,
+    Func<string, string?, CancellationToken, Task<ResolvedProfile>>? ChangeOwner = null)
 {
     /// <summary>Whether the file can hold drafts: a profile can, and a staged apply's one-off edits can't.</summary>
     public bool Drafts => Preview is not null;
@@ -104,7 +110,8 @@ internal sealed record ProfileStore(
         "Save",
         "Set in this profile",
         (@base, file) => @base is null ? $"Saved to {file}." : $"Extends {@base}. Saved to {file}.",
-        client.PreviewProfileAsync);
+        client.PreviewProfileAsync,
+        client.ChangeOwnerTypeAsync);
 }
 
 /// <summary>
@@ -152,12 +159,12 @@ internal sealed partial class ProfileViewModel(
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowEditor))]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(ResetCommand), nameof(ReloadCommand), nameof(SaveAsDraftCommand), nameof(PreviewCommand), nameof(DiscardDraftCommand), nameof(ConfirmDiscardDraftCommand), nameof(PreviewSaveCommand), nameof(PreviewSaveAsDraftCommand), nameof(DeleteCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(ResetCommand), nameof(ReloadCommand), nameof(SaveAsDraftCommand), nameof(PreviewCommand), nameof(DiscardDraftCommand), nameof(ConfirmDiscardDraftCommand), nameof(PreviewSaveCommand), nameof(PreviewSaveAsDraftCommand), nameof(DeleteCommand), nameof(ChangeOwnerCommand))]
     public partial bool Loading { get; set; }
 
     /// <summary>Whether a save is running; the editor stays on screen, and nothing else can change it.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(ResetCommand), nameof(ReloadCommand), nameof(SaveAsDraftCommand), nameof(PreviewCommand), nameof(DiscardDraftCommand), nameof(ConfirmDiscardDraftCommand), nameof(PreviewSaveCommand), nameof(PreviewSaveAsDraftCommand), nameof(DeleteCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(ResetCommand), nameof(ReloadCommand), nameof(SaveAsDraftCommand), nameof(PreviewCommand), nameof(DiscardDraftCommand), nameof(ConfirmDiscardDraftCommand), nameof(PreviewSaveCommand), nameof(PreviewSaveAsDraftCommand), nameof(DeleteCommand), nameof(ChangeOwnerCommand))]
     public partial bool Saving { get; set; }
 
     [ObservableProperty]
@@ -235,6 +242,190 @@ internal sealed partial class ProfileViewModel(
 
     public bool ShowEditor => !Loading && Error is null && Tabs.Count > 0;
 
+    /// <summary>What owns the repositories the profile is for, <c>user</c> or <c>organization</c>, or null for any owner, as last loaded or saved.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OwnerLabel))]
+    [NotifyCanExecuteChangedFor(nameof(ChangeOwnerCommand))]
+    public partial string? OwnerType { get; private set; }
+
+    public string OwnerLabel => Owners.Label(OwnerType);
+
+    /// <summary>Whether the editor offers to change the owner type: a profile's own, not a staged apply's.</summary>
+    public bool OwnerChangeable => store.ChangeOwner is not null;
+
+    /// <summary>What changing the file to each owner type would leave not managed, by path, as last loaded or saved.</summary>
+    private IReadOnlyDictionary<string, IReadOnlyList<string>> ownerChanges = new Dictionary<string, IReadOnlyList<string>>();
+
+    /// <summary>Whether the owner type picker is open.</summary>
+    [ObservableProperty]
+    public partial bool OwnerPickerOpen { get; set; }
+
+    partial void OnOwnerPickerOpenChanged(bool value)
+    {
+        if (value)
+        {
+            PendingOwner = Owners.Choices.First(choice => choice.Type == OwnerType);
+        }
+    }
+
+    /// <summary>The owner type picked in the picker, which Change makes the profile's.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OwnerLeaving), nameof(HasOwnerLeaving), nameof(OwnerLeavingNote), nameof(ChangeOwnerLabel))]
+    [NotifyCanExecuteChangedFor(nameof(ChangeOwnerCommand))]
+    public partial OwnerTypeChoice? PendingOwner { get; set; }
+
+    /// <summary>Whether the picker has personal accounts picked, for its radio button.</summary>
+    public bool PendingPersonal
+    {
+        get => PendingOwner?.Type == "user";
+        set => Pick(value, "user");
+    }
+
+    /// <summary>Whether the picker has organizations picked, for its radio button.</summary>
+    public bool PendingOrganization
+    {
+        get => PendingOwner?.Type == "organization";
+        set => Pick(value, "organization");
+    }
+
+    /// <summary>Whether the picker has any owner picked, for its radio button.</summary>
+    public bool PendingAny
+    {
+        get => PendingOwner is { Type: null };
+        set => Pick(value, null);
+    }
+
+    private void Pick(bool picked, string? type)
+    {
+        if (picked)
+        {
+            PendingOwner = Owners.Choices.First(choice => choice.Type == type);
+        }
+    }
+
+    partial void OnPendingOwnerChanged(OwnerTypeChoice? value)
+    {
+        OnPropertyChanged(nameof(PendingPersonal));
+        OnPropertyChanged(nameof(PendingOrganization));
+        OnPropertyChanged(nameof(PendingAny));
+    }
+
+    /// <summary>What the picked owner type would leave not managed in this file, as the app names each.</summary>
+    public IReadOnlyList<string> OwnerLeaving => PendingOwner?.Type is { } type && ownerChanges.TryGetValue(type, out var paths)
+        ? [.. paths.Select(DescribeOwnerChange)]
+        : [];
+
+    public bool HasOwnerLeaving => OwnerLeaving.Count > 0;
+
+    public string OwnerLeavingNote => OwnerLeaving.Count switch
+    {
+        1 => $"{PendingOwner!.Label} don't have 1 thing this profile sets. Changing the type leaves it not managed:",
+        var count => $"{PendingOwner?.Label} don't have {count} things this profile sets. Changing the type leaves them not managed:",
+    };
+
+    public string ChangeOwnerLabel => PendingOwner?.Type switch
+    {
+        "user" => "Change to personal",
+        "organization" => "Change to organizations",
+        _ => "Change to any owner",
+    };
+
+    /// <summary>Why the type can't change now: it waits for unsaved changes to be saved or discarded.</summary>
+    public bool OwnerChangeWaits => HasChanges;
+
+    /// <summary>What the editor hides because the profile's owner type doesn't have it; null when it hides nothing.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasOwnerHidden))]
+    public partial string? OwnerHidden { get; private set; }
+
+    public bool HasOwnerHidden => OwnerHidden is not null;
+
+    [RelayCommand]
+    private void OpenOwnerPicker() => OwnerPickerOpen = true;
+
+    [RelayCommand]
+    private void ToggleOwnerPicker() => OwnerPickerOpen = !OwnerPickerOpen;
+
+    [RelayCommand]
+    private void CloseOwnerPicker() => OwnerPickerOpen = false;
+
+    private bool CanChangeOwner() =>
+        store.ChangeOwner is not null && PendingOwner is not null && PendingOwner.Type != OwnerType
+        && !HasChanges && !Saving && !Loading;
+
+    /// <summary>
+    /// Makes the profile one for the picked owner type, which leaves what that
+    /// type doesn't have not managed. It saves at once, so it waits for unsaved
+    /// changes to be saved or discarded first.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanChangeOwner))]
+    private async Task ChangeOwnerAsync()
+    {
+        var change = store.ChangeOwner!;
+        var type = PendingOwner!.Type;
+        // The picker lists what the file held when the editor read it, so a file changed since then is
+        // read again first; nothing is lost, as a change waits for unsaved changes to be saved or discarded.
+        if (!string.Equals(ReadFile(File), loaded.GetValueOrDefault(File), StringComparison.Ordinal))
+        {
+            await LoadAsync().ConfigureAwait(true);
+            SaveError = $"{Path.GetFileName(File)} changed since the editor read it, so it shows the file as it is now. Check what the change leaves not managed, then change the type.";
+            return;
+        }
+        Saving = true;
+        SaveError = null;
+        try
+        {
+            ResolvedProfile? profile = null;
+            Dictionary<string, string?> texts = [];
+            await store.Write(async () =>
+            {
+                profile = await change(File, type, CancellationToken.None).ConfigureAwait(true);
+                texts = ReadFiles(ChainOf(profile));
+            }).ConfigureAwait(true);
+            if (profile is null)
+            {
+                return;
+            }
+            OwnerPickerOpen = false;
+            Show(profile, await BaseAsync(profile, texts).ConfigureAwait(true));
+            Remember(ChainOf(profile), texts);
+            ChangedFile = null;
+            if (saved is not null)
+            {
+                await saved().ConfigureAwait(true);
+            }
+        }
+        catch (Exception error)
+        {
+            SaveError = error.Message;
+        }
+        finally
+        {
+            Saving = false;
+        }
+    }
+
+    /// <summary>One of <see cref="ResolvedProfile.OwnerChanges"/> as the editor names it, such as Allow forking or Ruleset Main.</summary>
+    private static string DescribeOwnerChange(string path)
+    {
+        var draft = path.StartsWith("drafts.", StringComparison.Ordinal);
+        var setting = draft ? path["drafts.".Length..] : path;
+        if (setting.StartsWith("rulesets/", StringComparison.Ordinal))
+        {
+            return Drafted($"Ruleset {setting["rulesets/".Length..]}");
+        }
+        if (setting.StartsWith("environments/", StringComparison.Ordinal))
+        {
+            return Drafted($"Environment {setting["environments/".Length..]}");
+        }
+        string Drafted(string name) => draft ? $"{name} (draft)" : name;
+        var field = ProfileFields.Sections.SelectMany(section => section.Groups).SelectMany(group => group.Fields)
+            .FirstOrDefault(field => field.Path == setting || field.Path.StartsWith(setting + ".", StringComparison.Ordinal));
+        var name = field?.Label
+            ?? (setting.StartsWith("custom_properties.", StringComparison.Ordinal) ? $"Custom property {setting["custom_properties.".Length..]}" : setting);
+        return Drafted(name);
+    }
+
     /// <summary>The profile this one extends, if any.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Summary), nameof(InheritedLabel))]
@@ -294,6 +485,13 @@ internal sealed partial class ProfileViewModel(
     public partial int ChangeCount { get; set; }
 
     public bool HasChanges => ChangeCount > 0;
+
+    partial void OnChangeCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(ChangesStatus));
+        OnPropertyChanged(nameof(OwnerChangeWaits));
+        ChangeOwnerCommand.NotifyCanExecuteChanged();
+    }
 
     public string ChangesLabel => ChangeCount == 1 ? "1 unsaved change" : $"{ChangeCount} unsaved changes";
 
@@ -363,7 +561,6 @@ internal sealed partial class ProfileViewModel(
 
     partial void OnOnlyDraftsChanged(bool value) => Find();
 
-    partial void OnChangeCountChanged(int value) => OnPropertyChanged(nameof(ChangesStatus));
 
     /// <summary>Whether a search or filter is on, so the settings it found show in place of the tabs.</summary>
     public bool Filtering { get; private set; }
@@ -1026,6 +1223,13 @@ internal sealed partial class ProfileViewModel(
 
         Release();
         Tabs.Clear();
+        var owner = profile.OwnerType;
+        OwnerType = owner;
+        ownerChanges = profile.OwnerChanges ?? new Dictionary<string, IReadOnlyList<string>>();
+        OnPropertyChanged(nameof(OwnerLeaving));
+        OnPropertyChanged(nameof(HasOwnerLeaving));
+        OnPropertyChanged(nameof(OwnerLeavingNote));
+        var hidden = 0;
         foreach (var section in ProfileFields.Sections)
         {
             var values = profile.Values.TryGetProperty(section.Section, out var found) ? found : default;
@@ -1038,7 +1242,8 @@ internal sealed partial class ProfileViewModel(
                         group.Title,
                         group.Description,
                         [
-                            .. group.Fields.Select(field =>
+                            // What the owner type doesn't have, settings and values, is left out.
+                            .. Fitting(group.Fields).Select(field =>
                             {
                                 var saved = SettingViewModel.Find(values, field.Key);
                                 var origin = Origin(sources.GetValueOrDefault(field.Key));
@@ -1049,11 +1254,40 @@ internal sealed partial class ProfileViewModel(
                                     ? new SettingDraft(SettingViewModel.Find(drafts, field.Key))
                                     : unset.Contains(field.Path) && origin == SettingOrigin.Own ? new SettingDraft(null, Unsets: true) : null;
                                 SettingViewModel? row = null;
-                                row = new SettingViewModel(field, saved, origin, inherited, () => OnRowChanged(row!), draft);
+                                row = new SettingViewModel(field, saved, origin, inherited, () => OnRowChanged(row!), draft,
+                                    option => Owners.Has(owner, Owners.Need(field.Path, option.Value.AsText())))
+                                {
+                                    OwnerTag = field.Needs switch
+                                    {
+                                        OwnerNeed.Enterprise => "Enterprise Cloud",
+                                        OwnerNeed.Organization when owner is null => "Organizations",
+                                        _ => null,
+                                    },
+                                };
                                 return row;
                             }),
-                        ])),
+                        ])).Where(group => group.Settings.Count > 0),
                 ]));
+        }
+        OwnerHidden = hidden switch
+        {
+            0 => null,
+            1 => $"1 setting that only {Owners.Label(owner == "user" ? "organization" : "user").ToLowerInvariant()} have is hidden.",
+            _ => $"{hidden} settings that only {Owners.Label(owner == "user" ? "organization" : "user").ToLowerInvariant()} have are hidden.",
+        };
+
+        // The fields an owner of the profile's type has.
+        IEnumerable<SettingField> Fitting(IEnumerable<SettingField> fields)
+        {
+            foreach (var field in fields)
+            {
+                if (!Owners.Has(owner, field.Needs))
+                {
+                    hidden++;
+                    continue;
+                }
+                yield return field;
+            }
         }
         // A row that another setting can hide or turn off follows that setting's row.
         var rows = Settings.ToList();
@@ -1087,7 +1321,7 @@ internal sealed partial class ProfileViewModel(
 
         ProfileTabViewModel EntriesTab(string name, string section)
         {
-            var tab = new ProfileTabViewModel(name, section, OnSettingChanged);
+            var tab = new ProfileTabViewModel(name, section, OnSettingChanged) { Pushes = Owners.Has(owner, OwnerNeed.Organization) };
             var sources = profile.Sources[section];
             var drafts = DraftsOf(profile, section)
                 .Where(entry => profile.DraftSource(section, entry["name"]!.GetValue<string>()) is { } file && IsOwn(file))

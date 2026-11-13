@@ -1130,19 +1130,71 @@ describe('profile commands', () => {
     expect(document(result)).toMatchObject({ error: { kind: 'usage' } });
   });
 
+  test('profile changes the owner type on its own and leaves what the type lacks not managed', async () => {
+    const file = path.join(directory, 'owner.yaml');
+    await writeFile(file, 'owner_type: organization\nrepository: { allow_forking: true, has_wiki: false }\n');
+
+    const shown = await cli(new FakeGitHub(), 'profile', file, '--json');
+    expect(document(shown)).toMatchObject({
+      owner_source: file,
+      owner_changes: { user: ['repository.allow_forking'], organization: [] },
+    });
+
+    const mixed = await cli(
+      new FakeGitHub(),
+      'profile',
+      file,
+      '--owner-type',
+      'user',
+      '--unset',
+      'repository.has_wiki',
+    );
+    expect(mixed.code).toBe(2);
+    const previewed = await cli(new FakeGitHub(), 'profile', file, '--owner-type', 'user', '--preview');
+    expect(previewed.code).toBe(2);
+    expect(await readFile(file, 'utf8')).not.toContain('owner_type: user');
+    const unknown = await cli(new FakeGitHub(), 'profile', file, '--owner-type', 'enterprise');
+    expect(unknown.code).toBe(2);
+
+    const changed = await cli(new FakeGitHub(), 'profile', file, '--owner-type', 'user');
+    expect(changed).toMatchObject({ code: 0, err: `Saved ${file}\n` });
+    expect(await readFile(file, 'utf8')).toBe('owner_type: user\nrepository: { has_wiki: false }\n');
+
+    await cli(new FakeGitHub(), 'profile', file, '--owner-type', 'any');
+    expect(await readFile(file, 'utf8')).toBe('repository: { has_wiki: false }\n');
+  });
+
+  test('plan refuses a profile for the other kind of owner', async () => {
+    const file = path.join(directory, 'for-orgs.yaml');
+    await writeFile(file, 'owner_type: organization\nrepository: { has_wiki: false }\n');
+
+    const result = await cli(new FakeGitHub({ ownerType: 'User' }), 'plan', 'lunch/app', '--profile', file, '--json');
+
+    expect(result.code).toBe(1);
+    expect(document(result)).toMatchObject({ error: { kind: 'owner_mismatch' } });
+  });
+
   test('profiles lists a folder as JSON', async () => {
     const result = await cli(new FakeGitHub(), 'profiles', examples, '--json');
 
     expect(result).toMatchObject({ code: 0, err: '' });
     expect(document(result)).toEqual({
       profiles: [
-        { name: 'base', folder: '', file: path.join(examples, 'base.yaml'), extends: null, problem: null },
+        {
+          name: 'base',
+          folder: '',
+          file: path.join(examples, 'base.yaml'),
+          extends: null,
+          problem: null,
+          owner_type: null,
+        },
         {
           name: 'repotted',
           folder: '',
           file: path.join(examples, 'repotted.yaml'),
           extends: path.join(examples, 'base.yaml'),
           problem: null,
+          owner_type: null,
         },
       ],
     });

@@ -10,7 +10,7 @@ namespace Repotted.Desktop.Tests;
 public sealed class ProfilesTests : ViewModelTests
 {
     private static string OnlyBase(string @base) =>
-        $$$"""{"profiles":[{"name":"base","file":{{{Json(@base)}}},"extends":null,"problem":null}]}""";
+        $$$"""{"profiles":[{"name":"base","file":{{{Json(@base)}}},"extends":null,"owner_type":null,"problem":null}]}""";
 
     [AvaloniaFact]
     public async Task Edits_to_a_profile_whose_file_is_removed_stay_and_a_save_puts_it_back()
@@ -674,7 +674,7 @@ public sealed class ProfilesTests : ViewModelTests
     public async Task A_file_listed_under_two_names_opens_once()
     {
         var file = folders.Write("base.yaml", "repository: { has_issues: true }\n");
-        var listing = $$"""{"profiles":[{"name":"alias","file":{{Json(file)}},"extends":null,"problem":null},{"name":"base","file":{{Json(file)}},"extends":null,"problem":null}]}""";
+        var listing = $$"""{"profiles":[{"name":"alias","file":{{Json(file)}},"extends":null,"owner_type":null,"problem":null},{"name":"base","file":{{Json(file)}},"extends":null,"owner_type":null,"problem":null}]}""";
         var cli = new FakeCli().On(folders.List(), listing).On($"profile {file} --json", Documents.ResolvedBase(file));
         var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
 
@@ -693,7 +693,7 @@ public sealed class ProfilesTests : ViewModelTests
         Directory.CreateDirectory(other);
         var slow = new TaskCompletionSource();
         var cli = new FakeCli()
-            .OnceReady(folders.List(), $$"""{"profiles":[{"name":"orgs","file":{{Json(own)}},"extends":null,"problem":null}]}""", slow.Task)
+            .OnceReady(folders.List(), $$"""{"profiles":[{"name":"orgs","file":{{Json(own)}},"extends":null,"owner_type":null,"problem":null}]}""", slow.Task)
             .On(folders.List(other), Documents.NoProfiles);
         var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop { Folder = other }, folders.Settings, () => []);
 

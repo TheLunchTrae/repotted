@@ -2,6 +2,7 @@ import type { Change, SectionPlan, Warning } from '../change.js';
 import { type Endpoint, type EndpointValue, planEndpoint, readEndpoints } from '../endpoints.js';
 import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges, matches } from '../match.js';
+import type { OwnerType } from '../owner.js';
 import {
   commitPairs,
   mergeFields,
@@ -43,10 +44,19 @@ export interface LiveRepository {
   readonly securityAndAnalysis: Record<string, unknown> | undefined;
   /** The endpoint settings read, by key. */
   readonly endpoints: ReadonlyMap<string, EndpointValue>;
+  /** What owns the repository, or undefined when GitHub doesn't say. */
+  readonly owner: OwnerType | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The owner type in a repository as GitHub sends it, from `owner.type`. */
+export function repositoryOwnerType(data: unknown): OwnerType | undefined {
+  const owner = isRecord(data) ? data['owner'] : undefined;
+  const type = isRecord(owner) ? owner['type'] : undefined;
+  return type === 'User' ? 'user' : type === 'Organization' ? 'organization' : undefined;
 }
 
 function pick(data: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
@@ -77,6 +87,7 @@ export async function readRepository(
     repository,
     merge: pick(record, Object.keys(mergeFields)),
     securityAndAnalysis: isRecord(security) ? security : undefined,
+    owner: repositoryOwnerType(record),
     endpoints: await readEndpoints(
       github,
       repo,
