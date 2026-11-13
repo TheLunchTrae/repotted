@@ -454,6 +454,11 @@ public sealed class ViewTests : IDisposable
         Dispatcher.UIThread.RunJobs();
         Assert.Contains("orgs has unsaved changes. Save them before you close it?", Texts(window));
         Save(window, $"profile-closing-{theme}");
+        // The shortcut waits while the close it started still asks.
+        var first = editor.CloseCommand.ExecutionTask!;
+        window.KeyPressQwerty(PhysicalKey.W, modifier);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(first.IsCompleted);
         shell.Profiles.StayHereCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
         Assert.Same(editor, shell.Profiles.Current);
