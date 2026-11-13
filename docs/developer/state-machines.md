@@ -873,14 +873,14 @@ commit and artifacts, which last 3 days; GitHub allows a re-run for 30 days.
 | Releasing | The tag already holds the release            | Released, as on a re-run after GitHub published the release but the job failed. A tag at another commit fails the job.                                                                      |
 | Releasing | The release is published                     | Released. Publishing creates the tag at the run's commit, and an immutable release can't change, so a fix needs the next version.                                                           |
 
-Deploy Web deploys the web app, as [the web app](web-app.md#deploy)
-describes. By default it deploys the `main` Preview and leaves repotted.dev's
-version live; with Publish it deploys to repotted.dev. Previews and publishes
-each wait in a concurrency group of their own, so the last one started stays
-live, and a preview never holds up a publish. A run on another branch fails
-before it checks out anything, and one whose `ts:web:check` fails, or whose
-environment lacks a value, deploys nothing. A preview run fails after its
-deploy when the Preview has no address on a custom domain. When Cloudflare
+Deploy Web deploys the web app, as [the web app](web-app.md#deploy) describes.
+By default it deploys the Preview named for its branch, `main`, and leaves
+repotted.dev's version live; with Publish it deploys to repotted.dev. Previews
+and publishes each wait in a concurrency group of their own, so the last one
+started stays live, and a preview never holds up a publish. A run on another
+branch fails before it checks out anything, and one whose `ts:web:check` fails,
+or whose environment lacks a value, deploys nothing. A preview run fails after
+its deploy when the Preview has no address on a custom domain. When Cloudflare
 refuses a deploy, the version before it stays live; re-running the job tries
 again.
 

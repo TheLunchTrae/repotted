@@ -3,10 +3,10 @@ run-name: ${{ inputs.publish && 'Deploy Web' || 'Deploy Web preview' }}
 
 # The owner starts a run with Run workflow on main; nothing else does, as with
 # the release workflows. A run builds the web app and checks the Worker bundle.
-# With Publish not selected, the default, it deploys the repotted Worker's main
-# Preview at main.preview.repotted.dev, so repotted.dev keeps its version; with
-# Publish selected, it deploys to repotted.dev. The
-# deploy-web environment holds the Cloudflare values and allows only main.
+# With Publish not selected, the default, it deploys the repotted Worker's
+# Preview named for the branch, main.preview.repotted.dev, so repotted.dev keeps
+# its version; with Publish selected, it deploys to repotted.dev. The deploy-web
+# environment holds the Cloudflare values and allows only main.
 on:
   workflow_dispatch:
     inputs:
@@ -81,12 +81,20 @@ jobs:
             mise exec -- pnpm exec wrangler deploy
             exit 0
           fi
+          # The Preview is named for the branch, made a DNS label: lowercase
+          # letters, digits and hyphens, at most 40 characters, which leaves
+          # room for the deployment ID that deployment addresses put in front.
+          preview=$(tr '[:upper:]' '[:lower:]' <<<"$GITHUB_REF_NAME" | sed -E 's/[^a-z0-9]+/-/g; s/^-//; s/-$//' | cut -c -40 | sed -E 's/-$//')
+          if [[ -z $preview ]]; then
+            echo "::error::The branch name $GITHUB_REF_NAME gives no Preview name."
+            exit 1
+          fi
           output="$RUNNER_TEMP/wrangler-output.json"
-          WRANGLER_OUTPUT_FILE_PATH="$output" mise exec -- pnpm exec wrangler preview --name main
+          WRANGLER_OUTPUT_FILE_PATH="$output" mise exec -- pnpm exec wrangler preview --name "$preview"
           # The Preview's addresses on a custom domain, not on workers.dev.
           url=$(jq -r 'select(.type == "preview") | [.preview_urls[]? | select(test("\\.workers\\.dev/?$") | not)] | first // empty' "$output")
           if [[ -z $url ]]; then
-            echo "::error::Cloudflare gave the main Preview no address on a custom domain. Check that preview.repotted.dev is attached to the repotted Worker for Previews."
+            echo "::error::Cloudflare gave the $preview Preview no address on a custom domain. Check that preview.repotted.dev is attached to the repotted Worker for Previews."
             exit 1
           fi
           echo "preview-url=$url" >>"$GITHUB_OUTPUT"

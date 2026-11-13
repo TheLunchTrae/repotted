@@ -66,7 +66,8 @@ settings, GitHub Apps, New GitHub App, uses too:
   expiring tokens bring.
 - Client secret: one, for the web app's Worker. To rotate it, generate a new
   one, set it as the `repotted` Worker's `REPOTTED_APP_CLIENT_SECRET` for
-  production and for its `main` Preview, then delete the old one.
+  production, for its Previews Base and for its `main` Preview, then delete the
+  old one.
 - Webhook: clear **Active**.
 - Repository permissions: Administration, Actions, Contents, Pages,
   Custom properties and Issues, read and write; Code scanning alerts, read; and

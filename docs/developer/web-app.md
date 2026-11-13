@@ -2,11 +2,11 @@
 
 The web app runs at <https://repotted.dev> on a Cloudflare Worker, `repotted`,
 in `packages/web`, and a preview of it runs on the same Worker at
-<https://main.preview.repotted.dev>. The Worker serves the app's static files and handles
-the GitHub App's web sign-in on the same origin, so the sign-in needs no
-cross-origin requests and the client secret stays on the server. The page is a
-placeholder that signs in and shows the signed-in user; the app's UI moves to
-it later.
+<https://main.preview.repotted.dev>. The Worker serves the app's static files
+and handles the GitHub App's web sign-in on the same origin, so the sign-in
+needs no cross-origin requests and the client secret stays on the server. The
+page is a placeholder that signs in and shows the signed-in user; the app's UI
+moves to it later.
 
 ## Layout
 
@@ -122,14 +122,21 @@ then deploys the Worker.
 Its **Publish** input picks where, as Publish picks a test build or a release
 in the release workflows:
 
-| Publish          | Command                        | Where it runs                       |
-| ---------------- | ------------------------------ | ----------------------------------- |
-| Off, the default | `wrangler preview --name main` | <https://main.preview.repotted.dev> |
-| On               | `wrangler deploy`              | <https://repotted.dev>              |
+| Publish          | Command                            | Where it runs                       |
+| ---------------- | ---------------------------------- | ----------------------------------- |
+| Off, the default | `wrangler preview --name <branch>` | <https://main.preview.repotted.dev> |
+| On               | `wrangler deploy`                  | <https://repotted.dev>              |
 
-A preview deploys the `main` Preview, one of Cloudflare's
+A preview deploys a Preview named for the run's branch, one of Cloudflare's
 [Worker Previews](https://developers.cloudflare.com/workers/previews/), under
-the same `repotted` Worker. repotted.dev keeps serving its own version, and
+the same `repotted` Worker. The name is the branch made a DNS label: lowercase,
+with each run of other characters turned into a hyphen and cut to 40
+characters, so `feature/Sign-in` would be `feature-sign-in`. Deploy Web runs
+only on main, so today that is the `main` Preview. Previews of other branches
+would also need the branch rule loosened in the workflow and the environment,
+and each Preview's callback URL added to the Repotted App.
+
+repotted.dev keeps serving its own version, and
 each preview replaces the last one at the same address, which the run's
 summary and its environment link give. The Preview keeps its earlier
 deployments, each at its own `<deployment id>-main.preview.repotted.dev`
@@ -139,19 +146,22 @@ Previews take their address from the custom domain `preview.repotted.dev`,
 attached to the Worker for Previews only, as
 `<preview name>.preview.repotted.dev`. Cloudflare adds a wildcard DNS record
 and certificate for `*.preview.repotted.dev`; the first certificate can take a
-while to issue. The
-preview is public, as repotted.dev is, unless Cloudflare Access is put in front
-of it.
+while to issue. The preview is public, as repotted.dev is, unless Cloudflare
+Access is put in front of it.
 
-The client ID is public, so it is a variable in `wrangler.jsonc`, the same ID
-as `app.clientId` in `packages/cli/src/auth.ts`; a CLI test fails when they
-differ. Previews take none of the production variables, so it is set again in
-the `previews` block. The client secret is set once as the Worker secret
+The client ID is public, so it is a variable in `wrangler.jsonc`, the same ID as
+`app.clientId` in `packages/cli/src/auth.ts`; a CLI test fails when they differ.
+Previews take none of the production variables, so it is set again in the
+`previews` block. The client secret is set once as the Worker secret
 `REPOTTED_APP_CLIENT_SECRET`, in the dashboard or with `wrangler secret put`,
-and once for Previews, as below, and is rotated in both places. Wrangler never
-deletes a Worker's secrets: every deploy keeps the ones the version before it
-had, and every preview deployment the ones the Preview had, so the workflow
-never handles the secret.
+and once for Previews, as below. Wrangler never deletes a Worker's secrets:
+every deploy keeps the ones the version before it had, and every preview
+deployment the ones the Preview had, so the workflow never handles the secret.
+
+A change to the Previews Base reaches only Previews created after it, so
+rotating the secret sets it in three places: production, the Previews Base, and
+the `main` Preview, with
+`wrangler preview secret put REPOTTED_APP_CLIENT_SECRET --name main`.
 
 The sign-in's cookies are named with `__Host-`, so the browser keeps them for
 the one host that set them: a sign-in on the preview never reaches
@@ -183,9 +193,11 @@ would replace any other DNS record on the names without asking.
 
 A custom domain sends every path on its host to the Worker, and the asset
 config answers the app's own paths with `index.html`, so the app needs no
-Cloudflare Route. A Route such as `*.repotted.dev/` adds nothing for these
-hosts, and it would send `/` on any other subdomain of the zone to the
-production Worker.
+Cloudflare Route. A Route such as `*.repotted.dev/` matches `/`, with no query
+string, on every subdomain of the zone, the preview's hosts included. A Route
+takes precedence over a custom domain on the same host and always runs the
+production version, so the preview's `/`, where sign-in returns, would get
+production's page. Add no Route, and delete any that exists.
 
 `preview_urls` is set to `false`, though that follows from `workers_dev`,
 because Wrangler leaves the Worker's Version URLs as they were when it is
