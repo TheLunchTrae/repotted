@@ -66,7 +66,7 @@ internal sealed partial class ConfigRepositoryViewModel : ViewModelBase, IDispos
 
     public bool CanCopyLocal => localFolder is not null;
 
-    public string CopyLocalLabel => $"Add the profiles from {localFolder}";
+    public string CopyLocalLabel => $"Add the profiles from {localFolder} and its subfolders";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]

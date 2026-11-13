@@ -1007,6 +1007,27 @@ public sealed class ProfilesTests : ViewModelTests
     }
 
     [AvaloniaFact]
+    public async Task Another_folder_starts_with_its_subfolders_open()
+    {
+        var (cli, _, _, _) = Nested();
+        var other = Path.Combine(Path.GetDirectoryName(folders.Profiles)!, "other");
+        Directory.CreateDirectory(Path.Combine(other, "team"));
+        var mine = Path.Combine(other, "team", "mine.yaml");
+        File.WriteAllText(mine, "repository: { has_issues: true }\n");
+        cli.On(folders.List(other), $$$"""{"profiles":[{"name":"mine","folder":"team","file":{{{Json(mine)}}},"extends":null,"problem":null}]}""")
+            .On($"profile {mine} --json", Documents.ResolvedBase(mine));
+        var desktop = new FakeDesktop { Folder = other };
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), desktop, folders.Settings, () => []);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        ((ProfileFolderNode)profiles.Tree[1]).IsExpanded = false;
+
+        await profiles.ChangeFolderCommand.ExecuteAsync(null);
+
+        var team = Assert.IsType<ProfileFolderNode>(Assert.Single(profiles.Tree));
+        Assert.True(team.IsExpanded);
+    }
+
+    [AvaloniaFact]
     public async Task A_refresh_leaves_closed_the_subfolder_of_the_open_profile()
     {
         var (cli, _, oss, web) = Nested();
@@ -1071,6 +1092,37 @@ public sealed class ProfilesTests : ViewModelTests
         Assert.False(File.Exists(oss));
         Assert.True(File.Exists(other));
         Assert.Equal(["base", "team/apps/web"], profiles.Items.Select(item => item.Label));
+    }
+
+    [AvaloniaFact]
+    public async Task A_file_linked_into_two_folders_keeps_the_row_asked_about_after_a_refresh()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Making a link on Windows needs Developer Mode.");
+        Directory.CreateDirectory(Path.Combine(folders.Profiles, "team"));
+        var oss = folders.Write(Path.Combine("team", "oss.yaml"), "repository: { has_issues: true }\n");
+        var link = Path.Combine(folders.Profiles, "oss.yaml");
+        File.CreateSymbolicLink(link, oss);
+        // The CLI lists the real path, so both rows have the same file.
+        var cli = new FakeCli()
+            .On(folders.List(), $$$"""
+                {"profiles":[
+                  {"name":"oss","folder":"","file":{{{Json(oss)}}},"extends":null,"problem":null},
+                  {"name":"oss","folder":"team","file":{{{Json(oss)}}},"extends":null,"problem":null}
+                ]}
+                """)
+            .On($"profile {oss} --json", Documents.ResolvedBase(oss));
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        profiles.Items.Single(item => item.Label == "team/oss").DeleteCommand.Execute(null);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal("Delete team/oss?", profiles.DeleteQuestion);
+        cli.On(folders.List(), $$$"""{"profiles":[{"name":"oss","folder":"","file":{{{Json(link)}}},"extends":null,"problem":"It is a link to a missing file"}]}""");
+        await profiles.ConfirmDeleteCommand.ExecuteAsync(null);
+
+        Assert.False(File.Exists(oss));
+        Assert.NotNull(new FileInfo(link).LinkTarget);
     }
 }
 

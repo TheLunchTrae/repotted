@@ -152,6 +152,7 @@ public sealed class ConfigRepositoryTests : IDisposable
         Assert.Equal(["base.yaml", "team/oss.yaml", "team/apps/web.yaml"], copied);
         Assert.Equal("extends: ../oss.yaml\n", File.ReadAllText(Path.Combine(copy, "team", "apps", "web.yaml")));
         Assert.Equal("repository: { has_issues: true }\n", File.ReadAllText(Path.Combine(copy, "team", "oss.yaml")));
+        Assert.False(File.Exists(Path.Combine(copy, ".git", "config.yaml")));
         Assert.Equal(
             "Did not add team/oss.yaml from the profiles folder, because lunch/config already had a file of that name.",
             profiles.Notice);

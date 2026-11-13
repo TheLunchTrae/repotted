@@ -376,6 +376,9 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     /// <summary>The subfolders closed in the tree, by path, which stay closed when the list is read again.</summary>
     private readonly HashSet<string> collapsed = new(StringComparer.Ordinal);
 
+    /// <summary>The profiles folder <see cref="collapsed"/> is about; another folder starts with every subfolder open.</summary>
+    private string? collapsedIn;
+
     /// <summary>The subfolders in the tree, by path.</summary>
     private readonly Dictionary<string, ProfileFolderNode> folders = new(StringComparer.Ordinal);
 
@@ -460,7 +463,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             return;
         }
         Creating = null;
-        Reselect(Items.FirstOrDefault(item => item.Listing.File == Current?.File));
+        Reselect(Items.FirstOrDefault(item => IsOpen(item)));
     }
 
     /// <summary>A closed form gave up the name it held, so the open one may now take it.</summary>
@@ -520,10 +523,13 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             return;
         }
         Connecting = null;
-        Reselect(Items.FirstOrDefault(item => item.Listing.File == Current?.File));
+        Reselect(Items.FirstOrDefault(item => IsOpen(item)));
     }
 
     /// <summary>Selects the profile already open again, leaving the subfolders open or closed as they are.</summary>
+    /// <summary>Whether <paramref name="item"/> is the open profile's row; a linked file can be listed in two folders.</summary>
+    private bool IsOpen(ProfileItemViewModel item) => Current is { } current && item.Listing.File == current.File && item.Folder == current.Folder;
+
     private void Reselect(ProfileItemViewModel? item)
     {
         revealing = false;
@@ -849,17 +855,18 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             // so a new file is found by its subfolder and name in the folder.
             // A profile just made opens its folders; the one already open keeps the tree as the user left it.
             var made = select is not null;
-            var keep = select is null
-                ? Current?.File
+            // A linked file can be listed in two folders, so the row is found by its file and its folder.
+            (string File, string Folder)? keep = select is null
+                ? Current is { } current ? (current.File, current.Folder) : null
                 : listings.FirstOrDefault(listing =>
                     listing.Name == Path.GetFileNameWithoutExtension(select)
-                    && listing.Folder == SubfolderOf(folder, select))?.File;
+                    && listing.Folder == SubfolderOf(folder, select)) is { } listed ? (listed.File, listed.Folder) : null;
             select = null;
             Current = null;
             ApplyFilter();
             // The new profile form stays open, and nothing in the list is selected under it.
             var creating = Creating is not null;
-            if (Items.FirstOrDefault(item => item.Listing.File == keep) is { } shown)
+            if (Items.FirstOrDefault(item => (item.Listing.File, item.Folder) == keep) is { } shown)
             {
                 if (!creating)
                 {
@@ -874,7 +881,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
                 }
                 Open(shown.Listing);
             }
-            else if (all.FirstOrDefault(item => item.Listing.File == keep) is { } hidden)
+            else if (all.FirstOrDefault(item => (item.Listing.File, item.Folder) == keep) is { } hidden)
             {
                 // The search hides it, but it stays open.
                 Open(hidden.Listing);
@@ -954,7 +961,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     }
 
     private ProfileItemViewModel? Listed(ProfileListingDocument listing) =>
-        all.FirstOrDefault(item => item.Listing.File == listing.File && item.Name == listing.Name && !item.Removed);
+        all.FirstOrDefault(item => item.Listing.File == listing.File && item.Folder == listing.Folder && item.Name == listing.Name && !item.Removed);
 
     /// <summary>
     /// Words the question again after the list or the profile's edits
@@ -1296,6 +1303,11 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         }
         folders.Clear();
         Tree.Clear();
+        if (collapsedIn != Folder.Path)
+        {
+            collapsed.Clear();
+            collapsedIn = Folder.Path;
+        }
         foreach (var item in Items)
         {
             var parent = FolderNode(item.Folder, filtering);

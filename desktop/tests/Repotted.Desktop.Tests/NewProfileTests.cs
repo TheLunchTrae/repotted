@@ -588,7 +588,7 @@ public sealed class NewProfileTests : ViewModelTests
 
         // A name is taken only in the folder the file goes in.
         form.Name = "oss";
-        Assert.Equal("oss.yaml is already in this folder.", form.Problem);
+        Assert.Equal("oss.yaml is already in team.", form.Problem);
         form.Place = form.Places[0];
         Assert.Null(form.Problem);
         Assert.Equal("oss.yaml", form.FileName);

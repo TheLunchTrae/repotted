@@ -124,6 +124,9 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     partial void OnPlaceChanged(NewProfilePlace value) => Recheck();
 
     /// <summary>The folder the file goes in, on disk.</summary>
+    /// <summary>How a message names where the file goes: this folder, or the subfolder chosen.</summary>
+    private string PlaceName => Place.Path.Length == 0 ? "this folder" : Place.Path;
+
     private string Target => Place.Path.Length == 0 ? root : Path.Combine(root, Place.Path.Replace('/', Path.DirectorySeparatorChar));
 
     public IReadOnlyList<string> Repositories { get; }
@@ -236,7 +239,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
 
     /// <summary>Why the folder has no room for <paramref name="name"/>: a file of that name, or another capture making one.</summary>
     private string? InUse(string name) =>
-        Taken(name) is { } taken ? $"{taken} is already in this folder."
+        Taken(name) is { } taken ? $"{taken} is already in {PlaceName}."
         : Path.Combine(Target, $"{name}.yaml") is var file && captures.Contains(file) && !string.Equals(file, capturing, StringComparison.OrdinalIgnoreCase)
             ? $"Another capture is making {name}.yaml."
         : null;
@@ -388,7 +391,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
     {
         if (Taken(name) is { } other && other != Path.GetFileName(file))
         {
-            return $"{other} is already in this folder.";
+            return $"{other} is already in {PlaceName}.";
         }
         try
         {
@@ -397,7 +400,7 @@ internal sealed partial class NewProfileViewModel : ViewModelBase, IDisposable
         }
         catch (IOException) when (Taken(name) is { } taken)
         {
-            return $"{taken} is already in this folder.";
+            return $"{taken} is already in {PlaceName}.";
         }
     }
 

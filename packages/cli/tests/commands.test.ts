@@ -1015,6 +1015,18 @@ describe('profile commands', () => {
     expect(result).toMatchObject({ code: 0, err: '' });
     expect(result.out).toBe('base\nteam/oss (extends base)\nteam/apps/web (extends team/oss)\n');
   });
+
+  test('profiles names a base outside the folder by its file name without the extension', async () => {
+    const root = await mkdtemp(path.join(directory, 'profiles-'));
+    await mkdir(path.join(root, 'inner'));
+    await writeFile(path.join(root, 'shared.yaml'), 'repository: { has_issues: true }\n');
+    await writeFile(path.join(root, 'inner', 'web.yaml'), 'extends: ../shared.yaml\n');
+
+    const result = await cli(new FakeGitHub(), 'profiles', path.join(root, 'inner'));
+
+    expect(result).toMatchObject({ code: 0, err: '' });
+    expect(result.out).toBe('web (extends shared)\n');
+  });
 });
 
 describe('schema', () => {

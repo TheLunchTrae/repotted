@@ -15,7 +15,7 @@ internal abstract partial class ProfileTreeNode : ObservableObject
 }
 
 /// <summary>A subfolder of the profiles folder, with the profiles and subfolders in it.</summary>
-internal sealed class ProfileFolderNode : ProfileTreeNode
+internal sealed partial class ProfileFolderNode : ProfileTreeNode
 {
     /// <param name="path">The subfolder from the profiles folder, with <c>/</c> separators.</param>
     public ProfileFolderNode(string path)
@@ -33,7 +33,9 @@ internal sealed class ProfileFolderNode : ProfileTreeNode
     public ObservableCollection<ProfileTreeNode> Children { get; } = [];
 
     /// <summary>How many profiles it holds, its subfolders' included.</summary>
-    public int Count { get; set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpokenName))]
+    public partial int Count { get; set; }
 
     public override string SpokenName => $"{Name}, {Count} {(Count == 1 ? "profile" : "profiles")}";
 }

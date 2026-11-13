@@ -210,8 +210,9 @@ didn't finish; plan the batch again to review what is left.
 
 `npx repotted profiles <folder>` lists the profiles in a folder and its
 subfolders, and says why any of them can't be used. A profile in a subfolder
-prints with its folder, such as `team/oss`. Hidden subfolders, such as `.git`,
-and linked ones are left out, as a sync leaves them out.
+prints with its folder, such as `team/oss`, and so does a profile it extends.
+Hidden subfolders, such as `.git`, and linked ones are left out, as a sync
+leaves them out.
 
 `npx repotted profile <file>` prints a profile with everything it gets from the
 profiles it extends. With these options, it edits the file instead:

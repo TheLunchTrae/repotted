@@ -1281,6 +1281,17 @@ public sealed class ViewTests : IDisposable
         Dispatcher.UIThread.RunJobs();
         Assert.Same(shell.Profiles.Selected, tree.SelectedItem);
         Assert.Equal("oss", shell.Profiles.Current?.Name);
+
+        // A refresh or a search while the list shows still says how many each folder holds.
+        await shell.Profiles.RefreshCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["base", "team, 2 profiles", "oss", "apps, 1 profile", "web"], Names());
+        shell.Profiles.Filter = "web";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["team, 1 profile", "apps, 1 profile", "web"], Names());
+
+        IEnumerable<string?> Names() => window.GetVisualDescendants().OfType<TreeViewItem>()
+            .Select(item => ControlAutomationPeer.CreatePeerForElement(item).GetName());
     }
 
     [AvaloniaTheory]
@@ -1525,7 +1536,7 @@ public sealed class ViewTests : IDisposable
         Assert.True(shell.ShowingSettings);
         var text = Texts(window);
         Assert.Contains(ControlLabel.For("Keep profiles on GitHub"), text);
-        Assert.Contains($"Add the profiles from {folders.Profiles}", text);
+        Assert.Contains($"Add the profiles from {folders.Profiles} and its subfolders", text);
         Assert.Contains(ControlLabel.For("Use this repository"), text);
         Save(window, $"config-repository-form-{theme}");
     }
