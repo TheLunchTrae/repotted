@@ -1,8 +1,10 @@
+import type { Signal } from '@preact/signals';
 import type { GitHub } from '@repotted/core';
 import type { JSX } from 'preact';
 import { useEffect, useMemo } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
+import type { Keeping } from '../app/kept-files.js';
 import type { Preferences } from '../app/preferences.js';
 import { Profiles } from '../app/profiles.js';
 import { Repositories } from '../app/repositories.js';
@@ -15,13 +17,19 @@ import { SettingsPage } from './settings.js';
 import { Shell } from './shell.js';
 import { SignIn } from './sign-in.js';
 
+const titles: Readonly<Record<string, string>> = {
+  '/': 'Repositories',
+  '/profiles': 'Profiles',
+  '/settings': 'Settings',
+};
+
 interface AppProps {
   readonly account: Account;
   readonly github: GitHub;
   readonly preferences: Preferences;
   readonly router: Router;
-  /** Whether the browser keeps files between visits. */
-  readonly keepsFiles: boolean;
+  /** Whether the browser keeps the engine's files between visits. */
+  readonly keeping: Signal<Keeping>;
 }
 
 function SignedIn({
@@ -29,10 +37,10 @@ function SignedIn({
   github,
   preferences,
   router,
-  keepsFiles,
+  keeping,
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
-  // One of each per sign-in, so nothing of one account's shows under another.
+  // One of each per sign-in. The repository list is the account's; the profiles are the browser's, whoever signs in.
   const { repositories, profiles } = useMemo(() => {
     const refused = (): void => {
       account.refused();
@@ -47,8 +55,18 @@ function SignedIn({
     run(profiles.refresh());
   }, [repositories, profiles]);
   const path = router.path.value;
+  const title = titles[path];
+  useEffect(() => {
+    document.title = title === undefined ? 'Repotted' : `${title} - Repotted`;
+  }, [title]);
   return (
     <Shell account={account} user={user} router={router}>
+      {keeping.value === 'stopped' && (
+        <p class="notice notice-problem shell-notice" role="alert">
+          This browser stopped keeping your changes, as it does when its storage is full. What you change now lasts
+          until this tab closes. Free some space, then reload the page.
+        </p>
+      )}
       {path === '/' ? (
         <RepositoriesPage repositories={repositories} />
       ) : path === '/profiles' ? (
@@ -59,7 +77,7 @@ function SignedIn({
           user={user}
           profiles={profiles}
           repositories={repositories}
-          keepsFiles={keepsFiles}
+          keeping={keeping.value}
         />
       ) : (
         <div class="page">
@@ -79,6 +97,29 @@ function SignedIn({
 
 export function App(props: AppProps): JSX.Element {
   const state = props.account.state.value;
+  if (props.keeping.value === 'elsewhere') {
+    return (
+      <main class="sign-in">
+        <div class="sign-in-card">
+          <p class="wordmark">Repotted</p>
+          <h1>Repotted is open in another tab</h1>
+          <p class="muted">
+            One tab at a time keeps your profiles, so that two can't save over each other. Go on in the other tab, or
+            close it and reload this one.
+          </p>
+          <button
+            class="button button-primary"
+            type="button"
+            onClick={() => {
+              location.reload();
+            }}
+          >
+            Reload
+          </button>
+        </div>
+      </main>
+    );
+  }
   if (state.status === 'signed-in') {
     return <SignedIn {...props} user={state.user} />;
   }

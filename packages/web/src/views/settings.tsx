@@ -3,6 +3,7 @@ import { useState } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
 import { installUrl } from '../app/github-app.js';
+import type { Keeping } from '../app/kept-files.js';
 import type { Profiles } from '../app/profiles.js';
 import type { Repositories } from '../app/repositories.js';
 import { run } from './run.js';
@@ -13,7 +14,8 @@ export function SyncNote({ profiles }: { readonly profiles: Profiles }): JSX.Ele
   if (sync.status === 'failed') {
     return (
       <p class="problem small" role="alert">
-        Not synced: {sync.message} Profiles stay in this browser until a sync works.
+        Not synced. {/[.!?]$/u.test(sync.message) ? sync.message : `${sync.message}.`} Profiles stay in this browser
+        until a sync works.
       </p>
     );
   }
@@ -55,18 +57,20 @@ function ConnectForm({ profiles, repositories, onClose }: ConnectFormProps): JSX
   const [path, setPath] = useState(source.kind === 'repository' ? source.path : '');
   const [addLocal, setAddLocal] = useState(false);
   const [working, setWorking] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const error = profiles.connectError.value;
   const count = profiles.listings.value.length;
+  // Adding is offered only for another place than the profiles are in now.
+  const same =
+    source.kind === 'repository' &&
+    source.repository.toLowerCase() === repository.trim().toLowerCase() &&
+    source.path === path.trim().replace(/^\/+|\/+$/gu, '');
 
   const connect = async (): Promise<void> => {
     setWorking(true);
-    setError(undefined);
-    const problem = await profiles.connect(repository, path, addLocal);
+    const problem = await profiles.connect(repository, path, addLocal && !same);
     setWorking(false);
     if (problem === undefined) {
       onClose();
-    } else {
-      setError(problem);
     }
   };
 
@@ -118,7 +122,7 @@ function ConnectForm({ profiles, repositories, onClose }: ConnectFormProps): JSX
           Only YAML files sync, from this folder and the folders in it. Hidden folders such as .github stay out.
         </span>
       </label>
-      {count > 0 && (
+      {count > 0 && !same && (
         <label class="check">
           <input
             type="checkbox"
@@ -160,11 +164,10 @@ interface SettingsProps {
   readonly user: User;
   readonly profiles: Profiles;
   readonly repositories: Repositories;
-  /** Whether the browser keeps files between visits. */
-  readonly keepsFiles: boolean;
+  readonly keeping: Keeping;
 }
 
-export function SettingsPage({ account, user, profiles, repositories, keepsFiles }: SettingsProps): JSX.Element {
+export function SettingsPage({ account, user, profiles, repositories, keeping }: SettingsProps): JSX.Element {
   const [connecting, setConnecting] = useState(false);
   const source = profiles.source.value;
   const busy = profiles.busy.value;
@@ -234,6 +237,11 @@ export function SettingsPage({ account, user, profiles, repositories, keepsFiles
             </div>
           ) : (
             <div class="settings">
+              {profiles.connectError.value !== undefined && (
+                <p class="setting-row problem" role="alert">
+                  Couldn't use the repository: {profiles.connectError.value}
+                </p>
+              )}
               <div class="setting-row">
                 <div class="setting-text">
                   <strong>{onGitHub ? 'In a GitHub repository' : 'In this browser'}</strong>
@@ -244,9 +252,9 @@ export function SettingsPage({ account, user, profiles, repositories, keepsFiles
                     </span>
                   ) : (
                     <span class="muted small">
-                      {keepsFiles
-                        ? 'Only this browser has them. Clearing the site’s data deletes them.'
-                        : 'This browser keeps no files for the site, so they last until the tab closes.'}
+                      {keeping === 'visit-only'
+                        ? 'This browser keeps no files for the site, so they last until the tab closes.'
+                        : 'Only this browser has them. Clearing the site’s data deletes them.'}
                     </span>
                   )}
                   <SyncNote profiles={profiles} />

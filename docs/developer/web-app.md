@@ -160,8 +160,18 @@ visits: it loads what IndexedDB holds into memory before the app draws, then
 writes each change there in order, by the file's path. So a working copy,
 with saves that haven't reached GitHub, is there on the next visit. The
 engine's temporary files are not kept. In a browser that gives the site no
-storage, the files last for the visit, and Settings says so. A change that
-can't be kept, such as when storage is full, is reported to the console.
+storage, the files last for the visit, and Settings says so.
+
+What is kept must be the files as they were at one moment, or a later sync
+can take a profile the browser lost for one the user deleted. So one tab
+keeps the files at a time, under a Web Lock that it holds until it closes,
+and a second tab shows a page that says so. And the first change that can't
+be kept, such as when storage is full, is the last one tried: a notice says
+that changes last until the tab closes.
+[State machines](state-machines.md#web-kept-files) lists the states.
+
+The profiles belong to the browser, not to the signed-in account, as a
+folder on disk does for the CLI.
 
 ## Headers
 

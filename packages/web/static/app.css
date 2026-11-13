@@ -633,6 +633,10 @@ input[type='checkbox'] {
   cursor: pointer;
 }
 
+.shell-notice {
+  margin: 16px 24px 0;
+}
+
 .nav-link-end {
   margin-inline-start: auto;
 }

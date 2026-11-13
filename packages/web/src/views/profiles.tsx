@@ -34,6 +34,7 @@ function Folder({ node, profiles }: { readonly node: ProfileFolderNode; readonly
             class="tree-item tree-folder"
             type="button"
             aria-expanded={folder.open}
+            aria-label={`${folder.name}, ${folder.count} ${folder.count === 1 ? 'profile' : 'profiles'}`}
             onClick={() => {
               profiles.toggleFolder(folder.path);
             }}
@@ -86,7 +87,6 @@ function Profile({
           <button
             class="button"
             type="button"
-            aria-pressed={showYaml}
             onClick={() => {
               setShowYaml(!showYaml);
             }}
@@ -101,7 +101,7 @@ function Profile({
         </p>
       )}
       {showYaml && opened?.file === listing.file && (
-        <pre class="code" tabIndex={0} aria-label={`${listing.name} as YAML`}>
+        <pre class="code" role="region" tabIndex={0} aria-label={`${listing.name} as YAML`}>
           {opened.text}
         </pre>
       )}

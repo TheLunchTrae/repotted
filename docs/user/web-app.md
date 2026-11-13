@@ -7,6 +7,10 @@ The web app signs in, lists your repositories, and shows your profiles. To
 write profiles, compare, and apply, use the [desktop app](desktop.md) or the
 [command line](cli.md).
 
+Use Repotted in one tab at a time. A second tab says that Repotted is open
+in another one, so that two tabs can't save over each other's profiles;
+close the first and click **Reload**.
+
 ## Sign in
 
 Click **Sign in with GitHub** and approve the Repotted App on GitHub. The
@@ -58,7 +62,7 @@ them, and clearing the site's data deletes them. To have them follow you to
 any browser, keep them in a GitHub repository instead. In
 [Settings](#settings), click **Use a GitHub repository…**, name the
 repository, and optionally a folder in it. An empty repository works: tick
-**Add the profiles from this browser** to start it with them. The Repotted
+the box that adds the profiles from this browser to start it with them. The Repotted
 App must be installed on the repository with the Contents permission.
 
 From then on, **Sync now** in Settings, or **Sync** above the profile list,
@@ -71,7 +75,9 @@ requires pull requests on that branch, for example, refuses the commit unless
 you or the Repotted App can bypass it.
 
 The browser keeps a copy of the repository's profiles, so they are there when
-you come back. **Use this browser** in Settings goes back to profiles kept in
+you come back. Profiles belong to the browser, so anyone who signs in to
+Repotted on it sees them; on a shared computer, use a private window or keep
+none there. **Use this browser** in Settings goes back to profiles kept in
 the browser alone; the repository keeps every profile it has.
 
 ## Settings

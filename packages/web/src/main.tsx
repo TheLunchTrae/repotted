@@ -22,7 +22,10 @@ if (reason !== null) {
 run(account.load(signInFailure(reason)));
 
 // The kept files are in memory before anything reads a profile.
-const keepsFiles = await keepFiles(browserFiles(indexedDB), reportError);
+const keeping = await keepFiles(
+  browserFiles(() => indexedDB),
+  navigator.locks,
+);
 
 render(
   <App
@@ -30,7 +33,7 @@ render(
     github={github}
     preferences={browserPreferences(() => localStorage)}
     router={new Router(location, history, window)}
-    keepsFiles={keepsFiles}
+    keeping={keeping}
   />,
   document.body,
 );

@@ -280,3 +280,47 @@ test('a refresh asked for during a connect waits its turn, then syncs with the n
   expect(profiles.sync.value).toEqual({ status: 'synced', pulled: 0, pushed: 0 });
   expect(drawn(profiles.tree.value)).toEqual(['base', 'teams/ 1', '  web']);
 });
+
+test('keeping one side settles only the conflicts that were shown', async () => {
+  const github = repository();
+  const profiles = await connected(github);
+  await writeFile(`${copy}/base.yaml`, 'repository:\n  has_wiki: true\n');
+  github.write({ 'profiles/base.yaml': 'repository:\n  has_issues: false\n' });
+  await profiles.refresh();
+  expect(profiles.conflicts.value).toEqual(['base.yaml']);
+  // Another profile changes in both places before the user answers.
+  await writeFile(`${copy}/teams/web.yaml`, base);
+  github.write({ 'profiles/teams/web.yaml': 'repository:\n  has_issues: false\n' });
+
+  await profiles.keep('local');
+
+  expect(profiles.conflicts.value).toEqual(['teams/web.yaml']);
+  expect(github.files()['profiles/teams/web.yaml']).toBe('repository:\n  has_issues: false\n');
+});
+
+test('a remembered repository whose working copy the browser lost starts over as a first sync', async () => {
+  const preferences = memory({
+    'profiles-source': { kind: 'repository', repository: 'lunch/config', path: 'profiles' },
+  });
+  const profiles = new Profiles(repository(), preferences, () => undefined);
+
+  await profiles.refresh();
+
+  expect(profiles.sync.value).toEqual({ status: 'synced', pulled: 2, pushed: 0 });
+  expect(drawn(profiles.tree.value)).toEqual(['base', 'teams/ 1', '  web']);
+});
+
+test('a sign-in refused while connecting is reported as signed out, and the reason stays for Settings', async () => {
+  const github = repository().fail(answered(401, 'Bad credentials'));
+  const signedOut = vi.fn();
+  const profiles = new Profiles(github, memory(), signedOut);
+
+  expect(await profiles.connect('lunch/config', 'profiles', false)).toBe('Bad credentials');
+
+  expect(signedOut).toHaveBeenCalledOnce();
+  expect(profiles.connectError.value).toBe('Bad credentials');
+  expect(profiles.source.value).toEqual({ kind: 'browser' });
+
+  await profiles.keepInBrowser();
+  expect(profiles.connectError.value).toBeUndefined();
+});

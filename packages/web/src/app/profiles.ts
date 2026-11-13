@@ -95,6 +95,8 @@ export class Profiles {
   /** Whether a sync, a listing, or a change of where profiles are kept is under way. */
   readonly busy = signal(false);
   readonly search = signal('');
+  /** Why the last try to keep profiles in a repository failed, until the next change of where they are kept. */
+  readonly connectError = signal<string | undefined>(undefined);
   /** The open profile's file as it is saved, once read. */
   readonly opened = signal<{ readonly file: string; readonly text: string } | undefined>(undefined);
 
@@ -173,59 +175,65 @@ export class Profiles {
    */
   connect(repository: string, path: string, addLocal: boolean): Promise<string | undefined> {
     return this.#work(async () => {
-      let source: ProfilesSource;
-      try {
-        const repo = parseRepo(repository.trim());
-        source = {
-          kind: 'repository',
-          repository: `${repo.owner}/${repo.name}`,
-          path: path.trim().replace(/^\/+|\/+$/gu, ''),
-        };
-      } catch {
-        return 'Name the repository as owner/name, such as you/repotted-config.';
-      }
-      const target = folderOf(source);
-      const from = this.folder.value;
-      const synced = await exists(join(target, syncRecord));
-      const copied: string[] = [];
-      try {
-        await mkdir(target, { recursive: true });
-        if (addLocal && from !== target) {
-          for (const file of await profileFiles(from)) {
-            if (!(await exists(join(target, file)))) {
-              await mkdir(dirname(join(target, file)), { recursive: true });
-              await writeFile(join(target, file), await readFile(join(from, file)));
-              copied.push(file);
-            }
-          }
-        }
-        const result = await syncFolder(this.#github, target, { repository: source.repository, path: source.path });
-        this.#use(source);
-        this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
-        this.conflicts.value = result.conflicts;
-        await this.#list();
-        return undefined;
-      } catch (error) {
-        // A copy that never synced goes whole; one that had keeps all but what this try copied in.
-        if (synced) {
-          for (const file of copied) {
-            await rm(join(target, file), { force: true });
-          }
-        } else {
-          await rm(target, { recursive: true, force: true });
-        }
-        if (isSignedOut(error)) {
-          this.#onSignedOut();
-        }
-        return messageOf(error);
-      }
+      this.connectError.value = await this.#connect(repository, path, addLocal);
+      return this.connectError.value;
     });
+  }
+
+  async #connect(repository: string, path: string, addLocal: boolean): Promise<string | undefined> {
+    let source: ProfilesSource;
+    try {
+      const repo = parseRepo(repository.trim());
+      source = {
+        kind: 'repository',
+        repository: `${repo.owner}/${repo.name}`,
+        path: path.trim().replace(/^\/+|\/+$/gu, ''),
+      };
+    } catch {
+      return 'Name the repository as owner/name, such as you/repotted-config.';
+    }
+    const target = folderOf(source);
+    const from = this.folder.value;
+    const synced = await exists(join(target, syncRecord));
+    const copied: string[] = [];
+    try {
+      await mkdir(target, { recursive: true });
+      if (addLocal && from !== target) {
+        for (const file of await profileFiles(from)) {
+          if (!(await exists(join(target, file)))) {
+            await mkdir(dirname(join(target, file)), { recursive: true });
+            await writeFile(join(target, file), await readFile(join(from, file)));
+            copied.push(file);
+          }
+        }
+      }
+      const result = await syncFolder(this.#github, target, { repository: source.repository, path: source.path });
+      this.#use(source);
+      this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
+      this.conflicts.value = result.conflicts;
+      await this.#list();
+      return undefined;
+    } catch (error) {
+      // A copy that never synced goes whole; one that had keeps all but what this try copied in.
+      if (synced) {
+        for (const file of copied) {
+          await rm(join(target, file), { force: true });
+        }
+      } else {
+        await rm(target, { recursive: true, force: true });
+      }
+      if (isSignedOut(error)) {
+        this.#onSignedOut();
+      }
+      return messageOf(error);
+    }
   }
 
   /** Keeps the profiles in this browser only from now on. A repository keeps every profile it has. */
   keepInBrowser(): Promise<void> {
     return this.#work(async () => {
       this.#use({ kind: 'browser' });
+      this.connectError.value = undefined;
       this.sync.value = { status: 'none' };
       this.conflicts.value = [];
       await this.#list();
@@ -285,7 +293,12 @@ export class Profiles {
     }
     this.sync.value = { status: 'syncing' };
     try {
-      const result = await syncFolder(this.#github, this.folder.value, options);
+      // Named each time, so a working copy the browser lost starts over as a first sync.
+      const result = await syncFolder(this.#github, this.folder.value, {
+        repository: source.repository,
+        path: source.path,
+        ...options,
+      });
       this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
       this.conflicts.value = result.conflicts;
     } catch (error) {
