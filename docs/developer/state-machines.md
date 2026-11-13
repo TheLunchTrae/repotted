@@ -236,32 +236,33 @@ whenever the list is read.
 
 ### The profile
 
-| State  | Event                                   | Next                                                                                                    |
-| ------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| None   | A profile is opened for the first time  | Loading, then Loaded with its settings, or Unreadable with why and no settings.                         |
-| Loaded | The list is read again, as after a sync | Loaded from the file as it is then, with the unsaved changes laid over it again.                        |
-| Loaded | Its file is gone from the list          | The editor goes, with its unsaved changes.                                                              |
-| Any    | Profiles are moved to another place     | Every editor goes. Unsaved changes hold the move back, with "Save or reset your unsaved changes first." |
-| Loaded | The profile is deleted                  | The editor goes, with its unsaved changes.                                                              |
+| State  | Event                                              | Next                                                                                                                                                   |
+| ------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| None   | A profile is opened for the first time             | Loading, then Loaded with its settings, or Unreadable with why and no settings.                                                                        |
+| Loaded | The list is read again, as after a sync            | Loaded from the file as it is then, with the unsaved changes laid over it again.                                                                       |
+| Loaded | The profile, or one it extends, can't be read then | Unreadable, with why and no settings. Its changes are kept and count as nothing unsaved, so they hold no move back; they show again if it reads again. |
+| Loaded | Its file is gone from the list                     | The editor goes, with its unsaved changes.                                                                                                             |
+| Any    | Profiles are moved to another place                | Every editor goes. Unsaved changes hold the move back, with "Save or reset your unsaved changes first."                                                |
+| Loaded | The profile is deleted                             | The editor goes, with its unsaved changes.                                                                                                             |
 
 ### Unsaved changes
 
 Each change is previewed through the engine's `previewProfile`, so the
 editor shows what a save would give, base profiles included.
 
-| State   | Event                                                | Next                                                                                                                   |
-| ------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Saved   | A setting is chosen or typed                         | Unsaved, previewed. A change back to what the file has is no change.                                                   |
-| Unsaved | The engine accepts the preview                       | Unsaved, with **Save** on.                                                                                             |
-| Unsaved | The engine refuses the preview                       | Unsaved, with why above **Save**, which is off. The settings show as chosen.                                           |
-| Unsaved | A slower preview ends after a later one              | Its result is dropped.                                                                                                 |
-| Any     | Text that can't be a value is typed                  | The text stays as typed with why, and **Save** is off until it is corrected or reset.                                  |
-| Unsaved | Remove on a setting this profile sets                | Unsaved: the file stops naming it, and a base profile's value shows.                                                   |
-| Unsaved | Reset on a setting, or Reset in the footer           | That setting, or all of them, as saved.                                                                                |
-| Unsaved | A setting that stands alone is set, or one beside it | The other is taken out, as with **Take the site down** and the rest of Pages.                                          |
-| Unsaved | Save                                                 | Saving: a turn in the profiles' queue. Only the settings changed are written, so what the file gained meanwhile stays. |
-| Saving  | The write ends                                       | Saved, then a sync when profiles are kept on GitHub. A change made while it ran stays unsaved.                         |
-| Saving  | The write fails                                      | Unsaved, with why.                                                                                                     |
+| State   | Event                                                | Next                                                                                                                                                                                             |
+| ------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Saved   | A setting is chosen or typed                         | Unsaved, previewed. A change back to what the file has is no change.                                                                                                                             |
+| Unsaved | The engine accepts the preview                       | Unsaved, with **Save** on.                                                                                                                                                                       |
+| Unsaved | The engine refuses the preview                       | Unsaved, with why above **Save**, which is off. Each changed setting shows as chosen, and every other as saved.                                                                                  |
+| Unsaved | A slower preview ends after a later one              | Its result is dropped.                                                                                                                                                                           |
+| Any     | A name or number is typed                            | The box keeps the text as typed until it is left. Text that can be a value is an unsaved change at each key. Text that can't stays with why, and **Save** is off until it is corrected or reset. |
+| Unsaved | Remove on a setting this profile sets                | Unsaved: the file stops naming it, and a base profile's value shows.                                                                                                                             |
+| Unsaved | Reset on a setting, or Reset in the footer           | That setting, or all of them, as saved.                                                                                                                                                          |
+| Unsaved | A setting that stands alone is set, or one beside it | The other is taken out, as with **Take the site down** and the rest of Pages.                                                                                                                    |
+| Unsaved | Save                                                 | Saving: a turn in the profiles' queue. A sync first brings in what changed on GitHub, then only the settings changed are written, so what the file gained stays, and a sync commits them.        |
+| Saving  | The write ends                                       | Saved, then a sync when profiles are kept on GitHub. A change made while it ran stays unsaved.                                                                                                   |
+| Saving  | The write fails                                      | Unsaved, with why, and **Save** on to try again. A setting changed back meanwhile to what the save was writing keeps its change.                                                                 |
 
 A setting GitHub hides for the value of the one it follows is not drawn, and
 that one counts how many such settings a profile still names. A setting

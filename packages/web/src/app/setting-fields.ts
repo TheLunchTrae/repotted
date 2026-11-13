@@ -35,10 +35,6 @@ interface FieldDetails {
   readonly dependsOn: SettingCondition | undefined;
   /** Whether setting it takes out every other setting in its section, and setting any of them takes it out. */
   readonly alone: boolean;
-  /** Other words a search finds it by. */
-  readonly synonyms: readonly string[];
-  /** Whether its lines are allowed action patterns, which the editor checks against GitHub. */
-  readonly actionPatterns: boolean;
 }
 
 export class SettingField implements FieldDetails {
@@ -53,8 +49,6 @@ export class SettingField implements FieldDetails {
   readonly emptyIsNull: boolean;
   readonly dependsOn: SettingCondition | undefined;
   readonly alone: boolean;
-  readonly synonyms: readonly string[];
-  readonly actionPatterns: boolean;
 
   constructor(details: FieldDetails) {
     this.section = details.section;
@@ -68,8 +62,6 @@ export class SettingField implements FieldDetails {
     this.emptyIsNull = details.emptyIsNull;
     this.dependsOn = details.dependsOn;
     this.alone = details.alone;
-    this.synonyms = details.synonyms;
-    this.actionPatterns = details.actionPatterns;
   }
 
   /** The setting's place in a profile: its section, then each key down to it. */
@@ -85,20 +77,12 @@ export class SettingField implements FieldDetails {
     return new SettingField({ ...this.#details(), note });
   }
 
-  also(...synonyms: string[]): SettingField {
-    return new SettingField({ ...this.#details(), synonyms });
-  }
-
   hiddenWhile(key: string, ...values: unknown[]): SettingField {
     return new SettingField({ ...this.#details(), dependsOn: { key, values, hides: true } });
   }
 
   offWhile(key: string, ...values: unknown[]): SettingField {
     return new SettingField({ ...this.#details(), dependsOn: { key, values, hides: false } });
-  }
-
-  ofActionPatterns(): SettingField {
-    return new SettingField({ ...this.#details(), actionPatterns: true });
   }
 
   standsAlone(): SettingField {
@@ -118,8 +102,6 @@ export class SettingField implements FieldDetails {
       emptyIsNull: this.emptyIsNull,
       dependsOn: this.dependsOn,
       alone: this.alone,
-      synonyms: this.synonyms,
-      actionPatterns: this.actionPatterns,
     };
   }
 }
@@ -157,8 +139,6 @@ function field(
     emptyIsNull: text.emptyIsNull ?? false,
     dependsOn: undefined,
     alone: false,
-    synonyms: [],
-    actionPatterns: false,
   });
 }
 
@@ -219,8 +199,7 @@ function runnerLabel(setup: string): SettingField {
   return text('security', `${setup}.runner_label`, 'Runner label', { emptyIsNull: true })
     .under()
     .offWhile(`${setup}.runner_type`, 'standard')
-    .noted('Used only with labeled runners. Leave it empty for no label.')
-    .also('self-hosted', 'runner');
+    .noted('Used only with labeled runners. Leave it empty for no label.');
 }
 
 function group(title: string, description: string, fields: readonly SettingField[]): SettingGroup {
@@ -235,29 +214,27 @@ export const settingSections: readonly SettingSection[] = [
   section('Repository', 'repository', [
     group(
       'About',
-      'The description, website, and visibility describe one repository, so a captured profile leaves them out. Topics, custom properties, and autolinks are edited in the YAML.',
+      'The description, website, and visibility describe one repository, so a captured profile leaves them out. Topics, custom properties, and autolinks are set in the profile file, not here.',
       [
         text('repository', 'description', 'Description', { allowsEmpty: true }),
         text('repository', 'homepage', 'Website', { allowsEmpty: true }),
-        text('repository', 'default_branch', 'Default branch').also('main', 'master', 'trunk'),
-        choice('repository', 'visibility', 'Visibility', ['Public', 'public'], ['Private', 'private'])
-          .noted('A plan says what a change of visibility does before it applies.')
-          .also('private', 'public', 'internal'),
-        onOff('repository', 'is_template', 'Template repository').also('generate from template'),
-        onOff('repository', 'allow_forking', 'Allow forking').also('forks'),
+        text('repository', 'default_branch', 'Default branch'),
+        choice('repository', 'visibility', 'Visibility', ['Public', 'public'], ['Private', 'private']).noted(
+          'A plan says what a change of visibility does before it applies.',
+        ),
+        onOff('repository', 'is_template', 'Template repository'),
+        onOff('repository', 'allow_forking', 'Allow forking'),
       ],
     ),
     group('Features', 'What the repository shows on GitHub.', [
-      onOff('repository', 'has_issues', 'Issues')
-        .also('bug tracker', 'tickets')
-        .noted(
-          'Limiting issues to collaborators and closing issues when a linked pull request merges have no API, so they are set on GitHub only.',
-        ),
-      onOff('repository', 'has_projects', 'Projects').also('boards', 'kanban'),
+      onOff('repository', 'has_issues', 'Issues').noted(
+        'Limiting issues to collaborators and closing issues when a linked pull request merges have no API, so they are set on GitHub only.',
+      ),
+      onOff('repository', 'has_projects', 'Projects'),
       onOff('repository', 'has_wiki', 'Wiki').noted(
         'Restricting editing to collaborators has no API, so it is set on GitHub only.',
       ),
-      onOff('repository', 'has_discussions', 'Discussions').also('forum', 'questions'),
+      onOff('repository', 'has_discussions', 'Discussions'),
       onOff('repository', 'has_pull_requests', 'Pull requests'),
       choice(
         'repository',
@@ -269,7 +246,6 @@ export const settingSections: readonly SettingSection[] = [
         .under()
         .hiddenWhile('has_pull_requests', false),
       onOff('repository', 'pull_request_creation_cap.enabled', 'Limit open pull requests per user')
-        .also('spam', 'cap')
         .under()
         .hiddenWhile('has_pull_requests', false)
         .noted('Exemptions by account age or merged pull requests have no API, so they are set on GitHub only.'),
@@ -281,25 +257,13 @@ export const settingSections: readonly SettingSection[] = [
         .hiddenWhile('pull_request_creation_cap.enabled', false),
     ]),
     group('Pull requests', 'How branches update and clean up after a merge.', [
-      onOff('repository', 'allow_auto_merge', 'Allow auto-merge').also('automerge'),
-      onOff('repository', 'allow_update_branch', 'Suggest updating branches').also(
-        'out of date',
-        'behind base',
-        'update branch',
-      ),
-      onOff('repository', 'delete_branch_on_merge', 'Delete head branches after merge').also(
-        'auto-delete',
-        'cleanup',
-        'remove branches',
-      ),
-      onOff('repository', 'web_commit_signoff_required', 'Require sign-off on web commits').also(
-        'dco',
-        'signoff',
-        'developer certificate of origin',
-      ),
+      onOff('repository', 'allow_auto_merge', 'Allow auto-merge'),
+      onOff('repository', 'allow_update_branch', 'Suggest updating branches'),
+      onOff('repository', 'delete_branch_on_merge', 'Delete head branches after merge'),
+      onOff('repository', 'web_commit_signoff_required', 'Require sign-off on web commits'),
     ]),
     group('Releases', "Whether a published release's tag and assets are locked.", [
-      onOff('repository', 'immutable_releases', 'Immutable releases').also('lock releases', 'tag protection'),
+      onOff('repository', 'immutable_releases', 'Immutable releases'),
     ]),
   ]),
   section('Merge', 'merge', [
@@ -307,7 +271,7 @@ export const settingSections: readonly SettingSection[] = [
       'Merge methods',
       'How pull requests can merge, and what each kind of commit says. GitHub needs at least one method, and takes only the commit title and message pairs its settings page offers.',
       [
-        onOff('merge', 'allow_merge_commit', 'Allow merge commits').also('merge button', 'no fast-forward'),
+        onOff('merge', 'allow_merge_commit', 'Allow merge commits'),
         choice(
           'merge',
           'merge_commit_title',
@@ -327,7 +291,7 @@ export const settingSections: readonly SettingSection[] = [
         )
           .under()
           .hiddenWhile('allow_merge_commit', false),
-        onOff('merge', 'allow_squash_merge', 'Allow squash merging').also('squash and merge', 'single commit'),
+        onOff('merge', 'allow_squash_merge', 'Allow squash merging'),
         choice(
           'merge',
           'squash_merge_commit_title',
@@ -347,17 +311,13 @@ export const settingSections: readonly SettingSection[] = [
         )
           .under()
           .hiddenWhile('allow_squash_merge', false),
-        onOff('merge', 'allow_rebase_merge', 'Allow rebase merging').also(
-          'rebase and merge',
-          'linear history',
-          'fast-forward',
-        ),
+        onOff('merge', 'allow_rebase_merge', 'Allow rebase merging'),
       ],
     ),
   ]),
   section('Actions', 'actions', [
     group('Policy', 'Whether workflows run, and which actions they may use.', [
-      onOff('actions', 'enabled', 'Actions').also('workflows', 'ci', 'github actions'),
+      onOff('actions', 'enabled', 'Actions'),
       choice(
         'actions',
         'allowed_actions',
@@ -367,8 +327,7 @@ export const settingSections: readonly SettingSection[] = [
         ['Selected', 'selected'],
       )
         .under()
-        .hiddenWhile('enabled', false)
-        .also('allowlist', 'third-party', 'marketplace'),
+        .hiddenWhile('enabled', false),
       onOff('actions', 'selected_actions.github_owned_allowed', 'Actions by GitHub')
         .under()
         .hiddenWhile('allowed_actions', 'all', 'local_only'),
@@ -376,15 +335,12 @@ export const settingSections: readonly SettingSection[] = [
         .under()
         .hiddenWhile('allowed_actions', 'all', 'local_only'),
       list('actions', 'selected_actions.patterns_allowed', 'Allowed action patterns')
-        .ofActionPatterns()
         .under()
         .hiddenWhile('allowed_actions', 'all', 'local_only')
-        .noted('One pattern a line, such as octo-org/*. Start one with ! to block it.')
-        .also('allowlist', 'blocklist', 'patterns', 'wildcard'),
+        .noted('One pattern a line, such as octo-org/*. Start one with ! to block it.'),
       onOff('actions', 'sha_pinning_required', 'Require pinning to a full commit SHA')
         .under()
-        .hiddenWhile('enabled', false)
-        .also('pin', 'pinned', 'supply chain'),
+        .hiddenWhile('enabled', false),
     ]),
     group('Workflow permissions', 'What the GITHUB_TOKEN may do.', [
       choice(
@@ -393,11 +349,8 @@ export const settingSections: readonly SettingSection[] = [
         'Default permissions',
         ['Read', 'read'],
         ['Read and write', 'write'],
-      ).also('github_token', 'token permissions', 'contents write'),
-      onOff('actions', 'can_approve_pull_request_reviews', 'Allow approving pull requests').also(
-        'github_token',
-        'bot approvals',
       ),
+      onOff('actions', 'can_approve_pull_request_reviews', 'Allow approving pull requests'),
     ]),
     group(
       'Access',
@@ -410,7 +363,7 @@ export const settingSections: readonly SettingSection[] = [
           ['Nowhere else', 'none'],
           ["This user's repositories", 'user'],
           ["This organization's repositories", 'organization'],
-        ).also('reusable workflows', 'share actions'),
+        ),
       ],
     ),
     group('Fork pull requests', 'When workflows from forks run, and what they get.', [
@@ -421,7 +374,7 @@ export const settingSections: readonly SettingSection[] = [
         ['New GitHub users', 'first_time_contributors_new_to_github'],
         ['First-time contributors', 'first_time_contributors'],
         ['All outside contributors', 'all_external_contributors'],
-      ).also('forks', 'first-time contributor', 'outside collaborator'),
+      ),
       onOff(
         'actions',
         'fork_pr_workflows_private_repos.run_workflows_from_fork_pull_requests',
@@ -446,51 +399,32 @@ export const settingSections: readonly SettingSection[] = [
         .offWhile('fork_pr_workflows_private_repos.run_workflows_from_fork_pull_requests', false),
     ]),
     group('Artifacts and caches', 'How long workflow output stays, and how much the cache holds.', [
-      number('actions', 'artifact_and_log_retention.days', 'Artifact and log retention, in days').also(
-        'logs',
-        'storage',
-        'expire',
-      ),
-      number('actions', 'max_cache_retention_days', 'Cache retention, in days').also('storage', 'expire'),
-      number('actions', 'max_cache_size_gb', 'Cache size limit, in GB').also('storage', 'quota'),
+      number('actions', 'artifact_and_log_retention.days', 'Artifact and log retention, in days'),
+      number('actions', 'max_cache_retention_days', 'Cache retention, in days'),
+      number('actions', 'max_cache_size_gb', 'Cache size limit, in GB'),
     ]),
     group(
       'OpenID Connect',
-      'The subject claim in the tokens workflows get from GitHub. Claim keys are edited in the YAML.',
+      'The subject claim in the tokens workflows get from GitHub. Claim keys are set in the profile file, not here.',
       [
-        onOff('actions', 'oidc_customization_sub.use_default', 'Use the default subject claim').also(
-          'oidc',
-          'openid',
-          'sub claim',
-          'cloud deploy',
-        ),
-        onOff('actions', 'oidc_customization_sub.use_immutable_subject', 'Use immutable IDs in the subject').also(
-          'oidc',
-          'openid',
-          'sub claim',
-        ),
+        onOff('actions', 'oidc_customization_sub.use_default', 'Use the default subject claim'),
+        onOff('actions', 'oidc_customization_sub.use_immutable_subject', 'Use immutable IDs in the subject'),
       ],
     ),
   ]),
   section('Security', 'security', [
     group('Advanced Security', 'GitHub shows and changes these for repository admins only.', [
-      feature('advanced_security', 'GitHub Advanced Security').also('ghas'),
+      feature('advanced_security', 'GitHub Advanced Security'),
       feature('code_security', 'GitHub Code Security'),
-      onOff('security', 'private_vulnerability_reporting', 'Private vulnerability reporting').also(
-        'security advisories',
-        'report a vulnerability',
-      ),
+      onOff('security', 'private_vulnerability_reporting', 'Private vulnerability reporting'),
     ]),
     group('Dependabot', 'Alerts and pull requests for vulnerable dependencies.', [
-      onOff('security', 'vulnerability_alerts', 'Dependabot alerts')
-        .also('vulnerable dependencies', 'cve', 'security alerts')
-        .noted(
-          'Malware alerts, Dependabot rules, and preventing direct dismissals have no API here, so they are set on GitHub or in a security configuration.',
-        ),
+      onOff('security', 'vulnerability_alerts', 'Dependabot alerts').noted(
+        'Malware alerts, Dependabot rules, and preventing direct dismissals have no API here, so they are set on GitHub or in a security configuration.',
+      ),
       onOff('security', 'automated_security_fixes', 'Dependabot security updates')
         .under()
         .offWhile('vulnerability_alerts', false)
-        .also('dependabot pull requests', 'automatic fixes')
         .noted('Grouping security updates has no API; groups in dependabot.yml do it instead.'),
       choice(
         'security',
@@ -498,27 +432,22 @@ export const settingSections: readonly SettingSection[] = [
         'Dependabot runners',
         ['Standard', 'standard'],
         ['Labeled', 'labeled'],
-      )
-        .noted('Runner labels are edited in the YAML.')
-        .also('self-hosted'),
+      ).noted('Runner labels are set in the profile file, not here.'),
       text('security', 'dependabot_runner_settings.runner_group', 'Runner group', { allowsEmpty: true })
         .under()
         .offWhile('dependabot_runner_settings.runner_type', 'standard')
-        .noted('Used only with labeled runners. Leave it empty for no group.')
-        .also('self-hosted', 'runner'),
+        .noted('Used only with labeled runners. Leave it empty for no group.'),
     ]),
-    group('Code scanning', 'Finds problems in the code with CodeQL. Languages are edited in the YAML.', [
+    group('Code scanning', 'Finds problems in the code with CodeQL. Languages are set in the profile file, not here.', [
       choice(
         'security',
         'code_scanning_default_setup.state',
         'Default setup',
         ['Configured', 'configured'],
         ['Not configured', 'not-configured'],
-      )
-        .noted(
-          'Copilot Autofix, Agentic Autofix, and preventing direct dismissals have no API here, so they are set on GitHub or in a security configuration.',
-        )
-        .also('codeql', 'sast', 'static analysis'),
+      ).noted(
+        'Copilot Autofix, Agentic Autofix, and preventing direct dismissals have no API here, so they are set on GitHub or in a security configuration.',
+      ),
       choice(
         'security',
         'code_scanning_default_setup.query_suite',
@@ -536,8 +465,7 @@ export const settingSections: readonly SettingSection[] = [
         ['Remote and local', 'remote_and_local'],
       )
         .under()
-        .hiddenWhile('code_scanning_default_setup.state', 'not-configured')
-        .also('codeql'),
+        .hiddenWhile('code_scanning_default_setup.state', 'not-configured'),
       choice(
         'security',
         'code_scanning_default_setup.runner_type',
@@ -546,8 +474,7 @@ export const settingSections: readonly SettingSection[] = [
         ['Labeled', 'labeled'],
       )
         .under()
-        .hiddenWhile('code_scanning_default_setup.state', 'not-configured')
-        .also('self-hosted'),
+        .hiddenWhile('code_scanning_default_setup.state', 'not-configured'),
       runnerLabel('code_scanning_default_setup'),
       choice(
         'security',
@@ -557,46 +484,43 @@ export const settingSections: readonly SettingSection[] = [
         ['Off', 'disabled'],
       ),
     ]),
-    group('Code quality', 'Finds maintainability and reliability problems. Languages are edited in the YAML.', [
-      choice(
-        'security',
-        'code_quality_setup.state',
-        'Code quality',
-        ['Configured', 'configured'],
-        ['Not configured', 'not-configured'],
-      ),
-      choice(
-        'security',
-        'code_quality_setup.ai_findings_option',
-        'AI findings',
-        ['Off', 'disabled'],
-        ['On push', 'on_push'],
-      )
-        .under()
-        .hiddenWhile('code_quality_setup.state', 'not-configured'),
-      choice(
-        'security',
-        'code_quality_setup.runner_type',
-        'Runner type',
-        ['Standard', 'standard'],
-        ['Labeled', 'labeled'],
-      )
-        .under()
-        .hiddenWhile('code_quality_setup.state', 'not-configured')
-        .also('self-hosted'),
-      runnerLabel('code_quality_setup'),
-    ]),
+    group(
+      'Code quality',
+      'Finds maintainability and reliability problems. Languages are set in the profile file, not here.',
+      [
+        choice(
+          'security',
+          'code_quality_setup.state',
+          'Code quality',
+          ['Configured', 'configured'],
+          ['Not configured', 'not-configured'],
+        ),
+        choice(
+          'security',
+          'code_quality_setup.ai_findings_option',
+          'AI findings',
+          ['Off', 'disabled'],
+          ['On push', 'on_push'],
+        )
+          .under()
+          .hiddenWhile('code_quality_setup.state', 'not-configured'),
+        choice(
+          'security',
+          'code_quality_setup.runner_type',
+          'Runner type',
+          ['Standard', 'standard'],
+          ['Labeled', 'labeled'],
+        )
+          .under()
+          .hiddenWhile('code_quality_setup.state', 'not-configured'),
+        runnerLabel('code_quality_setup'),
+      ],
+    ),
     group('Secret scanning', 'Finds secrets pushed to the repository.', [
-      feature('secret_scanning', 'Secret Protection').also(
-        'secret scanning',
-        'leaked secrets',
-        'credentials',
-        'tokens',
-      ),
+      feature('secret_scanning', 'Secret Protection'),
       feature('secret_scanning_push_protection', 'Push protection')
         .under()
         .offWhile('security_and_analysis.secret_scanning', disabled)
-        .also('block secrets')
         .noted('Push protection for AI-detected secrets is set only in a security configuration.'),
       feature('secret_scanning_ai_detection', 'AI detection')
         .under()
@@ -614,28 +538,21 @@ export const settingSections: readonly SettingSection[] = [
       feature('secret_scanning_delegated_bypass', 'Delegated bypass')
         .under()
         .offWhile('security_and_analysis.secret_scanning', disabled)
-        .noted('Who can approve a bypass is edited in the YAML.'),
+        .noted('Who can approve a bypass is set in the profile file, not here.'),
     ]),
   ]),
   section('Pages', 'pages', [
     group('GitHub Pages', 'The site GitHub publishes from the repository.', [
       custom('pages', 'absent', 'Take the site down', [['Yes', true]])
         .standsAlone()
-        .also('unpublish', 'delete site')
         .noted('It deletes the site on each repository. Remove it to describe a site instead.'),
-      choice('pages', 'build_type', 'Build from', ['A branch', 'legacy'], ['GitHub Actions', 'workflow']).also(
-        'jekyll',
-        'static site',
-        'website',
-      ),
+      choice('pages', 'build_type', 'Build from', ['A branch', 'legacy'], ['GitHub Actions', 'workflow']),
       text('pages', 'source.branch', 'Branch').under().hiddenWhile('build_type', 'workflow'),
       choice('pages', 'source.path', 'Folder', ['/ (root)', '/'], ['/docs', '/docs'])
         .under()
         .hiddenWhile('build_type', 'workflow'),
-      text('pages', 'cname', 'Custom domain')
-        .also('cname', 'dns', 'website')
-        .noted('To clear a domain, set cname to null in the YAML.'),
-      onOff('pages', 'https_enforced', 'Enforce HTTPS').also('ssl', 'tls', 'certificate'),
+      text('pages', 'cname', 'Custom domain').noted('To clear a domain, set cname to null in the profile file.'),
+      onOff('pages', 'https_enforced', 'Enforce HTTPS'),
       custom('pages', 'public', 'Who can see the site', [
         ['Everyone', true],
         ['People with access', false],

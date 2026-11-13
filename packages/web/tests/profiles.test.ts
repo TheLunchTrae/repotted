@@ -678,3 +678,59 @@ test('a deleted profile takes its unsaved changes with it', async () => {
   expect(profiles.unsaved.value.size).toBe(0);
   expect(profiles.editor.value).toBeUndefined();
 });
+
+test('an editor goes with its profile when a sync removes it, and every editor goes when profiles move', async () => {
+  const github = repository();
+  const profiles = await connected(github);
+  const [first] = profiles.listings.value;
+  await profiles.select(first);
+  const editor = profiles.editor.value;
+  expect(editor?.file).toBe(`${copy}/base.yaml`);
+
+  github.write({ 'profiles/base.yaml': null, 'profiles/teams/web.yaml': base });
+  await profiles.refresh();
+  expect(profiles.editor.value).toBeUndefined();
+
+  await profiles.select(profiles.listings.value[0]);
+  const web = profiles.editor.value;
+  await profiles.keepInBrowser();
+  await profiles.connect('lunch/config', 'profiles', false);
+  await profiles.select(profiles.listings.value[0]);
+  expect(profiles.editor.value).toBeDefined();
+  expect(profiles.editor.value).not.toBe(web);
+});
+
+test('unsaved changes hold back a move to another repository, and a save waits its turn behind a sync', async () => {
+  const github = repository();
+  const held = { gate: Promise.resolve<undefined>(undefined) };
+  const request: FakeGitRepository['request'] = async (method, path, body) => {
+    await held.gate;
+    return github.request(method, path, body);
+  };
+  const profiles = new Profiles({ request }, memory(), () => undefined);
+  await profiles.connect('lunch/config', 'profiles', false);
+  await profiles.select(profiles.listings.value[0]);
+  const editor = profiles.editor.value;
+  const wiki = editor?.sections.value
+    .flatMap((section) => section.groups.flatMap((group) => group.rows))
+    .find((row) => row.field.key === 'has_wiki')?.field;
+  if (editor === undefined || wiki === undefined) {
+    throw new Error('The open profile should have an editor with a wiki setting.');
+  }
+  await editor.set(wiki, true);
+
+  expect(await profiles.connect('lunch/other', '', false)).toBe('Save or reset your unsaved changes first.');
+  expect(profiles.source.value).toMatchObject({ repository: 'lunch/config' });
+
+  const release = Promise.withResolvers<undefined>();
+  held.gate = release.promise;
+  const syncing = profiles.refresh();
+  const saving = profiles.save();
+  expect(editor.saving.value).toBe(true);
+  expect(await readFile(`${copy}/base.yaml`, 'utf8')).toBe(base);
+  release.resolve(undefined);
+  await Promise.all([syncing, saving]);
+
+  expect(github.files()['profiles/base.yaml']).toBe('repository:\n  has_wiki: true\n');
+  expect(editor.dirty.value).toBe(false);
+});

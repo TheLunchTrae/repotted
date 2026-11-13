@@ -25,7 +25,6 @@ test('a preview that ends after a later one does not replace what the later one 
   if (wiki === undefined) {
     throw new Error('The editor should offer the wiki setting.');
   }
-  const actual = vi.mocked(previewProfile).getMockImplementation();
   const held = Promise.withResolvers<undefined>();
   vi.mocked(previewProfile).mockImplementationOnce(async (file, edits) => {
     await held.promise;
@@ -38,7 +37,6 @@ test('a preview that ends after a later one does not replace what the later one 
   held.resolve(undefined);
   await slow;
 
-  expect(actual).toBeDefined();
   expect(editor.problem.value).toBeUndefined();
   expect(editor.dirty.value).toBe(false);
 });

@@ -1,16 +1,12 @@
 import type { JSX } from 'preact';
-import { useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 
-import type { ProfileEditor, SettingRow } from '../app/profile-editor.js';
+import { type ProfileEditor, sameValue, type SettingRow } from '../app/profile-editor.js';
 import type { Profiles } from '../app/profiles.js';
 import { run } from './run.js';
 
-function sameValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
 function Control({ row, editor }: { readonly row: SettingRow; readonly editor: ProfileEditor }): JSX.Element {
-  const { field, value, invalid } = row;
+  const { field, value, invalid, text } = row;
   const id = `setting-${field.path.join('-')}`;
   if (field.kind === 'choice') {
     return (
@@ -44,9 +40,12 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
         aria-labelledby={`${id}-label`}
         aria-invalid={invalid !== undefined}
         disabled={row.off}
-        value={invalid?.text ?? (Array.isArray(value) ? value.join('\n') : '')}
-        onChange={(event) => {
+        value={text ?? (Array.isArray(value) ? value.join('\n') : '')}
+        onInput={(event) => {
           typed(event.currentTarget.value);
+        }}
+        onBlur={() => {
+          editor.settle(field);
         }}
       />
     );
@@ -60,9 +59,12 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
       aria-invalid={invalid !== undefined}
       disabled={row.off}
       placeholder={value === undefined ? 'Not managed' : undefined}
-      value={invalid?.text ?? (typeof value === 'string' || typeof value === 'number' ? String(value) : '')}
-      onChange={(event) => {
+      value={text ?? (typeof value === 'string' || typeof value === 'number' ? String(value) : '')}
+      onInput={(event) => {
         typed(event.currentTarget.value);
+      }}
+      onBlur={() => {
+        editor.settle(field);
       }}
     />
   );
@@ -120,7 +122,7 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
       </div>
       {row.invalid !== undefined && (
         <p class="problem small" role="alert">
-          {row.invalid.problem}
+          {row.invalid}
         </p>
       )}
       {row.hiddenNamed > 0 && (
@@ -145,11 +147,22 @@ export function ProfileSettings({
   const sections = editor.sections.value;
   const [tab, setTab] = useState(sections[0]?.section.section ?? '');
   const shown = sections.find((item) => item.section.section === tab) ?? sections[0];
-  const problem = editor.problem.value;
+  const problem = editor.problem.value ?? editor.saveError.value;
+  const tabs = useRef<HTMLDivElement>(null);
+  // The arrow keys move between tabs, as in a tab list, and only the shown tab is a Tab stop.
+  const move = (event: KeyboardEvent, index: number): void => {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    const next = sections[(index + step + sections.length) % sections.length];
+    if (step !== 0 && next !== undefined) {
+      event.preventDefault();
+      setTab(next.section.section);
+      tabs.current?.querySelector<HTMLElement>(`#tab-${next.section.section}`)?.focus();
+    }
+  };
   return (
     <>
-      <div class="tabs" role="tablist" aria-label="Settings">
-        {sections.map(({ section, groups }) => {
+      <div class="tabs" role="tablist" aria-label="Settings" ref={tabs}>
+        {sections.map(({ section, groups }, index) => {
           const unsaved = groups.some((group) => group.rows.some((row) => row.unsaved || row.invalid !== undefined));
           return (
             <button
@@ -160,12 +173,21 @@ export function ProfileSettings({
               id={`tab-${section.section}`}
               aria-selected={shown?.section === section}
               aria-controls="settings-panel"
+              tabIndex={shown?.section === section ? 0 : -1}
               onClick={() => {
                 setTab(section.section);
               }}
+              onKeyDown={(event) => {
+                move(event, index);
+              }}
             >
               {section.name}
-              {unsaved && <span class="dot" aria-label="not saved yet" />}
+              {unsaved && (
+                <>
+                  <span class="dot" aria-hidden="true" />
+                  <span class="visually-hidden">, not saved yet</span>
+                </>
+              )}
             </button>
           );
         })}

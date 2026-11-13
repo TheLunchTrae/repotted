@@ -107,16 +107,17 @@ repository that follows the profile. Choosing it takes out the profile's
 other Pages settings, and setting any of them takes it out again.
 
 The bar under the settings saves them. **Save** writes your changes to the
-profile, and commits them when profiles are kept on GitHub; only the settings
-you changed are written, so a change made elsewhere to another setting
-stays. If the changes can't make a valid profile, such as one with every
+profile. When profiles are kept on GitHub, it first brings in what changed
+there and then commits yours; only the settings you changed are written, so
+a change made elsewhere to another setting stays. If the changes can't make a valid profile, such as one with every
 merge method off, the bar says why and **Save** waits. **Reset** in the bar
 puts the whole profile back as it was saved.
 
 Changes you haven't saved stay while you look at another profile, which is
 marked **Not saved** in the list. Moving your profiles to another place waits
-until you save or reset them. Deleting a profile discards its unsaved
-changes.
+until you save or reset them, and the browser asks before a reload or a
+closed tab discards them. Deleting a profile discards its unsaved changes,
+and so does a sync that finds the profile deleted or renamed on GitHub.
 
 Topics, custom properties, autolinks, rulesets, environments, and labels are
 not edited here yet.

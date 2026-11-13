@@ -23,8 +23,10 @@ export interface SettingRow {
   readonly unsaved: boolean;
   /** Whether GitHub greys it out for the value of the setting it follows. */
   readonly off: boolean;
-  /** What was typed for it, while that can't be a value, and why. */
-  readonly invalid: { readonly text: string; readonly problem: string } | undefined;
+  /** What is being typed for it, as typed, until the box is left. */
+  readonly text: string | undefined;
+  /** Why what was typed can't be a value, which holds the save back. */
+  readonly invalid: string | undefined;
   /** How many settings under it GitHub hides for its value while a profile still names them. */
   readonly hiddenNamed: number;
 }
@@ -41,7 +43,8 @@ function getIn(value: unknown, keys: readonly string[]): unknown {
   );
 }
 
-function sameValue(left: unknown, right: unknown): boolean {
+/** Whether two setting values are the same, as plain data. */
+export function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -94,6 +97,13 @@ function parse(field: SettingField, text: string): { readonly value: unknown } |
   return { value: trimmed };
 }
 
+/** Every setting of one section, in the editor's order. */
+function fieldsOf(section: string): readonly SettingField[] {
+  return settingSections
+    .flatMap((item) => item.groups.flatMap((group) => group.fields))
+    .filter((item) => item.section === section);
+}
+
 /**
  * The open profile's settings and the changes to them that aren't saved.
  * Every change is previewed through the engine as it is made, so the editor
@@ -104,15 +114,20 @@ export class ProfileEditor {
   readonly file: string;
   /** Why the profile can't be read. */
   readonly loadError = signal<string | undefined>(undefined);
-  /** Why the unsaved changes can't be saved as they stand, or why the last save failed. */
+  /** Why the unsaved changes can't be saved as they stand. */
   readonly problem = signal<string | undefined>(undefined);
+  /** Why the last save failed, until the next save or change. */
+  readonly saveError = signal<string | undefined>(undefined);
   readonly saving = signal(false);
 
   readonly #saved = signal<ResolvedProfile | undefined>(undefined);
   /** The profile as a save would leave it, while there are unsaved changes the engine accepts. */
   readonly #preview = signal<ResolvedProfile | undefined>(undefined);
   readonly #edits = signal<ReadonlyMap<string, SettingEdit>>(new Map());
-  readonly #invalid = signal<ReadonlyMap<string, { readonly text: string; readonly problem: string }>>(new Map());
+  /** What is being typed in each box, with why it can't be a value when it can't. */
+  readonly #typed = signal<ReadonlyMap<string, { readonly text: string; readonly problem: string | undefined }>>(
+    new Map(),
+  );
   /** The changes a save under way is writing, which the file has as soon as it ends. */
   #writing: ReadonlyMap<string, SettingEdit> = new Map();
   /** Counts previews, so a slow one never replaces a later one's result. */
@@ -122,19 +137,24 @@ export class ProfileEditor {
     this.file = file;
   }
 
-  /** Whether any change, typed or chosen, isn't saved. */
-  readonly dirty = computed(() => this.#edits.value.size > 0 || this.#invalid.value.size > 0);
+  /** Whether the profile has been read. */
+  readonly loaded = computed(() => this.#saved.value !== undefined);
+
+  /**
+   * Whether any change, typed or chosen, isn't saved. A profile that can't be
+   * read counts for nothing, since it offers no way to save or reset; its
+   * changes come back if it reads again.
+   */
+  readonly dirty = computed(() => this.loaded.value && (this.#edits.value.size > 0 || this.#refused.value));
 
   readonly canSave = computed(
     () =>
+      this.loaded.value &&
       this.#edits.value.size > 0 &&
-      this.#invalid.value.size === 0 &&
+      !this.#refused.value &&
       this.problem.value === undefined &&
       !this.saving.value,
   );
-
-  /** Whether the profile has been read. */
-  readonly loaded = computed(() => this.#saved.value !== undefined);
 
   /** Each tab's groups and settings, as they stand with the unsaved changes. */
   readonly sections = computed(() =>
@@ -144,6 +164,9 @@ export class ProfileEditor {
     })),
   );
 
+  /** Whether something typed can't be a value. */
+  readonly #refused = computed(() => [...this.#typed.value.values()].some((typed) => typed.problem !== undefined));
+
   /** Reads the profile as it is saved, and lays the unsaved changes over it again. */
   async load(): Promise<void> {
     try {
@@ -151,6 +174,7 @@ export class ProfileEditor {
       this.loadError.value = undefined;
     } catch (error) {
       this.#saved.value = undefined;
+      this.#preview.value = undefined;
       this.loadError.value = reasonOf(error, this.file);
       return;
     }
@@ -159,6 +183,93 @@ export class ProfileEditor {
 
   /** Sets a setting in this profile, or with undefined stops setting it here, so a base profile's value applies. */
   async set(field: SettingField, value: unknown): Promise<void> {
+    this.#forget(field);
+    await this.#change(field, value);
+  }
+
+  /**
+   * Takes what is being typed for a number, text, or list setting, as each
+   * key is pressed. The box keeps the text as typed until `settle`. Text
+   * that can't be a value says why and holds the save back.
+   */
+  async type(field: SettingField, text: string): Promise<void> {
+    const parsed = parse(field, text);
+    const typed = new Map(this.#typed.value);
+    typed.set(keyOf(field.path), { text, problem: 'problem' in parsed ? parsed.problem : undefined });
+    this.#typed.value = typed;
+    if ('value' in parsed) {
+      await this.#change(field, parsed.value);
+    }
+  }
+
+  /** The box was left: what was typed shows as its value from now on, unless it can't be one. */
+  settle(field: SettingField): void {
+    if (this.#typed.value.get(keyOf(field.path))?.problem === undefined) {
+      this.#forget(field);
+    }
+  }
+
+  /** Puts a setting back as it is saved. */
+  async reset(field: SettingField): Promise<void> {
+    const edits = new Map(this.#edits.value);
+    edits.delete(keyOf(field.path));
+    this.#forget(field);
+    this.#edits.value = edits;
+    this.saveError.value = undefined;
+    await this.#previewEdits();
+  }
+
+  /** Puts the whole profile back as it is saved. */
+  async resetAll(): Promise<void> {
+    this.#edits.value = new Map();
+    this.#typed.value = new Map();
+    this.saveError.value = undefined;
+    await this.#previewEdits();
+  }
+
+  /**
+   * Writes the unsaved changes to the file through `write`, which gives the
+   * save its turn among syncs. Only the settings changed are written, so
+   * what the file gained meanwhile stays. A save that fails keeps the
+   * changes, with why, and can be tried again.
+   */
+  async save(write: (work: () => Promise<void>) => Promise<void>): Promise<void> {
+    if (!this.canSave.value) {
+      return;
+    }
+    this.saving.value = true;
+    this.saveError.value = undefined;
+    const writing = this.#edits.value;
+    this.#writing = writing;
+    try {
+      await write(async () => {
+        this.#saved.value = await editProfile(this.file, [...writing.values()]);
+      });
+      // Changes made while the save ran stay unsaved.
+      const left = new Map(this.#edits.value);
+      for (const [key, edit] of writing) {
+        if (left.get(key) === edit) {
+          left.delete(key);
+        }
+      }
+      this.#edits.value = left;
+    } catch (error) {
+      // A setting changed back, while the save ran, to what the save was writing lost its
+      // edit as no change. The save wrote nothing, so that edit stands again.
+      const edits = new Map(writing);
+      for (const [key, edit] of this.#edits.value) {
+        edits.set(key, edit);
+      }
+      this.#edits.value = edits;
+      this.saveError.value = reasonOf(error, this.file);
+    } finally {
+      this.#writing = new Map();
+      this.saving.value = false;
+    }
+    await this.#previewEdits();
+  }
+
+  async #change(field: SettingField, value: unknown): Promise<void> {
     const edits = new Map(this.#edits.value);
     const change = (target: SettingField, next: unknown): void => {
       const key = keyOf(target.path);
@@ -173,94 +284,22 @@ export class ProfileEditor {
     change(field, value);
     if (value !== undefined) {
       // A setting that stands alone and the rest of its section take each other out.
-      for (const other of this.#fields(field.section)) {
-        if (other !== field && (field.alone || other.alone) && this.#current(other, edits) !== undefined) {
+      for (const other of fieldsOf(field.section)) {
+        if (other !== field && (field.alone || other.alone) && this.#valueOf(other, edits) !== undefined) {
           change(other, undefined);
         }
       }
     }
-    this.#forget(field);
     this.#edits.value = edits;
+    this.saveError.value = undefined;
     await this.#previewEdits();
-  }
-
-  /**
-   * Takes what was typed for a number, text, or list setting. Text that
-   * can't be a value stays as typed, with why, and holds the save back.
-   */
-  async type(field: SettingField, text: string): Promise<void> {
-    const parsed = parse(field, text);
-    if ('problem' in parsed) {
-      const invalid = new Map(this.#invalid.value);
-      invalid.set(keyOf(field.path), { text, problem: parsed.problem });
-      this.#invalid.value = invalid;
-      return;
-    }
-    await this.set(field, parsed.value);
-  }
-
-  /** Puts a setting back as it is saved. */
-  async reset(field: SettingField): Promise<void> {
-    const edits = new Map(this.#edits.value);
-    edits.delete(keyOf(field.path));
-    this.#forget(field);
-    this.#edits.value = edits;
-    await this.#previewEdits();
-  }
-
-  /** Puts the whole profile back as it is saved. */
-  async resetAll(): Promise<void> {
-    this.#edits.value = new Map();
-    this.#invalid.value = new Map();
-    await this.#previewEdits();
-  }
-
-  /**
-   * Writes the unsaved changes to the file through `write`, which gives the
-   * save its turn among syncs. Only the settings changed are written, so
-   * what the file gained meanwhile stays. A save that fails keeps the
-   * changes, with why.
-   */
-  async save(write: (work: () => Promise<void>) => Promise<void>): Promise<void> {
-    if (!this.canSave.value) {
-      return;
-    }
-    this.saving.value = true;
-    const edits = [...this.#edits.value.values()];
-    this.#writing = this.#edits.value;
-    try {
-      await write(async () => {
-        this.#saved.value = await editProfile(this.file, edits);
-      });
-      // Changes made while the save ran stay unsaved.
-      const left = new Map(this.#edits.value);
-      for (const edit of edits) {
-        if (left.get(keyOf(edit.path)) === edit) {
-          left.delete(keyOf(edit.path));
-        }
-      }
-      this.#edits.value = left;
-    } catch (error) {
-      this.problem.value = reasonOf(error, this.file);
-      return;
-    } finally {
-      this.#writing = new Map();
-      this.saving.value = false;
-    }
-    await this.#previewEdits();
-  }
-
-  #fields(section: string): readonly SettingField[] {
-    return settingSections
-      .flatMap((item) => item.groups.flatMap((group) => group.fields))
-      .filter((item) => item.section === section);
   }
 
   #forget(field: SettingField): void {
-    if (this.#invalid.value.has(keyOf(field.path))) {
-      const invalid = new Map(this.#invalid.value);
-      invalid.delete(keyOf(field.path));
-      this.#invalid.value = invalid;
+    if (this.#typed.value.has(keyOf(field.path))) {
+      const typed = new Map(this.#typed.value);
+      typed.delete(keyOf(field.path));
+      this.#typed.value = typed;
     }
   }
 
@@ -271,16 +310,20 @@ export class ProfileEditor {
     return saved !== undefined && source === saved.chain[0] ? getIn(saved.profile, field.path) : undefined;
   }
 
-  /** What applies for a setting given these edits, before any preview of them. */
-  #current(field: SettingField, edits: ReadonlyMap<string, { readonly value: unknown }>): unknown {
+  /**
+   * What applies for a setting with these edits: the edit's value, or for a
+   * setting with no edit, or one an edit stops setting here, what the
+   * previewed profile has, which is the saved one while a preview is refused.
+   */
+  #valueOf(field: SettingField, edits: ReadonlyMap<string, SettingEdit>): unknown {
     const edit = edits.get(keyOf(field.path));
-    return edit === undefined ? getIn((this.#preview.value ?? this.#saved.value)?.profile, field.path) : edit.value;
+    return edit?.value ?? getIn((this.#preview.value ?? this.#saved.value)?.profile, field.path);
   }
 
   async #previewEdits(): Promise<void> {
     const turn = (this.#previews += 1);
     const edits = [...this.#edits.value.values()];
-    if (edits.length === 0) {
+    if (edits.length === 0 || this.#saved.value === undefined) {
       this.#preview.value = undefined;
       this.problem.value = undefined;
       return;
@@ -293,6 +336,8 @@ export class ProfileEditor {
       }
     } catch (error) {
       if (turn === this.#previews) {
+        // No profile to show but the saved one, with each edit laid over its own setting.
+        this.#preview.value = undefined;
         this.problem.value = reasonOf(error, this.file);
       }
     }
@@ -304,38 +349,36 @@ export class ProfileEditor {
       return [];
     }
     const edits = this.#edits.value;
-    const value = (field: SettingField): unknown => {
-      const edit = edits.get(keyOf(field.path));
-      // An edit the engine refused still shows as chosen, beside why. One that stops
-      // setting the value here shows what then applies, such as a base profile's.
-      return edit?.value === undefined ? getIn(shown.profile, field.path) : edit.value;
-    };
+    const section = fieldsOf(group.fields[0]?.section ?? '');
     const holds = (field: SettingField): boolean => {
       const condition = field.dependsOn;
-      if (condition === undefined) {
+      const other = section.find((item) => item.key === condition?.key);
+      if (condition === undefined || other === undefined) {
         return false;
       }
-      const other = getIn(shown.profile, [field.section, ...condition.key.split('.')]);
-      return other !== undefined && condition.values.some((item) => sameValue(item, other));
+      const value = this.#valueOf(other, edits);
+      return value !== undefined && condition.values.some((item) => sameValue(item, value));
     };
-    const section = this.#fields(group.fields[0]?.section ?? '');
     return group.fields
       .filter((field) => !(field.dependsOn?.hides === true && holds(field)))
       .map((field) => {
+        const key = keyOf(field.path);
         const source = shown.sources[sectionOf(field)][field.key];
+        const typed = this.#typed.value.get(key);
         return {
           field,
-          value: value(field),
+          value: this.#valueOf(field, edits),
           source: source === undefined ? undefined : source === shown.chain[0] ? 'here' : basename(source),
-          unsaved: edits.has(keyOf(field.path)),
+          unsaved: edits.has(key),
           off: field.dependsOn?.hides === false && holds(field),
-          invalid: this.#invalid.value.get(keyOf(field.path)),
+          text: typed?.text,
+          invalid: typed?.problem,
           hiddenNamed: section.filter(
             (other) =>
               other.dependsOn?.hides === true &&
               other.dependsOn.key === field.key &&
               holds(other) &&
-              value(other) !== undefined,
+              this.#valueOf(other, edits) !== undefined,
           ).length,
         };
       });

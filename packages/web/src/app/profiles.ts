@@ -470,12 +470,14 @@ export class Profiles {
   }
 
   /**
-   * Saves the open profile's changes: a turn in the queue, then a sync when
-   * profiles are kept on GitHub, which commits the save.
+   * Saves the open profile's changes in one turn of the queue. When profiles
+   * are kept on GitHub, a sync first brings in what changed there, so the
+   * save lands on the file as it is now, and a sync after commits it.
    */
   async save(): Promise<void> {
     await this.editor.value?.save((write) =>
       this.#work(async () => {
+        await this.#sync({});
         await write();
         await this.#sync({});
         await this.#list();

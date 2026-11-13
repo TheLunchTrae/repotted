@@ -122,15 +122,24 @@ test('typed text that cannot be a value stays as typed with why, until it can', 
   const days = field('actions.artifact_and_log_retention.days');
 
   await editor.type(days, '0');
-  expect(row(editor, days.path.join('.'))?.invalid).toEqual({ text: '0', problem: 'Type a whole number, 1 or more.' });
+  expect(row(editor, days.path.join('.'))).toMatchObject({ text: '0', invalid: 'Type a whole number, 1 or more.' });
   expect(editor.dirty.value).toBe(true);
   expect(editor.canSave.value).toBe(false);
 
   await editor.type(days, ' 30 ');
-  expect(row(editor, days.path.join('.'))).toMatchObject({ value: 30, invalid: undefined, unsaved: true });
+  expect(row(editor, days.path.join('.'))).toMatchObject({
+    value: 30,
+    text: ' 30 ',
+    invalid: undefined,
+    unsaved: true,
+  });
+  editor.settle(days);
+  expect(row(editor, days.path.join('.'))?.text).toBeUndefined();
 
   await editor.type(field('repository.default_branch'), '  ');
-  expect(row(editor, 'repository.default_branch')?.invalid?.problem).toContain("can't be empty");
+  expect(row(editor, 'repository.default_branch')?.invalid).toContain("can't be empty");
+  editor.settle(field('repository.default_branch'));
+  expect(row(editor, 'repository.default_branch')?.text).toBe('  ');
   await editor.reset(field('repository.default_branch'));
   expect(row(editor, 'repository.default_branch')?.invalid).toBeUndefined();
 
@@ -187,9 +196,81 @@ test('a save that fails keeps the changes and says why', async () => {
 
   await editor.save(() => Promise.reject(new Error('The file is gone.')));
 
-  expect(editor.problem.value).toBe('The file is gone.');
+  expect(editor.saveError.value).toBe('The file is gone.');
   expect(editor.saving.value).toBe(false);
   expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: true, unsaved: true });
+
+  // The same changes can be saved again.
+  expect(editor.canSave.value).toBe(true);
+  await editor.save(write);
+  expect(editor.saveError.value).toBeUndefined();
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toContain('has_wiki: true');
+});
+
+test('a setting toggled back during a save that then fails keeps its change', async () => {
+  const editor = await opened({ 'web.yaml': base });
+  const wiki = field('repository.has_wiki');
+  await editor.set(wiki, true);
+  const held = Promise.withResolvers<undefined>();
+
+  const saving = editor.save(async () => {
+    await held.promise;
+    throw new Error('The file is gone.');
+  });
+  await editor.set(wiki, false);
+  await editor.set(wiki, true);
+  held.resolve(undefined);
+  await saving;
+
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: true, unsaved: true });
+  expect(editor.dirty.value).toBe(true);
+});
+
+test('settings with no change show as saved while another change is refused, and follow what is chosen', async () => {
+  const editor = await opened({
+    'web.yaml': 'repository:\n  has_wiki: true\nmerge:\n  allow_merge_commit: false\n  allow_rebase_merge: false\n',
+  });
+
+  await editor.set(field('repository.has_wiki'), false);
+  await editor.set(field('merge.allow_squash_merge'), false);
+  expect(editor.problem.value).toBeDefined();
+  await editor.reset(field('repository.has_wiki'));
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: true, source: 'here', unsaved: false });
+
+  // A setting GitHub hides goes with the one it follows, refused change or not.
+  await editor.set(field('repository.has_pull_requests'), false);
+  expect(editor.problem.value).toBeDefined();
+  expect(row(editor, 'repository.pull_request_creation_policy')).toBeUndefined();
+});
+
+test('a profile that stops reading keeps its changes for when it reads again, and counts as nothing unsaved meanwhile', async () => {
+  const editor = await opened({ 'base.yaml': base, 'web.yaml': 'extends: base.yaml\n' });
+  await editor.set(field('repository.has_issues'), false);
+  expect(editor.dirty.value).toBe(true);
+
+  await rm('/profiles/base.yaml');
+  await editor.load();
+  expect(editor.loadError.value).toContain('base.yaml');
+  expect(editor.dirty.value).toBe(false);
+  expect(editor.canSave.value).toBe(false);
+
+  await writeFile('/profiles/base.yaml', base);
+  await editor.load();
+  expect(editor.dirty.value).toBe(true);
+  expect(row(editor, 'repository.has_issues')).toMatchObject({ value: false, unsaved: true });
+});
+
+test('a change made while the profile is still being read is laid over it once it is', async () => {
+  await mkdir('/profiles', { recursive: true });
+  await writeFile('/profiles/web.yaml', base);
+  const editor = new ProfileEditor('/profiles/web.yaml');
+
+  const loading = editor.load();
+  await editor.set(field('repository.has_wiki'), true);
+  await loading;
+
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: true, unsaved: true });
+  expect(editor.canSave.value).toBe(true);
 });
 
 test('a change made while a save runs stays unsaved, and a change to the file meanwhile is kept', async () => {
@@ -226,20 +307,18 @@ test('a profile that cannot be read says why and shows no settings', async () =>
   expect(editor.sections.value.flatMap((section) => section.groups.flatMap((group) => group.rows))).toEqual([]);
 });
 
-test('every setting the editor offers is one the engine takes', async () => {
-  // Each field is set to its first choice, or to text of its kind, one at a time, and must preview without the engine calling its key unknown.
+test('every setting the editor offers, with every choice it gives, is one the engine takes', async () => {
   const fields = settingSections.flatMap((section) => section.groups.flatMap((group) => group.fields));
   for (const item of fields) {
-    const editor = await opened({ 'probe.yaml': '' }, 'probe.yaml');
-    const value =
+    const values =
       item.kind === 'choice'
-        ? item.options[0]?.value
-        : item.kind === 'number'
-          ? 5
-          : item.kind === 'list'
-            ? ['octo-org/*']
-            : 'main';
-    await editor.set(item, value);
-    expect(editor.problem.value ?? '', item.path.join('.')).not.toMatch(/unrecognized|unknown/iu);
+        ? item.options.map((option) => option.value)
+        : [item.kind === 'number' ? 5 : item.kind === 'list' ? ['octo-org/*'] : 'main'];
+    for (const value of values) {
+      const editor = await opened({ 'probe.yaml': '' }, 'probe.yaml');
+      await editor.set(item, value);
+      expect(editor.problem.value, `${item.path.join('.')}: ${JSON.stringify(value)}`).toBeUndefined();
+      expect(row(editor, item.path.join('.')), item.path.join('.')).toMatchObject({ value, unsaved: true });
+    }
   }
 });
