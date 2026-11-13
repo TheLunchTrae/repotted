@@ -91,8 +91,8 @@ lists `http://localhost:8787/api/auth/callback` as a callback URL, and its
 client ID and a client secret in `packages/web/.dev.vars`, which git ignores:
 
 ```sh
-REPOTTED_CLIENT_ID=Iv23...
-REPOTTED_CLIENT_SECRET=...
+REPOTTED_APP_CLIENT_ID=Iv23...
+REPOTTED_APP_CLIENT_SECRET=...
 ```
 
 ```sh
@@ -121,15 +121,15 @@ it. The first deploy replaces the Worker created in the dashboard.
 A run takes everything from the `deploy-web` environment, which allows only
 `main`:
 
-| Name                     | Kind     | Value                                                                             |
-| ------------------------ | -------- | --------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`   | Secret   | A Cloudflare API token with the permission below.                                 |
-| `CLOUDFLARE_ACCOUNT_ID`  | Variable | The Cloudflare account that holds the Worker and the `repotted.dev` zone.         |
-| `REPOTTED_CLIENT_ID`     | Variable | The Repotted App's client ID, as in `app.clientId` in `packages/cli/src/auth.ts`. |
-| `REPOTTED_CLIENT_SECRET` | Secret   | A client secret generated in the Repotted App's settings.                         |
+| Name                         | Kind     | Value                                                                             |
+| ---------------------------- | -------- | --------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`       | Secret   | A Cloudflare API token with the permission below.                                 |
+| `CLOUDFLARE_ACCOUNT_ID`      | Variable | The Cloudflare account that holds the Worker and the `repotted.dev` zone.         |
+| `REPOTTED_APP_CLIENT_ID`     | Variable | The Repotted App's client ID, as in `app.clientId` in `packages/cli/src/auth.ts`. |
+| `REPOTTED_APP_CLIENT_SECRET` | Secret   | A client secret generated in the Repotted App's settings.                         |
 
 GitHub reserves names that start with `GITHUB_`, so the App's values use
-`REPOTTED_`, and the Worker reads them under the same names.
+`REPOTTED_APP_`, and the Worker reads them under the same names.
 
 The API token needs one permission, from Cloudflare's
 [Workers roles](https://developers.cloudflare.com/workers/authorization/workers/):

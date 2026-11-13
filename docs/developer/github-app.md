@@ -63,7 +63,7 @@ settings, GitHub Apps, New GitHub App, uses too:
   on; the web app can't keep a sign-in without the refresh token that
   expiring tokens bring.
 - Client secret: one, for the web app's Worker. Generate a new one and update
-  `REPOTTED_CLIENT_SECRET` in the `deploy-web` environment to rotate it.
+  `REPOTTED_APP_CLIENT_SECRET` in the `deploy-web` environment to rotate it.
 - Webhook: clear **Active**.
 - Repository permissions: Administration, Actions, Contents, Pages,
   Custom properties and Issues, read and write; Code scanning alerts, read; and

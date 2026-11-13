@@ -4,8 +4,8 @@ import worker from '../src/worker.js';
 
 const origin = 'https://repotted.dev';
 const env = {
-  REPOTTED_CLIENT_ID: 'Iv1.client',
-  REPOTTED_CLIENT_SECRET: 'client-secret',
+  REPOTTED_APP_CLIENT_ID: 'Iv1.client',
+  REPOTTED_APP_CLIENT_SECRET: 'client-secret',
 };
 
 const refreshKept = '__Host-repotted-refresh=ghr_refresh; Path=/; Max-Age=15811200; Secure; HttpOnly; SameSite=Strict';
@@ -66,7 +66,7 @@ describe('sign-in', () => {
     expect(response.status).toBe(302);
     const location = new URL(response.headers.get('Location') ?? '');
     expect(`${location.origin}${location.pathname}`).toBe('https://github.com/login/oauth/authorize');
-    expect(location.searchParams.get('client_id')).toBe(env.REPOTTED_CLIENT_ID);
+    expect(location.searchParams.get('client_id')).toBe(env.REPOTTED_APP_CLIENT_ID);
     expect(location.searchParams.get('redirect_uri')).toBe(`${origin}/api/auth/callback`);
     expect(location.searchParams.get('code_challenge_method')).toBe('S256');
 
@@ -109,8 +109,8 @@ describe('callback', () => {
     expect(response.status).toBe(302);
     expect(response.headers.get('Location')).toBe('/');
     expect(Object.fromEntries(sentGrant())).toEqual({
-      client_id: env.REPOTTED_CLIENT_ID,
-      client_secret: env.REPOTTED_CLIENT_SECRET,
+      client_id: env.REPOTTED_APP_CLIENT_ID,
+      client_secret: env.REPOTTED_APP_CLIENT_SECRET,
       grant_type: 'authorization_code',
       code: 'the-code',
       redirect_uri: `${origin}/api/auth/callback`,
@@ -212,7 +212,7 @@ describe('token', () => {
     expect(Object.fromEntries(sentGrant())).toMatchObject({
       grant_type: 'refresh_token',
       refresh_token: 'ghr_old',
-      client_secret: env.REPOTTED_CLIENT_SECRET,
+      client_secret: env.REPOTTED_APP_CLIENT_SECRET,
     });
     expect(cookies(response)).toEqual([
       refreshKept,

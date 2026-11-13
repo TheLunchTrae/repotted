@@ -6,8 +6,8 @@
 import * as z from 'zod/mini';
 
 interface Env {
-  REPOTTED_CLIENT_ID: string;
-  REPOTTED_CLIENT_SECRET: string;
+  REPOTTED_APP_CLIENT_ID: string;
+  REPOTTED_APP_CLIENT_SECRET: string;
 }
 
 const authorizeUrl = 'https://github.com/login/oauth/authorize';
@@ -168,8 +168,8 @@ async function requestTokens(env: Env, grant: Record<string, string>): Promise<T
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: new URLSearchParams({
-        client_id: env.REPOTTED_CLIENT_ID,
-        client_secret: env.REPOTTED_CLIENT_SECRET,
+        client_id: env.REPOTTED_APP_CLIENT_ID,
+        client_secret: env.REPOTTED_APP_CLIENT_SECRET,
         ...grant,
       }),
       signal: AbortSignal.timeout(gitHubTimeoutMs),
@@ -194,7 +194,7 @@ async function signIn(request: Request, env: Env): Promise<Response> {
   );
   const location = new URL(authorizeUrl);
   location.search = new URLSearchParams({
-    client_id: env.REPOTTED_CLIENT_ID,
+    client_id: env.REPOTTED_APP_CLIENT_ID,
     redirect_uri: callbackUrl(request),
     state,
     code_challenge: challenge,
