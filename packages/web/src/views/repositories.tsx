@@ -63,7 +63,9 @@ function RepositoryPanel({ repository }: { readonly repository: Repository }): J
   const panel = useRef<HTMLElement>(null);
   // On a narrow screen the panel sits under the list, out of view of the row that opened it.
   useEffect(() => {
-    panel.current?.scrollIntoView({ block: 'nearest' });
+    if (matchMedia('(max-width: 760px)').matches) {
+      panel.current?.scrollIntoView({ block: 'nearest' });
+    }
   }, [repository.full_name]);
   return (
     <aside class="panel" ref={panel} aria-label={repository.full_name}>
