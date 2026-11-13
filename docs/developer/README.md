@@ -18,6 +18,8 @@ use Repotted, see the [user guide](../user/README.md).
   why, and the settings-page options GitHub offers no API for.
 - [The GitHub App](github-app.md): how Repotted signs in, and the Repotted
   App's registration settings.
+- [The web app](web-app.md): the Cloudflare Worker that serves repotted.dev
+  and its GitHub sign-in, running it locally, and deploying it.
 - [Releasing](releasing.md): publishing the CLI to npm and building, signing,
   and releasing the desktop app.
 
@@ -32,10 +34,13 @@ use Repotted, see the [user guide](../user/README.md).
 - `packages/cli`: the published `repotted` package: the CLI and the MCP
   server over the engine. Its build bundles core into one file, since core is
   never published on its own.
+- `packages/web`: the web app at repotted.dev: a Cloudflare Worker that serves
+  the site and its GitHub sign-in, and the page. Private to the workspace.
 - `examples/`: example profiles that the tests also load.
 - `desktop/`: the desktop app, in C# on .NET 10 with Avalonia. It runs the CLI
   with `--json` for everything it does.
 - `.config/mise/`: the pinned tools, the tasks, and the lockfile.
-- `.github/workflows/`: Quality, the gate on every pull request, and the
-  Release CLI and Release Desktop release workflows. All three run the gate
-  through `.github/actions/gate`.
+- `.github/workflows/`: Quality, the gate on every pull request; the Release
+  CLI and Release Desktop release workflows; and Deploy Web, which deploys the
+  web app. All four run the gate, or a task of it, through
+  `.github/actions/gate`.

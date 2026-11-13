@@ -119,6 +119,34 @@ sign out are the question in
 [Leaving with unsaved changes](#leaving-with-unsaved-changes), on the
 **Profiles** page.
 
+## Web sign-in
+
+The web app signs in through its Worker (`packages/web/src/worker.ts`), and
+each tab asks it for the access token through a `Session`
+(`packages/web/src/session.ts`). [The web app](web-app.md#sign-in) explains the
+cookies. All tabs share the access token the access cookie keeps, since each
+refresh revokes the one before.
+
+| State      | Event                                                                  | Next                                                                                                                                                                                 |
+| ---------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Signed out | The user presses **Sign in with GitHub**                               | On GitHub, with the state and verifier in the sign-in cookie for 10 minutes. Starting again, in this tab or another, replaces them.                                                  |
+| On GitHub  | The user cancels                                                       | Signed out with "The sign-in was cancelled on GitHub."; the sign-in cookie is cleared.                                                                                               |
+| On GitHub  | GitHub returns any other error, such as an unlisted callback URL       | Signed out with "GitHub didn't complete the sign-in."; GitHub's token endpoint isn't called.                                                                                         |
+| On GitHub  | The callback's state doesn't match, or the cookie is gone              | Signed out with "That sign-in expired."; GitHub isn't called. A sign-in that another start replaced ends here.                                                                       |
+| On GitHub  | GitHub refuses the code, or answers without a refresh token            | Signed out with "GitHub didn't complete the sign-in."; no token cookie is set.                                                                                                       |
+| On GitHub  | GitHub is out of reach, too slow, or fails on its side                 | The same.                                                                                                                                                                            |
+| On GitHub  | GitHub issues tokens                                                   | Signed in: the cookies hold the refresh token and the access token, and the sign-in cookie is cleared.                                                                               |
+| Signed in  | A tab needs a token and holds one with over 5 minutes left             | That token is used.                                                                                                                                                                  |
+| Signed in  | A tab needs a token and holds none, or one closer to expiry            | Under the site-wide lock, the tab asks the Worker, which returns the kept access token if it has over 5 minutes left. A call in the same tab that waited uses what it got.           |
+| Signed in  | The kept access token has 5 minutes or less left, or is gone           | Refreshing.                                                                                                                                                                          |
+| Signed in  | GitHub's API refuses a tab's token                                     | The tab names that token to the Worker under the lock. If the kept token differs, another tab replaced it, and the tab gets the new one; if not, Refreshing. It tries once more.     |
+| Signed in  | GitHub's API refuses the token from that second try too                | The page reads the sign-in as no longer accepted and offers to sign in again.                                                                                                        |
+| Refreshing | GitHub issues tokens                                                   | Signed in with both new tokens in the cookies; GitHub has revoked the old access token.                                                                                              |
+| Refreshing | No refresh cookie, or GitHub refuses the refresh token                 | Signed out in this tab. The cookies are left as they are, since another tab may have stored newer ones; a spent or revoked token is refused again until it expires.                  |
+| Refreshing | GitHub, or the Worker, is out of reach, too slow, or fails on its side | The tab keeps the token it held, near or past expiry, and reports that GitHub can't be reached; the cookies are kept for the next try.                                               |
+| Signed in  | The user signs out                                                     | Signed out: under the lock, the Worker clears both token cookies, so a refresh that another tab started can't store tokens afterwards. Other tabs keep their token until it expires. |
+| Signed in  | The refresh token's 6 months pass                                      | The browser drops the cookie; the next refresh reads as signed out.                                                                                                                  |
+
 ## Desktop navigation
 
 `ShellViewModel.Page` is the page the signed-in app shows: 0 for the
@@ -844,6 +872,13 @@ commit and artifacts, which last 3 days; GitHub allows a re-run for 30 days.
 | Releasing | GitHub refuses to publish the draft          | The draft stays without a tag, as when a ruleset blocks creating the tag. Re-running the job, once the cause is fixed, replaces the draft and publishes.                                    |
 | Releasing | The tag already holds the release            | Released, as on a re-run after GitHub published the release but the job failed. A tag at another commit fails the job.                                                                      |
 | Releasing | The release is published                     | Released. Publishing creates the tag at the run's commit, and an immutable release can't change, so a fix needs the next version.                                                           |
+
+Deploy Web deploys the web app, as [the web app](web-app.md#deploy)
+describes. Its runs wait in one concurrency group, so the last run started is
+the one that stays live. A run on another branch fails before it checks out
+anything, and one whose `ts:web:check` fails, or whose environment lacks a
+value, deploys nothing. When Cloudflare refuses the deploy, the version
+before it stays live; re-running the job deploys again.
 
 When npm has the CLI but its release is missing, a new run refuses the
 version, so re-run the failed jobs of the run that published it; the release

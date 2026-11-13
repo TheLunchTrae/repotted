@@ -34,5 +34,7 @@
     "verbatimModuleSyntax": true,
     "types": ["node"]
   },
-  "include": ["packages/*/*.ts", "packages/*/src/**/*", "packages/*/tests/**/*", "types/**/*.d.ts"]
+  "include": ["packages/*/*.ts", "packages/*/src/**/*", "packages/*/tests/**/*", "types/**/*.d.ts"],
+  // packages/web/tsconfig.json checks the web app's browser and Worker code.
+  "exclude": ["packages/web/src", "packages/web/tests"]
 }

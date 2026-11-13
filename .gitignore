@@ -235,3 +235,7 @@ __pycache__/
 # Workspace package builds; `mise run ts:build` regenerates them.
 /packages/*/dist/
 /packages/cli/LICENSE
+# Wrangler's local state and the web app's local secrets; see
+# docs/developer/web-app.md.
+/packages/web/.wrangler/
+/packages/web/.dev.vars
