@@ -252,4 +252,24 @@ public sealed class DeleteProfileTests : ViewModelTests
         Assert.True(editor.HasChanges);
         Assert.False(profiles.DeleteRunning);
     }
+
+    [AvaloniaFact]
+    public async Task Deleting_a_profile_takes_back_the_question_about_closing_it()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        Assert.True(profiles.HasLeaving);
+
+        profiles.Items.Single(item => item.Name == "orgs").DeleteCommand.Execute(null);
+        cli.On(folders.List(), $$$"""{"profiles":[{"name":"base","file":{{{Json(files.Base)}}},"extends":null,"problem":null}]}""");
+        await profiles.ConfirmDeleteCommand.ExecuteAsync(null);
+        await close;
+
+        Assert.False(profiles.HasLeaving);
+        Assert.False(File.Exists(files.Own));
+        Assert.Equal(["base"], profiles.Items.Select(item => item.Name));
+        Assert.NotSame(editor, profiles.Current);
+    }
 }

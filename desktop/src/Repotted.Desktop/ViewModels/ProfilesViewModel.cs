@@ -1064,6 +1064,11 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
                     {
                         Forget(file, editor);
                     }
+                    // A question about closing it has nothing left to ask.
+                    if (askedAbout is [var asked] && asked.File == file)
+                    {
+                        leave?.TrySetResult(false);
+                    }
                     if (ReferenceEquals(Current, editor))
                     {
                         Current = null;
