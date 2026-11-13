@@ -82,7 +82,7 @@ them](#apply-a-profile-to-several-repositories).
 A profile is a YAML file that describes how a repository should be set up. The
 app keeps your profiles in a folder: `Documents/Repotted` at first, which the
 app creates. To use another folder, such as a clone of a repository where you
-keep your profiles, click **Change folder** in [Settings](#settings).
+keep your profiles, click **Change folder…** in [Settings](#settings).
 
 The sidebar lists the profiles while the **Profiles** page is open. Type in
 **Find a profile** to narrow the list, and click the sync button beside the
@@ -92,7 +92,7 @@ profiles are kept there.
 ### Keep profiles on GitHub
 
 To have your profiles follow you to any computer, keep them in a GitHub
-repository instead. Click **Use a GitHub repository** in [Settings](#settings),
+repository instead. Click **Use a GitHub repository…** in [Settings](#settings),
 name the repository, and optionally a folder in it. An empty repository works:
 tick **Add the profiles from** your current folder to start it with them. The
 Repotted App must be installed on the repository with the Contents permission.
@@ -107,7 +107,7 @@ too; the app keeps your saves until a sync works. A ruleset that requires pull r
 refuses the commit unless you or the Repotted App can bypass it.
 
 The app keeps its copy of the repository's profiles in its app data folder.
-**Choose folder** in Settings goes back to a local folder; the repository keeps
+**Choose folder…** in Settings goes back to a local folder; the repository keeps
 every profile it has.
 
 ### Make a profile
@@ -257,11 +257,11 @@ unsaved changes, a banner asks first: **Save** saves them and closes it,
 changes.
 
 Unsaved changes stay with the app until you save or discard them. If you
-click **Change folder**, **Use a GitHub repository**, **Change repository** or
+click **Change folder…**, **Use a GitHub repository…**, **Change repository…** or
 **Sign out**, or quit, while a profile has unsaved changes, a banner asks
 first, in Settings or on the **Profiles** page: **Save** saves them and goes on, **Discard**
 drops them and goes on, and **Cancel** stays where you are. If a save fails,
-the profile opens with the error and nothing else changes. While a new profile
+the **Profiles** page opens the profile with the error, and nothing else changes. While a new profile
 is being captured, the profile that could not be saved stays closed, since
 opening it would stop the capture. A note names it instead, and you can open it
 once the capture finishes. The banner also asks before a sign-in that stopped

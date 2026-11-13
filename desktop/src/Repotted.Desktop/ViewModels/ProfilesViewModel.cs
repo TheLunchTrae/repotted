@@ -92,7 +92,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     /// <summary>Where the profiles live, and the sync state the page shows; every save and sync takes its turn there.</summary>
     public ProfileFolder Folder { get; }
 
-    /// <summary>Whether the note shows under the list; a failure that leaves nothing to list shows as the error instead.</summary>
+    /// <summary>Whether the sync note shows; a failure that leaves nothing to list shows as the error instead.</summary>
     public bool ShowSyncNote => Folder.SyncNote is not null && Error is null;
 
     public bool ShowSyncDone => ShowSyncNote && !Folder.SyncFailed;
@@ -319,6 +319,8 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             Creating = null;
             Open(hidden.Listing);
         }
+        // The question may have been asked from the settings, so the profile it opened comes into view.
+        ShowProfiles?.Invoke();
         answer.TrySetResult(false);
     }
 
@@ -458,6 +460,9 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
 
     /// <summary>Opens the settings, where the folder or repository is chosen; set by the shell.</summary>
     public Action? OpenSettings { get; set; }
+
+    /// <summary>Brings the profiles page, and the window it is in, into view; set by the shell.</summary>
+    public Action? ShowProfiles { get; set; }
 
     [RelayCommand]
     private void ShowSettings() => OpenSettings?.Invoke();

@@ -40,8 +40,10 @@ internal sealed partial class App : Application
     }
 
     /// <summary>
-    /// Puts Settings… in the macOS app menu, under About, with Command+comma,
-    /// where Mac apps keep their settings. It opens them while signed in.
+    /// Puts Settings… at the top of the macOS app menu, above the Hide and Quit
+    /// items macOS adds, with Command+comma, where Mac apps keep their
+    /// settings. It opens them while signed in. A menu of the app's own also
+    /// drops Avalonia's About item.
     /// </summary>
     private void AddSettingsToAppMenu(MainViewModel main)
     {

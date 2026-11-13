@@ -35,6 +35,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         Profiles = new ProfilesViewModel(client, desktop, settings, () => repositories?.Names ?? []);
         Profiles.PropertyChanged += OnProfilesChanged;
         Profiles.OpenSettings = OpenProfileSettings;
+        Profiles.ShowProfiles = () => Reveal(1);
         Repositories = repositories = new RepositoriesViewModel(
             client, desktop, account.InstallUrl, Profiles, OpenCompare, OpenCapture, OpenApply, Unfinished, OpenBatch, () => settings.HasBatch,
             account.Login, settings);
@@ -98,6 +99,23 @@ internal sealed partial class ShellViewModel : ViewModelBase
 
     /// <summary>Asks the view to show the settings window, or bring it to the front.</summary>
     public event EventHandler? SettingsWindowRequested;
+
+    /// <summary>Raised when the main window has something to show and should come in front of the settings window.</summary>
+    public event EventHandler? MainWindowRequested;
+
+    /// <summary>
+    /// Shows <paramref name="page"/> in the main window, which comes in front
+    /// of the settings window when the settings are in one, so a question or a
+    /// profile it opens is in view.
+    /// </summary>
+    private void Reveal(int page)
+    {
+        Page = page;
+        if (SettingsInWindow)
+        {
+            MainWindowRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     /// <summary>The settings window's tab: 0 for the account, 1 for where the profiles are kept.</summary>
     [ObservableProperty]
@@ -319,7 +337,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         // An apply that is running, or holds unsaved one-off edits, shows itself and says what it needs.
         if (Apply is { CanLeave: false } apply)
         {
-            Page = 0;
+            Reveal(0);
             if (!await apply.ConfirmLeaveAsync(act, wait).ConfigureAwait(true))
             {
                 return false;
@@ -327,7 +345,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         }
         if (Batch is { CanLeave: false } batch)
         {
-            Page = 0;
+            Reveal(0);
             if (!await batch.ConfirmLeaveAsync(act, wait).ConfigureAwait(true))
             {
                 return false;
@@ -337,7 +355,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         {
             return true;
         }
-        Page = 1;
+        Reveal(1);
         return await Profiles.ConfirmLeaveAsync(act).ConfigureAwait(true);
     }
 
@@ -347,6 +365,9 @@ internal sealed partial class ShellViewModel : ViewModelBase
     /// <summary>Loads both lists, which the sidebar counts.</summary>
     public Task RefreshAsync() =>
         Task.WhenAll(Repositories.RefreshCommand.ExecuteAsync(null), Profiles.RefreshCommand.ExecuteAsync(null));
+
+    /// <summary>What a screen reader calls the account menu's button, which shows the login.</summary>
+    public string AccountMenuName => $"Account, {Account.Login}";
 
     /// <summary>Up to two letters for the avatar.</summary>
     public string Initials

@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Repotted.Desktop.ViewModels;
 
@@ -31,6 +32,12 @@ internal sealed partial class ShellView : UserControl
         ProfileList.AddHandler(PointerPressedEvent, OnProfileListPointerPressed, RoutingStrategies.Tunnel);
         // Choosing an item in the account menu closes it, as a menu does.
         AccountMenu.AddHandler(Button.ClickEvent, (_, _) => AccountButton.Flyout?.Hide(), RoutingStrategies.Bubble, handledEventsToo: true);
+        // The arrow keys move through it, and it opens with the first item focused, as a menu does.
+        AccountMenu.AddHandler(KeyDownEvent, OnAccountMenuKeyDown, RoutingStrategies.Tunnel);
+        if (AccountButton.Flyout is { } flyout)
+        {
+            flyout.Opened += (_, _) => Dispatcher.UIThread.Post(() => MenuItems().FirstOrDefault()?.Focus(NavigationMethod.Directional));
+        }
     }
 
     /// <summary>The settings window, while it is open on macOS.</summary>
@@ -41,11 +48,13 @@ internal sealed partial class ShellView : UserControl
         if (shell is not null)
         {
             shell.SettingsWindowRequested -= OnSettingsWindowRequested;
+            shell.MainWindowRequested -= OnMainWindowRequested;
         }
         shell = DataContext as ShellViewModel;
         if (shell is not null)
         {
             shell.SettingsWindowRequested += OnSettingsWindowRequested;
+            shell.MainWindowRequested += OnMainWindowRequested;
         }
         base.OnDataContextChanged(e);
     }
@@ -66,6 +75,47 @@ internal sealed partial class ShellView : UserControl
         topLevel = null;
         Settings?.Close();
         base.OnDetachedFromVisualTree(e);
+    }
+
+    /// <summary>The account menu's items that can be chosen now, top to bottom.</summary>
+    private List<Button> MenuItems() =>
+        AccountMenu.GetVisualDescendants().OfType<Button>()
+            .Where(button => button.Classes.Contains("menuitem") && button.IsEffectivelyVisible && button.IsEffectivelyEnabled)
+            .ToList();
+
+    /// <summary>Moves the focus through the account menu with the arrow keys, Home and End.</summary>
+    private void OnAccountMenuKeyDown(object? sender, KeyEventArgs e)
+    {
+        var items = MenuItems();
+        if (items.Count == 0)
+        {
+            return;
+        }
+        var at = items.FindIndex(item => item.IsFocused);
+        int? next = e.Key switch
+        {
+            Key.Down => at < 0 ? 0 : (at + 1) % items.Count,
+            Key.Up => at < 0 ? items.Count - 1 : (at - 1 + items.Count) % items.Count,
+            Key.Home => 0,
+            Key.End => items.Count - 1,
+            _ => null,
+        };
+        if (next is { } index)
+        {
+            items[index].Focus(NavigationMethod.Directional);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Closes the settings window and brings the main window to the front. The
+    /// settings window belongs to the main window and so stays above it, which
+    /// would hide what the main window now shows.
+    /// </summary>
+    private void OnMainWindowRequested(object? sender, EventArgs e)
+    {
+        Settings?.Close();
+        (topLevel as Window)?.Activate();
     }
 
     /// <summary>Opens the settings window, or brings it to the front when it is open.</summary>

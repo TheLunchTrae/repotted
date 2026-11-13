@@ -13,7 +13,7 @@
         <TextBlock Text="{Binding Crumb}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"
                    TextTrimming="CharacterEllipsis" />
         <Button x:Name="AccountButton" Grid.Column="1" Classes="account" VerticalAlignment="Center"
-                AutomationProperties.Name="Account" ToolTip.Tip="{Binding SignedInWith}">
+                AutomationProperties.Name="{Binding AccountMenuName}" ToolTip.Tip="{Binding SignedInWith}">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Border Classes="avatar">
               <TextBlock Text="{Binding Initials}" FontSize="11" FontWeight="Bold"

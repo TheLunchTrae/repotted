@@ -71,7 +71,7 @@
         <SelectableTextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" />
         <StackPanel Orientation="Horizontal" Spacing="8">
           <Button Classes="quiet" Content="Try again" Command="{Binding RefreshCommand}" />
-          <Button Classes="quiet" Content="Change folder" Command="{Binding ChangeFolderCommand}" />
+          <Button Classes="quiet" Content="{Binding Folder.FolderLabel}" Command="{Binding ChangeFolderCommand}" />
           <Button Classes="quiet" Content="{Binding Folder.RepositoryLabel}" Command="{Binding StartConnectCommand}" />
         </StackPanel>
       </StackPanel>
@@ -83,7 +83,7 @@
                    Text="A profile is a YAML file. Start a new one here, capture one from a repository, choose a folder that already has profiles, or keep them in a GitHub repository so they follow you to any computer." />
         <StackPanel Orientation="Horizontal" Spacing="8">
           <Button Classes="primary" Content="New profile" Command="{Binding StartNewCommand}" CommandParameter="{x:Null}" />
-          <Button Classes="quiet" Content="Choose a folder" Command="{Binding ChangeFolderCommand}" />
+          <Button Classes="quiet" Content="{Binding Folder.FolderLabel}" Command="{Binding ChangeFolderCommand}" />
           <Button Classes="quiet" Content="{Binding Folder.RepositoryLabel}" Command="{Binding StartConnectCommand}" />
           <Button Classes="quiet" Content="{Binding Folder.RefreshLabel}" Command="{Binding RefreshCommand}" />
         </StackPanel>
