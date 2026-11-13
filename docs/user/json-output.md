@@ -220,7 +220,8 @@ field of that setting, and `cause`, which says why:
 - `refused`: GitHub refused to show it, as for want of a permission or of
   the admin role.
 - `unavailable`: the repository doesn't offer it, as on a GitHub plan
-  without the feature. `capture` leaves these out without a warning.
+  without the feature, or for a billed feature on an account with no
+  payment method on file. `capture` leaves these out without a warning.
 - `not_applicable`: it doesn't apply with the other settings, such as
   selected actions while Actions is off.
 - `unloadable`: in `capture` only, a profile can't hold the value GitHub
@@ -247,8 +248,9 @@ plan the repository needs now. A plan saved before changes carried `entry` is
 stale if it changes an autolink, ruleset, environment or label. A write that fails partway has
 `kind: apply_failed`, with the changes in `applied` and the one in `failed`,
 and `reason`: what GitHub refused it for, when GitHub refused it for good with
-a `403` or `422`, such as `Needs Pages write` or the repository's plan not
-supporting the setting, and null otherwise, as for a rate limit.
+a `402`, `403` or `422`, such as `Needs Pages write`, the repository's plan
+not supporting the setting or the account having no payment method on file,
+and null otherwise, as for a rate limit.
 A plan for a repository whose owner is the other kind from the profile's
 [owner type](profiles.md#owner-type) has `kind: owner_mismatch`, in `plan`,
 `apply` and a batch member's `error` alike.

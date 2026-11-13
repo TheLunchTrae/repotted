@@ -575,14 +575,15 @@ export function formatPlan(plan: Plan, locks: readonly Lock[] = []): string {
 
 /**
  * Why GitHub refused the change that failed, when it says something lasting
- * about the repository, the token or the App: a `403` or a `422`. A refusal
- * for want of a permission names the permission; any other, such as a
- * feature the repository's plan lacks or an organization policy, gives
- * GitHub's reason. Null for anything else, a rate limit included.
+ * about the repository, the token or the App: a `402`, `403` or `422`. A
+ * refusal for want of a permission names the permission; any other, such as
+ * a feature the repository's plan or billing lacks or an organization
+ * policy, gives GitHub's reason. Null for anything else, a rate limit
+ * included.
  */
 export function failureReason(error: ApplyError): string | null {
   const cause = error.cause;
-  if (!(cause instanceof GitHubError) || ![403, 422].includes(cause.status) || cause.rateLimited) {
+  if (!(cause instanceof GitHubError) || ![402, 403, 422].includes(cause.status) || cause.rateLimited) {
     return null;
   }
   if (cause.status === 403 && /not accessible by/iu.test(cause.message)) {

@@ -677,6 +677,35 @@ drafts:
     expect((await captureProfile(github, repo)).warnings).toEqual(plan.warnings);
   });
 
+  test('skips a setting the account needs a payment method for and still captures and plans the rest', async () => {
+    const github = new FakeGitHub({
+      settings: { '/actions/cache/retention-limit': { max_cache_retention_days: 7 } },
+    }).fail(
+      'GET /repos/lunch/app/actions/cache/storage-limit',
+      answered(402, 'Please ensure your account has a valid payment method on file to access this service.'),
+    );
+
+    const { profile, warnings } = await captureProfile(github, repo);
+    expect(profile.actions).toMatchObject({ max_cache_retention_days: 7 });
+    expect(profile.actions).not.toHaveProperty('max_cache_size_gb');
+    expect(warnings).toEqual([]);
+
+    const plan = await createPlan(github, repo, {
+      repository: { has_wiki: false },
+      actions: { max_cache_size_gb: 20 },
+    });
+    expect(plan.changes.map((change) => change.section)).toEqual(['repository']);
+    expect(plan.warnings).toEqual([
+      {
+        section: 'actions',
+        key: 'max_cache_size_gb',
+        cause: 'unavailable',
+        message:
+          'GitHub offers cache storage on this repository only with a payment method on file (Please ensure your account has a valid payment method on file to access this service.)',
+      },
+    ]);
+  });
+
   test('skips environments when it cannot read their deployment patterns', async () => {
     const github = new FakeGitHub({
       environments: [

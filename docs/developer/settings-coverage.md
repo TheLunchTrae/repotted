@@ -73,7 +73,9 @@ These hooks are why a plan settles after one apply:
   code quality.
 
 A setting the repository doesn't have, because of its plan, its owner or its
-visibility, reads as unavailable. A plan skips it with a warning that gives
+visibility, reads as unavailable, and so does a billed one, such as the
+Actions cache limits, that GitHub answers with a `402` while the account has
+no payment method on file. A plan skips it with a warning that gives
 GitHub's reason, and `capture` leaves it out silently. A setting GitHub
 refuses to show, with a `403`, is skipped with a warning in both, and the
 warning names the permission it needs. A `403` on a write stops apply, and

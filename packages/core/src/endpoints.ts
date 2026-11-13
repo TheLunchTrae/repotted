@@ -120,6 +120,15 @@ export async function readResource(
     if (error.status === 403) {
       return { available: false, cause: 'refused', reason: refusal(error, 'GET', path, target) };
     }
+    // 402 for a billed feature, such as Actions cache limits, on an account
+    // with no payment method on file.
+    if (error.status === 402) {
+      return {
+        available: false,
+        cause: 'unavailable',
+        reason: `GitHub offers ${target} on this repository only with a payment method on file (${error.message})`,
+      };
+    }
     // 404 for a feature the repository's plan or owner lacks; 405, 409 and
     // 422 for one that does not apply to it, such as fork settings on a
     // public repository.
