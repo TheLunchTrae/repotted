@@ -3,15 +3,15 @@ run-name: ${{ inputs.publish && 'Deploy Web' || 'Deploy Web preview' }}
 
 # The owner starts a run with Run workflow on main; nothing else does, as with
 # the release workflows. A run builds the web app and checks the Worker bundle.
-# With Publish not selected, the default, it uploads a version of the repotted
-# Worker under the preview alias without deploying it, so repotted.dev keeps
-# its version; with Publish selected, it deploys to repotted.dev. The
-# deploy-web environment holds the Cloudflare values and allows only main.
+# With Publish not selected, the default, it deploys the repotted Worker's
+# Preview named for the branch, main.preview.repotted.dev, so repotted.dev keeps
+# its version; with Publish selected, it deploys to repotted.dev. The deploy-web
+# environment holds the Cloudflare values and allows only main.
 on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish to repotted.dev instead of only uploading a preview
+        description: Publish to repotted.dev instead of the preview
         type: boolean
         default: false
 
@@ -19,8 +19,8 @@ permissions:
   contents: read
 
 # Runs of each kind wait their turn instead of replacing a waiting run, so the
-# last one started is the one that stays live or holds the preview alias. A
-# preview never holds up a publish.
+# last one started is the one that stays live. A preview never holds up a
+# publish.
 concurrency:
   group: ${{ inputs.publish && 'deploy-web' || 'deploy-web-preview' }}
   cancel-in-progress: false
@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: ${{ inputs.publish && 'Deploy to repotted.dev' || 'Upload a preview' }}
+    name: ${{ inputs.publish && 'Deploy to repotted.dev' || 'Deploy the preview' }}
     if: github.repository == 'TheLunchTrae/repotted'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
@@ -60,8 +60,8 @@ jobs:
         with:
           cache: false
           task: ts:web:check
-      # The client ID comes from wrangler.jsonc, and every upload keeps the
-      # client secret already set on the Worker.
+      # The client ID comes from wrangler.jsonc, and every deploy keeps the
+      # client secret already set on the Worker or its Preview.
       - name: Upload the Worker and its assets
         id: deploy
         working-directory: packages/web
@@ -81,16 +81,20 @@ jobs:
             mise exec -- pnpm exec wrangler deploy
             exit 0
           fi
-          # Applies wrangler.jsonc's workers_dev and preview_urls to the Worker,
-          # as a deploy does, without a new version, so its Version URLs are on.
-          mise exec -- pnpm exec wrangler triggers deploy
+          # The Preview is named for the branch, made a DNS label: lowercase
+          # letters, digits and hyphens, at most 40 characters, which leaves
+          # room for the deployment ID that deployment addresses put in front.
+          preview=$(tr '[:upper:]' '[:lower:]' <<<"$GITHUB_REF_NAME" | sed -E 's/[^a-z0-9]+/-/g; s/^-//; s/-$//' | cut -c -40 | sed -E 's/-$//')
+          if [[ -z $preview ]]; then
+            echo "::error::The branch name $GITHUB_REF_NAME gives no Preview name."
+            exit 1
+          fi
           output="$RUNNER_TEMP/wrangler-output.json"
-          WRANGLER_OUTPUT_FILE_PATH="$output" mise exec -- pnpm exec wrangler versions upload --preview-alias preview
-          # Wrangler leaves the alias URL out when the Worker's Version URLs are
-          # off.
-          url=$(jq -r 'select(.type == "version-upload") | .preview_alias_url // empty' "$output")
+          WRANGLER_OUTPUT_FILE_PATH="$output" mise exec -- pnpm exec wrangler preview --name "$preview"
+          # The Preview's addresses on a custom domain, not on workers.dev.
+          url=$(jq -r 'select(.type == "preview") | [.preview_urls[]? | select(test("\\.workers\\.dev/?$") | not)] | first // empty' "$output")
           if [[ -z $url ]]; then
-            echo "::error::Wrangler gave no preview address, so the repotted Worker's Version URLs are off. Check them under the Worker's Settings, Domains & Routes."
+            echo "::error::Cloudflare gave the $preview Preview no address on a custom domain. Check that preview.repotted.dev is attached to the repotted Worker for Previews."
             exit 1
           fi
           echo "preview-url=$url" >>"$GITHUB_OUTPUT"

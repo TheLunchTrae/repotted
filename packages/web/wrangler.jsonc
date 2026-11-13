@@ -18,11 +18,18 @@
   "vars": {
     "REPOTTED_APP_CLIENT_ID": "Iv23liAnsCkUv2UeQoiK",
   },
-  // The custom domain is attached once in the dashboard, so deploys need no
-  // zone permission and leave it alone. The workers.dev address stays off.
-  // Preview URLs are on for Deploy Web's previews, which upload a version under
-  // the preview alias without deploying it; every version also gets a URL of
-  // its own.
+  // Deploy Web's preview is one named Preview, main. Previews take none of the
+  // production vars, so the client ID is set again here; the client secret is
+  // set once for Previews in the dashboard.
+  "previews": {
+    "vars": {
+      "REPOTTED_APP_CLIENT_ID": "Iv23liAnsCkUv2UeQoiK",
+    },
+  },
+  // The custom domains are attached once in the dashboard, repotted.dev for
+  // production and preview.repotted.dev for Previews, so deploys need no zone
+  // permission and leave them alone. The workers.dev address and its Version
+  // URLs stay off; Wrangler leaves preview_urls as it was when it's unset.
   "workers_dev": false,
-  "preview_urls": true,
+  "preview_urls": false,
 }

@@ -416,9 +416,10 @@ describe('release', () => {
     expect(app.clientId).not.toBe('');
   });
 
-  // The web app's Worker signs in with the same App, from its own config.
+  // The web app's Worker, and its Previews, sign in with the same App.
   test('gives the web app the same client ID', () => {
     const config = readFileSync(path.join(import.meta.dirname, '../../web/wrangler.jsonc'), 'utf8');
-    expect(config).toContain(`"REPOTTED_APP_CLIENT_ID": "${app.clientId}"`);
+    const ids = [...config.matchAll(/"REPOTTED_APP_CLIENT_ID": "([^"]*)"/g)].map((match) => match[1]);
+    expect(ids).toStrictEqual([app.clientId, app.clientId]);
   });
 });
