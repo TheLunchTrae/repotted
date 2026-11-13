@@ -15,7 +15,14 @@ export {
   StalePlanError,
 } from './plan.js';
 export type { Plan } from './plan.js';
-export { editProfile, listProfiles, parseProfile, resolveProfile, stringifyProfile } from './profile.js';
+export {
+  editProfile,
+  listProfiles,
+  parseProfile,
+  previewProfile,
+  resolveProfile,
+  stringifyProfile,
+} from './profile.js';
 export type { EntryEdit, ProfileEdit } from './profile.js';
 export { lockChanges } from './permissions.js';
 export { profileFileJsonSchema } from './schema.js';

@@ -66,14 +66,17 @@ type OwnProfile = Omit<ProfileFile, 'autolinks' | 'rulesets' | 'environments' | 
 
 /**
  * A profile's drafts: settings by section, as the profile's `drafts` holds
- * them, and the autolinks, rulesets, environments and labels marked `draft: true`.
- * Plan and apply leave every draft out.
+ * them, the autolinks, rulesets, environments and labels marked `draft: true`,
+ * and `unset`, what finishing the drafts stops managing, as
+ * `repository.has_wiki` or `rulesets/Legacy`. Plan and apply leave every
+ * draft out.
  */
 export interface Drafts extends Partial<Record<SettingsSection, Readonly<Record<string, unknown>> | undefined>> {
   autolinks?: DraftAutolink[] | undefined;
   rulesets?: DraftEntry[] | undefined;
   environments?: DraftEntry[] | undefined;
   labels?: DraftEntry[] | undefined;
+  unset?: string[] | undefined;
 }
 
 function isDraft(entry: object): boolean {
@@ -168,76 +171,6 @@ const profileLayer: Layer<LayerRead> = {
   check: () => undefined,
 };
 
-/** A file's layer read and split into what applies and its drafts. */
-interface ParsedLayer<Read extends LayerRead> {
-  readonly read: Read;
-  readonly own: OwnProfile;
-  readonly drafts: Drafts;
-  readonly extends: string | undefined;
-}
-
-function parseLayer<Read extends LayerRead>(text: string, source: string, kind: Layer<Read>): ParsedLayer<Read> {
-  let data: unknown;
-  try {
-    data = parse(text) ?? {};
-  } catch (error) {
-    throw new ProfileError(`${source} is not valid YAML`, { cause: error });
-  }
-  const result = kind.schema.safeParse(data);
-  if (!result.success) {
-    throw new ProfileError(`${source} is not a valid ${kind.noun}:\n${describe(result.error)}`);
-  }
-  const { autolinks, rulesets, environments, labels, drafts, ...settings } = result.data.layer;
-  const [ownAutolinks, draftAutolinks] = partition<AutolinkEntry, DraftAutolink>(autolinks, isDraftAutolink);
-  const [ownRulesets, draftRulesets] = partition<RulesetEntry, DraftEntry>(rulesets, isDraftEntry);
-  const [ownEnvironments, draftEnvironments] = partition<EnvironmentEntry, DraftEntry>(environments, isDraftEntry);
-  const [ownLabels, draftLabels] = partition<LabelEntry, DraftEntry>(labels, isDraftEntry);
-  // Checked in each file, since a merge pairs entries by name and would keep only the last of two.
-  const problems = [
-    ...duplicateKeys(
-      draftAutolinks,
-      (entry) => `Draft autolink "${entry.key_prefix}"`,
-      (entry) => entry.key_prefix,
-    ),
-    ...duplicateKeys(
-      draftRulesets,
-      (entry) => `Draft ruleset "${entry.name}"`,
-      (entry) => entry.name,
-    ),
-    ...duplicateKeys(
-      draftEnvironments,
-      (entry) => `Draft environment "${entry.name}"`,
-      (entry) => environmentKey(entry.name),
-    ),
-    ...duplicateKeys(
-      draftLabels,
-      (entry) => `Draft label "${entry.name}"`,
-      (entry) => labelKey(entry.name),
-    ),
-  ];
-  if (problems.length > 0) {
-    throw new ProfileError(`${source} is not a valid ${kind.noun}:\n${problems.map((line) => `✖ ${line}`).join('\n')}`);
-  }
-  return {
-    read: result.data,
-    own: {
-      ...settings,
-      autolinks: ownAutolinks,
-      rulesets: ownRulesets,
-      environments: ownEnvironments,
-      labels: ownLabels,
-    },
-    drafts: {
-      ...drafts,
-      autolinks: draftAutolinks,
-      rulesets: draftRulesets,
-      environments: draftEnvironments,
-      labels: draftLabels,
-    },
-    extends: settings.extends,
-  };
-}
-
 /** A value of a merged profile, with the file that sets it. */
 interface Sourced<Entry> {
   readonly entry: Entry;
@@ -309,6 +242,214 @@ function unwrapObject(field: unknown): z.ZodObject | undefined {
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Whether a path names one setting: a section's key, or a key inside one of
+ * its groups, as `actions.selected_actions.verified_allowed`.
+ */
+function isSettingsSection(name: string | undefined): name is SettingsSection {
+  return settingsSections.some((section) => section === name);
+}
+
+/**
+ * What a path under a settings section names: one setting, such as
+ * `repository.has_wiki` or `actions.selected_actions.verified_allowed`, a
+ * group of settings, such as `actions.selected_actions`, or nothing.
+ */
+export function settingPath(path: readonly string[]): 'setting' | 'group' | undefined {
+  const [section, key, inner, ...rest] = path;
+  if (!isSettingsSection(section) || key === undefined || rest.length > 0) {
+    return undefined;
+  }
+  const schema = sectionSchemas[section];
+  if (schema === undefined) {
+    return inner === undefined ? 'setting' : undefined;
+  }
+  const field: unknown = schema.shape[key];
+  if (field === undefined) {
+    return undefined;
+  }
+  const group = groupKeys[section].has(key) ? unwrapObject(field) : undefined;
+  if (inner === undefined) {
+    return group === undefined ? 'setting' : 'group';
+  }
+  return group?.shape[inner] === undefined ? undefined : 'setting';
+}
+
+/** What a key of `drafts.unset` names: one setting or group of settings, or one entry of a list. */
+type Unset =
+  | { readonly kind: 'setting'; readonly path: readonly string[] }
+  | { readonly kind: 'entry'; readonly list: EntryList; readonly name: string };
+
+const entryKeys: Readonly<Record<EntryList, (name: string) => string>> = {
+  autolinks: (name) => name,
+  rulesets: (name) => name,
+  environments: environmentKey,
+  labels: labelKey,
+};
+
+function isEntryList(name: string): name is EntryList {
+  return Object.hasOwn(entryKeys, name);
+}
+
+/** Reads a key of `drafts.unset`, as `repository.has_wiki` or `rulesets/Legacy`, or undefined when it names nothing. */
+function parseUnset(key: string): Unset | undefined {
+  const slash = key.indexOf('/');
+  if (slash !== -1) {
+    const list = key.slice(0, slash);
+    const name = key.slice(slash + 1);
+    return isEntryList(list) && name !== '' ? { kind: 'entry', list, name } : undefined;
+  }
+  const parts = key.split('.');
+  return settingPath(parts) === undefined ? undefined : { kind: 'setting', path: parts };
+}
+
+/** The key an unset is known by, so two spellings of one environment's or label's name are one. */
+function unsetKey(unset: Unset): string {
+  return unset.kind === 'setting' ? unset.path.join('.') : `${unset.list}/${entryKeys[unset.list](unset.name)}`;
+}
+
+function getIn(value: unknown, keys: readonly string[]): unknown {
+  return keys.reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), value);
+}
+
+/** Whether a file's settings or entries, its own or its drafts, name what `unset` names. */
+function names(layer: Readonly<Record<string, unknown>>, unset: Unset): boolean {
+  if (unset.kind === 'setting') {
+    return getIn(layer, unset.path) !== undefined;
+  }
+  const key = entryKeys[unset.list];
+  const entries: unknown = layer[unset.list];
+  return (
+    Array.isArray(entries) &&
+    entries.some((entry) => {
+      const name: unknown = isRecord(entry)
+        ? unset.list === 'autolinks'
+          ? entry['key_prefix']
+          : entry['name']
+        : undefined;
+      return typeof name === 'string' && key(name) === key(unset.name);
+    })
+  );
+}
+
+/**
+ * What is wrong with a file's `drafts.unset`: a key that names nothing, one
+ * named twice, or one that a draft of the same file also changes.
+ */
+function unsetProblems(keys: readonly string[] | undefined, drafts: Readonly<Record<string, unknown>>): string[] {
+  const seen = new Set<string>();
+  const problems: string[] = [];
+  for (const key of keys ?? []) {
+    const unset = parseUnset(key);
+    if (unset === undefined) {
+      problems.push(
+        `${key} in drafts.unset names no setting or list entry, as in repository.has_wiki or rulesets/Main`,
+      );
+      continue;
+    }
+    if (seen.has(unsetKey(unset))) {
+      problems.push(`${key} is in drafts.unset more than once`);
+    }
+    seen.add(unsetKey(unset));
+    if (names(drafts, unset)) {
+      problems.push(`${key} is both in drafts.unset and changed by a draft; keep one`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * A file's `drafts.unset` that names what the file itself does not set:
+ * finishing the draft would change nothing there.
+ */
+function unsetWarnings(link: Link): string[] {
+  return (link.drafts.unset ?? []).flatMap((key) => {
+    const unset = parseUnset(key);
+    return unset === undefined || names(link.parsed, unset)
+      ? []
+      : [
+          `Draft unset ${key} in ${path.basename(link.file)}: the file does not set it, so finishing the draft changes nothing`,
+        ];
+  });
+}
+
+/** A file's layer read and split into what applies and its drafts. */
+interface ParsedLayer<Read extends LayerRead> {
+  readonly read: Read;
+  readonly own: OwnProfile;
+  readonly drafts: Drafts;
+  readonly extends: string | undefined;
+}
+
+function parseLayer<Read extends LayerRead>(text: string, source: string, kind: Layer<Read>): ParsedLayer<Read> {
+  let data: unknown;
+  try {
+    data = parse(text) ?? {};
+  } catch (error) {
+    throw new ProfileError(`${source} is not valid YAML`, { cause: error });
+  }
+  const result = kind.schema.safeParse(data);
+  if (!result.success) {
+    throw new ProfileError(`${source} is not a valid ${kind.noun}:\n${describe(result.error)}`);
+  }
+  const { autolinks, rulesets, environments, labels, drafts, ...settings } = result.data.layer;
+  const [ownAutolinks, draftAutolinks] = partition<AutolinkEntry, DraftAutolink>(autolinks, isDraftAutolink);
+  const [ownRulesets, draftRulesets] = partition<RulesetEntry, DraftEntry>(rulesets, isDraftEntry);
+  const [ownEnvironments, draftEnvironments] = partition<EnvironmentEntry, DraftEntry>(environments, isDraftEntry);
+  const [ownLabels, draftLabels] = partition<LabelEntry, DraftEntry>(labels, isDraftEntry);
+  // Checked in each file, since a merge pairs entries by name and would keep only the last of two.
+  const problems = [
+    ...duplicateKeys(
+      draftAutolinks,
+      (entry) => `Draft autolink "${entry.key_prefix}"`,
+      (entry) => entry.key_prefix,
+    ),
+    ...duplicateKeys(
+      draftRulesets,
+      (entry) => `Draft ruleset "${entry.name}"`,
+      (entry) => entry.name,
+    ),
+    ...duplicateKeys(
+      draftEnvironments,
+      (entry) => `Draft environment "${entry.name}"`,
+      (entry) => environmentKey(entry.name),
+    ),
+    ...duplicateKeys(
+      draftLabels,
+      (entry) => `Draft label "${entry.name}"`,
+      (entry) => labelKey(entry.name),
+    ),
+    ...unsetProblems(drafts?.unset, {
+      ...drafts,
+      autolinks: draftAutolinks,
+      rulesets: draftRulesets,
+      environments: draftEnvironments,
+      labels: draftLabels,
+    }),
+  ];
+  if (problems.length > 0) {
+    throw new ProfileError(`${source} is not a valid ${kind.noun}:\n${problems.map((line) => `✖ ${line}`).join('\n')}`);
+  }
+  return {
+    read: result.data,
+    own: {
+      ...settings,
+      autolinks: ownAutolinks,
+      rulesets: ownRulesets,
+      environments: ownEnvironments,
+      labels: ownLabels,
+    },
+    drafts: {
+      ...drafts,
+      autolinks: draftAutolinks,
+      rulesets: draftRulesets,
+      environments: draftEnvironments,
+      labels: draftLabels,
+    },
+    extends: settings.extends,
+  };
 }
 
 /**
@@ -510,13 +651,14 @@ function issueLines(error: z.ZodError): string[] {
   });
 }
 
-function toDrafts(merged: SourcedDrafts): Drafts {
+function toDrafts(merged: SourcedDrafts, unset: ReadonlyMap<string, Sourced<string>>): Drafts {
   const drafts: Drafts = {
     ...Object.fromEntries(settingsSections.map((section) => [section, values(merged.settings[section])])),
     autolinks: entries(merged.autolinks),
     rulesets: entries(merged.rulesets),
     environments: entries(merged.environments),
     labels: entries(merged.labels),
+    unset: [...unset.values()].map((item) => item.entry),
   };
   // A section or list with no drafts is left out.
   return Object.fromEntries(
@@ -619,8 +761,11 @@ function fileDraftWarnings(drafts: Drafts, file: string): string[] {
  */
 export type ProfileSources = Readonly<
   Record<SettingsSection | EntryList, Record<string, string>> & {
-    /** The same for drafts, by section and then key, prefix or name. */
-    drafts: Readonly<Record<SettingsSection | EntryList, Record<string, string>>>;
+    /**
+     * The same for drafts, by section and then key, prefix or name, and
+     * under `unset`, by each key of `drafts.unset`.
+     */
+    drafts: Readonly<Record<SettingsSection | EntryList | 'unset', Record<string, string>>>;
   }
 >;
 
@@ -716,7 +861,17 @@ function resolveChain(
   const mergedDrafts = chain
     .toReversed()
     .reduce<SourcedDrafts>((base, { file, drafts }) => mergeLayers(base, drafts, file), { settings: {} });
-  const drafts = toDrafts(mergedDrafts);
+  // A file's unset stands in for the same key in the files it extends.
+  const unset = new Map<string, Sourced<string>>();
+  for (const { file, drafts: own } of chain.toReversed()) {
+    for (const key of own.unset ?? []) {
+      const parsed = parseUnset(key);
+      if (parsed !== undefined) {
+        unset.set(unsetKey(parsed), { entry: key, file });
+      }
+    }
+  }
+  const drafts = toDrafts(mergedDrafts, unset);
   const adjusted = adjust === undefined ? { data: toProfile(merged), unmatched: [] } : adjust(toProfile(merged));
   const applied = validate(adjusted.data, source);
   return {
@@ -725,11 +880,17 @@ function resolveChain(
       profile: applied,
       drafts,
       warnings: [
-        ...chain.flatMap((link) => fileDraftWarnings(link.drafts, link.file)),
+        ...chain.flatMap((link) => [...fileDraftWarnings(link.drafts, link.file), ...unsetWarnings(link)]),
         ...draftWarnings(drafts),
         ...renamedDraftWarnings(applied, drafts),
       ],
-      sources: { ...sourcesOf(merged), drafts: sourcesOf(mergedDrafts) },
+      sources: {
+        ...sourcesOf(merged),
+        drafts: {
+          ...sourcesOf(mergedDrafts),
+          unset: Object.fromEntries([...unset.values()].map((item) => [item.entry, item.file])),
+        },
+      },
     },
     unmatched: adjusted.unmatched,
   };
@@ -851,14 +1012,6 @@ export interface EntryEdit {
 export type ProfileEdit = SettingEdit | EntryEdit;
 
 /**
- * Whether a path names one setting: a section's key, or a key inside one of
- * its groups, as `actions.selected_actions.verified_allowed`.
- */
-function isSettingsSection(name: string | undefined): name is SettingsSection {
-  return settingsSections.some((section) => section === name);
-}
-
-/**
  * Whether a path under `drafts` names one draft setting. A draft may name a
  * key the section does not have yet, so any key goes, and a key inside a
  * group such as `selected_actions` goes by the group's key as settings do.
@@ -873,33 +1026,11 @@ function isDraftPath(path: readonly string[]): boolean {
   );
 }
 
-/**
- * What a path under a settings section names: one setting, such as
- * `repository.has_wiki` or `actions.selected_actions.verified_allowed`, a
- * group of settings, such as `actions.selected_actions`, or nothing.
- */
-export function settingPath(path: readonly string[]): 'setting' | 'group' | undefined {
-  const [section, key, inner, ...rest] = path;
-  if (!isSettingsSection(section) || key === undefined || rest.length > 0) {
-    return undefined;
-  }
-  const schema = sectionSchemas[section];
-  if (schema === undefined) {
-    return inner === undefined ? 'setting' : undefined;
-  }
-  const field: unknown = schema.shape[key];
-  if (field === undefined) {
-    return undefined;
-  }
-  const group = groupKeys[section].has(key) ? unwrapObject(field) : undefined;
-  if (inner === undefined) {
-    return group === undefined ? 'setting' : 'group';
-  }
-  return group?.shape[inner] === undefined ? undefined : 'setting';
-}
-
 function isEditable(path: readonly string[]): boolean {
-  return path[0] === 'drafts' ? isDraftPath(path.slice(1)) : settingPath(path) === 'setting';
+  if (path[0] !== 'drafts') {
+    return settingPath(path) === 'setting';
+  }
+  return (path.length === 2 && path[1] === 'unset') || isDraftPath(path.slice(1));
 }
 
 /**
@@ -1045,21 +1176,23 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
   }
 }
 
-/**
- * Edits the first file of a chain, as `editProfile` does, for any kind of
- * layer. The file is read once, and `edits` says what to change from what
- * that read yields, so the edits and the text they change agree.
- */
-export async function editLayer<Read extends LayerRead>(
+/** A chain's first file with edits made to its text, resolved, and not yet saved. */
+interface EditedLayer<Read extends LayerRead> {
+  /** The chain as it was read, resolved. */
+  readonly before: ResolvedProfile;
+  readonly result: ResolvedLayer<Read>;
+  readonly file: string;
+  readonly original: string;
+  readonly text: string;
+}
+
+async function editChain<Read extends LayerRead>(
   file: string,
   edits: (head: Read) => readonly ProfileEdit[],
   layer: Layer<Read>,
-): Promise<ResolvedLayer<Read>> {
-  const {
-    head,
-    text: original,
-    links: [own, ...base],
-  } = await readChain(file, layer);
+): Promise<EditedLayer<Read>> {
+  const { head, text: original, links } = await readChain(file, layer);
+  const [own, ...base] = links;
   const document = parseDocument(original);
   const seen = new Set<string>();
   for (const edit of edits(head)) {
@@ -1107,14 +1240,30 @@ export async function editLayer<Read extends LayerRead>(
     ),
   };
   layer.check(result);
+  return { before: resolveChain(links, own.file, head.adjust).resolved, result, file: own.file, original, text };
+}
+
+/**
+ * Edits the first file of a chain, as `editProfile` does, for any kind of
+ * layer. The file is read once, and `edits` says what to change from what
+ * that read yields, so the edits and the text they change agree.
+ */
+export async function editLayer<Read extends LayerRead>(
+  file: string,
+  edits: (head: Read) => readonly ProfileEdit[],
+  layer: Layer<Read>,
+): Promise<ResolvedLayer<Read>> {
+  const edited = await editChain(file, edits, layer);
   try {
-    await replaceFile(own.file, original.includes('\r\n') ? text.replaceAll('\n', '\r\n') : text, {
-      create: false,
-    });
+    await replaceFile(
+      edited.file,
+      edited.original.includes('\r\n') ? edited.text.replaceAll('\n', '\r\n') : edited.text,
+      { create: false },
+    );
   } catch (error) {
-    throw new ProfileError(`Cannot save ${layer.noun} ${own.file}`, { cause: error });
+    throw new ProfileError(`Cannot save ${layer.noun} ${edited.file}`, { cause: error });
   }
-  return result;
+  return edited.result;
 }
 
 /**
@@ -1125,6 +1274,21 @@ export async function editLayer<Read extends LayerRead>(
  */
 export async function editProfile(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
   return (await editLayer(file, () => edits, profileLayer)).resolved;
+}
+
+/** What a profile resolves to before and after edits that are not saved. */
+export interface ProfilePreview {
+  readonly before: ResolvedProfile;
+  readonly after: ResolvedProfile;
+}
+
+/**
+ * Resolves a profile as it is and as `editProfile` would leave it, and saves
+ * nothing. The edits are checked as `editProfile` checks them.
+ */
+export async function previewProfile(file: string, edits: readonly ProfileEdit[]): Promise<ProfilePreview> {
+  const { before, result } = await editChain(file, () => edits, profileLayer);
+  return { before, after: result.resolved };
 }
 
 export function stringifyProfile(value: Profile): string {

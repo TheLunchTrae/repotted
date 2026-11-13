@@ -15,15 +15,22 @@ internal static class PlanSections
         ? null
         : $"Left out as {(plan.Skipped.Count == 1 ? "a draft" : "drafts")}: {string.Join(", ", plan.Skipped.Select(Describe))}.";
 
-    /// <summary>A draft as the plan names it: the ruleset Later, or a setting's path.</summary>
-    private static string Describe(SkippedDocument draft) => draft.Section switch
+    /// <summary>
+    /// A draft as the plan names it: the ruleset Later, or a setting's path,
+    /// and whether the draft stops managing it.
+    /// </summary>
+    private static string Describe(SkippedDocument draft)
     {
-        "rulesets" => $"the ruleset {draft.Target}",
-        "environments" => $"the environment {draft.Target}",
-        "autolinks" => $"the autolink {draft.Target}",
-        "labels" => $"the label {draft.Target}",
-        _ => $"{draft.Section}.{draft.Target}",
-    };
+        var named = draft.Section switch
+        {
+            "rulesets" => $"the ruleset {draft.Target}",
+            "environments" => $"the environment {draft.Target}",
+            "autolinks" => $"the autolink {draft.Target}",
+            "labels" => $"the label {draft.Target}",
+            _ => $"{draft.Section}.{draft.Target}",
+        };
+        return draft.Unset == true ? $"no longer managing {named}" : named;
+    }
 
     /// <summary>
     /// Where to grant what a plan's locks need: the settings page of the App's

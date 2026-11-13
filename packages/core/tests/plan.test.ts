@@ -100,6 +100,16 @@ drafts:
     const { skipped: _skipped, ...older } = plan;
     expect(parsePlan(JSON.parse(JSON.stringify(older))).skipped).toEqual([]);
     expect(describeSkipped({ section: 'pages', target: 'absent' })).toBe('pages.absent (turns the Pages site off)');
+    expect(describeSkipped({ section: 'rulesets', target: 'Legacy', unset: true })).toBe(
+      'ruleset "Legacy" (stops managing it)',
+    );
+    expect(
+      skippedDrafts({ unset: ['rulesets/Legacy', 'repository.has_wiki', 'actions.selected_actions.verified_allowed'] }),
+    ).toEqual([
+      { section: 'repository', target: 'has_wiki', unset: true },
+      { section: 'actions', target: 'selected_actions.verified_allowed', unset: true },
+      { section: 'rulesets', target: 'Legacy', unset: true },
+    ]);
     await applyPlan(github, plan);
     expect(github.writes).toEqual([
       { method: 'PATCH', path: '/repos/lunch/app', body: { delete_branch_on_merge: true } },

@@ -39,7 +39,8 @@
       "autolinks": {},
       "rulesets": {},
       "environments": {},
-      "labels": {}
+      "labels": {},
+      "unset": {}
     }
   }
 }

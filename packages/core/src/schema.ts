@@ -707,6 +707,12 @@ export const draftSettings = z
     security: draftValues,
     custom_properties: draftValues,
     pages: draftValues,
+    /**
+     * What finishing the draft stops managing, as `repository.has_wiki` or
+     * `rulesets/Legacy`: the profile file's own value or entry goes, so a
+     * base profile's applies again, or else the repository keeps its own.
+     */
+    unset: z.array(z.string().min(1)),
   })
   .partial()
   .strict();

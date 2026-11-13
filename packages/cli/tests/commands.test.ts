@@ -849,6 +849,40 @@ describe('profile commands', () => {
     expect(await readFile(file, 'utf8')).not.toContain('has_wiki');
   });
 
+  test('profile --preview shows what applies before and after the edits and saves nothing', async () => {
+    const file = path.join(directory, 'preview.yaml');
+    const text =
+      'repository: { has_wiki: false }\nrulesets: [{ name: Main }]\ndrafts: { repository: { has_projects: true } }\n';
+    await writeFile(file, text);
+
+    const previewed = await cli(
+      new FakeGitHub(),
+      'profile',
+      file,
+      '--set',
+      'repository.has_projects=true',
+      '--unset',
+      'drafts.repository.has_projects',
+      '--drop-ruleset',
+      'Main',
+      '--preview',
+      '--json',
+    );
+    expect(previewed).toMatchObject({ code: 0, err: '' });
+    expect(document(previewed)).toEqual({
+      before: 'repository:\n  has_wiki: false\nrulesets:\n  - name: Main\n',
+      after: 'repository:\n  has_projects: true\n  has_wiki: false\n',
+    });
+    expect(await readFile(file, 'utf8')).toBe(text);
+
+    const shown = await cli(new FakeGitHub(), 'profile', file, '--unset', 'repository.has_wiki', '--preview');
+    expect(shown).toMatchObject({
+      code: 0,
+      out: 'rulesets:\n  - name: Main\n',
+      err: `Preview only: ${file} is not saved\n`,
+    });
+  });
+
   test('profile renames a ruleset in place when its write follows its drop, and drops an environment', async () => {
     const file = path.join(directory, 'entries.yaml');
     await writeFile(

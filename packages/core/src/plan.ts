@@ -44,6 +44,8 @@ import { liveSecurityAndAnalysis, planSecurity, securityEndpoints } from './sect
 export interface Skipped {
   readonly section: Section;
   readonly target: string;
+  /** Present when the draft stops managing the target, from `drafts.unset`, rather than changing it. */
+  readonly unset?: true | undefined;
 }
 
 /** The changes a profile needs on one repository, in the order they apply. */
@@ -67,9 +69,23 @@ function draftTargets(drafts: Drafts, section: Section): string[] {
   return Object.keys(drafts[section] ?? {});
 }
 
+/** The section and target a key of `drafts.unset` names, as `repository.has_wiki` or `rulesets/Legacy`. */
+function unsetTarget(key: string): { section: Section; target: string } | undefined {
+  const at = key.includes('/') ? key.indexOf('/') : key.indexOf('.');
+  const section = sections.find((name) => name === key.slice(0, at));
+  return section === undefined ? undefined : { section, target: key.slice(at + 1) };
+}
+
 /** What a plan skips for these drafts, in the order their sections apply. */
 export function skippedDrafts(drafts: Drafts): Skipped[] {
-  return sections.flatMap((section) => draftTargets(drafts, section).map((target) => ({ section, target })));
+  const unset = (drafts.unset ?? []).flatMap((key) => {
+    const target = unsetTarget(key);
+    return target === undefined ? [] : [{ ...target, unset: true as const }];
+  });
+  return sections.flatMap((section) => [
+    ...draftTargets(drafts, section).map((target) => ({ section, target })),
+    ...unset.filter((item) => item.section === section),
+  ]);
 }
 
 /**
@@ -355,7 +371,9 @@ const savedPlan = z.object({
   desired: profile,
   changes: z.array(savedChange),
   // Plans saved before drafts existed have none.
-  skipped: z.array(z.object({ section: z.enum(sections), target: z.string() })).default([]),
+  skipped: z
+    .array(z.object({ section: z.enum(sections), target: z.string(), unset: z.literal(true).optional() }))
+    .default([]),
   warnings: z.array(
     z.union([
       z.object({
@@ -452,13 +470,12 @@ function describeTarget(section: Section, target: string): string {
 }
 
 /** A draft a plan leaves out, as plan output names it. */
-export function describeSkipped({ section, target }: Skipped): string {
-  if (isListSection(section)) {
-    return describeTarget(section, target);
+export function describeSkipped({ section, target, unset }: Skipped): string {
+  const named = isListSection(section) ? describeTarget(section, target) : `${section}.${target}`;
+  if (unset === true) {
+    return `${named} (stops managing it)`;
   }
-  return section === 'pages' && target === 'absent'
-    ? 'pages.absent (turns the Pages site off)'
-    : `${section}.${target}`;
+  return section === 'pages' && target === 'absent' ? 'pages.absent (turns the Pages site off)' : named;
 }
 
 const entryNouns: Partial<Record<Section, string>> = {
