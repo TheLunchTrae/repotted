@@ -4,7 +4,7 @@ import { expect, test } from 'vitest';
 
 import { isDeepEqual } from '../src/equal.js';
 
-// Node's comparison is the reference: the engine compared with it before it ran in a browser.
+// Node's comparison is the reference for plain data.
 test('compares the data YAML and JSON give as Node does', () => {
   const values: unknown[] = [
     undefined,

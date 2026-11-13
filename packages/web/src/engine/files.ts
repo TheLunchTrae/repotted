@@ -2,9 +2,11 @@
 // profiles, staged applies, and batches through `node:fs/promises`; the web
 // build maps that module to this one, so the engine runs in the page as it
 // does under Node. It has the functions the engine calls and no others, with
-// Node's error codes, which the engine reads. A store, such as the browser's
-// storage, fills the folders it owns and follows `watchFiles` to keep each
-// change.
+// the error codes the engine reads, ENOENT and EEXIST, as Node gives them. A
+// store, such as the browser's storage, fills the folders it owns and follows
+// `watchFiles` to keep each change. The engine replaces a file through a
+// temporary one beside it, named `.<name>.<random>.tmp`, so a watcher hears
+// of that file written and removed before the file itself.
 
 import { basename, dirname, join, resolve } from './path.js';
 
@@ -20,7 +22,7 @@ interface FolderNode {
 
 type Node = FileNode | FolderNode;
 
-/** A change to one file: its absolute path, and its content, or undefined once it is removed. */
+/** A change to one file: its absolute path, and a copy of its content, or undefined once it is removed. */
 export type FileChange = (file: string, content: Uint8Array | undefined) => void;
 
 const root: FolderNode = { kind: 'folder', children: new Map() };
@@ -68,10 +70,22 @@ function parentOf(target: string): FolderNode {
   return parent;
 }
 
+/** The name of the file or folder a path leads to, whatever `.` and `..` it holds. */
+function leaf(target: string): string {
+  return basename(resolve('/', target));
+}
+
+/**
+ * Tells the watchers of a change once the file function that made it has
+ * finished and before its caller goes on, so a watcher that throws fails
+ * neither the change nor the other watchers.
+ */
 function announce(target: string, content: Uint8Array | undefined): void {
   const file = resolve('/', target);
   for (const watcher of watchers) {
-    watcher(file, content);
+    queueMicrotask(() => {
+      watcher(file, content?.slice());
+    });
   }
 }
 
@@ -85,7 +99,7 @@ function announceRemoved(target: string, node: Node): void {
   }
 }
 
-/** Calls `watcher` after each file is written or removed, until the returned function is called. */
+/** Calls `watcher` after each file is written or removed, in order, until the returned function is called. */
 export function watchFiles(watcher: FileChange): () => void {
   watchers.add(watcher);
   return () => {
@@ -120,7 +134,7 @@ export function writeFile(
 ): Promise<void> {
   return settle(() => {
     const parent = parentOf(target);
-    const name = basename(target);
+    const name = leaf(target);
     const current = parent.children.get(name);
     if (current !== undefined && options.flag === 'wx') {
       throw new FileError('EEXIST', `file already exists, open '${target}'`);
@@ -222,12 +236,12 @@ export function rm(
     if (node.kind === 'folder' && options.recursive !== true) {
       throw new FileError('EISDIR', `path is a directory, rm '${target}'`);
     }
+    announceRemoved(target, node);
     if (node === root) {
       root.children.clear();
     } else {
-      parentOf(target).children.delete(basename(target));
+      parentOf(target).children.delete(leaf(target));
     }
-    announceRemoved(target, node);
   });
 }
 
@@ -242,7 +256,7 @@ export function rmdir(target: string): Promise<void> {
       throw new FileError('ENOTEMPTY', `directory not empty, rmdir '${target}'`);
     }
     if (node !== root) {
-      parentOf(target).children.delete(basename(target));
+      parentOf(target).children.delete(leaf(target));
     }
   });
 }
@@ -255,11 +269,11 @@ export function rename(from: string, to: string): Promise<void> {
       throw new FileError('EISDIR', `illegal operation on a directory, rename '${from}'`);
     }
     const parent = parentOf(to);
-    if (parent.children.get(basename(to))?.kind === 'folder') {
+    if (parent.children.get(leaf(to))?.kind === 'folder') {
       throw new FileError('EISDIR', `illegal operation on a directory, rename '${to}'`);
     }
-    parentOf(from).children.delete(basename(from));
-    parent.children.set(basename(to), node);
+    parentOf(from).children.delete(leaf(from));
+    parent.children.set(leaf(to), node);
     announce(from, undefined);
     announce(to, node.content);
   });

@@ -36,8 +36,8 @@ Node's types; `build.ts` runs under Node and the root config checks it.
 ## The engine
 
 The page bundles `packages/core` and calls it directly, as the CLI does, so
-the rules about what Repotted may write stay in one place. The engine's only
-Node modules are `node:fs/promises` and `node:path`; everything else it uses,
+the rules about what Repotted may write stay in one place. The only Node
+modules the engine runs are `node:fs/promises` and `node:path`; everything else it uses,
 such as hashing and base64, is on the web platform, which Node has too.
 `aliases.ts` maps those two modules for the page's bundle:
 
@@ -50,8 +50,8 @@ such as hashing and base64, is on the web platform, which Node has too.
 So a profile, a staged apply, and a batch are files at absolute paths in the
 page too, and the engine's functions take the same arguments there as under
 Node. The engine's own tests run on Node's file system;
-`tests/engine.test.ts` runs its file flows on the in-memory one, through the
-same aliases, in Vitest's `web` project. A Node module that the engine
+`tests/engine.test.ts` runs its profile, staged apply, and batch flows on the
+in-memory one, through the same aliases, in Vitest's `web` project. A Node module that the engine
 imports and `aliases.ts` doesn't map fails the build, which `ts:web:check`
 runs.
 

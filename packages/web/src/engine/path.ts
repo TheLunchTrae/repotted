@@ -1,6 +1,7 @@
 // POSIX paths for the engine in the page, where the web build maps
 // `node:path` to this module. It has the functions the engine calls, and
-// they answer as Node's do on Linux and macOS. The page's files hang from
+// they answer as Node's do on Linux and macOS for the paths the engine
+// makes; `join` drops a trailing slash, which Node keeps. The page's files hang from
 // `/`, which also stands in for the working directory.
 
 export const sep = '/';

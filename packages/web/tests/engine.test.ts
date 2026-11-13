@@ -14,7 +14,7 @@ import {
   planBatch,
   planStagedApply,
 } from '@repotted/core';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import { FakeFleet, FakeGitHub } from '../../core/tests/fake-github.js';
 import { mkdir, readdir, readFile, rm, rmdir, watchFiles, writeFile } from '../src/engine/files.js';
@@ -87,7 +87,7 @@ test('plans and applies a batch, then leaves no file or folder of it behind', as
   await expect(readdir('/batch', { withFileTypes: true })).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
-test('tells watchers of each file written, replaced, moved and removed, by its absolute path', async () => {
+test('tells watchers of each file written and removed, in order, by its absolute path', async () => {
   const seen: [string, string | undefined][] = [];
   const stop = watchFiles((file, content) => {
     seen.push([file, content === undefined ? undefined : new TextDecoder().decode(content)]);
@@ -96,15 +96,50 @@ test('tells watchers of each file written, replaced, moved and removed, by its a
 
   await writeFile('/profiles/teams/../a.yaml', 'one');
   await writeFile('/profiles/teams/b.yaml', 'two');
-  await rm('/profiles/teams', { recursive: true });
+  await rm('/', { recursive: true });
   stop();
+  await mkdir('/profiles', { recursive: true });
   await writeFile('/profiles/c.yaml', 'three');
 
   expect(seen).toEqual([
     ['/profiles/a.yaml', 'one'],
     ['/profiles/teams/b.yaml', 'two'],
     ['/profiles/teams/b.yaml', undefined],
+    ['/profiles/a.yaml', undefined],
   ]);
+});
+
+test('a watcher hears of the file an engine edit replaces, last and with its new content', async () => {
+  await mkdir('/profiles', { recursive: true });
+  await writeFile('/profiles/base.yaml', 'repository: { has_wiki: false }\n');
+  const seen: [string, string | undefined][] = [];
+  const stop = watchFiles((file, content) => {
+    seen.push([file, content === undefined ? undefined : new TextDecoder().decode(content)]);
+  });
+
+  await editProfile('/profiles/base.yaml', [{ path: ['repository', 'has_wiki'], value: true }]);
+  stop();
+
+  expect(seen.at(-1)).toEqual(['/profiles/base.yaml', 'repository: { has_wiki: true }\n']);
+  expect(seen.filter(([, content]) => content === undefined)).toEqual([
+    [expect.stringMatching(/^\/profiles\/\.base\.yaml\.[0-9a-f]+\.tmp$/u), undefined],
+  ]);
+});
+
+test('a watcher that changes the content it is given changes neither the file nor what others hear', async () => {
+  await mkdir('/profiles', { recursive: true });
+  const stopFirst = watchFiles((_file, content) => {
+    content?.fill(0);
+  });
+  const heard = vi.fn();
+  const stopSecond = watchFiles(heard);
+
+  await writeFile('/profiles/a.yaml', 'one');
+  stopFirst();
+  stopSecond();
+
+  expect(await readFile('/profiles/a.yaml', 'utf8')).toBe('one');
+  expect(heard).toHaveBeenCalledWith('/profiles/a.yaml', new TextEncoder().encode('one'));
 });
 
 test('keeps a folder that holds something when asked to remove it empty', async () => {

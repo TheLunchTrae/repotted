@@ -6,7 +6,7 @@ import { engineAliases } from './packages/web/aliases.ts';
 export default defineConfig({
   test: {
     projects: [
-      { test: { name: 'node', include: ['packages/{core,cli}/tests/**/*.test.ts'] } },
+      { test: { name: 'node', include: ['packages/{core,cli}/tests/**/*.test.ts', 'scripts/**/*.test.mjs'] } },
       // The web app's tests run the engine as the page does, on its in-memory files.
       { resolve: { alias: engineAliases }, test: { name: 'web', include: ['packages/web/tests/**/*.test.ts'] } },
     ],
