@@ -339,6 +339,7 @@ environments: [{ name: NPM, wait_timer: 5 }]
         rulesets: {},
         environments: {},
         labels: {},
+        unset: {},
       },
     });
   });
@@ -684,6 +685,7 @@ drafts:
       rulesets: { Unfinished: file },
       environments: { npm: file },
       labels: {},
+      unset: {},
     });
   });
 
@@ -919,7 +921,11 @@ drafts:
     const sections = Object.keys(profile.shape).filter(
       (key) => !['autolinks', 'rulesets', 'environments', 'labels'].includes(key),
     );
-    expect(Object.keys(draftSettings.shape).toSorted()).toEqual(sections.toSorted());
+    expect(
+      Object.keys(draftSettings.shape)
+        .filter((key) => key !== 'unset')
+        .toSorted(),
+    ).toEqual(sections.toSorted());
   });
 });
 
@@ -1004,6 +1010,63 @@ describe('editProfile with drafts', () => {
     ]);
     expect(replaced.profile.rulesets).toEqual([{ name: 'Main', target: 'tag' }]);
     expect(replaced.drafts).toEqual({});
+  });
+
+  test('stops managing what drafts.unset names once it is finished, and plans keep it until then', async () => {
+    const file = await write(
+      'edit-unset.yaml',
+      'repository:\n  has_wiki: false # no wiki\n  has_projects: false\nrulesets:\n  - name: Legacy\n  - name: Main\n',
+    );
+
+    const drafted = await editProfile(file, [
+      { path: ['drafts', 'unset'], value: ['repository.has_wiki', 'rulesets/Legacy'] },
+    ]);
+    expect(drafted.profile).toEqual({
+      repository: { has_wiki: false, has_projects: false },
+      rulesets: [{ name: 'Legacy' }, { name: 'Main' }],
+    });
+    expect(drafted.drafts).toEqual({ unset: ['repository.has_wiki', 'rulesets/Legacy'] });
+    expect(drafted.sources.drafts.unset).toEqual({ 'repository.has_wiki': file, 'rulesets/Legacy': file });
+    expect(drafted.warnings).toEqual([]);
+
+    const finished = await editProfile(file, [
+      { path: ['repository', 'has_wiki'], value: undefined },
+      { list: 'rulesets', name: 'Legacy', entry: undefined },
+      { path: ['drafts', 'unset'], value: undefined },
+    ]);
+    expect(finished.profile).toEqual({ repository: { has_projects: false }, rulesets: [{ name: 'Main' }] });
+    expect(finished.drafts).toEqual({});
+    expect(await readFile(file, 'utf8')).toBe('repository:\n  has_projects: false\nrulesets:\n  - name: Main\n');
+  });
+
+  test('refuses a drafts.unset key that names nothing, a group of settings, twice, or what a draft also changes', async () => {
+    const file = await write(
+      'edit-unset-bad.yaml',
+      'repository: { has_wiki: false }\nenvironments: [{ name: NPM }]\ndrafts: { repository: { has_projects: true } }\n',
+    );
+
+    for (const [keys, message] of [
+      [['repository.wiki'], 'repository.wiki in drafts.unset names no setting or list entry'],
+      [['actions.selected_actions'], 'actions.selected_actions in drafts.unset names no setting or list entry'],
+      [['environments/NPM', 'environments/npm'], 'environments/npm is in drafts.unset more than once'],
+      [['repository.has_projects'], 'repository.has_projects is both in drafts.unset and changed by a draft'],
+    ] as const) {
+      const refused = rejection(editProfile(file, [{ path: ['drafts', 'unset'], value: keys }]));
+      expect(String(await refused)).toContain(message);
+    }
+  });
+
+  test('warns when drafts.unset names what its own file does not set, as a base value', async () => {
+    await write('unset-base.yaml', 'repository: { has_wiki: false }\n');
+    const file = await write(
+      'unset-override.yaml',
+      'extends: unset-base.yaml\ndrafts: { unset: [repository.has_wiki] }\n',
+    );
+
+    const resolved = await resolveProfile(file);
+    expect(resolved.warnings).toEqual([
+      'Draft unset repository.has_wiki in unset-override.yaml: the file does not set it, so finishing the draft changes nothing',
+    ]);
   });
 
   test('edits draft keys only under a settings section', async () => {

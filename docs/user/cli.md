@@ -238,6 +238,11 @@ profiles it extends. With these options, it edits the file instead:
 - `--ruleset`, `--environment` or `--label` with `"draft": true` in the JSON
   writes a draft, and `--drop-draft-ruleset name`,
   `--drop-draft-environment name` and `--drop-draft-label name` remove one.
+- `--set drafts.unset=json` sets the list of what finishing the draft stops
+  managing, such as `["repository.has_wiki","rulesets/Legacy"]`, and
+  `--unset drafts.unset` empties it.
+- `--preview` makes the edits without saving them, and prints what the
+  profile applies before and after them.
 
 You can give several options at once; they apply in order. A write right after
 a drop from the same list renames the dropped entry in place, which can also

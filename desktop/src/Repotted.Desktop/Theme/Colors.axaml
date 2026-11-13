@@ -23,6 +23,9 @@
       <SolidColorBrush x:Key="DriftBrush" Color="#7a4f00" />
       <SolidColorBrush x:Key="DriftBgBrush" Color="#fff3d6" />
       <SolidColorBrush x:Key="DriftRailBrush" Color="#d6961a" />
+      <SolidColorBrush x:Key="DraftBrush" Color="#1f4a99" />
+      <SolidColorBrush x:Key="DraftBgBrush" Color="#e8effc" />
+      <SolidColorBrush x:Key="DraftRailBrush" Color="#3b6fd1" />
       <SolidColorBrush x:Key="RemoveBrush" Color="#9e2416" />
       <SolidColorBrush x:Key="RemoveBgBrush" Color="#fde9e5" />
       <SolidColorBrush x:Key="AddBrush" Color="#1f5a31" />
@@ -60,6 +63,9 @@
       <SolidColorBrush x:Key="DriftBrush" Color="#ffd27a" />
       <SolidColorBrush x:Key="DriftBgBrush" Color="#3a2e14" />
       <SolidColorBrush x:Key="DriftRailBrush" Color="#e7a93a" />
+      <SolidColorBrush x:Key="DraftBrush" Color="#b5ccff" />
+      <SolidColorBrush x:Key="DraftBgBrush" Color="#1b2740" />
+      <SolidColorBrush x:Key="DraftRailBrush" Color="#7fa6f5" />
       <SolidColorBrush x:Key="RemoveBrush" Color="#ffab9f" />
       <SolidColorBrush x:Key="RemoveBgBrush" Color="#3d1f1b" />
       <SolidColorBrush x:Key="AddBrush" Color="#a6fbad" />

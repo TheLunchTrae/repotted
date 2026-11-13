@@ -170,7 +170,7 @@ public sealed class DeleteProfileTests : ViewModelTests
         // An edit made while the question shows is named, and goes from it once undone.
         Choose(editor, "has_wiki", "On");
         Assert.Equal("This deletes orgs.yaml from the profiles folder, and it can't be undone. Your unsaved changes to it are discarded.", profiles.DeleteDetail);
-        editor.DiscardCommand.Execute(null);
+        editor.ResetCommand.Execute(null);
         Assert.Equal("This deletes orgs.yaml from the profiles folder, and it can't be undone.", profiles.DeleteDetail);
 
         profiles.Items.Single(item => item.Name == "base").DeleteCommand.Execute(null);

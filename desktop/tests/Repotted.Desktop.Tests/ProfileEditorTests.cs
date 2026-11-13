@@ -60,7 +60,7 @@ public sealed class ProfileEditorTests : ViewModelTests
     }
 
     [AvaloniaFact]
-    public async Task Drafts_show_where_they_are_saved_and_a_draft_and_an_entry_can_share_a_name()
+    public async Task Rows_start_from_this_profiles_draft_and_save_applies_the_draft()
     {
         var (profiles, cli, files) = await OpenOrgs();
         cli.On($"profile {files.Own} --json", Documents.ResolvedWithDrafts(files.Own, files.Base));
@@ -68,52 +68,175 @@ public sealed class ProfileEditorTests : ViewModelTests
         await editor.LoadCommand.ExecuteAsync(null);
         var (rulesets, environments) = (editor.Tab("Rulesets"), editor.Tab("Environments"));
 
-        // A base's draft shows, but only this profile's own drafts can be finished or discarded here.
-        var projects = Find(editor, "has_projects");
-        Assert.Equal(("On", false, "Saved in base, not applied."), (projects.DraftLabel, projects.OwnDraft, projects.DraftNote));
-        Assert.False(projects.FinishDraftCommand.CanExecute(null));
+        // The profile's own draft shows over what applies; a base's draft is that profile's to finish.
+        var wiki = Find(editor, "has_wiki");
+        Assert.Equal((true, "On", "In the draft. Applies now: Off"), (wiki.InDraft, Selected(wiki), wiki.Note));
+        Assert.Equal((true, "In the draft: from base. Applies now: Off"), (Find(editor, "allow_squash_merge").InDraft, Find(editor, "allow_squash_merge").Note));
+        Assert.Equal((false, "Not managed"), (Find(editor, "has_projects").InDraft, Find(editor, "has_projects").Note));
         Assert.Equal(
-            ["Protect main: From base", "Old tags: Removed from GitHub here", "Later: Draft, left out of compare and apply", "Protect main: Draft, left out of compare and apply"],
+            ["Protect main: Changed in the draft, applies once you save", "Old tags: Removed from GitHub here", "Later: New in the draft, applies once you save"],
             rulesets.Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
-        Assert.Equal("NPM: Draft in base, left out of compare and apply", $"{environments.Entries[1].Name}: {environments.Entries[1].Note}");
-        Assert.Equal([2, 2, 0, 0, 0, 2, 1, 0], editor.Tabs.Select(tab => tab.Count));
+        Assert.Equal(["npm: Set here"], environments.Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
+        Assert.Equal((true, "Draft: 4 changes", 0), (editor.HasDraft, editor.DraftLabel, editor.ChangeCount));
 
-        // A draft can take an entry's name, but not another draft's.
+        // With nothing unsaved, Save still applies the draft, and Reset and Save as draft have nothing to do.
+        Assert.False(editor.ResetCommand.CanExecute(null));
+        Assert.False(editor.SaveAsDraftCommand.CanExecute(null));
+        Assert.True(editor.SaveCommand.CanExecute(null));
+
+        // Save writes what the draft holds as the values, and takes the draft out.
+        var save = $$"""profile {{files.Own}} --set repository.has_wiki=true --unset drafts.repository.has_wiki --unset merge.allow_squash_merge --unset drafts.unset --drop-draft-ruleset=Protect main --ruleset={"name":"Protect main","enforcement":"evaluate"} --drop-draft-ruleset=Later --ruleset={"name":"Later"} --json""";
+        cli.On(save, Documents.Resolved(files.Own, files.Base, wiki: true));
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(save, cli.Calls.Last(call => call.StartsWith("profile ", StringComparison.Ordinal) && call != $"profile {files.Own} --json"));
+        Assert.Null(editor.SaveError);
+        Assert.False(editor.HasDraft);
+    }
+
+    [AvaloniaFact]
+    public async Task Save_as_draft_keeps_the_changes_without_changing_what_applies()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        cli.On($"profile {files.Own} --json", Documents.ResolvedWithDrafts(files.Own, files.Base));
+        var editor = profiles.Current!;
+        await editor.LoadCommand.ExecuteAsync(null);
+        var rulesets = editor.Tab("Rulesets");
+
+        // A change to what applies is drafted, a draft put back as it applies leaves the draft, and a dropped draft goes.
+        Choose(editor, "has_issues", "Off");
+        Choose(editor, "has_wiki", "Off");
+        var later = rulesets.Entries.Single(entry => entry.Name == "Later");
+        later.OpenCommand.Execute(null);
+        rulesets.Editing!.DropCommand.Execute(null);
+        rulesets.BackCommand.Execute(null);
+        Assert.Equal((3, "Draft: 4 changes", "· 3 unsaved changes"), (editor.ChangeCount, editor.DraftLabel, editor.ChangesStatus));
+
+        var draft = $"profile {files.Own} --set drafts.repository.has_issues=false --unset drafts.repository.has_wiki --drop-draft-ruleset=Later --json";
+        cli.On(draft, Documents.ResolvedWithDrafts(files.Own, files.Base));
+        await editor.SaveAsDraftCommand.ExecuteAsync(null);
+        Assert.Contains(draft, cli.Calls);
+        Assert.Null(editor.SaveError);
+
+        // A draft can take an applied entry's name, but no entry can take another's.
         rulesets.NewCommand.Execute(null);
         var extra = rulesets.Editing!.Editor;
-        extra.IsDraft = true;
-        extra.Name = "Old tags";
-        Assert.Null(extra.Problem);
         extra.Name = "Later";
-        Assert.Equal("The profile already has a draft ruleset named Later.", extra.Problem);
+        Assert.Equal("The profile already has a ruleset named Later.", extra.DraftProblem);
         rulesets.Editing!.DropCommand.Execute(null);
-
-        // Finishing the draft of a base's ruleset replaces the base's, as an override does.
-        var draft = rulesets.Entries[3];
-        draft.Editor.IsDraft = false;
-        Assert.Null(draft.Editor.Problem);
-        Assert.Equal("Finished, applies once saved", draft.Note);
-        Assert.Equal("Replaced by its finished draft once saved", rulesets.Entries[0].Note);
-        Assert.Equal(2, rulesets.Count);
-
-        // Saving a change as a draft puts the value back, and an undo takes the draft out.
-        Choose(editor, "has_wiki", "On");
-        var wiki = Find(editor, "has_wiki");
-        wiki.SaveAsDraftCommand.Execute(null);
-        Assert.Equal((false, true, "Off"), (wiki.Changed, wiki.DraftChanged, wiki.Options.Single(option => option.Selected).Label));
-        Assert.Equal("2 unsaved changes", editor.ChangesLabel);
-        wiki.ResetCommand.Execute(null);
-        Assert.False(wiki.HasDraft);
-        Assert.Equal("1 unsaved change", editor.ChangesLabel);
-
-        Choose(editor, "has_wiki", "On");
-        wiki.SaveAsDraftCommand.Execute(null);
-        var save = $$"""profile {{files.Own}} --set drafts.repository.has_wiki=true --drop-draft-ruleset=Protect main --ruleset={"name":"Protect main","enforcement":"evaluate"} --json""";
-        cli.On(save, Documents.ResolvedWithDrafts(files.Own, files.Base));
-        await editor.SaveCommand.ExecuteAsync(null);
-        Assert.Contains(save, cli.Calls);
-        Assert.Null(editor.SaveError);
     }
+
+    [AvaloniaFact]
+    public async Task Leaving_a_profile_with_a_draft_keeps_its_changes_in_the_draft()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        cli.On($"profile {files.Own} --json", Documents.ResolvedWithDrafts(files.Own, files.Base));
+        var editor = profiles.Current!;
+        await editor.LoadCommand.ExecuteAsync(null);
+        Choose(editor, "has_issues", "Off");
+        var other = Path.Combine(folders.Profiles, "other");
+        Directory.CreateDirectory(other);
+        orgsDesktop.Folder = other;
+        cli.On(folders.List(other), Documents.NoProfiles);
+        var draft = $"profile {files.Own} --set drafts.repository.has_issues=false --json";
+        cli.On(draft, Documents.ResolvedWithDrafts(files.Own, files.Base));
+
+        var change = profiles.ChangeFolderCommand.ExecuteAsync(null);
+        await profiles.SaveAndLeaveCommand.ExecuteAsync(null);
+        await change;
+        Assert.Contains(draft, cli.Calls);
+        Assert.DoesNotContain(cli.Calls, call => call.Contains("--unset drafts.unset", StringComparison.Ordinal));
+        Assert.Equal(other, profiles.Folder.Path);
+    }
+
+    [AvaloniaFact]
+    public async Task Reset_puts_a_group_a_list_or_the_whole_profile_back_as_last_saved()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        cli.On($"profile {files.Own} --json", Documents.ResolvedWithDrafts(files.Own, files.Base));
+        var editor = profiles.Current!;
+        await editor.LoadCommand.ExecuteAsync(null);
+
+        Choose(editor, "has_issues", "Off");
+        Choose(editor, "has_wiki", "Off");
+        Choose(editor, "allow_rebase_merge", "Off");
+        var features = editor.Tabs[0].Groups.Single(group => group.Settings.Contains(Find(editor, "has_wiki")));
+        Assert.True(features.HasChanges);
+        Assert.Equal("Reset the Features settings to what was last saved", features.ResetName);
+        features.ResetCommand.Execute(null);
+        // The draft comes back with the group, and the other group keeps its change.
+        Assert.Equal(("On", 1), (Selected(Find(editor, "has_wiki")), editor.ChangeCount));
+        Assert.False(features.HasChanges);
+        Assert.False(features.ResetCommand.CanExecute(null));
+
+        var rulesets = editor.Tab("Rulesets");
+        rulesets.NewCommand.Execute(null);
+        rulesets.Editing!.Editor.Name = "Extra";
+        rulesets.BackCommand.Execute(null);
+        Assert.True(rulesets.ResetCommand.CanExecute(null));
+        rulesets.ResetCommand.Execute(null);
+        Assert.DoesNotContain(rulesets.Entries, entry => entry.Name == "Extra");
+
+        editor.ResetCommand.Execute(null);
+        Assert.Equal(0, editor.ChangeCount);
+        Assert.True(editor.HasDraft);
+    }
+
+    [AvaloniaFact]
+    public async Task Discard_draft_asks_first_and_takes_only_this_profiles_draft_out()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        cli.On($"profile {files.Own} --json", Documents.ResolvedWithDrafts(files.Own, files.Base));
+        var editor = profiles.Current!;
+        await editor.LoadCommand.ExecuteAsync(null);
+
+        // It writes at once, so it waits until nothing unsaved would go with the reload.
+        Choose(editor, "has_issues", "Off");
+        Assert.False(editor.DiscardDraftCommand.CanExecute(null));
+        editor.ResetCommand.Execute(null);
+        editor.DiscardDraftCommand.Execute(null);
+        Assert.True(editor.ConfirmingDiscardDraft);
+        editor.CancelDiscardDraftCommand.Execute(null);
+        Assert.False(editor.ConfirmingDiscardDraft);
+
+        editor.DiscardDraftCommand.Execute(null);
+        var discard = $"profile {files.Own} --unset drafts.repository.has_wiki --unset drafts.unset --drop-draft-ruleset=Later --drop-draft-ruleset=Protect main --json";
+        cli.On(discard, Documents.Resolved(files.Own, files.Base));
+        await editor.ConfirmDiscardDraftCommand.ExecuteAsync(null);
+        Assert.Contains(discard, cli.Calls);
+        Assert.Null(editor.SaveError);
+        Assert.False(editor.HasDraft);
+    }
+
+    [AvaloniaFact]
+    public async Task Preview_shows_what_applies_now_against_what_applies_once_saved()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        cli.On($"profile {files.Own} --json", Documents.ResolvedWithDrafts(files.Own, files.Base));
+        var editor = profiles.Current!;
+        await editor.LoadCommand.ExecuteAsync(null);
+        // The YAML panel starts hidden for a profile.
+        Assert.False(editor.ShowYaml);
+
+        Choose(editor, "has_issues", "Off");
+        var preview = $$"""profile {{files.Own}} --set repository.has_issues=false --set repository.has_wiki=true --unset drafts.repository.has_wiki --unset merge.allow_squash_merge --unset drafts.unset --drop-draft-ruleset=Protect main --ruleset={"name":"Protect main","enforcement":"evaluate"} --drop-draft-ruleset=Later --ruleset={"name":"Later"} --preview --json""";
+        cli.On(preview, """{"before":"repository:\n  has_issues: true\n  has_wiki: false\n","after":"repository:\n  has_issues: false\n  has_wiki: true\n"}""");
+        await editor.PreviewCommand.ExecuteAsync(null);
+        Assert.Null(editor.SaveError);
+        var sheet = Assert.IsType<ProfilePreviewViewModel>(editor.Preview);
+        Assert.Equal(
+            ["repository:", "−  has_issues: true", "−  has_wiki: false", "+  has_issues: false", "+  has_wiki: true"],
+            sheet.Diff.Items.OfType<DiffLine>().Select(line => line.Sign + line.Text));
+        Assert.Equal("Stops applying: has_issues: true", sheet.Diff.Items.OfType<DiffLine>().ElementAt(1).AccessibleName);
+        Assert.Equal(
+            "What applies now against what applies once you save: the draft, and 1 change not saved yet. Save as draft keeps them all without applying them.",
+            sheet.Message);
+        // Preview saves nothing.
+        Assert.Equal(1, editor.ChangeCount);
+        editor.ClosePreviewCommand.Execute(null);
+        Assert.False(editor.Previewing);
+    }
+
+    private static string Selected(SettingViewModel setting) => setting.Options.Single(option => option.Selected).Label;
 
     [AvaloniaFact]
     public async Task The_settings_search_finds_names_keys_notes_synonyms_and_sub_options_on_every_tab()
@@ -202,31 +325,24 @@ public sealed class ProfileEditorTests : ViewModelTests
     }
 
     [AvaloniaFact]
-    public async Task The_drafts_filter_shows_settings_with_a_draft_and_points_to_drafted_entries()
+    public async Task The_drafts_filter_shows_settings_in_this_profiles_draft()
     {
         var (profiles, cli, files) = await OpenOrgs();
         cli.On($"profile {files.Own} --json", Documents.ResolvedWithDrafts(files.Own, files.Base));
         var editor = profiles.Current!;
         await editor.LoadCommand.ExecuteAsync(null);
 
+        // Projects has a draft in base only, which is base's to finish.
         editor.OnlyDrafts = true;
-        Assert.Equal(["Repository / Features: Projects"], Found(editor));
-        editor.Query = "wiki";
-        Assert.False(editor.HasResults);
-        Assert.Equal("No settings match \u201cwiki\u201d.", editor.ResultsSummary);
-        editor.Query = "";
-        editor.OnlyManaged = true;
-        // Projects has only a draft, which doesn't apply, so the profile doesn't manage it yet.
-        Assert.Equal(
-            "No settings match these filters. Drafts of rulesets, environments and labels are on their own tabs.",
-            editor.ResultsSummary);
+        Assert.Equal(["Repository / Features: Wiki", "Merge / Merge methods: Allow squash merging"], Found(editor));
+        editor.Query = "projects";
+        Assert.Equal("No settings match \u201cprojects\u201d.", editor.ResultsSummary);
 
-        // Saving a draft is a change waiting to be saved, so Not saved yet shows it.
+        // A change is waiting to be saved, so Not saved yet shows it.
         editor.ClearFiltersCommand.Execute(null);
-        Choose(editor, "has_wiki", "On");
-        Find(editor, "has_wiki").SaveAsDraftCommand.Execute(null);
+        Choose(editor, "has_issues", "Off");
         editor.OnlyUnsaved = true;
-        Assert.Equal(["Repository / Features: Wiki"], Found(editor));
+        Assert.Equal(["Repository / Features: Issues"], Found(editor));
     }
 
     /// <summary>What the search and filters found, as "Tab / Group: Setting, Setting".</summary>
@@ -251,7 +367,7 @@ public sealed class ProfileEditorTests : ViewModelTests
         size.Typed = "0";
         Assert.Equal("Enter a whole number of 1 or more.", size.TypedProblem);
         Assert.Equal((false, true, true), (size.Changed, size.Invalid, size.Pending));
-        Assert.Equal(("Not valid yet", "Undo"), (size.Note, size.ResetLabel));
+        Assert.Equal(("Not valid yet", "Reset"), (size.Note, size.ResetLabel));
         Assert.Equal("Enter a whole number of 1 or more.", size.TypedHelp);
         Assert.Equal($"{size.Label}: Enter a whole number of 1 or more.", editor.Problem);
         Assert.Equal("1 unsaved change", editor.ChangesLabel);
@@ -325,7 +441,10 @@ public sealed class ProfileEditorTests : ViewModelTests
         Assert.Equal((true, "Changed"), (label.Changed, label.Note));
         Assert.True(group.Changed);
         // A null draft would not show, so an empty label can't be one.
-        Assert.False(label.CanSaveAsDraft);
+        Assert.Equal("Runner label: an empty value can't be kept in a draft. Save it, or reset it.", editor.DraftProblem);
+        // Save can still apply it, so the editor says why Save as draft can't.
+        Assert.Equal(editor.DraftProblem, editor.DraftOnlyProblem);
+        Assert.False(editor.SaveAsDraftCommand.CanExecute(null));
         await editor.SaveCommand.ExecuteAsync(null);
 
         Assert.Contains(save, cli.Calls);
@@ -566,17 +685,35 @@ public sealed class ProfileEditorTests : ViewModelTests
     [AvaloniaFact]
     public async Task Emptying_the_pattern_list_allows_none_and_a_draft_of_patterns_reads_with_commas()
     {
-        var (editor, _, _, _) = await OpenOwn(
-            """{"actions":{"allowed_actions":"selected","selected_actions":{"patterns_allowed":["a/*"]}}}""",
+        var (editor, cli, own, resolved) = await OpenOwn(
+            """{"actions":{"allowed_actions":"selected","selected_actions":{"patterns_allowed":["a/*","c/*"]}}}""",
             """{"actions":{"allowed_actions":OWN,"selected_actions.patterns_allowed":OWN}}""");
         var patterns = Find(editor, "selected_actions.patterns_allowed");
 
         // An emptied box is a list of none, which differs from leaving the patterns out.
         patterns.Typed = "";
-        Assert.Equal(("Changed", "[]"), (patterns.Note, patterns.Change?.Value?.ToJsonString()));
-        patterns.Typed = "a/*\nb/*";
-        patterns.SaveAsDraftCommand.Execute(null);
-        Assert.Equal("a/*, b/*", patterns.DraftLabel);
+        Assert.Equal("Changed", patterns.Note);
+        var empty = $"profile {own} --set actions.selected_actions.patterns_allowed=[] --json";
+        cli.On(empty, resolved);
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Contains(empty, cli.Calls);
+
+        // A drafted list says what applies now with commas, not line breaks.
+        cli.On($"profile {own} --json", $$$"""
+            {"chain":[{{{Json(own)}}}],
+             "profile":{"actions":{"allowed_actions":"selected","selected_actions":{"patterns_allowed":["a/*","c/*"]} } },
+             "drafts":{"actions":{"selected_actions":{"patterns_allowed":["a/*","b/*"]} } },
+             "warnings":[],
+             "sources":{"repository":{},"merge":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
+               "rulesets":{},"environments":{},"labels":{},
+               "actions":{"allowed_actions":{{{Json(own)}}},"selected_actions.patterns_allowed":{{{Json(own)}}} },
+               "drafts":{"repository":{},"merge":{},"security":{},"custom_properties":{},"pages":{},"autolinks":{},
+                 "rulesets":{},"environments":{},"labels":{},
+                 "actions":{"selected_actions.patterns_allowed":{{{Json(own)}}} } } } }
+            """);
+        await editor.LoadCommand.ExecuteAsync(null);
+        patterns = Find(editor, "selected_actions.patterns_allowed");
+        Assert.Equal(("a/*\nb/*", "In the draft. Applies now: a/*, c/*"), (patterns.Typed, patterns.Note));
     }
 
     [AvaloniaFact]
@@ -599,7 +736,7 @@ public sealed class ProfileEditorTests : ViewModelTests
 
         size.Typed = "abc";
         Assert.True(editor.HasChanges);
-        editor.DiscardCommand.Execute(null);
+        editor.ResetCommand.Execute(null);
         Assert.Equal(("", false, false), (size.Typed, size.Pending, editor.HasChanges));
     }
 
@@ -946,7 +1083,7 @@ public sealed class ProfileEditorTests : ViewModelTests
         Assert.True(editor.Loading);
         Assert.False(editor.SaveCommand.CanExecute(null));
         Assert.False(editor.KeepMineCommand.CanExecute(null));
-        Assert.False(editor.DiscardCommand.CanExecute(null));
+        Assert.False(editor.ResetCommand.CanExecute(null));
         Assert.False(editor.ReloadCommand.CanExecute(null));
         resolve.SetResult(Documents.Resolved(files.Own, files.Base));
         await reload;

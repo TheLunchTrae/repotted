@@ -35,6 +35,9 @@ internal abstract record Account
 /// <summary>The code to enter on GitHub while a sign-in waits.</summary>
 internal sealed record DeviceCode(Uri VerificationUri, string UserCode, DateTimeOffset ExpiresAt);
 
+/// <summary>What a profile applies before edits and after them, as profile YAML.</summary>
+internal sealed record ProfilePreview(string Before, string After);
+
 /// <summary>The repositories Repotted can manage, and how it found them.</summary>
 internal sealed record RepositoryList(bool FromInstallations, IReadOnlyList<RepositoryDocument> Repositories);
 
@@ -220,6 +223,23 @@ internal sealed class RepottedClient(ICli cli)
         IReadOnlyList<EntryChange> entries,
         CancellationToken cancellationToken) =>
         await ProfileAsync(["profile", file, .. Edits(changes, entries), "--json"], cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// What <paramref name="file"/> applies now and what it would apply with
+    /// <paramref name="changes"/> and <paramref name="entries"/> made, as
+    /// profile YAML, without saving them.
+    /// </summary>
+    public async Task<ProfilePreview> PreviewProfileAsync(
+        string file,
+        IReadOnlyList<ProfileChange> changes,
+        IReadOnlyList<EntryChange> entries,
+        CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["profile", file, .. Edits(changes, entries), "--preview", "--json"], null, cancellationToken)
+            .ConfigureAwait(false);
+        var preview = Read(run, CliJson.Default.ProfilePreviewDocument);
+        return new ProfilePreview(preview.Before, preview.After);
+    }
 
     /// <summary>The options that write <paramref name="changes"/> and <paramref name="entries"/>, as <c>profile</c> and <c>stage</c> take them.</summary>
     private static List<string> Edits(IReadOnlyList<ProfileChange> changes, IReadOnlyList<EntryChange> entries)

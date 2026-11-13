@@ -22,6 +22,9 @@ internal enum DiffKind
 /// </summary>
 internal sealed record DiffLine(DiffKind Kind, string Text, string? Tag = null, bool Locked = false)
 {
+    /// <summary>Whether the diff is of what a profile applies, rather than of GitHub, which changes how it is read out.</summary>
+    public bool OfProfile { get; init; }
+
     public bool IsRemoved => Kind == DiffKind.Removed;
 
     public bool IsAdded => Kind == DiffKind.Added;
@@ -46,6 +49,8 @@ internal sealed record DiffLine(DiffKind Kind, string Text, string? Tag = null, 
     /// <summary>The line as screen readers hear it, in place of the sign, the colors and the strike-through.</summary>
     public string AccessibleName => (Kind switch
     {
+        DiffKind.Removed when OfProfile => $"Stops applying: {Text.Trim()}",
+        DiffKind.Added when OfProfile => $"Applies once saved: {Text.Trim()}",
         DiffKind.Removed => $"GitHub loses: {Text.Trim()}",
         DiffKind.Added => $"GitHub gets: {Text.Trim()}",
         DiffKind.Note when Locked => $"GitHub will refuse this: {Text}",

@@ -60,7 +60,7 @@ public sealed class ProfilesTests : ViewModelTests
         await profiles.RefreshCommand.ExecuteAsync(null);
         Assert.True(editor.Removed);
 
-        editor.DiscardCommand.Execute(null);
+        editor.ResetCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
 
         Assert.Equal(["base"], profiles.Items.Select(item => item.Name));
@@ -583,7 +583,7 @@ public sealed class ProfilesTests : ViewModelTests
         environments.Entries[0].DropCommand.Execute(null);
         environments.NewCommand.Execute(null);
 
-        editor.DiscardCommand.Execute(null);
+        editor.ResetCommand.Execute(null);
 
         Assert.False(editor.HasChanges);
         Assert.Null(rulesets.Editing);
@@ -609,7 +609,7 @@ public sealed class ProfilesTests : ViewModelTests
         Assert.Contains("Every merge method is off", editor.SaveError, StringComparison.Ordinal);
         Assert.Equal(1, editor.ChangeCount);
 
-        editor.DiscardCommand.Execute(null);
+        editor.ResetCommand.Execute(null);
         Assert.False(editor.HasChanges);
         Assert.Null(editor.SaveError);
     }

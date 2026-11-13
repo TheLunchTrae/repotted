@@ -63,6 +63,13 @@ internal sealed record ResolvedProfileDocument(
     IReadOnlyList<string> Warnings);
 
 /// <summary>
+/// What <c>repotted profile --preview --json</c> prints: what the profile
+/// applies before the edits and after them, each as profile YAML, with nothing
+/// saved.
+/// </summary>
+internal sealed record ProfilePreviewDocument(string Before, string After);
+
+/// <summary>
 /// One field a change writes: what GitHub has and what the profile wants. A
 /// member the CLI leaves out reads as <see cref="JsonValueKind.Undefined"/>,
 /// apart from a JSON null: GitHub has no value at all, rather than a null one.
@@ -153,8 +160,11 @@ internal sealed record PlanDocument(
     IReadOnlyList<LockDocument> Locks,
     IReadOnlyList<SkippedDocument> Skipped);
 
-/// <summary>A draft a plan leaves out: a setting by its section and key, or an entry by its list and name.</summary>
-internal sealed record SkippedDocument(string Section, string Target);
+/// <summary>
+/// A draft a plan leaves out: a setting by its section and key, or an entry by
+/// its list and name. <c>Unset</c> is true when the draft stops managing it.
+/// </summary>
+internal sealed record SkippedDocument(string Section, string Target, bool? Unset = null);
 
 /// <summary>
 /// What a staged apply holds, from <c>repotted stage --json</c>: the repository
@@ -343,6 +353,7 @@ internal sealed record LoginEvent(
 [JsonSerializable(typeof(RepositoryListDocument))]
 [JsonSerializable(typeof(ProfileListDocument))]
 [JsonSerializable(typeof(ResolvedProfileDocument))]
+[JsonSerializable(typeof(ProfilePreviewDocument))]
 [JsonSerializable(typeof(PlanDocument))]
 [JsonSerializable(typeof(CaptureDocument))]
 [JsonSerializable(typeof(StagedApplyDocument))]

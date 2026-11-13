@@ -241,8 +241,9 @@ internal static class Documents
 
     /// <summary>
     /// orgs over base, as <see cref="Resolved"/>, with drafts: base drafts
-    /// projects on and an npm environment, and orgs drafts a Later ruleset and
-    /// a Protect main ruleset beside the one base applies.
+    /// projects on and an npm environment, and orgs drafts the wiki on, stops
+    /// managing squash merges, and drafts a Later ruleset and a Protect main
+    /// ruleset beside the one base applies.
     /// </summary>
     public static string ResolvedWithDrafts(string own, string @base) =>
         $$$"""
@@ -253,9 +254,10 @@ internal static class Documents
            "rulesets":[{"name":"Protect main"},{"name":"Old tags","absent":true}],
            "environments":[{"name":"npm"}]},
          "drafts":{
-           "repository":{"has_projects":true},
+           "repository":{"has_projects":true,"has_wiki":true},
            "rulesets":[{"name":"Later","draft":true},{"name":"Protect main","draft":true,"enforcement":"evaluate"}],
-           "environments":[{"name":"NPM","draft":true,"wait_timer":"soon"}]},
+           "environments":[{"name":"NPM","draft":true,"wait_timer":"soon"}],
+           "unset":["merge.allow_squash_merge"]},
          "warnings":["Draft environment \"NPM\": Invalid input at wait_timer"],
          "sources":{
            "repository":{"has_issues":{{{Json(@base)}}},"has_wiki":{{{Json(own)}}} },
@@ -264,10 +266,11 @@ internal static class Documents
            "rulesets":{"Protect main":{{{Json(@base)}}},"Old tags":{{{Json(own)}}} },
            "environments":{"npm":{{{Json(own)}}} },"labels":{},
            "drafts":{
-             "repository":{"has_projects":{{{Json(@base)}}} },"merge":{},"actions":{},
+             "repository":{"has_projects":{{{Json(@base)}}},"has_wiki":{{{Json(own)}}} },"merge":{},"actions":{},
              "security":{},"custom_properties":{},"pages":{},"autolinks":{},
              "rulesets":{"Later":{{{Json(own)}}},"Protect main":{{{Json(own)}}} },
-             "environments":{"NPM":{{{Json(@base)}}} },"labels":{} } } }
+             "environments":{"NPM":{{{Json(@base)}}} },"labels":{},
+             "unset":{"merge.allow_squash_merge":{{{Json(own)}}} } } } }
         """;
 
     /// <summary>base alone: issues on, and rebase and squash merges allowed.</summary>

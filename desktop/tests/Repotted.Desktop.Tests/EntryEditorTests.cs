@@ -8,13 +8,13 @@ public sealed class EntryEditorTests
     private static JsonObject Json(string text) => JsonNode.Parse(text)!.AsObject();
 
     private static RulesetEditorViewModel Ruleset(string? saved, Func<string, bool>? taken = null) =>
-        new(saved is null ? null : Json(saved), renamable: true, (name, _) => taken?.Invoke(name) == true, () => { });
+        new(saved is null ? null : Json(saved), renamable: true, name => taken?.Invoke(name) == true, () => { });
 
     private static EnvironmentEditorViewModel Environment(string? saved) =>
-        new(saved is null ? null : Json(saved), renamable: true, (_, _) => false, () => { });
+        new(saved is null ? null : Json(saved), renamable: true, _ => false, () => { });
 
     private static LabelEditorViewModel Label(string? saved, Func<string, string?>? claimedBy = null) =>
-        new(saved is null ? null : Json(saved), renamable: true, (_, _) => false, old => claimedBy?.Invoke(old), () => { });
+        new(saved is null ? null : Json(saved), renamable: true, _ => false, old => claimedBy?.Invoke(old), () => { });
 
     private static RuleViewModel Rule(RulesetEditorViewModel editor, string type) =>
         editor.Rules.Single(rule => rule.Kind.Type == type);
@@ -335,10 +335,13 @@ public sealed class EntryEditorTests
         editor.Name = "bug";
         Assert.Null(editor.Problem);
 
-        // A draft may be unfinished.
+        // A draft may be unfinished, but still needs a name of its own.
         editor.Removes = false;
-        editor.IsDraft = true;
-        Assert.Null(editor.Problem);
+        editor.Color = "not a color";
+        Assert.NotNull(editor.Problem);
+        Assert.Null(editor.DraftProblem);
+        editor.Name = "";
+        Assert.Equal("A label needs a name.", editor.DraftProblem);
     }
 
     [Theory]

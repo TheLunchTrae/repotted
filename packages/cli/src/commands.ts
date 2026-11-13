@@ -30,6 +30,7 @@ import {
   describeSkipped,
   describeWarning,
   editProfile,
+  previewProfile,
   failureReason,
   type EntryEdit,
   formatPlan,
@@ -106,6 +107,8 @@ Commands:
           [--environment json] [--drop-environment name]  drafts.<section>.<key> keys and "draft": true
           [--label json] [--drop-label name]      entries are drafts
           [--drop-draft-ruleset name] [--drop-draft-environment name] [--drop-draft-label name]
+          [--preview]                             --preview shows what applies before and after the edits,
+                                                 and saves nothing
   stage <file> --new owner/repo [--profile file] Start a staged apply: one-off edits for one apply, over a
                                                  profile or over the repository as it is
   stage <file> [--set key=json] [--unset key]    Show a staged apply resolved; edit it as profile does, and
@@ -638,11 +641,23 @@ async function profile(io: Io, args: string[]): Promise<number> {
       label: { type: 'string', multiple: true },
       'drop-label': { type: 'string', multiple: true },
       'drop-draft-label': { type: 'string', multiple: true },
+      preview: { type: 'boolean' },
       json: { type: 'boolean' },
     },
   });
   const file = only(positionals, 'profile file');
   const edits = profileEdits(tokens);
+  if (values.preview === true) {
+    const { before, after } = await previewProfile(file, edits);
+    const texts = { before: stringifyProfile(before.profile), after: stringifyProfile(after.profile) };
+    if (values.json === true) {
+      json(io, texts);
+    } else {
+      io.out(texts.after);
+      io.err(`Preview only: ${file} is not saved\n`);
+    }
+    return 0;
+  }
   const resolved = edits.length === 0 ? await resolveProfile(file) : await editProfile(file, edits);
   if (values.json === true) {
     json(io, resolved);

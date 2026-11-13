@@ -585,13 +585,11 @@ public sealed class ApplyTests : IDisposable
         var issues = Setting(editor, "has_issues");
         issues.Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
         Assert.True(issues.Changed);
-        Assert.False(issues.CanSaveAsDraft);
-        Assert.False(issues.SaveAsDraftCommand.CanExecute(null));
-        var rulesets = editor.Tabs.Single(tab => tab.List == "rulesets");
-        Assert.False(rulesets.Drafts);
-        rulesets.NewCommand.Execute(null);
-        Assert.False(rulesets.Editing!.Editor.Drafts);
         Assert.False(editor.HoldsDrafts);
+        Assert.False(editor.SaveAsDraftCommand.CanExecute(null));
+        Assert.False(editor.PreviewCommand.CanExecute(null));
+        // One-off edits show what the apply changes beside them, so their YAML starts open.
+        Assert.True(editor.ShowYaml);
     }
 
     [AvaloniaFact]
@@ -1396,7 +1394,7 @@ public sealed class ApplyTests : IDisposable
         // Undoing the edits answers the question, and the quit goes on.
         quit = shell.ConfirmQuitAsync();
         Assert.True(apply.AskingToLeave);
-        apply.Edits!.DiscardCommand.Execute(null);
+        apply.Edits!.ResetCommand.Execute(null);
         Assert.True(await quit);
         Assert.False(apply.AskingToLeave);
 
@@ -1428,7 +1426,7 @@ public sealed class ApplyTests : IDisposable
         Assert.True(apply.EditsUnsaved);
 
         window.Close();
-        apply.Edits!.DiscardCommand.Execute(null);
+        apply.Edits!.ResetCommand.Execute(null);
         await Until(() => !window.IsVisible);
     }
 
@@ -1606,7 +1604,7 @@ public sealed class ApplyTests : IDisposable
         Save(window, $"apply-leave-{theme}");
         apply.StayHereCommand.Execute(null);
         Assert.False(await quit);
-        apply.Edits!.DiscardCommand.Execute(null);
+        apply.Edits!.ResetCommand.Execute(null);
         await apply.ReviewChangesCommand.ExecuteAsync(null);
 
         cli.On($"stage {file} --include=repository.has_wiki --json", Staged())

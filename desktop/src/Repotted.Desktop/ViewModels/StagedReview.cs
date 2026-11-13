@@ -71,6 +71,5 @@ internal sealed record StagedReview(
         "One-off edit",
         (@base, _) => @base is null
             ? "For this apply only, over the repository as it is."
-            : $"For this apply only, over {@base}, which stays as it is unless you save these edits to it.",
-        Drafts: false);
+            : $"For this apply only, over {@base}, which stays as it is unless you save these edits to it.");
 }
