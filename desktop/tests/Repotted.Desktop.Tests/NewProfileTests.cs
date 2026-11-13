@@ -3,6 +3,7 @@ using Avalonia.Headless.XUnit;
 using Repotted.Desktop.Services;
 using Repotted.Desktop.Theme;
 using Repotted.Desktop.ViewModels;
+using static Repotted.Desktop.Tests.Helpers;
 
 namespace Repotted.Desktop.Tests;
 
@@ -556,4 +557,65 @@ public sealed class NewProfileTests : ViewModelTests
 
     private static string Listing(params (string Name, string File, string? Extends)[] profiles) =>
         JsonSerializer.Serialize(new { profiles = profiles.Select(profile => new { name = profile.Name, file = profile.File, extends = profile.Extends, problem = (string?)null }) });
+
+    [AvaloniaFact]
+    public async Task A_new_profile_starts_in_the_open_profiles_subfolder_and_extends_across_folders()
+    {
+        Directory.CreateDirectory(Path.Combine(folders.Profiles, "team"));
+        var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var oss = folders.Write(Path.Combine("team", "oss.yaml"), "extends: ../base.yaml\n");
+        var listing = $$$"""
+            {"profiles":[
+              {"name":"base","folder":"","file":{{{Json(@base)}}},"extends":null,"problem":null},
+              {"name":"oss","folder":"team","file":{{{Json(oss)}}},"extends":{{{Json(@base)}}},"problem":null}
+            ]}
+            """;
+        var cli = new FakeCli()
+            .On(folders.List(), listing)
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base))
+            .On($"profile {oss} --json", Documents.ResolvedBase(oss));
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        profiles.Selected = profiles.Items.Single(item => item.Name == "oss");
+
+        profiles.StartNew(null);
+        var form = profiles.Creating!;
+
+        Assert.True(form.HasPlaces);
+        Assert.Equal(["Profiles folder", "team"], form.Places.Select(place => place.Label));
+        Assert.Equal("team", form.Place.Path);
+        Assert.Equal(["base", "team/oss"], form.Bases.Select(item => item.Label));
+
+        // A name is taken only in the folder the file goes in.
+        form.Name = "oss";
+        Assert.Equal("oss.yaml is already in this folder.", form.Problem);
+        form.Place = form.Places[0];
+        Assert.Null(form.Problem);
+        Assert.Equal("oss.yaml", form.FileName);
+
+        form.Place = form.Places[1];
+        form.Name = "web";
+        Assert.Equal("team/web.yaml", form.FileName);
+        form.Extends = true;
+        form.Base = form.Bases.Single(item => item.Name == "base");
+        var made = Path.Combine(folders.Profiles, "team", "web.yaml");
+        // Another profile of the same name, in the folder itself, is not the one made.
+        var other = folders.Write("web.yaml", "");
+        cli.On(folders.List(), $$$"""
+                {"profiles":[
+                  {"name":"base","folder":"","file":{{{Json(@base)}}},"extends":null,"problem":null},
+                  {"name":"web","folder":"","file":{{{Json(other)}}},"extends":null,"problem":null},
+                  {"name":"oss","folder":"team","file":{{{Json(oss)}}},"extends":{{{Json(@base)}}},"problem":null},
+                  {"name":"web","folder":"team","file":{{{Json(made)}}},"extends":{{{Json(@base)}}},"problem":null}
+                ]}
+                """)
+            .On($"profile {made} --json", Documents.ResolvedBase(made));
+
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.Equal("extends: \"../base.yaml\"\n", File.ReadAllText(made));
+        Assert.Equal("team/web", profiles.Selected?.Label);
+        Assert.Equal(made, profiles.Current?.File);
+    }
 }
+

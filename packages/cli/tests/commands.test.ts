@@ -991,15 +991,29 @@ describe('profile commands', () => {
     expect(result).toMatchObject({ code: 0, err: '' });
     expect(document(result)).toEqual({
       profiles: [
-        { name: 'base', file: path.join(examples, 'base.yaml'), extends: null, problem: null },
+        { name: 'base', folder: '', file: path.join(examples, 'base.yaml'), extends: null, problem: null },
         {
           name: 'repotted',
+          folder: '',
           file: path.join(examples, 'repotted.yaml'),
           extends: path.join(examples, 'base.yaml'),
           problem: null,
         },
       ],
     });
+  });
+
+  test('profiles names subfolder profiles by their subfolder', async () => {
+    const root = await mkdtemp(path.join(directory, 'profiles-'));
+    await mkdir(path.join(root, 'team', 'apps'), { recursive: true });
+    await writeFile(path.join(root, 'base.yaml'), 'repository: { has_issues: true }\n');
+    await writeFile(path.join(root, 'team', 'oss.yaml'), 'extends: ../base.yaml\n');
+    await writeFile(path.join(root, 'team', 'apps', 'web.yaml'), 'extends: ../oss.yaml\n');
+
+    const result = await cli(new FakeGitHub(), 'profiles', root);
+
+    expect(result).toMatchObject({ code: 0, err: '' });
+    expect(result.out).toBe('base\nteam/oss (extends base)\nteam/apps/web (extends team/oss)\n');
   });
 });
 

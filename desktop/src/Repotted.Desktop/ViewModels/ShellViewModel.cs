@@ -185,6 +185,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         _ when ShowingSettings => "Settings",
         (false, _, _, null) when Batch is not null => $"Repositories / {ControlLabel.For("Batch apply")}",
         (true, _, _, _) when Profiles.ShowCreating => $"Profiles / {ControlLabel.For("New profile")}",
+        (true, { } profile, _, _) when profile.Folder.Length > 0 => $"Profiles / {profile.Folder.Replace("/", " / ", StringComparison.Ordinal)} / {profile.Name}",
         (true, { } profile, _, _) => $"Profiles / {profile.Name}",
         (true, null, _, _) => "Profiles",
         (false, _, _, { } apply) => $"Repositories / {apply.Repository} / Apply",

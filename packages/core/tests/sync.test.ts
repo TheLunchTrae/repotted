@@ -82,9 +82,10 @@ describe('syncFolder', () => {
       'app.yml': app,
       'team/web.yaml': 'extends: ../base.yaml\n',
     });
-    expect((await listProfiles(local)).map((listing) => [listing.name, listing.problem])).toEqual([
-      ['app', null],
-      ['base', null],
+    expect((await listProfiles(local)).map((listing) => [listing.folder, listing.name, listing.problem])).toEqual([
+      ['', 'app', null],
+      ['', 'base', null],
+      ['team', 'web', null],
     ]);
     // Later syncs need no repository: the folder remembers it.
     expect(await syncFolder(github, local)).toMatchObject({ pulled: [], pushed: [] });

@@ -100,16 +100,28 @@
             </ListBoxItem>
           </ListBox>
 
-          <!-- The profiles in the folder, while the profiles page is open -->
+          <!-- The profiles in the folder and its subfolders, while the profiles page is open -->
           <DockPanel IsVisible="{Binding ShowingProfiles}" Margin="0,18,0,12">
             <Button DockPanel.Dock="Bottom" Classes="quiet" HorizontalAlignment="Stretch" Margin="0,12,0,0"
                     Content="New profile" Command="{Binding Profiles.StartNewCommand}" CommandParameter="{x:Null}" />
-            <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,6" IsVisible="{Binding Profiles.HasProfiles}">
-              <Grid ColumnDefinitions="*,Auto" Margin="12,0,0,0">
-                <TextBlock Classes="muted small" FontWeight="SemiBold" VerticalAlignment="Center"
-                           Text="{Binding Profiles.Folder.ListLabel}" />
-                <Button x:Name="SyncButton" Grid.Column="1" Classes="iconbutton" Command="{Binding Profiles.RefreshCommand}"
-                        ToolTip.Tip="{Binding Profiles.Folder.RefreshLabel}"
+            <!-- The one folder or repository every profile below is in, with its sync, and the filter -->
+            <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,8" IsVisible="{Binding Profiles.HasProfiles}">
+              <Grid ColumnDefinitions="Auto,*,Auto" Margin="8,0,0,0" ToolTip.Tip="{Binding Profiles.Folder.SourceText}">
+                <Border Classes="source" VerticalAlignment="Center">
+                  <Panel>
+                    <Path Classes="repo" IsVisible="{Binding Profiles.Folder.UsesRepository}" />
+                    <Path Classes="folder" IsVisible="{Binding !Profiles.Folder.UsesRepository}" />
+                  </Panel>
+                </Border>
+                <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Profiles.Folder.SourceName}" FontWeight="SemiBold" FontSize="14"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="muted" FontSize="12.5" Text="{Binding Profiles.Folder.SourceDetail}"
+                             TextTrimming="CharacterEllipsis"
+                             IsVisible="{Binding Profiles.Folder.SourceDetail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+                <Button x:Name="SyncButton" Grid.Column="2" Classes="iconbutton" Command="{Binding Profiles.RefreshCommand}"
+                        VerticalAlignment="Center" ToolTip.Tip="{Binding Profiles.Folder.RefreshLabel}"
                         AutomationProperties.Name="{Binding Profiles.Folder.RefreshLabel}">
                   <Path Classes="icon sync" />
                 </Button>
@@ -117,11 +129,15 @@
               <TextBox x:Name="ProfileFilter" Classes="search side" PlaceholderText="Find a profile"
                        Text="{Binding Profiles.Filter}" AutomationProperties.Name="Find a profile" />
             </StackPanel>
-            <ListBox x:Name="ProfileList" Classes="nav" ItemsSource="{Binding Profiles.Items}" SelectedItem="{Binding Profiles.Selected}"
-                     AutomationProperties.Name="{Binding Profiles.Folder.ListLabel}">
-              <ListBox.Styles>
-                <Style Selector="ListBoxItem" x:DataType="vm:ProfileItemViewModel">
-                  <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+            <TreeView x:Name="ProfileTree" Classes="nav" ItemsSource="{Binding Profiles.Tree}" SelectedItem="{Binding Profiles.SelectedNode}"
+                      AutomationProperties.Name="{Binding Profiles.Folder.ListName}">
+              <TreeView.Styles>
+                <Style Selector="TreeViewItem" x:DataType="vm:ProfileTreeNode">
+                  <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                  <Setter Property="AutomationProperties.Name" Value="{Binding SpokenName}" />
+                </Style>
+                <!-- Profiles are the rows with nothing under them; folders always hold a profile. -->
+                <Style Selector="TreeViewItem:empty" x:DataType="vm:ProfileItemViewModel">
                   <Setter Property="ContextMenu">
                     <ContextMenu>
                       <MenuItem Header="{theme:Label 'Delete profile'}" Command="{Binding DeleteCommand}"
@@ -129,17 +145,29 @@
                     </ContextMenu>
                   </Setter>
                 </Style>
-              </ListBox.Styles>
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:ProfileItemViewModel">
-                  <StackPanel Spacing="1">
-                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Classes="muted" FontSize="12.5" FontWeight="Normal" Text="{Binding Note}"
-                               IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                  </StackPanel>
+              </TreeView.Styles>
+              <TreeView.DataTemplates>
+                <TreeDataTemplate DataType="vm:ProfileFolderNode" ItemsSource="{Binding Children}">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Path Classes="folder" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding Name}" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Classes="muted" Margin="8,0,0,0" FontSize="13" FontWeight="Normal"
+                               Text="{Binding Count}" VerticalAlignment="Center" />
+                  </Grid>
+                </TreeDataTemplate>
+                <DataTemplate DataType="vm:ProfileItemViewModel">
+                  <Grid ColumnDefinitions="Auto,*">
+                    <Path Classes="profile" VerticalAlignment="Top" Margin="0,2,0,0" />
+                    <StackPanel Grid.Column="1" Margin="8,0,0,0" Spacing="1">
+                      <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Classes="muted" FontSize="12.5" FontWeight="Normal" Text="{Binding Note}"
+                                 IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                  </Grid>
                 </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+              </TreeView.DataTemplates>
+            </TreeView>
           </DockPanel>
         </DockPanel>
       </DockPanel>

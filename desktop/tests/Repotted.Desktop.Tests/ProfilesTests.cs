@@ -342,6 +342,7 @@ public sealed class ProfilesTests : ViewModelTests
         await change;
         Assert.Equal(other, profiles.Folder.Path);
         Assert.False(editor.HasChanges);
+        Assert.Equal((Path.GetFileName(other), Path.GetDirectoryName(other)), (profiles.Folder.SourceName, profiles.Folder.SourceDetail));
         Assert.Equal("extends: base.yaml\nrepository: { has_wiki: false }\n", File.ReadAllText(files.Own));
     }
 
@@ -913,4 +914,163 @@ public sealed class ProfilesTests : ViewModelTests
         Assert.NotNull(profiles.Current);
         Assert.False(profiles.ShowNoneOpen);
     }
+
+    /// <summary>base in the folder, oss in team over base, and web in team/apps over oss.</summary>
+    private (FakeCli Cli, string Base, string Oss, string Web) Nested()
+    {
+        Directory.CreateDirectory(Path.Combine(folders.Profiles, "team", "apps"));
+        var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        var oss = folders.Write(Path.Combine("team", "oss.yaml"), "extends: ../base.yaml\n");
+        var web = folders.Write(Path.Combine("team", "apps", "web.yaml"), "extends: ../oss.yaml\n");
+        var cli = new FakeCli()
+            .On(folders.List(), $$$"""
+                {"profiles":[
+                  {"name":"base","folder":"","file":{{{Json(@base)}}},"extends":null,"problem":null},
+                  {"name":"oss","folder":"team","file":{{{Json(oss)}}},"extends":{{{Json(@base)}}},"problem":null},
+                  {"name":"web","folder":"team/apps","file":{{{Json(web)}}},"extends":{{{Json(oss)}}},"problem":null}
+                ]}
+                """)
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base))
+            .On($"profile {oss} --json", Documents.ResolvedBase(oss))
+            .On($"profile {web} --json", Documents.ResolvedBase(web));
+        return (cli, @base, oss, web);
+    }
+
+    [AvaloniaFact]
+    public async Task Profiles_in_subfolders_show_under_their_folders_after_the_folders_own_profiles()
+    {
+        var (cli, _, _, _) = Nested();
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
+
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal(["base", "team/oss", "team/apps/web"], profiles.Items.Select(item => item.Label));
+        Assert.Equal("base", Assert.IsType<ProfileItemViewModel>(profiles.Tree[0]).Name);
+        var team = Assert.IsType<ProfileFolderNode>(Assert.Single(profiles.Tree.Skip(1)));
+        Assert.Equal(("team", "team", 2, true), (team.Name, team.Path, team.Count, team.IsExpanded));
+        Assert.Equal("oss", Assert.IsType<ProfileItemViewModel>(team.Children[0]).Name);
+        var apps = Assert.IsType<ProfileFolderNode>(team.Children[1]);
+        Assert.Equal(("apps", "team/apps", 1), (apps.Name, apps.Path, apps.Count));
+        var web = Assert.IsType<ProfileItemViewModel>(Assert.Single(apps.Children));
+        Assert.Equal("extends team/oss", web.Note);
+        Assert.Equal("extends base", profiles.Items.Single(item => item.Name == "oss").Note);
+        Assert.Same(profiles.Selected, profiles.SelectedNode);
+    }
+
+    [AvaloniaFact]
+    public async Task A_closed_subfolder_stays_closed_until_a_profile_in_it_is_chosen()
+    {
+        var (cli, _, _, _) = Nested();
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        ((ProfileFolderNode)profiles.Tree[1]).IsExpanded = false;
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        var team = (ProfileFolderNode)profiles.Tree[1];
+        Assert.False(team.IsExpanded);
+
+        // Choosing a subfolder leaves the open profile open.
+        var open = profiles.Selected;
+        profiles.SelectedNode = team;
+        Assert.Same(open, profiles.Selected);
+
+        profiles.Selected = profiles.Items.Single(item => item.Name == "web");
+
+        Assert.True(team.IsExpanded);
+        Assert.True(((ProfileFolderNode)team.Children[1]).IsExpanded);
+        Assert.Same(profiles.Selected, profiles.SelectedNode);
+        Assert.Equal("web", profiles.Current?.Name);
+    }
+
+    [AvaloniaFact]
+    public async Task The_filter_matches_subfolders_and_opens_them_without_remembering_it()
+    {
+        var (cli, _, _, _) = Nested();
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        ((ProfileFolderNode)profiles.Tree[1]).IsExpanded = false;
+
+        profiles.Filter = "apps";
+
+        Assert.Equal(["team/apps/web"], profiles.Items.Select(item => item.Label));
+        var team = Assert.IsType<ProfileFolderNode>(Assert.Single(profiles.Tree));
+        Assert.True(team.IsExpanded);
+        // base was open, and the filter hides it, so nothing in the tree is selected.
+        Assert.Null(profiles.Selected);
+        Assert.Equal("base", profiles.Current?.Name);
+
+        team.IsExpanded = false;
+        profiles.Filter = "";
+
+        Assert.False(((ProfileFolderNode)profiles.Tree[1]).IsExpanded);
+    }
+
+    [AvaloniaFact]
+    public async Task A_refresh_leaves_closed_the_subfolder_of_the_open_profile()
+    {
+        var (cli, _, oss, web) = Nested();
+        cli.On($"profile {web} --json", Documents.Resolved(web, oss));
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        profiles.Selected = profiles.Items.Single(item => item.Name == "web");
+        ((ProfileFolderNode)profiles.Tree[1]).IsExpanded = false;
+
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        Assert.False(((ProfileFolderNode)profiles.Tree[1]).IsExpanded);
+        Assert.Equal("team/apps/web", profiles.Selected?.Label);
+        // The editor names its base the way the sidebar does.
+        Assert.Equal("team/oss", profiles.Current?.BaseName);
+
+        // Leaving the new profile form chooses it again, and leaves the folder closed too.
+        profiles.StartNew(null);
+        profiles.CancelNew();
+
+        Assert.Equal("team/apps/web", profiles.Selected?.Label);
+        Assert.False(((ProfileFolderNode)profiles.Tree[1]).IsExpanded);
+    }
+
+    [AvaloniaFact]
+    public async Task A_new_profile_can_go_in_a_subfolder_that_has_no_profiles_yet()
+    {
+        var (cli, _, _, _) = Nested();
+        Directory.CreateDirectory(Path.Combine(folders.Profiles, "infra"));
+        Directory.CreateDirectory(Path.Combine(folders.Profiles, ".git", "hooks"));
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        profiles.StartNew(null);
+
+        Assert.Equal(["Profiles folder", "infra", "team", "team/apps"], profiles.Creating!.Places.Select(place => place.Label));
+    }
+
+    [AvaloniaFact]
+    public async Task Deleting_a_profile_in_a_subfolder_deletes_that_file_and_names_it_by_its_subfolder()
+    {
+        var (cli, @base, oss, web) = Nested();
+        // A profile of the same name in the folder itself stays.
+        var other = folders.Write("oss.yaml", "");
+        var profiles = new ProfilesViewModel(new RepottedClient(cli), new FakeDesktop(), folders.Settings, () => []);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        profiles.Items.Single(item => item.Label == "team/oss").DeleteCommand.Execute(null);
+
+        Assert.Equal("Delete team/oss?", profiles.DeleteQuestion);
+        Assert.Equal(
+            "This deletes team/oss.yaml from the profiles folder, and it can't be undone. team/apps/web extends it, so it stops loading until it extends another profile.",
+            profiles.DeleteDetail);
+        cli.On(folders.List(), $$$"""
+            {"profiles":[
+              {"name":"base","folder":"","file":{{{Json(@base)}}},"extends":null,"problem":null},
+              {"name":"web","folder":"team/apps","file":{{{Json(web)}}},"extends":null,"problem":"It extends ../oss.yaml, which is missing"}
+            ]}
+            """);
+        await profiles.ConfirmDeleteCommand.ExecuteAsync(null);
+
+        Assert.False(File.Exists(oss));
+        Assert.True(File.Exists(other));
+        Assert.Equal(["base", "team/apps/web"], profiles.Items.Select(item => item.Label));
+    }
 }
+

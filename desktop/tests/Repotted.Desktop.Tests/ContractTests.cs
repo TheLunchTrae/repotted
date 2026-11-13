@@ -658,6 +658,39 @@ public sealed class ContractTests
         Assert.Equal("repository:\n  has_wiki: false\n", await File.ReadAllTextAsync(made!, cancellationToken));
     }
     [Fact]
+    public async Task The_cli_lists_subfolders_and_reads_the_profiles_the_app_makes_in_them()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        Directory.CreateDirectory(Path.Combine(folders.Profiles, "team", "apps"));
+        folders.Write("base.yaml", "repository: { has_issues: true }\n");
+        folders.Write(Path.Combine("team", "oss.yaml"), "extends: ../base.yaml\n");
+        // The folder as the user picked it goes through a link, so its path is not the one the CLI lists.
+        var folder = folders.LinkToProfiles();
+
+        var listings = await client.ProfilesAsync(folder, cancellationToken);
+
+        Assert.Equal([("", "base"), ("team", "oss")], listings.Select(listing => (listing.Folder, listing.Name)));
+        var oss = new ProfileItemViewModel(listings[1], "base");
+        folders.Settings.Save(folders.Settings.Load() with { ProfilesFolder = folder });
+        string? made = null;
+        using var form = new NewProfileViewModel(
+            client, new ProfileFolder(client, folders.Settings), [oss], [], null, (file, _) => Task.FromResult(made = file), () => { }, () => { },
+            new HashSet<string>(), ["team", "team/apps"], "team/apps")
+        {
+            Name = "web",
+            Extends = true,
+        };
+        await form.CreateCommand.ExecuteAsync(null);
+
+        Assert.Null(form.Error);
+        var resolved = await client.ProfileAsync(made!, cancellationToken);
+        Assert.Equal([oss.Listing.File, listings[0].File], resolved.Chain.Skip(1));
+        Assert.Contains(await client.ProfilesAsync(folder, cancellationToken), listing => (listing.Folder, listing.Name) == ("team/apps", "web"));
+    }
+
+    [Fact]
     public async Task The_cli_stages_an_apply_the_way_the_app_drives_it()
     {
         var client = Client();

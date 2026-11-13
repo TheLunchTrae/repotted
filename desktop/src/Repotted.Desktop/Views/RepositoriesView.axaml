@@ -192,7 +192,7 @@
                     PlaceholderText="No profiles in the folder" AutomationProperties.Name="Profile to apply">
             <ComboBox.ItemTemplate>
               <DataTemplate x:DataType="vm:ProfileItemViewModel">
-                <TextBlock Text="{Binding Name}" />
+                <TextBlock Text="{Binding Label}" />
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
@@ -230,7 +230,7 @@
                     PlaceholderText="No profiles in the folder" AutomationProperties.Name="Profile to compare with">
             <ComboBox.ItemTemplate>
               <DataTemplate x:DataType="vm:ProfileItemViewModel">
-                <TextBlock Text="{Binding Name}" />
+                <TextBlock Text="{Binding Label}" />
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>

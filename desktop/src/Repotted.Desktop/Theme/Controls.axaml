@@ -312,6 +312,69 @@
     <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
 
+  <!-- The profiles tree in the sidebar: rows like the navigation above it -->
+  <Style Selector="TreeView.nav">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+  <Style Selector="TreeView.nav TreeViewItem">
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="FontSize" Value="14.5" />
+    <Setter Property="Padding" Value="4,6,10,6" />
+    <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
+  </Style>
+  <Style Selector="TreeView.nav TreeViewItem /template/ Border#PART_LayoutRoot">
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Margin" Value="0,1" />
+    <Setter Property="BorderThickness" Value="3,0,0,0" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="TreeView.nav TreeViewItem:pointerover /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+  </Style>
+  <Style Selector="TreeView.nav TreeViewItem:selected /template/ Border#PART_LayoutRoot, TreeView.nav TreeViewItem:selected:pointerover /template/ Border#PART_LayoutRoot, TreeView.nav TreeViewItem:selected:focus /template/ Border#PART_LayoutRoot, TreeView.nav TreeViewItem:selected:pressed /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource TintBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource RailBrush}" />
+  </Style>
+  <Style Selector="TreeView.nav TreeViewItem:selected /template/ ContentPresenter#PART_HeaderPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- The mark beside the folder or repository the profiles are in -->
+  <Style Selector="Border.source">
+    <Setter Property="Width" Value="28" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="CornerRadius" Value="7" />
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Border.source Path">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- Icons for a folder, a profile file and a GitHub repository, drawn in 16 by 16 -->
+  <Style Selector="Path.folder, Path.profile, Path.repo">
+    <Setter Property="Stroke" Value="{DynamicResource MutedBrush}" />
+    <Setter Property="StrokeThickness" Value="1.4" />
+    <Setter Property="StrokeJoin" Value="Round" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="Width" Value="16" />
+    <Setter Property="Height" Value="16" />
+    <Setter Property="Stretch" Value="None" />
+  </Style>
+  <Style Selector="Path.folder">
+    <Setter Property="Data" Value="M1.8,4.2 A1,1 0 0 1 2.8,3.2 H5.8 L7.2,4.7 H13.2 A1,1 0 0 1 14.2,5.7 V12.5 A1,1 0 0 1 13.2,13.5 H2.8 A1,1 0 0 1 1.8,12.5 Z" />
+  </Style>
+  <Style Selector="Path.profile">
+    <Setter Property="Data" Value="M4,1.8 H9.2 L12.5,5.1 V13.6 A0.7,0.7 0 0 1 11.8,14.3 H4 A0.7,0.7 0 0 1 3.3,13.6 V2.5 A0.7,0.7 0 0 1 4,1.8 Z M9,1.9 V5.2 H12.4" />
+  </Style>
+  <Style Selector="Path.repo">
+    <Setter Property="Data" Value="M3,2.8 A1.3,1.3 0 0 1 4.3,1.5 H13 V11.7 H4.3 A1.3,1.3 0 0 0 3,13 Z M3,13 A1.3,1.3 0 0 0 4.3,14.3 H13 V11.7 M5.6,4.4 H10.2" />
+  </Style>
+
   <!-- Radio buttons in the theme's green, not the system accent -->
   <Style Selector="RadioButton:checked /template/ Ellipse#CheckOuterEllipse, RadioButton:checked:pointerover /template/ Ellipse#CheckOuterEllipse, RadioButton:checked:pressed /template/ Ellipse#CheckOuterEllipse">
     <Setter Property="Fill" Value="{DynamicResource RailBrush}" />

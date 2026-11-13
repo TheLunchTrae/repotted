@@ -28,8 +28,9 @@ internal sealed partial class ShellView : UserControl
         Nav.AddHandler(KeyDownEvent, (_, _) => keyedOn = Nav.SelectedIndex, RoutingStrategies.Tunnel, handledEventsToo: true);
         Nav.AddHandler(TappedEvent, OnNavTapped, RoutingStrategies.Bubble, handledEventsToo: true);
         Nav.AddHandler(KeyDownEvent, OnNavKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
-        ProfileList.KeyDown += OnProfileListKeyDown;
-        ProfileList.AddHandler(PointerPressedEvent, OnProfileListPointerPressed, RoutingStrategies.Tunnel);
+        ProfileTree.SelectionChanged += OnProfileTreeSelectionChanged;
+        ProfileTree.KeyDown += OnProfileTreeKeyDown;
+        ProfileTree.AddHandler(PointerPressedEvent, OnProfileTreePointerPressed, RoutingStrategies.Tunnel);
         // Choosing an item in the account menu closes it, as a menu does.
         AccountMenu.AddHandler(Button.ClickEvent, (_, _) => AccountButton.Flyout?.Hide(), RoutingStrategies.Bubble, handledEventsToo: true);
         // The arrow keys move through it, and it opens with the first item focused, as a menu does.
@@ -37,6 +38,25 @@ internal sealed partial class ShellView : UserControl
         if (AccountButton.Flyout is { } flyout)
         {
             flyout.Opened += (_, _) => Dispatcher.UIThread.Post(() => MenuItems().FirstOrDefault()?.Focus(NavigationMethod.Directional));
+        }
+    }
+
+    /// <summary>
+    /// A subfolder takes focus, so the arrow keys move through it and open or
+    /// close it, but the selection goes back to the profile that is open, so
+    /// that row stays marked.
+    /// </summary>
+    private void OnProfileTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (ProfileTree.SelectedItem is ProfileFolderNode)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (ProfileTree.SelectedItem is ProfileFolderNode && shell is not null)
+                {
+                    ProfileTree.SelectedItem = shell.Profiles.Selected;
+                }
+            });
         }
     }
 
@@ -176,26 +196,26 @@ internal sealed partial class ShellView : UserControl
     /// new profile form is open, since selecting a profile closes the form
     /// and stops a capture it runs.
     /// </summary>
-    private void OnProfileListPointerPressed(object? sender, PointerPressedEventArgs e)
+    private void OnProfileTreePointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (e.GetCurrentPoint(ProfileList).Properties.IsRightButtonPressed
-            && DataContext is ViewModels.ShellViewModel { Profiles.Creating: not null })
+        if (e.GetCurrentPoint(ProfileTree).Properties.IsRightButtonPressed
+            && shell is { Profiles.Creating: not null })
         {
             e.Handled = true;
         }
     }
 
     /// <summary>
-    /// The platform's delete shortcut on the selected profile asks whether to
+    /// The platform's delete shortcut on the focused profile asks whether to
     /// delete it: Delete on Windows, and Command+Delete on macOS, as in the
-    /// Finder, where Delete alone edits text.
+    /// Finder, where Delete alone edits text. On a subfolder it does nothing.
     /// </summary>
-    private void OnProfileListKeyDown(object? sender, KeyEventArgs e)
+    private void OnProfileTreeKeyDown(object? sender, KeyEventArgs e)
     {
         var shortcut = OperatingSystem.IsMacOS()
             ? e.Key == Key.Back && e.KeyModifiers == KeyModifiers.Meta
             : e.Key == Key.Delete && e.KeyModifiers == KeyModifiers.None;
-        if (shortcut && ProfileList.SelectedItem is ViewModels.ProfileItemViewModel item && item.DeleteCommand.CanExecute(null))
+        if (shortcut && (e.Source as Control)?.DataContext is ProfileItemViewModel item && item.DeleteCommand.CanExecute(null))
         {
             item.DeleteCommand.Execute(null);
             e.Handled = true;

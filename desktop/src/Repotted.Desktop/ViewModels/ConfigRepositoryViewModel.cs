@@ -102,19 +102,17 @@ internal sealed partial class ConfigRepositoryViewModel : ViewModelBase, IDispos
             if (CopyLocal && localFolder is not null)
             {
                 Directory.CreateDirectory(folder);
-                foreach (var file in Directory.EnumerateFiles(localFolder)
-                    .Where(file => !System.IO.Path.GetFileName(file).StartsWith('.'))
-                    .Where(file => file.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
-                    .Order(StringComparer.Ordinal))
+                foreach (var file in ProfileFolder.ProfileFiles(localFolder))
                 {
-                    var target = System.IO.Path.Combine(folder, System.IO.Path.GetFileName(file));
+                    var target = ProfileFolder.Native(folder, file);
                     if (File.Exists(target))
                     {
-                        skipped.Add(System.IO.Path.GetFileName(file));
+                        skipped.Add(file);
                     }
                     else
                     {
-                        File.Copy(file, target);
+                        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target)!);
+                        File.Copy(ProfileFolder.Native(localFolder, file), target);
                         copied.Add(target);
                     }
                 }
@@ -165,4 +163,5 @@ internal sealed partial class ConfigRepositoryViewModel : ViewModelBase, IDispos
             closed.Dispose();
         }
     }
+
 }

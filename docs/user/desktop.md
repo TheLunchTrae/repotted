@@ -84,10 +84,20 @@ app keeps your profiles in a folder: `Documents/Repotted` at first, which the
 app creates. To use another folder, such as a clone of a repository where you
 keep your profiles, click **Change folder…** in [Settings](#settings).
 
-The sidebar lists the profiles while the **Profiles** page is open. Type in
+The sidebar lists the profiles while the **Profiles** page is open, under the
+folder's name, or the repository's when your profiles are on GitHub. Type in
 **Find a profile** to narrow the list, and click the sync button beside the
-list's heading to read the folder again, or to sync with GitHub when your
+folder's name to read the folder again, or to sync with GitHub when your
 profiles are kept there.
+
+Subfolders of the profiles folder show as folders, with the number of
+profiles in each, so you can group profiles by team or purpose. Click a
+folder's arrow to open or close it; while the app is open, it keeps closed
+the ones you closed. Folders whose names start with a dot, and links to
+other folders, are left out. Every other `.yaml` and `.yml` file under the
+profiles folder counts as a profile, so a folder that also holds other YAML,
+such as a whole repository's clone, lists those files as profiles with a
+problem.
 
 ### Keep profiles on GitHub
 
@@ -126,6 +136,11 @@ Click **New profile** and choose what it starts from:
   finishes. A capture that fails or that you cancel leaves nothing behind.
   If the app quits during a capture, the folder can keep a file whose name
   starts with a dot and ends in `.repotted-capture`. It is safe to delete.
+
+When the profiles folder has subfolders, **Folder** chooses where the new
+profile goes, including a subfolder with no profiles in it yet. It starts as
+the folder of the profile you have open. A new
+profile can extend a profile in any folder.
 
 The app never overwrites a file that is already in the folder.
 

@@ -97,7 +97,7 @@ Commands:
                                                  of a batch, when file is a batch folder
   apply <plan.json> [--yes]                      Apply a saved plan if the repository has not changed; a
         [--only owner/repo] [--stop-on-failure]  batch's plan, one repository at a time
-  profiles <folder>                              List the profiles in a folder
+  profiles <folder>                              List the profiles in a folder and its subfolders
   sync <folder> [--repository owner/repo]        Sync a folder of profiles with a GitHub repository
        [--path folder] [--prefer local|remote]   (or a folder in it); --prefer settles files changed on both,
        [--only file] [--message text]            or only the files --only names
@@ -483,12 +483,15 @@ async function profiles(io: Io, args: string[]): Promise<number> {
     json(io, { profiles: listings });
     return 0;
   }
+  const label = (listing: (typeof listings)[number]): string =>
+    listing.folder === '' ? listing.name : `${listing.folder}/${listing.name}`;
+  const labels = new Map(listings.map((listing) => [listing.file, label(listing)]));
   for (const listing of listings) {
     const notes = [
-      listing.extends === null ? '' : `extends ${path.basename(listing.extends)}`,
+      listing.extends === null ? '' : `extends ${labels.get(listing.extends) ?? path.basename(listing.extends)}`,
       listing.problem === null ? '' : 'invalid',
     ].filter(Boolean);
-    io.out(`${listing.name}${notes.length > 0 ? ` (${notes.join(', ')})` : ''}\n`);
+    io.out(`${label(listing)}${notes.length > 0 ? ` (${notes.join(', ')})` : ''}\n`);
   }
   for (const listing of listings) {
     if (listing.problem !== null) {
