@@ -20,7 +20,7 @@ it later.
 - `wrangler.jsonc`: the Worker's config. `assets.run_worker_first` sends only
   `/api/*` to the Worker; Cloudflare serves every other path from `dist/`, and a
   path with no file gets `index.html`, for the app's own routes. The Worker's
-  `workers.dev` address is off, and its per-version preview URLs are on for
+  `workers.dev` address is off, and its Version URLs are on for
   [previews](#deploy). The custom domain is set in the dashboard, not here;
   [Deploy](#deploy) says why.
 
@@ -179,10 +179,10 @@ with none listed, a deploy leaves the dashboard's domain as it is. Had the
 config listed it, every deploy would set it again, and in CI would replace any
 other DNS record on the name without asking.
 
-A preview upload doesn't apply `wrangler.jsonc`'s `workers_dev` and
-`preview_urls`; only a deploy does. Until one has, with `preview_urls` on, the
-Worker has no Version URLs, and a preview run uploads its version, then fails
-for want of an address.
+Uploading a version doesn't apply `wrangler.jsonc`'s `workers_dev` and
+`preview_urls`, so a preview first runs `wrangler triggers deploy`, which
+applies them as a deploy does without making a version. The Version URLs are
+then on before the first preview, with no publish needed.
 
 The Worker keeps nothing on the server between requests, so it needs no KV,
 R2, or D1, and the token no permission for them.
@@ -203,5 +203,3 @@ Before the first deploy:
    secret `REPOTTED_APP_CLIENT_SECRET`.
 5. Create the `deploy-web` environment with the values above, limited to
    `main`.
-6. Run Deploy Web with Publish once, which turns the Version URLs on, before
-   the first preview.

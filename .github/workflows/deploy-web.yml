@@ -81,13 +81,16 @@ jobs:
             mise exec -- pnpm exec wrangler deploy
             exit 0
           fi
+          # Applies wrangler.jsonc's workers_dev and preview_urls to the Worker,
+          # as a deploy does, without a new version, so its Version URLs are on.
+          mise exec -- pnpm exec wrangler triggers deploy
           output="$RUNNER_TEMP/wrangler-output.json"
           WRANGLER_OUTPUT_FILE_PATH="$output" mise exec -- pnpm exec wrangler versions upload --preview-alias preview
-          # Wrangler leaves the alias URL out when the Worker's preview URLs are
-          # off, which they are until a deploy applies wrangler.jsonc.
+          # Wrangler leaves the alias URL out when the Worker's Version URLs are
+          # off.
           url=$(jq -r 'select(.type == "version-upload") | .preview_alias_url // empty' "$output")
           if [[ -z $url ]]; then
-            echo "::error::The repotted Worker's preview URLs are off. Run Deploy Web with Publish once, or turn them on in the Worker's settings, then run this again."
+            echo "::error::Wrangler gave no preview address, so the repotted Worker's Version URLs are off. Check them under the Worker's Settings, Domains & Routes."
             exit 1
           fi
           echo "preview-url=$url" >>"$GITHUB_OUTPUT"

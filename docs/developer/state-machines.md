@@ -880,8 +880,8 @@ Previews and publishes each wait in a concurrency group of their own, so the
 last one started holds the alias or stays live, and a preview never holds up a
 publish. A run on another branch fails before it checks out anything, and one
 whose `ts:web:check` fails, or whose environment lacks a value, uploads
-nothing. A preview run fails after its upload when the Worker's preview URLs
-are off, since the alias has no address then. When Cloudflare refuses an
+nothing. A preview run fails after its upload when the Worker's Version URLs
+are still off, since the alias has no address then. When Cloudflare refuses an
 upload, the alias and the live version stay as they were; re-running the job
 tries again.
 
