@@ -1,15 +1,24 @@
 import type { JSX } from 'preact';
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { ProfileFolderNode, ProfileListing, Profiles } from '../app/profiles.js';
+import type { Repositories } from '../app/repositories.js';
 import type { Router } from '../app/router.js';
 import { Link } from './link.js';
+import { NewProfileForm } from './new-profile.js';
 import { run } from './run.js';
 import { SyncNote } from './settings.js';
 
 const ownerTypes = { user: 'For personal accounts', organization: 'For organizations' } as const;
 
-function Folder({ node, profiles }: { readonly node: ProfileFolderNode; readonly profiles: Profiles }): JSX.Element {
+interface FolderProps {
+  readonly node: ProfileFolderNode;
+  readonly profiles: Profiles;
+  /** Called when a profile is chosen, which closes the new profile form. */
+  readonly onOpen: () => void;
+}
+
+function Folder({ node, profiles, onOpen }: FolderProps): JSX.Element {
   const selected = profiles.selected.value;
   return (
     <ul class="tree">
@@ -20,6 +29,7 @@ function Folder({ node, profiles }: { readonly node: ProfileFolderNode; readonly
             type="button"
             aria-current={selected?.file === listing.file ? 'true' : undefined}
             onClick={() => {
+              onOpen();
               run(profiles.select(listing));
             }}
           >
@@ -42,21 +52,80 @@ function Folder({ node, profiles }: { readonly node: ProfileFolderNode; readonly
             <span class="tree-name">{folder.name}</span>
             <span class="muted count">{folder.count}</span>
           </button>
-          {folder.open && <Folder node={folder} profiles={profiles} />}
+          {folder.open && <Folder node={folder} profiles={profiles} onOpen={onOpen} />}
         </li>
       ))}
     </ul>
   );
 }
 
-function Profile({
-  listing,
-  profiles,
-}: {
+interface ProfileProps {
   readonly listing: ProfileListing;
   readonly profiles: Profiles;
-}): JSX.Element {
+}
+
+/** Asks before a profile is deleted, naming its file and the profiles that stop loading without it. */
+function DeleteProfile({ listing, profiles, onClose }: ProfileProps & { readonly onClose: () => void }): JSX.Element {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const dependents = profiles.dependents(listing);
+  const onGitHub = profiles.source.value.kind === 'repository';
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  return (
+    <dialog class="dialog" ref={dialog} aria-labelledby="delete-heading" onClose={onClose}>
+      <form
+        method="dialog"
+        onSubmit={(event) => {
+          if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'delete') {
+            event.preventDefault();
+            run(
+              profiles.remove(listing).then((failure) => {
+                setError(failure);
+                if (failure === undefined) {
+                  dialog.current?.close();
+                }
+              }),
+            );
+          }
+        }}
+      >
+        <h2 id="delete-heading">Delete {listing.name}?</h2>
+        <p>
+          This deletes <span class="mono">{profiles.pathOf(listing)}</span>.{' '}
+          {onGitHub
+            ? "The deletion is committed to the repository, whose history keeps the file as it was at the last sync. Changes made since then can't be brought back."
+            : "It can't be brought back."}
+        </p>
+        {dependents.length > 0 && (
+          <p>
+            {dependents.map((item) => item.name).join(', ')} {dependents.length === 1 ? 'extends' : 'extend'} it and{' '}
+            {dependents.length === 1 ? 'stops' : 'stop'} loading until pointed at another profile.
+          </p>
+        )}
+        {error !== undefined && (
+          <p class="notice notice-problem" role="alert">
+            {error}
+          </p>
+        )}
+        <div class="form-actions">
+          <button class="button button-danger" type="submit" value="delete" disabled={profiles.busy.value}>
+            Delete profile
+          </button>
+          <button class="button button-quiet" type="submit" value="cancel">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+function Profile({ listing, profiles }: ProfileProps): JSX.Element {
   const [showYaml, setShowYaml] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const warnings = profiles.captureWarnings.value;
   const opened = profiles.opened.value;
   const base = profiles.listings.value.find((item) => item.file === listing.extends);
   return (
@@ -93,8 +162,36 @@ function Profile({
           >
             {showYaml ? 'Hide YAML' : 'Show YAML'}
           </button>
+          <button
+            class="button"
+            type="button"
+            onClick={() => {
+              setDeleting(true);
+            }}
+          >
+            Delete profile
+          </button>
         </div>
       </div>
+      {deleting && (
+        <DeleteProfile
+          listing={listing}
+          profiles={profiles}
+          onClose={() => {
+            setDeleting(false);
+          }}
+        />
+      )}
+      {warnings?.file === listing.file && (
+        <div class="notice notice-drift" role="status">
+          <p>The capture left out what a profile can't hold:</p>
+          <ul>
+            {warnings.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {listing.problem !== null && (
         <p class="notice notice-problem" role="alert">
           {listing.problem}
@@ -109,13 +206,15 @@ function Profile({
   );
 }
 
-export function ProfilesPage({
-  profiles,
-  router,
-}: {
+interface ProfilesProps {
   readonly profiles: Profiles;
+  readonly repositories: Repositories;
   readonly router: Router;
-}): JSX.Element {
+  /** Set while the new profile form is open, with the repository it was asked to capture. */
+  readonly creating: { readonly repository: string | undefined } | undefined;
+}
+
+export function ProfilesPage({ profiles, repositories, router, creating }: ProfilesProps): JSX.Element {
   const source = profiles.source.value;
   const tree = profiles.tree.value;
   const selected = profiles.selected.value;
@@ -144,6 +243,9 @@ export function ProfilesPage({
             {source.kind === 'repository' ? 'Sync' : 'Refresh'}
           </button>
         </div>
+        <Link class="button button-primary" router={router} to="/profiles/new">
+          New profile
+        </Link>
         {total > 0 && (
           <input
             class="field"
@@ -164,7 +266,13 @@ export function ProfilesPage({
         {total > 0 && tree.count === 0 && (
           <p class="muted small">No profile matches "{profiles.search.value.trim()}".</p>
         )}
-        <Folder node={tree} profiles={profiles} />
+        <Folder
+          node={tree}
+          profiles={profiles}
+          onOpen={() => {
+            router.go('/profiles');
+          }}
+        />
       </aside>
 
       <div class="page-main">
@@ -214,7 +322,14 @@ export function ProfilesPage({
             )}
           </div>
         )}
-        {selected !== undefined ? (
+        {creating !== undefined ? (
+          <NewProfileForm
+            profiles={profiles}
+            repositories={repositories}
+            router={router}
+            repository={creating.repository}
+          />
+        ) : selected !== undefined ? (
           <Profile key={selected.file} listing={selected} profiles={profiles} />
         ) : (
           <div class="page-body">

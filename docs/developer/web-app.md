@@ -150,8 +150,10 @@ engine's in-memory files, in one of two folders:
   folder on disk for the CLI, so conflicts and first syncs follow
   [the same rules](state-machines.md#config-repository-sync).
 
-Syncs and changes of where profiles are kept take turns in one queue, so a
-sync never reads a folder that is being changed.
+Syncs, new profiles, deletions, and changes of where profiles are kept take
+turns in one queue, so a sync never reads a folder that is being changed. A
+capture reads GitHub with the engine's `captureProfile` before it takes its
+turn, so a slow read holds nothing up.
 [State machines](state-machines.md#web-profiles-source) lists the
 transitions.
 

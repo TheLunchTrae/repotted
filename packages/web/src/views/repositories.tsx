@@ -58,7 +58,12 @@ function OwnerFilter({ repositories }: { readonly repositories: Repositories }):
   );
 }
 
-function RepositoryPanel({ repository }: { readonly repository: Repository }): JSX.Element {
+interface PanelProps {
+  readonly repository: Repository;
+  readonly onCapture: (repository: string) => void;
+}
+
+function RepositoryPanel({ repository, onCapture }: PanelProps): JSX.Element {
   const [owner, name] = repository.full_name.split('/');
   const panel = useRef<HTMLElement>(null);
   // On a narrow screen the panel sits under the list, out of view of the row that opened it.
@@ -78,6 +83,15 @@ function RepositoryPanel({ repository }: { readonly repository: Repository }): J
       <a class="button" href={`https://github.com/${repository.full_name}`} target="_blank" rel="noreferrer">
         Open on GitHub
       </a>
+      <button
+        class="button"
+        type="button"
+        onClick={() => {
+          onCapture(repository.full_name);
+        }}
+      >
+        Capture as a new profile
+      </button>
     </aside>
   );
 }
@@ -102,7 +116,13 @@ function useSearchKey(): RefObject<HTMLInputElement | null> {
   return input;
 }
 
-export function RepositoriesPage({ repositories }: { readonly repositories: Repositories }): JSX.Element {
+interface RepositoriesProps {
+  readonly repositories: Repositories;
+  /** Starts a new profile that captures this repository, `owner/name`. */
+  readonly onCapture: (repository: string) => void;
+}
+
+export function RepositoriesPage({ repositories, onCapture }: RepositoriesProps): JSX.Element {
   const search = useSearchKey();
   const list = repositories.list.value;
   const loading = repositories.loading.value;
@@ -250,7 +270,7 @@ export function RepositoriesPage({ repositories }: { readonly repositories: Repo
           </>
         )}
       </section>
-      {selected !== undefined && <RepositoryPanel repository={selected} />}
+      {selected !== undefined && <RepositoryPanel repository={selected} onCapture={onCapture} />}
     </div>
   );
 }

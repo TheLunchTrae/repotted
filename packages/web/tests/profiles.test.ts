@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { FakeGitRepository } from '../../core/tests/fake-git.js';
-import { answered } from '../../core/tests/fake-github.js';
+import { answered, FakeGitHub } from '../../core/tests/fake-github.js';
 import type { Preferences } from '../src/app/preferences.js';
 import { type ProfileFolderNode, Profiles } from '../src/app/profiles.js';
 import { mkdir, readdir, readFile, rm, writeFile } from '../src/engine/files.js';
@@ -323,4 +323,146 @@ test('a sign-in refused while connecting is reported as signed out, and the reas
 
   await profiles.keepInBrowser();
   expect(profiles.connectError.value).toBeUndefined();
+});
+
+test('a new profile starts empty or extends another, in the folder asked for, and opens', async () => {
+  await inBrowser({ 'base.yaml': `owner_type: organization\n${base}`, 'any.yaml': base });
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  await profiles.refresh();
+  const [any, typed] = profiles.listings.value;
+  if (any === undefined || typed === undefined) {
+    throw new Error('The folder should list both profiles.');
+  }
+
+  expect(
+    await profiles.create({ name: ' mine ', folder: '', start: { kind: 'empty' }, ownerType: 'user' }),
+  ).toBeUndefined();
+  expect(await readFile('/profiles/browser/mine.yaml', 'utf8')).toBe('owner_type: user\n');
+  expect(profiles.selected.value?.name).toBe('mine');
+
+  await profiles.create({ name: 'web', folder: 'teams', start: { kind: 'extends', base: any }, ownerType: 'user' });
+  expect(await readFile('/profiles/browser/teams/web.yaml', 'utf8')).toBe('extends: "../any.yaml"\nowner_type: user\n');
+
+  // A typed base gives its type, so the new file names none.
+  await profiles.create({ name: 'org', folder: 'teams', start: { kind: 'extends', base: typed }, ownerType: 'user' });
+  expect(await readFile('/profiles/browser/teams/org.yaml', 'utf8')).toBe('extends: "../base.yaml"\n');
+
+  expect(profiles.listings.value.map((listing) => [listing.name, listing.problem, listing.owner_type])).toEqual([
+    ['any', null, null],
+    ['base', null, 'organization'],
+    ['mine', null, 'user'],
+    ['org', null, 'organization'],
+    ['web', null, 'user'],
+  ]);
+  expect(profiles.folders.value).toEqual(['', 'teams']);
+});
+
+test('a new profile never takes a name that is there, whatever its case, or one no file can have', async () => {
+  await inBrowser({ 'Base.yaml': base, 'teams/web.yml': base });
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  await profiles.refresh();
+  const start = { kind: 'empty' } as const;
+
+  expect(await profiles.create({ name: 'base', folder: '', start, ownerType: undefined })).toBe(
+    'Base.yaml is already in the profiles folder.',
+  );
+  expect(profiles.nameProblem('WEB', 'teams')).toBe('web.yml is already in teams.');
+  expect(profiles.nameProblem('web', '')).toBeUndefined();
+  expect(profiles.nameProblem('  ', '')).toBe('Give the profile a name.');
+  expect(profiles.nameProblem('a/b', '')).toContain('A name cannot');
+  expect(profiles.nameProblem('.hidden', '')).toContain('A name cannot');
+  expect(profiles.nameProblem('nul', '')).toContain('Windows keeps the name nul');
+  expect(await readFile('/profiles/browser/Base.yaml', 'utf8')).toBe(base);
+});
+
+test('a capture makes a profile of the repository, holds its name while it reads, and says what it left out', async () => {
+  const github = new FakeGitHub({ repository: { has_wiki: false }, ownerType: 'User' }, 'trae/site');
+  const held = Promise.withResolvers<undefined>();
+  const request: FakeGitHub['request'] = async (method, path, body) => {
+    await held.promise;
+    return github.request(method, path, body);
+  };
+  const profiles = new Profiles({ request }, memory(), () => undefined);
+  await profiles.refresh();
+  const capture = {
+    name: 'site',
+    folder: '',
+    start: { kind: 'repository', repository: 'trae/site' },
+    ownerType: undefined,
+  } as const;
+
+  const capturing = profiles.create(capture);
+  expect(profiles.nameProblem('Site', '')).toBe('Another capture is making Site.yaml.');
+  expect(profiles.listings.value).toEqual([]);
+  held.resolve(undefined);
+
+  expect(await capturing).toBeUndefined();
+  expect(profiles.nameProblem('other', '')).toBeUndefined();
+  expect(profiles.selected.value).toMatchObject({ name: 'site', problem: null, owner_type: 'user' });
+  expect(profiles.opened.value?.text).toContain('has_wiki: false');
+});
+
+test('a capture that fails, or whose form closed, leaves no profile behind', async () => {
+  const github = new FakeGitHub({}, 'trae/site').fail(/GET \/repos\/trae\/site$/u, answered(404, 'Not Found'), 1);
+  const profiles = new Profiles(github, memory(), () => undefined);
+  await profiles.refresh();
+  const capture = {
+    name: 'site',
+    folder: '',
+    start: { kind: 'repository', repository: 'trae/site' },
+    ownerType: undefined,
+  } as const;
+
+  expect(await profiles.create(capture)).toBe('Not Found');
+  expect(profiles.nameProblem('site', '')).toBeUndefined();
+
+  const closed = new AbortController();
+  const capturing = profiles.create(capture, closed.signal);
+  closed.abort();
+  expect(await capturing).toBeUndefined();
+
+  expect(profiles.listings.value).toEqual([]);
+  await expect(readFile('/profiles/browser/site.yaml', 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+test('making and deleting a profile kept on GitHub commits each', async () => {
+  const github = repository();
+  const profiles = await connected(github);
+
+  await profiles.create({ name: 'mine', folder: 'teams', start: { kind: 'empty' }, ownerType: 'organization' });
+  expect(github.files()['profiles/teams/mine.yaml']).toBe('owner_type: organization\n');
+
+  const mine = profiles.selected.value;
+  if (mine === undefined) {
+    throw new Error('The new profile should be open.');
+  }
+  expect(await profiles.remove(mine)).toBeUndefined();
+
+  expect(github.files()['profiles/teams/mine.yaml']).toBeUndefined();
+  expect(profiles.selected.value).toBeUndefined();
+  expect(drawn(profiles.tree.value)).toEqual(['base', 'teams/ 1', '  web']);
+});
+
+test('the profiles that extend one, directly or through another, are named before it is deleted', async () => {
+  await inBrowser({
+    'base.yaml': base,
+    'mid.yaml': 'extends: base.yaml\n',
+    'teams/leaf.yaml': 'extends: ../mid.yaml\n',
+    'other.yaml': base,
+  });
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  await profiles.refresh();
+  const root = profiles.listings.value.find((listing) => listing.name === 'base');
+  if (root === undefined) {
+    throw new Error('The folder should list base.');
+  }
+
+  expect(profiles.dependents(root).map((listing) => listing.name)).toEqual(['mid', 'leaf']);
+
+  await profiles.remove(root);
+  expect(profiles.listings.value.map((listing) => [listing.name, listing.problem === null])).toEqual([
+    ['mid', false],
+    ['other', true],
+    ['leaf', false],
+  ]);
 });
