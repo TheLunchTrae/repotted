@@ -147,8 +147,14 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     /// <summary>The owners in the list, the signed-in account first, each ticked when the list shows its repositories.</summary>
     public ObservableCollection<OwnerChoice> Owners { get; } = [];
 
-    /// <summary>Whether the list shows and has more than one owner to choose among.</summary>
-    public bool ShowOwnerFilter => ShowTable && Owners.Count > 1;
+    /// <summary>
+    /// Whether the list shows and has more than one owner to choose among, or
+    /// hides its one owner, which only the filter can show again.
+    /// </summary>
+    public bool ShowOwnerFilter => ShowTable && (Owners.Count > 1 || OwnersFiltered);
+
+    /// <summary>Whether the owner filter hides every owner in the list, so the list shows no repositories.</summary>
+    public bool EveryOwnerHidden => ShowTable && Owners.Count > 0 && Owners.All(owner => !owner.Shown);
 
     /// <summary>Whether the signed-in account has repositories of its own in the list.</summary>
     public bool HasPersonal => Owners.Any(owner => owner.Personal);
@@ -178,12 +184,12 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     public bool HasSelection => Selected is not null && !Choosing;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(ShowAddInHeading), nameof(ShowOwnerFilter))]
+    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(ShowAddInHeading), nameof(ShowOwnerFilter), nameof(EveryOwnerHidden))]
     [NotifyCanExecuteChangedFor(nameof(RefreshCommand))]
     public partial bool Loading { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(HasError), nameof(ShowAddInHeading), nameof(ShowOwnerFilter))]
+    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(HasError), nameof(ShowAddInHeading), nameof(ShowOwnerFilter), nameof(EveryOwnerHidden))]
     public partial string? Error { get; set; }
 
     public bool HasError => Error is not null;
@@ -203,7 +209,7 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     public bool ShowAddInHeading => CanAddRepositories && !ShowEmpty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(CountLabel), nameof(ShowAddInHeading), nameof(ShowOwnerFilter))]
+    [NotifyPropertyChangedFor(nameof(ShowTable), nameof(ShowEmpty), nameof(CountLabel), nameof(ShowAddInHeading), nameof(ShowOwnerFilter), nameof(EveryOwnerHidden))]
     public partial int Count { get; set; }
 
     public string CountLabel => OwnersFiltered
@@ -316,6 +322,7 @@ internal sealed partial class RepositoriesViewModel : ViewModelBase
     private void OwnersChanged()
     {
         OnPropertyChanged(nameof(ShowOwnerFilter));
+        OnPropertyChanged(nameof(EveryOwnerHidden));
         OnPropertyChanged(nameof(OwnersFiltered));
         OnPropertyChanged(nameof(OwnersLabel));
         OnPropertyChanged(nameof(CountLabel));

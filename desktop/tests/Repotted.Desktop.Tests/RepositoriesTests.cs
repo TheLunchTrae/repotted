@@ -142,6 +142,48 @@ public sealed class RepositoriesTests : ViewModelTests
     }
 
     [AvaloniaFact]
+    public async Task A_hidden_lone_owner_keeps_the_filter_to_show_it_again()
+    {
+        // Hidden while it had company, now the only owner in the list.
+        folders.Settings.Save(folders.Settings.Load() with { HiddenRepositoryOwners = ["lunchbox-labs"] });
+        var main = App(new FakeCli().On("status --json", Documents.SignedIn).On("repos --json", """
+            {"source":"installations","repositories":[
+              {"full_name":"lunchbox-labs/compasslet","private":false,"archived":false}
+            ]}
+            """));
+        await main.StartAsync();
+        var repositories = Assert.IsType<ShellViewModel>(main.Page).Repositories;
+
+        Assert.Empty(repositories.Items);
+        Assert.True(repositories.ShowOwnerFilter);
+        Assert.True(repositories.EveryOwnerHidden);
+        Assert.Equal(ControlLabel.For("No owners"), repositories.OwnersLabel);
+
+        repositories.ShowAllOwnersCommand.Execute(null);
+
+        Assert.Equal(["lunchbox-labs (1)", "compasslet"], Listed(repositories));
+        Assert.False(repositories.ShowOwnerFilter);
+        Assert.False(repositories.EveryOwnerHidden);
+        Assert.Null(folders.Settings.Load().HiddenRepositoryOwners);
+    }
+
+    [AvaloniaFact]
+    public async Task Hiding_every_owner_says_so()
+    {
+        var repositories = await Owned();
+        Assert.False(repositories.EveryOwnerHidden);
+
+        foreach (var owner in repositories.Owners)
+        {
+            owner.Shown = false;
+        }
+
+        Assert.Empty(repositories.Items);
+        Assert.True(repositories.EveryOwnerHidden);
+        Assert.Equal("0 of 5", repositories.CountLabel);
+    }
+
+    [AvaloniaFact]
     public async Task Remembered_owners_match_whatever_their_case()
     {
         folders.Settings.Save(folders.Settings.Load() with { HiddenRepositoryOwners = ["LUNCHBOX-LABS", "pixel-garden"] });
