@@ -16,6 +16,124 @@
       Actions off hides which actions are allowed, and search shows it off.
       The setting that hides others says when the profile still names them.
     -->
+    <!--
+      The allowed action patterns: the list, with what each line matches on
+      GitHub beside it, and under it a search for actions to add. The list
+      and the checks share a line height, so each check sits beside its line.
+      The results open under the search box; the arrow keys reach them from
+      it, Enter adds the chosen one, and Escape closes them.
+    -->
+    <DataTemplate x:Key="ActionPatterns" x:DataType="vm:ActionPatternsViewModel">
+      <Grid RowDefinitions="Auto,Auto,Auto">
+        <!-- The list gives way to the checks in a narrow editor, such as beside the YAML. -->
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="4*" MaxWidth="420" />
+          <ColumnDefinition Width="5*" />
+        </Grid.ColumnDefinitions>
+        <TextBox Classes="setting list" Text="{Binding Row.Typed}" AcceptsReturn="True" IsEnabled="{Binding Row.Enabled}"
+                 AutomationProperties.Name="{Binding Row.TypedName}"
+                 AutomationProperties.HelpText="{Binding Row.TypedHelp}" />
+        <ItemsControl Grid.Column="1" Classes="checks" ItemsSource="{Binding Lines}"
+                      AutomationProperties.Name="What each pattern matches on GitHub">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PatternLineViewModel">
+              <Border Classes="check">
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding Shown}"
+                            AutomationProperties.Name="{Binding AccessibleName}">
+                  <Panel Classes="mark" Classes.good="{Binding Good}" Classes.warning="{Binding Warning}"
+                         Classes.bad="{Binding Bad}" Classes.muted="{Binding Muted}" Classes.checking="{Binding Checking}">
+                    <Ellipse />
+                    <Path />
+                    <Arc Classes.spinner="{Binding Checking}" IsVisible="{Binding Checking}" />
+                  </Panel>
+                  <Border Classes="blocks" IsVisible="{Binding Note.Blocks}"><TextBlock Text="Blocks" /></Border>
+                  <TextBlock Classes="check" Classes.warning="{Binding Warning}" Classes.bad="{Binding Bad}"
+                             Classes.muted="{Binding Muted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                             ToolTip.Tip="{Binding Note.Text}"><Run Text="{Binding Note.Lead}" /><Run Text="{Binding Note.Name}" FontWeight="SemiBold" Foreground="{DynamicResource FgBrush}" /><Run Text="{Binding Note.Tail}" /></TextBlock>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Grid.Row="1" Classes="problem small" Text="{Binding Row.TypedProblem}" IsVisible="{Binding Row.HasTypedProblem}"
+                   TextWrapping="Wrap" Margin="0,4,0,0" />
+        <Panel Grid.Row="2" Margin="0,10,0,0">
+          <TextBox Classes="search actions" Text="{Binding Search.Query}" IsEnabled="{Binding Row.Enabled}"
+                   PlaceholderText="Search GitHub for actions to add"
+                   AutomationProperties.Name="Search GitHub for actions to add"
+                   AutomationProperties.HelpText="Results open under the box. Press the down arrow to reach them, and Escape to close them."
+                   KeyDown="OnActionSearchKeyDown">
+            <TextBox.InnerLeftContent>
+              <Path Classes="magnifier" VerticalAlignment="Center" Margin="10,0,0,0" />
+            </TextBox.InnerLeftContent>
+          </TextBox>
+          <Popup IsOpen="{Binding Search.Open, Mode=TwoWay}" Placement="BottomEdgeAlignedLeft" VerticalOffset="6"
+                 IsLightDismissEnabled="True" OverlayDismissEventPassThrough="True">
+            <Border Classes="found">
+              <StackPanel>
+                <DockPanel Margin="14,10" IsVisible="{Binding Search.HasStatus}">
+                  <Panel DockPanel.Dock="Left" Classes="mark checking" Margin="0,0,8,0" IsVisible="{Binding Search.Searching}">
+                    <Arc Classes.spinner="{Binding Search.Searching}" />
+                  </Panel>
+                  <TextBlock Classes="muted small" Text="{Binding Search.Status}" TextWrapping="Wrap"
+                             VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+                </DockPanel>
+                <ListBox Classes="found" ItemsSource="{Binding Search.Results}" IsVisible="{Binding Search.HasResults}"
+                         AutomationProperties.Name="Repositories GitHub found" AttachedToVisualTree="OnFoundActionsAttached">
+                  <ListBox.Styles>
+                    <Style Selector="ListBoxItem" x:DataType="vm:FoundActionViewModel">
+                      <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
+                    </Style>
+                  </ListBox.Styles>
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:FoundActionViewModel">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="1" VerticalAlignment="Center">
+                          <TextBlock Classes="mono" FontSize="13.5" Text="{Binding Repository}" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Classes="muted" FontSize="13" Text="{Binding Description}" IsVisible="{Binding HasDescription}"
+                                     TextTrimming="CharacterEllipsis" />
+                          <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,1,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                              <Path Classes="star" VerticalAlignment="Center" />
+                              <TextBlock Classes="muted" FontSize="12.5" Text="{Binding Stars}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                              <Path Classes="tick" VerticalAlignment="Center" IsVisible="{Binding HasActionFile}" />
+                              <TextBlock Classes="muted actionfile" Classes.has="{Binding HasActionFile}" FontSize="12.5"
+                                         Text="{Binding ActionNote}" />
+                            </StackPanel>
+                          </StackPanel>
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="add" Content="Add" Command="{Binding AddCommand}" IsVisible="{Binding !Added}"
+                                VerticalAlignment="Center" Margin="12,0,0,0" AutomationProperties.Name="{Binding AddName}" />
+                        <TextBlock Grid.Column="1" Classes="muted small" Text="Added" IsVisible="{Binding Added}"
+                                   VerticalAlignment="Center" Margin="12,0,10,0" />
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+                <Border Classes="foot">
+                  <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                             Text="GitHub has no Marketplace search, so these are repositories, most starred first. Add puts owner/repo@* in the list." />
+                </Border>
+              </StackPanel>
+            </Border>
+          </Popup>
+        </Panel>
+        <!-- The link keeps its width, and a long summary trims before it. -->
+        <DockPanel Grid.Row="2" Grid.Column="1" Margin="14,10,0,0" VerticalAlignment="Center" HorizontalAlignment="Left">
+          <Button DockPanel.Dock="Right" Classes="link" FontSize="13" Margin="12,0,0,0"
+                  Content="{Binding Source='Check again', Converter={x:Static theme:ControlLabel.Converter}}"
+                  Command="{Binding CheckAgainCommand}"
+                  IsVisible="{Binding CanCheckAgain}" VerticalAlignment="Center"
+                  AutomationProperties.HelpText="Asks GitHub about every pattern again." />
+          <TextBlock Classes="muted" FontSize="13" Text="{Binding Summary}" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Summary}"
+                     AutomationProperties.LiveSetting="Polite" />
+        </DockPanel>
+      </Grid>
+    </DataTemplate>
+
     <DataTemplate x:Key="SettingRow" x:DataType="vm:SettingViewModel">
       <Border Classes="field" Classes.nested="{Binding Nested}" Classes.off="{Binding !Enabled}">
         <Grid ColumnDefinitions="4,*,Auto,160" RowDefinitions="Auto,Auto">
@@ -34,7 +152,7 @@
           </StackPanel>
           <StackPanel Grid.Row="{Binding OptionsRow}" Grid.Column="{Binding OptionsColumn}" Grid.ColumnSpan="{Binding OptionsSpan}"
                       Classes="typed" Classes.wide="{Binding Wide}" Classes.nested="{Binding Nested}"
-                      VerticalAlignment="Center" Spacing="4" IsVisible="{Binding IsTyped}">
+                      VerticalAlignment="Center" Spacing="4" IsVisible="{Binding IsPlainBox}">
             <TextBox Classes="setting" Text="{Binding Typed}" Classes.number="{Binding IsNumber}" IsEnabled="{Binding Enabled}"
                      Classes.list="{Binding IsList}" AcceptsReturn="{Binding IsList}"
                      AutomationProperties.Name="{Binding TypedName}"
@@ -42,6 +160,8 @@
             <TextBlock Classes="problem small" Text="{Binding TypedProblem}" IsVisible="{Binding HasTypedProblem}"
                        TextWrapping="Wrap" MaxWidth="240" />
           </StackPanel>
+          <ContentControl Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Classes="patterns" Content="{Binding Patterns}"
+                          ContentTemplate="{StaticResource ActionPatterns}" IsVisible="{Binding HasPatterns}" />
           <Border Grid.Row="{Binding OptionsRow}" Grid.Column="{Binding OptionsColumn}" Grid.ColumnSpan="{Binding OptionsSpan}"
                   Classes="seg" Classes.wide="{Binding Wide}" Classes.nested="{Binding Nested}" IsVisible="{Binding IsChoice}"
                   IsEnabled="{Binding Enabled}">

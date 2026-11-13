@@ -173,6 +173,9 @@ internal sealed partial class ProfileViewModel(
 
     public bool HasSaveError => SaveError is not null;
 
+    /// <summary>What each allowed action pattern matches on GitHub, by its text, for as long as the editor is open.</summary>
+    private readonly Dictionary<string, ActionCheckDocument> actionChecks = new(StringComparer.Ordinal);
+
     /// <summary>The profile's file and the files it extends, own file first, as the editor last loaded or saved them.</summary>
     private List<string> chain = [];
 
@@ -997,6 +1000,18 @@ internal sealed partial class ProfileViewModel(
         OnPropertyChanged(nameof(ShowingFile));
     }
 
+    /// <summary>
+    /// Ends what the rows started, such as a check of action patterns under
+    /// way: when the rows are made again, and when the editor is dropped.
+    /// </summary>
+    public void Release()
+    {
+        foreach (var row in Settings)
+        {
+            row.Patterns?.Dispose();
+        }
+    }
+
     private void Show(ResolvedProfile profile, ResolvedProfile? @base)
     {
         var selected = SelectedTab?.Name;
@@ -1009,6 +1024,7 @@ internal sealed partial class ProfileViewModel(
         // Only this profile's own draft shows: a base's draft is that profile's to finish.
         var unset = OwnUnsets().ToHashSet(StringComparer.Ordinal);
 
+        Release();
         Tabs.Clear();
         foreach (var section in ProfileFields.Sections)
         {
@@ -1048,6 +1064,12 @@ internal sealed partial class ProfileViewModel(
                 row.ControlledBy = rows.Single(other => other.Field.Section == row.Field.Section && other.Field.Key == condition.Key);
                 row.ControlledBy.Dependents.Add(row);
             }
+        }
+        // A list of action patterns checks them once it knows whether GitHub hides it.
+        foreach (var row in rows.Where(row => row.Field.ActionPatterns))
+        {
+            row.Patterns = new ActionPatternsViewModel(client, row, actionChecks);
+            row.Patterns.Read();
         }
         Tabs.Add(EntriesTab("Rulesets", "rulesets"));
         Tabs.Add(EntriesTab("Environments", "environments"));

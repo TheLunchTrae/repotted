@@ -172,6 +172,9 @@ public sealed class ContractTests
         Assert.SkipWhen(account is Account.SignedIn, "Signed in here, so no command fails for want of a sign-in.");
 
         var error = await Assert.ThrowsAnyAsync<CliException>(() => client.RepositoriesAsync(cancellationToken));
+        // The commands the allowed action patterns run take their words after "--", and fail the same way.
+        await Assert.ThrowsAnyAsync<CliException>(() => client.CheckActionsAsync(["actions/*", "!octo-org/old@*"], cancellationToken));
+        await Assert.ThrowsAnyAsync<CliException>(() => client.FindActionsAsync("setup dotnet", cancellationToken));
 
         // With no sign-in at all, the sign-in is lost. A problem, such as a
         // keychain that would not open, may pass, and then may not be lost.

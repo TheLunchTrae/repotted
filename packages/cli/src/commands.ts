@@ -23,15 +23,19 @@ import {
   planBatch,
   readBatch,
   captureProfile,
+  checkActionPatterns,
   createGitHub,
   createPlan,
   currentUser,
+  describeActionCheck,
   describeFailure,
+  describeFoundAction,
   describeSkipped,
   describeWarning,
   editProfile,
   previewProfile,
   failureReason,
+  findActions,
   type EntryEdit,
   formatPlan,
   type GitHub,
@@ -123,6 +127,8 @@ Commands:
   schema                                         Print the JSON Schema of a profile file, for editors
   mcp [--read-only]                              Run the MCP server over stdio
   repos                                          List the repositories Repotted can manage
+  check-actions <pattern>...                     Check what each allowed action pattern matches on GitHub
+  find-actions <words>...                        Search GitHub for repositories with an action to allow
   status                                         Show which GitHub account Repotted signs in as
   login                                          Sign in with the Repotted GitHub App
   logout                                         Remove the sign-in from the OS keychain
@@ -993,6 +999,44 @@ async function repos(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
+/** The check statuses of a pattern that allows or blocks what it means to: the rest fail the command. */
+const sound = new Set(['match', 'owner', 'unchecked']);
+
+async function checkActions(io: Io, args: string[]): Promise<number> {
+  const { positionals, values } = parseArgs({ args, options: { json: { type: 'boolean' } }, allowPositionals: true });
+  if (positionals.length === 0) {
+    throw new UsageError('Expected one or more patterns, such as octo-org/* or actions/checkout@v6.');
+  }
+  const checks = await checkActionPatterns(await io.github(), positionals);
+  if (values.json === true) {
+    json(io, { checks });
+  } else {
+    for (const check of checks) {
+      io.out(`${describeActionCheck(check)}\n`);
+    }
+  }
+  return checks.every((check) => sound.has(check.status)) ? 0 : 1;
+}
+
+async function findActionsCommand(io: Io, args: string[]): Promise<number> {
+  const { positionals, values } = parseArgs({ args, options: { json: { type: 'boolean' } }, allowPositionals: true });
+  if (positionals.length === 0) {
+    throw new UsageError('Expected the words to search for, such as setup node.');
+  }
+  const results = await findActions(await io.github(), positionals.join(' '));
+  if (values.json === true) {
+    json(io, { results });
+    return 0;
+  }
+  for (const result of results) {
+    io.out(`${describeFoundAction(result)}\n`);
+  }
+  if (results.length === 0) {
+    io.err('GitHub found no repositories.\n');
+  }
+  return 0;
+}
+
 /** Where to install the Repotted App on more repositories; null when another App signs in. */
 function appInstallUrl(env: NodeJS.ProcessEnv): string | null {
   return usesRepottedApp(env) ? installUrl : null;
@@ -1141,6 +1185,8 @@ const commands: Record<string, (io: Io, args: string[]) => Promise<number>> = {
   sync,
   mcp,
   repos,
+  'check-actions': checkActions,
+  'find-actions': findActionsCommand,
   status,
   login,
   logout,
@@ -1165,6 +1211,16 @@ async function dispatch(io: Io, argv: string[]): Promise<number> {
     return 0;
   }
   return handler(io, rest);
+}
+
+/** Whether GitHub refused the failed request, or the request behind the failure, for a rate limit. */
+function rateLimited(error: unknown): boolean {
+  for (let current = error; current instanceof Error; current = current.cause) {
+    if (current instanceof GitHubError) {
+      return current.rateLimited;
+    }
+  }
+  return false;
 }
 
 /**
@@ -1196,7 +1252,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
     const message = error instanceof Error ? error.message : String(error);
     // Also --json=true, which parseArgs rejects, so the rejection is JSON too.
     if (argv.some((arg) => /^--json(?:=|$)/.test(arg))) {
-      json(io, { error: { kind: failureKind(error, misused), message } });
+      // A rate limit says so, since trying again later passes it.
+      json(io, {
+        error: { kind: failureKind(error, misused), message, ...(rateLimited(error) ? { rate_limited: true } : {}) },
+      });
     } else {
       io.err(`repotted: ${message}\n${docsLink(error)}`);
       if (misused) {

@@ -8,7 +8,11 @@ import {
   describeFailure,
   describeWarning,
   captureProfile,
+  checkActionPatterns,
   createPlan,
+  describeActionCheck,
+  describeFoundAction,
+  findActions,
   formatPlan,
   type GitHub,
   lockChanges,
@@ -60,6 +64,7 @@ const repository = z.string().describe('The repository as owner/name, for exampl
 const instructions = [
   'Repotted reads and changes GitHub repository settings, merge methods, Actions settings, security settings, custom properties, GitHub Pages, autolinks, rulesets, deployment environments and labels.',
   'capture describes a repository as a profile. plan compares a repository with a profile and lists the changes, without writing anything.',
+  'check_actions says what allowed action patterns match on GitHub, and find_actions searches GitHub for repositories with an action; both only read.',
   'apply makes the changes of one earlier plan, by its plan_id, and only if the repository has not changed since. Show the user the plan and get their agreement before calling apply.',
 ].join(' ');
 
@@ -127,6 +132,37 @@ export async function createServer(options: ServerOptions): Promise<McpServer> {
         const id = randomUUID();
         plans.set(id, plan);
         return text(`${formatPlan(plan, locks)}\n\nplan_id: ${id}`);
+      }),
+  );
+
+  server.registerTool(
+    'check_actions',
+    {
+      title: 'Check allowed action patterns',
+      description:
+        'Checks each allowed action pattern, an entry of actions.selected_actions.patterns_allowed such as octo-org/* or actions/checkout@v6, against GitHub: whether it is a pattern, and whether the owner, repository, tag, branch or commit, and path it names exist. Writes nothing.',
+      inputSchema: { patterns: z.array(z.string()).min(1).describe('The patterns to check') },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    ({ patterns }) =>
+      attempt(async () =>
+        text((await checkActionPatterns(await client(), patterns)).map(describeActionCheck).join('\n')),
+      ),
+  );
+
+  server.registerTool(
+    'find_actions',
+    {
+      title: 'Find actions',
+      description:
+        'Searches GitHub for repositories, most starred first, and says which have an action file at the top. GitHub has no search of Marketplace actions, so a result may not be an action. Writes nothing.',
+      inputSchema: { query: z.string().min(1).describe('The words to search for, such as setup node') },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    ({ query }) =>
+      attempt(async () => {
+        const found = await findActions(await client(), query);
+        return text(found.length === 0 ? 'GitHub found no repositories.' : found.map(describeFoundAction).join('\n'));
       }),
   );
 

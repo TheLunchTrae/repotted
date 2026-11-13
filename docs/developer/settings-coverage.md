@@ -204,6 +204,8 @@ them while Actions is off, and they apply as soon as it is turned back on.
 
 `actions.selected_actions.patterns_allowed` is a list in the editor, one
 pattern a line; GitHub takes at most 1000. An empty list allows no patterns.
+The editor checks each line against GitHub and searches for actions to add,
+through `repotted check-actions` and `repotted find-actions`.
 
 ## Permissions the Repotted App needs
 

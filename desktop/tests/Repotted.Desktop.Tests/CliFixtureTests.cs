@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Repotted.Desktop.Services;
+using Repotted.Desktop.ViewModels;
 
 namespace Repotted.Desktop.Tests;
 
@@ -31,6 +32,9 @@ public sealed class CliFixtureTests
         "batch-plan.json",
         "batch.json",
         "capture.json",
+        "check-actions.json",
+        "find-actions-limited.json",
+        "find-actions.json",
         "login.jsonl",
         "logout.json",
         "plan-locked.json",
@@ -119,6 +123,48 @@ public sealed class CliFixtureTests
 
         Assert.True(list.FromInstallations);
         Assert.Equal([new RepositoryDocument("lunch/app", true, false)], list.Repositories);
+    }
+
+    [Fact]
+    public async Task Action_checks()
+    {
+        string[] patterns =
+        [
+            "actions/*", "Github/CodeQL-Action/init@v3", "octo-org/deploy@v9", "octo-org/deplyo@*",
+            "!octo-org/old-deploy@*", "space-org*/*", "octo org/tools", "octo-org/limited",
+        ];
+        // The command exits 1 for a pattern that matches nothing, and the app still reads every check.
+        var checks = await Answering($"check-actions --json -- {string.Join(' ', patterns)}", "check-actions.json", exitCode: 1)
+            .CheckActionsAsync(patterns, None);
+
+        Assert.Equal(patterns, checks.Select(check => check.Pattern));
+        Assert.Equal(
+            [
+                "Any repository from actions, an organization",
+                "github/codeql-action, folder init, tag v3",
+                "octo-org/deploy has no tag or branch v9",
+                "No repository octo-org/deplyo you can see",
+                "Blocks octo-org/old-deploy, archived",
+                "A wildcard owner can't be checked",
+                "Not a pattern: a name can't have a space",
+                "GitHub's limit is reached. Try again in a minute.",
+            ],
+            checks.Select(check => PatternNote.For(check).Text));
+    }
+
+    [Fact]
+    public async Task Found_actions()
+    {
+        var found = await Answering("find-actions --json -- setup dotnet", "find-actions.json").FindActionsAsync("setup dotnet", None);
+
+        Assert.Equal(
+            [new FoundActionDocument("actions/setup-dotnet", "Set up .NET", 1140, "action.yml"), new FoundActionDocument("dotnet/sdk", null, 320, null)],
+            found);
+
+        // GitHub's search limit is a failure of its own, so the app can say to wait.
+        var limited = Answering("find-actions --json -- setup", "find-actions-limited.json", exitCode: 1);
+        var error = await Assert.ThrowsAsync<RateLimitedException>(() => limited.FindActionsAsync("setup", None));
+        Assert.Equal("API rate limit exceeded", error.Message);
     }
 
     [Fact]

@@ -311,12 +311,31 @@ Tests run the real commands against the in-memory GitHub in
 the terminal, and the version. With `--json`, each command prints the
 documents described in [JSON output](../user/json-output.md).
 
-`packages/cli/src/mcp.ts` serves `capture`, `plan`, and `apply`. The server
+`packages/cli/src/mcp.ts` serves `capture`, `plan`, and `apply`, and the two
+action lookups below. The server
 keeps each plan in memory under a random `plan_id`, and `apply` accepts only
 that ID, so an agent can apply only changes it has already shown as a plan, and
 each plan applies once. `--read-only` leaves out `apply`. The server looks up
 the token on every tool call, since a user token expires and refreshing it
 ends the old one; [The GitHub App](github-app.md) describes the sign-in.
+
+`packages/core/src/action-patterns.ts` checks allowed action patterns and
+searches for actions, for `check-actions`, `find-actions` and the MCP tools
+of the same names. Both only read. GitHub saves any pattern, so a check
+parses each one as GitHub documents them and looks up only the parts it
+names exactly: the owner of a wildcard repository, or the repository, then
+its ref, then its path at that ref. A ref goes into the path of its lookup, so a ref
+git can't have, such as one with `..`, is not a pattern and is never asked
+about. A lookup's failure belongs to its
+pattern, so one pattern's failure leaves the others checked. Once GitHub
+limits a lookup, the patterns not yet looked up get the same error without a
+request; a rejected sign-in fails the command instead, so the caller hears
+`signed_out`, and nothing more is asked. Lookups
+are shared by path within one run, and four patterns run at once. GitHub has
+no API that searches the Marketplace's actions, so `findActions` searches
+repositories and lists the top of each for an action file; a repository
+GitHub fails to list counts as one without, and only a rate limit or a
+rejected sign-in fails the search.
 
 The CLI ships to npm as one file bundled for Node, so shipped code uses only
 `node:` APIs. AGENTS.md lists the checks that enforce this. `repotted mcp`
@@ -364,7 +383,12 @@ view-model tests keep hand-written documents, for the states they need. The
 app reads a warning's `cause`, `section`, `key`, `field` and `exclusion` to
 place it, and `WarningDocument.Text` in
 `Services/CliDocuments.cs` builds the line it lists the way `describeWarning`
-does, so a change to that line changes both. The app ships its own CLI, so
+does, so a change to that line changes both. `PatternNote.For` in
+`ViewModels/ActionPatternsViewModel.cs` words an allowed action pattern's
+check from the `check-actions` document the same way beside
+`describeActionCheck`, in the same words, with the name set apart to show
+in semibold and a blocking pattern's "Blocks" as a tag. A change to either
+changes both. The app ships its own CLI, so
 every member that CLI always prints is required, and a hand-written example
 that leaves one out fails to parse rather than reading as empty.
 

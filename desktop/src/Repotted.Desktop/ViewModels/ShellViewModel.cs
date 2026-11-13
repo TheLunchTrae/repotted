@@ -167,6 +167,12 @@ internal sealed partial class ShellViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowingRepositories), nameof(ShowingCompare), nameof(ShowingApply), nameof(Crumb))]
     public partial ApplyViewModel? Apply { get; private set; }
 
+    /// <summary>A batch that closes ends what its editors started, such as a check of action patterns under way.</summary>
+    partial void OnBatchChanged(BatchViewModel? oldValue, BatchViewModel? newValue) => oldValue?.Release();
+
+    /// <summary>An apply that closes ends what its editor started, such as a check of action patterns under way.</summary>
+    partial void OnApplyChanged(ApplyViewModel? oldValue, ApplyViewModel? newValue) => oldValue?.Release();
+
     public bool ShowingRepositories => Page == 0 && Compare is null && Apply is null && Batch is null;
 
     public bool ShowingCompare => Page == 0 && Compare is not null && Apply is null && Batch is null;

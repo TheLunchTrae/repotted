@@ -1,0 +1,7 @@
+{
+  "error": {
+    "kind": "error",
+    "message": "API rate limit exceeded",
+    "rate_limited": true
+  }
+}

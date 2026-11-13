@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "repository": "actions/setup-dotnet",
+      "description": "Set up .NET",
+      "stars": 1140,
+      "action_file": "action.yml"
+    },
+    {
+      "repository": "dotnet/sdk",
+      "description": null,
+      "stars": 320,
+      "action_file": null
+    }
+  ]
+}

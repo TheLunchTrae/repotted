@@ -1406,6 +1406,30 @@ public sealed class ApplyTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Closing_an_apply_ends_the_checks_its_one_off_edits_started()
+    {
+        var cli = Cli(fromProfile: false)
+            .On("repos --json", Documents.Repositories)
+            .On(folders.List(), Documents.NoProfiles);
+        var shell = new ShellViewModel(
+            new Account.SignedIn("TheLunchTrae", "Trae", null, Documents.InstallUrl),
+            new RepottedClient(cli),
+            new FakeDesktop(),
+            folders.Settings,
+            () => Task.CompletedTask);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+        shell.Repositories.Selected = shell.Repositories.Rows.Single(row => row.FullName == Repository);
+        shell.Repositories.ChangeSettingsCommand.Execute(null);
+        await Until(() => shell.Apply?.Step == ApplyStep.Reviewing);
+        var ended = await ActionPatternsTests.HoldCheckAsync(shell.Apply!.Edits!, cli);
+
+        shell.ShowPage(0);
+
+        Assert.Null(shell.Apply);
+        Assert.True(ended());
+    }
+
+    [AvaloniaFact]
     public async Task Closing_the_window_asks_about_unsaved_one_off_edits()
     {
         var (window, shell, _) = await ShowList("light");

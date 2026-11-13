@@ -1,3 +1,4 @@
+export { checkActionPatterns, describeActionCheck, describeFoundAction, findActions } from './action-patterns.js';
 export { createGitHub, GitHubError, parseRepo } from './github.js';
 export type { GitHub } from './github.js';
 export {

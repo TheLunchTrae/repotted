@@ -4,12 +4,13 @@ import { describe, expect, test } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
+import { type GitHub, GitHubError } from '../../core/src/github.js';
 import { FakeGitHub } from '../../core/tests/fake-github.js';
 import { createServer } from '../src/mcp.js';
 
 const examples = path.join(import.meta.dirname, '../../../examples');
 
-async function connect(github: FakeGitHub, readOnly = false, onClient: () => void = () => undefined): Promise<Client> {
+async function connect(github: GitHub, readOnly = false, onClient: () => void = () => undefined): Promise<Client> {
   const server = await createServer({
     version: '0.0.0',
     github: () => {
@@ -171,7 +172,7 @@ describe('MCP server', () => {
     const client = await connect(new FakeGitHub(), true);
     const { tools } = await client.listTools();
 
-    expect(tools.map((tool) => tool.name).toSorted()).toEqual(['capture', 'plan']);
+    expect(tools.map((tool) => tool.name).toSorted()).toEqual(['capture', 'check_actions', 'find_actions', 'plan']);
   });
 
   test('returns a captured profile as YAML', async () => {
@@ -180,5 +181,29 @@ describe('MCP server', () => {
 
     expect(captured.isError).toBe(false);
     expect(captured.text).toContain('delete_branch_on_merge: false');
+  });
+
+  test('checks action patterns and finds actions, in lines', async () => {
+    const answers: Readonly<Record<string, unknown>> = {
+      '/users/actions': { login: 'actions', type: 'Organization' },
+      '/search/repositories?q=setup%20node%20archived%3Afalse&sort=stars&order=desc&per_page=10': {
+        items: [{ full_name: 'actions/setup-node', description: 'Set up Node.js', stargazers_count: 4600 }],
+      },
+      '/repos/actions/setup-node/contents/': [{ name: 'action.yml', type: 'file' }],
+    };
+    const client = await connect({
+      request: (_method, requested) =>
+        requested in answers ? Promise.resolve(answers[requested]) : Promise.reject(new GitHubError(404, 'Not Found')),
+    });
+
+    expect(await call(client, 'check_actions', { patterns: ['actions/*', 'octo-org/deplyo@v1'] })).toEqual({
+      text: 'actions/*: any repository from actions, an organization\nocto-org/deplyo@v1: no repository octo-org/deplyo you can see',
+      isError: false,
+    });
+    expect(await call(client, 'find_actions', { query: 'setup node' })).toEqual({
+      text: 'actions/setup-node (4.6k stars, action.yml): Set up Node.js',
+      isError: false,
+    });
+    expect(await call(client, 'find_actions', { query: 'nothing' })).toMatchObject({ isError: true });
   });
 });

@@ -1,0 +1,63 @@
+{
+  "checks": [
+    {
+      "pattern": "actions/*",
+      "blocks": false,
+      "status": "owner",
+      "owner": "actions",
+      "owner_type": "organization",
+      "all_repositories": true
+    },
+    {
+      "pattern": "Github/CodeQL-Action/init@v3",
+      "blocks": false,
+      "status": "match",
+      "repository": "github/codeql-action",
+      "archived": false,
+      "ref": "v3",
+      "ref_kind": "tag",
+      "path": "init",
+      "path_kind": "folder"
+    },
+    {
+      "pattern": "octo-org/deploy@v9",
+      "blocks": false,
+      "status": "missing_ref",
+      "repository": "octo-org/deploy",
+      "ref": "v9"
+    },
+    {
+      "pattern": "octo-org/deplyo@*",
+      "blocks": false,
+      "status": "not_found",
+      "missing": "repository",
+      "name": "octo-org/deplyo"
+    },
+    {
+      "pattern": "!octo-org/old-deploy@*",
+      "blocks": true,
+      "status": "match",
+      "repository": "octo-org/old-deploy",
+      "archived": true
+    },
+    {
+      "pattern": "space-org*/*",
+      "blocks": false,
+      "status": "unchecked",
+      "why": "wildcard_owner"
+    },
+    {
+      "pattern": "octo org/tools",
+      "status": "invalid",
+      "reason": "space",
+      "message": "a name can't have a space"
+    },
+    {
+      "pattern": "octo-org/limited",
+      "blocks": false,
+      "status": "error",
+      "message": "API rate limit exceeded",
+      "rate_limited": true
+    }
+  ]
+}

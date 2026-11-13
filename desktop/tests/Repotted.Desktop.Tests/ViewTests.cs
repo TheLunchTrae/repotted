@@ -663,9 +663,100 @@ public sealed class ViewTests : IDisposable
         text = Texts(window);
         Assert.Contains("Allowed actions", text);
         var patterns = window.GetVisualDescendants().OfType<TextBox>()
-            .Single(box => AutomationProperties.GetName(box) == "Allowed action patterns");
+            .Single(box => box.IsEffectivelyVisible && AutomationProperties.GetName(box) == "Allowed action patterns");
         Assert.Equal(("octo-org/*\n!octo-org/old@*", true, true), (patterns.Text, patterns.AcceptsReturn, patterns.IsEnabled));
         Save(window, $"settings-actions-selected-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task The_action_patterns_show_what_each_line_matches_and_a_search_adds_to_them(string theme)
+    {
+        string[] patterns =
+        [
+            "actions/*", "docker/build-push-action@v6", "Github/CodeQL-Action/init@v3", "octo-org/deploy@v9",
+            "octo-org/deplyo@*", "!octo-org/old-deploy@*", "space-org*/*", "octo org/tools",
+        ];
+        var @base = folders.Write("base.yaml", "repository: {}\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nactions:\n  allowed_actions: selected\n");
+        var resolved = $$$"""
+            {"chain":[{{{Json(own)}}},{{{Json(@base)}}}],
+             "profile":{"actions":{"allowed_actions":"selected",
+               "selected_actions":{"patterns_allowed":[{{{string.Join(',', patterns.Select(Json))}}}]} } },
+             {{{Documents.NoDrafts}}},
+             "sources":{
+               "repository":{},"merge":{},
+               "actions":{"allowed_actions":{{{Json(own)}}},"selected_actions.patterns_allowed":{{{Json(own)}}} },
+               "security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{},"labels":{},
+               {{{Documents.NoDraftSources}}} } }
+            """;
+        var added = new TaskCompletionSource<string>();
+        var window = await Show(theme, FakeCli.SignedIn()
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", resolved)
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base))
+            .On($"check-actions --json -- {string.Join(' ', patterns)}", Documents.ActionChecks)
+            .On("find-actions --json -- setup dotnet", Documents.FoundActions)
+            .On("check-actions --json -- actions/setup-dotnet@*", _ => added.Task));
+        window.Height = 1140;
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        editor.SelectedTab = editor.Tab("Actions");
+        editor.ShowYaml = false;
+        var row = editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.HasPatterns);
+        var checks = row.Patterns!;
+        await Until(() => checks.Summary == "4 match, 1 has a missing tag or branch, 2 match nothing, 1 can't be checked");
+
+        var text = Texts(window);
+        Assert.Contains("github/codeql-action", text);
+        Assert.Contains(", folder init, tag v3", text);
+        Assert.Contains(" has no tag or branch v9", text);
+        Assert.Contains("No repository octo-org/deplyo you can see", text);
+        Assert.Contains("Blocks", text);
+        Assert.Contains("A wildcard owner can't be checked", text);
+        Assert.Contains("Not a pattern: a name can't have a space", text);
+        Assert.Contains(ControlLabel.For("Check again"), text);
+        // Each check sits beside its own line of the list.
+        var list = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.IsEffectivelyVisible && AutomationProperties.GetName(box) == "Allowed action patterns");
+        var lines = window.GetVisualDescendants().OfType<Border>().Where(border => border.Classes.Contains("check")).ToList();
+        var presenter = list.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.TextPresenter>().Single();
+        Assert.Equal(patterns.Length, lines.Count);
+        Assert.Equal(presenter.TranslatePoint(default, window)!.Value.Y, lines[0].TranslatePoint(default, window)!.Value.Y);
+        Assert.Equal(presenter.Bounds.Height, lines.Sum(line => line.Bounds.Height));
+        Save(window, $"action-patterns-checks-{theme}");
+
+        // The search lists repositories under its box, and Add puts one in the list.
+        window.Height = 1400;
+        Dispatcher.UIThread.RunJobs();
+        var search = window.GetVisualDescendants().OfType<TextBox>().Single(box => AutomationProperties.GetName(box) == "Search GitHub for actions to add");
+        search.Focus();
+        checks.Search.Query = "setup dotnet";
+        await checks.Search.SubmitCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        window.KeyPressQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
+        window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        Assert.EndsWith("\nactions/setup-dotnet@*", row.Typed, StringComparison.Ordinal);
+        await Until(() => checks.Summary.EndsWith("1 being checked", StringComparison.Ordinal));
+        window.KeyPressQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        text = Texts(window);
+        Assert.Contains("Checking…", text);
+        Assert.Contains("Added", text);
+        Assert.Contains(ControlLabel.For("Add"), text);
+        Assert.Contains("No action.yml at the top", text);
+        Assert.Contains("GitHub has no Marketplace search, so these are repositories, most starred first. Add puts owner/repo@* in the list.", text);
+        Save(window, $"action-patterns-search-{theme}");
+
+        // Escape closes the results and gives the keyboard back to the search box.
+        window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(checks.Search.Open);
+        Assert.True(search.IsFocused);
+        added.SetResult("""{"checks":[{"pattern":"actions/setup-dotnet@*","blocks":false,"status":"match","repository":"actions/setup-dotnet","archived":false}]}""");
+        await Until(() => checks.Summary.StartsWith("5 match", StringComparison.Ordinal));
     }
 
     [AvaloniaTheory]

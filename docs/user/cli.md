@@ -260,6 +260,45 @@ any comment above it. It writes nothing when the result would not be a valid
 profile, and it refuses to edit a list that shares parts through YAML anchors
 and aliases.
 
+## Check allowed action patterns
+
+A profile's `actions.selected_actions.patterns_allowed` lists the actions and
+reusable workflows a repository may use, as
+[GitHub's patterns](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#allowing-select-actions-and-reusable-workflows-to-run):
+`owner/repository@ref`, with a path before the `@` for an action in a folder
+or a reusable workflow, `*` as a wildcard, and a leading `!` to block.
+GitHub saves a pattern that matches nothing, so a typo allows nothing and
+says nothing.
+
+```sh
+npx repotted check-actions 'actions/*' 'docker/build-push-action@v6' '!octo-org/old-deploy@*'
+```
+
+`check-actions` looks up what each pattern names exactly and prints a line
+for each:
+
+```text
+actions/*: any repository from actions, an organization
+docker/build-push-action@v6: docker/build-push-action, tag v6
+!octo-org/old-deploy@*: blocks octo-org/old-deploy, archived
+```
+
+It names the repository as GitHub spells it, and says when the repository has
+no such tag, branch or commit, or no such folder or file, or when GitHub has
+no such owner or repository that you can see: a private repository your
+sign-in can't read looks the same as one that doesn't exist. A part with a
+wildcard is not looked up, and neither is a pattern whose owner has one. It
+exits 1 when a pattern is not a pattern, names something GitHub doesn't have,
+or could not be checked. Once GitHub's rate limit is reached, the patterns
+not yet looked up say so without being asked about. Quote the patterns, since a shell expands `*` and
+`!`.
+
+`npx repotted find-actions <words>` searches GitHub for repositories to
+allow, most starred first, and says which have an `action.yml` or
+`action.yaml` at the top. GitHub has no search of its Marketplace's actions,
+so a result is a repository, not necessarily an action. GitHub allows 30
+searches a minute.
+
 ## Edit profiles with completion
 
 `npx repotted schema` prints the JSON Schema of a profile file. Save it next
@@ -333,7 +372,7 @@ and write to push (see [Sign in](sign-in.md#give-the-app-your-repositories)).
 
 ## Use Repotted from an agent
 
-`repotted mcp` runs an MCP server that gives an AI agent three tools:
+`repotted mcp` runs an MCP server that gives an AI agent these tools:
 
 - `capture` returns a repository's profile as YAML.
 - `plan` compares a repository with a profile, given as YAML or a file path,
@@ -341,6 +380,10 @@ and write to push (see [Sign in](sign-in.md#give-the-app-your-repositories)).
 - `apply` applies one plan from `plan`, by its `plan_id`, with the same check
   as `repotted apply`. An agent can only apply changes it has already shown as
   a plan, and each plan applies once.
+- `check_actions` says what allowed action patterns match on GitHub, and
+  `find_actions` searches GitHub for repositories with an action, as
+  [`check-actions` and `find-actions`](#check-allowed-action-patterns) do.
+  They write nothing.
 
 To add Repotted to an MCP client:
 
@@ -353,7 +396,7 @@ To add Repotted to an MCP client:
 ```
 
 Add `"--read-only"` after `"mcp"` to leave out the `apply` tool, so the agent
-can capture and plan but never change a repository. File paths and `extends`
+can read but never change a repository. File paths and `extends`
 resolve from the folder the server starts in.
 
 If you haven't signed in, the agent's first tool call replies with a code to
@@ -362,6 +405,6 @@ enter on GitHub. Once you have entered it, the agent's next call works.
 ## Output for scripts
 
 `--json` makes `capture`, `plan`, `apply`, `profile`, `profiles`, `sync`,
-`repos`, and `status` print one JSON document instead of text, and `schema`
+`repos`, `check-actions`, `find-actions`, and `status` print one JSON document instead of text, and `schema`
 print its schema on one line. The [JSON output reference](json-output.md)
 describes each document.

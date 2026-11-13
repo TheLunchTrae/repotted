@@ -401,6 +401,15 @@ internal sealed partial class BatchViewModel(
         await OpenEditsAsync().ConfigureAwait(true);
     }
 
+    /// <summary>Ends what the one-off editors started, such as a check of action patterns under way, when the batch closes.</summary>
+    public void Release()
+    {
+        foreach (var member in Members)
+        {
+            member.Edits?.Release();
+        }
+    }
+
     /// <summary>
     /// Shows the plans, keeping each repository's entry, and its one-off
     /// edits, from the plan before; a repository that left the batch goes.
@@ -446,6 +455,11 @@ internal sealed partial class BatchViewModel(
                 member.Failed(listed.File, "The plan has nothing for this repository. Review again.");
             }
             members.Add(member);
+        }
+        // A repository that left the batch takes its one-off edits with it, and what they started.
+        foreach (var gone in Members.Except(members))
+        {
+            gone.Edits?.Release();
         }
         var tab = Tab;
         showing = true;
@@ -673,6 +687,7 @@ internal sealed partial class BatchViewModel(
         // while a change runs, so each is read again the next time it shows.
         foreach (var member in Members)
         {
+            member.Edits?.Release();
             member.Edits = null;
         }
         // The plan starts at once, so the old plan is never there to act on between the two.
