@@ -415,6 +415,7 @@ Apply page and the new profile form write through the same one.
 | Local folder | Refresh                                            | The folder is listed.                                       |
 | Connected    | Refresh                                            | Syncing, then listed.                                       |
 | Connected    | A save                                             | Syncing, then listed again when the sync pulled anything.   |
+| Connected    | A delete                                           | Syncing, then listed.                                       |
 | Syncing      | It records                                         | In sync, or conflicts when any file changed on both sides.  |
 | Syncing      | It fails                                           | Not synced: saves stay on this computer until a sync works. |
 | Conflicts    | Keep this computer's or GitHub's version           | Syncing, with `prefer` for those files only.                |
@@ -426,8 +427,8 @@ Saves to the folder and syncs of it take turns in one `SerialQueue` in
 `ProfileFolder` (`WriteAsync` and `SyncAsync`), so a sync never reads a file a
 save is writing. A profile editor's save writes through its `ProfileStore`,
 which `ProfileStore.Profile` gives the folder's `WriteAsync`; saving one-off
-edits to the profile on the Apply page and the new profile form's move of a
-capture write through the folder itself. Some writes and syncs run outside the
+edits to the profile on the Apply page, the new profile form's move of a
+capture, and deleting a profile write through the folder itself. Some writes and syncs run outside the
 queue:
 
 - The connect form's first sync.
@@ -627,6 +628,31 @@ closes again once the question settles.
 
 The folder is picked before the question, so cancelling the folder picker asks
 nothing.
+
+### Deleting a profile
+
+The list's context menu and shortcut, and the editor's **Delete profile**,
+ask through `ProfilesViewModel.AskDelete`, which sets `Deleting` and words the
+question. The question warns rather than blocks: it names every listed profile
+that extends this one, directly or through another, and says unsaved changes
+are discarded. A Removed editor offers no delete, since its file is already
+gone; **Discard** lets it go.
+
+| State    | Event                                      | Next                                                                                                                                                                       |
+| -------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idle     | Delete a profile                           | Asking, about that profile; asking about another replaces it.                                                                                                              |
+| Asking   | Cancel                                     | Idle, with nothing changed.                                                                                                                                                |
+| Asking   | The profile's editor is loading or saving  | Asking, with **Delete profile** off until it ends, so a save never lands after the delete.                                                                                 |
+| Asking   | Delete profile                             | Deleting: a turn in the folder's `WriteAsync`, so it waits for a running save or sync. The page and the leave choices are off, and `Busy` holds.                           |
+| Deleting | Its turn comes, in the same folder         | The folder's entry for the profile is deleted (a link, not what it points to), and the editor leaves the cache. A file already gone counts as deleted.                     |
+| Deleting | Its turn comes after another folder opened | Idle, with nothing deleted.                                                                                                                                                |
+| Deleting | Deleting the file fails                    | Idle, with a notice that names the profile and the error. The file and its editor stay.                                                                                    |
+| Deleted  | A config repository                        | A sync, which pushes the delete as its own commit, or shows a conflict when the file changed on GitHub; Keep mine pushes the delete and Use GitHub's brings the file back. |
+| Deleted  | The sync ends, or there is no repository   | The folder is listed again.                                                                                                                                                |
+| Any      | The folder changes                         | Idle: the question goes with the folder.                                                                                                                                   |
+
+`ProfileFolder` remembers which conflicts are files deleted here, so the
+conflict banner and the note after a sync say so.
 
 ## New profile form
 

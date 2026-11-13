@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Repotted.Desktop.ViewModels"
              xmlns:views="using:Repotted.Desktop.Views"
+             xmlns:theme="using:Repotted.Desktop.Theme"
              x:Class="Repotted.Desktop.Views.ShellView"
              x:DataType="vm:ShellViewModel">
   <Grid RowDefinitions="44,*" ColumnDefinitions="248,*">
@@ -73,11 +74,17 @@
                     Content="New profile" Command="{Binding Profiles.StartNewCommand}" CommandParameter="{x:Null}" />
             <TextBlock DockPanel.Dock="Top" Classes="muted small" Margin="12,0,12,6" FontWeight="SemiBold"
                        Text="{Binding Profiles.Folder.ListLabel}" IsVisible="{Binding Profiles.HasProfiles}" />
-            <ListBox Classes="nav" ItemsSource="{Binding Profiles.Items}" SelectedItem="{Binding Profiles.Selected}"
+            <ListBox x:Name="ProfileList" Classes="nav" ItemsSource="{Binding Profiles.Items}" SelectedItem="{Binding Profiles.Selected}"
                      AutomationProperties.Name="Profiles in this folder">
               <ListBox.Styles>
                 <Style Selector="ListBoxItem" x:DataType="vm:ProfileItemViewModel">
                   <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                  <Setter Property="ContextMenu">
+                    <ContextMenu>
+                      <MenuItem Header="{theme:Label 'Delete profile'}" Command="{Binding DeleteCommand}"
+                                InputGesture="{OnPlatform Default=Delete, macOS=Meta+Back}" />
+                    </ContextMenu>
+                  </Setter>
                 </Style>
               </ListBox.Styles>
               <ListBox.ItemTemplate>

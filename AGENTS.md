@@ -280,7 +280,7 @@ builds outside mise.
 - Each platform shows labels in its own casing. `Theme/ControlLabel.cs`
   turns a label into Apple's title style on macOS, as in "Sign In with
   GitHub", and leaves it as written on Windows. It applies to buttons,
-  segmented options, tabs, and page titles, and a button's accessible name
+  segmented options, tabs, page titles, and menu items, and a button's accessible name
   follows its shown label unless the view sets one. Everything else stays
   in sentence case on both.
   - A button's or toggle button's string content gets it from
@@ -290,7 +290,8 @@ builds outside mise.
     template shows a button's control content as its type name.
   - A tab's or page title's `TextBlock` needs it written in: bind with
     `Converter={x:Static theme:ControlLabel.Converter}`, or use
-    `{theme:Label 'New profile'}` for a fixed title.
+    `{theme:Label 'New profile'}` for a fixed title. A menu item's header
+    uses `{theme:Label ...}` too.
   - View tests compare a label through `ControlLabel.For`, so they pass on
     both platforms. CI runs them on Linux, so run them on a Mac after
     changing how labels are cased.
