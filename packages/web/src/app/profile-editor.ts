@@ -317,7 +317,10 @@ export class ProfileEditor {
    */
   #valueOf(field: SettingField, edits: ReadonlyMap<string, SettingEdit>): unknown {
     const edit = edits.get(keyOf(field.path));
-    return edit?.value ?? getIn((this.#preview.value ?? this.#saved.value)?.profile, field.path);
+    // A null is a value, which clears the setting on GitHub; only an edit with no value falls through.
+    return edit?.value === undefined
+      ? getIn((this.#preview.value ?? this.#saved.value)?.profile, field.path)
+      : edit.value;
   }
 
   async #previewEdits(): Promise<void> {
