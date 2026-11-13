@@ -179,7 +179,7 @@ while the setting above them is off.
 | `actions.selected_actions.*`, the allowed action patterns among them                                                             | `actions.allowed_actions`               | `all`, `local_only` | Hidden |
 | The three options under fork pull request workflows in private repositories                                                      | `run_workflows_from_fork_pull_requests` | `false`             | Off    |
 | `automated_security_fixes`                                                                                                       | `vulnerability_alerts`                  | `false`             | Off    |
-| Dependabot's `runner_label` and `runner_group`, code scanning's and code quality's `runner_label`                                | their `runner_type`                     | `standard`          | Off    |
+| Dependabot's `runner_group`, code scanning's and code quality's `runner_label`                                                   | their `runner_type`                     | `standard`          | Off    |
 | Code scanning's `query_suite`, `threat_model`, `runner_type`                                                                     | `code_scanning_default_setup.state`     | `not-configured`    | Hidden |
 | Code quality's `ai_findings_option`, `runner_type`                                                                               | `code_quality_setup.state`              | `not-configured`    | Hidden |
 | Secret scanning's push protection, validity checks, non-provider patterns, AI detection and delegated bypass and alert dismissal | `security_and_analysis.secret_scanning` | `disabled`          | Off    |

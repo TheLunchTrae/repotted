@@ -141,8 +141,8 @@ internal sealed partial class SettingViewModel : ViewModelBase
         ? ""
         : Field.Options.FirstOrDefault(option => JsonNode.DeepEquals(option.Value, value))?.Label ?? Display(value);
 
-    /// <summary>How many settings under this one are hidden by it while this profile still names them, set here or in a base, or with a draft.</summary>
-    public int HiddenManaged => Under().Count(row => row.Hidden && row.Cause == this && (row.Managed || row.HasDraft || row.Pending));
+    /// <summary>How many settings under this one are hidden by it while this profile still names them once saved, set here or in a base, or with a draft or invalid text.</summary>
+    public int HiddenManaged => Under().Count(row => row.Hidden && row.Cause == this && (row.Managed || row.HasDraft || row.Invalid));
 
     /// <summary>What the row says about the settings it hides that the profile still names; null when there are none.</summary>
     public string? HiddenNote => HiddenManaged switch
@@ -317,7 +317,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
     public string TypedName => Label;
 
     /// <summary>What screen readers hear after the box's name: the problem with the text, or where the value comes from, after why the box is off while it is.</summary>
-    public string TypedHelp => TypedProblem ?? (WhyOff is { } why ? $"{why} {Note}" : Note);
+    public string TypedHelp => TypedProblem ?? string.Join(' ', new[] { WhyOff, IsList ? FieldNote : null, Note }.OfType<string>());
 
     /// <summary>What screen readers hear after a choice's name: where the value comes from, after why the choices are off while they are.</summary>
     public string OptionHelp => WhyOff is { } why ? $"{why} {Note}" : Note;
@@ -455,8 +455,15 @@ internal sealed partial class SettingViewModel : ViewModelBase
         Set(changed: true, null);
     }
 
-    /// <summary>Tells the bindings the row may show differently, as when the setting that turns it off changes.</summary>
-    public void Refresh() => OnAllPropertiesChanged();
+    /// <summary>Tells the bindings the row and its choices may show differently, as when the setting that turns it off changes.</summary>
+    public void Refresh()
+    {
+        OnAllPropertiesChanged();
+        foreach (var option in Options)
+        {
+            option.Refresh();
+        }
+    }
 
     /// <summary>Puts the value and the draft back as saved.</summary>
     public void Undo()

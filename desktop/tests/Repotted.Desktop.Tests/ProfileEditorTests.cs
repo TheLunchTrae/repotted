@@ -139,7 +139,7 @@ public sealed class ProfileEditorTests : ViewModelTests
         Assert.Equal(["Repository / Features: Wiki"], Found(editor));
         // A sub-option shows under the setting it belongs to.
         editor.Query = "draft pull";
-        Assert.Equal(["Repository / Features: Pull requests, Count draft pull requests"], Found(editor));
+        Assert.Equal(["Repository / Features: Pull requests, Limit open pull requests per user, Count draft pull requests"], Found(editor));
         // Searching a setting finds its sub-options too.
         editor.Query = "secret protection";
         Assert.Equal(
@@ -445,6 +445,9 @@ public sealed class ProfileEditorTests : ViewModelTests
                 // Above it in its group, so it shows under what hides it, and a value a misspelling would never match.
                 var parent = Assert.Single(group.Fields.Take(index), other => other.Section == field.Section && other.Key == condition.Key);
                 Assert.All(condition.Values, value => Assert.Contains(parent.Options, option => JsonNode.DeepEquals(option.Value, value)));
+                // A setting GitHub hides sits under one that is hidden too, or under none: under one GitHub only
+                // greys out, it would show off rather than hidden while that is off.
+                Assert.True(!condition.Hides || parent.DependsOn is null or { Hides: true }, $"{field.Key} hides under {parent.Key}, which only turns off.");
             }
         }
     }
@@ -461,6 +464,58 @@ public sealed class ProfileEditorTests : ViewModelTests
         Assert.Equal(["Merge / Merge methods: Allow squash merging, Squash commit title"], Found(editor));
         Assert.Equal((true, false), (title.Hidden, title.Enabled));
         Assert.Equal($"Hidden while Allow squash merging is set to Off. {title.Note}", title.OptionHelp);
+    }
+
+    [AvaloniaFact]
+    public async Task A_hidden_setting_removed_from_the_profile_is_no_longer_counted_as_named()
+    {
+        var (editor, _, _, _) = await OpenOwn(
+            """{"merge":{"allow_squash_merge":false,"squash_merge_commit_title":"PR_TITLE"}}""",
+            """{"merge":{"allow_squash_merge":OWN,"squash_merge_commit_title":OWN}}""");
+        var squash = Find(editor, "allow_squash_merge");
+        Assert.Equal("This profile still names 1 setting hidden under it.", squash.HiddenNote);
+
+        Find(editor, "squash_merge_commit_title").ResetCommand.Execute(null);
+        Assert.Null(squash.HiddenNote);
+    }
+
+    [AvaloniaFact]
+    public async Task Search_shows_the_setting_that_hides_or_turns_off_what_it_finds()
+    {
+        var (editor, _, _, _) = await OpenOwn("""{"actions":{"enabled":true,"allowed_actions":"all"}}""",
+            """{"actions":{"enabled":OWN,"allowed_actions":OWN}}""");
+
+        editor.Query = "patterns_allowed";
+        Assert.Equal(["Actions / Policy: Actions, Allowed actions, Allowed action patterns"], Found(editor));
+        editor.Query = "include_drafts";
+        Assert.Equal(["Repository / Features: Pull requests, Limit open pull requests per user, Count draft pull requests"], Found(editor));
+    }
+
+    [AvaloniaFact]
+    public async Task A_choice_tells_screen_readers_when_the_setting_above_turns_it_off_and_back_on()
+    {
+        var (editor, _, _, _) = await OpenOwn("""{"merge":{"allow_squash_merge":true}}""", """{"merge":{"allow_squash_merge":OWN}}""");
+        var title = Find(editor, "squash_merge_commit_title");
+        var option = title.Options[0];
+        var told = 0;
+        option.PropertyChanged += (_, args) => told += args.PropertyName is nameof(OptionViewModel.Help) or null or "" ? 1 : 0;
+
+        Choose(editor, "allow_squash_merge", "Off");
+        Assert.StartsWith("Hidden while Allow squash merging is set to Off.", option.Help, StringComparison.Ordinal);
+        Assert.True(told > 0);
+        var before = told;
+        Find(editor, "allow_squash_merge").ResetCommand.Execute(null);
+        Assert.DoesNotContain("while", option.Help, StringComparison.Ordinal);
+        Assert.True(told > before);
+        Assert.False(title.Hidden);
+    }
+
+    [AvaloniaFact]
+    public async Task The_pattern_box_tells_screen_readers_how_to_fill_it()
+    {
+        var (editor, _, _, _) = await OpenOwn("""{"actions":{"allowed_actions":"selected"}}""", """{"actions":{"allowed_actions":OWN}}""");
+        var patterns = Find(editor, "selected_actions.patterns_allowed");
+        Assert.Equal($"{patterns.FieldNote} {patterns.Note}", patterns.TypedHelp);
     }
 
     [AvaloniaFact]

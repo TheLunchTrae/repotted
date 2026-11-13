@@ -336,6 +336,7 @@ internal sealed partial class ProfileViewModel(
                 var fits = group.Rows.Where(row => Fits(row.Setting, words)).ToList();
                 count += fits.Count;
                 var parents = fits.Select(row => SettingSearch.Parent(row.Setting.Field)).OfType<SettingField>()
+                    .Concat(fits.SelectMany(row => Above(row.Setting)).Select(above => above.Field))
                     .ToHashSet(ReferenceEqualityComparer.Instance);
                 foreach (var row in group.Rows)
                 {

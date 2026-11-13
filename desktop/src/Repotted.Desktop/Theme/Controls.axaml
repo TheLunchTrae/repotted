@@ -462,8 +462,8 @@
     <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
     <Setter Property="FontSize" Value="13" />
   </Style>
-  <!-- A setting that another one turns off, which GitHub greys out. -->
-  <Style Selector="Border.field.off StackPanel.setting">
+  <!-- A setting that another one turns off, which GitHub greys out: its name dims, and what says why stays readable. -->
+  <Style Selector="Border.field.off TextBlock.dims">
     <Setter Property="Opacity" Value="0.6" />
   </Style>
   <Style Selector="TextBox.setting.number">

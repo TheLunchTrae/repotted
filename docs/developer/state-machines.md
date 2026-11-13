@@ -459,14 +459,14 @@ found by, built once from `ProfileFields`. The result rows are made once for
 each load of the profile, the first time a search or filter is on; a search
 then shows and hides them, and one that finds the same changes nothing.
 
-| State   | Event                                      | Next                                                                                                                                |
-| ------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Tabs    | Type a search, or turn on a filter         | Results: the settings that fit, across every settings tab, with a matched sub-option's setting shown above it. The tabs are hidden. |
-| Results | Change the search or a filter              | Results, found again; Tabs when the search is blank and every filter is off.                                                        |
-| Results | Edit, undo or remove a setting, or Discard | Results, unchanged: a row that no longer fits stays until the search or a filter changes, so it doesn't vanish while being edited.  |
-| Results | The profile loads, reloads or saves        | Results, found again among the new rows.                                                                                            |
-| Results | Escape in the search box                   | The search is cleared: Results while a filter is on, otherwise Tabs.                                                                |
-| Results | **Clear**                                  | Tabs, with the search cleared and every filter off.                                                                                 |
+| State   | Event                                      | Next                                                                                                                                                                             |
+| ------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tabs    | Type a search, or turn on a filter         | Results: the settings that fit, across every settings tab, with a matched sub-option's setting, and any setting that hides or turns it off, shown above it. The tabs are hidden. |
+| Results | Change the search or a filter              | Results, found again; Tabs when the search is blank and every filter is off.                                                                                                     |
+| Results | Edit, undo or remove a setting, or Discard | Results, unchanged: a row that no longer fits stays until the search or a filter changes, so it doesn't vanish while being edited.                                               |
+| Results | The profile loads, reloads or saves        | Results, found again among the new rows.                                                                                                                                         |
+| Results | Escape in the search box                   | The search is cleared: Results while a filter is on, otherwise Tabs.                                                                                                             |
+| Results | **Clear**                                  | Tabs, with the search cleared and every filter off.                                                                                                                              |
 
 The compare view's search and its **Differs from GitHub** and **Can't
 change** filters live on `CompareViewModel` and each
