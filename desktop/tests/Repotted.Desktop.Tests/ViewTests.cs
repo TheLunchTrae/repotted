@@ -55,6 +55,8 @@ public sealed class ViewTests : IDisposable
     public async Task The_account_menu_offers_the_settings_and_signing_out(string theme)
     {
         var window = await Show(theme, FakeCli.SignedIn());
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.SettingsInWindow = false;
         var view = window.GetVisualDescendants().OfType<ShellView>().Single();
         var account = view.FindControl<Button>("AccountButton")!;
         var menu = view.FindControl<StackPanel>("AccountMenu")!;
@@ -80,7 +82,6 @@ public sealed class ViewTests : IDisposable
         Dispatcher.UIThread.RunJobs();
 
         Assert.False(account.Flyout.IsOpen);
-        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
         Assert.True(shell.ShowingSettings);
     }
 
@@ -90,6 +91,9 @@ public sealed class ViewTests : IDisposable
     {
         var window = await Show(theme, FakeCli.SignedIn());
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        // Settings are a page off macOS, and a window on it.
+        shell.SettingsInWindow = false;
+        Dispatcher.UIThread.RunJobs();
 
         Click(window, "Settings");
 
@@ -258,6 +262,7 @@ public sealed class ViewTests : IDisposable
     {
         var window = await Show("light", FakeCli.SignedIn());
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.SettingsInWindow = false;
         shell.Page = 1;
         Dispatcher.UIThread.RunJobs();
 
@@ -1307,6 +1312,7 @@ public sealed class ViewTests : IDisposable
             .On(folders.List(), $$"""{"profiles":[{"name":"base","file":{{Json(file)}},"extends":null,"problem":null}]}""")
             .On($"profile {file} --json", Documents.ResolvedBase(file)));
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.SettingsInWindow = false;
         shell.Page = 1;
 
         shell.Profiles.StartConnectCommand.Execute(null);
@@ -1340,6 +1346,7 @@ public sealed class ViewTests : IDisposable
             .On($"profile {@base} --json", Documents.ResolvedBase(@base));
         var window = await Show(theme, cli);
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.SettingsInWindow = false;
         shell.Page = 1;
         await shell.Profiles.RefreshCommand.ExecuteAsync(null);
         shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
