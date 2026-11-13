@@ -18,5 +18,9 @@
       // published package needs it although no file in cli imports it.
       "ignoreDependencies": ["@octokit/core"],
     },
+    "packages/web": {
+      "entry": ["src/worker.ts", "src/page.ts", "build.ts", "tests/**/*.test.ts"],
+      "project": ["*.ts", "src/**/*.ts", "tests/**/*.ts"],
+    },
   },
 }

@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "repotted",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-11-01",
+  "build": {
+    "command": "node build.ts",
+  },
+  // Only /api/* reaches the Worker; every other path is a static file, and a
+  // path with no file gets index.html, for the web app's own routes.
+  "assets": {
+    "directory": "dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  // Cloudflare creates the proxied DNS record for a custom domain. The sign-in
+  // works only at origins the GitHub App lists as callback URLs, so the
+  // workers.dev and preview URLs stay off.
+  "routes": [{ "pattern": "repotted.dev", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+}

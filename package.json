@@ -20,7 +20,7 @@
     "lint:fix": "pnpm run directives:check && oxlint --fix .",
     "standards": "pnpm run lint:fix && pnpm run format",
     "test": "vitest run",
-    "typecheck": "tsc --pretty -p tsconfig.json"
+    "typecheck": "tsc --pretty -p tsconfig.json && tsc --pretty -p packages/web/tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

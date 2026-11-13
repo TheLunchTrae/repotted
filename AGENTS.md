@@ -28,7 +28,9 @@ and the developer page for how and why.
 
 `packages/core` is the engine: the profile schema, one adapter per section,
 and the plan engine. `packages/cli` is the published `repotted` package: the
-CLI and the MCP server over that engine.
+CLI and the MCP server over that engine. `packages/web` is the web app at
+repotted.dev: a Cloudflare Worker that serves the site and its GitHub
+sign-in; see [the web app](docs/developer/web-app.md).
 
 ### Safety
 
@@ -45,7 +47,8 @@ CLI and the MCP server over that engine.
   repository's settings, rulesets, or branch protection, without the owner's
   explicit yes for that repository and that plan.
 - Do not run Release CLI or Release Desktop, publish to npm, push a tag, or
-  publish a release without the owner's explicit yes. A test build of Release
+  publish a release without the owner's explicit yes. Do not run Deploy Web or
+  `wrangler deploy`, or change the Worker's secrets, without it either. A test build of Release
   Desktop, with Publish not selected, on a pull request's branch, which
   [Releasing](docs/developer/releasing.md#the-desktop-app) describes,
   releases nothing and needs no yes.
@@ -198,7 +201,9 @@ and commands. mise pins Node and pnpm; pnpm installs the workspace, Vitest runs
 the tests, and esbuild builds the CLI. The published package runs under Node
 through `npx`, so shipped code uses only `node:` APIs, and `ts:node:check` runs
 the built CLI under the oldest supported Node. The desktop app ships the CLI as
-a Node single executable that `packages/cli/sea.ts` builds.
+a Node single executable that `packages/cli/sea.ts` builds. `packages/web`
+runs in the browser and on Cloudflare Workers instead, so its `src/` uses web
+platform APIs and no `node:` modules.
 
 Select checks for the change:
 
@@ -208,6 +213,7 @@ Select checks for the change:
 | CLI, build, or runtime  | `ts:build`, `ts:node:check`, `ts:sea:check`      |
 | Dependencies or exports | `ts:audit`, `ts:knip`                            |
 | Formatting              | `ts:fmt:check`; `ts:standards` applies autofixes |
+| Web app or Worker       | `ts:test`, `ts:type`, `ts:web:check`             |
 
 `ts:sea:check` builds the single executable, on Linux in CI, and checks its
 startup snapshot, so the gate catches a CLI or core change that breaks it. A

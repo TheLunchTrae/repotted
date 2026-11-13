@@ -1,0 +1,13 @@
+{
+  // The Worker and the page run on web platform APIs, not Node's, so they get
+  // the DOM library in place of Node's types. build.ts runs under Node and is
+  // checked by the root config.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "types": [],
+    "tsBuildInfoFile": ".tsbuildinfo"
+  },
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": []
+}

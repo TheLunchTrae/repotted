@@ -45,17 +45,25 @@ administers, though the token itself may not be allowed to change them.
 
 The Repotted App is owned by the project's owner. Its client ID and slug are
 `app.clientId` and `app.slug` in `packages/cli/src/auth.ts`. The client ID is
-public; the App needs no client secret or private key for the device flow. The
-gate fails if `app.clientId` is empty.
+public; the device flow needs no client secret or private key, so the CLI and
+the desktop app hold none. The gate fails if `app.clientId` is empty.
+
+The [web app](web-app.md) signs in with the App's web flow, whose code
+exchange needs a client secret. Only its Worker holds one, as a Worker secret
+that Deploy Web uploads.
 
 Its settings, which a replacement App, registered under Settings, Developer
 settings, GitHub Apps, New GitHub App, uses too:
 
 - Name: Repotted App. Its slug, the name as GitHub writes it in URLs, must
   match `app.slug`. Homepage: the repository's URL.
-- Callback URL: none. Leave **Request user authorization (OAuth) during
-  installation** off, turn on **Enable Device Flow**, and leave **Expire user
-  authorization tokens** on.
+- Callback URL: `https://repotted.dev/api/auth/callback`, for the web app.
+  Leave **Request user authorization (OAuth) during installation** off, turn
+  on **Enable Device Flow**, and leave **Expire user authorization tokens**
+  on; the web app can't keep a sign-in without the refresh token that
+  expiring tokens bring.
+- Client secret: one, for the web app's Worker. Generate a new one and update
+  `REPOTTED_CLIENT_SECRET` in the `deploy-web` environment to rotate it.
 - Webhook: clear **Active**.
 - Repository permissions: Administration, Actions, Contents, Pages,
   Custom properties and Issues, read and write; Code scanning alerts, read; and

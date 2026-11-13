@@ -91,6 +91,14 @@ depends = ["ts:install"]
 # at load time; see docs/developer/architecture.md.
 run = "node packages/cli/tests/sea-check.mjs"
 
+[tasks."ts:web:check"]
+description = "Build the web app and check that its Worker bundles for deploy"
+depends = ["ts:install"]
+# A dry run bundles the Worker and reads the static assets as a deploy would,
+# and uploads nothing.
+env = { WRANGLER_SEND_METRICS = "false" }
+run = "pnpm --filter @repotted/web run check"
+
 [tasks."ts:standards"]
 description = "Run the TypeScript standards workflow with autofixes"
 depends = ["ts:install"]
@@ -101,4 +109,4 @@ description = "Run the TypeScript standards CI gate"
 # Tests and the Node and executable checks run after the static checks, so a
 # test that writes temporary files cannot race the static scans.
 depends = ["ts:lint", "ts:type", "ts:fmt:check", "ts:audit", "ts:knip"]
-run = [{ task = "ts:test" }, { task = "ts:node:check" }, { task = "ts:sea:check" }]
+run = [{ task = "ts:test" }, { task = "ts:node:check" }, { task = "ts:sea:check" }, { task = "ts:web:check" }]

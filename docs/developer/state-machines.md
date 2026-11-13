@@ -119,6 +119,29 @@ sign out are the question in
 [Leaving with unsaved changes](#leaving-with-unsaved-changes), on the
 **Profiles** page.
 
+## Web sign-in
+
+The web app signs in through its Worker (`packages/web/src/worker.ts`), and
+each tab keeps its access token in a `Session` (`packages/web/src/session.ts`).
+[The web app](web-app.md#sign-in) explains the cookies.
+
+| State      | Event                                                       | Next                                                                                                                                                                                         |
+| ---------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Signed out | The user presses **Sign in with GitHub**                    | On GitHub, with the state and verifier in the sign-in cookie for 10 minutes. Starting again, in this tab or another, replaces them.                                                          |
+| On GitHub  | The user cancels                                            | Signed out with "The sign-in was cancelled on GitHub."; the sign-in cookie is cleared.                                                                                                       |
+| On GitHub  | The callback's state doesn't match, or the cookie is gone   | Signed out with "That sign-in expired."; GitHub isn't called. A sign-in that another start replaced ends here.                                                                               |
+| On GitHub  | GitHub refuses the code, or answers without a refresh token | Signed out with "GitHub didn't complete the sign-in."; no refresh cookie is set.                                                                                                             |
+| On GitHub  | GitHub is out of reach or fails on its side                 | The same.                                                                                                                                                                                    |
+| On GitHub  | GitHub issues tokens                                        | Signed in: the refresh cookie holds the refresh token, the sign-in cookie is cleared, and the page refreshes once to get its access token.                                                   |
+| Signed in  | A tab needs a token and holds one with over 5 minutes left  | That token is used.                                                                                                                                                                          |
+| Signed in  | A tab needs a token and holds none, or one closer to expiry | Refreshing, under the site-wide lock, so no two refreshes send the same cookie. A call in the same tab that waited for the lock uses the token the one before it got.                        |
+| Refreshing | GitHub issues tokens                                        | Signed in with the new refresh token stored.                                                                                                                                                 |
+| Refreshing | No refresh cookie, or GitHub refuses the refresh token      | Signed out in this tab. The cookie is left as it is, since another tab may have stored a newer one; a spent or revoked one is refused again until it expires.                                |
+| Refreshing | GitHub is out of reach or fails on its side                 | The tab keeps no token and reports that GitHub can't be reached; the cookie is kept for the next try.                                                                                        |
+| Signed in  | GitHub's API answers 401 with the access token              | Signed out in this tab, as when the user revoked the App on GitHub; the next refresh confirms it.                                                                                            |
+| Signed in  | The user signs out                                          | Signed out: under the lock, the Worker clears the refresh cookie, so a refresh that another tab started can't store a token afterwards. Other tabs keep their access token until it expires. |
+| Signed in  | The refresh token's 6 months pass                           | The browser drops the cookie; the next refresh reads as signed out.                                                                                                                          |
+
 ## Desktop navigation
 
 `ShellViewModel.Page` is the page the signed-in app shows: 0 for the
@@ -844,6 +867,13 @@ commit and artifacts, which last 3 days; GitHub allows a re-run for 30 days.
 | Releasing | GitHub refuses to publish the draft          | The draft stays without a tag, as when a ruleset blocks creating the tag. Re-running the job, once the cause is fixed, replaces the draft and publishes.                                    |
 | Releasing | The tag already holds the release            | Released, as on a re-run after GitHub published the release but the job failed. A tag at another commit fails the job.                                                                      |
 | Releasing | The release is published                     | Released. Publishing creates the tag at the run's commit, and an immutable release can't change, so a fix needs the next version.                                                           |
+
+Deploy Web deploys the web app, as [the web app](web-app.md#deploy)
+describes. Its runs wait in one concurrency group, so the last run started is
+the one that stays live. A run on another branch fails before it checks out
+anything, and one whose `ts:web:check` fails, or whose environment lacks a
+value, deploys nothing. When Cloudflare refuses the deploy, the version
+before it stays live; re-running the job deploys again.
 
 When npm has the CLI but its release is missing, a new run refuses the
 version, so re-run the failed jobs of the run that published it; the release

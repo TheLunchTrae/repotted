@@ -16,7 +16,8 @@ minimumReleaseAge: 4320
 overrides:
   minimatch: ^11.0.3
 
-# Dependency install scripts stay off. esbuild's only checks its binary, which
-# pnpm already installs from esbuild's platform package.
+# Dependency install scripts stay off. esbuild's and workerd's only check
+# their binaries, which pnpm already installs from their platform packages.
 allowBuilds:
   esbuild: false
+  workerd: false
