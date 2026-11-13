@@ -19,8 +19,8 @@
       "ignoreDependencies": ["@octokit/core"],
     },
     "packages/web": {
-      "entry": ["src/worker.ts", "src/page.ts", "build.ts", "tests/**/*.test.ts"],
-      "project": ["*.ts", "src/**/*.ts", "tests/**/*.ts"],
+      "entry": ["src/worker.ts", "src/main.tsx", "build.ts", "tests/**/*.test.ts"],
+      "project": ["*.ts", "src/**/*.{ts,tsx}", "tests/**/*.ts"],
     },
   },
 }

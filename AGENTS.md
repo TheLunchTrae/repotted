@@ -30,7 +30,11 @@ and the developer page for how and why.
 and the plan engine. `packages/cli` is the published `repotted` package: the
 CLI and the MCP server over that engine. `packages/web` is the web app at
 repotted.dev: a Cloudflare Worker that serves the site and its GitHub
-sign-in; see [the web app](docs/developer/web-app.md).
+sign-in; see [the web app](docs/developer/web-app.md). Its state lives in
+`src/app/`, in classes with no DOM in them that the tests drive, and
+`src/views/` draws it. All text it shows is in sentence case, by the rules
+under [C# and the desktop app](#c-and-the-desktop-app), with no
+per-platform casing.
 
 ### Safety
 
