@@ -153,7 +153,6 @@ internal sealed partial class ApplyViewModel(
     /// <summary>Whether the actions on the changes show.</summary>
     public bool ShowChangeActions => ShowActions && !Editing;
 
-    /// <summary>Where the review stands, for a screen reader.</summary>
     /// <summary>What a screen reader says for the edit step, with whether it is the current one.</summary>
     public string EditStepName => Editing ? "Step 1 of 2, edit, current step" : "Step 1 of 2, edit, done";
 
