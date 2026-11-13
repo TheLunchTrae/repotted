@@ -36,25 +36,22 @@ function showSignedOut(message: string): void {
 }
 
 async function show(failure: string | undefined): Promise<void> {
-  let token: string | undefined;
+  let response: Response | undefined;
   try {
-    token = await session.accessToken();
+    response = await session.fetchGitHub('/user');
   } catch {
     status.textContent = "Repotted can't reach GitHub right now. Reload to try again.";
     return;
   }
-  if (token === undefined) {
+  if (response === undefined) {
     showSignedOut(failure ?? 'Sign in to manage your repositories.');
     return;
   }
-  const response = await fetch('https://api.github.com/user', {
-    headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}` },
-  }).catch(() => undefined);
-  if (response?.status === 401) {
+  if (response.status === 401) {
     showSignedOut('GitHub no longer accepts this sign-in. Sign in again.');
     return;
   }
-  if (response?.ok !== true) {
+  if (!response.ok) {
     status.textContent = "Repotted can't reach GitHub right now. Reload to try again.";
     return;
   }

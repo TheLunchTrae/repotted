@@ -1,7 +1,7 @@
 // The Worker answers /api/* for the web app; wrangler.jsonc sends every other
 // path to the static assets. It holds the GitHub App's client secret, which the
-// page never sees, and keeps the refresh token in an HttpOnly cookie, so the
-// page only ever holds a short-lived access token.
+// page never sees, and keeps the refresh token and the current access token in
+// HttpOnly cookies, so the page only ever holds a short-lived access token.
 
 import * as z from 'zod/mini';
 
@@ -18,8 +18,14 @@ const tokenUrl = 'https://github.com/login/oauth/access_token';
 // plain-HTTP page can plant or read them.
 const signInCookie = '__Host-repotted-sign-in';
 const refreshCookie = '__Host-repotted-refresh';
+const accessCookie = '__Host-repotted-access';
 // How long a sign-in started here may take on GitHub before its state expires.
 const signInSeconds = 10 * 60;
+// An access token this close to expiry is replaced rather than handed out, the
+// same margin the page refreshes at.
+const refreshMarginMs = 5 * 60 * 1000;
+// How long the Worker waits on GitHub's token endpoint; the page waits longer.
+const gitHubTimeoutMs = 10_000;
 
 /** Why a sign-in came back without one, as the page reads it from `?sign-in=`. */
 type SignInFailure = 'denied' | 'expired' | 'failed';
@@ -38,8 +44,22 @@ type GitHubTokens = z.infer<typeof tokenResponse>;
 
 type TokenResult = { kind: 'tokens'; tokens: GitHubTokens } | { kind: 'refused' } | { kind: 'unavailable' };
 
+/** The access token the browser's tabs share, as its cookie keeps it. */
+interface AccessToken {
+  token: string;
+  expiresAt: number;
+}
+
+// The page names the access token GitHub just refused, so the Worker replaces
+// it instead of handing it back.
+const tokenRequest = z.object({ replace: z.optional(z.string()) });
+
 function apiHeaders(extra: Record<string, string> = {}): Headers {
-  return new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...extra });
+  return new Headers({
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    ...extra,
+  });
 }
 
 function json(status: number, body: unknown, extra: Record<string, string> = {}): Response {
@@ -61,8 +81,19 @@ function cookie(name: string, value: string, maxAge: number, sameSite: 'Lax' | '
   return `${name}=${value}; Path=/; Max-Age=${maxAge}; Secure; HttpOnly; SameSite=${sameSite}`;
 }
 
-function refreshCookieFor(tokens: GitHubTokens): string {
-  return cookie(refreshCookie, tokens.refresh_token, tokens.refresh_token_expires_in, 'Strict');
+function issuedAccessToken(tokens: GitHubTokens): AccessToken {
+  return {
+    token: tokens.access_token,
+    expiresAt: Date.now() + tokens.expires_in * 1000,
+  };
+}
+
+/** The cookies that keep a new pair of tokens: the refresh token, and the access token with its expiry. */
+function tokenCookies(tokens: GitHubTokens, access: AccessToken): string[] {
+  return [
+    cookie(refreshCookie, tokens.refresh_token, tokens.refresh_token_expires_in, 'Strict'),
+    cookie(accessCookie, `${access.expiresAt}.${access.token}`, tokens.expires_in, 'Strict'),
+  ];
 }
 
 function readCookie(request: Request, name: string): string | undefined {
@@ -74,6 +105,25 @@ function readCookie(request: Request, name: string): string | undefined {
     }
   }
   return undefined;
+}
+
+function readAccessToken(request: Request): AccessToken | undefined {
+  const value = readCookie(request, accessCookie) ?? '';
+  const separator = value.indexOf('.');
+  const expiresAt = Number(value.slice(0, separator));
+  const token = value.slice(separator + 1);
+  return separator > 0 && Number.isSafeInteger(expiresAt) && token !== '' ? { token, expiresAt } : undefined;
+}
+
+/**
+ * The page gets the time left rather than the expiry, so its own clock, not
+ * the Worker's, decides when the token is near its end.
+ */
+function accessAnswer(access: AccessToken): Response {
+  return json(200, {
+    accessToken: access.token,
+    expiresIn: Math.floor((access.expiresAt - Date.now()) / 1000),
+  });
 }
 
 function base64Url(bytes: Uint8Array): string {
@@ -104,8 +154,8 @@ function fromThisSite(request: Request): boolean {
 /**
  * Calls GitHub's token endpoint. GitHub answers an OAuth error, such as
  * `bad_refresh_token`, with status 200 and an `error` field; that, or tokens
- * the web app can't use, is `refused`. GitHub out of reach or failing on its
- * side is `unavailable`.
+ * the web app can't use, is `refused`. GitHub out of reach, too slow, or
+ * failing on its side is `unavailable`.
  */
 async function requestTokens(env: Env, grant: Record<string, string>): Promise<TokenResult> {
   let response: Response;
@@ -113,12 +163,16 @@ async function requestTokens(env: Env, grant: Record<string, string>): Promise<T
   try {
     response = await fetch(tokenUrl, {
       method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
       body: new URLSearchParams({
         client_id: env.REPOTTED_CLIENT_ID,
         client_secret: env.REPOTTED_CLIENT_SECRET,
         ...grant,
       }),
+      signal: AbortSignal.timeout(gitHubTimeoutMs),
     });
     if (response.status >= 500) {
       return { kind: 'unavailable' };
@@ -158,8 +212,11 @@ async function callback(request: Request, env: Env): Promise<Response> {
   const cleared = cookie(signInCookie, '', 0, 'Lax');
   const failed = (reason: SignInFailure): Response => redirect(`/?sign-in=${reason}`, [cleared]);
 
-  if (params.get('error') === 'access_denied') {
-    return failed('denied');
+  // GitHub reports other errors, such as a callback URL the App doesn't list,
+  // the same way; signing in again won't fix those, so they aren't "expired".
+  const error = params.get('error');
+  if (error !== null) {
+    return failed(error === 'access_denied' ? 'denied' : 'failed');
   }
   const [state = '', verifier = ''] = (readCookie(request, signInCookie) ?? '').split('.');
   const code = params.get('code') ?? '';
@@ -178,30 +235,57 @@ async function callback(request: Request, env: Env): Promise<Response> {
   if (result.kind !== 'tokens') {
     return failed('failed');
   }
-  return redirect('/', [cleared, refreshCookieFor(result.tokens)]);
+  return redirect('/', [cleared, ...tokenCookies(result.tokens, issuedAccessToken(result.tokens))]);
+}
+
+/** The request's JSON body, `{}` when it has none, or undefined when it isn't JSON. */
+async function readJson(request: Request): Promise<unknown> {
+  try {
+    const text = await request.text();
+    return text === '' ? {} : JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
- * Trades the refresh token for a new access token, and keeps the new refresh
- * token GitHub issues with it, since each one works once.
+ * Answers the page's request for an access token. Every tab gets the one in the
+ * access cookie while it has more than the margin left, since GitHub revokes
+ * an access token when its refresh token is used: a tab that refreshed for
+ * itself would cut off the others. Otherwise, or when the page names that
+ * token as one GitHub refused, it trades the refresh token for new tokens and
+ * keeps both, since each refresh token works once.
  */
 async function token(request: Request, env: Env): Promise<Response> {
   if (!fromThisSite(request)) {
     return json(403, { error: 'forbidden' });
   }
+  const asked = tokenRequest.safeParse(await readJson(request));
+  if (!asked.success) {
+    return json(400, { error: 'bad_request' });
+  }
+  const access = readAccessToken(request);
+  if (access !== undefined && access.token !== asked.data.replace && access.expiresAt - Date.now() > refreshMarginMs) {
+    return accessAnswer(access);
+  }
   const refreshToken = readCookie(request, refreshCookie);
   if (refreshToken === undefined) {
     return json(401, { error: 'signed_out' });
   }
-  const result = await requestTokens(env, { grant_type: 'refresh_token', refresh_token: refreshToken });
+  const result = await requestTokens(env, {
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+  });
   switch (result.kind) {
-    case 'tokens':
-      return json(
-        200,
-        { accessToken: result.tokens.access_token, expiresAt: Date.now() + result.tokens.expires_in * 1000 },
-        { 'Set-Cookie': refreshCookieFor(result.tokens) },
-      );
-    // The cookie stays. A refused token is spent or revoked, so keeping it does
+    case 'tokens': {
+      const issued = issuedAccessToken(result.tokens);
+      const response = accessAnswer(issued);
+      for (const value of tokenCookies(result.tokens, issued)) {
+        response.headers.append('Set-Cookie', value);
+      }
+      return response;
+    }
+    // The cookies stay. A refused token is spent or revoked, so keeping it does
     // no harm, while clearing it could replace a newer token that a request
     // from another tab stored meanwhile.
     case 'refused':
@@ -215,7 +299,9 @@ function signOut(request: Request): Promise<Response> {
   if (!fromThisSite(request)) {
     return Promise.resolve(json(403, { error: 'forbidden' }));
   }
-  const headers = apiHeaders({ 'Set-Cookie': cookie(refreshCookie, '', 0, 'Strict') });
+  const headers = apiHeaders();
+  headers.append('Set-Cookie', cookie(refreshCookie, '', 0, 'Strict'));
+  headers.append('Set-Cookie', cookie(accessCookie, '', 0, 'Strict'));
   return Promise.resolve(new Response(null, { status: 204, headers }));
 }
 

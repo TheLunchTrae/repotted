@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import worker from '../src/worker.js';
 
 const origin = 'https://repotted.dev';
-const env = { REPOTTED_CLIENT_ID: 'Iv1.client', REPOTTED_CLIENT_SECRET: 'client-secret' };
+const env = {
+  REPOTTED_CLIENT_ID: 'Iv1.client',
+  REPOTTED_CLIENT_SECRET: 'client-secret',
+};
+
+const refreshKept = '__Host-repotted-refresh=ghr_refresh; Path=/; Max-Age=15811200; Secure; HttpOnly; SameSite=Strict';
 
 const tokens = {
   access_token: 'ghu_access',
@@ -43,7 +48,11 @@ function sentGrant(): URLSearchParams {
   return new URLSearchParams(body instanceof URLSearchParams ? body : undefined);
 }
 
-async function startedSignIn(): Promise<{ state: string; verifier: string; cookie: string }> {
+async function startedSignIn(): Promise<{
+  state: string;
+  verifier: string;
+  cookie: string;
+}> {
   const response = await call('/api/auth/sign-in');
   const [cookie = ''] = cookies(response);
   const [state = '', verifier = ''] = (cookie.split(';')[0] ?? '').split('=')[1]?.split('.') ?? [];
@@ -87,13 +96,15 @@ describe('sign-in', () => {
 });
 
 describe('callback', () => {
-  test('trades the code with the verifier and secret, keeps the refresh token, and spends the sign-in', async () => {
+  test('trades the code with the verifier and secret, keeps both tokens, and spends the sign-in', async () => {
     const { state, verifier, cookie } = await startedSignIn();
     github.mockResolvedValue(Response.json(tokens));
+    vi.useFakeTimers({ toFake: ['Date'], now: 1_000_000 });
 
     const response = await call(`/api/auth/callback?code=the-code&state=${state}`, {
       headers: { Cookie: cookie.split(';')[0] ?? '' },
     });
+    vi.useRealTimers();
 
     expect(response.status).toBe(302);
     expect(response.headers.get('Location')).toBe('/');
@@ -107,7 +118,8 @@ describe('callback', () => {
     });
     expect(cookies(response)).toEqual([
       '__Host-repotted-sign-in=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax',
-      '__Host-repotted-refresh=ghr_refresh; Path=/; Max-Age=15811200; Secure; HttpOnly; SameSite=Strict',
+      refreshKept,
+      '__Host-repotted-access=29800000.ghu_access; Path=/; Max-Age=28800; Secure; HttpOnly; SameSite=Strict',
     ]);
   });
 
@@ -133,6 +145,16 @@ describe('callback', () => {
     expect(github).not.toHaveBeenCalled();
   });
 
+  test('reports any other error from GitHub as a failed sign-in, not an expired one', async () => {
+    const { state, cookie } = await startedSignIn();
+    const response = await call(`/api/auth/callback?error=redirect_uri_mismatch&state=${state}`, {
+      headers: { Cookie: cookie.split(';')[0] ?? '' },
+    });
+
+    expect(response.headers.get('Location')).toBe('/?sign-in=failed');
+    expect(github).not.toHaveBeenCalled();
+  });
+
   test.each([
     ['refuses the code', () => Promise.resolve(Response.json({ error: 'bad_verification_code' }))],
     ['issues a token that never expires', () => Promise.resolve(Response.json({ access_token: 'ghu_x' }))],
@@ -151,48 +173,140 @@ describe('callback', () => {
 });
 
 describe('token', () => {
-  const fromSite = { Origin: origin, Cookie: 'other=1; __Host-repotted-refresh=ghr_old' };
+  const now = 1_000_000;
+  const hour = 60 * 60 * 1000;
+  const fromSite = {
+    Origin: origin,
+    Cookie: 'other=1; __Host-repotted-refresh=ghr_old',
+  };
+  const withAccess = (expiresAt: number): Record<string, string> => ({
+    Origin: origin,
+    Cookie: `__Host-repotted-refresh=ghr_old; __Host-repotted-access=${expiresAt}.ghu_kept`,
+  });
+  const askFor = (headers: Record<string, string>, body?: string): Promise<Response> =>
+    call('/api/auth/token', {
+      method: 'POST',
+      headers,
+      ...(body === undefined ? {} : { body }),
+    });
 
-  test('refreshes, returns the access token with its expiry, and keeps the new refresh token', async () => {
-    github.mockResolvedValue(Response.json(tokens));
-    vi.useFakeTimers({ toFake: ['Date'], now: 1_000_000 });
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now });
+  });
 
-    const response = await call('/api/auth/token', { method: 'POST', headers: fromSite });
+  afterEach(() => {
     vi.useRealTimers();
+  });
+
+  test('refreshes, returns the access token with its time left, and keeps both new tokens', async () => {
+    github.mockResolvedValue(Response.json(tokens));
+
+    const response = await askFor(fromSite);
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
-    expect(await response.json()).toEqual({ accessToken: 'ghu_access', expiresAt: 1_000_000 + 28_800_000 });
+    expect(await response.json()).toEqual({
+      accessToken: 'ghu_access',
+      expiresIn: 28_800,
+    });
     expect(Object.fromEntries(sentGrant())).toMatchObject({
       grant_type: 'refresh_token',
       refresh_token: 'ghr_old',
       client_secret: env.REPOTTED_CLIENT_SECRET,
     });
     expect(cookies(response)).toEqual([
-      '__Host-repotted-refresh=ghr_refresh; Path=/; Max-Age=15811200; Secure; HttpOnly; SameSite=Strict',
+      refreshKept,
+      `__Host-repotted-access=${now + 28_800_000}.ghu_access; Path=/; Max-Age=28800; Secure; HttpOnly; SameSite=Strict`,
     ]);
   });
 
-  test('answers signed out, and leaves the cookie, when GitHub refuses the refresh token', async () => {
+  test('hands out the kept access token while it has over five minutes left, without refreshing', async () => {
+    const response = await askFor(withAccess(now + hour));
+
+    expect(await response.json()).toEqual({
+      accessToken: 'ghu_kept',
+      expiresIn: 3600,
+    });
+    expect(github).not.toHaveBeenCalled();
+    expect(cookies(response)).toEqual([]);
+  });
+
+  test('refreshes when the kept access token has five minutes or less left', async () => {
+    github.mockResolvedValue(Response.json(tokens));
+
+    const response = await askFor(withAccess(now + 5 * 60 * 1000));
+
+    expect(await response.json()).toEqual({
+      accessToken: 'ghu_access',
+      expiresIn: 28_800,
+    });
+    expect(github).toHaveBeenCalledTimes(1);
+  });
+
+  test('refreshes when the page names the kept access token as refused', async () => {
+    github.mockResolvedValue(Response.json(tokens));
+
+    const response = await askFor(withAccess(now + hour), JSON.stringify({ replace: 'ghu_kept' }));
+
+    expect(await response.json()).toEqual({
+      accessToken: 'ghu_access',
+      expiresIn: 28_800,
+    });
+    expect(github).toHaveBeenCalledTimes(1);
+  });
+
+  test('hands out the kept access token when the page names an older one, since another tab replaced it', async () => {
+    const response = await askFor(withAccess(now + hour), JSON.stringify({ replace: 'ghu_older' }));
+
+    expect(await response.json()).toEqual({
+      accessToken: 'ghu_kept',
+      expiresIn: 3600,
+    });
+    expect(github).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['is not JSON', 'replace'],
+    ['names no string', '{"replace":1}'],
+  ])('refuses a body that %s', async (_name, body) => {
+    const response = await askFor(fromSite, body);
+
+    expect(response.status).toBe(400);
+    expect(github).not.toHaveBeenCalled();
+  });
+
+  test('answers signed out, and leaves the cookies, when GitHub refuses the refresh token', async () => {
     github.mockResolvedValue(Response.json({ error: 'bad_refresh_token' }));
 
-    const response = await call('/api/auth/token', { method: 'POST', headers: fromSite });
+    const response = await askFor(fromSite);
 
     expect(response.status).toBe(401);
     expect(cookies(response)).toEqual([]);
   });
 
-  test('answers unavailable, and leaves the cookie, when GitHub fails on its side', async () => {
-    github.mockResolvedValue(new Response('oops', { status: 503 }));
+  test.each([
+    ['fails on its side', () => Promise.resolve(new Response('oops', { status: 503 }))],
+    ['is too slow', () => Promise.reject(new DOMException('timed out', 'TimeoutError'))],
+  ])('answers unavailable, and leaves the cookies, when GitHub %s', async (_name, answer) => {
+    github.mockImplementation(answer);
 
-    const response = await call('/api/auth/token', { method: 'POST', headers: fromSite });
+    const response = await askFor(fromSite);
 
     expect(response.status).toBe(502);
     expect(cookies(response)).toEqual([]);
   });
 
+  test('gives up on GitHub after ten seconds', async () => {
+    github.mockResolvedValue(Response.json(tokens));
+
+    await askFor(fromSite);
+
+    const signal = github.mock.calls[0]?.[1]?.signal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+  });
+
   test('answers signed out without a refresh cookie', async () => {
-    const response = await call('/api/auth/token', { method: 'POST', headers: { Origin: origin } });
+    const response = await askFor({ Origin: origin });
 
     expect(response.status).toBe(401);
     expect(github).not.toHaveBeenCalled();
@@ -202,7 +316,7 @@ describe('token', () => {
     ['another site', { Origin: 'https://evil.example', Cookie: fromSite.Cookie }],
     ['no origin', { Cookie: fromSite.Cookie }],
   ])('refuses a request from %s', async (_name, headers) => {
-    const response = await call('/api/auth/token', { method: 'POST', headers });
+    const response = await askFor(headers);
 
     expect(response.status).toBe(403);
     expect(github).not.toHaveBeenCalled();
@@ -210,17 +324,24 @@ describe('token', () => {
 });
 
 describe('sign-out', () => {
-  test('clears the refresh cookie', async () => {
-    const response = await call('/api/auth/sign-out', { method: 'POST', headers: { Origin: origin } });
+  test('clears both token cookies', async () => {
+    const response = await call('/api/auth/sign-out', {
+      method: 'POST',
+      headers: { Origin: origin },
+    });
 
     expect(response.status).toBe(204);
     expect(cookies(response)).toEqual([
       '__Host-repotted-refresh=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict',
+      '__Host-repotted-access=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict',
     ]);
   });
 
   test('refuses a request from another site', async () => {
-    const response = await call('/api/auth/sign-out', { method: 'POST', headers: { Origin: 'https://evil.example' } });
+    const response = await call('/api/auth/sign-out', {
+      method: 'POST',
+      headers: { Origin: 'https://evil.example' },
+    });
 
     expect(response.status).toBe(403);
     expect(cookies(response)).toEqual([]);

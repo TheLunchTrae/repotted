@@ -47,11 +47,12 @@ sign-in; see [the web app](docs/developer/web-app.md).
   repository's settings, rulesets, or branch protection, without the owner's
   explicit yes for that repository and that plan.
 - Do not run Release CLI or Release Desktop, publish to npm, push a tag, or
-  publish a release without the owner's explicit yes. Do not run Deploy Web or
-  `wrangler deploy`, or change the Worker's secrets, without it either. A test build of Release
+  publish a release without the owner's explicit yes. A test build of Release
   Desktop, with Publish not selected, on a pull request's branch, which
   [Releasing](docs/developer/releasing.md#the-desktop-app) describes,
   releases nothing and needs no yes.
+- Do not run Deploy Web or `wrangler deploy`, or change the Worker's secrets
+  or domain, without the owner's explicit yes.
 
 ## Commands
 
