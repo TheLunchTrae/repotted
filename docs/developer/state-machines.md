@@ -195,6 +195,46 @@ owners rather than the shown ones means an owner new to the list shows.
 
 A browser that refuses storage keeps the choice for the visit only.
 
+## Web profiles source
+
+`Profiles` (`packages/web/src/app/profiles.ts`) keeps where the profiles are,
+saved as `profiles-source` in the browser's
+[preferences](web-app.md#the-app), and the sync state the pages show. Every
+event below waits its turn in one queue.
+
+| State      | Event                                   | Next                                                                                                                        |
+| ---------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| In browser | Refresh, or the app opens               | The folder is listed.                                                                                                       |
+| On GitHub  | Sync, or the app opens                  | Syncing, then listed.                                                                                                       |
+| Syncing    | It records                              | In sync, or conflicts when any file changed on both sides.                                                                  |
+| Syncing    | It fails                                | Not synced, with why; the working copy is listed as it is.                                                                  |
+| Syncing    | GitHub answers 401                      | Not synced, and the account is signed out.                                                                                  |
+| Conflicts  | Keep mine or Use GitHub's               | Syncing, with `prefer` for the files in conflict only.                                                                      |
+| Any        | Use a repository, from the connect form | Connecting: profiles kept now are copied into the repository's working copy if asked, skipping names it has, then it syncs. |
+| Connecting | The sync records                        | On GitHub, saved, with the working copy listed.                                                                             |
+| Connecting | The name isn't `owner/name`             | As before, with why; GitHub isn't asked.                                                                                    |
+| Connecting | The sync fails                          | As before, with why. A working copy that never synced is removed, and one that had loses only what was copied in.           |
+| On GitHub  | Use this browser                        | In browser, saved; the repository and its working copy keep what they have.                                                 |
+
+A profile open when the list is read again shows its file as it is then, and
+closes when the file is gone.
+
+## Web kept files
+
+`keepFiles` (`packages/web/src/app/kept-files.ts`) keeps the engine's files in
+IndexedDB.
+
+| State   | Event                              | Next                                                                         |
+| ------- | ---------------------------------- | ---------------------------------------------------------------------------- |
+| Opening | IndexedDB gives the kept files     | Keeping: the files are in memory, and each later change is written in order. |
+| Opening | IndexedDB can't be opened or read  | Not keeping: the files last for the visit, and Settings says so.             |
+| Keeping | A file is written or removed       | The same is done in IndexedDB, after the changes before it.                  |
+| Keeping | A write to IndexedDB fails         | Keeping: the failure is reported, and later changes are still written.       |
+| Keeping | The engine writes a temporary file | Nothing is kept of it.                                                       |
+
+**Failure:** a tab closed right after a change can lose that change, since
+the write to IndexedDB follows the change in memory.
+
 ## Desktop navigation
 
 `ShellViewModel.Page` is the page the signed-in app shows: 0 for the

@@ -1,12 +1,67 @@
-import { createHash } from 'node:crypto';
-
+import { fromBase64, toBase64 } from '../src/bytes.js';
 import { type GitHub, GitHubError, type Method } from '../src/github.js';
 
 type Tree = Map<string, { id: string; mode: string }>;
 
+/**
+ * SHA-1 in hex, computed at once: the fake names commits, trees, and blobs
+ * as git does, inside methods that answer without waiting, which the web
+ * platform's own digest can't do.
+ */
+function sha1(bytes: Uint8Array): string {
+  const length = bytes.length;
+  const padded = new Uint8Array((((length + 8) >> 6) + 1) << 6);
+  padded.set(bytes);
+  padded[length] = 0x80;
+  const view = new DataView(padded.buffer);
+  view.setUint32(padded.length - 8, Math.floor(length / 0x20000000));
+  view.setUint32(padded.length - 4, length << 3);
+  const state = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0];
+  const words = new Uint32Array(80);
+  const rotate = (value: number, by: number): number => (value << by) | (value >>> (32 - by));
+  for (let block = 0; block < padded.length; block += 64) {
+    for (let index = 0; index < 80; index += 1) {
+      words[index] =
+        index < 16
+          ? view.getUint32(block + index * 4)
+          : rotate(
+              (words[index - 3] ?? 0) ^ (words[index - 8] ?? 0) ^ (words[index - 14] ?? 0) ^ (words[index - 16] ?? 0),
+              1,
+            );
+    }
+    let [a = 0, b = 0, c = 0, d = 0, e = 0] = state;
+    for (let index = 0; index < 80; index += 1) {
+      const [mix, constant] =
+        index < 20
+          ? [(b & c) | (~b & d), 0x5a827999]
+          : index < 40
+            ? [b ^ c ^ d, 0x6ed9eba1]
+            : index < 60
+              ? [(b & c) | (b & d) | (c & d), 0x8f1bbcdc]
+              : [b ^ c ^ d, 0xca62c1d6];
+      const next = (rotate(a, 5) + mix + e + constant + (words[index] ?? 0)) | 0;
+      e = d;
+      d = c;
+      c = rotate(b, 30);
+      b = a;
+      a = next;
+    }
+    state[0] = ((state[0] ?? 0) + a) | 0;
+    state[1] = ((state[1] ?? 0) + b) | 0;
+    state[2] = ((state[2] ?? 0) + c) | 0;
+    state[3] = ((state[3] ?? 0) + d) | 0;
+    state[4] = ((state[4] ?? 0) + e) | 0;
+  }
+  return state.map((word) => (word >>> 0).toString(16).padStart(8, '0')).join('');
+}
+
 /** The id git gives a file's content. */
 function blobId(content: Uint8Array): string {
-  return createHash('sha1').update(`blob ${content.byteLength}\0`).update(content).digest('hex');
+  const header = new TextEncoder().encode(`blob ${content.byteLength}\0`);
+  const whole = new Uint8Array(header.length + content.byteLength);
+  whole.set(header);
+  whole.set(content, header.length);
+  return sha1(whole);
 }
 
 interface Commit {
@@ -23,7 +78,7 @@ function object(value: unknown): Record<string, unknown> {
 }
 
 function hash(value: string): string {
-  return createHash('sha1').update(value).digest('hex');
+  return sha1(new TextEncoder().encode(value));
 }
 
 /**
@@ -230,14 +285,14 @@ export class FakeGitRepository implements GitHub {
       if (content === undefined) {
         throw new GitHubError(404, 'Not Found');
       }
-      return { sha: id, content: Buffer.from(content).toString('base64'), encoding: 'base64' };
+      return { sha: id, content: toBase64(content), encoding: 'base64' };
     }
     if (method === 'POST' && route === `${base}/git/blobs`) {
       const { content, encoding } = object(body);
       if (encoding !== 'base64' || typeof content !== 'string') {
         throw new GitHubError(422, 'Invalid blob');
       }
-      const bytes = Buffer.from(content, 'base64');
+      const bytes = fromBase64(content);
       const blob = blobId(bytes);
       this.blobs.set(blob, bytes);
       return { sha: blob };
@@ -274,7 +329,7 @@ export class FakeGitRepository implements GitHub {
         throw new GitHubError(422, 'Invalid request');
       }
       const commit = this.write(
-        { [file]: Buffer.from(content, 'base64').toString('utf8') },
+        { [file]: new TextDecoder().decode(fromBase64(content)) },
         { message: String(message) },
       );
       return { commit: { sha: commit } };
