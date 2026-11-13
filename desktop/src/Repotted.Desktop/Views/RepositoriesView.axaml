@@ -43,7 +43,7 @@
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,14">
           <!-- Which owners' repositories the list shows -->
           <Button Classes="quiet owners" Classes.filtered="{Binding OwnersFiltered}" VerticalAlignment="Center"
-                  IsVisible="{Binding CanFilterOwners}" AutomationProperties.Name="{Binding OwnersLabel, StringFormat='Owners: {0}'}">
+                  IsVisible="{Binding ShowOwnerFilter}" AutomationProperties.Name="{Binding OwnersLabel, StringFormat='Owners: {0}'}">
             <StackPanel Orientation="Horizontal" Spacing="8">
               <TextBlock Text="{Binding OwnersLabel}" VerticalAlignment="Center" />
               <Path Data="M 1,1 L 5,5 L 9,1" Stroke="{DynamicResource MutedBrush}" StrokeThickness="1.6"

@@ -36,7 +36,7 @@ public sealed class RepositoriesTests : ViewModelTests
             ["TheLunchTrae (personal, 2)", "repotted", "test-repo", "lunchbox-labs (2)", "compasslet", "tool-inspector", "Pixel-Garden (1)", "site"],
             Listed(repositories));
         Assert.Equal(["TheLunchTrae", "lunchbox-labs", "Pixel-Garden"], repositories.Owners.Select(owner => owner.Owner));
-        Assert.True(repositories.CanFilterOwners);
+        Assert.True(repositories.ShowOwnerFilter);
         Assert.False(repositories.OwnersFiltered);
         Assert.Equal(ControlLabel.For("All owners"), repositories.OwnersLabel);
         Assert.Equal("All 5", repositories.CountLabel);
@@ -50,7 +50,7 @@ public sealed class RepositoriesTests : ViewModelTests
         await main.StartAsync();
         var repositories = Assert.IsType<ShellViewModel>(main.Page).Repositories;
 
-        Assert.False(repositories.CanFilterOwners);
+        Assert.False(repositories.ShowOwnerFilter);
         Assert.Equal(["TheLunchTrae (personal, 3)", "github-setup", "repotted", "test-repo"], Listed(repositories));
     }
 
@@ -60,7 +60,7 @@ public sealed class RepositoriesTests : ViewModelTests
         var repositories = await Owned();
         repositories.Selected = repositories.Rows.Single(row => row.Name == "compasslet");
 
-        repositories.Owners.Single(owner => owner.Owner == "lunchbox-labs").Shown = false;
+        Owner(repositories, "lunchbox-labs").Shown = false;
 
         Assert.Equal(["TheLunchTrae (personal, 2)", "repotted", "test-repo", "Pixel-Garden (1)", "site"], Listed(repositories));
         Assert.True(repositories.OwnersFiltered);
@@ -68,9 +68,9 @@ public sealed class RepositoriesTests : ViewModelTests
         Assert.Equal("3 of 5", repositories.CountLabel);
         // The selected repository is hidden, so the first one shown is selected instead.
         Assert.Equal("TheLunchTrae/repotted", repositories.Selected?.FullName);
-        Assert.Equal(["TheLunchTrae", "Pixel-Garden"], folders.Settings.Load().RepositoryOwners);
+        Assert.Equal(["lunchbox-labs"], folders.Settings.Load().HiddenRepositoryOwners);
 
-        repositories.Owners.Single(owner => owner.Owner == "TheLunchTrae").Shown = false;
+        Owner(repositories, "TheLunchTrae").Shown = false;
         Assert.Equal("Pixel-Garden", repositories.OwnersLabel);
 
         // A new run starts from the remembered choice.
@@ -78,11 +78,20 @@ public sealed class RepositoriesTests : ViewModelTests
         Assert.Equal(["Pixel-Garden (1)", "site"], Listed(again));
         Assert.Equal([false, false, true], again.Owners.Select(owner => owner.Shown));
 
-        again.Owners.Single(owner => owner.Owner == "Pixel-Garden").Shown = false;
+        Owner(again, "Pixel-Garden").Shown = false;
         Assert.Empty(again.Rows);
         Assert.Equal(ControlLabel.For("No owners"), again.OwnersLabel);
         Assert.Equal("0 of 5", again.CountLabel);
         Assert.False(again.HasSelection);
+
+        // Ticking every owner again shows them all and saves no choice.
+        foreach (var owner in again.Owners)
+        {
+            owner.Shown = true;
+        }
+        Assert.Equal(5, again.Rows.Count);
+        Assert.False(again.OwnersFiltered);
+        Assert.Null(folders.Settings.Load().HiddenRepositoryOwners);
     }
 
     [AvaloniaFact]
@@ -94,38 +103,90 @@ public sealed class RepositoriesTests : ViewModelTests
 
         Assert.Equal(["TheLunchTrae (personal, 2)", "repotted", "test-repo"], Listed(repositories));
         Assert.Equal(ControlLabel.For("Personal"), repositories.OwnersLabel);
-        Assert.Equal(["TheLunchTrae"], folders.Settings.Load().RepositoryOwners);
+        Assert.Equal(["lunchbox-labs", "Pixel-Garden"], folders.Settings.Load().HiddenRepositoryOwners);
 
         repositories.ShowAllOwnersCommand.Execute(null);
 
         Assert.Equal(5, repositories.Rows.Count);
         Assert.True(repositories.Owners.All(owner => owner.Shown));
-        Assert.Null(folders.Settings.Load().RepositoryOwners);
+        Assert.Null(folders.Settings.Load().HiddenRepositoryOwners);
     }
 
     [AvaloniaFact]
-    public async Task A_remembered_choice_with_no_owner_in_the_list_shows_every_owner()
+    public async Task A_hidden_owner_that_leaves_stays_hidden_and_a_new_owner_shows()
     {
-        folders.Settings.Save(folders.Settings.Load() with { RepositoryOwners = ["gone-org"] });
+        var cli = new FakeCli().On("status --json", Documents.SignedIn).On("repos --json", Documents.OwnedRepositories);
+        var main = App(cli);
+        await main.StartAsync();
+        var repositories = Assert.IsType<ShellViewModel>(main.Page).Repositories;
+        Owner(repositories, "Pixel-Garden").Shown = false;
 
-        var repositories = await Owned();
+        // Pixel-Garden leaves the list, and another organization joins it.
+        cli.On("repos --json", """
+            {"source":"installations","repositories":[
+              {"full_name":"lunchbox-labs/compasslet","private":false,"archived":false},
+              {"full_name":"new-org/app","private":false,"archived":false},
+              {"full_name":"TheLunchTrae/repotted","private":false,"archived":false}
+            ]}
+            """);
+        await repositories.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal(["TheLunchTrae (personal, 1)", "repotted", "lunchbox-labs (1)", "compasslet", "new-org (1)", "app"], Listed(repositories));
+        Owner(repositories, "new-org").Shown = false;
+        Assert.Equal(["Pixel-Garden", "new-org"], folders.Settings.Load().HiddenRepositoryOwners);
 
-        Assert.Equal(5, repositories.Rows.Count);
-        Assert.False(repositories.OwnersFiltered);
-        // The choice stays as it was until the next one.
-        Assert.Equal(["gone-org"], folders.Settings.Load().RepositoryOwners);
+        // Back again, it is still hidden.
+        cli.On("repos --json", Documents.OwnedRepositories);
+        await repositories.RefreshCommand.ExecuteAsync(null);
+        Assert.False(Owner(repositories, "Pixel-Garden").Shown);
+        Assert.Equal(["TheLunchTrae (personal, 2)", "repotted", "test-repo", "lunchbox-labs (2)", "compasslet", "tool-inspector"], Listed(repositories));
     }
 
     [AvaloniaFact]
-    public async Task A_remembered_owner_that_comes_back_is_shown_again()
+    public async Task Remembered_owners_match_whatever_their_case()
     {
-        folders.Settings.Save(folders.Settings.Load() with { RepositoryOwners = ["thelunchtrae", "gone-org"] });
+        folders.Settings.Save(folders.Settings.Load() with { HiddenRepositoryOwners = ["LUNCHBOX-LABS", "pixel-garden"] });
 
         var repositories = await Owned();
 
-        // Logins ignore case, and an owner missing from the list doesn't count.
         Assert.Equal(["TheLunchTrae (personal, 2)", "repotted", "test-repo"], Listed(repositories));
         Assert.Equal(ControlLabel.For("Personal"), repositories.OwnersLabel);
+    }
+
+    [AvaloniaFact]
+    public async Task A_failed_read_keeps_the_owners_and_hides_the_filter()
+    {
+        var cli = new FakeCli().On("status --json", Documents.SignedIn).On("repos --json", Documents.OwnedRepositories);
+        var main = App(cli);
+        await main.StartAsync();
+        var repositories = Assert.IsType<ShellViewModel>(main.Page).Repositories;
+        Owner(repositories, "Pixel-Garden").Shown = false;
+
+        cli.On("repos --json", """{"error":{"kind":"error","message":"fetch failed"}}""", exitCode: 1);
+        await repositories.RefreshCommand.ExecuteAsync(null);
+
+        Assert.False(repositories.ShowOwnerFilter);
+        Assert.Equal(3, repositories.Owners.Count);
+        Assert.False(Owner(repositories, "Pixel-Garden").Shown);
+        Assert.Equal(["Pixel-Garden"], folders.Settings.Load().HiddenRepositoryOwners);
+    }
+
+    [AvaloniaFact]
+    public async Task A_choice_that_cannot_be_saved_still_holds_for_this_run()
+    {
+        var unwritable = Path.Combine(folders.SettingsFolder, "settings.json");
+        var shell = new ShellViewModel(
+            new Account.SignedIn("TheLunchTrae", null, null, null),
+            new RepottedClient(new FakeCli().On("repos --json", Documents.OwnedRepositories)),
+            new FakeDesktop(),
+            // A file where the settings folder should be, so every save fails.
+            new AppSettings(unwritable),
+            () => Task.CompletedTask);
+        await shell.Repositories.RefreshCommand.ExecuteAsync(null);
+
+        shell.Repositories.ShowOnlyPersonalCommand.Execute(null);
+
+        Assert.Equal(2, shell.Repositories.Rows.Count);
+        Assert.Equal(ControlLabel.For("Personal"), shell.Repositories.OwnersLabel);
     }
 
     [AvaloniaFact]
@@ -143,7 +204,7 @@ public sealed class RepositoriesTests : ViewModelTests
         repositories.Filter = "co";
         Assert.Equal(["lunchbox-labs (1)", "compasslet"], Listed(repositories));
 
-        repositories.Owners.Single(owner => owner.Owner == "lunchbox-labs").Shown = false;
+        Owner(repositories, "lunchbox-labs").Shown = false;
         Assert.Empty(repositories.Items);
         Assert.Equal("3 of 5", repositories.CountLabel);
     }
@@ -158,6 +219,9 @@ public sealed class RepositoriesTests : ViewModelTests
         Assert.False(repositories.HasPersonal);
         Assert.Equal(["lunchbox-labs", "Pixel-Garden", "TheLunchTrae"], repositories.Owners.Select(owner => owner.Owner));
     }
+
+    private static OwnerChoice Owner(RepositoriesViewModel repositories, string owner) =>
+        repositories.Owners.Single(choice => choice.Owner == owner);
 
     private async Task<RepositoriesViewModel> Owned()
     {

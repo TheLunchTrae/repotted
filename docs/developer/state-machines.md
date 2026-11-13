@@ -383,20 +383,22 @@ last good record in place and the next sync starts from it.
 
 ## Desktop repository owners
 
-`RepositoriesViewModel` keeps the owners the repository list shows as a choice
-of logins, saved as `repository_owners` in the app's `settings.json`, or none
-for every owner. The list's owners come from each read of the list, so the
-choice can name an owner that is no longer there.
+`RepositoriesViewModel` keeps the owners the repository list hides, by login,
+saved as `hidden_repository_owners` in the app's `settings.json`, or none when
+it hides no owner. The list's owners come from each read of the list, and a
+hidden owner matches its login in any case. Keeping the hidden owners rather
+than the shown ones means an owner new to the list shows.
 
-| Choice                         | Event                                   | Next                                                                   |
-| ------------------------------ | --------------------------------------- | ---------------------------------------------------------------------- |
-| Every owner                    | An owner is unticked                    | The ticked owners, saved.                                              |
-| Some owners                    | The last unticked owner is ticked       | Every owner, saved as none.                                            |
-| Some owners                    | Only personal                           | The signed-in account alone, saved.                                    |
-| Any                            | Show all                                | Every owner, saved as none.                                            |
-| Some owners                    | The list is read again                  | The chosen owners in the list show; one that left stays in the choice. |
-| Names no owner now in the list | The list is read again                  | Every owner shows, and the choice stays saved until the next one.      |
-| No owners ticked               | The list is read again or the app opens | Every owner shows, since the choice names no owner in the list.        |
+| Hidden                  | Event                                   | Next                                                                    |
+| ----------------------- | --------------------------------------- | ----------------------------------------------------------------------- |
+| None                    | An owner is unticked                    | That owner, saved.                                                      |
+| Some owners             | Every owner in the list is ticked       | Only hidden owners not in the list, or none, saved.                     |
+| Any                     | Only personal                           | Every owner in the list but the signed-in account, saved.               |
+| Any                     | Show all                                | None, saved as none.                                                    |
+| Some owners             | The list is read again                  | The hidden owners in the list stay hidden; an owner new to it shows.    |
+| An owner not in list    | An owner is unticked or Only personal   | The owner not in the list stays hidden, with the new choice, saved.     |
+| Every owner in the list | The list is read again or the app opens | The list shows no repositories, and the filter shows **No owners**.     |
+| Any                     | The read fails                          | The owners and their ticks stay as they were, and the filter is hidden. |
 
 A save that fails, such as an unwritable app data folder, is let go: the
 choice holds for this run and is lost at the next.

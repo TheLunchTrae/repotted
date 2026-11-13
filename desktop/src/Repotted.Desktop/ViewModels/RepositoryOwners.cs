@@ -9,7 +9,11 @@ namespace Repotted.Desktop.ViewModels;
 internal sealed record OwnerHeading(string Owner, bool Personal, int Count)
 {
     /// <summary>What a screen reader says for the heading.</summary>
-    public string Description => $"{Owner}{(Personal ? ", personal" : "")}, {Count} {(Count == 1 ? "repository" : "repositories")}";
+    public string Description => Describe(Owner, Personal, Count);
+
+    /// <summary>An owner as a screen reader says it.</summary>
+    internal static string Describe(string owner, bool personal, int count) =>
+        $"{owner}{(personal ? ", personal" : "")}, {count} {(count == 1 ? "repository" : "repositories")}";
 }
 
 /// <summary>An owner in the owner filter, ticked when the list shows its repositories.</summary>
@@ -24,7 +28,7 @@ internal sealed partial class OwnerChoice(string owner, bool personal, int count
     public int Count { get; } = count;
 
     /// <summary>What a screen reader says for the owner's checkbox.</summary>
-    public string Description => $"{Owner}{(Personal ? ", personal" : "")}, {Count} {(Count == 1 ? "repository" : "repositories")}";
+    public string Description => OwnerHeading.Describe(Owner, Personal, Count);
 
     [ObservableProperty]
     public partial bool Shown { get; set; }

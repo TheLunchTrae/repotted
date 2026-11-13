@@ -6,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -84,6 +85,15 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("Show repositories owned by", Texts(window));
         Save(window, $"repositories-owner-filter-{theme}");
 
+        // Unticking an owner's box hides its repositories.
+        var pixel = ((Flyout)owners.Flyout).Content is Control content
+            ? content.GetLogicalDescendants().OfType<CheckBox>().Single(box => box.DataContext is OwnerChoice { Owner: "Pixel-Garden" })
+            : throw new InvalidOperationException();
+        pixel.IsChecked = false;
+        Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain(repositories.Rows, row => row.Owner == "Pixel-Garden");
+        Assert.Equal(ControlLabel.For("2 owners"), repositories.OwnersLabel);
+
         repositories.ShowOnlyPersonalCommand.Execute(null);
         owners.Flyout.Hide();
         Dispatcher.UIThread.RunJobs();
@@ -111,6 +121,18 @@ public sealed class ViewTests : IDisposable
         Assert.DoesNotContain(list.Selection.SelectedItems, item => item is OwnerHeading);
         Assert.Equal(5, repositories.Chosen.Count);
         Assert.True(repositories.Choosing);
+
+        // Hiding an owner lets go of its repositories only; the rest stay chosen for the batch.
+        repositories.Owners.Single(owner => owner.Owner == "Pixel-Garden").Shown = false;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(4, repositories.Chosen.Count);
+        Assert.DoesNotContain(repositories.Chosen, row => row.Owner == "Pixel-Garden");
+
+        // So does the search.
+        repositories.Filter = "co";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["lunchbox-labs/compasslet"], repositories.Chosen.Select(row => row.FullName));
+        Assert.Equal("lunchbox-labs/compasslet", repositories.Selected?.FullName);
     }
 
     [AvaloniaFact]
