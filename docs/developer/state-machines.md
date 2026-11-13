@@ -147,6 +147,53 @@ refresh revokes the one before.
 | Signed in  | The user signs out                                                     | Signed out: under the lock, the Worker clears both token cookies, so a refresh that another tab started can't store tokens afterwards. Other tabs keep their token until it expires. |
 | Signed in  | The refresh token's 6 months pass                                      | The browser drops the cookie; the next refresh reads as signed out.                                                                                                                  |
 
+## Web account
+
+`Account` (`packages/web/src/app/account.ts`) holds who is signed in to the
+tab. The app draws the sign-in page in every state but Signed in.
+
+| State       | Event                                                    | Next                                                                                                 |
+| ----------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Checking    | GitHub names the user                                    | Signed in.                                                                                           |
+| Checking    | The browser isn't signed in, or GitHub refuses the token | Signed out, with why the sign-in failed when the Worker's redirect gave a reason.                    |
+| Checking    | GitHub or the Worker can't be reached                    | Unreachable, with **Try again**.                                                                     |
+| Unreachable | Try again                                                | Checking.                                                                                            |
+| Signed in   | Any request in the app gets a 401                        | Signed out with "GitHub no longer accepts this sign-in."; what the page held goes with it.           |
+| Signed in   | Sign out                                                 | Signing out: **Sign out** is off, and a second press sends nothing.                                  |
+| Signing out | The Worker clears the cookies                            | Signed out with "Signed out."                                                                        |
+| Signing out | The Worker can't be reached or fails                     | Signed in, with "Signing out didn't finish. Try again." in the account menu until the next sign-out. |
+
+## Web repositories
+
+`Repositories` (`packages/web/src/app/repositories.ts`) holds the repository
+list for one sign-in.
+
+| State                 | Event                                           | Next                                                                                             |
+| --------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| No list               | The page opens                                  | Reading, with "Reading your repositories…".                                                      |
+| Reading               | GitHub answers                                  | The list, grouped by owner. A selected repository stays selected when the new list still has it. |
+| Reading               | Refresh                                         | Nothing: the read under way finishes, and the button is off.                                     |
+| Reading               | The read fails                                  | The list it had, if any, with why above it.                                                      |
+| Reading               | GitHub answers 401                              | The account is signed out, as above.                                                             |
+| A list                | Refresh                                         | Reading, with the list dimmed and in use.                                                        |
+| A repository selected | A search or a hidden owner takes it out of view | Its panel closes. It is selected again when it comes back into view.                             |
+
+It keeps the owners the list hides, by login, under `hidden-repository-owners`
+in the browser's [preferences](web-app.md#the-app), or nothing when it hides
+no owner. A hidden owner matches its login in any case. Keeping the hidden
+owners rather than the shown ones means an owner new to the list shows.
+
+| Hidden                  | Event                                            | Next                                                                                           |
+| ----------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| None                    | An owner is unticked                             | That owner, saved.                                                                             |
+| Any                     | Only personal                                    | Every owner in the list but the signed-in account, saved.                                      |
+| Any                     | Show all                                         | None, saved as nothing.                                                                        |
+| Some owners             | The list is read again                           | The hidden owners in the list stay hidden; an owner new to it shows.                           |
+| An owner not in list    | An owner is ticked or unticked, or Only personal | The owner not in the list stays hidden, with the new choice, saved.                            |
+| Every owner in the list | The list is read again or the page opens         | The list shows no repositories and says every owner is hidden; the filter shows **No owners**. |
+
+A browser that refuses storage keeps the choice for the visit only.
+
 ## Desktop navigation
 
 `ShellViewModel.Page` is the page the signed-in app shows: 0 for the

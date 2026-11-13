@@ -6,20 +6,28 @@ in `packages/web`, and a preview of it runs on the same Worker at
 and handles the GitHub App's web sign-in on the same origin, so the sign-in
 needs no cross-origin requests and the client secret stays on the server. The
 page runs the [engine](#the-engine) itself and calls GitHub's API from the
-browser. It is a placeholder that signs in and shows the signed-in user; the
-app's UI moves to it later.
+browser. It signs in and lists the user's repositories; the rest of the app
+moves to it step by step.
 
 ## Layout
 
 - `src/worker.ts`: the Worker. It answers only `/api/*`.
 - `src/session.ts`: the page's access token, refreshed through the Worker.
-- `src/page.ts`: the placeholder page.
+- `src/main.tsx`: the page's entry. It makes the session, the engine's GitHub
+  client, and the account, and renders the app.
+- `src/app/`: the app's state, one class for each part, such as `Account` and
+  `Repositories`. Each keeps its state in
+  [signals](https://preactjs.com/guide/v10/signals/) and has no DOM in it, so
+  the tests drive it against the in-memory GitHub.
+- `src/views/`: [Preact](https://preactjs.com/) components that draw that
+  state and call its methods. They hold no state of their own beyond what a
+  control needs, such as an open menu.
 - `src/engine/`: what the engine needs to run in the page: its files, and its
   GitHub client for the session.
 - `aliases.ts`: the engine's Node modules and what stands in for each in the
   page. `build.ts` and the root `vitest.config.ts` both read it.
-- `static/`: the HTML, the CSS, and `_headers`, the headers Cloudflare adds to
-  every static file.
+- `static/`: the HTML, the CSS, the fonts, and `_headers`, the headers
+  Cloudflare adds to every static file.
 - `build.ts`: copies `static/` into `dist/` and bundles the page into
   `dist/app.js`. Wrangler runs it before every deploy and dev session.
 - `wrangler.jsonc`: the Worker's config. `assets.run_worker_first` sends only
@@ -107,10 +115,27 @@ expires, and the authorization stays on the user's GitHub account until they
 revoke it there. [State machines](state-machines.md#web-sign-in) lists each
 transition.
 
+## The app
+
+`App` draws the sign-in page until `Account` reads who is signed in, and the
+shell with its pages after. A 401 from GitHub anywhere in the app means the
+sign-in no longer works, so the part that met it calls `Account.refused`, and
+the app returns to the sign-in page with why.
+[State machines](state-machines.md#web-account) lists the transitions.
+
+The look follows the approved mock-ups: `static/app.css` holds their colors,
+each with a light and a dark value that the system's setting picks, and the
+Atkinson Hyperlegible fonts are served from `static/fonts/`. All text is in
+sentence case: only the first word and proper names are capitalized.
+
+Choices that belong to the browser, such as the owners whose repositories
+are hidden, are kept in `localStorage` through `Preferences`, under keys that
+start with `repotted:`. They are not kept per account.
+
 ## Headers
 
 `static/_headers` sets a Content Security Policy on every static file: scripts,
-styles, and requests come only from the site, plus requests to
+styles, fonts, and requests come only from the site, plus requests to
 `api.github.com` and images from `avatars.githubusercontent.com`. The page
 loads no third-party script, and nothing may frame it. It also sends no
 referrer, and tells browsers to use only HTTPS for repotted.dev for two years.
