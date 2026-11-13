@@ -150,6 +150,61 @@ label on its issues; `renamed_from` in a profile is how Repotted knows to make
 one. GitHub can't merge two labels, so where a repository has the new name and
 an old one, the plan leaves the old one and warns.
 
+## Settings that depend on another
+
+On GitHub's settings pages some options only show, or only take a change,
+while the setting above them has a certain value. The desktop app's editor
+does the same, so a profile reads like the page it sets. In
+`ProfileFields.cs` a field says which setting it depends on, in the same
+section and group, with `HiddenWhile` or `OffWhile`:
+
+- **Hidden**: GitHub leaves the option off the page. The tab leaves the row
+  out; search and the filters still find it, shown off, with the reason.
+- **Off**: GitHub shows the option greyed out. The row stays in place and
+  can't be changed, with the reason under it.
+
+Either way the value stays in the profile, and a setting that hides others
+says how many of them the profile still names. The editor only shows what
+the profile resolves to; a plan decides what applies, and core already warns
+`not_applicable` for the Actions options and Dependabot security updates
+while the setting above them is off.
+
+| Setting                                                                                                                          | Depends on                              | While               | Shown  |
+| -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | ------------------- | ------ |
+| `pull_request_creation_policy`, `pull_request_creation_cap.enabled`                                                              | `has_pull_requests`                     | `false`             | Hidden |
+| `pull_request_creation_cap.max_open_pull_requests`, `.include_drafts`                                                            | `pull_request_creation_cap.enabled`     | `false`             | Hidden |
+| `merge_commit_title`, `merge_commit_message`                                                                                     | `allow_merge_commit`                    | `false`             | Hidden |
+| `squash_merge_commit_title`, `squash_merge_commit_message`                                                                       | `allow_squash_merge`                    | `false`             | Hidden |
+| `actions.allowed_actions`, `actions.sha_pinning_required`                                                                        | `actions.enabled`                       | `false`             | Hidden |
+| `actions.selected_actions.*`, the allowed action patterns among them                                                             | `actions.allowed_actions`               | `all`, `local_only` | Hidden |
+| The three options under fork pull request workflows in private repositories                                                      | `run_workflows_from_fork_pull_requests` | `false`             | Off    |
+| `automated_security_fixes`                                                                                                       | `vulnerability_alerts`                  | `false`             | Off    |
+| Dependabot's `runner_label` and `runner_group`, code scanning's and code quality's `runner_label`                                | their `runner_type`                     | `standard`          | Off    |
+| Code scanning's `query_suite`, `threat_model`, `runner_type`                                                                     | `code_scanning_default_setup.state`     | `not-configured`    | Hidden |
+| Code quality's `ai_findings_option`, `runner_type`                                                                               | `code_quality_setup.state`              | `not-configured`    | Hidden |
+| Secret scanning's push protection, validity checks, non-provider patterns, AI detection and delegated bypass and alert dismissal | `security_and_analysis.secret_scanning` | `disabled`          | Off    |
+| `pages.source.branch`, `pages.source.path`                                                                                       | `pages.build_type`                      | `workflow`          | Hidden |
+
+A dependency carries down: a row under a hidden row is hidden too, and a row
+whose parent is off is off. Each row names only the one setting just above
+it, so the reason it gives is the highest setting that turns it off.
+
+GitHub's docs describe what each setting needs but rarely whether the page
+hides or greys an option, so the hide or off choice follows GitHub's settings
+pages as Primer builds them: options that open under a checkbox or a choice
+are hidden, and options that stay listed beside a parent that is off are
+greyed. The fork pull request options and secret scanning's features are
+the least certain; if GitHub's page treats one differently, change its
+`HiddenWhile` or `OffWhile` and this table.
+
+With Actions turned off, only the options on the same card of GitHub's page
+are hidden. Workflow permissions, access, fork pull requests, artifacts and
+caches, and OpenID Connect stay editable, since GitHub's API still reads and sets
+them while Actions is off, and they apply as soon as it is turned back on.
+
+`actions.selected_actions.patterns_allowed` is a list in the editor, one
+pattern a line; GitHub takes at most 1000. An empty list allows no patterns.
+
 ## Permissions the Repotted App needs
 
 The Repotted App asks for Administration read and write, which most settings

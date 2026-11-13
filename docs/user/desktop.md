@@ -122,12 +122,23 @@ rulesets, environments, and labels. A setting's own options sit indented under i
 such as who can create pull requests under **Pull requests**. Names and
 numbers, such as a branch or a pull request limit, are typed in a box. Until
 what you type is valid, the app says what's wrong and won't save the profile;
-**Undo** puts the box back. A box that goes with one choice of the setting
-above it, such as **Runner label** with a **Runner type** of **Labeled**, is
-off while another choice applies, and keeps its value. Leave a runner label
-empty for no label.
-Topics, custom properties, autolinks, and a few lists, such as the actions a
-repository allows, are edited in the YAML.
+**Undo** puts the box back.
+
+Options that GitHub only offers with a certain value of the setting above
+them follow that setting, as they do on GitHub's own pages. Where GitHub
+hides them, the tab does too: turn off **Actions** and the options for which
+actions may run go, and they come back when you turn it on. Where GitHub
+greys them out, they stay in place and are off, such as **Runner label** with
+a **Runner type** of **Standard**. Either way the profile keeps their values,
+the setting above says how many hidden ones the profile still names, and a
+search still finds them. Leave a runner label empty for no label.
+
+With **Allowed actions** set to **Selected**, **Allowed action patterns**
+takes one pattern a line, such as `octo-org/*`, and a pattern that starts
+with `!` blocks what it matches.
+
+Topics, custom properties, autolinks, and a few lists, such as OpenID
+Connect claim keys, are edited in the YAML.
 
 Some options on GitHub's settings pages have no API, so no profile can set
 them. Where one belongs to a setting, a note under that setting says so, such

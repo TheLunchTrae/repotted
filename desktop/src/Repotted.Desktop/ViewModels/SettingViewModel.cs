@@ -75,8 +75,11 @@ internal sealed partial class SettingViewModel : ViewModelBase
 
     public bool IsNumber => Field.Kind == SettingKind.Number;
 
-    /// <summary>Whether the choices are too long to sit beside the label, so they go under it.</summary>
-    public bool Wide => IsChoice && Field.Options.Sum(option => option.Label.Length) > 40;
+    /// <summary>Whether the setting is a list, typed one item a line.</summary>
+    public bool IsList => Field.Kind == SettingKind.List;
+
+    /// <summary>Whether the choices are too long to sit beside the label, or the value is a list, so they go under it.</summary>
+    public bool Wide => IsList || (IsChoice && Field.Options.Sum(option => option.Label.Length) > 40);
 
     public int OptionsRow => Wide ? 1 : 0;
 
@@ -92,19 +95,67 @@ internal sealed partial class SettingViewModel : ViewModelBase
     public bool HasFieldNote => Field.Note is not null;
 
     /// <summary>
-    /// The row of the setting that can turn this one off, as
-    /// <see cref="SettingField.OffWhen"/> names it, once the editor has made
+    /// The row of the setting that can hide this one or turn it off, as
+    /// <see cref="SettingField.DependsOn"/> names it, once the editor has made
     /// every row; the editor refreshes this row when that one changes.
     /// </summary>
     public SettingViewModel? ControlledBy { get; set; }
 
+    /// <summary>The rows that <see cref="ControlledBy"/> names this one for, which the editor sets with it.</summary>
+    public List<SettingViewModel> Dependents { get; } = [];
+
     /// <summary>
-    /// Whether the value can be edited: not while the setting that
-    /// <see cref="SettingField.OffWhen"/> names shows the value that turns it
-    /// off, as saved, inherited or changed. The value and its way back stay.
+    /// The row whose value hides this one or turns it off: the setting it
+    /// depends on, while that shows a value <see cref="SettingField.DependsOn"/>
+    /// names, as saved, inherited or changed, or the row that hides or turns
+    /// off that setting in turn. Null while nothing does.
     /// </summary>
-    public bool Enabled => Field.OffWhen is not { } off
-        || !string.Equals(ControlledBy?.Value.AsText(), off.Value, StringComparison.Ordinal);
+    private SettingViewModel? Cause => ControlledBy switch
+    {
+        null => null,
+        { Cause: { } above } => above,
+        { } parent when Field.DependsOn!.Holds(parent.Value) => parent,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Whether GitHub hides the setting now, as its page does with what
+    /// depends on a setting that is off. The tab leaves it out, while search
+    /// and filters still find it, off. Its value stays in the profile.
+    /// </summary>
+    public bool Hidden => ControlledBy is { } parent && (parent.Hidden || (Field.DependsOn!.Hides && Cause == parent));
+
+    /// <summary>
+    /// Whether the value can be edited: not while it is <see cref="Hidden"/>,
+    /// or while the setting it depends on turns it off. The value and its way back stay.
+    /// </summary>
+    public bool Enabled => Cause is null;
+
+    /// <summary>Why the setting is hidden or off, naming the setting that does it and its value; null while it isn't.</summary>
+    public string? WhyOff => Cause is { } cause
+        ? $"{(Hidden ? "Hidden" : "Off")} while {cause.Label} is set to {cause.ValueLabel}."
+        : null;
+
+    /// <summary>The value as its option names it, or as the box shows it.</summary>
+    private string ValueLabel => Value is not { } value
+        ? ""
+        : Field.Options.FirstOrDefault(option => JsonNode.DeepEquals(option.Value, value))?.Label ?? Display(value);
+
+    /// <summary>How many settings under this one are hidden by it while this profile still names them, set here or in a base, or with a draft.</summary>
+    public int HiddenManaged => Under().Count(row => row.Hidden && row.Cause == this && (row.Managed || row.HasDraft || row.Pending));
+
+    /// <summary>What the row says about the settings it hides that the profile still names; null when there are none.</summary>
+    public string? HiddenNote => HiddenManaged switch
+    {
+        0 => null,
+        1 => "This profile still names 1 setting hidden under it.",
+        var count => $"This profile still names {count} settings hidden under it.",
+    };
+
+    public bool HasHiddenNote => HiddenNote is not null;
+
+    /// <summary>Every row that depends on this one, directly or through another.</summary>
+    private IEnumerable<SettingViewModel> Under() => Dependents.SelectMany(row => row.Under().Prepend(row));
 
     public JsonNode? Saved { get; }
 
@@ -152,7 +203,8 @@ internal sealed partial class SettingViewModel : ViewModelBase
     /// <summary>The draft's value as its option names it, or as JSON when no option does.</summary>
     public string DraftLabel => Draft is not { } draft
         ? ""
-        : Field.Options.FirstOrDefault(option => JsonNode.DeepEquals(option.Value, draft))?.Label ?? Display(draft);
+        : Field.Options.FirstOrDefault(option => JsonNode.DeepEquals(option.Value, draft))?.Label
+            ?? (draft is JsonArray ? Display(draft).Replace("\n", ", ", StringComparison.Ordinal) : Display(draft));
 
     public string DraftNote => (DraftChanged, OwnDraft) switch
     {
@@ -265,8 +317,10 @@ internal sealed partial class SettingViewModel : ViewModelBase
     public string TypedName => Label;
 
     /// <summary>What screen readers hear after the box's name: the problem with the text, or where the value comes from, after why the box is off while it is.</summary>
-    public string TypedHelp => TypedProblem
-        ?? (!Enabled && Field.Note is { } why ? $"{why} {Note}" : Note);
+    public string TypedHelp => TypedProblem ?? (WhyOff is { } why ? $"{why} {Note}" : Note);
+
+    /// <summary>What screen readers hear after a choice's name: where the value comes from, after why the choices are off while they are.</summary>
+    public string OptionHelp => WhyOff is { } why ? $"{why} {Note}" : Note;
 
     private string? Parse(string text, out JsonNode? value)
     {
@@ -280,6 +334,17 @@ internal sealed partial class SettingViewModel : ViewModelBase
             value = JsonValue.Create(number);
             return null;
         }
+        if (Field.Kind == SettingKind.List)
+        {
+            // Commas separate items too, as GitHub's own box takes them.
+            var items = text.Split(['\n', '\r', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (items.Length > MaxItems)
+            {
+                return $"GitHub takes at most {MaxItems} patterns.";
+            }
+            value = new JsonArray([.. items.Select(item => JsonValue.Create(item))]);
+            return null;
+        }
         if (text.Length == 0 && !Field.AllowsEmpty && !Field.EmptyIsNull)
         {
             return "Enter a value, or remove the setting from this profile.";
@@ -288,10 +353,14 @@ internal sealed partial class SettingViewModel : ViewModelBase
         return null;
     }
 
-    /// <summary>A number or text as the box shows it.</summary>
+    /// <summary>The most items GitHub takes in a list, as its allowed action patterns.</summary>
+    private const int MaxItems = 1000;
+
+    /// <summary>A number, text or list as the box shows it, a list one item a line.</summary>
     private static string Display(JsonNode? value) => value switch
     {
         null => "",
+        JsonArray list => string.Join('\n', list.Select(item => item?.AsText() ?? item?.ToJsonString() ?? "")),
         JsonValue scalar when scalar.GetValueKind() == JsonValueKind.String => scalar.GetValue<string>(),
         _ => value.ToJsonString(),
     };
@@ -470,8 +539,8 @@ internal sealed partial class OptionViewModel(SettingViewModel setting, SettingO
 
     public string AccessibleName => $"{setting.Label}: {option.Label}";
 
-    /// <summary>Where the setting's value comes from, for screen readers.</summary>
-    public string Note => setting.Note;
+    /// <summary>Where the setting's value comes from, for screen readers, after why the setting is off while it is.</summary>
+    public string Help => setting.OptionHelp;
 
     [RelayCommand]
     private void Choose() => setting.Choose(option);
