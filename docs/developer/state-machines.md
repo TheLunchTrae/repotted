@@ -877,10 +877,10 @@ Deploy Web deploys the web app, as [the web app](web-app.md#deploy)
 describes: to the preview Worker by default, and to repotted.dev with Publish.
 Runs to each Worker wait in a concurrency group of their own, so the last run
 started is the one that stays live, and a preview never holds up a publish. A
-run with Publish on another branch than `main` fails before it checks out
-anything, and one whose `ts:web:check` fails, or whose environment lacks a
-value, deploys nothing. When Cloudflare refuses the deploy, the version
-before it stays live; re-running the job deploys again.
+run on another branch fails before it checks out anything, and one whose
+`ts:web:check` fails, or whose environment lacks a value, deploys nothing.
+When Cloudflare refuses the deploy, the version before it stays live;
+re-running the job deploys again.
 
 When npm has the CLI but its release is missing, a new run refuses the
 version, so re-run the failed jobs of the run that published it; the release

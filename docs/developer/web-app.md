@@ -1,9 +1,9 @@
 # The web app
 
-The web app runs at <https://repotted.dev> on one Cloudflare Worker, in
-`packages/web`, and a second Worker serves previews at
-<https://preview.repotted.dev>. The Worker serves the app's static files and handles the
-GitHub App's web sign-in on the same origin, so the sign-in needs no
+The web app runs at <https://repotted.dev> on a Cloudflare Worker, in
+`packages/web`, and a second copy of that Worker serves previews at
+<https://preview.repotted.dev>. Each serves the app's static files and handles
+the GitHub App's web sign-in on its own origin, so the sign-in needs no
 cross-origin requests and the client secret stays on the server. The page is a
 placeholder that signs in and shows the signed-in user; the app's UI moves to
 it later.
@@ -112,32 +112,33 @@ nothing. The gate runs it, and Vitest runs `packages/web/tests`.
 
 ## Deploy
 
-The Deploy Web workflow, `.github/workflows/deploy-web.yml`, deploys the web
-app. Like the [release workflows](releasing.md), only the owner starts it, with
-**Run workflow**; no push or other event does, so a merge never changes either
-site by itself. It runs `ts:web:check` from the locked downloads, then
-`wrangler deploy` with the client ID as a variable and the client secret as a
-secret, uploaded with the code, so no version runs without it.
+The Deploy Web workflow, `.github/workflows/deploy-web.yml`, deploys `main`.
+Like the [release workflows](releasing.md), only the owner starts it, with
+**Run workflow** on `main`; no push or other event does, so a merge never
+changes either site by itself. It runs `ts:web:check` from the locked
+downloads, then `wrangler deploy` with the client ID as a variable and the
+client secret as a secret, uploaded with the code, so no version runs without
+it.
 
-Its **Publish** input picks the Worker:
+Its **Publish** input picks the Worker, as Publish picks a test build or a
+release in the release workflows:
 
-| Publish          | Worker             | Site                           | Branches | Environment          |
-| ---------------- | ------------------ | ------------------------------ | -------- | -------------------- |
-| Off, the default | `repotted-preview` | <https://preview.repotted.dev> | Any      | `deploy-web-preview` |
-| On               | `repotted`         | <https://repotted.dev>         | `main`   | `deploy-web`         |
+| Publish          | Worker             | Site                           |
+| ---------------- | ------------------ | ------------------------------ |
+| Off, the default | `repotted-preview` | <https://preview.repotted.dev> |
+| On               | `repotted`         | <https://repotted.dev>         |
 
-A preview deploys the run's branch to the preview Worker, so a change can be
-tried at its own address before it is published. Publish on any branch but
-`main` stops before checking anything out. The preview Worker is
-`wrangler.jsonc`'s `preview` environment, which takes the same config and
-names the Worker `repotted-preview`.
+A preview puts `main` live at its own address before it is published. The
+preview Worker is `wrangler.jsonc`'s `preview` environment, which takes the
+same config and names the Worker `repotted-preview`.
 
 The sign-in's cookies are named with `__Host-`, so the browser keeps them for
 the one host that set them: a sign-in on the preview never reaches
 repotted.dev, or the other way round. Each site keeps its own sign-in, and its
 own browser storage.
 
-Each environment holds the same four values:
+Both deploys take their values from the `deploy-web` environment, which allows
+only `main`:
 
 | Name                         | Kind     | Value                                                                             |
 | ---------------------------- | -------- | --------------------------------------------------------------------------------- |
@@ -147,43 +148,37 @@ Each environment holds the same four values:
 | `REPOTTED_APP_CLIENT_SECRET` | Secret   | A client secret generated in the Repotted App's settings.                         |
 
 GitHub reserves names that start with `GITHUB_`, so the App's values use
-`REPOTTED_APP_`, and the Worker reads them under the same names. Both
-environments can hold the same client secret, or each its own; the App accepts
-any of its secrets.
+`REPOTTED_APP_`, and the Workers read them under the same names.
 
-Each environment's API token needs one permission, from Cloudflare's
+The API token needs one permission, from Cloudflare's
 [Workers roles](https://developers.cloudflare.com/workers/authorization/workers/):
-Workers, Editor, scoped to that environment's Worker, `repotted` for
-`deploy-web` and `repotted-preview` for `deploy-web-preview`. That covers
-deploying new versions with their assets, variables, and secrets, and turning
-off the `workers.dev` address and per-version preview URLs. A preview runs a branch's own copy of
-the workflow, so its token must not reach `repotted`: with a token scoped to
-the preview Worker alone, no branch can change repotted.dev. Editor can't
-create a Worker, so each Worker is created once in the dashboard, with the name
-above, before the first deploy replaces it.
+Workers, Editor, scoped to the `repotted` and `repotted-preview` Workers. That
+covers deploying new versions with their assets, variables, and secrets, and
+turning off the `workers.dev` address and per-version preview URLs. Editor
+can't create a Worker, so each Worker is created once in the dashboard, with
+the name above, before the first deploy replaces it.
 
-The custom domains need zone permissions that a token scoped to one Worker
-can't have, so each is attached once in the dashboard rather than in
+The custom domains need zone permissions that a token scoped to Workers can't
+have, so each is attached once in the dashboard rather than in
 `wrangler.jsonc`. Wrangler changes a Worker's custom domains only for those its
 config lists; with none listed, a deploy leaves the dashboard's domain as it is.
 Had the config listed them, every deploy would set them again, and in CI would
 replace any other DNS record on the name without asking.
 
 The Workers keep nothing on the server between requests, so they need no KV,
-R2, or D1, and the tokens no permission for them.
+R2, or D1, and the token no permission for them.
 
-Before the first deploy to each site:
+Before the first deploy:
 
 1. Add `repotted.dev` to the Cloudflare account and point its nameservers at
-   Cloudflare, so the zone is active. This is once, for both.
-2. Create the Worker in the dashboard, `repotted` or `repotted-preview`. In its
-   **Settings**, under **Domains & Routes**, add its custom domain,
+   Cloudflare, so the zone is active.
+2. Create the `repotted` and `repotted-preview` Workers in the dashboard. In
+   each one's **Settings**, under **Domains & Routes**, add its custom domain,
    `repotted.dev` or `preview.repotted.dev`.
-3. Create the API token above, scoped to that Worker.
-4. In the Repotted App's settings, add the site's callback URL,
-   `https://repotted.dev/api/auth/callback` or
-   `https://preview.repotted.dev/api/auth/callback`. Keep **Expire user
-   authorization tokens** on, and generate a client secret if the environment
-   doesn't reuse one.
-5. Create the environment with the values above: `deploy-web` limited to
-   `main`, or `deploy-web-preview` with no branch rule.
+3. Create the API token above, scoped to both Workers.
+4. In the Repotted App's settings, add the callback URLs
+   `https://repotted.dev/api/auth/callback` and
+   `https://preview.repotted.dev/api/auth/callback`, keep **Expire user
+   authorization tokens** on, and generate a client secret.
+5. Create the `deploy-web` environment with the values above, limited to
+   `main`.
