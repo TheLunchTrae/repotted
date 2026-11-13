@@ -260,6 +260,30 @@ opening it would stop the capture. A note names it instead, and you can open it
 once the capture finishes. The banner also asks before a sign-in that stopped
 working takes you back to the sign-in page, since saving needs no sign-in.
 
+### Delete a profile
+
+To delete a profile, right-click it in the list and choose **Delete profile**,
+or select it and press <kbd>Delete</kbd>, or <kbd>⌘</kbd>+<kbd>Delete</kbd> on
+macOS. An open profile also has **Delete profile** at the start of the row with
+**Save profile**. The
+app asks first, naming the file it deletes. If the profile has unsaved
+changes, deleting discards them. If other profiles extend it, directly or
+through another profile, the question names them: they stop loading until you
+point them at another profile, but the app doesn't stop you, so you can delete
+a base and the profiles over it in either order. **Delete profile** deletes
+the file, and **Cancel** keeps it. A deleted profile that was open closes, and no other profile opens in its place. The file doesn't go to the Trash or Recycle
+Bin, so a deleted profile in a local folder can't be brought back. If the
+profile is a link to a file elsewhere, the app deletes the link and leaves the
+file.
+
+When your profiles are kept on GitHub, the app commits the deletion to the
+repository, so its history keeps the file as it was at the last sync. The
+question says when that isn't all of it: changes made since the last sync, a
+profile that hasn't reached GitHub yet, and a link, which doesn't sync, can't
+be brought back. If the profile changed on GitHub
+since the last sync, the app asks which side to keep, as for any other
+conflict: **Keep mine** keeps it deleted, and **Use GitHub's** brings it back.
+
 ## Compare a repository with a profile
 
 On the **Repositories** page, select a repository, pick a profile under

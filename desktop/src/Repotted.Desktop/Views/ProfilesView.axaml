@@ -47,6 +47,19 @@
         </StackPanel>
       </Grid>
     </Border>
+    <!-- Deleting a profile waits for a yes that has seen what goes with it -->
+    <Border DockPanel.Dock="Top" Classes="panel" Margin="32,16,32,0" IsVisible="{Binding AskingDelete}">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="4" VerticalAlignment="Center">
+          <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding DeleteQuestion}" AutomationProperties.LiveSetting="Assertive" />
+          <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding DeleteDetail}" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0" VerticalAlignment="Center">
+          <Button Classes="quiet" Content="Cancel" Command="{Binding CancelDeleteCommand}" />
+          <Button Classes="primary" Content="Delete profile" Command="{Binding ConfirmDeleteCommand}" />
+        </StackPanel>
+      </Grid>
+    </Border>
     <!-- A file changed both here and on GitHub waits for a side -->
     <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
             Padding="32,10" IsVisible="{Binding Folder.HasConflicts}">
@@ -109,7 +122,7 @@
         </ContentControl.DataTemplates>
       </ContentControl>
 
-      <ContentControl Content="{Binding Current}" IsVisible="{Binding ShowProfile}">
+      <ContentControl Content="{Binding Current}" IsVisible="{Binding ShowProfile}" IsEnabled="{Binding !DeleteRunning}">
         <ContentControl.DataTemplates>
           <DataTemplate DataType="vm:ProfileViewModel"><views:ProfileView /></DataTemplate>
         </ContentControl.DataTemplates>

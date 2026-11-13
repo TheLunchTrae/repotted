@@ -36,7 +36,8 @@ internal sealed partial class ProfileView : UserControl
     private void OnCloseShortcut(object? sender, KeyEventArgs e)
     {
         // While the question about unsaved changes waits, the close is still running and can't start again.
-        if (CloseGesture.Matches(e) && CloseButton.IsEffectivelyVisible && DataContext is ProfileViewModel profile
+        // While the page is off, such as during a delete, the shortcut is off with it.
+        if (CloseGesture.Matches(e) && CloseButton.IsEffectivelyVisible && CloseButton.IsEffectivelyEnabled && DataContext is ProfileViewModel profile
             && profile.CloseCommand.CanExecute(null))
         {
             profile.CloseCommand.Execute(null);

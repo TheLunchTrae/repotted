@@ -76,9 +76,27 @@ internal sealed partial class ProfileFolder(RepottedClient client, AppSettings s
 
     public bool HasConflicts => Conflicts.Count > 0;
 
+    /// <summary>The files in conflict that are gone from the folder, such as a profile deleted here that changed on GitHub.</summary>
+    private HashSet<string> deletedHere = [];
+
     public string ConflictMessage => Conflicts.Count == 1
-        ? $"{Conflicts[0]} changed here and on GitHub since the last sync. Keep which version?"
-        : $"These files changed here and on GitHub since the last sync: {string.Join(", ", Conflicts)}. Keep which versions?";
+        ? deletedHere.Contains(Conflicts[0])
+            ? $"{Conflicts[0]} was deleted here and changed on GitHub since the last sync. Keep mine keeps it deleted, and Use GitHub's brings it back."
+            : $"{Conflicts[0]} changed here and on GitHub since the last sync. Keep which version?"
+        : $"These files changed here and on GitHub since the last sync: {string.Join(", ", Conflicts)}.{DeletedNote()} Keep which versions?";
+
+    /// <summary>For several files in conflict, which were deleted here and what each choice does with them.</summary>
+    private string DeletedNote()
+    {
+        List<string> deleted = [.. Conflicts.Where(deletedHere.Contains)];
+        if (deleted.Count == 0)
+        {
+            return "";
+        }
+        var named = deleted.Count == 1 ? deleted[0] : $"{string.Join(", ", deleted.Take(deleted.Count - 1))} and {deleted[^1]}";
+        var (verb, it) = deleted.Count == 1 ? ("was", "it") : ("were", "them");
+        return $" {named} {verb} deleted here: Keep mine keeps {it} deleted, and Use GitHub's brings {it} back.";
+    }
 
     /// <summary>Ends once the write or sync running now, and any queued behind it, ends.</summary>
     public Task Idle => turns.Idle;
@@ -154,6 +172,7 @@ internal sealed partial class ProfileFolder(RepottedClient client, AppSettings s
         Path = folder;
         Repository = null;
         RepositoryPath = "";
+        deletedHere = [];
         Conflicts = [];
         SyncNote = null;
         SyncFailed = false;
@@ -162,14 +181,20 @@ internal sealed partial class ProfileFolder(RepottedClient client, AppSettings s
     private void ShowSync(SyncDocument result)
     {
         SyncFailed = false;
+        // Read before Conflicts changes, which the message follows.
+        deletedHere = [.. result.Conflicts.Where(Gone)];
         Conflicts = result.Conflicts;
         var committed = result.Pushed.Count switch
         {
             0 => null,
+            1 when Gone(result.Pushed[0]) => $"Committed the deletion of {result.Pushed[0]} to {result.Branch}.",
             1 => $"Committed {result.Pushed[0]} to {result.Branch}.",
             var count => $"Committed {count} files to {result.Branch}.",
         };
         // The banner asks about the conflicts, so the note only says what did sync.
         SyncNote = committed ?? (result.Conflicts.Count > 0 ? $"Everything else is in sync with {result.Branch}." : $"In sync with {result.Branch} on GitHub.");
     }
+
+    /// <summary>Whether a file the sync names, by its path in the folder, is not in the folder.</summary>
+    private bool Gone(string file) => !File.Exists(System.IO.Path.Combine(Path, file));
 }

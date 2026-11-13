@@ -24,6 +24,8 @@ internal sealed partial class ShellView : UserControl
         Nav.AddHandler(KeyDownEvent, (_, _) => keyedOn = Nav.SelectedIndex, RoutingStrategies.Tunnel, handledEventsToo: true);
         Nav.AddHandler(TappedEvent, OnNavTapped, RoutingStrategies.Bubble, handledEventsToo: true);
         Nav.AddHandler(KeyDownEvent, OnNavKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
+        ProfileList.KeyDown += OnProfileListKeyDown;
+        ProfileList.AddHandler(PointerPressedEvent, OnProfileListPointerPressed, RoutingStrategies.Tunnel);
         if (OperatingSystem.IsMacOS())
         {
             SearchShortcut.Text = "⌘K";
@@ -69,6 +71,37 @@ internal sealed partial class ShellView : UserControl
             && page == shown)
         {
             shell.ShowPage(page);
+        }
+    }
+
+    /// <summary>
+    /// A right-click opens a profile's menu without selecting it while the
+    /// new profile form is open, since selecting a profile closes the form
+    /// and stops a capture it runs.
+    /// </summary>
+    private void OnProfileListPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(ProfileList).Properties.IsRightButtonPressed
+            && DataContext is ViewModels.ShellViewModel { Profiles.Creating: not null })
+        {
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// The platform's delete shortcut on the selected profile asks whether to
+    /// delete it: Delete on Windows, and Command+Delete on macOS, as in the
+    /// Finder, where Delete alone edits text.
+    /// </summary>
+    private void OnProfileListKeyDown(object? sender, KeyEventArgs e)
+    {
+        var shortcut = OperatingSystem.IsMacOS()
+            ? e.Key == Key.Back && e.KeyModifiers == KeyModifiers.Meta
+            : e.Key == Key.Delete && e.KeyModifiers == KeyModifiers.None;
+        if (shortcut && ProfileList.SelectedItem is ViewModels.ProfileItemViewModel item && item.DeleteCommand.CanExecute(null))
+        {
+            item.DeleteCommand.Execute(null);
+            e.Handled = true;
         }
     }
 

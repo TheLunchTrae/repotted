@@ -586,6 +586,78 @@ public sealed class ViewTests : IDisposable
         Assert.True(editor.HasChanges);
     }
 
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task The_delete_shortcut_on_a_profile_asks_first_and_names_what_goes_with_it(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
+        var cli = FakeCli.SignedIn()
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base));
+        var window = await Show(theme, cli);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "base");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains(ControlLabel.For("Delete profile"), Texts(window));
+
+        // The list's own shortcut: Delete, or Command+Delete on macOS.
+        window.GetVisualDescendants().OfType<ListBoxItem>().Single(item => item.DataContext == shell.Profiles.Selected).Focus();
+        if (OperatingSystem.IsMacOS())
+        {
+            window.KeyPressQwerty(PhysicalKey.Backspace, RawInputModifiers.Meta);
+        }
+        else
+        {
+            window.KeyPressQwerty(PhysicalKey.Delete, RawInputModifiers.None);
+        }
+
+        var text = Texts(window);
+        Assert.Contains("Delete base?", text);
+        Assert.Contains(
+            "This deletes base.yaml from the profiles folder, and it can't be undone. orgs extends it, so it stops loading until it extends another profile.",
+            text);
+        Assert.Contains(ControlLabel.For("Cancel"), text);
+        Assert.True(File.Exists(@base));
+        Save(window, $"profiles-delete-{theme}");
+    }
+
+    [AvaloniaFact]
+    public async Task A_profile_menu_asks_to_delete_it_and_leaves_the_new_profile_form_open()
+    {
+        var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository: { has_wiki: false }\n");
+        var cli = FakeCli.SignedIn()
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base));
+        var window = await Show("light", cli);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        Dispatcher.UIThread.RunJobs();
+        shell.Profiles.StartNew(null);
+        Dispatcher.UIThread.RunJobs();
+        var form = shell.Profiles.Creating;
+        Assert.NotNull(form);
+
+        var item = window.GetVisualDescendants().OfType<ListBoxItem>().Single(item => (item.DataContext as ProfileItemViewModel)?.Name == "orgs");
+        var point = item.TranslatePoint(new Point(12, 12), window)!.Value;
+        window.MouseDown(point, MouseButton.Right);
+        window.MouseUp(point, MouseButton.Right);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(form, shell.Profiles.Creating);
+        var menu = Assert.IsType<ContextMenu>(item.ContextMenu);
+        Assert.True(menu.IsOpen);
+        var delete = Assert.IsType<MenuItem>(Assert.Single(menu.Items));
+        Assert.Equal(ControlLabel.For("Delete profile"), delete.Header);
+        delete.Command!.Execute(delete.CommandParameter);
+        Assert.Equal("Delete orgs?", shell.Profiles.DeleteQuestion);
+        menu.Close();
+    }
+
     [AvaloniaFact]
     public async Task Closing_the_window_stays_on_cancel_or_a_failed_save_and_closes_once_saved()
     {

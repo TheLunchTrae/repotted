@@ -42,6 +42,21 @@ public sealed class ConfigRepositoryTests : IDisposable
         return folder;
     }
 
+    /// <summary>Records <paramref name="files"/> as the last sync left them, by their git blob ids.</summary>
+    private static void Record(string copy, params string[] files)
+    {
+        static string Blob(string file)
+        {
+            var content = File.ReadAllBytes(file);
+#pragma warning disable CA5350 // Git names a blob by its SHA-1.
+            return Convert.ToHexStringLower(System.Security.Cryptography.SHA1.HashData([.. System.Text.Encoding.ASCII.GetBytes($"blob {content.Length}\0"), .. content]));
+#pragma warning restore CA5350
+        }
+        File.WriteAllText(
+            Path.Combine(copy, ".repotted-sync.json"),
+            JsonSerializer.Serialize(new { files = files.ToDictionary(file => Path.GetFileName(file), Blob) }));
+    }
+
     private ProfilesViewModel Profiles(FakeCli cli, FakeDesktop? desktop = null) =>
         new(new RepottedClient(cli), desktop ?? new FakeDesktop(), folders.Settings, () => ["lunch/config", "lunch/app"]);
 
@@ -255,6 +270,146 @@ public sealed class ConfigRepositoryTests : IDisposable
         Assert.Contains(Command(copy, " --prefer=local --only=base.yaml"), cli.Calls);
         Assert.False(profiles.Folder.HasConflicts);
         Assert.Equal("Committed base.yaml to main.", profiles.Folder.SyncNote);
+    }
+
+    [AvaloniaFact]
+    public async Task Deleting_a_profile_commits_the_deletion_and_a_change_on_github_waits_for_a_side()
+    {
+        var copy = Synced();
+        var file = Path.Combine(copy, "base.yaml");
+        File.WriteAllText(file, "repository:\n  has_issues: true\n");
+        Record(copy, file);
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var cli = new FakeCli()
+            .On(Command(copy), Sync())
+            .On(folders.List(copy), Listing(file))
+            .On($"profile {file} --json", Documents.ResolvedBase(file));
+        var profiles = Profiles(cli);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        profiles.Items.Single().DeleteCommand.Execute(null);
+        Assert.Equal("This deletes base.yaml here and commits the deletion to lunch/config, whose history keeps it.", profiles.DeleteDetail);
+        cli.Calls.Clear();
+        cli.On(Command(copy), Sync(conflicts: ["base.yaml"]), exitCode: 1).On(folders.List(copy), Documents.NoProfiles);
+        await profiles.ConfirmDeleteCommand.ExecuteAsync(null);
+
+        Assert.False(File.Exists(file));
+        Assert.Equal([Command(copy), folders.List(copy)], cli.Calls);
+        Assert.Equal(
+            "base.yaml was deleted here and changed on GitHub since the last sync. Keep mine keeps it deleted, and Use GitHub's brings it back.",
+            profiles.Folder.ConflictMessage);
+
+        cli.On(Command(copy, " --prefer=local --only=base.yaml"), Sync(pushed: ["base.yaml"]));
+        await profiles.KeepMineCommand.ExecuteAsync(null);
+
+        Assert.False(profiles.Folder.HasConflicts);
+        Assert.Equal("Committed the deletion of base.yaml to main.", profiles.Folder.SyncNote);
+    }
+
+    [AvaloniaFact]
+    public async Task A_delete_waits_for_a_running_sync_and_closes_the_profile_until_its_own_sync_ends()
+    {
+        var copy = Synced();
+        var file = Path.Combine(copy, "base.yaml");
+        File.WriteAllText(file, "repository:\n  has_issues: true\n");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var cli = new FakeCli()
+            .On(Command(copy), Sync())
+            .On(folders.List(copy), Listing(file))
+            .On($"profile {file} --json", Documents.ResolvedBase(file));
+        var profiles = Profiles(cli);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        var editor = profiles.Current!;
+        profiles.Items.Single().DeleteCommand.Execute(null);
+        var running = new TaskCompletionSource();
+        cli.OnceReady(Command(copy), Sync(), running.Task);
+
+        var refresh = profiles.RefreshAsync();
+        var delete = profiles.ConfirmDeleteCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        // The delete waits its turn behind the sync already running.
+        Assert.True(File.Exists(file));
+        Assert.True(profiles.Busy);
+        Assert.False(profiles.Items.Single().DeleteCommand.CanExecute(null));
+        var committing = new TaskCompletionSource();
+        cli.OnceReady(Command(copy), Sync(pushed: ["base.yaml"]), committing.Task).On(folders.List(copy), Documents.NoProfiles);
+        running.SetResult();
+        await refresh;
+        Dispatcher.UIThread.RunJobs();
+
+        // Gone, and closed while its own sync commits it, so nothing can edit or save it back.
+        Assert.False(File.Exists(file));
+        Assert.True(profiles.DeleteRunning);
+        Assert.Null(profiles.Current);
+        Assert.NotSame(editor, profiles.Current);
+        Assert.False(profiles.AskingDelete);
+        Assert.False(profiles.CancelDeleteCommand.CanExecute(null));
+        committing.SetResult();
+        await delete;
+
+        Assert.False(profiles.DeleteRunning);
+        Assert.Equal("Committed the deletion of base.yaml to main.", profiles.Folder.SyncNote);
+        Assert.Empty(profiles.Items);
+    }
+
+    [AvaloniaFact]
+    public async Task The_question_says_what_github_keeps_from_the_last_sync()
+    {
+        var copy = Synced();
+        var synced = Path.Combine(copy, "synced.yaml");
+        var changed = Path.Combine(copy, "changed.yaml");
+        var fresh = Path.Combine(copy, "fresh.yaml");
+        File.WriteAllText(synced, "repository: { has_issues: true }\n");
+        File.WriteAllText(changed, "repository: { has_issues: true }\n");
+        Record(copy, synced, changed);
+        File.WriteAllText(changed, "repository: { has_issues: false }\n");
+        File.WriteAllText(fresh, "repository: { has_wiki: true }\n");
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var cli = new FakeCli()
+            .On(Command(copy), Sync())
+            .On(folders.List(copy), Listing(changed, fresh, synced))
+            .On($"profile {changed} --json", Documents.ResolvedBase(changed));
+        var profiles = Profiles(cli);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        string Detail(string name)
+        {
+            profiles.Items.Single(item => item.Name == name).DeleteCommand.Execute(null);
+            return profiles.DeleteDetail;
+        }
+
+        Assert.Equal("This deletes synced.yaml here and commits the deletion to lunch/config, whose history keeps it.", Detail("synced"));
+        Assert.Equal(
+            "This deletes changed.yaml here and commits the deletion to lunch/config. Its history keeps the last synced version, and changes since then can't be brought back.",
+            Detail("changed"));
+        Assert.Equal("This deletes fresh.yaml here, and it can't be undone, since it hasn't reached lunch/config yet.", Detail("fresh"));
+    }
+
+    [AvaloniaFact]
+    public async Task Several_conflicts_name_the_ones_deleted_here()
+    {
+        var copy = Synced();
+        var kept = Path.Combine(copy, "kept.yaml");
+        var gone = Path.Combine(copy, "gone.yaml");
+        File.WriteAllText(kept, "repository: { has_issues: true }\n");
+        File.WriteAllText(gone, "repository: { has_issues: true }\n");
+        Record(copy, kept, gone);
+        folders.Settings.Save(folders.Settings.Load() with { ConfigRepository = "lunch/config", ConfigPath = "" });
+        var cli = new FakeCli()
+            .On(Command(copy), Sync())
+            .On(folders.List(copy), Listing(gone, kept))
+            .On($"profile {gone} --json", Documents.ResolvedBase(gone));
+        var profiles = Profiles(cli);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+
+        profiles.Items.Single(item => item.Name == "gone").DeleteCommand.Execute(null);
+        cli.On(Command(copy), Sync(conflicts: ["gone.yaml", "kept.yaml"]), exitCode: 1).On(folders.List(copy), Listing(kept));
+        await profiles.ConfirmDeleteCommand.ExecuteAsync(null);
+
+        Assert.Equal(
+            "These files changed here and on GitHub since the last sync: gone.yaml, kept.yaml. gone.yaml was deleted here: Keep mine keeps it deleted, and Use GitHub's brings it back. Keep which versions?",
+            profiles.Folder.ConflictMessage);
     }
 
     [AvaloniaFact]

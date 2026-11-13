@@ -415,6 +415,7 @@ Apply page and the new profile form write through the same one.
 | Local folder | Refresh                                            | The folder is listed.                                       |
 | Connected    | Refresh                                            | Syncing, then listed.                                       |
 | Connected    | A save                                             | Syncing, then listed again when the sync pulled anything.   |
+| Connected    | A delete                                           | Syncing, then listed.                                       |
 | Syncing      | It records                                         | In sync, or conflicts when any file changed on both sides.  |
 | Syncing      | It fails                                           | Not synced: saves stay on this computer until a sync works. |
 | Conflicts    | Keep this computer's or GitHub's version           | Syncing, with `prefer` for those files only.                |
@@ -426,8 +427,8 @@ Saves to the folder and syncs of it take turns in one `SerialQueue` in
 `ProfileFolder` (`WriteAsync` and `SyncAsync`), so a sync never reads a file a
 save is writing. A profile editor's save writes through its `ProfileStore`,
 which `ProfileStore.Profile` gives the folder's `WriteAsync`; saving one-off
-edits to the profile on the Apply page and the new profile form's move of a
-capture write through the folder itself. Some writes and syncs run outside the
+edits to the profile on the Apply page, the new profile form's move of a
+capture, and deleting a profile write through the folder itself. Some writes and syncs run outside the
 queue:
 
 - The connect form's first sync.
@@ -592,16 +593,17 @@ save brings the old name back beside the new one.
 shortcut, which leaves the page with no profile open. The editor stays in the
 cache, as it does when another profile opens.
 
-| State     | Event                                                                  | Next                                                                                                                                     |
-| --------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Open      | Close, with no unsaved changes                                         | None open.                                                                                                                               |
-| Open      | Close, with unsaved changes                                            | Asking, as [Leaving with unsaved changes](#leaving-with-unsaved-changes) describes, about this profile alone; other editors keep theirs. |
-| Asking    | Save or Discard settles this profile's edits                           | None open.                                                                                                                               |
-| Asking    | A save fails                                                           | Open, with the error.                                                                                                                    |
-| Asking    | Choose another profile, or open the new profile form                   | That one shows, and the question is taken back as if cancelled.                                                                          |
-| Asking    | A refresh or sync                                                      | Asking, with this profile open; a refresh opens no other profile while the question waits.                                               |
-| None open | A refresh                                                              | None open: a refresh opens no profile in place of one the user closed.                                                                   |
-| None open | Choose a profile, or choose or connect a folder, the same one included | Open, as at startup.                                                                                                                     |
+| State          | Event                                                                  | Next                                                                                                                                     |
+| -------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Open           | Close, with no unsaved changes                                         | None open.                                                                                                                               |
+| Open           | Close, with unsaved changes                                            | Asking, as [Leaving with unsaved changes](#leaving-with-unsaved-changes) describes, about this profile alone; other editors keep theirs. |
+| Asking         | Save or Discard settles this profile's edits                           | None open.                                                                                                                               |
+| Asking         | A save fails                                                           | Open, with the error.                                                                                                                    |
+| Asking         | Choose another profile, or open the new profile form                   | That one shows, and the question is taken back as if cancelled.                                                                          |
+| Open or asking | The profile is deleted                                                 | None open, and any question about closing it is taken back, as [Deleting a profile](#deleting-a-profile) describes.                      |
+| Asking         | A refresh or sync                                                      | Asking, with this profile open; a refresh opens no other profile while the question waits.                                               |
+| None open      | A refresh                                                              | None open: a refresh opens no profile in place of one the user closed.                                                                   |
+| None open      | Choose a profile, or choose or connect a folder, the same one included | Open, as at startup.                                                                                                                     |
 
 ### Leaving with unsaved changes
 
@@ -627,6 +629,37 @@ closes again once the question settles.
 
 The folder is picked before the question, so cancelling the folder picker asks
 nothing.
+
+### Deleting a profile
+
+The list's context menu and shortcut, and the editor's **Delete profile**,
+ask through `ProfilesViewModel.AskDelete`, which sets `Deleting` and words the
+question. The question warns rather than blocks: it names every listed profile
+that extends this one, directly or through another, and says unsaved changes
+are discarded. For a config repository it says what GitHub keeps, from
+`.repotted-sync.json`: the file whole when its blob id matches the record,
+only the synced version when it doesn't, and nothing for a file the record
+lacks or a link. A Removed editor offers no delete, since its file is already
+gone; **Discard** lets it go. While the new profile form is open, a
+right-click opens a profile's menu without selecting the profile, since
+selecting one closes the form.
+
+| State    | Event                                                 | Next                                                                                                                                                                                                                                                                                                                                           |
+| -------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idle     | Delete a profile                                      | Asking, about that profile; asking about another replaces it.                                                                                                                                                                                                                                                                                  |
+| Asking   | Cancel                                                | Idle, with nothing changed.                                                                                                                                                                                                                                                                                                                    |
+| Asking   | The profile's edits change, or the list is read again | Asking, worded again. Idle when the list no longer has the profile.                                                                                                                                                                                                                                                                            |
+| Asking   | The profile's editor is loading or saving             | Asking, with **Delete profile** off until it ends, so a save never lands after the delete.                                                                                                                                                                                                                                                     |
+| Asking   | Delete profile                                        | Deleting: a turn in the folder's `WriteAsync`, so it waits for a running save or sync. `DeleteRunning` holds until the list is read again: the page, the leave choices and every delete are off, and `Busy` holds.                                                                                                                             |
+| Deleting | Its turn comes, in the same folder                    | The folder's entry for the profile is deleted (a link, not what it points to), its editor leaves the cache, and a question about closing it is taken back. If it was open, it closes as if the user closed it, so no other profile opens in its place; another open profile stays open. A folder with no entry of that name counts as deleted. |
+| Deleting | The entry can't be told, or deleting it fails         | Idle, with a notice that names the profile and why. The file and its editor stay. An entry can't be told when the folder can't be read, or two entries of that name could each be it.                                                                                                                                                          |
+| Deleting | Its turn comes after another folder opened            | Idle, with nothing deleted.                                                                                                                                                                                                                                                                                                                    |
+| Deleted  | A config repository                                   | A sync, which pushes the delete as its own commit, or shows a conflict when the file changed on GitHub; Keep mine pushes the delete and Use GitHub's brings the file back.                                                                                                                                                                     |
+| Deleted  | The sync ends, or there is no repository              | The folder is listed again, the new profile form checks its name again, and Idle.                                                                                                                                                                                                                                                              |
+| Any      | The folder changes                                    | Idle: the question goes with the folder.                                                                                                                                                                                                                                                                                                       |
+
+`ProfileFolder` remembers which conflicts are files deleted here, so the
+conflict banner and the note after a sync say so, for one file or several.
 
 ## New profile form
 

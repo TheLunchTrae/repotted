@@ -81,12 +81,14 @@ internal sealed record ProfileStore(
 /// <param name="store">Where it reads and saves, and how a save's write takes its turn.</param>
 /// <param name="saved">Runs after each save, such as to sync the folder with its config repository.</param>
 /// <param name="close">Closes the editor, which asks first about unsaved changes; null where the page holds it open.</param>
+/// <param name="delete">Asks whether to delete the profile; null where an editor can't delete its file, such as on the Apply page.</param>
 internal sealed partial class ProfileViewModel(
     RepottedClient client,
     ProfileListingDocument listing,
     ProfileStore store,
     Func<Task>? saved = null,
-    Func<Task>? close = null) : ViewModelBase
+    Func<Task>? close = null,
+    Action? delete = null) : ViewModelBase
 {
     public string SaveLabel => store.SaveLabel;
 
@@ -108,12 +110,12 @@ internal sealed partial class ProfileViewModel(
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowEditor))]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand), nameof(DeleteCommand))]
     public partial bool Loading { get; set; }
 
     /// <summary>Whether a save is running; the editor stays on screen, and nothing else can change it.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand), nameof(DeleteCommand))]
     public partial bool Saving { get; set; }
 
     [ObservableProperty]
@@ -161,7 +163,7 @@ internal sealed partial class ProfileViewModel(
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RemovedMessage), nameof(OutOfDateMessage))]
-    [NotifyCanExecuteChangedFor(nameof(ReloadCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ReloadCommand), nameof(DeleteCommand))]
     public partial bool Removed { get; set; }
 
     partial void OnRemovedChanged(bool value)
@@ -436,6 +438,18 @@ internal sealed partial class ProfileViewModel(
     private Task ReloadAsync() => LoadAsync();
 
     private bool CanReload() => CanDiscard() && !Removed;
+
+    /// <summary>Whether this editor offers Delete profile: the Profiles page's editors do, the Apply page's doesn't.</summary>
+    public bool Deletable => delete is not null;
+
+    /// <summary>
+    /// Asks whether to delete the profile. A removed profile has no file to
+    /// delete, so Discard lets it go instead, and a load or save holds it.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanDelete))]
+    private void Delete() => delete?.Invoke();
+
+    private bool CanDelete() => delete is not null && !Loading && !Saving && !Removed;
 
     /// <summary>
     /// Takes the file as listed again: a removed file that came back with

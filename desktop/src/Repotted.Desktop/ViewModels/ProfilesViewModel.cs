@@ -1,15 +1,28 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Security.Cryptography;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Repotted.Desktop.Services;
 
 namespace Repotted.Desktop.ViewModels;
 
-/// <summary>A profile in the sidebar list.</summary>
-internal sealed class ProfileItemViewModel(ProfileListingDocument listing, string? baseName, bool removed = false)
+/// <summary>A profile in the sidebar list, which its menu and the delete shortcut can ask to delete.</summary>
+internal sealed partial class ProfileItemViewModel(
+    ProfileListingDocument listing,
+    string? baseName,
+    bool removed = false,
+    Action<ProfileItemViewModel>? delete = null,
+    Func<bool>? canDelete = null)
 {
     public ProfileListingDocument Listing => listing;
+
+    /// <summary>A removed profile has no file to delete; Discard in its editor lets it go.</summary>
+    [RelayCommand(CanExecute = nameof(CanDelete))]
+    private void Delete() => delete?.Invoke(this);
+
+    private bool CanDelete() => delete is not null && !Removed && (canDelete?.Invoke() ?? true);
 
     public string? BaseName => baseName;
 
@@ -87,7 +100,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     public bool ShowSyncProblem => ShowSyncNote && Folder.SyncFailed;
 
     /// <summary>Whether a sync, or a save and the sync after it, is under way; a save ends once the sync after it does.</summary>
-    public bool Busy => Folder.Syncing || editors.Values.Any(editor => editor.Saving);
+    public bool Busy => Folder.Syncing || DeleteRunning || editors.Values.Any(editor => editor.Saving);
 
     /// <summary>Keeps what the page shows of the folder in step with it.</summary>
     private void OnFolderPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -98,6 +111,8 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             // The leave question has already settled any unsaved changes, so this
             // only drops editors that have none.
             case nameof(ProfileFolder.Path):
+                // The question named a profile of the folder left behind.
+                Deleting = null;
                 foreach (var editor in editors.Values)
                 {
                     editor.PropertyChanged -= OnEditorChanged;
@@ -269,8 +284,8 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanAnswer))]
     private void StayHere() => leave?.TrySetResult(false);
 
-    /// <summary>The question's buttons wait while Save runs, so nothing moves on under a save.</summary>
-    private bool CanAnswer() => !SavingToLeave;
+    /// <summary>The question's buttons wait while Save or a delete runs, so nothing moves on under either.</summary>
+    private bool CanAnswer() => !SavingToLeave && !DeleteRunning;
 
     /// <summary>
     /// Goes on when no profile has unsaved changes left; otherwise opens the
@@ -541,7 +556,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     {
         if (!editors.TryGetValue(listing.File, out var editor))
         {
-            var opened = new ProfileViewModel(client, listing, ProfileStore.Profile(client, Folder), SavedAsync, () => CloseAsync(listing.File));
+            var opened = new ProfileViewModel(client, listing, ProfileStore.Profile(client, Folder), SavedAsync, () => CloseAsync(listing.File), () => AskDeleteListed(listing));
             editors[listing.File] = opened;
             opened.PropertyChanged += OnEditorChanged;
             _ = opened.LoadCommand.ExecuteAsync(null);
@@ -616,6 +631,14 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         if (e.PropertyName == nameof(ProfileViewModel.Saving))
         {
             OnPropertyChanged(nameof(Busy));
+        }
+        if (e.PropertyName is nameof(ProfileViewModel.Saving) or nameof(ProfileViewModel.Loading))
+        {
+            ConfirmDeleteCommand.NotifyCanExecuteChanged();
+        }
+        if (e.PropertyName == nameof(ProfileViewModel.HasChanges) && sender is ProfileViewModel changed && Deleting?.Listing.File == changed.File)
+        {
+            ReaskDelete();
         }
         if (sender is not ProfileViewModel editor
             || !editors.TryGetValue(editor.File, out var cached)
@@ -734,11 +757,14 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             [
                 .. listings.Select(listing => new ProfileItemViewModel(
                     listing,
-                    listing.Extends is null ? null : names.GetValueOrDefault(listing.Extends) ?? Path.GetFileNameWithoutExtension(listing.Extends))),
+                    listing.Extends is null ? null : names.GetValueOrDefault(listing.Extends) ?? Path.GetFileNameWithoutExtension(listing.Extends),
+                    delete: AskDelete,
+                    canDelete: () => !DeleteRunning)),
                 .. removed,
             ];
             Count = all.Count;
             Usable = [.. all.Where(item => !item.Invalid && !item.Removed)];
+            ReaskDelete();
             // The CLI lists real paths, and the folder's own path may not be one,
             // so a new file is found by its name in the folder.
             var keep = select is null
@@ -791,6 +817,304 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             }
         }
     }
+
+    /// <summary>
+    /// The profile the delete question asks about; null when nothing asks.
+    /// The question names what the delete takes with it, as of when it was
+    /// asked, and stays until it is answered or another folder opens.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AskingDelete), nameof(DeleteQuestion))]
+    [NotifyCanExecuteChangedFor(nameof(ConfirmDeleteCommand), nameof(CancelDeleteCommand))]
+    public partial ProfileItemViewModel? Deleting { get; private set; }
+
+    public bool AskingDelete => Deleting is not null;
+
+    public string DeleteQuestion => Deleting is null ? "" : $"Delete {Deleting.Name}?";
+
+    /// <summary>What deleting takes with it: the file, any unsaved changes, and the profiles that stop loading.</summary>
+    [ObservableProperty]
+    public partial string DeleteDetail { get; private set; } = "";
+
+    /// <summary>True from Delete profile on the question until the file is gone, any sync has committed it, and the list is read again.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Busy))]
+    [NotifyCanExecuteChangedFor(nameof(ConfirmDeleteCommand), nameof(CancelDeleteCommand), nameof(SaveAndLeaveCommand), nameof(DiscardAndLeaveCommand), nameof(StayHereCommand))]
+    public partial bool DeleteRunning { get; private set; }
+
+    partial void OnDeleteRunningChanged(bool value)
+    {
+        foreach (var item in all)
+        {
+            item.DeleteCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    /// <summary>
+    /// Asks about deleting the profile an editor was opened for. Two names
+    /// can list one file, through a link, so the item is found by name too.
+    /// </summary>
+    private void AskDeleteListed(ProfileListingDocument listing)
+    {
+        if (Listed(listing) is { } item)
+        {
+            AskDelete(item);
+        }
+    }
+
+    private ProfileItemViewModel? Listed(ProfileListingDocument listing) =>
+        all.FirstOrDefault(item => item.Listing.File == listing.File && item.Name == listing.Name && !item.Removed);
+
+    /// <summary>
+    /// Words the question again after the list or the profile's edits
+    /// change, so it names what a delete takes now. It goes once the profile
+    /// is no longer listed.
+    /// </summary>
+    private void ReaskDelete()
+    {
+        if (Deleting is not { } asked || DeleteRunning)
+        {
+            return;
+        }
+        if (Listed(asked.Listing) is { } item)
+        {
+            AskDelete(item);
+        }
+        else
+        {
+            Deleting = null;
+        }
+    }
+
+    /// <summary>
+    /// Asks whether to delete <paramref name="item"/>, naming its file, the
+    /// unsaved changes the delete discards, and every listed profile that
+    /// extends it, directly or through another, since those stop loading.
+    /// Deleting is allowed all the same: the question warns rather than
+    /// blocks, so a base and the profiles over it can go in any order.
+    /// </summary>
+    private void AskDelete(ProfileItemViewModel item)
+    {
+        if (DeleteRunning || item.Removed)
+        {
+            return;
+        }
+        var entry = Entry(item.Listing).Path;
+        var file = Path.GetFileName(entry ?? item.Listing.File);
+        List<string> parts =
+        [
+            Folder.Repository is not { } repository ? $"This deletes {file} from the profiles folder, and it can't be undone."
+            : entry is not null && IsLink(entry) ? $"This deletes the link {file} here, and it can't be undone, since links don't sync to {repository}."
+            : SyncedBlob(file) is not { } synced ? $"This deletes {file} here, and it can't be undone, since it hasn't reached {repository} yet."
+            : entry is null || synced == BlobId(entry) ? $"This deletes {file} here and commits the deletion to {repository}, whose history keeps it."
+            : $"This deletes {file} here and commits the deletion to {repository}. Its history keeps the last synced version, and changes since then can't be brought back.",
+        ];
+        if (editors.TryGetValue(item.Listing.File, out var editor) && editor.HasChanges)
+        {
+            parts.Add("Your unsaved changes to it are discarded.");
+        }
+        var (direct, through) = Extending(item.Listing.File);
+        if (direct.Count + through.Count > 0)
+        {
+            List<string> names = [.. direct, .. through];
+            var many = names.Count > 1;
+            var how = through.Count > 0 ? ", directly or through another profile" : "";
+            parts.Add($"{Join(names)} {(many ? "extend" : "extends")} it{how}, so {(many ? "they stop" : "it stops")} loading until {(many ? "they extend" : "it extends")} another profile.");
+        }
+        DeleteDetail = string.Join(" ", parts);
+        Deleting = item;
+    }
+
+    /// <summary>The listed profiles over <paramref name="file"/>: those that extend it, then those that extend one of them, by name.</summary>
+    private (List<string> Direct, List<string> Through) Extending(string file)
+    {
+        var listed = all.Where(item => !item.Removed).ToList();
+        var direct = listed.Where(item => item.Listing.Extends == file).ToList();
+        var found = new HashSet<string>(direct.Select(item => item.Listing.File), StringComparer.Ordinal) { file };
+        List<ProfileItemViewModel> through = [];
+        for (var next = direct; next.Count > 0;)
+        {
+            next = [.. listed.Where(item => item.Listing.Extends is { } over && next.Any(above => above.Listing.File == over) && found.Add(item.Listing.File))];
+            through.AddRange(next);
+        }
+        return ([.. direct.Select(item => item.Name).Order(StringComparer.Ordinal)], [.. through.Select(item => item.Name).Order(StringComparer.Ordinal)]);
+    }
+
+    private static string Join(List<string> names) => names.Count switch
+    {
+        1 => names[0],
+        2 => $"{names[0]} and {names[1]}",
+        _ => $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}",
+    };
+
+    /// <summary>
+    /// The file in the folder that lists as <paramref name="listing"/>. The
+    /// CLI lists a linked file under its real path, so the entry is found by
+    /// name: the one whose file name the listing shares, or the only one of
+    /// that name. Deleting it takes a link out of the folder, and never the
+    /// file the link points to. Gone only when the folder has no entry of
+    /// that name; a folder that can't be read, or two entries that could
+    /// each be it, find neither.
+    /// </summary>
+    private (string? Path, bool Gone) Entry(ProfileListingDocument listing)
+    {
+        List<string> named;
+        try
+        {
+            named =
+            [
+                .. Directory.EnumerateFiles(Folder.Path).Where(entry =>
+                    Path.GetFileNameWithoutExtension(entry) == listing.Name
+                    && Path.GetExtension(entry).ToLowerInvariant() is ".yaml" or ".yml"),
+            ];
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return (null, false);
+        }
+        var path = named.FirstOrDefault(entry => Path.GetFileName(entry) == Path.GetFileName(listing.File))
+            ?? (named.Count == 1 ? named[0] : null);
+        return (path, named.Count == 0);
+    }
+
+    private static bool IsLink(string entry) => new FileInfo(entry).LinkTarget is not null;
+
+    /// <summary>The git blob id the last sync recorded for <paramref name="file"/>; null when GitHub never had it.</summary>
+    private string? SyncedBlob(string file)
+    {
+        try
+        {
+            using var record = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(Folder.Path, SyncRecord)));
+            return record.RootElement.TryGetProperty("files", out var files)
+                && files.TryGetProperty(file, out var id)
+                && id.ValueKind == JsonValueKind.String
+                ? id.GetString()
+                : null;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The git blob id of a file, which the sync record compares to tell whether GitHub has this version.</summary>
+    private static string? BlobId(string entry)
+    {
+        try
+        {
+            var content = File.ReadAllBytes(entry);
+            var header = System.Text.Encoding.ASCII.GetBytes($"blob {content.Length}\0");
+#pragma warning disable CA5350 // Git names a blob by its SHA-1; this matches that name and secures nothing.
+            return Convert.ToHexStringLower(SHA1.HashData([.. header, .. content]));
+#pragma warning restore CA5350
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCancelDelete))]
+    private void CancelDelete() => Deleting = null;
+
+    private bool CanCancelDelete() => Deleting is not null && !DeleteRunning;
+
+    /// <summary>
+    /// Deletes the profile the question names, in the folder's turn with
+    /// saves and syncs, so no sync reads the folder partway. Its editor goes
+    /// with it, unsaved changes and all. For a config repository, a sync then
+    /// commits the deletion, as it commits a save. The list is read again. A
+    /// deleted profile that was open stays closed, as if closed, so none opens
+    /// in its place; another open profile stays open.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanConfirmDelete))]
+    private async Task ConfirmDeleteAsync()
+    {
+        if (Deleting is not { } item)
+        {
+            return;
+        }
+        var folder = Folder.Path;
+        var file = item.Listing.File;
+        DeleteRunning = true;
+        try
+        {
+            var deleted = false;
+            try
+            {
+                await Folder.WriteAsync(() =>
+                {
+                    // Another folder opened while the delete waited its turn.
+                    if (folder != Folder.Path)
+                    {
+                        return Task.CompletedTask;
+                    }
+                    var (entry, gone) = Entry(item.Listing);
+                    if (entry is not null)
+                    {
+                        File.Delete(entry);
+                    }
+                    // A file gone already, such as by a sync, is as good as deleted.
+                    else if (!gone)
+                    {
+                        throw new IOException($"Repotted could not tell which file in the folder is {item.Name}.");
+                    }
+                    deleted = true;
+                    // The deleted profile closes now, so nothing edits or saves it while the list is read again.
+                    if (editors.TryGetValue(file, out var editor))
+                    {
+                        Forget(file, editor);
+                    }
+                    // A question about closing it has nothing left to ask.
+                    if (askedAbout is [var asked] && asked.File == file)
+                    {
+                        leave?.TrySetResult(false);
+                        // Settled now, not when the close's continuation runs, so the reload below opens none either way.
+                        closing = false;
+                    }
+                    if (editor is not null && ReferenceEquals(Current, editor))
+                    {
+                        closed = true;
+                        Current = null;
+                    }
+                    if (ReferenceEquals(Selected, item))
+                    {
+                        Selected = null;
+                    }
+                    return Task.CompletedTask;
+                }).ConfigureAwait(true);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                Notice = $"Repotted could not delete {item.Name}: {error.Message}";
+            }
+            Deleting = null;
+            if (!deleted || folder != Folder.Path)
+            {
+                return;
+            }
+            if (Folder.UsesRepository)
+            {
+                await Folder.SyncAsync(null, null).ConfigureAwait(true);
+            }
+            if (folder == Folder.Path)
+            {
+                await LoadAsync(sync: false).ConfigureAwait(true);
+                // The form's name may have been the deleted file's.
+                Creating?.Recheck();
+            }
+        }
+        finally
+        {
+            DeleteRunning = false;
+        }
+    }
+
+    /// <summary>The question waits while the profile's editor loads or saves, so a save never lands after the delete.</summary>
+    private bool CanConfirmDelete() =>
+        Deleting is { } item
+        && !DeleteRunning
+        && !(editors.TryGetValue(item.Listing.File, out var editor) && (editor.Loading || editor.Saving));
 
     [RelayCommand]
     private async Task ChangeFolderAsync()
