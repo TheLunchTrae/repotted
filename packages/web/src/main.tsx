@@ -1,7 +1,9 @@
 import { render } from 'preact';
 
 import { Account, signInFailure } from './app/account.js';
+import { browserFiles, keepFiles } from './app/kept-files.js';
 import { browserPreferences } from './app/preferences.js';
+import { Router } from './app/router.js';
 import { sessionGitHub } from './engine/github.js';
 import { Session } from './session.js';
 import { App } from './views/app.js';
@@ -19,4 +21,20 @@ if (reason !== null) {
 }
 run(account.load(signInFailure(reason)));
 
-render(<App account={account} github={github} preferences={browserPreferences(() => localStorage)} />, document.body);
+// The kept files are in memory before anything reads a profile.
+const keeping = await keepFiles(
+  browserFiles(() => indexedDB),
+  // Undefined in a browser without Web Locks, whatever the type says.
+  navigator.locks,
+);
+
+render(
+  <App
+    account={account}
+    github={github}
+    preferences={browserPreferences(() => localStorage)}
+    router={new Router(location, history, window)}
+    keeping={keeping}
+  />,
+  document.body,
+);

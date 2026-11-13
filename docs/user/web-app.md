@@ -3,8 +3,13 @@
 The Repotted web app runs at <https://repotted.dev>. It needs nothing
 installed: it runs in your browser and talks to GitHub from there.
 
-The web app signs in and lists your repositories. To write profiles, compare,
-and apply, use the [desktop app](desktop.md) or the [command line](cli.md).
+The web app signs in, lists your repositories, and shows your profiles. To
+write profiles, compare, and apply, use the [desktop app](desktop.md) or the
+[command line](cli.md).
+
+Use Repotted in one tab at a time. A second tab says that Repotted is open
+in another one, so that two tabs can't save over each other's profiles;
+close the first and click **Reload**.
 
 ## Sign in
 
@@ -37,3 +42,51 @@ and an owner that's new to the list shows.
 
 Click a repository to open its panel, where **Open on GitHub** opens it
 there. Click it again to close the panel.
+
+## Profiles
+
+A profile is a YAML file that describes how a repository should be set up.
+The **Profiles** page lists your profiles down the side, under where they are
+kept. Type in **Find a profile** to narrow the list. Folders show with the
+number of profiles in each; click a folder to close or open it. A profile
+Repotted can't use is marked **Problem**, and opening it says why.
+
+Click a profile to open it. The page says what owns the repositories it is
+for and which profile it extends. **Show YAML** shows the profile's file as
+it is saved; it starts hidden.
+
+### Keep profiles on GitHub
+
+Profiles are kept in your browser at first, where only that browser has
+them, and clearing the site's data deletes them. To have them follow you to
+any browser, keep them in a GitHub repository instead. In
+[Settings](#settings), click **Use a GitHub repository…**, name the
+repository, and optionally a folder in it. An empty repository works: tick
+the box that adds the profiles from this browser to start it with them. The Repotted
+App must be installed on the repository with the Contents permission.
+
+From then on, **Sync now** in Settings, or **Sync** above the profile list,
+brings in changes made elsewhere and commits yours to the repository's
+default branch. If a profile changed both in the browser and on GitHub since
+the last sync, a banner asks which version to keep: **Keep mine** commits
+yours, and **Use GitHub's** takes the repository's. If a sync fails, a banner
+on the **Profiles** page says why, and Settings says so too. A ruleset that
+requires pull requests on that branch, for example, refuses the commit unless
+you or the Repotted App can bypass it.
+
+The browser keeps a copy of the repository's profiles, so they are there when
+you come back. Profiles belong to the browser, so anyone who signs in to
+Repotted on it sees them; on a shared computer, use a private window or keep
+none there. **Use this browser** in Settings goes back to profiles kept in
+the browser alone; the repository keeps every profile it has.
+
+## Settings
+
+**Settings**, at the top right and in the account menu, holds what applies to
+the whole app in this browser.
+
+**Account** shows who you're signed in as, with **Add repositories** and
+**Sign out**. **Profiles** shows where your profiles are kept and how the
+last sync went, with **Sync now** (or **Refresh** for profiles in the
+browser), and the buttons that move them to a GitHub repository or back to
+the browser.

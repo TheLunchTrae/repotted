@@ -195,6 +195,76 @@ owners rather than the shown ones means an owner new to the list shows.
 
 A browser that refuses storage keeps the choice for the visit only.
 
+## Web profiles source
+
+`Profiles` (`packages/web/src/app/profiles.ts`) keeps where the profiles are,
+saved as `profiles-source` in the browser's
+[preferences](web-app.md#the-app), and the sync state the pages show. Every
+event below waits its turn in one queue.
+
+| State      | Event                                   | Next                                                                                                                        |
+| ---------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| In browser | Refresh, or the app opens               | The folder is listed.                                                                                                       |
+| On GitHub  | Sync, or the app opens                  | Syncing, then listed.                                                                                                       |
+| Syncing    | It records                              | In sync, or conflicts when any file changed on both sides.                                                                  |
+| Syncing    | It fails                                | Not synced, with why; the working copy is listed as it is.                                                                  |
+| Syncing    | GitHub answers 401                      | Not synced, and the account is signed out.                                                                                  |
+| Conflicts  | Keep mine or Use GitHub's               | Syncing, with `prefer` for the files in conflict only.                                                                      |
+| Any        | Use a repository, from the connect form | Connecting: profiles kept now are copied into the repository's working copy if asked, skipping names it has, then it syncs. |
+| Connecting | The sync records                        | On GitHub, saved, with the working copy listed.                                                                             |
+| Connecting | The name isn't `owner/name`             | As before, with why; GitHub isn't asked.                                                                                    |
+| Connecting | GitHub answers 401                      | As for a failed sync, and the account is signed out.                                                                        |
+| Connecting | The sync fails                          | As before, with why. A working copy that never synced is removed, and one that had loses only what was copied in.           |
+| On GitHub  | Use this browser                        | In browser, saved; the repository and its working copy keep what they have.                                                 |
+
+A profile open when the list is read again shows its file as it is then, and
+closes when the file is gone.
+
+A repository that is remembered while its working copy is gone, as after the
+browser's storage was cleared, syncs as a first sync. Why the last connect
+failed stays in Settings until profiles are moved again. The profiles and
+where they are kept belong to the browser, not to the account: whoever signs
+in on it sees them, and a sync runs with that account's access.
+
+## Web kept files
+
+`keepFiles` (`packages/web/src/app/kept-files.ts`) keeps the engine's files in
+IndexedDB. What is kept must be the files as they were at one moment: a sync
+record kept without one of the profiles it lists reads as that profile
+deleted here, and the next sync would delete it on GitHub.
+
+| State   | Event                                             | Next                                                                                                                                                |
+| ------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Opening | Another tab of the site holds the lock            | Elsewhere: nothing is loaded or kept, and the app shows only a page that says so, with **Reload**.                                                  |
+| Opening | IndexedDB gives the kept files                    | Keeping: the files are in memory, and each later change is written in order.                                                                        |
+| Opening | A kept file can't be placed in memory             | Keeping, without that file.                                                                                                                         |
+| Opening | IndexedDB can't be opened or read                 | Visit only: the files last for the visit, and Settings says so.                                                                                     |
+| Opening | The browser has no Web Locks, or refuses the lock | Visit only, with nothing loaded: no tab can tell that it alone keeps the files.                                                                     |
+| Keeping | A file is written or removed                      | The same is done in IndexedDB, after the changes before it.                                                                                         |
+| Keeping | The engine writes a temporary file                | Nothing is kept of it.                                                                                                                              |
+| Keeping | A write to IndexedDB fails                        | Stopped: no later change is written, so what is kept stays as it was before the failure. A notice on every page says so until the page is reloaded. |
+| Keeping | The tab closes                                    | The lock is free for the next tab.                                                                                                                  |
+
+**Failure:** a tab closed right after a change can lose that change, since
+the write to IndexedDB follows the change in memory
+([#225](https://github.com/TheLunchTrae/repotted/issues/225)).
+
+## Web navigation
+
+`Router` (`packages/web/src/app/router.ts`) holds the address of the page
+within the app.
+
+| State    | Event                              | Next                                                     |
+| -------- | ---------------------------------- | -------------------------------------------------------- |
+| Any page | A link to one of the app's pages   | That page, with a new entry in the browser's history.    |
+| Any page | A link to the page already shown   | The same page; the history gets no entry.                |
+| Any page | The browser's back or forward      | The page at that entry.                                  |
+| Any page | An address the app has no page for | "There's no page here", with a link to the repositories. |
+
+A trailing slash names the same page. Leaving Settings while its connect form
+is syncing lets the sync finish: the profiles move, or the reason they
+didn't shows in Settings.
+
 ## Desktop navigation
 
 `ShellViewModel.Page` is the page the signed-in app shows: 0 for the

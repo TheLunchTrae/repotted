@@ -129,8 +129,49 @@ Atkinson Hyperlegible fonts are served from `static/fonts/`. All text is in
 sentence case: only the first word and proper names are capitalized.
 
 Choices that belong to the browser, such as the owners whose repositories
-are hidden, are kept in `localStorage` through `Preferences`, under keys that
-start with `repotted:`. They are not kept per account.
+are hidden and where profiles are kept, are in `localStorage` through
+`Preferences`, under keys that start with `repotted:`. They are not kept per
+account.
+
+`Router` holds the page's address, and `Link` changes it without loading the
+page again. The Worker's asset config answers every path with `index.html`,
+so an address works when opened directly.
+
+## Profiles
+
+`Profiles` (`src/app/profiles.ts`) holds where the profiles are kept, how the
+last sync went, and the list the sidebar draws. Profiles are files in the
+engine's in-memory files, in one of two folders:
+
+- `/profiles/browser`, for profiles kept in this browser only.
+- `/profiles/github/<owner>/<name>/@<folder>`, a working copy of a folder in
+  a config repository, with the engine's sync record in it. `syncFolder`
+  brings it and the repository in line through GitHub's API, as it does a
+  folder on disk for the CLI, so conflicts and first syncs follow
+  [the same rules](state-machines.md#config-repository-sync).
+
+Syncs and changes of where profiles are kept take turns in one queue, so a
+sync never reads a folder that is being changed.
+[State machines](state-machines.md#web-profiles-source) lists the
+transitions.
+
+`keepFiles` (`src/app/kept-files.ts`) keeps the in-memory files across
+visits: it loads what IndexedDB holds into memory before the app draws, then
+writes each change there in order, by the file's path. So a working copy,
+with saves that haven't reached GitHub, is there on the next visit. The
+engine's temporary files are not kept. In a browser that gives the site no
+storage, the files last for the visit, and Settings says so.
+
+What is kept must be the files as they were at one moment, or a later sync
+can take a profile the browser lost for one the user deleted. So one tab
+keeps the files at a time, under a Web Lock that it holds until it closes,
+and a second tab shows a page that says so. And the first change that can't
+be kept, such as when storage is full, is the last one tried: a notice says
+that changes last until the tab closes.
+[State machines](state-machines.md#web-kept-files) lists the states.
+
+The profiles belong to the browser, not to the signed-in account, as a
+folder on disk does for the CLI.
 
 ## Headers
 
