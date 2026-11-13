@@ -874,8 +874,10 @@ commit and artifacts, which last 3 days; GitHub allows a re-run for 30 days.
 | Releasing | The release is published                     | Released. Publishing creates the tag at the run's commit, and an immutable release can't change, so a fix needs the next version.                                                           |
 
 Deploy Web deploys the web app, as [the web app](web-app.md#deploy)
-describes. Its runs wait in one concurrency group, so the last run started is
-the one that stays live. A run on another branch fails before it checks out
+describes: to the preview Worker by default, and to repotted.dev with Publish.
+Runs to each Worker wait in a concurrency group of their own, so the last run
+started is the one that stays live, and a preview never holds up a publish. A
+run with Publish on another branch than `main` fails before it checks out
 anything, and one whose `ts:web:check` fails, or whose environment lacks a
 value, deploys nothing. When Cloudflare refuses the deploy, the version
 before it stays live; re-running the job deploys again.

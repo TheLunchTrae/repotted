@@ -13,10 +13,15 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"],
   },
-  // repotted.dev is attached to the Worker once in the dashboard, so deploys
+  // Each Worker's custom domain is attached once in the dashboard, so deploys
   // need no zone permission and leave it alone. The sign-in works only at the
-  // callback URLs the GitHub App lists, so the workers.dev and preview URLs
-  // stay off.
+  // callback URLs the GitHub App lists, so the workers.dev address and
+  // per-version preview URLs stay off.
   "workers_dev": false,
   "preview_urls": false,
+  "env": {
+    // The preview Worker, repotted-preview, at preview.repotted.dev. It takes
+    // everything above, and its own name from the environment's.
+    "preview": {},
+  },
 }

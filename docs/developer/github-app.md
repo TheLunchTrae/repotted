@@ -57,7 +57,9 @@ settings, GitHub Apps, New GitHub App, uses too:
 
 - Name: Repotted App. Its slug, the name as GitHub writes it in URLs, must
   match `app.slug`. Homepage: the repository's URL.
-- Callback URL: `https://repotted.dev/api/auth/callback`, for the web app.
+- Callback URLs: `https://repotted.dev/api/auth/callback` and
+  `https://preview.repotted.dev/api/auth/callback`, for the web app and its
+  preview.
   Leave **Request user authorization (OAuth) during installation** off, turn
   on **Enable Device Flow**, and leave **Expire user authorization tokens**
   on; the web app can't keep a sign-in without the refresh token that
