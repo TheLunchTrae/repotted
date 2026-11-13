@@ -542,7 +542,7 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("From base", text);
         Assert.Contains("Not managed", text);
         Assert.Contains("1 unsaved change", text);
-        Assert.Contains(ControlLabel.For("Save profile"), text);
+        Assert.Contains(ControlLabel.For("Save"), text);
         Save(window, $"profile-{theme}");
 
         // Screen readers hear which option is chosen, and where the value comes from.
@@ -1158,39 +1158,67 @@ public sealed class ViewTests : IDisposable
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
-    public async Task Drafts_show_with_a_badge_under_their_setting_and_in_the_list(string theme)
+    public async Task A_draft_shows_in_its_rows_the_banner_the_footer_and_preview(string theme)
     {
         var @base = folders.Write("base.yaml", "repository: { has_issues: true }\n");
         var own = folders.Write("orgs.yaml", "extends: base.yaml\n");
+        var preview = $$"""profile {{own}} --set repository.has_issues=false --set repository.has_wiki=true --unset drafts.repository.has_wiki --unset merge.allow_squash_merge --unset drafts.unset --drop-draft-ruleset=Protect main --ruleset={"name":"Protect main","enforcement":"evaluate"} --drop-draft-ruleset=Later --ruleset={"name":"Later"} --preview --json""";
         var window = await Show(theme, FakeCli.SignedIn()
             .On(folders.List(), Documents.Profiles(own, @base))
             .On($"profile {own} --json", Documents.ResolvedWithDrafts(own, @base))
-            .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base))
+            .On(preview, """
+                {"before":"extends: base\nrepository:\n  has_issues: true\n  has_wiki: false\nmerge:\n  allow_rebase_merge: true\n  allow_squash_merge: false\nrulesets:\n  - name: Protect main\n  - name: Old tags\n    absent: true\n",
+                 "after":"extends: base\nrepository:\n  has_issues: false\n  has_wiki: true\nmerge:\n  allow_rebase_merge: true\n  allow_squash_merge: true\nrulesets:\n  - name: Protect main\n    enforcement: evaluate\n  - name: Old tags\n    absent: true\n  - name: Later\n"}
+                """));
         var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
         shell.Page = 1;
         shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
         var editor = shell.Profiles.Current!;
-        editor.ShowYaml = false;
-        var wiki = editor.Tabs[0].Groups.SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki");
-        wiki.Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
+        Assert.False(editor.ShowYaml);
 
         var text = Texts(window);
-        Assert.Contains("What the drafts still need", text);
-        Assert.Contains("Draft environment \"NPM\": Invalid input at wait_timer", text);
-        Assert.Contains(ControlLabel.For("Save as draft"), text);
-        Assert.Contains("Draft", text);
-        Assert.Contains(" · Saved in base, not applied.", text);
+        Assert.Contains("Draft saved.", text);
+        Assert.Contains("4 changes in this profile don't apply yet: compare and apply leave them out until you save.", text);
+        Assert.Contains("Draft: 4 changes", text);
+        Assert.Contains("In the draft. Applies now: Off", text);
+        Assert.Contains("In the draft", text);
+        foreach (var label in new[] { "Reset", "Preview", "Save as draft", "Save", "Discard draft", "Show YAML" })
+        {
+            Assert.Contains(ControlLabel.For(label), text);
+        }
         Assert.DoesNotContain(ControlLabel.For("Finish draft"), text);
-        wiki.SaveAsDraftCommand.Execute(null);
-        text = Texts(window);
-        Assert.Contains(ControlLabel.For("Finish draft"), text);
-        Assert.Contains(ControlLabel.For("Discard draft"), text);
-        var drafts = window.GetVisualDescendants().OfType<TextBlock>()
-            .Select(block => AutomationProperties.GetName(block))
-            .Where(name => name?.Contains(" draft: ", StringComparison.Ordinal) == true);
-        Assert.Contains("Wiki draft: On. Saved as a draft when you save. It applies once you finish it.", drafts);
-        window.Height = 1100;
+        // Buttons that stay in the tree while hidden must still follow their commands.
+        editor.DiscardDraftCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(ButtonFor(window, editor.ConfirmDiscardDraftCommand).IsEffectivelyEnabled);
+        editor.CancelDiscardDraftCommand.Execute(null);
+        window.Height = 1000;
+        ShowFeatures(window);
         Save(window, $"drafts-settings-{theme}");
+
+        var issues = editor.Tabs[0].Groups.SelectMany(group => group.Settings).Single(setting => setting.Key == "has_issues");
+        issues.Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains("· 1 unsaved change", Texts(window));
+        Assert.False(ButtonFor(window, editor.ConfirmDiscardDraftCommand).IsEffectivelyEnabled);
+        var resets = window.GetVisualDescendants().OfType<Button>()
+            .Select(button => AutomationProperties.GetName(button))
+            .Where(name => name?.StartsWith("Reset the ", StringComparison.Ordinal) == true);
+        Assert.Contains("Reset the Features settings to what was last saved", resets);
+        ShowFeatures(window);
+        Save(window, $"drafts-editing-{theme}");
+
+        await editor.PreviewCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(editor.SaveError);
+        text = Texts(window);
+        Assert.Contains(ControlLabel.For("Preview changes"), text);
+        Assert.Contains(ControlLabel.For("Close"), text);
+        Assert.True(ButtonFor(window, editor.PreviewSaveCommand).IsEffectivelyEnabled);
+        Assert.True(ButtonFor(window, editor.PreviewSaveAsDraftCommand).IsEffectivelyEnabled);
+        Save(window, $"drafts-preview-{theme}");
+        editor.ClosePreviewCommand.Execute(null);
 
         editor.SelectedTab = editor.Tab("Rulesets");
         Dispatcher.UIThread.RunJobs();
@@ -1199,24 +1227,22 @@ public sealed class ViewTests : IDisposable
             .Select(button => AutomationProperties.GetName(button))
             .ToList();
         Assert.Equal(
-            ["Protect main: From base", "Old tags: Removed from GitHub here", "Later: Draft, left out of compare and apply", "Protect main: Draft, left out of compare and apply"],
+            ["Protect main: Changed in the draft, applies once you save", "Old tags: Removed from GitHub here", "Later: New in the draft, applies once you save"],
             rows);
         Save(window, $"drafts-rulesets-{theme}");
+    }
 
-        editor.Tab("Rulesets").Entries[3].OpenCommand.Execute(null);
-        text = Texts(window);
-        Assert.Contains("Save as a draft", text);
-        Assert.Contains("Saved as a draft: compare and apply leave it out, and it may be unfinished. Turn this off to finish it, once it is valid.", text);
-        Save(window, $"drafts-ruleset-{theme}");
+    private static Button ButtonFor(Window window, System.Windows.Input.ICommand command) =>
+        window.GetVisualDescendants().OfType<Button>().Single(button => ReferenceEquals(button.Command, command));
 
-        // A base's ruleset can be made a draft only in the base.
-        editor.Tab("Rulesets").Editing = null;
-        editor.Tab("Rulesets").Entries[0].OpenCommand.Execute(null);
+    /// <summary>Scrolls the Features group to the top, so a screenshot shows its drafts.</summary>
+    private static void ShowFeatures(Window window)
+    {
         Dispatcher.UIThread.RunJobs();
-        var box = window.GetVisualDescendants().OfType<CheckBox>().Single(check => Equals(check.Content, "Save as a draft"));
-        Assert.False(box.IsEnabled);
-        Assert.Contains("Set in a base profile, so it can be saved as a draft only there.", Texts(window));
-        Save(window, $"drafts-base-ruleset-{theme}");
+        var heading = window.GetVisualDescendants().OfType<TextBlock>().First(block => block.Text == "Features");
+        var scroller = window.GetVisualDescendants().OfType<ScrollViewer>().First(viewer => viewer.Name == "Scroller");
+        scroller.Offset = new Vector(0, heading.TranslatePoint(default, scroller.Content as Visual ?? scroller)!.Value.Y - 8);
+        Dispatcher.UIThread.RunJobs();
     }
 
     [AvaloniaTheory]
@@ -1446,7 +1472,7 @@ public sealed class ViewTests : IDisposable
         Assert.Contains($"Profiles / {ControlLabel.For("New profile")}", text);
         Assert.Contains("libraries.yaml", text);
         Assert.Contains(ControlLabel.For("Capture"), text);
-        Assert.DoesNotContain(ControlLabel.For("Save profile"), text);
+        Assert.DoesNotContain(ControlLabel.For("Save as draft"), text);
         var extends = window.GetVisualDescendants().OfType<RadioButton>()
             .Single(radio => radio.IsChecked != true && ControlAutomationPeer.CreatePeerForElement(radio).GetName() == "Another profile");
         Assert.Equal(
@@ -1672,3 +1698,4 @@ public sealed class ViewTests : IDisposable
         return window;
     }
 }
+

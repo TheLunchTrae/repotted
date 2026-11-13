@@ -152,7 +152,7 @@ rulesets, environments, and labels. A setting's own options sit indented under i
 such as who can create pull requests under **Pull requests**. Names and
 numbers, such as a branch or a pull request limit, are typed in a box. Until
 what you type is valid, the app says what's wrong and won't save the profile;
-**Undo** puts the box back.
+**Reset** puts the box back.
 
 Options that GitHub only offers with a certain value of the setting above
 them follow that setting, as they do on GitHub's own pages. Where GitHub
@@ -184,9 +184,11 @@ A profile manages only what it names. A setting you leave unset keeps whatever
 value each repository has. When a profile extends another, each setting shows
 which profile it comes from, and setting it here overrides the base profile.
 To stop setting a value in this profile, click **Remove** beside it; if a base
-profile sets it, the base's value applies again. **Undo** reverts a change you
-haven't saved, and **Discard** reverts them all. **Show YAML** shows the profile's
-file as it is saved.
+profile sets it, the base's value applies again. **Reset** beside a setting
+puts it back as it was last saved; **Reset** beside a group's heading or over
+a list of rulesets, environments or labels does that for all of them, and
+**Reset** in the footer does it for the whole profile. **Show YAML** shows the
+profile's file as it is saved; it starts hidden.
 
 To find a setting, type in **Search settings** above the tabs, or press
 <kbd>Ctrl</kbd>+<kbd>F</kbd>, or <kbd>⌘</kbd>+<kbd>F</kbd> on macOS. The search
@@ -197,7 +199,7 @@ description and notes, the names of its choices, its profile key such as
 option that matches shows under its setting. Rulesets, environments, and
 labels aren't searched. **Managed** shows only the settings this profile or a profile it
 extends sets, **Not saved yet** shows only the settings you've changed and not
-saved, drafts included, and **Drafts** shows only the settings with a draft.
+saved, and **Drafts** shows only the settings in this profile's draft.
 Each works with or without a search. A setting you edit stays in the list until
 you change the search or a filter. Escape clears the search, and **Clear**
 clears the search and turns the filters off, which brings the tabs back.
@@ -228,26 +230,27 @@ leaves the old one. The preview shows the label with dark or light text,
 whichever reads on its color. See [Labels](profiles.md#labels) for what apply
 does with renames.
 
-Any setting, ruleset, environment or label can be saved as a draft, which keeps it
-in the profile, finished or not, without applying it. Compare leaves drafts
-out and names them, and so do `repotted plan` and `apply`. After you pick a
-setting's new value, **Save as draft** keeps that value as a draft and puts
-the setting back. The draft shows under the setting with a **Draft** badge:
-**Finish draft** makes it the value, so it applies once you save, and
-**Discard draft** takes it out, and a base profile's draft of the setting, if
-it has one, shows again. A draft from a base profile shows too, but you finish
-it in that profile. A ruleset, environment or label this profile sets has
-**Save as a draft** in its editor, and a **Draft** badge in the list; for one a base
-profile sets, the box is off, and you make the draft in that profile. Its
-fields aren't checked while it's a draft; turn the box off to finish it, and
-the editor then checks them. What each draft still needs shows under the
-profile's heading. A draft can share its name with a ruleset, environment or
-label that applies, which is how you draft a change to one: finishing the draft
-replaces that one once you save. Drafting a ruleset that overrides a base
-profile's leaves the base's applying until you finish it. See
-[Drafts](profiles.md#drafts) for how drafts sit in the YAML.
+The footer under the editor holds the profile's saves. **Save as draft** keeps
+every change you've made as the profile's draft, without applying any of it:
+compare leaves the draft out and names what it holds, and so do `repotted
+plan` and `apply`. The draft can be unfinished; each ruleset, environment and
+label in it still needs a name of its own. **Preview** shows what applies now
+against what applies once you save, with the draft and your unsaved changes
+together, and saves nothing. **Save** applies it all: your changes, and the
+draft, which then goes.
 
-Click **Save profile** to write your changes to the file. Saving writes each
+A profile with a draft opens on it. Each setting, ruleset, environment and
+label in the draft shows its draft, with a blue rail and, for a setting, what
+applies until you save; a ruleset, environment or label taken out in the draft
+is struck through. A banner says how much the draft holds, and **Discard
+draft** takes it out of the file, after asking, once nothing is unsaved. What
+each draft still needs shows under the profile's heading. A base profile's
+draft doesn't show here: you save or discard it in that profile. Drafting a
+change to a base profile's ruleset makes a draft here, which replaces the
+base's once you save. See [Drafts](profiles.md#drafts) for how drafts sit in
+the YAML.
+
+Click **Save** to write your changes to the file. Saving writes each
 edited ruleset, environment or label whole. So when you edited one and the file
 changed since you opened it, such as in another editor or by a sync with
 GitHub, the app doesn't save over that change. The same goes for a change to
@@ -260,8 +263,8 @@ changed are written.
 
 If the file is removed while you have unsaved changes, such as by a sync with
 GitHub, the profile stays in the list with the note **Removed, edits not
-saved**. **Save profile** puts the file back with your changes, and
-**Discard** lets the profile go. If the profile was renamed on GitHub, saving
+saved**. **Save** puts the file back with your changes, and
+**Reset** lets the profile go. If the profile was renamed on GitHub, saving
 brings it back under its old name, beside the renamed one.
 
 **Close profile** above the profile's name closes it, as does
@@ -274,7 +277,8 @@ changes.
 Unsaved changes stay with the app until you save or discard them. If you
 click **Change folder…**, **Use a GitHub repository…**, **Change repository…** or
 **Sign out**, or quit, while a profile has unsaved changes, a banner asks
-first, in Settings or on the **Profiles** page: **Save** saves them and goes on, **Discard**
+first, in Settings or on the **Profiles** page: **Save** saves them and goes on,
+keeping them in the draft for a profile that has one, **Discard**
 drops them and goes on, and **Cancel** stays where you are. If a save fails,
 the **Profiles** page opens the profile with the error, and nothing else changes. While a new profile
 is being captured, the profile that could not be saved stays closed, since

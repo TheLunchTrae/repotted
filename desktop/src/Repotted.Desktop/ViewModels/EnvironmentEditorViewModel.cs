@@ -13,7 +13,7 @@ internal sealed partial class EnvironmentEditorViewModel : EntryEditorViewModel
 
     private readonly JsonArray? savedPatterns;
 
-    public EnvironmentEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool, bool> taken, Action changed)
+    public EnvironmentEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool> taken, Action changed)
         : base(saved, renamable, taken, changed)
     {
         var start = Start;

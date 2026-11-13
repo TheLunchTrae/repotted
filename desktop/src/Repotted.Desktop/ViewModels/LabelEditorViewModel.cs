@@ -21,10 +21,10 @@ internal sealed partial class LabelEditorViewModel : EntryEditorViewModel
 
     /// <param name="saved">The label as the profile resolves it, or null for a new one.</param>
     /// <param name="renamable">Whether the name can change.</param>
-    /// <param name="taken">Whether another label has a name, as a draft or not.</param>
+    /// <param name="taken">Whether another label has a name.</param>
     /// <param name="claimedBy">The other label that has a name or lists it as an old name, or null.</param>
     /// <param name="changed">Runs on every edit.</param>
-    public LabelEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool, bool> taken, Func<string, string?> claimedBy, Action changed)
+    public LabelEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool> taken, Func<string, string?> claimedBy, Action changed)
         : base(saved, renamable, taken, changed)
     {
         this.claimedBy = claimedBy;

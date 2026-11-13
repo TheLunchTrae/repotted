@@ -551,7 +551,7 @@ public sealed class ConfigRepositoryTests : IDisposable
         cli.Calls.Clear();
 
         var refresh = profiles.RefreshAsync();
-        editor.DiscardCommand.Execute(null);
+        editor.ResetCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
 
         Assert.Equal([Command(copy)], cli.Calls);

@@ -258,9 +258,11 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         {
             foreach (var editor in Unsaved)
             {
-                if (editor.SaveCommand.CanExecute(null))
+                // A profile with a draft keeps its changes in the draft, so leaving applies nothing it didn't already.
+                var save = editor.HasDraft ? editor.SaveAsDraftCommand : editor.SaveCommand;
+                if (save.CanExecute(null))
                 {
-                    await editor.SaveCommand.ExecuteAsync(null).ConfigureAwait(true);
+                    await save.ExecuteAsync(null).ConfigureAwait(true);
                 }
             }
         }
@@ -287,9 +289,9 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         foreach (var editor in Unsaved)
         {
             // An editor that is loading or saving can't discard yet, and keeps the question open.
-            if (editor.DiscardCommand.CanExecute(null))
+            if (editor.ResetCommand.CanExecute(null))
             {
-                editor.DiscardCommand.Execute(null);
+                editor.ResetCommand.Execute(null);
             }
         }
         Settle(answer);

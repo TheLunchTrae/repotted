@@ -7,8 +7,36 @@ using Repotted.Desktop.Services;
 
 namespace Repotted.Desktop.ViewModels;
 
-/// <summary>A group of setting rows under its heading.</summary>
-internal sealed record SettingGroupViewModel(string Title, string Description, IReadOnlyList<SettingViewModel> Settings);
+/// <summary>A group of setting rows under its heading, which Reset puts back as last saved.</summary>
+internal sealed partial class SettingGroupViewModel(string title, string description, IReadOnlyList<SettingViewModel> settings)
+    : ViewModelBase
+{
+    public string Title { get; } = title;
+
+    public string Description { get; } = description;
+
+    public IReadOnlyList<SettingViewModel> Settings { get; } = settings;
+
+    /// <summary>Whether a row in the group differs from what was last saved.</summary>
+    public bool HasChanges => Settings.Any(setting => setting.HasChanges);
+
+    public string ResetName => $"Reset the {Title} settings to what was last saved";
+
+    [RelayCommand(CanExecute = nameof(HasChanges))]
+    private void Reset()
+    {
+        foreach (var setting in Settings.Where(setting => setting.HasChanges))
+        {
+            setting.Undo();
+        }
+    }
+
+    public void Refresh()
+    {
+        OnPropertyChanged(nameof(HasChanges));
+        ResetCommand.NotifyCanExecuteChanged();
+    }
+}
 
 /// <summary>A setting row in the search results, shown when the search and filters find it or a sub-option of it.</summary>
 internal sealed partial class SettingResultViewModel(SettingViewModel setting) : ViewModelBase
@@ -51,7 +79,11 @@ internal sealed partial class SettingResultsViewModel(string tab, string title, 
 /// <param name="SaveLabel">The save button's label.</param>
 /// <param name="OwnLabel">The legend's name for values the file sets itself.</param>
 /// <param name="Summary">The line under the heading, given what the file extends, if anything, and its name.</param>
-/// <param name="Drafts">Whether the file can hold drafts: a profile can, and a staged apply's one-off edits can't.</param>
+/// <param name="Preview">
+/// What applies before and after edits that are not saved, for Preview; null
+/// where the file can't hold drafts, as a staged apply's one-off edits can't,
+/// so Save as draft, Preview and the draft banner are not offered.
+/// </param>
 internal sealed record ProfileStore(
     Func<string, CancellationToken, Task<ResolvedProfile>> Load,
     Func<string, IReadOnlyList<ProfileChange>, IReadOnlyList<EntryChange>, CancellationToken, Task<ResolvedProfile>> Save,
@@ -59,16 +91,20 @@ internal sealed record ProfileStore(
     string SaveLabel,
     string OwnLabel,
     Func<string?, string, string> Summary,
-    bool Drafts = true)
+    Func<string, IReadOnlyList<ProfileChange>, IReadOnlyList<EntryChange>, CancellationToken, Task<ProfilePreview>>? Preview = null)
 {
+    /// <summary>Whether the file can hold drafts: a profile can, and a staged apply's one-off edits can't.</summary>
+    public bool Drafts => Preview is not null;
+
     /// <summary>A profile file in <paramref name="folder"/>, which each save writes in its turn with the folder's syncs.</summary>
     public static ProfileStore Profile(RepottedClient client, ProfileFolder folder) => new(
         client.ProfileAsync,
         client.SaveProfileAsync,
         folder.WriteAsync,
-        "Save profile",
+        "Save",
         "Set in this profile",
-        (@base, file) => @base is null ? $"Saved to {file}." : $"Extends {@base}. Saved to {file}.");
+        (@base, file) => @base is null ? $"Saved to {file}." : $"Extends {@base}. Saved to {file}.",
+        client.PreviewProfileAsync);
 }
 
 /// <summary>
@@ -116,12 +152,12 @@ internal sealed partial class ProfileViewModel(
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowEditor))]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand), nameof(DeleteCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(ResetCommand), nameof(ReloadCommand), nameof(SaveAsDraftCommand), nameof(PreviewCommand), nameof(DiscardDraftCommand), nameof(ConfirmDiscardDraftCommand), nameof(PreviewSaveCommand), nameof(PreviewSaveAsDraftCommand), nameof(DeleteCommand))]
     public partial bool Loading { get; set; }
 
     /// <summary>Whether a save is running; the editor stays on screen, and nothing else can change it.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand), nameof(DeleteCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(ResetCommand), nameof(ReloadCommand), nameof(SaveAsDraftCommand), nameof(PreviewCommand), nameof(DiscardDraftCommand), nameof(ConfirmDiscardDraftCommand), nameof(PreviewSaveCommand), nameof(PreviewSaveAsDraftCommand), nameof(DeleteCommand))]
     public partial bool Saving { get; set; }
 
     [ObservableProperty]
@@ -192,7 +228,7 @@ internal sealed partial class ProfileViewModel(
     }
 
     public string RemovedMessage =>
-        $"{FileName} is no longer in the folder, such as after a sync with GitHub removed it. Save profile puts it back with your unsaved changes, and Discard lets it go.";
+        $"{FileName} is no longer in the folder, such as after a sync with GitHub removed it. {store.SaveLabel} puts it back with your unsaved changes, and Reset lets it go.";
 
     public bool ShowEditor => !Loading && Error is null && Tabs.Count > 0;
 
@@ -214,9 +250,13 @@ internal sealed partial class ProfileViewModel(
     [ObservableProperty]
     public partial string Yaml { get; set; } = "";
 
+    /// <summary>
+    /// Whether the YAML panel shows. It starts hidden for a profile, and open
+    /// for one-off edits, whose panel shows what the apply changes beside them.
+    /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(YamlLabel))]
-    public partial bool ShowYaml { get; set; } = true;
+    public partial bool ShowYaml { get; set; } = !store.Drafts;
 
     public string YamlLabel => ShowYaml ? "Hide YAML" : "Show YAML";
 
@@ -247,12 +287,50 @@ internal sealed partial class ProfileViewModel(
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasChanges), nameof(ChangesLabel))]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(DiscardCommand), nameof(ReloadCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(KeepMineCommand), nameof(ResetCommand), nameof(ReloadCommand), nameof(SaveAsDraftCommand), nameof(PreviewCommand), nameof(DiscardDraftCommand), nameof(ConfirmDiscardDraftCommand), nameof(PreviewSaveCommand), nameof(PreviewSaveAsDraftCommand), nameof(DeleteCommand))]
     public partial int ChangeCount { get; set; }
 
     public bool HasChanges => ChangeCount > 0;
 
     public string ChangesLabel => ChangeCount == 1 ? "1 unsaved change" : $"{ChangeCount} unsaved changes";
+
+    /// <summary>
+    /// How many changes this profile's own draft holds, as last saved: draft
+    /// settings, rulesets, environments and labels, and what it takes out.
+    /// Plans leave them out until Save finishes them.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDraft), nameof(DraftLabel), nameof(DraftMessage), nameof(ChangesStatus))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(DiscardDraftCommand), nameof(ConfirmDiscardDraftCommand), nameof(PreviewCommand), nameof(PreviewSaveCommand))]
+    public partial int DraftCount { get; private set; }
+
+    /// <summary>Whether this profile has a draft of its own, saved but not applied.</summary>
+    public bool HasDraft => DraftCount > 0;
+
+    public string DraftLabel => DraftCount == 1 ? "Draft: 1 change" : $"Draft: {DraftCount} changes";
+
+    public string DraftMessage => DraftCount == 1
+        ? "1 change in this profile doesn't apply yet: compare and apply leave it out until you save."
+        : $"{DraftCount} changes in this profile don't apply yet: compare and apply leave them out until you save.";
+
+    /// <summary>The unsaved changes as the footer counts them, after the draft when there is one.</summary>
+    public string ChangesStatus => HasDraft ? $"· {ChangesLabel}" : ChangesLabel;
+
+    /// <summary>Whether Discard draft is waiting on its question, as it writes at once and can't be undone.</summary>
+    [ObservableProperty]
+    public partial bool ConfirmingDiscardDraft { get; private set; }
+
+    /// <summary>The Preview sheet, while it is open.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Previewing))]
+    public partial ProfilePreviewViewModel? Preview { get; private set; }
+
+    public bool Previewing => Preview is not null;
+
+    /// <summary>Whether Preview is reading what Save would apply.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PreviewCommand))]
+    public partial bool PreviewLoading { get; private set; }
 
     /// <summary>Whether the file, as last loaded or saved, sets any setting, ruleset, environment or label itself.</summary>
     public bool SetsAnything =>
@@ -276,11 +354,13 @@ internal sealed partial class ProfileViewModel(
 
     partial void OnOnlyUnsavedChanged(bool value) => Find();
 
-    /// <summary>Whether only settings with a draft show: this profile's own, or a base profile's.</summary>
+    /// <summary>Whether only settings in this profile's own draft show.</summary>
     [ObservableProperty]
     public partial bool OnlyDrafts { get; set; }
 
     partial void OnOnlyDraftsChanged(bool value) => Find();
+
+    partial void OnChangeCountChanged(int value) => OnPropertyChanged(nameof(ChangesStatus));
 
     /// <summary>Whether a search or filter is on, so the settings it found show in place of the tabs.</summary>
     public bool Filtering { get; private set; }
@@ -357,7 +437,7 @@ internal sealed partial class ProfileViewModel(
         {
             0 when words.Length > 0 => $"No settings match \u201c{Query.Trim()}\u201d.",
             0 when OnlyUnsaved && Entries.Any(entry => entry.Changed) => "No settings match these filters. Unsaved changes to rulesets, environments and labels are on their own tabs.",
-            0 when OnlyDrafts && Entries.Any(entry => entry.IsDraft) => "No settings match these filters. Drafts of rulesets, environments and labels are on their own tabs.",
+            0 when OnlyDrafts && Entries.Any(entry => entry.HasDraft) => "No settings match these filters. Drafts of rulesets, environments and labels are on their own tabs.",
             0 => "No settings match these filters.",
             1 => "1 setting found.",
             _ => $"{count} settings found.",
@@ -379,10 +459,20 @@ internal sealed partial class ProfileViewModel(
 
     private IEnumerable<EntryViewModel> Entries => Tabs.SelectMany(tab => tab.Entries);
 
-    /// <summary>Why the edits cannot be saved yet, such as a ruleset with no name or a number that isn't one.</summary>
-    public string? Problem =>
-        Settings.Where(setting => setting.Invalid).Select(setting => $"{setting.Label}: {setting.TypedProblem}").FirstOrDefault()
+    /// <summary>Why Save can't apply the edits yet, such as a ruleset with no name or a rule that isn't finished.</summary>
+    public string? Problem => TypedProblem
         ?? Entries.Select(entry => entry.Problem).FirstOrDefault(problem => problem is not null);
+
+    /// <summary>
+    /// Why Save as draft can't keep the edits yet: a draft may be unfinished,
+    /// but each entry needs a name of its own, and a box needs a value.
+    /// </summary>
+    public string? DraftProblem => TypedProblem
+        ?? Settings.Select(setting => setting.DraftProblem).FirstOrDefault(problem => problem is not null)
+        ?? Entries.Select(entry => entry.DraftProblem).FirstOrDefault(problem => problem is not null);
+
+    private string? TypedProblem =>
+        Settings.Where(setting => setting.Invalid).Select(setting => $"{setting.Label}: {setting.TypedProblem}").FirstOrDefault();
 
     [RelayCommand]
     public async Task LoadAsync()
@@ -443,14 +533,14 @@ internal sealed partial class ProfileViewModel(
     [RelayCommand(CanExecute = nameof(CanReload))]
     private Task ReloadAsync() => LoadAsync();
 
-    private bool CanReload() => CanDiscard() && !Removed;
+    private bool CanReload() => CanReset() && !Removed;
 
     /// <summary>Whether this editor offers Delete profile: the Profiles page's editors do, the Apply page's doesn't.</summary>
     public bool Deletable => delete is not null;
 
     /// <summary>
     /// Asks whether to delete the profile. A removed profile has no file to
-    /// delete, so Discard lets it go instead, and a load or save holds it.
+    /// delete, so Reset lets it go instead, and a load or save holds it.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanDelete))]
     private void Delete() => delete?.Invoke();
@@ -523,23 +613,229 @@ internal sealed partial class ProfileViewModel(
         loaded = chain.ToDictionary(file => file, file => texts.GetValueOrDefault(file), StringComparer.Ordinal);
     }
 
-    private async Task SaveAsync(bool overwrite)
+    private Task SaveAsync(bool overwrite)
     {
-        // Drafts follow the values, each draft written before any is taken out,
-        // so a drafts section that keeps a draft stays where the file has it.
-        var drafts = Settings.Select(setting => setting.DraftChange).OfType<ProfileChange>().ToList();
-        var changes = Settings.Select(setting => setting.Change).OfType<ProfileChange>()
-            .Concat(drafts.Where(change => change.Value is not null))
-            .Concat(drafts.Where(change => change.Value is null))
+        var (changes, entries) = SaveEdits();
+        return WriteAsync(changes, entries, overwrite);
+    }
+
+    /// <summary>
+    /// The edits Save makes: every value as it ends, so it applies, and this
+    /// profile's draft taken out, since what it held is applied or reset.
+    /// </summary>
+    private (List<ProfileChange> Changes, List<EntryChange> Entries) SaveEdits()
+    {
+        var rows = Settings.ToList();
+        var shown = rows.Select(row => row.Field.Path).ToHashSet(StringComparer.Ordinal);
+        // Drafts the editor has no row for, of a custom property, are finished as they are.
+        var others = OwnDraftSettings().Where(draft => !shown.Contains(draft.Key)).ToList();
+        // A key no row stands for: a custom property's is unset; one with a row, or an entry's, names
+        // what this file doesn't set, so it changes nothing and just leaves the list.
+        var gone = OwnUnsets().Where(key => !Handled(key) && !key.Contains('/', StringComparison.Ordinal) && !shown.Contains(key));
+        var changes = rows.SelectMany(row => row.SaveChanges())
+            .Concat(others.Select(draft => new ProfileChange(draft.Key, draft.Value?.DeepClone(), SetsNull: draft.Value is null)))
+            .Concat(others.Select(draft => new ProfileChange($"drafts.{draft.Key}", null)))
+            .Concat(gone.Select(key => new ProfileChange(key, null)))
             .ToList();
-        // The CLI takes a write right after a drop as a rename, so plain writes
-        // go first, then drops, and each rename last, as its own drop and write.
-        // A draft finished over an entry this file names is a write and a drop.
-        var single = Entries.Where(entry => !entry.Renames || entry.Replaces).SelectMany(entry => entry.Changes()).ToList();
-        var entries = single.Where(change => change.Entry is not null)
-            .Concat(single.Where(change => change.Entry is null))
-            .Concat(Entries.Where(entry => entry.Renames && !entry.Replaces).SelectMany(entry => entry.Changes()))
+        // Only autolinks, which the editor doesn't show, stay in the list.
+        changes.AddRange(UnsetChange([.. AutolinkUnsets()]));
+        return (changes, Ordered(Entries.SelectMany(entry => entry.SaveChanges())));
+    }
+
+    /// <summary>
+    /// The edits Save as draft makes: every value as it ends that is not the
+    /// one that applies, as a draft, and nothing that applies changed.
+    /// </summary>
+    private (List<ProfileChange> Changes, List<EntryChange> Entries) DraftEdits()
+    {
+        var shown = Settings.Select(row => row.Field.Path).ToHashSet(StringComparer.Ordinal);
+        // A key no row stands for stays, unless a row or entry list could: then it names what this file doesn't set.
+        var unset = AllOwnUnsets().Where(key => !Handled(key) && (IsAutolink(key) || !(key.Contains('/', StringComparison.Ordinal) || shown.Contains(key))))
+            .Concat(Settings.Where(row => row.UnsetOnDraft).Select(row => row.Field.Path))
+            .Concat(Entries.Select(entry => entry.UnsetOnDraft).OfType<string>())
             .ToList();
+        List<ProfileChange> changes = [.. Settings.SelectMany(row => row.DraftChanges()), .. UnsetChange(unset)];
+        return (changes, Ordered(Entries.SelectMany(entry => entry.DraftChanges())));
+    }
+
+    /// <summary>
+    /// The CLI takes a write right after a drop as a rename in place, so plain
+    /// writes go first, then drops, and each rename last, as its drop and write.
+    /// </summary>
+    private static List<EntryChange> Ordered(IEnumerable<IReadOnlyList<EntryChange>> steps)
+    {
+        var all = steps.ToList();
+        var single = all.Where(step => step.Count == 1).Select(step => step[0]).ToList();
+        return
+        [
+            .. single.Where(change => change.Entry is not null),
+            .. single.Where(change => change.Entry is null),
+            .. all.Where(step => step.Count > 1).SelectMany(step => step),
+        ];
+    }
+
+    /// <summary>The edit that makes <c>drafts.unset</c> hold <paramref name="keys"/>, or none when it already does.</summary>
+    private IEnumerable<ProfileChange> UnsetChange(List<string> keys)
+    {
+        if (keys.SequenceEqual(AllOwnUnsets(), StringComparer.Ordinal))
+        {
+            yield break;
+        }
+        yield return new ProfileChange("drafts.unset", keys.Count == 0 ? null : new JsonArray([.. keys.Select(key => JsonValue.Create(key))]));
+    }
+
+    /// <summary>Whether a row stands for a key of <c>drafts.unset</c>, so the row says whether it stays.</summary>
+    private bool Handled(string key) =>
+        Settings.Any(row => row.Unsets && row.Field.Path == key)
+        || Entries.Any(entry => entry.UnsetKey is { } own && string.Equals(own, key, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>This profile's own keys of <c>drafts.unset</c>, as the editor last loaded or saved it.</summary>
+    private IReadOnlyList<string> AllOwnUnsets() => resolved is { } profile
+        ? [.. profile.DraftSources.GetValueOrDefault("unset", Empty).Where(pair => IsOwn(pair.Value)).Select(pair => pair.Key)]
+        : [];
+
+    /// <summary>The own keys of <c>drafts.unset</c> that name an autolink, which the editor doesn't show, so it keeps them.</summary>
+    private IEnumerable<string> AutolinkUnsets() => AllOwnUnsets().Where(IsAutolink);
+
+    /// <summary>The own keys of <c>drafts.unset</c> the editor saves and discards.</summary>
+    private IEnumerable<string> OwnUnsets() => AllOwnUnsets().Where(key => !IsAutolink(key));
+
+    private static bool IsAutolink(string key) => key.StartsWith("autolinks/", StringComparison.Ordinal);
+
+    /// <summary>
+    /// This profile's own draft settings, by path, as the editor last loaded
+    /// or saved it: those with a row, and of custom properties. A draft of a
+    /// key no section has stays in the file, with the profile's warning.
+    /// </summary>
+    private IEnumerable<KeyValuePair<string, JsonNode?>> OwnDraftSettings()
+    {
+        if (resolved is not { } profile)
+        {
+            yield break;
+        }
+        var shown = Settings.Select(row => row.Field.Path).ToHashSet(StringComparer.Ordinal);
+        foreach (var section in Sections)
+        {
+            var drafts = profile.Drafts.TryGetProperty(section, out var found) ? found : default;
+            foreach (var (key, file) in profile.DraftSources.GetValueOrDefault(section, Empty))
+            {
+                if (IsOwn(file) && (section == "custom_properties" || shown.Contains($"{section}.{key}")))
+                {
+                    yield return new($"{section}.{key}", SettingViewModel.Find(drafts, key));
+                }
+            }
+        }
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> Empty = new Dictionary<string, string>();
+
+    /// <summary>The sections that hold settings, as a profile names them.</summary>
+    private static readonly string[] Sections = ["repository", "merge", "actions", "security", "custom_properties", "pages"];
+
+    /// <summary>The lists whose drafts the editor shows, and so can save and discard.</summary>
+    private static readonly string[] Lists = ["rulesets", "environments", "labels"];
+
+    private bool IsOwn(string file) => resolved is { } profile && string.Equals(file, profile.File, StringComparison.Ordinal);
+
+    /// <summary>The profile as the editor last loaded or saved it.</summary>
+    private ResolvedProfile? resolved;
+
+    /// <summary>How many changes the profile's own draft holds, of those the editor can save and discard.</summary>
+    private int CountDraft() =>
+        OwnDraftSettings().Count()
+        + OwnUnsets().Count()
+        + Lists.Sum(list => resolved?.DraftSources.GetValueOrDefault(list, Empty).Count(pair => IsOwn(pair.Value)) ?? 0);
+
+    /// <summary>Keeps every unsaved change as this profile's draft, which plans leave out until Save.</summary>
+    [RelayCommand(CanExecute = nameof(CanSaveAsDraft))]
+    private Task SaveAsDraftAsync()
+    {
+        var (changes, entries) = DraftEdits();
+        return WriteAsync(changes, entries, overwrite: false);
+    }
+
+    /// <summary>Why Save as draft can't keep the edits, when Save could still apply them.</summary>
+    public string? DraftOnlyProblem => store.Drafts && HasChanges && Problem is null ? DraftProblem : null;
+
+    public bool HasDraftOnlyProblem => DraftOnlyProblem is not null;
+
+    private bool CanSaveAsDraft() => store.Drafts && HasChanges && !Saving && !Loading && DraftProblem is null;
+
+    /// <summary>Asks before Discard draft, which writes at once.</summary>
+    [RelayCommand(CanExecute = nameof(CanDiscardDraft))]
+    private void DiscardDraft() => ConfirmingDiscardDraft = true;
+
+    [RelayCommand]
+    private void CancelDiscardDraft() => ConfirmingDiscardDraft = false;
+
+    /// <summary>Takes this profile's draft out of its file, so only what applies stays.</summary>
+    [RelayCommand(CanExecute = nameof(CanDiscardDraft))]
+    private Task ConfirmDiscardDraftAsync()
+    {
+        ConfirmingDiscardDraft = false;
+        List<ProfileChange> changes =
+        [
+            .. OwnDraftSettings().Select(draft => new ProfileChange($"drafts.{draft.Key}", null)),
+            .. UnsetChange([.. AutolinkUnsets()]),
+        ];
+        var entries = Lists.SelectMany(list => resolved?.DraftSources.GetValueOrDefault(list, Empty)
+            .Where(pair => IsOwn(pair.Value))
+            .Select(pair => new EntryChange(list, pair.Key, null, Draft: true)) ?? []).ToList();
+        return WriteAsync(changes, entries, overwrite: false);
+    }
+
+    /// <summary>Discard draft writes at once, so it waits until no unsaved change would be lost with the reload.</summary>
+    private bool CanDiscardDraft() => HasDraft && !HasChanges && !Saving && !Loading;
+
+    /// <summary>Opens the Preview sheet: what applies now against what applies once Save runs.</summary>
+    [RelayCommand(CanExecute = nameof(CanPreview))]
+    private async Task PreviewAsync()
+    {
+        if (store.Preview is not { } preview)
+        {
+            return;
+        }
+        var (changes, entries) = SaveEdits();
+        PreviewLoading = true;
+        SaveError = null;
+        try
+        {
+            var texts = await preview(File, changes, entries, CancellationToken.None).ConfigureAwait(true);
+            Preview = new ProfilePreviewViewModel(Name, texts, DraftCount, ChangeCount);
+        }
+        catch (Exception error)
+        {
+            SaveError = error.Message;
+        }
+        finally
+        {
+            PreviewLoading = false;
+        }
+    }
+
+    private bool CanPreview() => store.Drafts && (HasChanges || HasDraft) && !Saving && !Loading && !PreviewLoading && TypedProblem is null;
+
+    [RelayCommand]
+    private void ClosePreview() => Preview = null;
+
+    /// <summary>Save as draft from the Preview sheet, which closes it.</summary>
+    [RelayCommand(CanExecute = nameof(CanSaveAsDraft))]
+    private Task PreviewSaveAsDraftAsync()
+    {
+        Preview = null;
+        return SaveAsDraftAsync();
+    }
+
+    /// <summary>Save from the Preview sheet, which closes it.</summary>
+    [RelayCommand(CanExecute = nameof(CanSave))]
+    private Task PreviewSaveAsync()
+    {
+        Preview = null;
+        return SaveAsync(overwrite: false);
+    }
+
+    private async Task WriteAsync(List<ProfileChange> changes, List<EntryChange> entries, bool overwrite)
+    {
         Saving = true;
         SaveError = null;
         try
@@ -613,12 +909,14 @@ internal sealed partial class ProfileViewModel(
         }
     }
 
-    private bool CanSave() => HasChanges && !Saving && !Loading && Problem is null;
+    /// <summary>Save applies the unsaved changes and the draft together, so it needs one of them, and every entry valid.</summary>
+    private bool CanSave() => (HasChanges || HasDraft) && !Saving && !Loading && Problem is null;
 
-    private bool CanDiscard() => HasChanges && !Saving && !Loading;
+    private bool CanReset() => HasChanges && !Saving && !Loading;
 
-    [RelayCommand(CanExecute = nameof(CanDiscard))]
-    private void Discard()
+    /// <summary>Puts the whole profile back as last saved, draft included.</summary>
+    [RelayCommand(CanExecute = nameof(CanReset))]
+    private void Reset()
     {
         foreach (var setting in Settings.Where(setting => setting.HasChanges))
         {
@@ -702,11 +1000,14 @@ internal sealed partial class ProfileViewModel(
     private void Show(ResolvedProfile profile, ResolvedProfile? @base)
     {
         var selected = SelectedTab?.Name;
+        resolved = profile;
         string? Base(string file) =>
             string.Equals(file, profile.File, StringComparison.Ordinal) ? null : LabelOf(file);
         SettingOrigin Origin(string? file) => file is null
             ? SettingOrigin.NotManaged
             : Base(file) is null ? SettingOrigin.Own : SettingOrigin.Inherited;
+        // Only this profile's own draft shows: a base's draft is that profile's to finish.
+        var unset = OwnUnsets().ToHashSet(StringComparer.Ordinal);
 
         Tabs.Clear();
         foreach (var section in ProfileFields.Sections)
@@ -728,11 +1029,11 @@ internal sealed partial class ProfileViewModel(
                                 var inherited = origin == SettingOrigin.Inherited
                                     ? new InheritedValue(saved!, Base(sources[field.Key])!)
                                     : Inherit(@base, section.Section, field.Key);
-                                var draft = SettingViewModel.Find(drafts, field.Key) is { } value
-                                    ? new DraftValue(value, profile.DraftSource(section.Section, field.Key) is { } file ? Base(file) : null)
-                                    : null;
+                                var draft = profile.DraftSource(section.Section, field.Key) is { } file && IsOwn(file)
+                                    ? new SettingDraft(SettingViewModel.Find(drafts, field.Key))
+                                    : unset.Contains(field.Path) && origin == SettingOrigin.Own ? new SettingDraft(null, Unsets: true) : null;
                                 SettingViewModel? row = null;
-                                row = new SettingViewModel(field, saved, origin, inherited, () => OnRowChanged(row!), draft, BaseDraft(@base, section.Section, field.Key), store.Drafts);
+                                row = new SettingViewModel(field, saved, origin, inherited, () => OnRowChanged(row!), draft);
                                 return row;
                             }),
                         ])),
@@ -754,6 +1055,7 @@ internal sealed partial class ProfileViewModel(
         SelectedTab = Tabs.FirstOrDefault(tab => tab.Name == selected) ?? Tabs[0];
         BaseName = profile.Chain.Count > 1 ? LabelOf(profile.Chain[1]) : null;
         DraftWarnings = profile.Warnings;
+        DraftCount = store.Drafts ? CountDraft() : 0;
         ChangeCount = 0;
         Yaml = ReadText(profile.File);
         // The rows are new, so what a search found is found again among them.
@@ -763,25 +1065,41 @@ internal sealed partial class ProfileViewModel(
 
         ProfileTabViewModel EntriesTab(string name, string section)
         {
-            var tab = new ProfileTabViewModel(name, section, OnSettingChanged, store.Drafts);
+            var tab = new ProfileTabViewModel(name, section, OnSettingChanged);
             var sources = profile.Sources[section];
+            var drafts = DraftsOf(profile, section)
+                .Where(entry => profile.DraftSource(section, entry["name"]!.GetValue<string>()) is { } file && IsOwn(file))
+                .ToList();
+            bool Unsets(string entryName) => unset.Any(key => key.StartsWith($"{section}/", StringComparison.Ordinal)
+                && tab.SameName(key[(section.Length + 1)..], entryName));
             foreach (var entry in EntriesOf(profile, section))
             {
                 var entryName = entry["name"]!.GetValue<string>();
                 var file = sources.GetValueOrDefault(entryName);
                 var inBase = @base is not null && EntriesOf(@base, section).Any(other => tab.SameName(other["name"]!.GetValue<string>(), entryName));
-                tab.Entries.Add(new EntryViewModel(tab, entry, Origin(file), file is null ? null : Base(file), inBase));
+                var draft = drafts.FirstOrDefault(other => tab.SameName(other["name"]!.GetValue<string>(), entryName));
+                if (draft is not null)
+                {
+                    drafts.Remove(draft);
+                }
+                tab.Entries.Add(new EntryViewModel(tab, entry, Origin(file), file is null ? null : Base(file), inBase, Stripped(draft), Unsets(entryName)));
             }
-            // Drafts follow what applies, each with the file that holds it.
-            foreach (var entry in DraftsOf(profile, section))
+            // A draft of an entry that doesn't apply yet follows what applies.
+            foreach (var draft in drafts)
             {
-                var entryName = entry["name"]!.GetValue<string>();
-                var file = profile.DraftSource(section, entryName);
-                var inBase = @base is not null && DraftsOf(@base, section).Any(other => tab.SameName(other["name"]!.GetValue<string>(), entryName));
-                tab.Entries.Add(new EntryViewModel(tab, entry, Origin(file), file is null ? null : Base(file), inBase));
+                var entryName = draft["name"]!.GetValue<string>();
+                var inBase = @base is not null && EntriesOf(@base, section).Any(other => tab.SameName(other["name"]!.GetValue<string>(), entryName));
+                tab.Entries.Add(new EntryViewModel(tab, null, SettingOrigin.Own, null, inBase, Stripped(draft)));
             }
             return tab;
         }
+    }
+
+    /// <summary>A draft entry without its <c>draft</c> key, as the row edits it.</summary>
+    private static JsonObject? Stripped(JsonObject? entry)
+    {
+        entry?.Remove("draft");
+        return entry;
     }
 
     /// <summary>The named rulesets, environments or labels of a resolved profile.</summary>
@@ -824,19 +1142,6 @@ internal sealed partial class ProfileViewModel(
             return null;
         }
         return new InheritedValue(value, LabelOf(file));
-    }
-
-    /// <summary>The draft a base profile has of a setting, and the file that holds it there.</summary>
-    private DraftValue? BaseDraft(ResolvedProfile? @base, string section, string key)
-    {
-        if (@base is null
-            || !@base.Drafts.TryGetProperty(section, out var drafts)
-            || SettingViewModel.Find(drafts, key) is not { } value
-            || @base.DraftSource(section, key) is not { } file)
-        {
-            return null;
-        }
-        return new DraftValue(value, LabelOf(file));
     }
 
     /// <summary>
@@ -883,11 +1188,25 @@ internal sealed partial class ProfileViewModel(
         foreach (var tab in Tabs)
         {
             tab.RefreshCount();
+            foreach (var group in tab.Groups)
+            {
+                group.Refresh();
+            }
         }
         OnPropertyChanged(nameof(Problem));
         OnPropertyChanged(nameof(HasProblem));
+        OnPropertyChanged(nameof(DraftProblem));
+        OnPropertyChanged(nameof(DraftOnlyProblem));
+        OnPropertyChanged(nameof(HasDraftOnlyProblem));
         SaveCommand.NotifyCanExecuteChanged();
         KeepMineCommand.NotifyCanExecuteChanged();
+        SaveAsDraftCommand.NotifyCanExecuteChanged();
+        PreviewCommand.NotifyCanExecuteChanged();
+        DiscardDraftCommand.NotifyCanExecuteChanged();
+        ConfirmDiscardDraftCommand.NotifyCanExecuteChanged();
+        PreviewSaveCommand.NotifyCanExecuteChanged();
+        PreviewSaveAsDraftCommand.NotifyCanExecuteChanged();
+        ResetCommand.NotifyCanExecuteChanged();
     }
 
     public bool HasProblem => Problem is not null;

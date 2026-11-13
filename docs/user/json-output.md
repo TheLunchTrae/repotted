@@ -25,8 +25,9 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `entry`, and the `create`'s `fields` say what differs.
   `warnings` lists what the plan left out and what a change does beyond its
   fields, as [warnings](#warnings) describes. `skipped` lists the profile's
-  drafts as `{ section, target }`, where `target` is a draft setting's key,
-  a draft autolink's key prefix, or a draft entry's name. `access` is
+  drafts as `{ section, target, unset }`, where `target` is a draft setting's key,
+  a draft autolink's key prefix, or a draft entry's name, and `unset` is
+  `true` for one that `drafts.unset` stops managing. `access` is
   `{ role, app }`: `role` is your role on the
   repository (`admin`, `maintain`, `write`, `triage` or `read`), or null when
   GitHub doesn't say. `app` is `{ status: installed, permissions,
@@ -85,15 +86,19 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   [drafts](profiles.md#drafts): what a plan applies. `drafts` holds them, as
   `repository`, `merge`, `actions`, `security`, `custom_properties` and
   `pages` objects of draft settings and `autolinks`, `rulesets`,
-  `environments` and `labels` lists of draft entries, each with `draft: true`; a member
+  `environments` and `labels` lists of draft entries, each with `draft: true`,
+  and an `unset` list of what finishing the draft stops managing; a member
   with no drafts is left out. `warnings` says what stops each draft from
   applying as it stands. `sources` names the file that sets each value:
   `repository`, `merge`, `actions`, `security`, `custom_properties` and
   `pages` by key, with the keys inside an object of settings as
   `<object>.<key>`, such as `selected_actions.verified_allowed` under
   `actions`, `autolinks` by key prefix, `rulesets`, `environments` and
-  `labels` by name, and `drafts` the same way for drafts. A value whose file is
-  `chain[0]` is set in the profile itself.
+  `labels` by name, and `drafts` the same way for drafts, with `unset` by
+  each key it lists. A value whose file is `chain[0]` is set in the profile
+  itself. With `--preview`, `profile` prints `{ before, after }` instead: what
+  the profile applies before and after the edits, each as profile YAML, and
+  saves nothing.
 - `stage` prints
   `{ file, repository, base, exclude, chain, profile, drafts, warnings, sources }`.
   `file` is the staged apply's real path, first in `chain`, and `repository`

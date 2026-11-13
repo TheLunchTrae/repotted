@@ -499,7 +499,7 @@ public sealed class BatchTests : IDisposable
         Assert.Same(repotted, batch.Selected);
         Assert.Equal(1, batch.Tab);
 
-        edits.DiscardCommand.Execute(null);
+        edits.ResetCommand.Execute(null);
         Assert.True(await leaving);
         Assert.True(batch.ApplyCommand.CanExecute(null));
     }

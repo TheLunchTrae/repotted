@@ -63,6 +63,13 @@ internal sealed record ResolvedProfileDocument(
     IReadOnlyList<string> Warnings);
 
 /// <summary>
+/// What <c>repotted profile --preview --json</c> prints: what the profile
+/// applies before the edits and after them, each as profile YAML, with nothing
+/// saved.
+/// </summary>
+internal sealed record ProfilePreviewDocument(string Before, string After);
+
+/// <summary>
 /// One field a change writes: what GitHub has and what the profile wants. A
 /// member the CLI leaves out reads as <see cref="JsonValueKind.Undefined"/>,
 /// apart from a JSON null: GitHub has no value at all, rather than a null one.
@@ -346,6 +353,7 @@ internal sealed record LoginEvent(
 [JsonSerializable(typeof(RepositoryListDocument))]
 [JsonSerializable(typeof(ProfileListDocument))]
 [JsonSerializable(typeof(ResolvedProfileDocument))]
+[JsonSerializable(typeof(ProfilePreviewDocument))]
 [JsonSerializable(typeof(PlanDocument))]
 [JsonSerializable(typeof(CaptureDocument))]
 [JsonSerializable(typeof(StagedApplyDocument))]

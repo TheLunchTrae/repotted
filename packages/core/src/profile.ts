@@ -277,7 +277,7 @@ export function settingPath(path: readonly string[]): 'setting' | 'group' | unde
   return group?.shape[inner] === undefined ? undefined : 'setting';
 }
 
-/** What a key of `drafts.unset` names: one setting or group of settings, or one entry of a list. */
+/** What a key of `drafts.unset` names: one setting, or one entry of a list. */
 type Unset =
   | { readonly kind: 'setting'; readonly path: readonly string[] }
   | { readonly kind: 'entry'; readonly list: EntryList; readonly name: string };
@@ -302,7 +302,7 @@ function parseUnset(key: string): Unset | undefined {
     return isEntryList(list) && name !== '' ? { kind: 'entry', list, name } : undefined;
   }
   const parts = key.split('.');
-  return settingPath(parts) === undefined ? undefined : { kind: 'setting', path: parts };
+  return settingPath(parts) === 'setting' ? { kind: 'setting', path: parts } : undefined;
 }
 
 /** The key an unset is known by, so two spellings of one environment's or label's name are one. */

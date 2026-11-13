@@ -1039,7 +1039,7 @@ describe('editProfile with drafts', () => {
     expect(await readFile(file, 'utf8')).toBe('repository:\n  has_projects: false\nrulesets:\n  - name: Main\n');
   });
 
-  test('refuses a drafts.unset key that names nothing, twice, or what a draft also changes', async () => {
+  test('refuses a drafts.unset key that names nothing, a group of settings, twice, or what a draft also changes', async () => {
     const file = await write(
       'edit-unset-bad.yaml',
       'repository: { has_wiki: false }\nenvironments: [{ name: NPM }]\ndrafts: { repository: { has_projects: true } }\n',
@@ -1047,6 +1047,7 @@ describe('editProfile with drafts', () => {
 
     for (const [keys, message] of [
       [['repository.wiki'], 'repository.wiki in drafts.unset names no setting or list entry'],
+      [['actions.selected_actions'], 'actions.selected_actions in drafts.unset names no setting or list entry'],
       [['environments/NPM', 'environments/npm'], 'environments/npm is in drafts.unset more than once'],
       [['repository.has_projects'], 'repository.has_projects is both in drafts.unset and changed by a draft'],
     ] as const) {

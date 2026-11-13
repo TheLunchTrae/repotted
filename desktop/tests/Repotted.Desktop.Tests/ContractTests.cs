@@ -405,7 +405,7 @@ public sealed class ContractTests
     }
 
     [AvaloniaFact]
-    public async Task The_cli_saves_the_drafts_the_app_makes_and_finishes()
+    public async Task The_cli_keeps_the_draft_the_app_saves_and_save_applies_it()
     {
         var client = Client();
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -419,71 +419,182 @@ public sealed class ContractTests
             rulesets:
               - name: Main
                 enforcement: active
+              - name: Old
+                enforcement: active
               - name: Later
                 draft: true
                 enforcement: maybe
-            environments:
-              - name: npm
-                draft: true
-                wait_timer: soon
 
             """.ReplaceLineEndings("\n"));
         var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken));
         var editor = Editor(client, listing, folders);
         await editor.LoadCommand.ExecuteAsync(null);
-        var settings = editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).ToList();
-        var (wiki, issues) = (settings.Single(setting => setting.Key == "has_wiki"), settings.Single(setting => setting.Key == "has_issues"));
-        var (rulesets, environments) = (editor.Tabs.Single(tab => tab.List == "rulesets"), editor.Tabs.Single(tab => tab.List == "environments"));
+        RulesetEditorViewModel Ruleset(string name) =>
+            (RulesetEditorViewModel)editor.Tabs.Single(tab => tab.List == "rulesets").Entries.Single(entry => entry.Name == name).Editor;
+        SettingViewModel Setting(string key) =>
+            editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == key);
 
-        // Drafts show beside what applies, and the counts leave them out.
-        Assert.Equal(("On", true, false), (issues.DraftLabel, issues.OwnDraft, issues.Managed));
-        Assert.Equal(
-            ["Main: Set here", "Later: Draft, left out of compare and apply"],
-            rulesets.Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
-        Assert.Equal((1, 0), (rulesets.Count, environments.Count));
+        // The rows start from the draft, and the counts with them.
+        Assert.Equal((true, true), (Setting("has_issues").InDraft, Setting("has_issues").Managed));
+        Assert.Equal((2, 3), (editor.DraftCount, editor.Tabs.Single(tab => tab.List == "rulesets").Count));
         // A draft's value of the wrong kind opens, and stops nothing while it is a draft.
-        Assert.Null(environments.Entries.Single().Editor.Problem);
+        Assert.Null(editor.DraftProblem);
 
-        wiki.Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
-        wiki.SaveAsDraftCommand.Execute(null);
-        Assert.Equal((false, "On"), (wiki.Changed, wiki.DraftLabel));
-        issues.FinishDraftCommand.Execute(null);
-        Assert.Equal((true, false), (issues.Changed, issues.HasDraft));
-        rulesets.Entries[0].Editor.IsDraft = true;
-        var later = (RulesetEditorViewModel)rulesets.Entries[1].Editor;
-        later.IsDraft = false;
-        later.Enforcement.Options[0].ChooseCommand.Execute(null);
-        Assert.Equal("4 unsaved changes", editor.ChangesLabel);
+        Setting("has_wiki").Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
+        Ruleset("Main").Enforcement.Options.Single(option => option.Label == "Evaluate").ChooseCommand.Execute(null);
+        var rulesets = editor.Tabs.Single(tab => tab.List == "rulesets");
+        rulesets.Entries.Single(entry => entry.Name == "Old").OpenCommand.Execute(null);
+        rulesets.Editing!.DropCommand.Execute(null);
+        rulesets.BackCommand.Execute(null);
+        await editor.SaveAsDraftCommand.ExecuteAsync(null);
+
+        // What applies stays as it was, and the draft holds the rest, removals included.
+        Assert.Null(editor.SaveError);
+        Assert.Equal(
+            """
+            repository: { has_wiki: false }
+            drafts:
+              repository: { has_issues: true, has_wiki: true }
+              unset:
+                - rulesets/Old
+            rulesets:
+              - name: Main
+                enforcement: active
+              - name: Old
+                enforcement: active
+              - name: Later
+                draft: true
+                enforcement: maybe
+              - name: Main
+                enforcement: evaluate
+                draft: true
+
+            """.ReplaceLineEndings("\n"),
+            await File.ReadAllTextAsync(orgs, cancellationToken));
+        Assert.Equal((false, 5), (editor.HasChanges, editor.DraftCount));
+        Assert.Equal(
+            ["Main: Changed in the draft, applies once you save", "Old: Taken out in the draft, so the profile stops managing it once you save", "Later: New in the draft, applies once you save"],
+            editor.Tabs.Single(tab => tab.List == "rulesets").Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
+
+        // Save finishes the draft once it is valid, in place.
+        Ruleset("Later").Enforcement.Options.Single(option => option.Label == "Active").ChooseCommand.Execute(null);
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Null(editor.SaveError);
+        Assert.Equal(
+            """
+            repository: { has_wiki: true, has_issues: true }
+            rulesets:
+              - name: Main
+                enforcement: evaluate
+              - name: Later
+                enforcement: active
+
+            """.ReplaceLineEndings("\n"),
+            await File.ReadAllTextAsync(orgs, cancellationToken));
+        Assert.Equal((false, false), (editor.HasChanges, editor.HasDraft));
+    }
+
+    [AvaloniaFact]
+    public async Task Save_finishes_what_the_editor_shows_and_keeps_what_it_cant_edit()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        var orgs = folders.Write(
+            "orgs.yaml",
+            """
+            repository: { has_wiki: false, has_projects: true }
+            drafts:
+              repository: { not_a_key: true }
+              unset: [repository.has_projects, autolinks/JIRA-, rulesets/Gone, repository.has_issues]
+            autolinks:
+              - key_prefix: JIRA-
+                url_template: https://example.com/<num>
+
+            """.ReplaceLineEndings("\n"));
+        var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken));
+        var editor = Editor(client, listing, folders);
+        await editor.LoadCommand.ExecuteAsync(null);
+        SettingViewModel Setting(string key) =>
+            editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == key);
+
+        // The draft counts only what the editor can save or discard: not the autolink, nor a key no section has.
+        Assert.Equal(3, editor.DraftCount);
+        Assert.True(Setting("has_projects").InDraft);
+        // The file doesn't set the issues the draft unsets, so setting them is no conflict.
+        Setting("has_issues").Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
         await editor.SaveCommand.ExecuteAsync(null);
 
         Assert.Null(editor.SaveError);
-        Assert.False(editor.HasChanges);
-        // Each change lands in place: a draft finished, one made, and the drafts section kept where it was.
         Assert.Equal(
             """
             repository: { has_wiki: false, has_issues: true }
             drafts:
-              repository: { has_wiki: true }
-            rulesets:
-              - name: Main
-                enforcement: active
-                draft: true
-              - name: Later
-                enforcement: active
-            environments:
-              - name: npm
-                draft: true
-                wait_timer: soon
+              repository: { not_a_key: true }
+              unset:
+                - autolinks/JIRA-
+            autolinks:
+              - key_prefix: JIRA-
+                url_template: https://example.com/<num>
 
             """.ReplaceLineEndings("\n"),
             await File.ReadAllTextAsync(orgs, cancellationToken));
-        Assert.Equal(
-            ["Later: Set here", "Main: Draft, left out of compare and apply"],
-            editor.Tabs.Single(tab => tab.List == "rulesets").Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
+        Assert.Equal((false, false), (editor.HasChanges, editor.HasDraft));
     }
 
     [AvaloniaFact]
-    public async Task A_draft_finished_under_the_name_of_an_entry_in_the_same_file_replaces_it()
+    public async Task Discard_draft_takes_out_what_the_editor_shows_and_keeps_autolinks()
+    {
+        var client = Client();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var folders = new Folders();
+        var orgs = folders.Write(
+            "orgs.yaml",
+            """
+            repository: { has_wiki: false }
+            drafts:
+              repository: { has_issues: false }
+              unset: [repository.has_wiki, autolinks/JIRA-]
+            autolinks:
+              - key_prefix: JIRA-
+                url_template: https://example.com/<num>
+              - key_prefix: OPS-
+                url_template: https://example.com/ops/<num>
+                draft: true
+            rulesets:
+              - name: Later
+                draft: true
+
+            """.ReplaceLineEndings("\n"));
+        var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken));
+        var editor = Editor(client, listing, folders);
+        await editor.LoadCommand.ExecuteAsync(null);
+        Assert.Equal(3, editor.DraftCount);
+
+        editor.DiscardDraftCommand.Execute(null);
+        await editor.ConfirmDiscardDraftCommand.ExecuteAsync(null);
+
+        Assert.Null(editor.SaveError);
+        Assert.Equal(
+            """
+            repository: { has_wiki: false }
+            drafts:
+              unset:
+                - autolinks/JIRA-
+            autolinks:
+              - key_prefix: JIRA-
+                url_template: https://example.com/<num>
+              - key_prefix: OPS-
+                url_template: https://example.com/ops/<num>
+                draft: true
+
+            """.ReplaceLineEndings("\n"),
+            await File.ReadAllTextAsync(orgs, cancellationToken));
+        Assert.False(editor.HasDraft);
+    }
+
+    [AvaloniaFact]
+    public async Task A_draft_under_the_name_of_an_entry_in_the_same_file_replaces_it_once_saved()
     {
         var client = Client();
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -504,13 +615,9 @@ public sealed class ContractTests
         await editor.LoadCommand.ExecuteAsync(null);
         var rulesets = editor.Tabs.Single(tab => tab.List == "rulesets");
 
-        var draft = rulesets.Entries.Single(entry => entry.SavedDraft);
-        draft.Editor.IsDraft = false;
-        Assert.Null(draft.Problem);
-        // The two become one once saved, so the count stays at one.
-        Assert.Equal(
-            ["Main: Replaced by its finished draft once saved", "Main: Finished, applies once saved"],
-            rulesets.Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
+        // The two show as one row, which starts from the draft.
+        var main = Assert.Single(rulesets.Entries);
+        Assert.Equal("Main: Changed in the draft, applies once you save", $"{main.Name}: {main.Note}");
         Assert.Equal(1, rulesets.Count);
         await editor.SaveCommand.ExecuteAsync(null);
 
@@ -528,12 +635,12 @@ public sealed class ContractTests
     }
 
     [AvaloniaFact]
-    public async Task Only_this_profiles_own_entries_become_drafts_and_a_bases_draft_comes_back()
+    public async Task A_bases_draft_stays_the_bases_and_this_profile_saves_around_it()
     {
         var client = Client();
         var cancellationToken = TestContext.Current.CancellationToken;
         using var folders = new Folders();
-        folders.Write(
+        var @base = folders.Write(
             "base.yaml",
             """
             drafts:
@@ -541,90 +648,47 @@ public sealed class ContractTests
             rulesets:
               - name: Shared
                 enforcement: active
-              - name: Base only
-                enforcement: active
-              - name: Edited
-                enforcement: active
               - name: Later
-                draft: true
-              - name: Next
                 draft: true
 
             """.ReplaceLineEndings("\n"));
-        folders.Write(
+        var baseText = await File.ReadAllTextAsync(@base, cancellationToken);
+        var orgs = folders.Write(
             "orgs.yaml",
             """
             extends: base.yaml
             repository: { has_wiki: false }
-            drafts:
-              repository: { has_projects: false }
-            environments:
-              - { name: npm, draft: true, wait_timer: soon }
-            rulesets:
-              - name: Shared
-                enforcement: evaluate
-              - name: Edited
-                draft: true
-                enforcement: disabled
-              - name: Next
-                draft: true
-                enforcement: evaluate
 
             """.ReplaceLineEndings("\n"));
         var listing = Assert.Single(await client.ProfilesAsync(folders.Profiles, cancellationToken), item => item.Name == "orgs");
         var editor = Editor(client, listing, folders);
         await editor.LoadCommand.ExecuteAsync(null);
         Assert.Null(editor.Error);
-        var rulesets = editor.Tabs.Single(tab => tab.List == "rulesets");
-        RulesetEditorViewModel Ruleset(string name, bool draft) =>
-            (RulesetEditorViewModel)rulesets.Entries.Single(entry => entry.SavedName == name && entry.SavedDraft == draft).Editor;
-
-        // What a draft still needs shows with the profile.
-        Assert.Contains(editor.DraftWarnings, warning => warning.Contains("npm", StringComparison.Ordinal));
-
-        // A base's entry or draft can't be made a draft or finished here.
-        Assert.False(Ruleset("Base only", draft: false).CanDraft);
-        Assert.False(Ruleset("Later", draft: true).CanDraft);
-
-        // A draft of this file's override leaves the base's ruleset applying, so the count stays.
-        var count = rulesets.Count;
-        var shared = Ruleset("Shared", draft: false);
-        Assert.True(shared.CanDraft);
-        shared.IsDraft = true;
-        Assert.Equal("Saved as a draft: compare and apply leave it out, so the base profile's ruleset applies until you finish it.", shared.DraftNote);
-        Assert.Equal(count, rulesets.Count);
-        shared.IsDraft = false;
-
-        // A draft can't be finished over a base's entry that is being edited, which would write it twice.
-        Ruleset("Edited", draft: false).Enforcement.Options[1].ChooseCommand.Execute(null);
-        var edited = Ruleset("Edited", draft: true);
-        edited.IsDraft = false;
-        Assert.Equal("The profile already has a ruleset named Edited.", edited.Problem);
-        edited.IsDraft = true;
-        rulesets.Undo();
-
-        // Finishing this file's draft of a base's draft brings the base's back as a draft.
-        var next = rulesets.Entries.Single(entry => entry.SavedName == "Next");
-        next.Editor.IsDraft = false;
-        Assert.Equal("Finished, applies once saved, and the base profile's draft comes back", next.Note);
-        rulesets.Undo();
-
-        // Taking out this profile's draft brings back the base's, and choosing the saved value keeps a new draft.
         var settings = editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).ToList();
-        var projects = settings.Single(setting => setting.Key == "has_projects");
-        Assert.Equal(("Off", true), (projects.DraftLabel, projects.OwnDraft));
-        projects.DiscardDraftCommand.Execute(null);
-        Assert.Equal(("On", false, "Saved in base, not applied."), (projects.DraftLabel, projects.OwnDraft, projects.DraftNote));
-        var wiki = settings.Single(setting => setting.Key == "has_wiki");
-        wiki.Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
-        wiki.SaveAsDraftCommand.Execute(null);
-        wiki.Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
-        Assert.Equal((true, "On"), (wiki.DraftChanged, wiki.DraftLabel));
-        await editor.SaveCommand.ExecuteAsync(null);
 
+        // Neither of base's drafts shows here, so this profile has none.
+        Assert.Equal("Not managed", settings.Single(setting => setting.Key == "has_projects").Note);
+        Assert.Equal(["Shared: From base"], editor.Tabs.Single(tab => tab.List == "rulesets").Entries.Select(entry => $"{entry.Name}: {entry.Note}"));
+        Assert.False(editor.HasDraft);
+
+        // A draft of a base's ruleset is this profile's, and the base's file stays as it is.
+        var shared = (RulesetEditorViewModel)editor.Tabs.Single(tab => tab.List == "rulesets").Entries.Single().Editor;
+        shared.Enforcement.Options.Single(option => option.Label == "Evaluate").ChooseCommand.Execute(null);
+        await editor.SaveAsDraftCommand.ExecuteAsync(null);
         Assert.Null(editor.SaveError);
-        projects = editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == "has_projects");
-        Assert.Equal(("On", false), (projects.DraftLabel, projects.OwnDraft));
+        Assert.Equal(
+            """
+            extends: base.yaml
+            repository: { has_wiki: false }
+            rulesets:
+              - name: Shared
+                enforcement: evaluate
+                draft: true
+
+            """.ReplaceLineEndings("\n"),
+            await File.ReadAllTextAsync(orgs, cancellationToken));
+        Assert.Equal(baseText, await File.ReadAllTextAsync(@base, cancellationToken));
+        Assert.Equal(1, editor.DraftCount);
     }
 
     [Fact]

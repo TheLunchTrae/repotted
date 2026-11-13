@@ -73,28 +73,39 @@ reaches GitHub, and a plan lists each draft it skipped.
 - Draft settings go in a `drafts` section, which holds the same sections of
   settings as the profile: `repository`, `merge`, `actions`, `security`,
   `custom_properties`, and `pages`.
+- `drafts.unset` lists what finishing the draft stops managing: a setting by
+  its section and key, such as `repository.has_wiki`, or a ruleset,
+  environment, label or autolink by its list and name, such as
+  `rulesets/Legacy`. A key for something the file doesn't set changes
+  nothing, and Repotted warns about it.
 
 ```yaml
 repository:
   has_wiki: false
+  has_projects: true
 drafts:
   repository:
     has_wiki: true # turn on once the docs move
+  unset:
+    - repository.has_projects
 rulesets:
   - name: Tags
     draft: true
     target: tag
 ```
 
-Here the wiki stays off, and the `Tags` ruleset waits until you finish it.
+Here the wiki stays off and projects stay on, and the `Tags` ruleset waits
+until you finish it. Finishing the draft turns the wiki on and stops the
+profile managing projects.
 
 Repotted still reads every draft and checks it against the rules for its
 setting or entry, and warns about what fails, such as a key it doesn't know
 or a value GitHub doesn't take. Rules that tie settings together, such as
 keeping one merge method on, are checked only when you finish the draft.
-To finish a draft, move a setting out of `drafts` into its section, or remove
-an entry's `draft: true`. From then on it's checked like the rest of the
-profile.
+To finish a draft, move a setting out of `drafts` into its section, remove
+an entry's `draft: true`, or remove what `drafts.unset` names and its line
+there. From then on it's checked like the rest of the profile. The desktop
+app finishes the whole draft at once when you save.
 
 Drafts never change what applies. A draft can share a name with an entry in
 the same profile or in a base profile, and a draft setting can sit beside the

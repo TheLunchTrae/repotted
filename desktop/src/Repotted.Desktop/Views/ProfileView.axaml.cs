@@ -27,6 +27,7 @@ internal sealed partial class ProfileView : UserControl
         var shortcut = OperatingSystem.IsMacOS() ? "⌘W" : "Ctrl+W";
         ToolTip.SetTip(CloseButton, $"{ControlLabel.For("Close profile")} ({shortcut})");
         AutomationProperties.SetAcceleratorKey(CloseButton, shortcut);
+        PlatformOrder(PreviewActions);
     }
 
     /// <summary>
@@ -43,6 +44,21 @@ internal sealed partial class ProfileView : UserControl
             profile.CloseCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// Sets a sheet's actions, written in macOS's order with the default last,
+    /// in the platform's order: Windows and Linux put the default first.
+    /// </summary>
+    internal static void PlatformOrder(Panel actions)
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+        var buttons = actions.Children.ToList();
+        actions.Children.Clear();
+        actions.Children.AddRange(Enumerable.Reverse(buttons));
     }
 
     /// <summary>
@@ -91,6 +107,11 @@ internal sealed partial class ProfileView : UserControl
             or nameof(ProfileViewModel.OnlyUnsaved) or nameof(ProfileViewModel.OnlyDrafts))
         {
             Scroller.Offset = default;
+        }
+        // The sheet takes focus when it opens, so the keyboard is in it and not behind it.
+        if (e.PropertyName is nameof(ProfileViewModel.Previewing) && watched?.Previewing == true)
+        {
+            Dispatcher.UIThread.Post(() => ClosePreview.Focus(), DispatcherPriority.Loaded);
         }
     }
 

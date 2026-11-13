@@ -20,7 +20,7 @@ internal sealed partial class RulesetEditorViewModel : EntryEditorViewModel
     private readonly JsonObject? savedRefName;
     private readonly IReadOnlyList<JsonObject> savedRules;
 
-    public RulesetEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool, bool> taken, Action changed)
+    public RulesetEditorViewModel(JsonObject? saved, bool renamable, Func<string, bool> taken, Action changed)
         : base(saved, renamable, taken, changed)
     {
         var start = Start;
