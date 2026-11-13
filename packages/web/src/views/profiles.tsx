@@ -113,7 +113,8 @@ function DeleteProfile({ listing, profiles, onClose }: ProfileProps & { readonly
           <button class="button button-danger" type="submit" value="delete" disabled={profiles.busy.value}>
             Delete profile
           </button>
-          <button class="button button-quiet" type="submit" value="cancel">
+          {/* The dialog opens with the keyboard on Cancel, so Enter never deletes by itself. */}
+          <button class="button button-quiet" type="submit" value="cancel" autofocus>
             Cancel
           </button>
         </div>
@@ -187,7 +188,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           <p>The capture left out what a profile can't hold:</p>
           <ul>
             {warnings.warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
+              <li>{warning}</li>
             ))}
           </ul>
         </div>

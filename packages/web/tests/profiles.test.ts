@@ -372,11 +372,20 @@ test('a new profile never takes a name that is there, whatever its case, or one 
   expect(profiles.nameProblem('a/b', '')).toContain('A name cannot');
   expect(profiles.nameProblem('.hidden', '')).toContain('A name cannot');
   expect(profiles.nameProblem('nul', '')).toContain('Windows keeps the name nul');
+  expect(profiles.nameProblem('con.old', '')).toContain('Windows keeps the name con.old');
+  expect(profiles.nameProblem('a\tb', '')).toContain('A name cannot');
+  expect(profiles.nameProblem('mine.yaml', '')).toBe('Leave out the file ending; Repotted adds .yaml.');
+  expect(await profiles.create({ name: 'out', folder: '../..', start, ownerType: undefined })).toBe(
+    '../.. is not a folder a profile can go in.',
+  );
   expect(await readFile('/profiles/browser/Base.yaml', 'utf8')).toBe(base);
 });
 
 test('a capture makes a profile of the repository, holds its name while it reads, and says what it left out', async () => {
-  const github = new FakeGitHub({ repository: { has_wiki: false }, ownerType: 'User' }, 'trae/site');
+  const github = new FakeGitHub(
+    { repository: { has_wiki: false, allow_forking: true }, ownerType: 'User' },
+    'trae/site',
+  );
   const held = Promise.withResolvers<undefined>();
   const request: FakeGitHub['request'] = async (method, path, body) => {
     await held.promise;
@@ -400,6 +409,15 @@ test('a capture makes a profile of the repository, holds its name while it reads
   expect(profiles.nameProblem('other', '')).toBeUndefined();
   expect(profiles.selected.value).toMatchObject({ name: 'site', problem: null, owner_type: 'user' });
   expect(profiles.opened.value?.text).toContain('has_wiki: false');
+  // A personal repository has no forking setting to keep, so the capture leaves it out and says so.
+  expect(profiles.captureWarnings.value?.file).toBe('/profiles/browser/site.yaml');
+  expect(profiles.captureWarnings.value?.warnings.join('\n')).toContain('allow_forking');
+
+  const site = profiles.selected.value;
+  if (site !== undefined) {
+    await profiles.remove(site);
+  }
+  expect(profiles.captureWarnings.value).toBeUndefined();
 });
 
 test('a capture that fails, or whose form closed, leaves no profile behind', async () => {
@@ -465,4 +483,147 @@ test('the profiles that extend one, directly or through another, are named befor
     ['other', true],
     ['leaf', false],
   ]);
+});
+
+test('a new profile asked for during a sync is checked against what the sync brings in', async () => {
+  const github = new FakeGitRepository();
+  github.write({ 'profiles/Base.yaml': base, 'profiles/teams/web.yml': web.replace('../base.yaml', '../Base.yaml') });
+  const held = Promise.withResolvers<undefined>();
+  const request = vi.fn<FakeGitRepository['request']>(async (method, path, body) => {
+    await held.promise;
+    return github.request(method, path, body);
+  });
+  const preferences = memory({
+    'profiles-source': { kind: 'repository', repository: 'lunch/config', path: 'profiles' },
+  });
+  const profiles = new Profiles({ request }, preferences, () => undefined);
+  const start = { kind: 'empty' } as const;
+
+  // The first sync of the visit is under way, so nothing is listed yet.
+  const syncing = profiles.refresh();
+  const first = profiles.create({ name: 'base', folder: '', start, ownerType: undefined });
+  const second = profiles.create({ name: 'web', folder: 'teams', start, ownerType: undefined });
+  held.resolve(undefined);
+  await syncing;
+
+  expect(await first).toBe('Base.yaml is already in the profiles folder.');
+  expect(await second).toBe('web.yml is already in teams.');
+  expect(Object.keys(github.files()).sort()).toEqual(['profiles/Base.yaml', 'profiles/teams/web.yml']);
+  expect(profiles.sync.value.status).toBe('synced');
+});
+
+test('a capture that ends after profiles moved elsewhere makes nothing there', async () => {
+  const api = new FakeGitHub({}, 'trae/site');
+  const config = repository();
+  const held = Promise.withResolvers<undefined>();
+  const request: FakeGitHub['request'] = async (method, path, body) => {
+    if (path.startsWith('/repos/trae/site')) {
+      await held.promise;
+      return api.request(method, path, body);
+    }
+    return config.request(method, path, body);
+  };
+  const profiles = new Profiles({ request }, memory(), () => undefined);
+  await profiles.refresh();
+
+  const capturing = profiles.create({
+    name: 'site',
+    folder: '',
+    start: { kind: 'repository', repository: 'trae/site' },
+    ownerType: undefined,
+  });
+  expect(await profiles.connect('lunch/config', 'profiles', false)).toBeUndefined();
+  held.resolve(undefined);
+
+  expect(await capturing).toBe('Where profiles are kept changed, so the profile was not made.');
+  expect(config.files()['profiles/site.yaml']).toBeUndefined();
+  await expect(readFile('/profiles/browser/site.yaml', 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+test('a sign-in refused during a capture is reported as signed out, and nothing is made', async () => {
+  const github = new FakeGitHub({}, 'trae/site').fail(/GET \/repos\/trae\/site$/u, answered(401, 'Bad credentials'));
+  const signedOut = vi.fn();
+  const profiles = new Profiles(github, memory(), signedOut);
+  await profiles.refresh();
+
+  const failure = await profiles.create({
+    name: 'site',
+    folder: '',
+    start: { kind: 'repository', repository: 'trae/site' },
+    ownerType: undefined,
+  });
+
+  expect(failure).toBe('Bad credentials');
+  expect(signedOut).toHaveBeenCalledOnce();
+  expect(profiles.listings.value).toEqual([]);
+});
+
+test('a profile made or deleted while GitHub is out of reach is kept here, and the next sync carries it', async () => {
+  const github = repository();
+  const profiles = await connected(github);
+  github.fail(answered(500, 'GitHub is having a moment'), 1);
+
+  expect(
+    await profiles.create({ name: 'mine', folder: '', start: { kind: 'empty' }, ownerType: undefined }),
+  ).toBeUndefined();
+  expect(profiles.sync.value).toEqual({ status: 'failed', message: 'GitHub is having a moment' });
+  expect(profiles.selected.value?.name).toBe('mine');
+  expect(github.files()['profiles/mine.yaml']).toBeUndefined();
+
+  await profiles.refresh();
+  expect(github.files()['profiles/mine.yaml']).toBe('');
+
+  const mine = profiles.selected.value;
+  github.fail(answered(500, 'GitHub is having a moment'), 1);
+  if (mine !== undefined) {
+    await profiles.remove(mine);
+  }
+  expect(profiles.sync.value.status).toBe('failed');
+  expect(drawn(profiles.tree.value)).toEqual(['base', 'teams/ 1', '  web']);
+  expect(github.files()['profiles/mine.yaml']).toBe('');
+
+  await profiles.refresh();
+  expect(github.files()['profiles/mine.yaml']).toBeUndefined();
+});
+
+test('a delete asked of a list that has since changed deletes nothing', async () => {
+  await inBrowser({ 'base.yaml': base });
+  const profiles = await connected(repository());
+  const [listed] = profiles.listings.value;
+  if (listed === undefined) {
+    throw new Error('The repository should list a profile.');
+  }
+  await profiles.keepInBrowser();
+
+  expect(await profiles.remove(listed)).toBeUndefined();
+
+  expect(await readFile(`${copy}/base.yaml`, 'utf8')).toBe(base);
+  expect(drawn(profiles.tree.value)).toEqual(['base']);
+});
+
+test('a profile deleted here and changed on GitHub is a conflict that either side can win', async () => {
+  const github = repository();
+  const profiles = await connected(github);
+  const theirs = 'repository:\n  has_issues: false\n';
+  const find = (): ReturnType<Profiles['listings']['value']['find']> =>
+    profiles.listings.value.find((listing) => listing.name === 'base');
+
+  github.write({ 'profiles/base.yaml': theirs });
+  const listed = find();
+  if (listed !== undefined) {
+    await profiles.remove(listed);
+  }
+  expect(profiles.conflicts.value).toEqual(['base.yaml']);
+  expect(find()).toBeUndefined();
+
+  await profiles.keep('remote');
+  expect(await readFile(`${copy}/base.yaml`, 'utf8')).toBe(theirs);
+
+  github.write({ 'profiles/base.yaml': base });
+  const again = find();
+  if (again !== undefined) {
+    await profiles.remove(again);
+  }
+  await profiles.keep('local');
+  expect(github.files()['profiles/base.yaml']).toBeUndefined();
 });

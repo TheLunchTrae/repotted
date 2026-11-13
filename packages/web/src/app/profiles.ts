@@ -294,10 +294,14 @@ export class Profiles {
     if (trimmed === '') {
       return 'Give the profile a name.';
     }
-    if (/^\.|[/\\:*?"<>|]|[. ]$/u.test(trimmed)) {
+    // What a sync refuses in a profile's path, so a profile made here always reaches GitHub.
+    if (/^\.|[/\\:*?"<>|\p{Cc}]|[. ]$/u.test(trimmed)) {
       return 'A name cannot start with a dot, end with a dot or a space, or hold / \\ : * ? " < > |.';
     }
-    if (windowsNames.test(trimmed)) {
+    if (/\.ya?ml$/iu.test(trimmed)) {
+      return 'Leave out the file ending; Repotted adds .yaml.';
+    }
+    if (windowsNames.test(trimmed.split('.')[0] ?? trimmed)) {
       return `Windows keeps the name ${trimmed} for itself, so it cannot be a file there.`;
     }
     const place = folder === '' ? 'the profiles folder' : folder;
@@ -351,12 +355,24 @@ export class Profiles {
             }`;
     }
     return this.#work(async () => {
-      if (signal?.aborted === true) {
+      // A capture whose form closed makes nothing. A profile asked for outright is made even so.
+      if (profile.start.kind === 'repository' && signal?.aborted === true) {
         return undefined;
       }
-      // Where profiles are kept may have changed while GitHub was read.
+      // Where profiles are kept may have changed while this waited or GitHub was read.
       if (this.folder.value !== folder) {
         return 'Where profiles are kept changed, so the profile was not made.';
+      }
+      // The list is as the turns before this one left it, such as a sync that pulled a profile of that name.
+      const taken = this.nameProblem(profile.name, profile.folder);
+      if (taken !== undefined) {
+        return taken;
+      }
+      // A folder is one that holds profiles, or a new one under the profiles folder, never a way out of it.
+      if (
+        profile.folder.split('/').some((part) => profile.folder !== '' && /^\.|^$|[\\:*?"<>|\p{Cc}]|[. ]$/u.test(part))
+      ) {
+        return `${profile.folder} is not a folder a profile can go in.`;
       }
       try {
         await mkdir(dirname(file), { recursive: true });
@@ -398,10 +414,9 @@ export class Profiles {
       if (!this.listings.value.some((item) => item.file === listing.file)) {
         return undefined;
       }
-      try {
-        await rm(listing.file, { force: true });
-      } catch (error) {
-        return `${listing.name} was not deleted: ${messageOf(error)}`;
+      await rm(listing.file, { force: true });
+      if (this.captureWarnings.value?.file === listing.file) {
+        this.captureWarnings.value = undefined;
       }
       await this.#sync({});
       await this.#list();
@@ -444,6 +459,7 @@ export class Profiles {
     this.source.value = source;
     this.#preferences.write(sourceKey, source);
     this.#closedFolders.value = new Set();
+    this.captureWarnings.value = undefined;
     this.#selectedFile.value = undefined;
     this.opened.value = undefined;
   }

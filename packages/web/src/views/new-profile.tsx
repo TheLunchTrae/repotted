@@ -29,8 +29,9 @@ export function NewProfileForm({ profiles, repositories, router, repository }: N
   const [name, setName] = useState('');
   const [folder, setFolder] = useState(profiles.selected.value?.folder ?? '');
   const [kind, setKind] = useState<NewProfileStart['kind']>(repository === undefined ? 'empty' : 'repository');
-  const [baseFile, setBaseFile] = useState(listings[0]?.file ?? '');
-  const [from, setFrom] = useState(repository ?? captured[0]?.full_name ?? '');
+  // What the user picked. Until they pick, or once their pick is gone, the first one listed stands.
+  const [pickedBase, setBaseFile] = useState<string | undefined>(undefined);
+  const [pickedFrom, setFrom] = useState(repository);
   const [owner, setOwner] = useState<OwnerChoice>('any');
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -43,7 +44,10 @@ export function NewProfileForm({ profiles, repositories, router, repository }: N
     [],
   );
 
-  const base = listings.find((listing) => listing.file === baseFile);
+  const base = listings.find((listing) => listing.file === pickedBase) ?? listings[0];
+  const baseFile = base?.file ?? '';
+  const from =
+    captured.find((item) => item.full_name === pickedFrom)?.full_name ?? pickedFrom ?? captured[0]?.full_name ?? '';
   const start: NewProfileStart | undefined =
     kind === 'empty'
       ? { kind }
@@ -61,7 +65,8 @@ export function NewProfileForm({ profiles, repositories, router, repository }: N
       : kind === 'extends' && base !== undefined && base.owner_type !== null
         ? `${base.name} is for ${ownerLabels[base.owner_type].toLowerCase()}, so this one is too.`
         : undefined;
-  const problem = name.trim() === '' ? undefined : profiles.nameProblem(name, folder);
+  // While it works, the name it holds is its own.
+  const problem = working || name.trim() === '' ? undefined : profiles.nameProblem(name, folder);
 
   const create = async (): Promise<void> => {
     if (start === undefined) {
@@ -100,22 +105,28 @@ export function NewProfileForm({ profiles, repositories, router, repository }: N
         </div>
       </div>
 
-      <label class="form-field">
-        <span>Name</span>
+      <div class="form-field">
+        <label for="new-profile-name">Name</label>
         <input
+          id="new-profile-name"
           class="field"
           required
           disabled={working}
           value={name}
+          aria-invalid={problem !== undefined}
           aria-describedby="new-profile-file"
           onInput={(event) => {
             setName(event.currentTarget.value);
           }}
         />
-        <span id="new-profile-file" class={problem === undefined ? 'muted small mono' : 'problem small'}>
+        <span
+          id="new-profile-file"
+          class={problem === undefined ? 'muted small mono' : 'problem small'}
+          aria-live="polite"
+        >
           {problem ?? `${folder === '' ? '' : `${folder}/`}${name.trim() === '' ? 'name' : name.trim()}.yaml`}
         </span>
-      </label>
+      </div>
 
       {profiles.folders.value.length > 1 && (
         <label class="form-field">

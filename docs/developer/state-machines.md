@@ -234,18 +234,18 @@ the list when the form asks, and the write itself refuses a file that is
 there. A capture reads GitHub before it takes its turn in the queue, and
 holds its name against other new profiles while it reads.
 
-| State                      | Event                                     | Next                                                                                               |
-| -------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Editing                    | Create or Capture                         | The name is checked again. A profile of that name in any case, or a capture making it, refuses it. |
-| Creating, empty or extends | Its turn comes                            | The file is written, then synced when profiles are kept on GitHub: Created, and the profile opens. |
-| Creating, capture          | Start                                     | Reading: the name is held while GitHub is read.                                                    |
-| Reading                    | GitHub answers                            | The name is free, and the profile is written when its turn comes, with what the capture left out.  |
-| Reading                    | The read fails                            | Editing, with why; the name is free and nothing is written.                                        |
-| Reading                    | GitHub answers 401                        | The same, and the account is signed out.                                                           |
-| Reading                    | The form closes                           | The read finishes and nothing is written.                                                          |
-| Any creating               | A file of that name came in meanwhile     | Editing, with "is already there"; the file that came in stays.                                     |
-| Any creating               | Where profiles are kept changed meanwhile | Editing, with why; nothing is written.                                                             |
-| Created                    | The sync that follows fails               | The profile is made and listed; the sync state says why it hasn't reached GitHub.                  |
+| State                      | Event                                                       | Next                                                                                                                                                                                                            |
+| -------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Editing                    | Create or Capture                                           | The name is checked: a profile of that name in any case, a name a sync would refuse, or a capture making it, refuses it. It is checked again when the turn comes, against the list as the turns before left it. |
+| Creating, empty or extends | Its turn comes                                              | The file is written, then synced when profiles are kept on GitHub: Created, and the profile opens.                                                                                                              |
+| Creating, capture          | Start                                                       | Reading: the name is held while GitHub is read.                                                                                                                                                                 |
+| Reading                    | GitHub answers                                              | The name is free, and the profile is written when its turn comes, with what the capture left out.                                                                                                               |
+| Reading                    | The read fails                                              | Editing, with why; the name is free and nothing is written.                                                                                                                                                     |
+| Reading                    | GitHub answers 401                                          | The same, and the account is signed out.                                                                                                                                                                        |
+| Reading                    | The form closes                                             | The read finishes and nothing is written. An empty or extending profile asked for before the form closed is still made.                                                                                         |
+| Any creating               | A profile of that name came in meanwhile, such as by a sync | Editing, with "is already in"; the profile that came in stays.                                                                                                                                                  |
+| Any creating               | Where profiles are kept changed meanwhile                   | Editing, with why; nothing is written.                                                                                                                                                                          |
+| Created                    | The sync that follows fails                                 | The profile is made and listed; the sync state says why it hasn't reached GitHub.                                                                                                                               |
 
 The form's owner type goes into the file as `owner_type`, except for a
 capture, which writes the repository's own, and a profile that extends a
@@ -264,7 +264,7 @@ question warns and doesn't block.
 | Asking   | Delete profile                          | Deleting: a turn in the queue, after any sync under way. The button is off while the queue is busy.                                           |
 | Deleting | Its turn comes                          | The file is removed, a sync commits that when profiles are kept on GitHub, and the list is read again: the profile closes and no other opens. |
 | Deleting | The list no longer has the profile      | Idle, with nothing deleted.                                                                                                                   |
-| Deleting | Removing the file fails                 | Asking, with why; the file stays.                                                                                                             |
+| Deleted  | The sync that follows fails             | The profile is gone here and still on GitHub; the sync state says why, and the next sync commits the delete.                                  |
 | Deleted  | The profile changed on GitHub meanwhile | A conflict: **Keep mine** commits the delete, and **Use GitHub's** brings the file back.                                                      |
 
 ## Web kept files
