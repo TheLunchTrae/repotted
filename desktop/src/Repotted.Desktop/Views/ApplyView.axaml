@@ -14,20 +14,20 @@
       </StackPanel>
       <!-- On the one-off edits -->
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom" IsVisible="{Binding ShowEditActions}">
-        <Button Classes="quiet" Content="Discard apply" Command="{Binding DiscardCommand}"
+        <Button x:Name="DiscardApply" Classes="quiet" Content="Discard apply" Command="{Binding DiscardCommand}"
                 AutomationProperties.HelpText="Throws this apply away with its one-off edits. The profile stays as it is." />
         <Button Classes="quiet" Content="Save edits to profile" Command="{Binding SaveToProfileCommand}" IsVisible="{Binding HasBase}"
                 AutomationProperties.HelpText="Writes the one-off edits into the profile this apply starts from." />
-        <Button Classes="primary" Content="Review changes" Command="{Binding ReviewChangesCommand}"
+        <Button x:Name="ReviewChanges" Classes="primary" Content="Review changes" Command="{Binding ReviewChangesCommand}"
                 AutomationProperties.HelpText="Saves the one-off edits to this apply, not the profile, and shows what it writes to GitHub." />
       </StackPanel>
       <!-- On the changes -->
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom" IsVisible="{Binding ShowChangeActions}">
-        <Button Classes="quiet" Content="Back to edits" Command="{Binding BackToEditsCommand}"
+        <Button x:Name="BackToEdits" Classes="quiet" Content="Back to edits" Command="{Binding BackToEditsCommand}"
                 AutomationProperties.HelpText="Goes back to the one-off edits. Nothing is written." />
         <Button Classes="quiet" Content="Review again" Command="{Binding ReviewAgainCommand}"
                 AutomationProperties.HelpText="Reads the repository and the App's access again and plans the apply from them." />
-        <Button Classes="primary" Content="{Binding ApplyLabel}" Command="{Binding ApplyCommand}" />
+        <Button x:Name="Apply" Classes="primary" Content="{Binding ApplyLabel}" Command="{Binding ApplyCommand}" />
       </StackPanel>
     </Grid>
 
@@ -119,17 +119,21 @@
       <DockPanel IsVisible="{Binding ShowReview}">
         <!-- Where the review stands: editing, or reviewing the changes to apply them -->
         <Border DockPanel.Dock="Top" Margin="32,16,32,0" Padding="0,0,0,12" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
-          <StackPanel Orientation="Horizontal" Spacing="10" AutomationProperties.Name="{Binding StepName}"
-                      AutomationProperties.LiveSetting="Polite">
+          <!-- Each step reads as one element, its name saying whether it is the current one. -->
+          <StackPanel Orientation="Horizontal" Spacing="10">
             <StackPanel Classes="step" Classes.on="{Binding ShowingEdits}" Classes.done="{Binding ShowingChanges}"
-                        Orientation="Horizontal" Spacing="8">
-              <Border Classes="stepnum"><TextBlock Text="1" /></Border>
-              <TextBlock Classes="steplabel" Text="{Binding Source='Edit', Converter={x:Static theme:ControlLabel.Converter}}" />
+                        Orientation="Horizontal" Spacing="8"
+                        AutomationProperties.AccessibilityView="Control" AutomationProperties.Name="{Binding EditStepName}"
+                        AutomationProperties.LiveSetting="Polite">
+              <Border Classes="stepnum"><TextBlock Text="1" AutomationProperties.AccessibilityView="Raw" /></Border>
+              <TextBlock Classes="steplabel" Text="Edit" AutomationProperties.AccessibilityView="Raw" />
             </StackPanel>
             <TextBlock Classes="muted" Text="›" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
-            <StackPanel Classes="step" Classes.on="{Binding ShowingChanges}" Orientation="Horizontal" Spacing="8">
-              <Border Classes="stepnum"><TextBlock Text="2" /></Border>
-              <TextBlock Classes="steplabel" Text="{Binding Source='Review and apply', Converter={x:Static theme:ControlLabel.Converter}}" />
+            <StackPanel Classes="step" Classes.on="{Binding ShowingChanges}" Orientation="Horizontal" Spacing="8"
+                        AutomationProperties.AccessibilityView="Control" AutomationProperties.Name="{Binding ReviewStepName}"
+                        AutomationProperties.LiveSetting="Polite">
+              <Border Classes="stepnum"><TextBlock Text="2" AutomationProperties.AccessibilityView="Raw" /></Border>
+              <TextBlock Classes="steplabel" Text="Review and apply" AutomationProperties.AccessibilityView="Raw" />
             </StackPanel>
           </StackPanel>
         </Border>

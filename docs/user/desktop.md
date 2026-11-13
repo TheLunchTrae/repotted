@@ -298,9 +298,10 @@ can:
 - Click **Review changes** to go on. Edits you haven't saved are saved to the
   apply first, never to the profile, and the changes are compared again, so
   the review always shows what the edits say. If they can't be saved, you
-  stay on the edits with why.
+  stay on the edits with why. It waits while an edit isn't valid.
 - Click **Save edits to profile** to write the one-off edits into the profile,
-  which then sets them itself.
+  which then sets them itself. Edits you haven't saved are saved to the apply
+  first, so the profile gets what you see.
 - Click **Discard apply** to throw the apply away, below.
 
 **Review and apply** shows each change by section, with what GitHub has now
@@ -318,7 +319,8 @@ link that counts them, such as **Show 4 unchanged lines**. A line from a
 one-off edit is marked **One-off edit**, a change GitHub will refuse has a
 padlock under it, and a setting Repotted couldn't check says why. Left-out
 changes and drafts are not in the diff; a note under it counts them. The diff
-shows saved edits; **Save edits** or **Review changes** brings in the rest. **File** shows the file as saved.
+shows saved edits; **Save edits** or **Review changes** brings in the rest.
+**File** shows the file as saved.
 
 A padlock marks each change GitHub will refuse, with what it needs, as on the
 comparison. **Apply** waits until no such change is left: leave it out, or
@@ -326,8 +328,8 @@ click **Review App access**, grant what it needs, and click **Review again**.
 Otherwise the apply would stop at that change and leave the ones after it
 unwritten.
 
-On the review, click **Apply** and then **Apply now** to write the changes. Repotted checks
-GitHub first: if the repository changed since you reviewed it, nothing is
+On **Review and apply**, click **Apply** and then **Apply now** to write the
+changes. Repotted checks GitHub first: if the repository changed since you reviewed it, nothing is
 written, and **Review again** shows what the apply needs now. If GitHub refuses
 a change partway, the changes before it stay written and nothing after it is;
 **Review again** shows what is left.
@@ -368,7 +370,9 @@ set that change keeps them, and the batch says which.
 Under it, each repository shows its status: how many changes, **Already in
 line**, **Needs access** for a change GitHub will refuse, or **Couldn't
 compare** with why. Select one to see its **Changes** and **One-off edits**
-tabs, with **Previous** and **Next** to go through them. Untick a repository to leave it out of the
+tabs: the first lists its changes, with **Leave out**, and the second its
+one-off edits, as in the steps of an apply to one repository. **Previous** and
+**Next** go through the repositories. Untick a repository to leave it out of the
 batch; its staged apply stays, and ticking it puts it back. Any change plans
 every repository again, and **Apply** waits while one-off edits are unsaved.
 

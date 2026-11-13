@@ -432,9 +432,9 @@
   <Style Selector="StackPanel.step.on Border.stepnum TextBlock">
     <Setter Property="Foreground" Value="{DynamicResource BgBrush}" />
   </Style>
+  <!-- The current step keeps the same weight, so its label never measures differently. -->
   <Style Selector="StackPanel.step.on TextBlock.steplabel">
     <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
-    <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
   <Style Selector="StackPanel.step.done Border.stepnum">
     <Setter Property="Background" Value="{DynamicResource TintBrush}" />

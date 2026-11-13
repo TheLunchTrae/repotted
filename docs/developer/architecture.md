@@ -421,8 +421,8 @@ command runs.
 ### Applying from the app
 
 The Apply page is a staged apply, as `repotted stage` makes one, kept in the
-app data folder per repository. Its one-off edits tab is the profile editor
-over the staged file: `ProfileStore` swaps the editor's reads and saves for
+app data folder per repository. Its edit step, where it opens, is the profile
+editor over the staged file: `ProfileStore` swaps the editor's reads and saves for
 `stage`, which takes the same edits as `profile`, so every setting the editor
 shows can be overridden once. A profile's store writes in its turn with the
 syncs of the profiles folder; the staged file is the app's alone, so its
