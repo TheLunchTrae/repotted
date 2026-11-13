@@ -5,29 +5,6 @@
              x:Class="Repotted.Desktop.Views.ProfilesView"
              x:DataType="vm:ProfilesViewModel">
   <DockPanel>
-    <!-- Where the profiles come from, and how the last sync went -->
-    <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
-            Padding="32,10" IsVisible="{Binding !ShowEmpty}">
-      <StackPanel Spacing="4">
-        <Grid ColumnDefinitions="*,Auto,Auto,Auto">
-          <TextBlock Classes="muted small" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                     ToolTip.Tip="{Binding Folder.Path}">
-            <Run Text="{Binding Folder.SourceLabel}" /> <Run Classes="mono" Text="{Binding Folder.SourceText}" />
-          </TextBlock>
-          <Button Grid.Column="1" Classes="link" Margin="16,0,0,0" Content="Change folder"
-                  Command="{Binding ChangeFolderCommand}" />
-          <Button Grid.Column="2" Classes="link" Margin="16,0,0,0" Content="{Binding Folder.RepositoryLabel}"
-                  Command="{Binding StartConnectCommand}" />
-          <Button Grid.Column="3" Classes="link" Margin="16,0,0,0" Content="{Binding Folder.RefreshLabel}"
-                  Command="{Binding RefreshCommand}" />
-        </Grid>
-        <TextBlock Classes="muted small" TextWrapping="Wrap" Text="{Binding Folder.SyncNote}" IsVisible="{Binding ShowSyncDone}"
-                   AutomationProperties.LiveSetting="Polite" />
-        <SelectableTextBlock Classes="small" TextWrapping="Wrap" Text="{Binding Folder.SyncNote}" IsVisible="{Binding ShowSyncProblem}"
-                             Foreground="{DynamicResource RemoveBrush}" AutomationProperties.LiveSetting="Assertive" />
-      </StackPanel>
-    </Border>
-
     <!-- Shown in every state, the empty folder included, because the usual folder to choose is a new one -->
     <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
             Padding="32,10" IsVisible="{Binding HasNotice}">
@@ -58,6 +35,16 @@
           <Button Classes="quiet" Content="Cancel" Command="{Binding CancelDeleteCommand}" />
           <Button Classes="primary" Content="Delete profile" Command="{Binding ConfirmDeleteCommand}" />
         </StackPanel>
+      </Grid>
+    </Border>
+    <!-- A sync that failed, which the settings also say -->
+    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+            Padding="32,10" IsVisible="{Binding ShowSyncProblem}">
+      <Grid ColumnDefinitions="*,Auto">
+        <SelectableTextBlock FontSize="13.5" TextWrapping="Wrap" VerticalAlignment="Center" Text="{Binding Folder.SyncNote}"
+                             Foreground="{DynamicResource RemoveBrush}" AutomationProperties.LiveSetting="Assertive" />
+        <Button Grid.Column="1" Classes="quiet" Margin="16,0,0,0" Content="{Binding Folder.RefreshLabel}"
+                Command="{Binding RefreshCommand}" />
       </Grid>
     </Border>
     <!-- A file changed both here and on GitHub waits for a side -->
@@ -116,11 +103,12 @@
         </ContentControl.DataTemplates>
       </ContentControl>
 
-      <ContentControl Content="{Binding Connecting}" IsVisible="{Binding ShowConnecting}">
-        <ContentControl.DataTemplates>
-          <DataTemplate DataType="vm:ConfigRepositoryViewModel"><views:ConfigRepositoryView /></DataTemplate>
-        </ContentControl.DataTemplates>
-      </ContentControl>
+      <!-- The repository is chosen in the settings; the page says so while the form is open there -->
+      <StackPanel Margin="32,24" Spacing="12" MaxWidth="560" HorizontalAlignment="Left" IsVisible="{Binding ShowConnecting}">
+        <TextBlock Classes="h1" Text="Profiles" />
+        <TextBlock TextWrapping="Wrap" Text="Choose the GitHub repository for your profiles in the settings." />
+        <Button Classes="quiet" HorizontalAlignment="Left" Content="Show settings" Command="{Binding ShowSettingsCommand}" />
+      </StackPanel>
 
       <ContentControl Content="{Binding Current}" IsVisible="{Binding ShowProfile}" IsEnabled="{Binding !DeleteRunning}">
         <ContentControl.DataTemplates>

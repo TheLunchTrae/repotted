@@ -26,7 +26,7 @@ internal sealed partial class ProfileFolder(RepottedClient client, AppSettings s
 
     /// <summary>The config repository profiles live in, as <c>owner/name</c>; null when they live in a local folder.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(UsesRepository), nameof(SourceLabel), nameof(SourceText), nameof(RepositoryLabel), nameof(RefreshLabel), nameof(ListLabel), nameof(EmptyMessage))]
+    [NotifyPropertyChangedFor(nameof(UsesRepository), nameof(SourceLabel), nameof(SourceText), nameof(RepositoryTitle), nameof(RepositoryLabel), nameof(FolderTitle), nameof(FolderLabel), nameof(RefreshLabel), nameof(ListLabel), nameof(EmptyMessage))]
     public partial string? Repository { get; private set; } = settings.Load().ConfigRepository;
 
     /// <summary>The folder in the config repository; empty for its root.</summary>
@@ -36,12 +36,21 @@ internal sealed partial class ProfileFolder(RepottedClient client, AppSettings s
 
     public bool UsesRepository => Repository is not null;
 
-    public string SourceLabel => UsesRepository ? "GitHub repository:" : "Profiles folder:";
+    /// <summary>Where the profiles live, as the settings name it.</summary>
+    public string SourceLabel => UsesRepository ? "Kept in a GitHub repository" : "Kept in a folder on this computer";
 
     /// <summary>Where the profiles live, as the user named it.</summary>
     public string SourceText => Repository is null ? Path : RepositoryPath.Length == 0 ? Repository : $"{Repository}/{RepositoryPath}";
 
-    public string RepositoryLabel => UsesRepository ? "Change repository" : "Use a GitHub repository";
+    /// <summary>The settings' choice of a repository, which is another one once a repository is in use.</summary>
+    public string RepositoryTitle => UsesRepository ? "Another GitHub repository" : "A GitHub repository";
+
+    public string RepositoryLabel => UsesRepository ? "Change repository…" : "Use a GitHub repository…";
+
+    /// <summary>The settings' choice of a folder, which is another one while a folder is in use.</summary>
+    public string FolderTitle => UsesRepository ? "A folder on this computer" : "Another folder";
+
+    public string FolderLabel => UsesRepository ? "Choose folder…" : "Change folder…";
 
     public string RefreshLabel => UsesRepository ? "Sync now" : "Refresh";
 

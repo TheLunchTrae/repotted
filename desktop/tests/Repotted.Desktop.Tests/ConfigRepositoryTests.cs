@@ -149,7 +149,7 @@ public sealed class ConfigRepositoryTests : IDisposable
         Assert.Null(profiles.Connecting);
         Assert.Equal(("lunch/config", "profiles"), (folders.Settings.Load().ConfigRepository, folders.Settings.Load().ConfigPath));
         Assert.Equal(copy, profiles.Folder.Path);
-        Assert.Equal("GitHub repository:", profiles.Folder.SourceLabel);
+        Assert.Equal("Kept in a GitHub repository", profiles.Folder.SourceLabel);
         Assert.Equal("lunch/config/profiles", profiles.Folder.SourceText);
         Assert.Equal("Sync now", profiles.Folder.RefreshLabel);
         Assert.Equal("Committed base.yaml to main.", profiles.Folder.SyncNote);
@@ -423,14 +423,16 @@ public sealed class ConfigRepositoryTests : IDisposable
             .On(folders.List(), Documents.NoProfiles);
         var profiles = Profiles(cli, new FakeDesktop { Folder = folders.Profiles });
         await profiles.RefreshCommand.ExecuteAsync(null);
-        Assert.Equal("Change repository", profiles.Folder.RepositoryLabel);
+        Assert.Equal("Change repository…", profiles.Folder.RepositoryLabel);
+        Assert.Equal("A folder on this computer", profiles.Folder.FolderTitle);
 
         await profiles.ChangeFolderCommand.ExecuteAsync(null);
 
         Assert.Null(folders.Settings.Load().ConfigRepository);
         Assert.Equal(folders.Profiles, profiles.Folder.Path);
-        Assert.Equal("Profiles folder:", profiles.Folder.SourceLabel);
-        Assert.Equal("Use a GitHub repository", profiles.Folder.RepositoryLabel);
+        Assert.Equal("Kept in a folder on this computer", profiles.Folder.SourceLabel);
+        Assert.Equal("Use a GitHub repository…", profiles.Folder.RepositoryLabel);
+        Assert.Equal("Another folder", profiles.Folder.FolderTitle);
         Assert.Null(profiles.Folder.SyncNote);
     }
 

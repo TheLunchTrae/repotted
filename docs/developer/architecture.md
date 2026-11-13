@@ -535,7 +535,10 @@ counted and shown on request. The app doesn't apply plans.
   everything changed at once, with `OnAllPropertiesChanged`; a page view
   model that other code listens to raises each name.
 - `src/Repotted.Desktop/Views`: the pages in XAML, bound with compiled
-  bindings.
+  bindings. `SettingsAccountView` and `SettingsProfilesView` are the settings'
+  panes, shown together by `SettingsView` as a page on Windows and Linux, and
+  as tabs by `SettingsWindow` on macOS, where `App` also adds Settings… to the
+  app menu.
 - `src/Repotted.Desktop/Theme`: the custom theme. `Colors.axaml` holds the
   light and dark colors, and `Controls.axaml` styles the controls over Fluent.
 - `src/Repotted.Desktop/Assets/Fonts`: Atkinson Hyperlegible Next and Mono,

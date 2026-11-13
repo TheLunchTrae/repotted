@@ -119,6 +119,31 @@ sign out are the question in
 [Leaving with unsaved changes](#leaving-with-unsaved-changes), on the
 **Profiles** page.
 
+## Desktop navigation
+
+`ShellViewModel.Page` is the page the signed-in app shows: 0 for the
+repositories, with a compare, an apply or a batch standing in for the list,
+1 for the profiles, and 2 for the settings where they are a page. The sidebar
+binds `NavPage`, which is Page for the first two and -1 on the settings, and
+`SettingsNavPage`, which is 0 only on the settings. Each ignores the -1 its
+list sets as the other list takes the selection.
+
+`SettingsInWindow` is true on macOS. There the settings never become a page:
+`OpenSettings` raises `SettingsWindowRequested`, and `ShellView` opens a
+`SettingsWindow` over the main window, or brings the open one forward. The
+window shows `SettingsTab`, 0 for the account and 1 for the profiles, and
+closes when the shell leaves the visual tree, as when signing out replaces it.
+
+| State                    | Event                                                              | Next                                                                                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any page                 | Repositories or Profiles in the sidebar                            | That page. Leaving the repositories closes a compare, and an apply or batch that can leave, as in [Desktop apply](#desktop-apply).                                                             |
+| Any page                 | Settings, Ctrl+comma, or the account menu, on Windows              | The settings page, closing a compare as above.                                                                                                                                                 |
+| Any page                 | Repotted > Settings…, Command+comma, or the account menu, on macOS | The page stays; the settings window opens or comes forward.                                                                                                                                    |
+| Any page                 | Use a GitHub repository or Change repository, wherever it is       | After [Leaving with unsaved changes](#leaving-with-unsaved-changes), the connect form opens in the settings, at the Profiles tab on macOS; the profiles page says so and offers Show settings. |
+| The connect form is open | It connects or is cancelled                                        | The settings show where the profiles are kept again.                                                                                                                                           |
+| The settings window      | Command+W or its close button                                      | Closed; the next open makes a new one.                                                                                                                                                         |
+| The settings window      | The shell is replaced                                              | Closed.                                                                                                                                                                                        |
+
 ## Plan and apply
 
 `createPlan` only reads. `applyPlan` (`packages/core/src/plan.ts`) plans
@@ -611,10 +636,11 @@ Changing the folder, connecting or changing the repository, closing the
 window, signing out, and a lost sign-in that would replace the app go through
 `ProfilesViewModel.ConfirmLeaveAsync`, which asks only when a cached editor
 has unsaved changes. [Closing](#closing) a profile goes through it too, and
-asks only about that profile. Closing the window, signing out, and a lost
-sign-in show the **Profiles** page first, through
-`ShellViewModel.ConfirmLeaveAsync`. Closing the window cancels the close and
-closes again once the question settles.
+asks only about that profile. The question shows on the **Profiles** page and
+in the settings, where changing the folder or the repository starts. Closing
+the window, signing out, and a lost sign-in show the **Profiles** page first,
+through `ShellViewModel.ConfirmLeaveAsync`. Closing the window cancels the
+close and closes again once the question settles.
 
 | State            | Event                                                                                                   | Next                                                                                                                                                                                                                                                                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

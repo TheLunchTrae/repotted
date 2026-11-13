@@ -3,12 +3,15 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using Repotted.Desktop.ViewModels;
 
 namespace Repotted.Desktop.Views;
 
 internal sealed partial class ShellView : UserControl
 {
     private TopLevel? topLevel;
+
+    private ShellViewModel? shell;
 
     /// <summary>The page selected when the pointer went down, since the list selects on press, before the tap.</summary>
     private int pressedOn = -1;
@@ -26,10 +29,25 @@ internal sealed partial class ShellView : UserControl
         Nav.AddHandler(KeyDownEvent, OnNavKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
         ProfileList.KeyDown += OnProfileListKeyDown;
         ProfileList.AddHandler(PointerPressedEvent, OnProfileListPointerPressed, RoutingStrategies.Tunnel);
-        if (OperatingSystem.IsMacOS())
+        // Choosing an item in the account menu closes it, as a menu does.
+        AccountMenu.AddHandler(Button.ClickEvent, (_, _) => AccountButton.Flyout?.Hide(), RoutingStrategies.Bubble, handledEventsToo: true);
+    }
+
+    /// <summary>The settings window, while it is open on macOS.</summary>
+    internal SettingsWindow? Settings { get; private set; }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        if (shell is not null)
         {
-            SearchShortcut.Text = "⌘K";
+            shell.SettingsWindowRequested -= OnSettingsWindowRequested;
         }
+        shell = DataContext as ShellViewModel;
+        if (shell is not null)
+        {
+            shell.SettingsWindowRequested += OnSettingsWindowRequested;
+        }
+        base.OnDataContextChanged(e);
     }
 
     // The shortcut listens on the window, so it works before anything in the
@@ -41,11 +59,40 @@ internal sealed partial class ShellView : UserControl
         topLevel?.AddHandler(KeyDownEvent, OnShortcut, RoutingStrategies.Tunnel);
     }
 
+    // Signing out, or anything else that ends the shell, closes its settings.
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         topLevel?.RemoveHandler(KeyDownEvent, OnShortcut);
         topLevel = null;
+        Settings?.Close();
         base.OnDetachedFromVisualTree(e);
+    }
+
+    /// <summary>Opens the settings window, or brings it to the front when it is open.</summary>
+    private void OnSettingsWindowRequested(object? sender, EventArgs e)
+    {
+        if (Settings is { } open)
+        {
+            open.Activate();
+            return;
+        }
+        var window = new SettingsWindow { DataContext = shell };
+        window.Closed += (_, _) =>
+        {
+            if (Settings == window)
+            {
+                Settings = null;
+            }
+        };
+        Settings = window;
+        if (topLevel is Window owner)
+        {
+            window.Show(owner);
+        }
+        else
+        {
+            window.Show();
+        }
     }
 
     /// <summary>
@@ -65,7 +112,7 @@ internal sealed partial class ShellView : UserControl
 
     private void ShowPage(object? source, int shown)
     {
-        if (DataContext is ViewModels.ShellViewModel shell
+        if (shell is not null
             && (source as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true) is { } item
             && Nav.IndexFromContainer(item) is var page and >= 0
             && page == shown)
@@ -105,14 +152,13 @@ internal sealed partial class ShellView : UserControl
         }
     }
 
-    /// <summary>Ctrl+K, or Command+K on macOS, moves to the search.</summary>
+    /// <summary>Ctrl+comma, or Command+comma on macOS, opens the settings, as apps on both do.</summary>
     private void OnShortcut(object? sender, KeyEventArgs e)
     {
         var modifier = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
-        if (e.Key == Key.K && e.KeyModifiers == modifier)
+        if (e.Key == Key.OemComma && e.KeyModifiers == modifier && shell is not null)
         {
-            SearchBox.Focus();
-            SearchBox.SelectAll();
+            shell.OpenSettings();
             e.Handled = true;
         }
     }

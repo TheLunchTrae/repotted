@@ -279,7 +279,7 @@ public sealed class SignInTests : ViewModelTests
         var main = App(cli);
         await main.StartAsync();
         var shell = Assert.IsType<ShellViewModel>(main.Page);
-        shell.Search = "repotted";
+        shell.Repositories.Filter = "repotted";
 
         // Another run refreshed the token first, so the sign-in still works.
         cli.On("repos --json", Documents.SignedOutFailure, exitCode: 1);
@@ -289,7 +289,7 @@ public sealed class SignInTests : ViewModelTests
 
         Assert.Equal(2, cli.Calls.Count(call => call == "status --json"));
         Assert.Same(shell, main.Page);
-        Assert.Equal("repotted", shell.Search);
+        Assert.Equal("repotted", shell.Repositories.Filter);
         Assert.Equal("Bad credentials", shell.Repositories.Error);
     }
 

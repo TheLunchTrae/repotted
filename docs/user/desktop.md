@@ -47,8 +47,8 @@ npm to use it.
 
 The first time the app opens, click **Sign in with GitHub** and enter the code
 it shows on GitHub. If the sign-in stops working while the app is open, the app
-returns to this page. To sign out, click **Sign out** under your account in the
-sidebar. If the GitHub CLI is also signed in on your computer, signing out
+returns to this page. To sign out, click your account at the top right and
+choose **Sign out**, or click **Sign out** in [Settings](#settings). If the GitHub CLI is also signed in on your computer, signing out
 keeps you in the app, signed in with the GitHub CLI's token.
 [Sign in](sign-in.md) explains the steps, the permissions the Repotted App asks
 for, and how to use a token instead.
@@ -57,10 +57,11 @@ for, and how to use a token instead.
 
 The **Repositories** page lists the repositories that the Repotted App is
 installed on and that you administer. With a token instead of the App, it
-lists every repository your account administers. Press <kbd>Ctrl</kbd>+<kbd>K</kbd>, or
-<kbd>⌘</kbd>+<kbd>K</kbd> on macOS, to search the list on the current page.
-To add repositories to the list, click **Add repositories**, which opens the
-Repotted App's install page on GitHub.
+lists every repository your account administers. To find a repository, type in
+**Find a repository** above the list, or press <kbd>Ctrl</kbd>+<kbd>F</kbd>, or
+<kbd>⌘</kbd>+<kbd>F</kbd> on macOS; Escape clears it. To add repositories to the
+list, click **Add repositories**, which opens the Repotted App's install page on
+GitHub.
 
 The list is grouped by owner: your own repositories first, then each
 organization, or other account, in name order. When there's more than one owner,
@@ -81,27 +82,33 @@ them](#apply-a-profile-to-several-repositories).
 A profile is a YAML file that describes how a repository should be set up. The
 app keeps your profiles in a folder: `Documents/Repotted` at first, which the
 app creates. To use another folder, such as a clone of a repository where you
-keep your profiles, click **Change folder** on the **Profiles** page.
+keep your profiles, click **Change folder** in [Settings](#settings).
+
+The sidebar lists the profiles while the **Profiles** page is open. Type in
+**Find a profile** to narrow the list, and click the sync button beside the
+list's heading to read the folder again, or to sync with GitHub when your
+profiles are kept there.
 
 ### Keep profiles on GitHub
 
 To have your profiles follow you to any computer, keep them in a GitHub
-repository instead. Click **Use a GitHub repository** on the **Profiles** page,
+repository instead. Click **Use a GitHub repository** in [Settings](#settings),
 name the repository, and optionally a folder in it. An empty repository works:
 tick **Add the profiles from** your current folder to start it with them. The
 Repotted App must be installed on the repository with the Contents permission.
 
 From then on, each save is a commit to the repository's default branch, and
-**Sync now** brings in changes made elsewhere. If a profile changed both in
+**Sync now** in Settings, or the sync button beside the profile list, brings in
+changes made elsewhere. If a profile changed both in
 the app and on GitHub since the last sync, a banner asks which version to keep:
 **Keep mine** commits yours, and **Use GitHub's** takes the repository's. If a
-sync fails, the app says why under the list and keeps your saves until a sync
-works. A ruleset that requires pull requests on that branch, for example,
+sync fails, a banner on the **Profiles** page says why, and Settings says so
+too; the app keeps your saves until a sync works. A ruleset that requires pull requests on that branch, for example,
 refuses the commit unless you or the Repotted App can bypass it.
 
 The app keeps its copy of the repository's profiles in its app data folder.
-**Change folder** goes back to a local folder; the repository keeps every
-profile it has.
+**Choose folder** in Settings goes back to a local folder; the repository keeps
+every profile it has.
 
 ### Make a profile
 
@@ -251,8 +258,8 @@ changes.
 
 Unsaved changes stay with the app until you save or discard them. If you
 click **Change folder**, **Use a GitHub repository**, **Change repository** or
-**Sign out**, or quit, while a profile has unsaved changes, a banner on the
-**Profiles** page asks first: **Save** saves them and goes on, **Discard**
+**Sign out**, or quit, while a profile has unsaved changes, a banner asks
+first, in Settings or on the **Profiles** page: **Save** saves them and goes on, **Discard**
 drops them and goes on, and **Cancel** stays where you are. If a save fails,
 the profile opens with the error and nothing else changes. While a new profile
 is being captured, the profile that could not be saved stays closed, since
@@ -426,6 +433,25 @@ still be discarded or started over; any apply it started then stays on its own.
 
 The command line does the same with
 [`repotted stage --batch`](cli.md#apply-a-profile-to-several-repositories).
+
+## Settings
+
+Settings hold what applies to the whole app: the account you're signed in
+with, and where your profiles are kept.
+
+- On macOS, choose **Repotted > Settings…** or press <kbd>⌘</kbd>+<kbd>,</kbd>.
+  Settings open in a window of their own, with an **Account** pane and a
+  **Profiles** pane.
+- On Windows, click **Settings** at the foot of the sidebar, or press
+  <kbd>Ctrl</kbd>+<kbd>,</kbd>.
+
+The account menu, at the top right, opens Settings too, and also offers **Add
+repositories** and **Sign out**.
+
+**Account** shows who you're signed in as and how, with **Add repositories**
+and **Sign out**. **Profiles** shows where your profiles are kept and how the
+last sync went, with **Sync now** (or **Refresh** for a folder), and the
+buttons that move them to a GitHub repository or a folder on this computer.
 
 ## Where the app keeps its settings
 

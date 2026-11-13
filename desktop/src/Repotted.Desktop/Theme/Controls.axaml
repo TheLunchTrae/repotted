@@ -769,4 +769,144 @@
     <Setter Property="Padding" Value="0,2" />
     <Setter Property="Margin" Value="0,2" />
   </Style>
+  <!-- Line icons, drawn in the text's color on a 16px grid. -->
+  <Style Selector="Path.icon">
+    <Setter Property="Stroke" Value="{DynamicResource MutedBrush}" />
+    <Setter Property="StrokeThickness" Value="1.5" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+    <Setter Property="Width" Value="16" />
+    <Setter Property="Height" Value="16" />
+    <Setter Property="Stretch" Value="None" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Path.icon.gear">
+    <Setter Property="Data" Value="M8,5 A2.7,2.7 0 1 0 8,10.4 A2.7,2.7 0 1 0 8,5 Z M6.9,2 H9.1 L9.5,3.7 L10.8,4.4 L12.4,3.8 L13.5,5.8 L12.2,7 V8.4 L13.5,9.6 L12.4,11.6 L10.8,11 L9.5,11.7 L9.1,13.4 H6.9 L6.5,11.7 L5.2,11 L3.6,11.6 L2.5,9.6 L3.8,8.4 V7 L2.5,5.8 L3.6,3.8 L5.2,4.4 L6.5,3.7 Z" />
+  </Style>
+  <Style Selector="Path.icon.sync">
+    <Setter Property="Data" Value="M13,6.5 A5.2,5.2 0 0 0 3.4,5 M3,9.5 A5.2,5.2 0 0 0 12.6,11 M3.2,2.4 V5.2 H6 M12.8,13.6 V10.8 H10" />
+  </Style>
+  <Style Selector="Path.icon.chevron">
+    <Setter Property="Data" Value="M4.5,6.5 L8,10 L11.5,6.5" />
+    <Setter Property="Width" Value="12" />
+    <Setter Property="Height" Value="16" />
+    <Setter Property="Margin" Value="-2,0,0,0" />
+  </Style>
+  <Style Selector="Path.icon.person">
+    <Setter Property="Data" Value="M11,5.7 A3,3 0 1 0 5,5.7 A3,3 0 1 0 11,5.7 Z M2.5,14 C3.1,11.2 5.3,9.7 8,9.7 C10.7,9.7 12.9,11.2 13.5,14" />
+    <Setter Property="Width" Value="16" />
+  </Style>
+  <Style Selector="Path.icon.folder">
+    <Setter Property="Data" Value="M1.8,3.8 A1,1 0 0 1 2.8,2.8 H6 L7.4,4.4 H13.2 A1,1 0 0 1 14.2,5.4 V12.2 A1,1 0 0 1 13.2,13.2 H2.8 A1,1 0 0 1 1.8,12.2 Z" />
+  </Style>
+
+  <!-- The account at the top right, which opens its menu. -->
+  <Style Selector="Button.account">
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="Padding" Value="4,0,10,0" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="CornerRadius" Value="16" />
+  </Style>
+  <Style Selector="Button.account:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+  </Style>
+  <Style Selector="Button.account Border.avatar">
+    <Setter Property="Width" Value="24" />
+    <Setter Property="Height" Value="24" />
+    <Setter Property="CornerRadius" Value="12" />
+  </Style>
+  <Style Selector="FlyoutPresenter.menu">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="6" />
+    <Setter Property="MinWidth" Value="260" />
+  </Style>
+  <!-- An item in a menu: the whole row is the button. -->
+  <Style Selector="Button.menuitem">
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="Button.menuitem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource TintBrush}" />
+  </Style>
+  <!-- A small button with only an icon, which its tooltip and name describe. -->
+  <Style Selector="Button.iconbutton">
+    <Setter Property="MinHeight" Value="26" />
+    <Setter Property="Width" Value="26" />
+    <Setter Property="Height" Value="26" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="Button.iconbutton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+  </Style>
+  <Style Selector="Button.iconbutton:pointerover Path.icon">
+    <Setter Property="Stroke" Value="{DynamicResource FgBrush}" />
+  </Style>
+  <Style Selector="TextBox.search.side">
+    <Setter Property="Width" Value="NaN" />
+  </Style>
+
+  <!-- Settings: groups of rows, each a setting and the button that changes it. -->
+  <Style Selector="Border.settings">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource PanelRadius}" />
+  </Style>
+  <Style Selector="Border.settingrow">
+    <Setter Property="Padding" Value="18,14" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+  </Style>
+  <Style Selector="Border.settingrow.first">
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="Border.avatar.large">
+    <Setter Property="Width" Value="40" />
+    <Setter Property="Height" Value="40" />
+    <Setter Property="CornerRadius" Value="20" />
+  </Style>
+  <!-- A settings window's toolbar tabs: an icon over each pane's name. -->
+  <Style Selector="ListBox.toolbar">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+  <Style Selector="ListBox.toolbar ListBoxItem">
+    <Setter Property="Padding" Value="12,6" />
+    <Setter Property="MinWidth" Value="76" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="ListBox.toolbar ListBoxItem Path.icon">
+    <Setter Property="Width" Value="22" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="Stretch" Value="Uniform" />
+    <Setter Property="StrokeThickness" Value="1.4" />
+  </Style>
+  <Style Selector="ListBox.toolbar ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+  </Style>
+  <Style Selector="ListBox.toolbar ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource TintBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource FgBrush}" />
+  </Style>
+  <Style Selector="ListBox.toolbar ListBoxItem:selected Path.icon">
+    <Setter Property="Stroke" Value="{DynamicResource RailBrush}" />
+  </Style>
 </Styles>

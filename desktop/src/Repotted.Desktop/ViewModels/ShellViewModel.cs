@@ -7,8 +7,8 @@ using Repotted.Desktop.Theme;
 namespace Repotted.Desktop.ViewModels;
 
 /// <summary>
-/// The signed-in app: the sidebar, the header with its search, and the page,
-/// which is the repository list, a compare, or the profiles.
+/// The signed-in app: the sidebar, the header with the account, and the page,
+/// which is the repository list, a compare, the profiles, or the settings.
 /// </summary>
 internal sealed partial class ShellViewModel : ViewModelBase
 {
@@ -34,6 +34,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
         RepositoriesViewModel? repositories = null;
         Profiles = new ProfilesViewModel(client, desktop, settings, () => repositories?.Names ?? []);
         Profiles.PropertyChanged += OnProfilesChanged;
+        Profiles.OpenSettings = OpenProfileSettings;
         Repositories = repositories = new RepositoriesViewModel(
             client, desktop, account.InstallUrl, Profiles, OpenCompare, OpenCapture, OpenApply, Unfinished, OpenBatch, () => settings.HasBatch,
             account.Login, settings);
@@ -46,10 +47,92 @@ internal sealed partial class ShellViewModel : ViewModelBase
 
     public ProfilesViewModel Profiles { get; }
 
-    /// <summary>The page: 0 for the repositories, 1 for the profiles, as the sidebar lists them.</summary>
+    /// <summary>
+    /// The page: 0 for the repositories and 1 for the profiles, as the sidebar
+    /// lists them, and 2 for the settings where they are a page rather than a
+    /// window.
+    /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowingProfiles), nameof(ShowingRepositories), nameof(ShowingCompare), nameof(ShowingApply), nameof(ShowingBatch), nameof(Crumb), nameof(SearchHint))]
+    [NotifyPropertyChangedFor(nameof(ShowingProfiles), nameof(ShowingRepositories), nameof(ShowingCompare), nameof(ShowingApply), nameof(ShowingBatch), nameof(ShowingSettings), nameof(NavPage), nameof(SettingsNavPage), nameof(Crumb))]
     public partial int Page { get; set; }
+
+    public const int SettingsPage = 2;
+
+    /// <summary>
+    /// The sidebar entry selected among Repositories and Profiles: none while
+    /// the settings show. Choosing one shows its page.
+    /// </summary>
+    public int NavPage
+    {
+        get => Page < SettingsPage ? Page : -1;
+        set
+        {
+            if (value is >= 0 and < SettingsPage)
+            {
+                Page = value;
+            }
+        }
+    }
+
+    /// <summary>The settings entry at the foot of the sidebar: 0 while the settings show, otherwise -1. Choosing it shows them.</summary>
+    public int SettingsNavPage
+    {
+        get => ShowingSettings ? 0 : -1;
+        set
+        {
+            if (value == 0)
+            {
+                OpenSettings();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether the settings open in a window of their own, as on macOS, where
+    /// Repotted > Settings opens them; elsewhere they are a page, at the foot
+    /// of the sidebar.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SettingsLabel))]
+    public partial bool SettingsInWindow { get; set; } = OperatingSystem.IsMacOS();
+
+    /// <summary>Asks the view to show the settings window, or bring it to the front.</summary>
+    public event EventHandler? SettingsWindowRequested;
+
+    /// <summary>The settings window's tab: 0 for the account, 1 for where the profiles are kept.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SettingsTitle))]
+    public partial int SettingsTab { get; set; }
+
+    /// <summary>The settings window's title, which names its tab, as macOS settings windows do.</summary>
+    public string SettingsTitle => SettingsTab == 1 ? "Profiles" : "Account";
+
+    /// <summary>Shows the settings at where the profiles are kept, as the profiles page asks.</summary>
+    private void OpenProfileSettings()
+    {
+        SettingsTab = 1;
+        OpenSettings();
+    }
+
+    /// <summary>The settings' name where they are opened: "Settings…" for the window, which opens apart from the app.</summary>
+    public string SettingsLabel => SettingsInWindow ? "Settings…" : "Settings";
+
+    /// <summary>The shortcut that opens the settings, as the account menu shows it.</summary>
+    public static string SettingsShortcut => OperatingSystem.IsMacOS() ? "⌘," : "Ctrl+,";
+
+    /// <summary>Shows the settings: the window on macOS, the page elsewhere.</summary>
+    [RelayCommand]
+    public void OpenSettings()
+    {
+        if (SettingsInWindow)
+        {
+            SettingsWindowRequested?.Invoke(this, EventArgs.Empty);
+        }
+        else
+        {
+            Page = SettingsPage;
+        }
+    }
 
     /// <summary>The open compare, which stands in for the repository list until it closes.</summary>
     [ObservableProperty]
@@ -76,9 +159,12 @@ internal sealed partial class ShellViewModel : ViewModelBase
 
     public bool ShowingProfiles => Page == 1;
 
+    public bool ShowingSettings => Page == SettingsPage;
+
     /// <summary>Where you are, for the header.</summary>
     public string Crumb => (ShowingProfiles, Profiles.Current, Compare, Apply) switch
     {
+        _ when ShowingSettings => "Settings",
         (false, _, _, null) when Batch is not null => $"Repositories / {ControlLabel.For("Batch apply")}",
         (true, _, _, _) when Profiles.ShowCreating => $"Profiles / {ControlLabel.For("New profile")}",
         (true, { } profile, _, _) => $"Profiles / {profile.Name}",
@@ -213,7 +299,7 @@ internal sealed partial class ShellViewModel : ViewModelBase
                 CloseBatch();
             }
         }
-        else
+        else if (page == 1)
         {
             Profiles.CancelNew();
         }
@@ -257,8 +343,6 @@ internal sealed partial class ShellViewModel : ViewModelBase
 
     /// <summary>Whether leaving the app would ask first, or wait, for unsaved changes or an apply.</summary>
     public bool MustAskToLeave => Profiles.HasUnsaved || Apply is { CanLeave: false } || Batch is { CanLeave: false };
-
-    public string SearchHint => ShowingProfiles ? "Find a profile" : "Find a repository";
 
     /// <summary>Loads both lists, which the sidebar counts.</summary>
     public Task RefreshAsync() =>
@@ -319,15 +403,6 @@ internal sealed partial class ShellViewModel : ViewModelBase
     /// a save or sync already running ends.
     /// </summary>
     public Task Stop() => Profiles.Stop();
-
-    [ObservableProperty]
-    public partial string Search { get; set; } = "";
-
-    partial void OnSearchChanged(string value)
-    {
-        Repositories.Filter = value;
-        Profiles.Filter = value;
-    }
 
     private void OnProfilesChanged(object? sender, PropertyChangedEventArgs e)
     {

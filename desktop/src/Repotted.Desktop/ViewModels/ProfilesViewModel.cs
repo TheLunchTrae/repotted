@@ -430,7 +430,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Opens the form that makes a GitHub repository the place profiles live.</summary>
+    /// <summary>Opens the form that makes a GitHub repository the place profiles live, in the settings.</summary>
     /// <remarks>
     /// Unsaved changes are settled first: connecting moves this folder's
     /// files to the repository, and the editors close once it connects.
@@ -453,7 +453,14 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             Folder.Repository is null && Count > 0 ? Folder.Path : null,
             ConnectedAsync,
             CancelConnect);
+        OpenSettings?.Invoke();
     }
+
+    /// <summary>Opens the settings, where the folder or repository is chosen; set by the shell.</summary>
+    public Action? OpenSettings { get; set; }
+
+    [RelayCommand]
+    private void ShowSettings() => OpenSettings?.Invoke();
 
     /// <summary>Closes the repository form, back to the profile that was open.</summary>
     public void CancelConnect()

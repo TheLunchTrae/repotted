@@ -41,6 +41,15 @@
       <!-- The list -->
       <DockPanel Margin="0,0,24,0">
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,14">
+          <TextBox x:Name="RepositorySearch" Classes="search" Margin="0,0,4,0" VerticalAlignment="Center"
+                   PlaceholderText="Find a repository" Text="{Binding Filter}" IsVisible="{Binding ShowTable}"
+                   AutomationProperties.Name="Find a repository">
+            <TextBox.InnerRightContent>
+              <Border Classes="kbd" Margin="6,0,0,0" IsHitTestVisible="False">
+                <TextBlock x:Name="SearchShortcut" Classes="mono muted" FontSize="12" Text="Ctrl F" />
+              </Border>
+            </TextBox.InnerRightContent>
+          </TextBox>
           <!-- Which owners' repositories the list shows -->
           <Button Classes="quiet owners" Classes.filtered="{Binding OwnersFiltered}" VerticalAlignment="Center"
                   IsVisible="{Binding ShowOwnerFilter}" AutomationProperties.Name="{Binding OwnersLabel, StringFormat='Owners: {0}'}">

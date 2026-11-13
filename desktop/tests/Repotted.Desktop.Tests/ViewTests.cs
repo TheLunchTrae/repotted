@@ -43,8 +43,113 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("TheLunchTrae/github-setup", text);
         Assert.Contains("No profile", text);
         Assert.Contains(ControlLabel.For("Add repositories"), text);
-        Assert.Contains(ControlLabel.For("Sign out"), text);
+        Assert.Contains("Find a repository", text);
+        // The account sits at the top right, and its menu holds what it does.
+        Assert.Contains("TheLunchTrae", text);
+        Assert.DoesNotContain(ControlLabel.For("Sign out"), text);
         Save(window, $"repositories-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task The_account_menu_offers_the_settings_and_signing_out(string theme)
+    {
+        var window = await Show(theme, FakeCli.SignedIn());
+        var view = window.GetVisualDescendants().OfType<ShellView>().Single();
+        var account = view.FindControl<Button>("AccountButton")!;
+        var menu = view.FindControl<StackPanel>("AccountMenu")!;
+
+        account.Flyout!.ShowAt(account);
+        Dispatcher.UIThread.RunJobs();
+
+        var text = menu.GetVisualDescendants().OfType<TextBlock>().Where(block => block.IsEffectivelyVisible)
+            .Select(block => block.Text).ToHashSet();
+        Assert.Contains("TheLunchTrae", text);
+        Assert.Contains("Signed in with the Repotted App.", text);
+        Assert.Contains(ControlLabel.For("Add repositories"), text);
+        Assert.Contains("Settings", text);
+        Assert.Contains(ShellViewModel.SettingsShortcut, text);
+        Assert.Contains(ControlLabel.For("Sign out"), text);
+        Save(window, $"account-menu-{theme}");
+
+        // Choosing an item closes the menu.
+        var settings = menu.GetVisualDescendants().OfType<Button>()
+            .Single(button => AutomationProperties.GetName(button) == "Settings");
+        settings.Command!.Execute(null);
+        settings.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(account.Flyout.IsOpen);
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        Assert.True(shell.ShowingSettings);
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task The_settings_page_holds_the_account_and_where_profiles_are_kept(string theme)
+    {
+        var window = await Show(theme, FakeCli.SignedIn());
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+
+        Click(window, "Settings");
+
+        Assert.True(shell.ShowingSettings);
+        Assert.Equal("Settings", shell.Crumb);
+        Assert.Equal(-1, window.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "Nav").SelectedIndex);
+        var text = Texts(window);
+        Assert.Contains("For the whole app, on this computer.", text);
+        Assert.Contains("TheLunchTrae", text);
+        Assert.Contains("Signed in with the Repotted App.", text);
+        Assert.Contains(ControlLabel.For("Sign out"), text);
+        Assert.Contains("Kept in a folder on this computer", text);
+        Assert.Contains(folders.Profiles, text);
+        Assert.Contains(ControlLabel.For("Use a GitHub repository…"), text);
+        Assert.Contains(ControlLabel.For("Change folder…"), text);
+        Save(window, $"settings-page-{theme}");
+
+        // The sidebar leads back.
+        Click(window, "Repositories");
+        Assert.True(shell.ShowingRepositories);
+        Assert.Equal(-1, window.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "SettingsNav").SelectedIndex);
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task On_macOS_the_settings_open_in_a_window_with_a_tab_for_each_pane(string theme)
+    {
+        var window = await Show(theme, FakeCli.SignedIn());
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.SettingsInWindow = true;
+        var view = window.GetVisualDescendants().OfType<ShellView>().Single();
+        Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain(window.GetVisualDescendants().OfType<ListBox>(), list => list.Name == "SettingsNav" && list.IsEffectivelyVisible);
+
+        shell.OpenSettings();
+        Dispatcher.UIThread.RunJobs();
+
+        var settings = Assert.IsType<SettingsWindow>(view.Settings);
+        Assert.True(shell.ShowingRepositories);
+        Assert.Equal("Account", settings.Title);
+        settings.Width = 640;
+        var account = Texts(settings);
+        Assert.Contains("TheLunchTrae", account);
+        Assert.Contains(ControlLabel.For("Sign out"), account);
+        Save(settings, $"settings-window-account-{theme}");
+
+        shell.SettingsTab = 1;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Profiles", settings.Title);
+        var profiles = Texts(settings);
+        Assert.Contains("Kept in a folder on this computer", profiles);
+        Assert.DoesNotContain("TheLunchTrae", profiles);
+        Save(settings, $"settings-window-profiles-{theme}");
+
+        // Opening them again brings the same window forward, and the shell's end closes it.
+        shell.OpenSettings();
+        Assert.Same(settings, view.Settings);
+        ((MainViewModel)window.DataContext!).Page = null;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(view.Settings);
     }
 
     [AvaloniaFact]
@@ -136,16 +241,30 @@ public sealed class ViewTests : IDisposable
     }
 
     [AvaloniaFact]
-    public async Task The_search_shortcut_works_before_anything_has_focus()
+    public async Task The_find_shortcut_works_before_anything_has_focus()
     {
         var window = await Show("light", FakeCli.SignedIn());
-        var search = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "SearchBox");
+        var search = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "RepositorySearch");
         Assert.Null(window.FocusManager?.GetFocusedElement());
 
-        window.KeyPressQwerty(PhysicalKey.K, OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control);
+        window.KeyPressQwerty(PhysicalKey.F, OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control);
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(search.IsFocused);
+    }
+
+    [AvaloniaFact]
+    public async Task The_settings_shortcut_opens_the_settings_from_any_page()
+    {
+        var window = await Show("light", FakeCli.SignedIn());
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        Dispatcher.UIThread.RunJobs();
+
+        window.KeyPressQwerty(PhysicalKey.Comma, OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(shell.ShowingSettings);
     }
 
     [AvaloniaTheory]
@@ -1193,6 +1312,8 @@ public sealed class ViewTests : IDisposable
         shell.Profiles.StartConnectCommand.Execute(null);
         shell.Profiles.Connecting!.Repository = "TheLunchTrae/repotted-config";
 
+        // The form opens in the settings, where the repository is chosen.
+        Assert.True(shell.ShowingSettings);
         var text = Texts(window);
         Assert.Contains(ControlLabel.For("Keep profiles on GitHub"), text);
         Assert.Contains($"Add the profiles from {folders.Profiles}", text);
@@ -1224,15 +1345,24 @@ public sealed class ViewTests : IDisposable
         shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
 
         var text = Texts(window);
-        Assert.Contains("GitHub repository:", text);
-        Assert.Contains("TheLunchTrae/repotted-config", text);
         Assert.Contains("orgs.yaml changed here and on GitHub since the last sync. Keep which version?", text);
         Assert.Contains(ControlLabel.For("Keep mine"), text);
         Assert.Contains(ControlLabel.For("Use GitHub's"), text);
-        Assert.Contains(ControlLabel.For("Sync now"), text);
         Assert.Contains("In this repository", text);
-        Assert.Contains("Everything else is in sync with main.", text);
+        Assert.Equal("Sync now", AutomationProperties.GetName(window.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "SyncButton")));
         Save(window, $"config-repository-conflict-{theme}");
+
+        // The settings say where they live and how the sync went.
+        shell.OpenSettings();
+        var settings = Texts(window);
+        Assert.Contains("Kept in a GitHub repository", settings);
+        Assert.Contains("TheLunchTrae/repotted-config", settings);
+        Assert.Contains(ControlLabel.For("Sync now"), settings);
+        Assert.Contains("Everything else is in sync with main.", settings);
+        Assert.Contains(ControlLabel.For("Change repository…"), settings);
+        Assert.Contains(ControlLabel.For("Choose folder…"), settings);
+        Save(window, $"config-repository-settings-{theme}");
+        shell.Page = 1;
 
         // A ruleset that turns the commit away says what to change, under the list.
         cli.On(
