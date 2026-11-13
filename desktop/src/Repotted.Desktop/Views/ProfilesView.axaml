@@ -89,6 +89,14 @@
         </StackPanel>
       </StackPanel>
 
+      <!-- The folder has profiles and none is open, such as after one is closed -->
+      <StackPanel x:Name="NoneOpen" Margin="32,24" Spacing="12" MaxWidth="560" HorizontalAlignment="Left" IsVisible="{Binding ShowNoneOpen}">
+        <TextBlock Classes="h1" Text="Profiles" />
+        <TextBlock TextWrapping="Wrap" Text="Choose a profile in the list to edit it, or start a new one." />
+        <Button x:Name="NoneOpenNew" Classes="quiet" HorizontalAlignment="Left" Content="New profile"
+                Command="{Binding StartNewCommand}" CommandParameter="{x:Null}" />
+      </StackPanel>
+
       <ContentControl Content="{Binding Creating}" IsVisible="{Binding ShowCreating}">
         <ContentControl.DataTemplates>
           <DataTemplate DataType="vm:NewProfileViewModel"><views:NewProfileView /></DataTemplate>

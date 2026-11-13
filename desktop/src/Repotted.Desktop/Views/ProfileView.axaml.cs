@@ -1,6 +1,9 @@
 using System.ComponentModel;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Repotted.Desktop.ViewModels;
@@ -11,10 +14,31 @@ internal sealed partial class ProfileView : UserControl
 {
     private ProfileViewModel? watched;
 
+    private TopLevel? topLevel;
+
+    /// <summary>Command+W on macOS and Ctrl+W elsewhere, which close a document in each platform's own apps.</summary>
+    private static readonly KeyGesture CloseGesture = new(Key.W, OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control);
+
     public ProfileView()
     {
         InitializeComponent();
         _ = new FindShortcut(this, SettingsSearch, SearchShortcut);
+        var shortcut = OperatingSystem.IsMacOS() ? "⌘W" : "Ctrl+W";
+        ToolTip.SetTip(CloseButton, shortcut);
+        AutomationProperties.SetAcceleratorKey(CloseButton, shortcut);
+    }
+
+    /// <summary>
+    /// Closes the profile on its shortcut while the page shows. It listens on
+    /// the window, so it works wherever focus is on the page.
+    /// </summary>
+    private void OnCloseShortcut(object? sender, KeyEventArgs e)
+    {
+        if (CloseGesture.Matches(e) && CloseButton.IsEffectivelyVisible && DataContext is ProfileViewModel profile)
+        {
+            profile.CloseCommand.Execute(null);
+            e.Handled = true;
+        }
     }
 
     /// <summary>
@@ -32,12 +56,16 @@ internal sealed partial class ProfileView : UserControl
     {
         base.OnAttachedToVisualTree(e);
         Watch(DataContext as ProfileViewModel);
+        topLevel = TopLevel.GetTopLevel(this);
+        topLevel?.AddHandler(KeyDownEvent, OnCloseShortcut, RoutingStrategies.Tunnel);
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
         Watch(null);
+        topLevel?.RemoveHandler(KeyDownEvent, OnCloseShortcut);
+        topLevel = null;
     }
 
     private void Watch(ProfileViewModel? profile)

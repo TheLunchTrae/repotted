@@ -548,6 +548,22 @@ again, and the choice offers only Keep mine, since there is no file to reload.
 A rename by a sync shows as the old file removed and the new one listed, so a
 save brings the old name back beside the new one.
 
+### Closing
+
+`ProfilesViewModel` closes the open editor through **Close profile** or its
+shortcut, which leaves the page with no profile open. The editor stays in the
+cache, as it does when another profile opens.
+
+| State     | Event                                          | Next                                                                                                                                     |
+| --------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Open      | Close, with no unsaved changes                 | None open.                                                                                                                               |
+| Open      | Close, with unsaved changes                    | Asking, as [Leaving with unsaved changes](#leaving-with-unsaved-changes) describes, about this profile alone; other editors keep theirs. |
+| Asking    | Save or Discard settles this profile's edits   | None open.                                                                                                                               |
+| Asking    | A save fails                                   | Open, with the error.                                                                                                                    |
+| Asking    | Another profile opens, or the new profile form | That one shows, and the question is taken back as if cancelled.                                                                          |
+| None open | A refresh                                      | None open: a refresh opens no profile in place of one the user closed.                                                                   |
+| None open | Choose a profile, or another folder            | Open, as at startup.                                                                                                                     |
+
 ### Leaving with unsaved changes
 
 Changing the folder, connecting or changing the repository, closing the
@@ -566,7 +582,7 @@ settles.
 | Asking           | Discard                                                                            | Every changed editor that can discard does. It goes on when none has changes left; an editor still loading keeps its changes, opens, and it stays.                                                                                                                                                                                           |
 | Saving or asking | A save failed, or an editor still loading kept its changes, while a capture runs   | It stays, but opens nothing, since that would close the new profile form and stop its capture. A notice names the profile and why, such as "orgs could not be saved, so you cannot change the folder yet.", over any notice already showing. It goes once that profile opens or a way out asks again, and the notice it covered shows again. |
 | Asking           | Cancel                                                                             | Idle, with nothing changed. A new profile form that was open stays open.                                                                                                                                                                                                                                                                     |
-| Asking           | Another change of folder, connect, or close                                        | Asking, about the new act. The earlier one stays where it was, as if cancelled.                                                                                                                                                                                                                                                              |
+| Asking           | Another change of folder, connect, or close                                        | Asking, about the new act and every editor, even when the earlier question asked about one profile closing. The earlier one stays where it was, as if cancelled.                                                                                                                                                                             |
 
 The folder is picked before the question, so cancelling the folder picker asks
 nothing.

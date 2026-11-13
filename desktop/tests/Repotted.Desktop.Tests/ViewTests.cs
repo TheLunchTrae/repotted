@@ -415,6 +415,52 @@ public sealed class ViewTests : IDisposable
         Assert.False(window.IsVisible);
     }
 
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task A_profile_closes_on_its_shortcut_and_asks_first_about_unsaved_changes(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nrepository:\n  has_wiki: false\n");
+        var window = await Show(theme, FakeCli.SignedIn()
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", Documents.Resolved(own, @base))
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        var modifier = OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control;
+        Assert.Contains(ControlLabel.For("Close profile"), Texts(window));
+        Save(window, $"profile-close-{theme}");
+
+        // With nothing unsaved it closes at once, and focus stays on the page.
+        var close = window.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "CloseButton" && button.IsEffectivelyVisible);
+        close.Focus();
+        window.KeyPressQwerty(PhysicalKey.W, modifier);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(shell.Profiles.Current);
+        var text = Texts(window);
+        Assert.Contains("Choose a profile in the list to edit it, or start a new one.", text);
+        Assert.Equal("Profiles", shell.Crumb);
+        var focused = Assert.IsType<Button>(window.FocusManager?.GetFocusedElement());
+        Assert.Same(shell.Profiles.StartNewCommand, focused.Command);
+        Save(window, $"profiles-none-open-{theme}");
+
+        // With unsaved changes it asks first, about that profile.
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        Assert.Same(editor, shell.Profiles.Current);
+        editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == "has_wiki")
+            .Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
+        window.KeyPressQwerty(PhysicalKey.W, modifier);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains("orgs has unsaved changes. Save them before you close it?", Texts(window));
+        Save(window, $"profile-closing-{theme}");
+        shell.Profiles.StayHereCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Same(editor, shell.Profiles.Current);
+        Assert.True(editor.HasChanges);
+    }
+
     [AvaloniaFact]
     public async Task Closing_the_window_stays_on_cancel_or_a_failed_save_and_closes_once_saved()
     {
