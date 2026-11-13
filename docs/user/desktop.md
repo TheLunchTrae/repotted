@@ -175,7 +175,9 @@ folder, or isn't one you can see, which is how a misspelled name shows. A
 pattern with a wildcard in the owner can't be checked. The line under the
 list counts them. The checks only inform: a profile saves and applies with
 any pattern GitHub accepts. When GitHub can't be reached, or its limit is
-reached, the line says so, and **Check again** tries those patterns again.
+reached, the line says so. **Check again** asks GitHub about every line
+again, such as after you make the repository, push the tag or sign in to
+another account.
 
 To find an action, type in the search box under the list. The app shows
 repositories from GitHub's search, most starred first, each with its

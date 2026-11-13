@@ -71,8 +71,13 @@
                  IsLightDismissEnabled="True" OverlayDismissEventPassThrough="True">
             <Border Classes="found">
               <StackPanel>
-                <TextBlock Classes="muted small" Text="{Binding Search.Status}" IsVisible="{Binding Search.HasStatus}"
-                           TextWrapping="Wrap" Margin="14,10" AutomationProperties.LiveSetting="Polite" />
+                <DockPanel Margin="14,10" IsVisible="{Binding Search.HasStatus}">
+                  <Panel DockPanel.Dock="Left" Classes="mark checking" Margin="0,0,8,0" IsVisible="{Binding Search.Searching}">
+                    <Arc Classes.spinner="{Binding Search.Searching}" />
+                  </Panel>
+                  <TextBlock Classes="muted small" Text="{Binding Search.Status}" TextWrapping="Wrap"
+                             VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+                </DockPanel>
                 <ListBox Classes="found" ItemsSource="{Binding Search.Results}" IsVisible="{Binding Search.HasResults}"
                          AutomationProperties.Name="Repositories GitHub found" AttachedToVisualTree="OnFoundActionsAttached">
                   <ListBox.Styles>
@@ -115,14 +120,17 @@
             </Border>
           </Popup>
         </Panel>
-        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="12" Margin="14,10,0,0" VerticalAlignment="Center">
+        <!-- The link keeps its width, and a long summary trims before it. -->
+        <DockPanel Grid.Row="2" Grid.Column="1" Margin="14,10,0,0" VerticalAlignment="Center" HorizontalAlignment="Left">
+          <Button DockPanel.Dock="Right" Classes="link" FontSize="13" Margin="12,0,0,0"
+                  Content="{Binding Source='Check again', Converter={x:Static theme:ControlLabel.Converter}}"
+                  Command="{Binding CheckAgainCommand}"
+                  IsVisible="{Binding CanCheckAgain}" VerticalAlignment="Center"
+                  AutomationProperties.HelpText="Asks GitHub about every pattern again." />
           <TextBlock Classes="muted" FontSize="13" Text="{Binding Summary}" VerticalAlignment="Center"
                      TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Summary}"
                      AutomationProperties.LiveSetting="Polite" />
-          <Button Classes="link" FontSize="13" Content="Check again" Command="{Binding CheckAgainCommand}"
-                  IsVisible="{Binding CanCheckAgain}" VerticalAlignment="Center"
-                  AutomationProperties.HelpText="Checks again the patterns that could not be checked." />
-        </StackPanel>
+        </DockPanel>
       </Grid>
     </DataTemplate>
 

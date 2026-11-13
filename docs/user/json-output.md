@@ -173,11 +173,14 @@ diagnostic and not a failure. `--help` and `--version` still print text.
     doesn't.
   - `not_found`, with `missing`, `owner` or `repository`, and `name`, when
     GitHub has none that the sign-in can see.
-  - `error`, with `message` and `rate_limited`, when the lookup failed.
+  - `error`, with `message` and `rate_limited`, when the lookup failed. Once
+    one lookup is rate limited, every pattern not yet looked up has this
+    status too, with `rate_limited` true, without a request.
 - `find-actions` prints `{ results }`, at most ten repositories, most
   starred first, each as `{ repository, description, stars, action_file }`.
   `description` may be null, and `action_file` is `action.yml` or
-  `action.yaml`, or null when the top of the repository has neither.
+  `action.yaml`, or null when the top of the repository has neither, or
+  GitHub could not list it.
 - `status` prints `{ signed_in: true, login, name, token_variable,
   install_url }`, where `token_variable` names `GITHUB_TOKEN` or `GH_TOKEN`
   when one is set and used before the sign-in, and is null otherwise, and

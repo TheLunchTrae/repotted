@@ -707,7 +707,7 @@ public sealed class ViewTests : IDisposable
         editor.ShowYaml = false;
         var row = editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.HasPatterns);
         var checks = row.Patterns!;
-        await Until(() => checks.Summary == "4 match, 1 has a missing tag, 2 match nothing, 1 can't be checked");
+        await Until(() => checks.Summary == "4 match, 1 has a missing tag or branch, 2 match nothing, 1 can't be checked");
 
         var text = Texts(window);
         Assert.Contains("github/codeql-action", text);
@@ -717,6 +717,7 @@ public sealed class ViewTests : IDisposable
         Assert.Contains("Blocks", text);
         Assert.Contains("A wildcard owner can't be checked", text);
         Assert.Contains("Not a pattern: a name can't have a space", text);
+        Assert.Contains(ControlLabel.For("Check again"), text);
         // Each check sits beside its own line of the list.
         var list = window.GetVisualDescendants().OfType<TextBox>().Single(box => box.IsEffectivelyVisible && AutomationProperties.GetName(box) == "Allowed action patterns");
         var lines = window.GetVisualDescendants().OfType<Border>().Where(border => border.Classes.Contains("check")).ToList();

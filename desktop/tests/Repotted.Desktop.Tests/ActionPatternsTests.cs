@@ -72,7 +72,62 @@ public sealed class ActionPatternsTests
         return (row, row.Patterns, pauses);
     }
 
+    /// <summary>
+    /// Starts a check in <paramref name="editor"/> that never lands, and puts the editor back as saved.
+    /// Gives whether the run of the command line behind the check was ended.
+    /// </summary>
+    internal static async Task<Func<bool>> HoldCheckAsync(ProfileViewModel editor, FakeCli cli)
+    {
+        CancellationToken? asked = null;
+        cli.On(Check("octo-org/held"), cancellationToken =>
+        {
+            asked = cancellationToken;
+            return new TaskCompletionSource<string>().Task;
+        });
+        var list = editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.HasPatterns);
+        list.Typed = "octo-org/held";
+        // The list is checked once GitHub would show it.
+        list.ControlledBy!.Options.Single(option => option.Label == "Selected").ChooseCommand.Execute(null);
+        await Until(() => asked is not null);
+        editor.ResetCommand.Execute(null);
+        Assert.False(editor.HasChanges);
+        Assert.False(asked!.Value.IsCancellationRequested);
+        return () => asked.Value.IsCancellationRequested;
+    }
+
     private static IEnumerable<string> Notes(ActionPatternsViewModel patterns) => patterns.Lines.Select(line => line.Note.Text);
+
+    [Fact]
+    public void A_note_words_a_check_as_the_command_line_does()
+    {
+        var sha = new string('b', 40);
+        ActionCheckDocument[] checks =
+        [
+            new("actions/setup-*", "owner", Owner: "actions", OwnerType: "organization"),
+            new("!octocat/*", "owner", Blocks: true, Owner: "octocat", OwnerType: "user", AllRepositories: true),
+            new($"octo-org/deploy@{sha}", "missing_ref", Repository: "octo-org/deploy", Ref: sha),
+            new("octo-org/deploy/sub@*", "missing_path", Repository: "octo-org/deploy", Path: "sub"),
+            new("!octo-org/deplyo@*", "not_found", Blocks: true, Missing: "repository", Name: "octo-org/deplyo"),
+            new("!nobody/*", "not_found", Blocks: true, Missing: "owner", Name: "nobody"),
+            new("*", "unchecked", Why: "everything"),
+        ];
+
+        // describeActionCheck prints the same after the pattern, in lower case.
+        Assert.Equal(
+            [
+                "Some repositories from actions, an organization",
+                "Blocks any repository from octocat, a user",
+                "octo-org/deploy has no commit bbbbbbb",
+                "octo-org/deploy has no sub folder or file",
+                "Blocks no repository octo-org/deplyo you can see",
+                "Blocks no owner nobody you can see",
+                "Matches every action",
+            ],
+            checks.Select(check => PatternNote.For(check).Text));
+        // The tag shows before the words, which then start as a sentence does.
+        var blocked = PatternNote.For(checks[4]);
+        Assert.Equal((true, PatternTone.Bad, "No repository octo-org/deplyo you can see"), (blocked.Blocks, blocked.Tone, blocked.Lead));
+    }
 
     [AvaloniaFact]
     public async Task A_list_is_checked_when_it_opens_and_again_once_typing_pauses_for_what_is_new()
@@ -83,7 +138,7 @@ public sealed class ActionPatternsTests
         var (row, patterns, pauses) = Open(cli, ["actions/*", "octo-org/deploy@v9"]);
 
         // The first read waits for no pause.
-        await Until(() => patterns.Summary == "1 matches, 1 has a missing tag");
+        await Until(() => patterns.Summary == "1 matches, 1 has a missing tag or branch");
         Assert.Empty(pauses.Waiting);
         Assert.Equal(["Any repository from actions, an organization", "octo-org/deploy has no tag or branch v9"], Notes(patterns));
         Assert.Equal((PatternTone.Good, PatternTone.Warning), (patterns.Lines[0].Note.Tone, patterns.Lines[1].Note.Tone));
@@ -98,7 +153,7 @@ public sealed class ActionPatternsTests
 
         // Once it pauses, only the pattern nothing is known about is asked for.
         pauses.End();
-        await Until(() => patterns.Summary == "1 matches, 1 has a missing tag, 1 matches nothing");
+        await Until(() => patterns.Summary == "1 matches, 1 has a missing tag or branch, 1 matches nothing");
         Assert.Equal([Check("actions/*", "octo-org/deploy@v9"), Check("octo-org/deplyo@*")], cli.Calls);
         Assert.Equal((PatternTone.Bad, "No repository octo-org/deplyo you can see"), (patterns.Lines[3].Note.Tone, patterns.Lines[3].Note.Text));
 
@@ -149,7 +204,6 @@ public sealed class ActionPatternsTests
         // One pattern's failure leaves the others checked.
         await Until(() => patterns.Summary == "1 matches, 1 could not be checked");
         Assert.Equal((PatternTone.Muted, PatternNote.RateLimit), (patterns.Lines[1].Note.Tone, patterns.Lines[1].Note.Text));
-        Assert.True(patterns.CanCheckAgain);
 
         // A run that fails as a whole says so on each line it asked about, and typing asks for neither again.
         row.Typed = "actions/*\nocto-org/deploy@v9\nocto-org/deplyo@*";
@@ -160,11 +214,27 @@ public sealed class ActionPatternsTests
         Assert.Empty(pauses.Waiting);
         Assert.Equal(2, cli.Calls.Count);
 
-        // Check again asks at once for what failed, and only that.
-        cli.On(Check("octo-org/deploy@v9", "octo-org/deplyo@*"), Checks(MissingTag, Typo));
+        // Check again asks at once about every line, what was already known included,
+        // so what changed on GitHub since shows: here the misspelled repository was made.
+        const string made = """{"pattern":"octo-org/deplyo@*","blocks":false,"status":"match","repository":"octo-org/deplyo","archived":false}""";
+        var landed = new TaskCompletionSource<string>();
+        cli.On(Check("actions/*", "octo-org/deploy@v9", "octo-org/deplyo@*"), _ => landed.Task);
+        Assert.True(patterns.CanCheckAgain);
         patterns.CheckAgainCommand.Execute(null);
-        await Until(() => patterns.Summary == "1 matches, 1 has a missing tag, 1 matches nothing");
+        Assert.Equal("3 being checked", patterns.Summary);
+        Assert.All(patterns.Lines.Take(3), line => Assert.Equal(PatternNote.Checking, line.Note));
         Assert.Empty(pauses.Waiting);
+        // While it runs there is nothing to ask again.
+        Assert.False(patterns.CanCheckAgain);
+        patterns.CheckAgainCommand.Execute(null);
+        Assert.Equal(3, cli.Calls.Count);
+
+        landed.SetResult(Checks(Actions, MissingTag, made));
+        await Until(() => patterns.Summary == "2 match, 1 has a missing tag or branch");
+        Assert.True(patterns.CanCheckAgain);
+
+        // An empty list, or one of lines that can't be checked, has nothing to check again.
+        row.Typed = "octo-org/a, octo-org/b";
         Assert.False(patterns.CanCheckAgain);
     }
 
@@ -179,7 +249,7 @@ public sealed class ActionPatternsTests
 
         row.Patterns.Read();
 
-        await Until(() => row.Patterns.CanCheckAgain);
+        await Until(() => lost == 1 && row.Patterns.CanCheckAgain);
         Assert.Equal((1, "Bad credentials"), (lost, row.Patterns.Lines[0].Note.Text));
     }
 
@@ -282,6 +352,8 @@ public sealed class ActionPatternsTests
         // A newer search ends the run of the one before it, whose answer is dropped.
         search.Query = "setup dotnet";
         Assert.True(ended.IsCancellationRequested);
+        // The results go on saying so through the pause, until the newer search starts.
+        Assert.Equal((true, true, "Searching…"), (search.Open, search.Searching, search.Status));
         pauses.End();
         await Until(() => search.HasResults);
         first.SetResult("""{"results":[{"repository":"octo-org/stale","description":null,"stars":1,"action_file":null}]}""");

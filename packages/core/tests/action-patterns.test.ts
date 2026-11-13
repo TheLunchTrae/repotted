@@ -32,11 +32,22 @@ describe('checkActionPatterns', () => {
       'octo-org//init@v1',
       'octo-org/deploy@v1@v2',
       'octo-org/deploy@',
-      'octo_org/deploy',
+      'octo.org/deploy',
       'octo-org/de?ploy',
       'octo-org/../deploy',
       'octo-org/deploy/../../x@v1',
       'octo-org/deploy@v1:2',
+      // A ref goes into the path GitHub is asked for, so one git can't have is never asked about.
+      'octo-org/deploy@x/../../../../../../user',
+      'octo-org/deploy@v1..v2',
+      'octo-org/deploy@/v1',
+      'octo-org/deploy@v1/',
+      'octo-org/deploy@releases//v1',
+      'octo-org/deploy@releases/./v1',
+      'octo-org/deploy@v1.',
+      'octo-org/deploy@releases.lock/v1',
+      'octo-org/deploy@v1\u0007',
+      'octo-org/deploy@v1~2',
     ]);
 
     expect(checks.map((check) => (check.status === 'invalid' ? [check.reason, check.message] : check.status))).toEqual([
@@ -47,11 +58,21 @@ describe('checkActionPatterns', () => {
       ['empty_name', 'a name is missing beside a /'],
       ['several_refs', 'it has more than one @'],
       ['empty_ref', 'nothing follows the @'],
-      ['invalid_characters', "an owner can't have _"],
+      ['invalid_characters', "an owner can't have ."],
       ['invalid_characters', "a repository can't have ?"],
       ['invalid_characters', "a repository can't be only dots"],
       ['invalid_characters', "a path can't be only dots"],
       ['invalid_characters', "a tag or branch can't have :"],
+      ['invalid_characters', "a tag or branch can't have .."],
+      ['invalid_characters', "a tag or branch can't have .."],
+      ['invalid_characters', "a tag or branch can't start or end with /, or have //"],
+      ['invalid_characters', "a tag or branch can't start or end with /, or have //"],
+      ['invalid_characters', "a tag or branch can't start or end with /, or have //"],
+      ['invalid_characters', "a tag or branch can't have a part that starts with a dot"],
+      ['invalid_characters', "a tag or branch can't end with a dot"],
+      ['invalid_characters', "a tag or branch can't have a part that ends with .lock"],
+      ['invalid_characters', "a tag or branch can't have a control character"],
+      ['invalid_characters', "a tag or branch can't have ~"],
     ]);
     expect(github.paths).toEqual([]);
   });
@@ -71,8 +92,13 @@ describe('checkActionPatterns', () => {
     const github = fakeGitHub({
       '/users/Actions': { login: 'actions', type: 'Organization' },
       '/users/octocat': { login: 'octocat', type: 'User' },
+      '/users/mona_octo': { login: 'mona_octo', type: 'User' },
     });
 
+    // An Enterprise Managed User's login has an underscore before its short code.
+    expect((await checkActionPatterns(github, ['mona_octo/*'])).map(describeActionCheck)).toEqual([
+      'mona_octo/*: any repository from mona_octo, a user',
+    ]);
     expect(await checkActionPatterns(github, ['Actions/*', 'octocat/setup-*@v1', 'nobody/*'])).toEqual([
       {
         pattern: 'Actions/*',
@@ -225,30 +251,63 @@ describe('checkActionPatterns', () => {
     expect(most).toBe(4);
   });
 
-  test('reports a failed lookup on its pattern, a rate limit included, and goes on', async () => {
+  test('reports a failed lookup on its pattern, and goes on', async () => {
     const github = fakeGitHub({
-      '/repos/octo-org/a': responseError(403, { message: 'API rate limit exceeded' }, { 'x-ratelimit-remaining': '0' }),
       '/repos/octo-org/b': new GitHubError(500, 'Server Error'),
       '/repos/octo-org/c': { full_name: 'octo-org/c' },
     });
 
-    expect(await checkActionPatterns(github, ['octo-org/a', 'octo-org/b', 'octo-org/c'])).toEqual([
-      {
-        pattern: 'octo-org/a',
-        blocks: false,
-        status: 'error',
-        message: 'API rate limit exceeded',
-        rate_limited: true,
-      },
+    expect(await checkActionPatterns(github, ['octo-org/b', 'octo-org/c'])).toEqual([
       { pattern: 'octo-org/b', blocks: false, status: 'error', message: 'Server Error', rate_limited: false },
       { pattern: 'octo-org/c', blocks: false, status: 'match', repository: 'octo-org/c', archived: false },
     ]);
+  });
+
+  test('stops asking once GitHub limits a lookup, and says so on each pattern left', async () => {
+    const limited = responseError(403, { message: 'API rate limit exceeded' }, { 'x-ratelimit-remaining': '0' });
+    const github = fakeGitHub({ '/repos/octo-org/a0': limited, '/repos/octo-org/a1': { full_name: 'octo-org/a1' } });
+    const error = { blocks: false, status: 'error', message: 'API rate limit exceeded', rate_limited: true };
+
+    const checks = await checkActionPatterns(github, [
+      ...Array.from({ length: 8 }, (_, index) => `octo-org/a${index}`),
+      'space-org*/*',
+      'octo org/tools',
+    ]);
+
+    // The four lookups under way when the limit lands finish. No pattern after them is asked about,
+    // and one that needs no lookup still gets its answer.
+    expect(github.paths.toSorted()).toEqual(['0', '1', '2', '3'].map((index) => `/repos/octo-org/a${index}`));
+    expect(checks.slice(0, 2)).toEqual([
+      { pattern: 'octo-org/a0', ...error },
+      { pattern: 'octo-org/a1', blocks: false, status: 'match', repository: 'octo-org/a1', archived: false },
+    ]);
+    expect(checks.slice(4, 8)).toEqual([4, 5, 6, 7].map((index) => ({ pattern: `octo-org/a${index}`, ...error })));
+    expect(checks.slice(8).map((check) => check.status)).toEqual(['unchecked', 'invalid']);
   });
 
   test('fails as a whole when GitHub rejects the sign-in', async () => {
     const rejected = new GitHubError(401, 'Bad credentials');
 
     await expect(checkActionPatterns(fakeGitHub({ '/users/actions': rejected }), ['actions/*'])).rejects.toBe(rejected);
+
+    // Nothing more is asked once it does: not for the patterns left, nor for the rest of one under way.
+    const github = fakeGitHub({ '/repos/octo-org/a0': rejected, '/repos/octo-org/a1': { full_name: 'octo-org/a1' } });
+    await expect(
+      checkActionPatterns(github, [
+        'octo-org/a0',
+        'octo-org/a1@v1',
+        ...Array.from({ length: 8 }, (_, index) => `octo-org/b${index}`),
+      ]),
+    ).rejects.toBe(rejected);
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    expect(github.paths.toSorted()).toEqual([
+      '/repos/octo-org/a0',
+      '/repos/octo-org/a1',
+      '/repos/octo-org/b0',
+      '/repos/octo-org/b1',
+    ]);
   });
 });
 
@@ -265,11 +324,13 @@ test('describeActionCheck says each check in a line', async () => {
 
   const checks = await checkActionPatterns(github, [
     'actions/*',
+    'actions/setup-*',
     'github/codeql-action/init@v3',
     `github/codeql-action@${'a'.repeat(40)}`,
     'github/codeql-action@v9',
+    `github/codeql-action@${'b'.repeat(40)}`,
     'github/codeql-action/upload@*',
-    'octo-org/deplyo@*',
+    '!octo-org/deplyo@*',
     '!octo-org/old-deploy@*',
     'space-org*/*',
     '*',
@@ -279,11 +340,13 @@ test('describeActionCheck says each check in a line', async () => {
 
   expect(checks.map(describeActionCheck)).toEqual([
     'actions/*: any repository from actions, an organization',
+    'actions/setup-*: some repositories from actions, an organization',
     'github/codeql-action/init@v3: github/codeql-action, folder init, tag v3',
     `github/codeql-action@${'a'.repeat(40)}: github/codeql-action, commit aaaaaaa`,
     'github/codeql-action@v9: github/codeql-action has no tag or branch v9',
+    `github/codeql-action@${'b'.repeat(40)}: github/codeql-action has no commit bbbbbbb`,
     'github/codeql-action/upload@*: github/codeql-action has no upload folder or file',
-    'octo-org/deplyo@*: no repository octo-org/deplyo you can see',
+    '!octo-org/deplyo@*: blocks no repository octo-org/deplyo you can see',
     '!octo-org/old-deploy@*: blocks octo-org/old-deploy, archived',
     "space-org*/*: a wildcard owner can't be checked",
     '*: matches every action',
@@ -319,6 +382,29 @@ describe('findActions', () => {
       { repository: 'octo-org/yaml-action', description: null, stars: 0, action_file: 'action.yaml' },
       { repository: 'octo-org/empty', description: null, stars: 0, action_file: null },
     ]);
+  });
+
+  test('counts a repository GitHub fails to list as one with no action file', async () => {
+    const github = fakeGitHub({
+      [search]: { items: [{ full_name: 'a/b' }, { full_name: 'a/c' }, { full_name: 'a/d' }] },
+      '/repos/a/b/contents/': new GitHubError(500, 'Server Error'),
+      '/repos/a/c/contents/': new GitHubError(451, 'Unavailable for legal reasons'),
+      '/repos/a/d/contents/': [{ name: 'action.yml', type: 'file' }],
+    });
+
+    expect((await findActions(github, 'setup dotnet')).map((found) => found.action_file)).toEqual([
+      null,
+      null,
+      'action.yml',
+    ]);
+
+    const rejected = new GitHubError(401, 'Bad credentials');
+    await expect(
+      findActions(
+        fakeGitHub({ [search]: { items: [{ full_name: 'a/b' }] }, '/repos/a/b/contents/': rejected }),
+        'setup dotnet',
+      ),
+    ).rejects.toBe(rejected);
   });
 
   test('fails with the rate limit when GitHub limits the search or a listing', async () => {

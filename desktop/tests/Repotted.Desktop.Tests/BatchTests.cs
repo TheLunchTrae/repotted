@@ -641,6 +641,43 @@ public sealed class BatchTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_batch_that_closes_or_loses_a_repository_ends_the_checks_its_one_off_edits_started()
+    {
+        var (world, first) = await Reviewing();
+        first.Batch.CloseCommand.Execute(null);
+        var shell = new ShellViewModel(
+            new Account.SignedIn("TheLunchTrae", "Trae", null, Documents.InstallUrl),
+            new RepottedClient(world.Cli),
+            new FakeDesktop(),
+            Settings,
+            () => Task.CompletedTask);
+        shell.Repositories.ResumeBatchCommand.Execute(null);
+        await Until(() => shell.Batch?.Step == BatchStep.Reviewing);
+        var batch = shell.Batch!;
+
+        async Task<Func<bool>> Held(string repository)
+        {
+            var member = MemberOf(batch, repository);
+            batch.Selected = member;
+            await Until(() => member.Edits is { Loading: false });
+            return await ActionPatternsTests.HoldCheckAsync(member.Edits!, world.Cli);
+        }
+
+        var left = await Held(TestRepo);
+        var stayed = await Held(Repotted);
+
+        // A plan that no longer lists a repository drops its edits, and what they started.
+        world.Members.Remove(world.Find(TestRepo));
+        await batch.ReviewAgainCommand.ExecuteAsync(null);
+        Assert.Equal([Repotted], batch.Members.Select(member => member.Repository));
+        Assert.Equal((true, false), (left(), stayed()));
+
+        batch.CloseCommand.Execute(null);
+        Assert.Null(shell.Batch);
+        Assert.True(stayed());
+    }
+
+    [AvaloniaFact]
     public async Task A_change_reads_the_open_one_off_edits_again_and_keeps_the_tab()
     {
         var (_, page) = await Reviewing();

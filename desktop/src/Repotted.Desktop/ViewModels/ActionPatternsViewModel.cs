@@ -42,7 +42,10 @@ internal sealed record PatternNote(PatternTone Tone, string Lead = "", string Na
 
     public const string RateLimit = "GitHub's limit is reached. Try again in a minute.";
 
-    public string Text => $"{(Blocks ? "Blocks " : "")}{Lead}{Name}{Tail}";
+    /// <summary>The note in a line, worded as <c>repotted check-actions</c> prints it after the pattern.</summary>
+    public string Text => Blocks
+        ? $"Blocks {(Lead.Length == 0 ? "" : char.ToLowerInvariant(Lead[0]) + Lead[1..])}{Name}{Tail}"
+        : $"{Lead}{Name}{Tail}";
 
     /// <summary>A check that could not run, in the words of <paramref name="error"/>.</summary>
     public static PatternNote Failed(Exception error) =>
@@ -60,7 +63,10 @@ internal sealed record PatternNote(PatternTone Tone, string Lead = "", string Na
             check.Blocks),
         "missing_ref" => new(PatternTone.Warning, Name: check.Repository ?? "", Tail: $" has no {RefWords(check.Ref ?? "")}", Blocks: check.Blocks),
         "missing_path" => new(PatternTone.Warning, Name: check.Repository ?? "", Tail: $" has no {check.Path} folder or file", Blocks: check.Blocks),
-        "not_found" => new(PatternTone.Bad, $"No {(check.Missing == "owner" ? "owner" : "repository")} {check.Name} you can see"),
+        "not_found" => new(
+            PatternTone.Bad,
+            $"No {(check.Missing == "owner" ? "owner" : "repository")} {check.Name} you can see",
+            Blocks: check.Blocks),
         "unchecked" => new(
             PatternTone.Muted,
             check.Why == "everything" ? "Matches every action" : "A wildcard owner can't be checked",
@@ -119,8 +125,8 @@ internal sealed class PatternLineViewModel : ViewModelBase
 /// Each line of the list gets what its pattern matches on GitHub, once
 /// typing pauses. A check belongs to the pattern's text, so a line that
 /// changes while its check runs never shows that check, and a pattern checked
-/// once is not asked about again while the editor is open, apart from a
-/// check that failed.
+/// once is not asked about again while the editor is open, until Check
+/// again asks about every line.
 /// </summary>
 internal sealed partial class ActionPatternsViewModel : ViewModelBase, IDisposable
 {
@@ -182,8 +188,8 @@ internal sealed partial class ActionPatternsViewModel : ViewModelBase, IDisposab
     /// <summary>The checks in a line, such as "4 match, 1 has a missing tag"; empty for an empty list.</summary>
     public string Summary { get; private set; } = "";
 
-    /// <summary>Whether a check failed, so it can be tried again.</summary>
-    public bool CanCheckAgain => failed.Count > 0;
+    /// <summary>Whether the list has a line to check and none is being checked, so all can be checked again.</summary>
+    public bool CanCheckAgain => checking.Count == 0 && Patterns.Any(Checkable);
 
     private static string PatternOf(string line) => line.Trim();
 
@@ -287,11 +293,23 @@ internal sealed partial class ActionPatternsViewModel : ViewModelBase, IDisposab
         }
     }
 
-    /// <summary>Checks again the patterns whose check failed, at once.</summary>
+    /// <summary>
+    /// Checks every line again, at once, dropping what was known about each:
+    /// a repository made since, a tag pushed, or another sign-in changes
+    /// what GitHub answers.
+    /// </summary>
     [RelayCommand]
     private void CheckAgain()
     {
+        if (!CanCheckAgain)
+        {
+            return;
+        }
         failed.Clear();
+        foreach (var pattern in Patterns)
+        {
+            known.Remove(pattern);
+        }
         read = false;
         Read();
     }
@@ -341,8 +359,8 @@ internal sealed partial class ActionPatternsViewModel : ViewModelBase, IDisposab
         return string.Join(", ", new[]
         {
             Count(check => check.Status is "match" or "owner") switch { 0 => null, 1 => "1 matches", var count => $"{count} match" },
-            Count(check => check.Status == "missing_ref") switch { 0 => null, 1 => "1 has a missing tag", var count => $"{count} have a missing tag" },
-            Count(check => check.Status == "missing_path") switch { 0 => null, 1 => "1 has a missing folder", var count => $"{count} have a missing folder" },
+            Count(check => check.Status == "missing_ref") switch { 0 => null, 1 => "1 has a missing tag or branch", var count => $"{count} have a missing tag or branch" },
+            Count(check => check.Status == "missing_path") switch { 0 => null, 1 => "1 has a missing folder or file", var count => $"{count} have a missing folder or file" },
             Count(check => check.Status is "not_found" or "invalid") switch { 0 => null, 1 => "1 matches nothing", var count => $"{count} match nothing" },
             (Count(check => check.Status == "unchecked") + Lines.Count(line => line.Note == PatternNote.Several)) switch
             {

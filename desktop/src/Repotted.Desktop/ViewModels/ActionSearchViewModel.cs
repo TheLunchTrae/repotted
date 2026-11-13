@@ -100,6 +100,7 @@ internal sealed partial class ActionSearchViewModel(
 
     public bool HasStatus => Status is not null;
 
+    /// <summary>Whether a search is under way, or about to start for text typed during one, which the results show.</summary>
     [ObservableProperty]
     public partial bool Searching { get; private set; }
 
@@ -146,7 +147,10 @@ internal sealed partial class ActionSearchViewModel(
         {
             return;
         }
+        // Text typed during a search keeps the results saying so until its own search starts.
+        var searching = Searching;
         Stop();
+        Searching = searching;
         var mine = running = new CancellationTokenSource();
         var cancellationToken = mine.Token;
         var words = Words;

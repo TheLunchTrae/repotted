@@ -76,9 +76,9 @@ function invalid(reason: InvalidReason, message: string): Invalid {
   return { reason, message };
 }
 
-// Owners take letters, digits and hyphens; repositories also dots and
-// underscores. A ref may not hold what git forbids in one.
-const ownerCharacter = /[^A-Za-z0-9*-]/u;
+// Owners take letters, digits and hyphens, and an underscore before the
+// short code of an Enterprise Managed User; repositories also take dots.
+const ownerCharacter = /[^\w*-]/u;
 const repositoryCharacter = /[^\w.*-]/u;
 const refCharacter = /[~^:?[\\]/u;
 const dotsOnly = /^\.+$/u;
@@ -91,6 +91,36 @@ function forbidden(name: string, pattern: RegExp, what: string): Invalid | undef
   }
   // A name of dots would leave the path a lookup asks GitHub for.
   return dotsOnly.test(name) ? invalid('invalid_characters', `${what} can't be only dots`) : undefined;
+}
+
+/**
+ * What git forbids in the name of a tag or branch. A lookup puts the ref in
+ * the path it asks GitHub for, where a part such as `..` would name
+ * something else, so a ref git can't have is never asked about.
+ */
+function refProblem(ref: string): Invalid | undefined {
+  const cant = (what: string): Invalid => invalid('invalid_characters', `a tag or branch can't ${what}`);
+  // eslint-disable-next-line no-control-regex -- git forbids control characters in a ref
+  if (/[\u0000-\u001f\u007f]/u.test(ref)) {
+    return cant('have a control character');
+  }
+  const parts = ref.split('/');
+  if (parts.includes('')) {
+    return cant('start or end with /, or have //');
+  }
+  if (ref.includes('..')) {
+    return cant('have ..');
+  }
+  if (parts.some((part) => part.startsWith('.'))) {
+    return cant('have a part that starts with a dot');
+  }
+  if (ref.endsWith('.')) {
+    return cant('end with a dot');
+  }
+  if (parts.some((part) => part.endsWith('.lock'))) {
+    return cant('have a part that ends with .lock');
+  }
+  return forbidden(ref, refCharacter, 'a tag or branch');
 }
 
 /** Reads a pattern as GitHub documents them: `OWNER/REPOSITORY[/PATH][@REF]`, with `*` wildcards and a `!` to block. */
@@ -124,7 +154,7 @@ function parsePattern(text: string): ParsedPattern | Invalid {
     forbidden(owner, ownerCharacter, 'an owner') ??
     forbidden(repository, repositoryCharacter, 'a repository') ??
     path.map((part) => forbidden(part, /\\/u, 'a path')).find((problem) => problem !== undefined) ??
-    (ref === undefined ? undefined : forbidden(ref, refCharacter, 'a tag or branch')) ?? {
+    (ref === undefined ? undefined : refProblem(ref)) ?? {
       blocks,
       everything: false,
       owner,
@@ -160,8 +190,11 @@ async function find(get: Get, path: string): Promise<unknown> {
 const account = z.object({ login: z.string(), type: z.string() });
 const repositoryFound = z.object({ full_name: z.string(), archived: z.boolean().optional() });
 
+/** A full commit SHA, which a pattern may pin in place of a tag or branch. */
+const fullSha = /^[0-9a-f]{40}$/iu;
+
 async function refKind(get: Get, repo: string, ref: string): Promise<'tag' | 'branch' | 'commit' | undefined> {
-  if (/^[0-9a-f]{40}$/iu.test(ref)) {
+  if (fullSha.test(ref)) {
     // GitHub answers 422 for a full SHA that names no commit.
     try {
       return (await find(get, `${repo}/commits/${ref}`)) === undefined ? undefined : 'commit';
@@ -231,10 +264,22 @@ async function lookUp(get: Get, parsed: ParsedPattern): Promise<ActionLookup> {
       };
 }
 
-async function check(get: Get, pattern: string): Promise<ActionPatternCheck> {
+/** What one run of checks has learned that ends its lookups early. */
+interface Run {
+  /** GitHub's message once it limits the run. Every lookup after it would get the same answer. */
+  limited?: string;
+  /** The rejected sign-in that fails the run as a whole, after which nothing more is asked. */
+  failed?: GitHubError;
+}
+
+async function check(get: Get, run: Run, pattern: string): Promise<ActionPatternCheck> {
   const parsed = parsePattern(pattern);
   if ('reason' in parsed) {
     return { pattern, status: 'invalid', ...parsed };
+  }
+  const needsGitHub = !parsed.everything && !wild(parsed.owner);
+  if (run.limited !== undefined && needsGitHub) {
+    return { pattern, blocks: parsed.blocks, status: 'error', message: run.limited, rate_limited: true };
   }
   try {
     return { pattern, blocks: parsed.blocks, ...(await lookUp(get, parsed)) };
@@ -243,13 +288,11 @@ async function check(get: Get, pattern: string): Promise<ActionPatternCheck> {
     if (!(error instanceof Error) || (error instanceof GitHubError && error.status === 401)) {
       throw error;
     }
-    return {
-      pattern,
-      blocks: parsed.blocks,
-      status: 'error',
-      message: error.message,
-      rate_limited: error instanceof GitHubError && error.rateLimited,
-    };
+    const limited = error instanceof GitHubError && error.rateLimited;
+    if (limited) {
+      run.limited ??= error.message;
+    }
+    return { pattern, blocks: parsed.blocks, status: 'error', message: error.message, rate_limited: limited };
   }
 }
 
@@ -260,22 +303,38 @@ const lookupsAtOnce = 4;
  * pattern at all, and whether the owner, repository, ref and path it names
  * exactly exist. It only reads. Patterns that are the same, or that name the
  * same repository, share their lookups, and at most a few patterns are
- * looked up at once.
+ * looked up at once. Once GitHub limits a lookup, the patterns not yet
+ * looked up get that error without being asked about, and once it rejects
+ * the sign-in, nothing more is asked.
  */
 export async function checkActionPatterns(github: GitHub, patterns: readonly string[]): Promise<ActionPatternCheck[]> {
   const answers = new Map<string, Promise<unknown>>();
+  const run: Run = {};
   const get: Get = (path) => {
-    const asked = answers.get(path) ?? github.request('GET', path);
+    if (run.failed !== undefined) {
+      return Promise.reject(run.failed);
+    }
+    const known = answers.get(path);
+    if (known !== undefined) {
+      return known;
+    }
+    const asked = github.request('GET', path);
     answers.set(path, asked);
+    // Noted here, as the answer lands, so a lookup that lands with it asks nothing more.
+    asked.catch((error: unknown) => {
+      if (error instanceof GitHubError && error.status === 401) {
+        run.failed ??= error;
+      }
+    });
     return asked;
   };
   const unique = [...new Set(patterns.map((pattern) => pattern.trim()))];
   const checks = new Map<string, ActionPatternCheck>();
   let next = 0;
   const worker = async (): Promise<void> => {
-    for (let pattern = unique[next]; pattern !== undefined; pattern = unique[next]) {
+    for (let pattern = unique[next]; pattern !== undefined && run.failed === undefined; pattern = unique[next]) {
       next += 1;
-      checks.set(pattern, await check(get, pattern));
+      checks.set(pattern, await check(get, run, pattern));
     }
   };
   await Promise.all(Array.from({ length: lookupsAtOnce }, worker));
@@ -302,13 +361,13 @@ export function describeActionCheck(found: ActionPatternCheck): string {
       case 'unchecked':
         return found.why === 'everything' ? 'matches every action' : "a wildcard owner can't be checked";
       case 'owner':
-        return `${found.all_repositories ? 'any repository' : 'repositories'} from ${found.owner}, ${
+        return `${found.all_repositories ? 'any repository' : 'some repositories'} from ${found.owner}, ${
           found.owner_type === 'organization' ? 'an organization' : 'a user'
         }`;
       case 'match':
         return matched(found);
       case 'missing_ref':
-        return `${found.repository} has no tag or branch ${found.ref}`;
+        return `${found.repository} has no ${fullSha.test(found.ref) ? `commit ${found.ref.slice(0, 7)}` : `tag or branch ${found.ref}`}`;
       case 'missing_path':
         return `${found.repository} has no ${found.path} folder or file`;
       case 'not_found':
@@ -344,8 +403,9 @@ async function actionFile(github: GitHub, repository: string): Promise<string | 
     const names = top.success ? top.data.filter((entry) => entry.type === 'file').map((entry) => entry.name) : [];
     return ['action.yml', 'action.yaml'].find((name) => names.includes(name)) ?? null;
   } catch (error) {
-    // An empty repository, or one whose files the token may not list, shows no action file.
-    if (error instanceof GitHubError && !error.rateLimited && [403, 404, 409].includes(error.status)) {
+    // One repository that can't be listed shows no action file, and the search goes on: an empty one,
+    // one the token may not read, or one GitHub fails for. A rate limit or a rejected sign-in ends the search.
+    if (error instanceof GitHubError && !error.rateLimited && error.status !== 401) {
       return null;
     }
     throw error;

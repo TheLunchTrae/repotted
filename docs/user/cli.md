@@ -289,7 +289,8 @@ no such owner or repository that you can see: a private repository your
 sign-in can't read looks the same as one that doesn't exist. A part with a
 wildcard is not looked up, and neither is a pattern whose owner has one. It
 exits 1 when a pattern is not a pattern, names something GitHub doesn't have,
-or could not be checked. Quote the patterns, since a shell expands `*` and
+or could not be checked. Once GitHub's rate limit is reached, the patterns
+not yet looked up say so without being asked about. Quote the patterns, since a shell expands `*` and
 `!`.
 
 `npx repotted find-actions <words>` searches GitHub for repositories to

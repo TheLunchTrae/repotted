@@ -324,12 +324,18 @@ searches for actions, for `check-actions`, `find-actions` and the MCP tools
 of the same names. Both only read. GitHub saves any pattern, so a check
 parses each one as GitHub documents them and looks up only the parts it
 names exactly: the owner of a wildcard repository, or the repository, then
-its ref, then its path at that ref. A lookup's failure belongs to its
-pattern, so one pattern's failure leaves the others checked; a rejected
-sign-in fails the command instead, so the caller hears `signed_out`. Lookups
+its ref, then its path at that ref. A ref goes into the path of its lookup, so a ref
+git can't have, such as one with `..`, is not a pattern and is never asked
+about. A lookup's failure belongs to its
+pattern, so one pattern's failure leaves the others checked. Once GitHub
+limits a lookup, the patterns not yet looked up get the same error without a
+request; a rejected sign-in fails the command instead, so the caller hears
+`signed_out`, and nothing more is asked. Lookups
 are shared by path within one run, and four patterns run at once. GitHub has
 no API that searches the Marketplace's actions, so `findActions` searches
-repositories and lists the top of each for an action file.
+repositories and lists the top of each for an action file; a repository
+GitHub fails to list counts as one without, and only a rate limit or a
+rejected sign-in fails the search.
 
 The CLI ships to npm as one file bundled for Node, so shipped code uses only
 `node:` APIs. AGENTS.md lists the checks that enforce this. `repotted mcp`
@@ -380,7 +386,9 @@ place it, and `WarningDocument.Text` in
 does, so a change to that line changes both. `PatternNote.For` in
 `ViewModels/ActionPatternsViewModel.cs` words an allowed action pattern's
 check from the `check-actions` document the same way beside
-`describeActionCheck`, with the name set apart to show in monospace. The app ships its own CLI, so
+`describeActionCheck`, in the same words, with the name set apart to show
+in semibold and a blocking pattern's "Blocks" as a tag. A change to either
+changes both. The app ships its own CLI, so
 every member that CLI always prints is required, and a hand-written example
 that leaves one out fails to parse rather than reading as empty.
 

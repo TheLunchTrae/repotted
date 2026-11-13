@@ -242,6 +242,9 @@ internal sealed partial class ApplyViewModel(
     [ObservableProperty]
     public partial ProfileViewModel? Edits { get; private set; }
 
+    /// <summary>Ends what the one-off editor started, such as a check of action patterns under way, when the apply closes.</summary>
+    public void Release() => Edits?.Release();
+
     /// <summary>The last plan as a diff, which the one-off edits' YAML panel shows.</summary>
     private PlanDiffViewModel? diff;
 
