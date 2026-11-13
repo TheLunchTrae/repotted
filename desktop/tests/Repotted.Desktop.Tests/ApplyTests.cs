@@ -1467,7 +1467,8 @@ public sealed class ApplyTests : IDisposable
         await apply.ReviewChangesCommand.ExecuteAsync(null);
         Dispatcher.UIThread.RunJobs();
         // The button that went on hides with the edits, so focus moves to the changes' own action.
-        Assert.Equal(ControlLabel.For("Apply 3 changes"), (window.FocusManager?.GetFocusedElement() as Button)?.Content);
+        var focused = Assert.IsType<Button>(window.FocusManager?.GetFocusedElement());
+        Assert.Equal(ControlLabel.For("Apply 3 changes"), ControlAutomationPeer.CreatePeerForElement(focused).GetName());
         Assert.Equal("Step 2 of 2, review and apply, current step", steps[1].GetName());
         text = Texts(window);
         Assert.Contains($"Apply to {Repository}", text);
