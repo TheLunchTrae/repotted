@@ -215,7 +215,7 @@ Cloud has with **Enterprise Cloud**, and a profile for any owner also marks
 those only organizations have with **Organizations**. To change the type,
 click it, pick another, and click **Change**. The app first lists what the
 new type doesn't have, and the change leaves those settings not managed. It
-saves at once, so save or discard your changes first.
+saves at once, so save or reset your changes first.
 
 A profile manages only what it names. A setting you leave unset keeps whatever
 value each repository has. When a profile extends another, each setting shows

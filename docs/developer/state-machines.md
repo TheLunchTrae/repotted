@@ -513,7 +513,7 @@ type changes only through the picker, which writes at once with
 | -------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 | Closed   | The type is clicked                                    | Open, with the profile's type picked.                                                              |
 | Open     | Another type is picked                                 | Open, listing what `owner_changes` says that type leaves not managed.                              |
-| Open     | Change, with unsaved changes                           | Not offered: the change would lose them, so it waits for a save or Discard.                        |
+| Open     | Change, with unsaved changes                           | Not offered: the change would lose them, so it waits for a save or Reset.                          |
 | Open     | Change, with the file changed since the editor read it | Open, with the file read again and a note to check what the change leaves; nothing is written.     |
 | Open     | Change                                                 | Changing, in the queue that keeps saves and syncs apart.                                           |
 | Changing | It succeeds                                            | Closed, and the editor shows the file as the CLI resolved it, then a sync for a config repository. |

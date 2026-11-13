@@ -898,7 +898,26 @@ function ownerTypeEdits(layer: ProfileFile, type: OwnerType | undefined): Profil
     // A ruleset or environment with several conflicts is written once, without all of them.
     edits.set(conflictTarget(conflict), conflict.edit);
   }
-  return [{ path: ['owner_type'], value: type }, ...edits.values()];
+  // A drafts.unset key that names what the change takes out of the file names nothing then.
+  const removed = new Set(
+    [...edits.values()].flatMap((edit) =>
+      'list' in edit
+        ? edit.draft !== true && edit.entry === undefined
+          ? [unsetKey({ kind: 'entry', list: edit.list, name: edit.name })]
+          : []
+        : edit.path[0] === 'drafts'
+          ? []
+          : [unsetKey({ kind: 'setting', path: edit.path })],
+    ),
+  );
+  const unset = layer.drafts?.unset ?? [];
+  const kept = unset.filter((key) => {
+    const parsed = parseUnset(key);
+    return parsed === undefined || !removed.has(unsetKey(parsed));
+  });
+  const unsetEdits: ProfileEdit[] =
+    kept.length === unset.length ? [] : [{ path: ['drafts', 'unset'], value: kept.length === 0 ? undefined : kept }];
+  return [{ path: ['owner_type'], value: type }, ...edits.values(), ...unsetEdits];
 }
 
 /** The draft rulesets and environments that owners of `type` don't have. */
@@ -1324,8 +1343,11 @@ function removeOwnerType(document: Document): void {
 
 /** A chain's first file with edits made to its text, resolved, and not yet saved. */
 interface EditedLayer<Read extends LayerRead> {
-  /** The chain as it was read, resolved. */
-  readonly before: ResolvedProfile;
+  /**
+   * Resolves the chain as it was read. Only a preview needs it, and an edit
+   * can fix a chain that no longer resolves, so it is not resolved up front.
+   */
+  readonly before: () => ResolvedProfile;
   readonly result: ResolvedLayer<Read>;
   readonly file: string;
   readonly original: string;
@@ -1394,7 +1416,7 @@ async function editChain<Read extends LayerRead>(
     ),
   };
   layer.check(result);
-  return { before: resolveChain(links, own.file, head.adjust).resolved, result, file: own.file, original, text };
+  return { before: () => resolveChain(links, own.file, head.adjust).resolved, result, file: own.file, original, text };
 }
 
 /**
@@ -1442,7 +1464,7 @@ export interface ProfilePreview {
  */
 export async function previewProfile(file: string, edits: readonly ProfileEdit[]): Promise<ProfilePreview> {
   const { before, result } = await editChain(file, () => edits, profileLayer);
-  return { before, after: result.resolved };
+  return { before: before(), after: result.resolved };
 }
 
 /** Whether a file sets, itself, what an owner type conflict in a base names. */

@@ -293,6 +293,38 @@ environments:
     expect(String(await rejection(changeOwnerType(file, 'user')))).toContain(`because ${base}, which it builds on`);
   });
 
+  test('fixes a child that a base made invalid by changing it to any owner', async () => {
+    const base = await write('base-forking.yaml', 'repository: { allow_forking: true }\n');
+    const file = await write(
+      'child-invalid.yaml',
+      `owner_type: user\nextends: ${base}\nrepository: { has_wiki: false }\n`,
+    );
+    expect(String(await rejection(resolveProfile(file)))).toContain('allow_forking');
+
+    const resolved = await changeOwnerType(file, undefined);
+
+    expect(resolved.profile.owner_type).toBeUndefined();
+    expect(await readFile(file, 'utf8')).toBe(`extends: ${base}\nrepository: { has_wiki: false }\n`);
+  });
+
+  test('drops a drafts.unset key that names what the change takes out', async () => {
+    const file = await write(
+      'unset-taken.yaml',
+      [
+        'owner_type: organization',
+        'repository: { allow_forking: true, has_wiki: false }',
+        'rulesets: [{ name: Pushes, target: push }, { name: Main, target: branch }]',
+        'drafts: { unset: [repository.allow_forking, rulesets/Pushes, rulesets/Main] }',
+        '',
+      ].join('\n'),
+    );
+
+    const resolved = await changeOwnerType(file, 'user');
+
+    expect(resolved.warnings).toEqual([]);
+    expect(parse(await readFile(file, 'utf8'))).toMatchObject({ drafts: { unset: ['rulesets/Main'] } });
+  });
+
   test('keeps a comment over the first key at the top, and gives it back', async () => {
     const text = '# Profiles\n\n# Personal repositories\nrepository: { has_wiki: false }\n';
     const file = await write('commented.yaml', text);
