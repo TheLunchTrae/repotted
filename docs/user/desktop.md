@@ -167,6 +167,25 @@ With **Allowed actions** set to **Selected**, **Allowed action patterns**
 takes one pattern a line, such as `octo-org/*`, and a pattern that starts
 with `!` blocks what it matches.
 
+Beside each line, the app shows what the pattern matches on GitHub, a moment
+after you stop typing: the repository, with the folder and the tag, branch or
+commit the pattern names, or the owner for a pattern such as `octo-org/*`. A
+line is marked when the repository has no such tag or branch, has no such
+folder, or isn't one you can see, which is how a misspelled name shows. A
+pattern with a wildcard in the owner can't be checked. The line under the
+list counts them. The checks only inform: a profile saves and applies with
+any pattern GitHub accepts. When GitHub can't be reached, or its limit is
+reached, the line says so, and **Check again** tries those patterns again.
+
+To find an action, type in the search box under the list. The app shows
+repositories from GitHub's search, most starred first, each with its
+description, its stars and whether it has an `action.yml` at the top. GitHub
+has no search for its Marketplace, so a result isn't always an action.
+**Add** puts the repository at the end of the list as `owner/repo@*`, which
+allows every version; edit the line to pin a tag or a folder. From the search
+box, the Down key moves into the results, Enter or Space adds one, and Escape
+closes them.
+
 Topics, custom properties, autolinks, and a few lists, such as OpenID
 Connect claim keys, are edited in the YAML.
 

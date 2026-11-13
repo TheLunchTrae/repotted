@@ -195,6 +195,32 @@ internal static class Documents
 {
     public const string NoProfiles = """{"profiles":[]}""";
 
+    /// <summary>What <c>check-actions</c> prints for eight patterns: one of each kind of check, in the order the view tests list them.</summary>
+    public const string ActionChecks =
+        """
+        {"checks":[
+          {"pattern":"actions/*","blocks":false,"status":"owner","owner":"actions","owner_type":"organization","all_repositories":true},
+          {"pattern":"docker/build-push-action@v6","blocks":false,"status":"match","repository":"docker/build-push-action","archived":false,"ref":"v6","ref_kind":"tag"},
+          {"pattern":"Github/CodeQL-Action/init@v3","blocks":false,"status":"match","repository":"github/codeql-action","archived":false,"ref":"v3","ref_kind":"tag","path":"init","path_kind":"folder"},
+          {"pattern":"octo-org/deploy@v9","blocks":false,"status":"missing_ref","repository":"octo-org/deploy","ref":"v9"},
+          {"pattern":"octo-org/deplyo@*","blocks":false,"status":"not_found","missing":"repository","name":"octo-org/deplyo"},
+          {"pattern":"!octo-org/old-deploy@*","blocks":true,"status":"match","repository":"octo-org/old-deploy","archived":true},
+          {"pattern":"space-org*/*","blocks":false,"status":"unchecked","why":"wildcard_owner"},
+          {"pattern":"octo org/tools","status":"invalid","reason":"space","message":"a name can't have a space"}
+        ]}
+        """;
+
+    /// <summary>What <c>find-actions</c> prints for a search that finds actions and a repository that is none.</summary>
+    public const string FoundActions =
+        """
+        {"results":[
+          {"repository":"actions/setup-dotnet","description":"Set up your GitHub Actions workflow with a specific version of the .NET core sdk","stars":1140,"action_file":"action.yml"},
+          {"repository":"actions/setup-node","description":"Set up your GitHub Actions workflow with a specific version of node.js","stars":4600,"action_file":"action.yml"},
+          {"repository":"microsoft/setup-msbuild","description":"Sets up MSBuild in the path for your workflow","stars":320,"action_file":"action.yml"},
+          {"repository":"dotnet/sdk","description":"Core functionality needed to create .NET Core projects","stars":3000,"action_file":null}
+        ]}
+        """;
+
     /// <summary>What a resolved profile with no drafts has beside its values: no drafts, and nothing they need.</summary>
     public const string NoDrafts =
         """

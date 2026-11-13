@@ -79,6 +79,17 @@ internal sealed partial class SettingViewModel : ViewModelBase
     /// <summary>Whether the setting is a list, typed one item a line.</summary>
     public bool IsList => Field.Kind == SettingKind.List;
 
+    /// <summary>
+    /// The checks and the search of a list of allowed action patterns, which
+    /// the editor gives the row once it has made every row; null for any other setting.
+    /// </summary>
+    public ActionPatternsViewModel? Patterns { get; set; }
+
+    public bool HasPatterns => Patterns is not null;
+
+    /// <summary>Whether the box is a plain one, with nothing beside it.</summary>
+    public bool IsPlainBox => IsTyped && !HasPatterns;
+
     /// <summary>Whether the choices are too long to sit beside the label, or the value is a list, so they go under it.</summary>
     public bool Wide => IsList || (IsChoice && Field.Options.Sum(option => option.Label.Length) > 40);
 
@@ -454,6 +465,8 @@ internal sealed partial class SettingViewModel : ViewModelBase
         {
             option.Refresh();
         }
+        // The list may have come out of hiding, which is when its patterns are checked.
+        Patterns?.Read();
     }
 
     /// <summary>Puts the value back as last saved, draft included.</summary>
@@ -497,6 +510,7 @@ internal sealed partial class SettingViewModel : ViewModelBase
         {
             option.Refresh();
         }
+        Patterns?.Read();
         this.changed();
     }
 

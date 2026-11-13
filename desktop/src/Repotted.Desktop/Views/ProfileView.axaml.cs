@@ -2,8 +2,10 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Repotted.Desktop.Theme;
@@ -114,6 +116,79 @@ internal sealed partial class ProfileView : UserControl
             Dispatcher.UIThread.Post(() => ClosePreview.Focus(), DispatcherPriority.Loaded);
         }
     }
+
+    /// <summary>
+    /// The keys of the action search box: Enter searches at once, the down
+    /// arrow moves into the results, and Escape closes them.
+    /// </summary>
+    private void OnActionSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox { DataContext: ActionPatternsViewModel { Search: { } search } } box)
+        {
+            return;
+        }
+        switch (e.Key)
+        {
+            case Key.Enter:
+                search.SubmitCommand.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.Escape when search.Open:
+                search.CloseCommand.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.Down when search is { Open: true, HasResults: true } && FoundActions(box) is { } results:
+                results.SelectedIndex = Math.Max(results.SelectedIndex, 0);
+                (results.ContainerFromIndex(results.SelectedIndex) ?? results).Focus(NavigationMethod.Directional);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    /// <summary>Hears the keys of the action search results before the list does, since a list keeps Enter and Space for itself.</summary>
+    private void OnFoundActionsAttached(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (sender is ListBox results)
+        {
+            results.RemoveHandler(KeyDownEvent, OnFoundActionKeyDown);
+            results.AddHandler(KeyDownEvent, OnFoundActionKeyDown, RoutingStrategies.Tunnel);
+        }
+    }
+
+    /// <summary>
+    /// The keys of the action search results: Enter or Space adds the chosen
+    /// repository, Escape closes the results, and both that and the up arrow
+    /// on the first result go back to the search box.
+    /// </summary>
+    private void OnFoundActionKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not ListBox { DataContext: ActionPatternsViewModel { Search: { } search } } results)
+        {
+            return;
+        }
+        // A press on the Add button is the button's own.
+        if (e.Key is Key.Enter or Key.Space && e.Source is not Button && results.SelectedItem is FoundActionViewModel found)
+        {
+            found.AddCommand.Execute(null);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape || (e.Key == Key.Up && results.SelectedIndex <= 0))
+        {
+            if (e.Key == Key.Escape)
+            {
+                search.CloseCommand.Execute(null);
+            }
+            var box = results.FindLogicalAncestorOfType<Popup>()?.Parent is Panel panel
+                ? panel.Children.OfType<TextBox>().FirstOrDefault()
+                : null;
+            box?.Focus();
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>The results list under an action search box.</summary>
+    private static ListBox? FoundActions(TextBox box) =>
+        (box.Parent as Panel)?.Children.OfType<Popup>().FirstOrDefault()?.Child?.GetLogicalDescendants().OfType<ListBox>().FirstOrDefault();
 
     /// <summary>Puts focus in an entry's editor once it opens, so the keyboard follows the open.</summary>
     private void OnEntryNameAttached(object? sender, VisualTreeAttachmentEventArgs e)

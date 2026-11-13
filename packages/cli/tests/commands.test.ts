@@ -572,6 +572,117 @@ describe('batch', () => {
   });
 });
 
+/** A GitHub that answers each path with what `answers` holds for it, throws what is an error, and 404s the rest. */
+function answering(answers: Readonly<Record<string, unknown>>): GitHub {
+  return {
+    request(_method, requested) {
+      const answer = answers[requested];
+      return answer === undefined || answer instanceof Error
+        ? Promise.reject(answer ?? new GitHubError(404, 'Not Found'))
+        : Promise.resolve(answer);
+    },
+  };
+}
+
+describe('action commands', () => {
+  const limited = responseError(403, { message: 'API rate limit exceeded' }, { 'x-ratelimit-remaining': '0' });
+  const github = answering({
+    '/users/actions': { login: 'actions', type: 'Organization' },
+    '/repos/Github/CodeQL-Action': { full_name: 'github/codeql-action', archived: false },
+    '/repos/Github/CodeQL-Action/git/ref/tags/v3': { ref: 'refs/tags/v3' },
+    '/repos/Github/CodeQL-Action/contents/init?ref=v3': [],
+    '/repos/octo-org/deploy': { full_name: 'octo-org/deploy', archived: false },
+    '/repos/octo-org/old-deploy': { full_name: 'octo-org/old-deploy', archived: true },
+    '/repos/octo-org/limited': limited,
+    '/search/repositories?q=setup%20dotnet%20archived%3Afalse&sort=stars&order=desc&per_page=10': {
+      items: [
+        { full_name: 'actions/setup-dotnet', description: 'Set up .NET', stargazers_count: 1140 },
+        { full_name: 'dotnet/sdk', description: null, stargazers_count: 320 },
+      ],
+    },
+    '/repos/actions/setup-dotnet/contents/': [{ name: 'action.yml', type: 'file' }],
+    '/repos/dotnet/sdk/contents/': [{ name: 'README.md', type: 'file' }],
+  });
+
+  test('check-actions says what each pattern matches, as JSON or as lines', async () => {
+    const patterns = [
+      'actions/*',
+      'Github/CodeQL-Action/init@v3',
+      'octo-org/deploy@v9',
+      'octo-org/deplyo@*',
+      '!octo-org/old-deploy@*',
+      'space-org*/*',
+      'octo org/tools',
+      'octo-org/limited',
+    ];
+
+    const checked = await cliWith(github, {}, 'check-actions', ...patterns, '--json');
+    // A pattern that matches nothing, or is none, fails the command, for scripts.
+    expect(checked).toMatchObject({ code: 1, err: '' });
+    expect(document(checked)).toMatchObject({
+      checks: [
+        { pattern: 'actions/*', status: 'owner', owner: 'actions', owner_type: 'organization' },
+        { status: 'match', repository: 'github/codeql-action', ref_kind: 'tag', path_kind: 'folder' },
+        { status: 'missing_ref', repository: 'octo-org/deploy', ref: 'v9' },
+        { status: 'not_found', missing: 'repository', name: 'octo-org/deplyo' },
+        { status: 'match', blocks: true, archived: true },
+        { status: 'unchecked', why: 'wildcard_owner' },
+        { status: 'invalid', reason: 'space' },
+        { status: 'error', rate_limited: true },
+      ],
+    });
+    await fixture('check-actions', checked);
+
+    const lines = await cliWith(github, {}, 'check-actions', 'actions/*', '!octo-org/old-deploy@*', '*');
+    expect(lines).toEqual({
+      code: 0,
+      out: [
+        'actions/*: any repository from actions, an organization',
+        '!octo-org/old-deploy@*: blocks octo-org/old-deploy, archived',
+        '*: matches every action',
+        '',
+      ].join('\n'),
+      err: '',
+    });
+    expect(await cliWith(github, {}, 'check-actions')).toMatchObject({ code: 2 });
+  });
+
+  test('find-actions lists repositories and their action files, as JSON or as lines', async () => {
+    const found = await cliWith(github, {}, 'find-actions', 'setup', 'dotnet', '--json');
+    expect(found).toMatchObject({ code: 0, err: '' });
+    expect(document(found)).toEqual({
+      results: [
+        { repository: 'actions/setup-dotnet', description: 'Set up .NET', stars: 1140, action_file: 'action.yml' },
+        { repository: 'dotnet/sdk', description: null, stars: 320, action_file: null },
+      ],
+    });
+    await fixture('find-actions', found);
+
+    expect(await cliWith(github, {}, 'find-actions', 'setup dotnet')).toMatchObject({
+      code: 0,
+      out: 'actions/setup-dotnet (1.1k stars, action.yml): Set up .NET\ndotnet/sdk (320 stars, no action.yml at the top)\n',
+    });
+    expect(await cliWith(github, {}, 'find-actions')).toMatchObject({ code: 2 });
+  });
+
+  test('a rate limit fails with its message, and says in JSON that it is one', async () => {
+    const search = answering({
+      '/search/repositories?q=setup%20archived%3Afalse&sort=stars&order=desc&per_page=10': limited,
+    });
+
+    const failed = await cliWith(search, {}, 'find-actions', 'setup', '--json');
+    expect(failed.code).toBe(1);
+    expect(document(failed)).toEqual({
+      error: { kind: 'error', message: 'API rate limit exceeded', rate_limited: true },
+    });
+    await fixture('find-actions-limited', failed);
+    expect(await cliWith(search, {}, 'find-actions', 'setup')).toMatchObject({
+      code: 1,
+      err: 'repotted: API rate limit exceeded\n',
+    });
+  });
+});
+
 describe('account commands', () => {
   const account = {
     login: 'lunch',

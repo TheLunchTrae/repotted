@@ -1,8 +1,8 @@
 # JSON output
 
 `--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `schema`, `stage`, `sync`,
-`repos`, `status` and `logout` prints exactly one JSON document on stdout, for scripts
-and programs such as the desktop app. Repotted writes nothing to stderr in this mode;
+`repos`, `check-actions`, `find-actions`, `status` and `logout` prints exactly one JSON
+document on stdout, for scripts and programs such as the desktop app. Repotted writes nothing to stderr in this mode;
 anything that appears there, such as a deprecation notice from the GitHub client, is
 diagnostic and not a failure. `--help` and `--version` still print text.
 
@@ -149,6 +149,35 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   refuses the installation list to any other token, which gets `admin` and
   every repository the account administers; the token itself may not be
   allowed to change them (see [Sign in](sign-in.md#use-a-token-instead)).
+- `check-actions` prints `{ checks }`, one check for each pattern, in order,
+  and exits 1 unless every status is `match`, `owner` or `unchecked`. Each has `pattern` and `status`, and every one but `invalid` has `blocks`,
+  which is true for a pattern that starts with `!`. A member that doesn't
+  apply is left out. `status` is:
+  - `invalid`, with `reason` and `message`, for text that is not a pattern.
+    `reason` is `empty`, `space`, `several_refs`, `empty_ref`, `empty_name`,
+    `missing_repository` or `invalid_characters`, and `message` says it in
+    words, such as `a name can't have a space`.
+  - `unchecked`, with `why`: `everything` for `*` alone, or `wildcard_owner`
+    for an owner with a wildcard, which names nothing to look up.
+  - `owner`, with `owner`, `owner_type`, `organization` or `user`, and
+    `all_repositories`, for an owner that exists and a wildcard for its
+    repositories. `all_repositories` is true for `owner/*`.
+  - `match`, with `repository` and `archived`, for a repository that exists.
+    `repository` is its name as GitHub spells it, which follows a rename.
+    When the pattern names a ref exactly, the check has `ref` and
+    `ref_kind`: `tag`, `branch` or `commit`. When it names a path exactly, it
+    has `path` and `path_kind`: `folder` or `file`. The path is looked for at
+    that ref, or on the default branch without one.
+  - `missing_ref`, with `repository` and `ref`, and `missing_path`, with
+    `repository` and `path`, when the repository exists and that part
+    doesn't.
+  - `not_found`, with `missing`, `owner` or `repository`, and `name`, when
+    GitHub has none that the sign-in can see.
+  - `error`, with `message` and `rate_limited`, when the lookup failed.
+- `find-actions` prints `{ results }`, at most ten repositories, most
+  starred first, each as `{ repository, description, stars, action_file }`.
+  `description` may be null, and `action_file` is `action.yml` or
+  `action.yaml`, or null when the top of the repository has neither.
 - `status` prints `{ signed_in: true, login, name, token_variable,
   install_url }`, where `token_variable` names `GITHUB_TOKEN` or `GH_TOKEN`
   when one is set and used before the sign-in, and is null otherwise, and
@@ -211,4 +240,5 @@ supporting the setting, and null otherwise, as for a rate limit.
 A command that finds no sign-in, or whose sign-in or token GitHub rejects,
 has `kind: signed_out`; `status` says which. Anything else, such as an invalid
 profile, a network error, or a keychain that would not open, has
-`kind: error`.
+`kind: error`. A failure that is GitHub's rate limit also has
+`rate_limited: true`; trying again later passes it.

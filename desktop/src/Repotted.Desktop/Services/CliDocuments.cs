@@ -325,8 +325,41 @@ internal sealed record SyncDocument(
     IReadOnlyList<string> Pushed,
     IReadOnlyList<string> Conflicts);
 
-/// <summary>The <c>error</c> member of a failure.</summary>
-internal sealed record ErrorDetail(string Kind, string Message);
+/// <summary>
+/// What one allowed action pattern matches on GitHub, from
+/// <c>repotted check-actions --json</c>. <paramref name="Status"/> says which
+/// of the other members it has; the CLI leaves out those that don't apply.
+/// </summary>
+internal sealed record ActionCheckDocument(
+    string Pattern,
+    string Status,
+    bool Blocks = false,
+    string? Message = null,
+    string? Why = null,
+    string? Owner = null,
+    string? OwnerType = null,
+    bool AllRepositories = false,
+    string? Repository = null,
+    bool Archived = false,
+    string? Ref = null,
+    string? RefKind = null,
+    string? Path = null,
+    string? PathKind = null,
+    string? Missing = null,
+    string? Name = null,
+    bool RateLimited = false);
+
+/// <summary>What <c>repotted check-actions --json</c> prints: a check for each pattern, in order.</summary>
+internal sealed record ActionChecksDocument(IReadOnlyList<ActionCheckDocument> Checks);
+
+/// <summary>A repository <c>repotted find-actions --json</c> found, and the action file at its top, if it has one.</summary>
+internal sealed record FoundActionDocument(string Repository, string? Description, int Stars, string? ActionFile);
+
+/// <summary>What <c>repotted find-actions --json</c> prints.</summary>
+internal sealed record FoundActionsDocument(IReadOnlyList<FoundActionDocument> Results);
+
+/// <summary>The <c>error</c> member of a failure. <paramref name="RateLimited"/> is true when GitHub's rate limit refused the command.</summary>
+internal sealed record ErrorDetail(string Kind, string Message, bool RateLimited = false);
 
 /// <summary>Any document that may hold a failure.</summary>
 internal sealed record FailureDocument(ErrorDetail? Error = null);
@@ -365,6 +398,8 @@ internal sealed record LoginEvent(
 [JsonSerializable(typeof(BatchApplyDocument))]
 [JsonSerializable(typeof(ApplyFailureDocument))]
 [JsonSerializable(typeof(SyncDocument))]
+[JsonSerializable(typeof(ActionChecksDocument))]
+[JsonSerializable(typeof(FoundActionsDocument))]
 [JsonSerializable(typeof(FailureDocument))]
 [JsonSerializable(typeof(LoginEvent))]
 [JsonSerializable(typeof(LogoutDocument))]

@@ -11,6 +11,9 @@ internal class CliException(string message) : Exception(message);
 /// <summary>A command failed because there is no sign-in, or GitHub rejected it.</summary>
 internal sealed class SignInLostException(string message) : CliException(message);
 
+/// <summary>GitHub's rate limit refused a command, which a later try passes.</summary>
+internal sealed class RateLimitedException(string message) : CliException(message);
+
 /// <summary>The command line printed something the app could not read, such as after a crash, rather than a failure it explains.</summary>
 internal sealed class CliOutputException(string message) : CliException(message);
 
@@ -141,6 +144,33 @@ internal sealed class RepottedClient(ICli cli)
             "admin" => new RepositoryList(false, list.Repositories),
             _ => throw Unreadable(run, $"unknown repository source \"{list.Source}\"."),
         };
+    }
+
+    /// <summary>
+    /// Checks what each of <paramref name="patterns"/>, allowed action patterns,
+    /// matches on GitHub, and answers a check for each, in order. It only reads.
+    /// </summary>
+    public async Task<IReadOnlyList<ActionCheckDocument>> CheckActionsAsync(
+        IReadOnlyList<string> patterns,
+        CancellationToken cancellationToken)
+    {
+        // After --, so a pattern that starts with a dash stays a pattern. The
+        // command exits 1 when a pattern matches nothing, and still prints.
+        var run = await cli.RunAsync(["check-actions", "--json", "--", .. patterns], null, cancellationToken).ConfigureAwait(false);
+        var checks = Read(run, CliJson.Default.ActionChecksDocument).Checks;
+        return checks.Count == patterns.Count
+            ? checks
+            : throw Unreadable(run, $"it checked {checks.Count} of {patterns.Count} patterns.");
+    }
+
+    /// <summary>
+    /// Searches GitHub's repositories for <paramref name="words"/>, most
+    /// starred first. It only reads. GitHub's search limit throws <see cref="RateLimitedException"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<FoundActionDocument>> FindActionsAsync(string words, CancellationToken cancellationToken)
+    {
+        var run = await cli.RunAsync(["find-actions", "--json", "--", words], null, cancellationToken).ConfigureAwait(false);
+        return Read(run, CliJson.Default.FoundActionsDocument).Results;
     }
 
     public async Task<IReadOnlyList<ProfileListingDocument>> ProfilesAsync(
@@ -624,7 +654,7 @@ internal sealed class RepottedClient(ICli cli)
     {
         if (failure.Kind != "signed_out")
         {
-            return new CliException(failure.Message);
+            return failure.RateLimited ? new RateLimitedException(failure.Message) : new CliException(failure.Message);
         }
         SignInLost?.Invoke(this, EventArgs.Empty);
         return new SignInLostException(failure.Message);

@@ -124,6 +124,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
                 foreach (var editor in editors.Values)
                 {
                     editor.PropertyChanged -= OnEditorChanged;
+                    editor.Release();
                 }
                 editors.Clear();
                 break;
@@ -766,6 +767,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     private void Forget(string file, ProfileViewModel editor)
     {
         editor.PropertyChanged -= OnEditorChanged;
+        editor.Release();
         editors.Remove(file);
         OnPropertyChanged(nameof(Busy));
     }

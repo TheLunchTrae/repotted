@@ -71,10 +71,19 @@ internal sealed record SettingField(string Section, string Key, string Label, IR
     /// </summary>
     public IReadOnlyList<string> Synonyms { get; init; } = [];
 
+    /// <summary>
+    /// Whether its items are allowed action patterns, which the editor
+    /// checks against GitHub and offers a search for.
+    /// </summary>
+    public bool ActionPatterns { get; init; }
+
     /// <summary>The setting as a sub-option of the one above it.</summary>
     public SettingField Under() => this with { Nested = true };
 
     public SettingField Noted(string note) => this with { Note = note };
+
+    /// <summary>The list, as one of allowed action patterns.</summary>
+    public SettingField OfActionPatterns() => this with { ActionPatterns = true };
 
     public SettingField Also(params string[] synonyms) => this with { Synonyms = synonyms };
 
@@ -246,7 +255,7 @@ internal static class ProfileFields
                     .HiddenWhile("allowed_actions", "all", "local_only"),
                 Switch("actions", "selected_actions.verified_allowed", "Actions by verified creators").Under()
                     .HiddenWhile("allowed_actions", "all", "local_only"),
-                List("actions", "selected_actions.patterns_allowed", "Allowed action patterns").Under()
+                List("actions", "selected_actions.patterns_allowed", "Allowed action patterns").OfActionPatterns().Under()
                     .HiddenWhile("allowed_actions", "all", "local_only")
                     .Noted("One pattern a line, such as octo-org/*. Start one with ! to block it.")
                     .Also("allowlist", "blocklist", "patterns", "wildcard"),

@@ -673,6 +673,7 @@ internal sealed partial class BatchViewModel(
         // while a change runs, so each is read again the next time it shows.
         foreach (var member in Members)
         {
+            member.Edits?.Release();
             member.Edits = null;
         }
         // The plan starts at once, so the old plan is never there to act on between the two.

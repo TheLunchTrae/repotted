@@ -595,6 +595,182 @@
     <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
     <Setter Property="FontSize" Value="13" />
   </Style>
+  <!--
+    A list of allowed action patterns, with what each line matches beside it.
+    The list's lines and the checks are the same height, and the list keeps
+    its border's width with focus, so a check stays beside its line.
+  -->
+  <Style Selector="ContentControl.patterns">
+    <Setter Property="Margin" Value="40,0,16,12" />
+  </Style>
+  <Style Selector="ContentControl.patterns TextBox.setting.list">
+    <Setter Property="Width" Value="NaN" />
+    <Setter Property="LineHeight" Value="26" />
+    <Setter Property="Padding" Value="12,6" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style Selector="ContentControl.patterns TextBox.setting.list:focus /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="ItemsControl.checks">
+    <Setter Property="Margin" Value="0,7,0,0" />
+  </Style>
+  <Style Selector="Border.check">
+    <Setter Property="Height" Value="26" />
+    <Setter Property="Padding" Value="14,0,0,0" />
+  </Style>
+  <Style Selector="TextBlock.check">
+    <Setter Property="FontSize" Value="13.5" />
+  </Style>
+  <Style Selector="TextBlock.check.warning">
+    <Setter Property="Foreground" Value="{DynamicResource DriftBrush}" />
+  </Style>
+  <Style Selector="TextBlock.check.bad">
+    <Setter Property="Foreground" Value="{DynamicResource RemoveBrush}" />
+  </Style>
+  <Style Selector="TextBlock.check.muted">
+    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+  </Style>
+  <!-- A check's mark: a tick, an exclamation mark, a cross or a dash on a disc, or a ring that turns while GitHub is asked. -->
+  <Style Selector="Panel.mark">
+    <Setter Property="Width" Value="16" />
+    <Setter Property="Height" Value="16" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Panel.mark Path">
+    <Setter Property="StrokeThickness" Value="1.6" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+  </Style>
+  <Style Selector="Panel.mark.good Ellipse">
+    <Setter Property="Fill" Value="{DynamicResource AddBgBrush}" />
+  </Style>
+  <Style Selector="Panel.mark.good Path">
+    <Setter Property="Data" Value="M4.6,8.3 L7,10.6 L11.4,5.7" />
+    <Setter Property="Stroke" Value="{DynamicResource AddBrush}" />
+  </Style>
+  <Style Selector="Panel.mark.warning Ellipse">
+    <Setter Property="Fill" Value="{DynamicResource DriftBgBrush}" />
+  </Style>
+  <Style Selector="Panel.mark.warning Path">
+    <Setter Property="Data" Value="M8,4.4 V8.8 M8,11.4 V11.5" />
+    <Setter Property="Stroke" Value="{DynamicResource DriftBrush}" />
+  </Style>
+  <Style Selector="Panel.mark.bad Ellipse">
+    <Setter Property="Fill" Value="{DynamicResource RemoveBgBrush}" />
+  </Style>
+  <Style Selector="Panel.mark.bad Path">
+    <Setter Property="Data" Value="M5.4,5.4 L10.6,10.6 M10.6,5.4 L5.4,10.6" />
+    <Setter Property="Stroke" Value="{DynamicResource RemoveBrush}" />
+  </Style>
+  <Style Selector="Panel.mark.muted Ellipse">
+    <Setter Property="Fill" Value="{DynamicResource SunkenBrush}" />
+  </Style>
+  <Style Selector="Panel.mark.muted Path">
+    <Setter Property="Data" Value="M5.4,8 H10.6" />
+    <Setter Property="Stroke" Value="{DynamicResource MutedBrush}" />
+  </Style>
+  <Style Selector="Panel.mark.checking Ellipse, Panel.mark.checking Path">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <Style Selector="Panel.mark Arc">
+    <Setter Property="Width" Value="14" />
+    <Setter Property="Height" Value="14" />
+    <Setter Property="StartAngle" Value="0" />
+    <Setter Property="SweepAngle" Value="270" />
+    <Setter Property="Stroke" Value="{DynamicResource RailBrush}" />
+    <Setter Property="StrokeThickness" Value="2" />
+  </Style>
+  <Style Selector="Panel.mark Arc.spinner">
+    <Style.Animations>
+      <Animation Duration="0:0:0.9" IterationCount="INFINITE">
+        <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
+        <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360" /></KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
+  <!-- A pattern that blocks what it names. -->
+  <Style Selector="Border.blocks">
+    <Setter Property="BorderBrush" Value="{DynamicResource RemoveBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Padding" Value="5,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.blocks TextBlock">
+    <Setter Property="FontSize" Value="11.5" />
+    <Setter Property="Foreground" Value="{DynamicResource RemoveBrush}" />
+  </Style>
+  <!-- The search for actions, as wide as the list above it, and what it found. -->
+  <Style Selector="TextBox.search.actions">
+    <Setter Property="Width" Value="NaN" />
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="Height" Value="32" />
+  </Style>
+  <Style Selector="Path.magnifier">
+    <Setter Property="Data" Value="M10.2,10.2 L13.5,13.5 M11.5,6.75 A4.75,4.75 0 1 1 2,6.75 A4.75,4.75 0 1 1 11.5,6.75 Z" />
+    <Setter Property="Stroke" Value="{DynamicResource MutedBrush}" />
+    <Setter Property="StrokeThickness" Value="1.5" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="Width" Value="15" />
+    <Setter Property="Height" Value="15" />
+    <Setter Property="Stretch" Value="None" />
+  </Style>
+  <Style Selector="Border.found">
+    <Setter Property="Width" Value="560" />
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="ClipToBounds" Value="True" />
+    <Setter Property="BoxShadow" Value="0 10 30 0 #29000000" />
+    <Setter Property="Margin" Value="0,0,24,24" />
+  </Style>
+  <Style Selector="ListBox.found">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MaxHeight" Value="420" />
+  </Style>
+  <Style Selector="ListBox.found ListBoxItem">
+    <Setter Property="Padding" Value="14,9" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+  </Style>
+  <Style Selector="ListBox.found ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter, ListBox.found ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource TintBrush}" />
+  </Style>
+  <Style Selector="Button.add">
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="FontSize" Value="13.5" />
+  </Style>
+  <Style Selector="TextBlock.actionfile.has">
+    <Setter Property="Foreground" Value="{DynamicResource AddBrush}" />
+  </Style>
+  <Style Selector="Path.star">
+    <Setter Property="Data" Value="M6,0.8 L7.5,4.2 L11.2,4.5 L8.4,7 L9.3,10.6 L6,8.7 L2.7,10.6 L3.6,7 L0.8,4.5 L4.5,4.2 Z" />
+    <Setter Property="Fill" Value="{DynamicResource MutedBrush}" />
+    <Setter Property="Width" Value="12" />
+    <Setter Property="Height" Value="12" />
+    <Setter Property="Stretch" Value="None" />
+  </Style>
+  <Style Selector="Path.tick">
+    <Setter Property="Data" Value="M2,6.4 L4.8,9 L10,3.2" />
+    <Setter Property="Stroke" Value="{DynamicResource AddBrush}" />
+    <Setter Property="StrokeThickness" Value="1.6" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+    <Setter Property="Width" Value="12" />
+    <Setter Property="Height" Value="12" />
+    <Setter Property="Stretch" Value="None" />
+  </Style>
+  <Style Selector="Border.foot">
+    <Setter Property="Background" Value="{DynamicResource SunkenBrush}" />
+    <Setter Property="Padding" Value="14,8" />
+  </Style>
   <!-- A setting that another one turns off, which GitHub greys out: its name dims, and what says why stays readable. -->
   <Style Selector="Border.field.off TextBlock.dims">
     <Setter Property="Opacity" Value="0.6" />

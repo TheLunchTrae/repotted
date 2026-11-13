@@ -553,6 +553,54 @@ when what it shows changes. **Can't change** is offered only while a difference 
 loading a comparison with nothing locked turns it off. Loading a comparison
 finds again with the current search and filters.
 
+### Allowed action pattern checks
+
+`ActionPatternsViewModel` sits on the **Allowed action patterns** row and
+shows beside each line what its pattern matches on GitHub, read with
+`repotted check-actions --json`. The states are those of one pattern's text,
+trimmed; a line shows the state of the text it holds now, so a check that
+lands after its line changed shows on no other line. A blank line shows
+nothing, and a line with a comma holds several patterns and is never checked.
+The checks are kept on the profile's editor by pattern text, so they outlive
+the rows of a load, a reload or a save, and go with the editor.
+
+| State               | Event                                                                     | Next                                                                                                             |
+| ------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Not checked         | The profile loads with the pattern in the list                            | Checking, at once.                                                                                               |
+| Not checked         | The list changes to hold the pattern                                      | Waiting. Each further change starts the 600 ms pause again.                                                      |
+| Not checked         | GitHub hides the row, as with **Allowed actions** not set to **Selected** | Not checked, and nothing runs. Waiting once the row shows, or Checking at once when nothing was read before.     |
+| Waiting             | The pause ends                                                            | Checking, in one run of the command for every pattern still in the list that is Not checked, 100 patterns a run. |
+| Waiting             | The pattern leaves the list                                               | Not checked. The pause goes on only while another pattern waits.                                                 |
+| Checking            | The check lands                                                           | Checked, or Failed when GitHub's answer for this pattern was an error or its rate limit.                         |
+| Checking            | The whole run fails, such as with no network                              | Failed, for every pattern of that run. A lost sign-in also takes the app to the sign-in page.                    |
+| Checking            | The pattern leaves the list                                               | Checking: the run goes on and its result is kept for the text, so typing it back shows it.                       |
+| Checked             | The pattern leaves the list and comes back                                | Checked, with no new run.                                                                                        |
+| Failed              | The list changes                                                          | Failed: a failure isn't tried again by typing.                                                                   |
+| Failed              | **Check again**                                                           | Checking, at once, for every Failed pattern in the list. The link shows only while one is Failed.                |
+| Waiting or Checking | The rows are replaced, or the editor leaves the cache                     | The pause and the run are cancelled. What a run had already kept stays for the editor's next rows.               |
+
+### Action search
+
+`ActionSearchViewModel` is the search box under the list. It runs
+`repotted find-actions --json` and shows the repositories in a popup. One
+search runs at a time: a newer one cancels the run before it, so an older
+answer never replaces a newer one.
+
+| State              | Event                                | Next                                                                                                   |
+| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Closed             | Type two characters or more          | Waiting, closed still. Each further change starts the 500 ms pause again.                              |
+| Any                | The text drops under two characters  | Closed, with any pause or search cancelled.                                                            |
+| Waiting            | The pause ends, or Enter             | Searching: the popup opens and says so, in place of any results of the search before.                  |
+| Searching          | The text changes                     | Waiting, with the search cancelled. The popup stays open and still says it is searching.               |
+| Searching          | The search lands with repositories   | Results.                                                                                               |
+| Searching          | The search lands with none           | Message: GitHub found no repositories for the words.                                                   |
+| Searching          | The search fails                     | Message: GitHub's search limit is reached, or the error. A lost sign-in also goes to the sign-in page. |
+| Results            | **Add**                              | Results, with `owner/repo@*` on a new line at the end of the list and the row showing Added.           |
+| Results            | The list changes                     | Results, each row showing Added while the list holds its `owner/repo@*` on a line, in any case.        |
+| Results or Message | Enter                                | Searching, at once, for the text as it is.                                                             |
+| Open, in any state | Escape, or a click outside the popup | Closed, with any search cancelled. The text stays, and Enter searches again.                           |
+| Any                | The rows are replaced                | Gone with them, with any pause or search cancelled.                                                    |
+
 ### Each ruleset, environment or label
 
 | State                                     | Event               | Next                                                                                                                                                                                                                                                                     |

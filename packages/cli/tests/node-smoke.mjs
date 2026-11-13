@@ -61,7 +61,7 @@ try {
   send({ jsonrpc: '2.0', method: 'notifications/initialized' });
   const list = await request(2, 'tools/list', {});
   const names = (list.result?.tools ?? []).map((tool) => tool.name).toSorted();
-  if (names.join(',') !== 'capture,plan') {
+  if (names.join(',') !== 'capture,check_actions,find_actions,plan') {
     throw new Error(`Unexpected tools: ${names.join(', ')}`);
   }
   const planned = await request(3, 'tools/call', {
