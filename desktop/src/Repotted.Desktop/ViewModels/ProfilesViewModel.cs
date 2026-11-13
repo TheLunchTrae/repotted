@@ -142,10 +142,17 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     /// repository, and quitting each drop every editor, so each asks first.
     /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasLeaving), nameof(LeavingMessage))]
+    [NotifyPropertyChangedFor(nameof(HasLeaving), nameof(HasLeavingAll), nameof(LeavingMessage))]
     public partial string? Leaving { get; private set; }
 
     public bool HasLeaving => Leaving is not null;
+
+    /// <summary>
+    /// Whether the question asks about every editor, as changing the folder or
+    /// the repository does; the settings show only that one, since closing a
+    /// profile asks about a profile they don't show.
+    /// </summary>
+    public bool HasLeavingAll => Leaving is not null && askedAbout is null;
 
     /// <summary>The answer to the question about unsaved changes: true to go on, false to stay.</summary>
     private TaskCompletionSource<bool>? leave;

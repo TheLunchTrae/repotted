@@ -199,6 +199,31 @@ public sealed class ViewTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task Closing_a_profile_asks_only_on_the_profiles_page_and_not_in_the_settings()
+    {
+        var (window, shell, editor, _) = await ShowUnsaved("light");
+        shell.SettingsInWindow = false;
+        var list = window.GetVisualDescendants().OfType<ListBox>().Single(list => list.Name == "ProfileList");
+        Assert.Equal(shell.Profiles.Folder.ListLabel, AutomationProperties.GetName(list));
+
+        var closing = editor.CloseCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(shell.Profiles.HasLeaving);
+        Assert.False(shell.Profiles.HasLeavingAll);
+        Assert.Contains(shell.Profiles.LeavingMessage, Texts(window));
+
+        // The settings don't show the profile, so they don't ask about closing it.
+        shell.OpenSettings();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(shell.ShowingSettings);
+        Assert.DoesNotContain(shell.Profiles.LeavingMessage, Texts(window));
+
+        shell.Profiles.StayHereCommand.Execute(null);
+        await closing.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
     public async Task On_macOS_signing_out_from_the_settings_window_asks_in_the_main_window()
     {
         var (window, shell, editor, _) = await ShowUnsaved("light");

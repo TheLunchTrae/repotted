@@ -637,8 +637,9 @@ Changing the folder, connecting or changing the repository, closing the
 window, signing out, and a lost sign-in that would replace the app go through
 `ProfilesViewModel.ConfirmLeaveAsync`, which asks only when a cached editor
 has unsaved changes. [Closing](#closing) a profile goes through it too, and
-asks only about that profile. The question shows on the **Profiles** page and
-in the settings, where changing the folder or the repository starts. Closing
+asks only about that profile. The question shows on the **Profiles** page.
+The settings show it too when it asks about every profile, as changing the
+folder or the repository does, since those start there. Closing
 the window, signing out, and a lost sign-in show the **Profiles** page first,
 through `ShellViewModel.ConfirmLeaveAsync`. Closing the window cancels the
 close and closes again once the question settles.

@@ -118,7 +118,7 @@
                        Text="{Binding Profiles.Filter}" AutomationProperties.Name="Find a profile" />
             </StackPanel>
             <ListBox x:Name="ProfileList" Classes="nav" ItemsSource="{Binding Profiles.Items}" SelectedItem="{Binding Profiles.Selected}"
-                     AutomationProperties.Name="Profiles in this folder">
+                     AutomationProperties.Name="{Binding Profiles.Folder.ListLabel}">
               <ListBox.Styles>
                 <Style Selector="ListBoxItem" x:DataType="vm:ProfileItemViewModel">
                   <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />

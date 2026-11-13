@@ -9,7 +9,7 @@
     <TextBlock Classes="small" TextWrapping="Wrap" Foreground="{DynamicResource RemoveBrush}" Text="{Binding Profiles.Notice}"
                IsVisible="{Binding Profiles.HasNotice}" AutomationProperties.LiveSetting="Assertive" />
     <!-- Changing the folder or the repository waits until unsaved changes are saved or discarded -->
-    <Border Classes="settings" Padding="18,12" IsVisible="{Binding Profiles.HasLeaving}">
+    <Border Classes="settings" Padding="18,12" IsVisible="{Binding Profiles.HasLeavingAll}">
       <Grid ColumnDefinitions="*,Auto">
         <TextBlock Classes="small" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource DriftBrush}"
                    Text="{Binding Profiles.LeavingMessage}" AutomationProperties.LiveSetting="Assertive" />
