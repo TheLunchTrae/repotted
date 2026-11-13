@@ -9,12 +9,14 @@ namespace Repotted.Desktop.Services;
 /// set, as <c>owner/name</c>, profiles live in that repository, in
 /// <paramref name="ConfigPath"/> or at its root, and the app keeps its working
 /// copy in the app data folder; otherwise they live in
-/// <paramref name="ProfilesFolder"/>.
+/// <paramref name="ProfilesFolder"/>. <paramref name="HiddenRepositoryOwners"/>
+/// holds the owners, by login, whose repositories the repository list hides.
 /// </summary>
 internal sealed record SettingsDocument(
     string? ProfilesFolder = null,
     string? ConfigRepository = null,
-    string? ConfigPath = null);
+    string? ConfigPath = null,
+    IReadOnlyList<string>? HiddenRepositoryOwners = null);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower, WriteIndented = true)]
 [JsonSerializable(typeof(SettingsDocument))]

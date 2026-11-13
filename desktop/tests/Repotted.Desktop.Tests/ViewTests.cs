@@ -6,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -62,6 +63,76 @@ public sealed class ViewTests : IDisposable
                 "TheLunchTrae/test-repo, private, no profile",
             ],
             names);
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
+    public async Task The_repository_list_is_grouped_by_owner_and_filtered_by_owner(string theme)
+    {
+        var window = await Show(theme, new FakeCli().On("status --json", Documents.SignedIn).On("repos --json", Documents.OwnedRepositories));
+        var repositories = ((ShellViewModel)((MainViewModel)window.DataContext!).Page!).Repositories;
+
+        var text = Texts(window);
+        Assert.Contains("TheLunchTrae", text);
+        Assert.Contains("Personal", text);
+        Assert.Contains("lunchbox-labs", text);
+        Assert.Contains(ControlLabel.For("All owners"), text);
+        Save(window, $"repositories-owners-{theme}");
+
+        var owners = window.GetVisualDescendants().OfType<Button>().Single(button => button.Classes.Contains("owners"));
+        owners.Flyout!.ShowAt(owners);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains("Show repositories owned by", Texts(window));
+        Save(window, $"repositories-owner-filter-{theme}");
+
+        // Unticking an owner's box hides its repositories.
+        var pixel = ((Flyout)owners.Flyout).Content is Control content
+            ? content.GetLogicalDescendants().OfType<CheckBox>().Single(box => box.DataContext is OwnerChoice { Owner: "Pixel-Garden" })
+            : throw new InvalidOperationException();
+        pixel.IsChecked = false;
+        Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain(repositories.Rows, row => row.Owner == "Pixel-Garden");
+        Assert.Equal(ControlLabel.For("2 owners"), repositories.OwnersLabel);
+
+        repositories.ShowOnlyPersonalCommand.Execute(null);
+        owners.Flyout.Hide();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains("2 of 5", Texts(window));
+        Save(window, $"repositories-personal-{theme}");
+    }
+
+    [AvaloniaFact]
+    public async Task Owner_headings_are_read_out_and_never_selected()
+    {
+        var window = await Show("light", new FakeCli().On("status --json", Documents.SignedIn).On("repos --json", Documents.OwnedRepositories));
+        var repositories = ((ShellViewModel)((MainViewModel)window.DataContext!).Page!).Repositories;
+        var list = window.GetVisualDescendants().OfType<ListBox>().Single(box => box.Name == "List");
+
+        var headings = window.GetVisualDescendants().OfType<ListBoxItem>().Where(item => item.DataContext is OwnerHeading).ToList();
+        Assert.Equal(
+            ["TheLunchTrae, personal, 2 repositories", "lunchbox-labs, 2 repositories", "Pixel-Garden, 1 repository"],
+            headings.Select(item => ControlAutomationPeer.CreatePeerForElement(item).GetName()));
+        Assert.All(headings, item => Assert.False(item.IsEnabled));
+
+        // Select all takes every repository and no heading.
+        list.Focus();
+        list.SelectAll();
+        Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain(list.Selection.SelectedItems, item => item is OwnerHeading);
+        Assert.Equal(5, repositories.Chosen.Count);
+        Assert.True(repositories.Choosing);
+
+        // Hiding an owner lets go of its repositories only; the rest stay chosen for the batch.
+        repositories.Owners.Single(owner => owner.Owner == "Pixel-Garden").Shown = false;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(4, repositories.Chosen.Count);
+        Assert.DoesNotContain(repositories.Chosen, row => row.Owner == "Pixel-Garden");
+
+        // So does the search.
+        repositories.Filter = "co";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["lunchbox-labs/compasslet"], repositories.Chosen.Select(row => row.FullName));
+        Assert.Equal("lunchbox-labs/compasslet", repositories.Selected?.FullName);
     }
 
     [AvaloniaFact]

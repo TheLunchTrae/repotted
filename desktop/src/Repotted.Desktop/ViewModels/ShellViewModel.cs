@@ -35,7 +35,8 @@ internal sealed partial class ShellViewModel : ViewModelBase
         Profiles = new ProfilesViewModel(client, desktop, settings, () => repositories?.Names ?? []);
         Profiles.PropertyChanged += OnProfilesChanged;
         Repositories = repositories = new RepositoriesViewModel(
-            client, desktop, account.InstallUrl, Profiles, OpenCompare, OpenCapture, OpenApply, Unfinished, OpenBatch, () => settings.HasBatch);
+            client, desktop, account.InstallUrl, Profiles, OpenCompare, OpenCapture, OpenApply, Unfinished, OpenBatch, () => settings.HasBatch,
+            account.Login, settings);
         Repositories.PropertyChanged += OnRepositoriesChanged;
     }
 
