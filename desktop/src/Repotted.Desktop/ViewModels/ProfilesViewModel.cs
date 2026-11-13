@@ -18,7 +18,7 @@ internal sealed partial class ProfileItemViewModel(
 {
     public ProfileListingDocument Listing => listing;
 
-    /// <summary>A removed profile has no file to delete; Discard in its editor lets it go.</summary>
+    /// <summary>A removed profile has no file to delete; Reset in its editor lets it go.</summary>
     [RelayCommand(CanExecute = nameof(CanDelete))]
     private void Delete() => delete?.Invoke(this);
 

@@ -665,7 +665,7 @@ are discarded. For a config repository it says what GitHub keeps, from
 `.repotted-sync.json`: the file whole when its blob id matches the record,
 only the synced version when it doesn't, and nothing for a file the record
 lacks or a link. A Removed editor offers no delete, since its file is already
-gone; **Discard** lets it go. While the new profile form is open, a
+gone; **Reset** lets it go. While the new profile form is open, a
 right-click opens a profile's menu without selecting the profile, since
 selecting one closes the form.
 

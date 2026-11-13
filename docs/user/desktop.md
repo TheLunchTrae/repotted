@@ -290,8 +290,7 @@ working takes you back to the sign-in page, since saving needs no sign-in.
 
 To delete a profile, right-click it in the list and choose **Delete profile**,
 or select it and press <kbd>Delete</kbd>, or <kbd>⌘</kbd>+<kbd>Delete</kbd> on
-macOS. An open profile also has **Delete profile** at the start of the row with
-**Save profile**. The
+macOS. An open profile also has **Delete profile** beside **Show YAML**. The
 app asks first, naming the file it deletes. If the profile has unsaved
 changes, deleting discards them. If other profiles extend it, directly or
 through another profile, the question names them: they stop loading until you
