@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 
 import { build } from 'esbuild';
 
+import { engineAliases } from './aliases.ts';
+
 // The site Workers static assets serve: the files in static/ and the page's
 // bundle. wrangler.jsonc runs this before every deploy and dev session.
 const dist = new URL('dist/', import.meta.url);
@@ -12,6 +14,7 @@ await build({
   entryPoints: [fileURLToPath(new URL('src/page.ts', import.meta.url))],
   outfile: fileURLToPath(new URL('app.js', dist)),
   bundle: true,
+  alias: engineAliases,
   format: 'esm',
   target: 'es2024',
   minify: true,

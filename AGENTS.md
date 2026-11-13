@@ -201,7 +201,10 @@ asynchronous work.
 and commands. mise pins Node and pnpm; pnpm installs the workspace, Vitest runs
 the tests, and esbuild builds the CLI. The published package runs under Node
 through `npx`, so shipped code uses only `node:` APIs, and `ts:node:check` runs
-the built CLI under the oldest supported Node. The desktop app ships the CLI as
+the built CLI under the oldest supported Node. `packages/core` also runs in the
+web app's page, so it uses web platform APIs, and of Node's modules only
+`node:fs/promises` and `node:path`, which the page
+[maps to its own](docs/developer/web-app.md#the-engine). The desktop app ships the CLI as
 a Node single executable that `packages/cli/sea.ts` builds. `packages/web`
 runs in the browser and on Cloudflare Workers instead, so its `src/` uses web
 platform APIs and no `node:` modules.

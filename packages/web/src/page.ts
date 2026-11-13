@@ -1,8 +1,10 @@
-// A placeholder page that proves the sign-in end to end: it signs in with
-// GitHub through the Worker and shows who is signed in.
+// A placeholder page that proves the sign-in and the engine end to end: it
+// signs in with GitHub through the Worker and has the engine read who is
+// signed in.
 
-import * as z from 'zod/mini';
+import { currentUser, GitHubError } from '@repotted/core';
 
+import { sessionGitHub } from './engine/github.js';
 import { Session } from './session.js';
 
 const failures: Record<string, string> = {
@@ -12,7 +14,7 @@ const failures: Record<string, string> = {
 };
 
 const session = new Session();
-const gitHubUser = z.object({ login: z.string(), avatar_url: z.string() });
+const github = sessionGitHub(session);
 
 function element<T extends HTMLElement>(id: string, type: new () => T): T {
   const found = document.getElementById(id);
@@ -36,29 +38,20 @@ function showSignedOut(message: string): void {
 }
 
 async function show(failure: string | undefined): Promise<void> {
-  let response: Response | undefined;
+  let user: Awaited<ReturnType<typeof currentUser>>;
   try {
-    response = await session.fetchGitHub('/user');
-  } catch {
-    status.textContent = "Repotted can't reach GitHub right now. Reload to try again.";
+    user = await currentUser(github);
+  } catch (error) {
+    if (error instanceof GitHubError && error.status === 401) {
+      showSignedOut(failure ?? 'Sign in to manage your repositories.');
+    } else {
+      status.textContent = "Repotted can't reach GitHub right now. Reload to try again.";
+    }
     return;
   }
-  if (response === undefined) {
-    showSignedOut(failure ?? 'Sign in to manage your repositories.');
-    return;
-  }
-  if (response.status === 401) {
-    showSignedOut('GitHub no longer accepts this sign-in. Sign in again.');
-    return;
-  }
-  if (!response.ok) {
-    status.textContent = "Repotted can't reach GitHub right now. Reload to try again.";
-    return;
-  }
-  const user = gitHubUser.parse(await response.json());
   status.textContent = 'Signed in.';
-  login.textContent = user.login;
-  avatar.src = user.avatar_url;
+  login.textContent = user.name ?? user.login;
+  avatar.src = `https://avatars.githubusercontent.com/${encodeURIComponent(user.login)}?size=80`;
   signInLink.hidden = true;
   account.hidden = false;
 }

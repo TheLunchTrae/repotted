@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto';
 import { lstat, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 import { z } from 'zod';
 
+import { fromBase64, hexDigest, toBase64 } from './bytes.js';
 import { replaceFile } from './files.js';
 import { type GitHub, GitHubError, parseRepo, type RepoRef, repoPath } from './github.js';
 
@@ -83,8 +83,12 @@ function explain(error: unknown, repository: string, branch: string): unknown {
 }
 
 /** The id git gives a file's content, which GitHub's trees list. */
-export function blobId(content: Uint8Array): string {
-  return createHash('sha1').update(`blob ${content.byteLength}\0`).update(content).digest('hex');
+async function blobId(content: Uint8Array): Promise<string> {
+  const header = new TextEncoder().encode(`blob ${content.byteLength}\0`);
+  const whole = new Uint8Array(header.length + content.byteLength);
+  whole.set(header);
+  whole.set(content, header.length);
+  return hexDigest('SHA-1', whole);
 }
 
 // A path a profile can have on every OS the app runs on: no hidden or reserved
@@ -308,7 +312,7 @@ async function descends(github: GitHub, repo: RepoRef, commit: string | null, he
 
 async function readBlob(github: GitHub, repo: RepoRef, id: string): Promise<Uint8Array> {
   const blob = blobInfo.parse(await github.request('GET', `${repoPath(repo)}/git/blobs/${id}`));
-  return Buffer.from(blob.content, 'base64');
+  return fromBase64(blob.content);
 }
 
 function commitMessage(changes: readonly { file: string; verb: 'Add' | 'Update' | 'Delete' }[]): string {
@@ -414,7 +418,9 @@ export async function syncFolder(github: GitHub, directory: string, options: Syn
       base.clear();
     }
     const local = await localFiles(folder);
-    const localIds = new Map([...local].map(([file, content]) => [file, blobId(content)]));
+    const localIds = new Map(
+      await Promise.all([...local].map(async ([file, content]) => [file, await blobId(content)] as const)),
+    );
     const localClash = caseClash(localIds.keys());
     if (localClash !== undefined) {
       throw new SyncError(
@@ -525,12 +531,12 @@ export async function syncFolder(github: GitHub, directory: string, options: Syn
             `${repoPath(repo)}/contents/${remotePath(first).split('/').map(encodeURIComponent).join('/')}`,
             {
               message: message(changes.filter((change) => change.file === first)),
-              content: Buffer.from(content).toString('base64'),
+              content: toBase64(content),
               branch,
             },
           );
           pushed.add(first);
-          base.set(first, blobId(content));
+          base.set(first, await blobId(content));
           continue;
         }
         const tree = [];
@@ -543,7 +549,7 @@ export async function syncFolder(github: GitHub, directory: string, options: Syn
           }
           const blob = sha.parse(
             await github.request('POST', `${repoPath(repo)}/git/blobs`, {
-              content: Buffer.from(content).toString('base64'),
+              content: toBase64(content),
               encoding: 'base64',
             }),
           );

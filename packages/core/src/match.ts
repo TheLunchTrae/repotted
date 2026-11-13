@@ -1,4 +1,4 @@
-import { isDeepStrictEqual } from 'node:util';
+import { isDeepEqual } from './equal.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -69,7 +69,7 @@ export function fieldChanges(
 export function bodyChanges(body: object, current: object | undefined): FieldChange[] {
   const before = new Map<string, unknown>(Object.entries(current ?? {}));
   return Object.entries(body)
-    .filter(([field, to]: [string, unknown]) => !isDeepStrictEqual(to, before.get(field)))
+    .filter(([field, to]: [string, unknown]) => !isDeepEqual(to, before.get(field)))
     .map(([field, to]: [string, unknown]) => ({ field, from: before.get(field), to }));
 }
 

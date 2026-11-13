@@ -124,8 +124,16 @@ const requestFailure = z.object({
   response: z.object({ data: z.unknown(), headers: z.record(z.string(), z.unknown()) }).optional(),
 });
 
-export function createGitHub(token: string): GitHub {
-  const octokit = new Octokit({ auth: token, userAgent: 'repotted' });
+/**
+ * A client for GitHub's REST API. It signs requests with `auth` when that is
+ * a token; when it is a `fetch`, that function sends each request and signs
+ * it, which lets a sign-in that refreshes its token supply the current one.
+ */
+export function createGitHub(auth: string | typeof fetch): GitHub {
+  const octokit = new Octokit({
+    userAgent: 'repotted',
+    ...(typeof auth === 'string' ? { auth } : { request: { fetch: auth } }),
+  });
   return {
     async request(method, path, body) {
       try {

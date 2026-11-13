@@ -1,6 +1,7 @@
-import { randomBytes } from 'node:crypto';
 import { chmod, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+
+import { randomHex } from './bytes.js';
 
 // What Windows answers while another program, such as antivirus or the
 // search indexer, holds a file that was just written.
@@ -24,7 +25,7 @@ export async function replaceFile(
   content: Uint8Array | string,
   { create = true }: { create?: boolean } = {},
 ): Promise<void> {
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomBytes(6).toString('hex')}.tmp`);
+  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomHex(6)}.tmp`);
   try {
     await writeFile(temporary, content);
     const existing = await stat(file).catch((error: unknown) => {
