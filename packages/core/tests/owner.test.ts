@@ -325,6 +325,26 @@ environments:
     expect(parse(await readFile(file, 'utf8'))).toMatchObject({ drafts: { unset: ['rulesets/Main'] } });
   });
 
+  test('takes out a group that only organizations have, setting by setting', async () => {
+    const file = await write(
+      'org-groups.yaml',
+      [
+        'owner_type: organization',
+        'actions: { enabled: true, fork_pr_workflows_private_repos: { run_workflows_from_fork_pull_requests: true, send_write_tokens_to_workflows: false } }',
+        'security: { code_quality_setup: { state: configured } }',
+        'drafts:',
+        '  security: { code_quality_setup: { state: not-configured } }',
+        '  unset: [actions.fork_pr_workflows_private_repos.send_write_tokens_to_workflows]',
+        '',
+      ].join('\n'),
+    );
+
+    const resolved = await changeOwnerType(file, 'user');
+
+    expect(resolved.warnings).toEqual([]);
+    expect(parse(await readFile(file, 'utf8'))).toEqual({ owner_type: 'user', actions: { enabled: true } });
+  });
+
   test('keeps a comment over the first key at the top, and gives it back', async () => {
     const text = '# Profiles\n\n# Personal repositories\nrepository: { has_wiki: false }\n';
     const file = await write('commented.yaml', text);

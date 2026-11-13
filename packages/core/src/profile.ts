@@ -895,25 +895,38 @@ function ownerTypeEdits(layer: ProfileFile, type: OwnerType | undefined): Profil
   const conflicts = [...ownerConflicts(layer, type, { drafts: true }), ...draftOwnerConflicts(layer.drafts, type)];
   const edits = new Map<string, ProfileEdit>();
   for (const conflict of conflicts) {
-    // A ruleset or environment with several conflicts is written once, without all of them.
-    edits.set(conflictTarget(conflict), conflict.edit);
+    const { edit } = conflict;
+    if ('list' in edit) {
+      // A ruleset or environment with several conflicts is written once, without all of them.
+      edits.set(conflictTarget(conflict), edit);
+      continue;
+    }
+    // A group such as code_quality_setup goes setting by setting, as an edit names one setting.
+    const value = getIn(layer, edit.path);
+    const group = settingPath(edit.path[0] === 'drafts' ? edit.path.slice(1) : edit.path) === 'group';
+    for (const key of group && isRecord(value) ? Object.keys(value) : [undefined]) {
+      const at = key === undefined ? edit.path : [...edit.path, key];
+      edits.set(at.join('.'), { path: at, value: undefined });
+    }
   }
-  // A drafts.unset key that names what the change takes out of the file names nothing then.
-  const removed = new Set(
-    [...edits.values()].flatMap((edit) =>
-      'list' in edit
-        ? edit.draft !== true && edit.entry === undefined
-          ? [unsetKey({ kind: 'entry', list: edit.list, name: edit.name })]
-          : []
-        : edit.path[0] === 'drafts'
-          ? []
-          : [unsetKey({ kind: 'setting', path: edit.path })],
-    ),
+  // A drafts.unset key that names what the change takes out of the file, or a setting in it, names nothing then.
+  const removed = [...edits.values()].flatMap((edit) =>
+    'list' in edit
+      ? edit.draft !== true && edit.entry === undefined
+        ? [unsetKey({ kind: 'entry', list: edit.list, name: edit.name })]
+        : []
+      : edit.path[0] === 'drafts'
+        ? []
+        : [edit.path.join('.')],
   );
   const unset = layer.drafts?.unset ?? [];
   const kept = unset.filter((key) => {
     const parsed = parseUnset(key);
-    return parsed === undefined || !removed.has(unsetKey(parsed));
+    if (parsed === undefined) {
+      return true;
+    }
+    const name = unsetKey(parsed);
+    return !removed.some((gone) => name === gone || (parsed.kind === 'setting' && name.startsWith(`${gone}.`)));
   });
   const unsetEdits: ProfileEdit[] =
     kept.length === unset.length ? [] : [{ path: ['drafts', 'unset'], value: kept.length === 0 ? undefined : kept }];
