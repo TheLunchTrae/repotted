@@ -137,8 +137,9 @@ address, until it reaches Cloudflare's limit of 100 and drops the oldest.
 
 Previews take their address from the custom domain `preview.repotted.dev`,
 attached to the Worker for Previews only, as
-`<preview name>.preview.repotted.dev`. Cloudflare adds a wildcard DNS record and certificate for
-`*.preview.repotted.dev`; the first certificate can take a while to issue. The
+`<preview name>.preview.repotted.dev`. Cloudflare adds a wildcard DNS record
+and certificate for `*.preview.repotted.dev`; the first certificate can take a
+while to issue. The
 preview is public, as repotted.dev is, unless Cloudflare Access is put in front
 of it.
 
@@ -180,6 +181,12 @@ config lists; with none listed, a deploy leaves the dashboard's domains as they
 are. Had the config listed them, every deploy would set them again, and in CI
 would replace any other DNS record on the names without asking.
 
+A custom domain sends every path on its host to the Worker, and the asset
+config answers the app's own paths with `index.html`, so the app needs no
+Cloudflare Route. A Route such as `*.repotted.dev/` adds nothing for these
+hosts, and it would send `/` on any other subdomain of the zone to the
+production Worker.
+
 `preview_urls` is set to `false`, though that follows from `workers_dev`,
 because Wrangler leaves the Worker's Version URLs as they were when it is
 unset. The next publish turns them off.
@@ -193,7 +200,8 @@ Before the first deploy:
    Cloudflare, so the zone is active.
 2. Create the `repotted` Worker in the dashboard. In its **Settings**, under
    **Domains & Routes**, add the custom domain `repotted.dev`, enabled for
-   production, and `preview.repotted.dev`, enabled for Preview.
+   production, and `preview.repotted.dev`, enabled for Preview. Add no
+   Route.
 3. Create the API token above.
 4. In the Repotted App's settings, add the callback URLs
    `https://repotted.dev/api/auth/callback` and
