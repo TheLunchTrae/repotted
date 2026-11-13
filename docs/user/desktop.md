@@ -329,10 +329,10 @@ Otherwise the apply would stop at that change and leave the ones after it
 unwritten.
 
 On **Review and apply**, click **Apply** and then **Apply now** to write the
-changes. Repotted checks GitHub first: if the repository changed since you reviewed it, nothing is
-written, and **Review again** shows what the apply needs now. If GitHub refuses
-a change partway, the changes before it stay written and nothing after it is;
-**Review again** shows what is left.
+changes. Repotted checks GitHub first: if the repository changed since you
+reviewed it, nothing is written, and **Review again** shows what the apply
+needs now. If GitHub refuses a change partway, the changes before it stay
+written and nothing after it is; **Review again** shows what is left.
 
 An apply you leave before it finishes is kept. The repository shows "An apply
 here is not finished." with **Resume**, which offers to pick it up or start

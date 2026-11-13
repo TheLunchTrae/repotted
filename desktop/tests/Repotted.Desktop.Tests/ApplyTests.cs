@@ -775,6 +775,38 @@ public sealed class ApplyTests : IDisposable
     }
 
     [AvaloniaFact]
+    public async Task A_first_unsaved_edit_can_be_saved_to_the_profile()
+    {
+        // A staged apply whose every value comes from the profile, so nothing is saved as a one-off edit yet.
+        var fresh = Staged().Replace($"\"merge\":{{\"allow_squash_merge\":{Json(file)} }}", $"\"merge\":{{\"allow_squash_merge\":{Json(@base)} }}", StringComparison.Ordinal);
+        Assert.NotEqual(Staged(), fresh);
+        var cli = Cli()
+            .On(New(), () =>
+            {
+                File.WriteAllText(file, "apply_to: TheLunchTrae/repotted\n");
+                return fresh;
+            })
+            .On(Read, fresh);
+        var page = Open(cli);
+        await page.Apply.OpenAsync();
+        var apply = page.Apply;
+        Assert.False(apply.Edits!.SetsAnything);
+        Assert.False(apply.SaveToProfileCommand.CanExecute(null));
+
+        Setting(apply.Edits, "has_issues").Options.Single(option => option.Label == "Off").ChooseCommand.Execute(null);
+        Assert.True(apply.SaveToProfileCommand.CanExecute(null));
+        var stage = $"stage {file} --set repository.has_issues=false --json";
+        var save = $"stage {file} --save-to-profile --json";
+        cli.On(stage, Staged()).On(save, fresh);
+        cli.Calls.Clear();
+
+        await apply.SaveToProfileCommand.ExecuteAsync(null);
+
+        Assert.Equal([stage, Planned, save, Planned], cli.Calls.Where(call => call == stage || call == save || call == Planned));
+        Assert.Equal(1, page.ProfilesSaved);
+    }
+
+    [AvaloniaFact]
     public async Task Edits_that_fail_to_save_save_nothing_to_the_profile()
     {
         var (page, cli) = await Reviewing(changes: false);

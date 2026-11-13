@@ -119,19 +119,17 @@
       <DockPanel IsVisible="{Binding ShowReview}">
         <!-- Where the review stands: editing, or reviewing the changes to apply them -->
         <Border DockPanel.Dock="Top" Margin="32,16,32,0" Padding="0,0,0,12" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
-          <!-- Each step reads as one element, its name saying whether it is the current one. -->
+          <!-- Each step reads as one element, its name saying whether it is the current one; focus moving to the shown step announces a switch. -->
           <StackPanel Orientation="Horizontal" Spacing="10">
             <StackPanel Classes="step" Classes.on="{Binding ShowingEdits}" Classes.done="{Binding ShowingChanges}"
                         Orientation="Horizontal" Spacing="8"
-                        AutomationProperties.AccessibilityView="Control" AutomationProperties.Name="{Binding EditStepName}"
-                        AutomationProperties.LiveSetting="Polite">
+                        AutomationProperties.AccessibilityView="Control" AutomationProperties.Name="{Binding EditStepName}">
               <Border Classes="stepnum"><TextBlock Text="1" AutomationProperties.AccessibilityView="Raw" /></Border>
               <TextBlock Classes="steplabel" Text="Edit" AutomationProperties.AccessibilityView="Raw" />
             </StackPanel>
             <TextBlock Classes="muted" Text="›" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
             <StackPanel Classes="step" Classes.on="{Binding ShowingChanges}" Orientation="Horizontal" Spacing="8"
-                        AutomationProperties.AccessibilityView="Control" AutomationProperties.Name="{Binding ReviewStepName}"
-                        AutomationProperties.LiveSetting="Polite">
+                        AutomationProperties.AccessibilityView="Control" AutomationProperties.Name="{Binding ReviewStepName}">
               <Border Classes="stepnum"><TextBlock Text="2" AutomationProperties.AccessibilityView="Raw" /></Border>
               <TextBlock Classes="steplabel" Text="Review and apply" AutomationProperties.AccessibilityView="Raw" />
             </StackPanel>

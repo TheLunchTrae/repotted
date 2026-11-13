@@ -521,7 +521,8 @@ internal sealed partial class ApplyViewModel(
     }
 
     private bool CanSaveToProfile() =>
-        Step == ApplyStep.Reviewing && Editing && !Working && !EditsBusy && EditsSavable && HasBase && Edits?.SetsAnything == true;
+        Step == ApplyStep.Reviewing && Editing && !Working && !EditsBusy && EditsSavable && HasBase
+        && (EditsUnsaved || Edits?.SetsAnything == true);
 
     /// <summary>
     /// Changes the staged apply, then shows the edits as the staged apply it
