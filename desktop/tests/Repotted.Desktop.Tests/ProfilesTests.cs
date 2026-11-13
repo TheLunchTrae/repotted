@@ -845,4 +845,72 @@ public sealed class ProfilesTests : ViewModelTests
         Assert.Equal(folder, profiles.Folder.Path);
         Assert.True(File.Exists(files.Own));
     }
+
+    [AvaloniaFact]
+    public async Task The_new_profile_form_takes_back_the_question_about_closing()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        profiles.StartNew(null);
+        await close.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.False(profiles.HasLeaving);
+        Assert.True(profiles.ShowCreating);
+        Assert.True(editor.HasChanges);
+    }
+
+    [AvaloniaFact]
+    public async Task A_refresh_while_closing_keeps_the_profile_and_the_question()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.True(profiles.HasLeaving);
+        Assert.Same(editor, profiles.Current);
+
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await close;
+        Assert.Null(profiles.Current);
+        Assert.True(profiles.ShowNoneOpen);
+    }
+
+    [AvaloniaFact]
+    public async Task Discard_on_closing_a_removed_profile_leaves_none_open()
+    {
+        var (profiles, cli, files) = await OpenOrgs();
+        var editor = profiles.Current!;
+        Choose(editor, "has_wiki", "On");
+        File.Delete(files.Own);
+        cli.On(folders.List(), OnlyBase(files.Base));
+        await profiles.RefreshCommand.ExecuteAsync(null);
+        Assert.True(editor.Removed);
+
+        var close = editor.CloseCommand.ExecuteAsync(null);
+        profiles.DiscardAndLeaveCommand.Execute(null);
+        await close.WaitAsync(TimeSpan.FromSeconds(5));
+        // Discarding a removed profile's edits lists the folder again, which opens nothing in its place.
+        await Until(() => !profiles.Loading && profiles.Items.All(item => item.Name != "orgs"));
+
+        Assert.Null(profiles.Current);
+        Assert.True(profiles.ShowNoneOpen);
+    }
+
+    [AvaloniaFact]
+    public async Task Choosing_a_folder_after_closing_opens_its_first_profile()
+    {
+        var (profiles, _, _) = await OpenOrgs();
+        await profiles.Current!.CloseCommand.ExecuteAsync(null);
+        orgsDesktop.Folder = folders.Profiles;
+
+        await profiles.ChangeFolderCommand.ExecuteAsync(null);
+
+        Assert.NotNull(profiles.Current);
+        Assert.False(profiles.ShowNoneOpen);
+    }
 }

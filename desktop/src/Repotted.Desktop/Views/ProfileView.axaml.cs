@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Repotted.Desktop.Theme;
 using Repotted.Desktop.ViewModels;
 
 namespace Repotted.Desktop.Views;
@@ -24,7 +25,7 @@ internal sealed partial class ProfileView : UserControl
         InitializeComponent();
         _ = new FindShortcut(this, SettingsSearch, SearchShortcut);
         var shortcut = OperatingSystem.IsMacOS() ? "⌘W" : "Ctrl+W";
-        ToolTip.SetTip(CloseButton, shortcut);
+        ToolTip.SetTip(CloseButton, $"{ControlLabel.For("Close profile")} ({shortcut})");
         AutomationProperties.SetAcceleratorKey(CloseButton, shortcut);
     }
 
@@ -34,7 +35,9 @@ internal sealed partial class ProfileView : UserControl
     /// </summary>
     private void OnCloseShortcut(object? sender, KeyEventArgs e)
     {
-        if (CloseGesture.Matches(e) && CloseButton.IsEffectivelyVisible && DataContext is ProfileViewModel profile)
+        // While the question about unsaved changes waits, the close is still running and can't start again.
+        if (CloseGesture.Matches(e) && CloseButton.IsEffectivelyVisible && DataContext is ProfileViewModel profile
+            && profile.CloseCommand.CanExecute(null))
         {
             profile.CloseCommand.Execute(null);
             e.Handled = true;

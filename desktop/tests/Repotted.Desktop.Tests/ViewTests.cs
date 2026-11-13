@@ -442,8 +442,7 @@ public sealed class ViewTests : IDisposable
         var text = Texts(window);
         Assert.Contains("Choose a profile in the list to edit it, or start a new one.", text);
         Assert.Equal("Profiles", shell.Crumb);
-        var focused = Assert.IsType<Button>(window.FocusManager?.GetFocusedElement());
-        Assert.Same(shell.Profiles.StartNewCommand, focused.Command);
+        Assert.Equal("NoneOpenNew", Assert.IsType<Button>(window.FocusManager?.GetFocusedElement()).Name);
         Save(window, $"profiles-none-open-{theme}");
 
         // With unsaved changes it asks first, about that profile.

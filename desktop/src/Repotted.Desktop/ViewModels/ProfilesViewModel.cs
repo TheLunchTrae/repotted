@@ -103,7 +103,6 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
                     editor.PropertyChanged -= OnEditorChanged;
                 }
                 editors.Clear();
-                closed = false;
                 break;
             case nameof(ProfileFolder.SyncNote):
                 OnPropertyChanged(nameof(ShowSyncNote));
@@ -467,6 +466,7 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         }
         Connecting = null;
         Folder.UseRepository(repository, path, result);
+        closed = false;
         Selected = null;
         await LoadAsync(sync: false).ConfigureAwait(true);
     }
@@ -554,6 +554,9 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     /// <summary>Whether the user closed the open profile, so a refresh opens none in its place.</summary>
     private bool closed;
 
+    /// <summary>Whether a close waits on the question about unsaved changes, so a refresh meanwhile opens no other profile.</summary>
+    private bool closing;
+
     /// <summary>
     /// Closes the open profile, back to the list with none open. Unsaved
     /// changes to it ask first, and the editor keeps them on Cancel; the other
@@ -565,9 +568,20 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
         {
             return;
         }
-        if (!await ConfirmLeaveAsync("close it", [editor]).ConfigureAwait(true)
-            // Another profile opened while the question waited, and it stays open.
-            || Current != editor)
+        // Choosing another profile while the question waits takes it back, so
+        // going on means this profile's changes are settled. A refresh in the
+        // meantime can have opened a new editor for the same file.
+        bool confirmed;
+        closing = true;
+        try
+        {
+            confirmed = await ConfirmLeaveAsync("close it", [editor]).ConfigureAwait(true);
+        }
+        finally
+        {
+            closing = false;
+        }
+        if (!confirmed)
         {
             return;
         }
@@ -578,13 +592,14 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Takes back a question about closing a profile once another profile, or
-    /// the new profile form, takes its place, since that is no longer the
-    /// profile on screen. A question about every editor stays.
+    /// Takes back a question about closing a profile once the user chooses
+    /// another profile, or the new profile form, since that is no longer the
+    /// profile on screen. A question about every editor stays. A refresh
+    /// while the question waits opens no other profile in its place.
     /// </summary>
     private void DropCloseQuestion(string? opening)
     {
-        if (askedAbout is [var closing] && closing.File != opening)
+        if (askedAbout is [var asked] && asked.File != opening)
         {
             leave?.TrySetResult(false);
         }
@@ -747,8 +762,8 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
                 // The search hides it, but it stays open.
                 Open(hidden.Listing);
             }
-            // A profile the user closed leaves none open until they choose one.
-            else if (!closed && Items.FirstOrDefault() is { } first)
+            // A profile the user closed, or is closing, leaves none open until they choose one.
+            else if (!closed && !closing && Items.FirstOrDefault() is { } first)
             {
                 if (!creating)
                 {
@@ -798,6 +813,8 @@ internal sealed partial class ProfilesViewModel : ViewModelBase
             Notice = $"Repotted could not remember this folder for next time: {error.Message}";
         }
         Folder.UseFolder(folder);
+        // Another folder, or the same one chosen again, opens its first profile.
+        closed = false;
         Selected = null;
         await RefreshAsync().ConfigureAwait(true);
     }

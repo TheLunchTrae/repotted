@@ -453,6 +453,8 @@ public sealed class ApplyTests : IDisposable
         var (page, cli) = await Reviewing();
         var apply = page.Apply;
         var editor = apply.Edits!;
+        // One-off edits close with the apply, so the editor offers no close of its own.
+        Assert.False(editor.CanClose);
         // An earlier load of the edits failed, so the editor shows the error in place of the tabs.
         editor.Error = "Could not read the profile.";
         cli.On($"stage {file} --exclude=repository.has_wiki --json", Staged(true, "repository.has_wiki"))
