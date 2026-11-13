@@ -25,7 +25,6 @@ public sealed class ContractTests
         "repository.topics",
         "custom_properties",
         "autolinks",
-        "actions.selected_actions.patterns_allowed",
         "actions.oidc_customization_sub.include_claim_keys",
         "security.security_and_analysis.secret_scanning_delegated_bypass_options",
         "security.code_scanning_default_setup.languages",
@@ -240,6 +239,7 @@ public sealed class ContractTests
                 new("actions.max_cache_size_gb", JsonValue.Create(5)),
                 new("pages.source.branch", JsonValue.Create("main")),
                 new("repository.description", JsonValue.Create("")),
+                new("actions.selected_actions.patterns_allowed", new JsonArray("octo-org/*", "!octo-org/old@*")),
             ],
             [],
             cancellationToken);
@@ -251,6 +251,9 @@ public sealed class ContractTests
         Assert.Equal(3, SettingViewModel.Find(values.GetProperty("repository"), "pull_request_creation_cap.max_open_pull_requests")!.GetValue<int>());
         Assert.Equal("main", SettingViewModel.Find(values.GetProperty("pages"), "source.branch")!.GetValue<string>());
         Assert.Equal("", SettingViewModel.Find(values.GetProperty("repository"), "description")!.GetValue<string>());
+        Assert.Equal(own, saved.Sources["actions"]["selected_actions.patterns_allowed"]);
+        Assert.True(JsonNode.DeepEquals(new JsonArray("octo-org/*", "!octo-org/old@*"),
+            SettingViewModel.Find(values.GetProperty("actions"), "selected_actions.patterns_allowed")));
     }
 
     [AvaloniaFact]

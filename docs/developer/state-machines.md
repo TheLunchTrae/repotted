@@ -434,17 +434,21 @@ A `SettingViewModel` is one row of a settings tab. Its value comes from the
 profile, a base profile, or neither; a change waits until the profile is
 saved. A field marked `EmptyIsNull`, a runner label, saves an empty box as
 `null` and shows a `null` as an empty box, so leaving it empty is no change.
+A field with `DependsOn` follows the row it names above it, through that
+row's own parent, as `settings-coverage.md` lists; changing a row refreshes
+the rows above and below it.
 
-| State              | Event                                               | Next                                                                                                                                                               |
-| ------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Saved              | Choose a value, or type a valid one                 | Changed. Typing back the text the box started with, or choosing the value this profile itself saved, is Saved instead.                                             |
-| Saved, set here    | Remove                                              | Changed, to leave the value out; a base profile's value then applies.                                                                                              |
-| Saved or changed   | Type text that isn't a valid value                  | Invalid: the value is as saved, the box keeps the text and says why. It counts as an unsaved change, and the profile can't be saved until it is fixed.             |
-| Invalid            | Type a valid value                                  | Changed, or Saved when it is the value the row started with.                                                                                                       |
-| Changed or invalid | Undo, or Discard on the profile                     | Saved, with the box showing the saved value.                                                                                                                       |
-| Any, in a section  | A setting that must stand alone there is set        | Each other setting this profile's file would hold there is left out: removed when set here, undone when only changed. Pages' `absent` is such a setting.           |
-| Any, in a section  | Another setting is set beside one that stands alone | The setting that stands alone is left out the same way, since the CLI refuses a file that holds both. Undoing one side doesn't bring the other back; Discard does. |
-| Any                | The setting that turns it off shows that value      | Off, as a runner label is with standard runners: the box can't be typed in but keeps its value, rail and way back. On once that setting has another value or none. |
+| State              | Event                                                    | Next                                                                                                                                                                                                                                                 |
+| ------------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Saved              | Choose a value, or type a valid one                      | Changed. Typing back the text the box started with, or choosing the value this profile itself saved, is Saved instead.                                                                                                                               |
+| Saved, set here    | Remove                                                   | Changed, to leave the value out; a base profile's value then applies.                                                                                                                                                                                |
+| Saved or changed   | Type text that isn't a valid value                       | Invalid: the value is as saved, the box keeps the text and says why. It counts as an unsaved change, and the profile can't be saved until it is fixed.                                                                                               |
+| Invalid            | Type a valid value                                       | Changed, or Saved when it is the value the row started with.                                                                                                                                                                                         |
+| Changed or invalid | Undo, or Discard on the profile                          | Saved, with the box showing the saved value.                                                                                                                                                                                                         |
+| Any, in a section  | A setting that must stand alone there is set             | Each other setting this profile's file would hold there is left out: removed when set here, undone when only changed. Pages' `absent` is such a setting.                                                                                             |
+| Any, in a section  | Another setting is set beside one that stands alone      | The setting that stands alone is left out the same way, since the CLI refuses a file that holds both. Undoing one side doesn't bring the other back; Discard does.                                                                                   |
+| Any                | The setting that turns it off shows that value           | Off, as a runner label is with standard runners: the box can't be typed in but keeps its value, rail and way back. On once that setting has another value or none.                                                                                   |
+| Any                | The setting that hides it shows that value, or is hidden | Hidden, as the allowed actions are with Actions off: the tab leaves the row out, and results show it off. It keeps its value, and the setting that hides it counts it while the profile names it. Shown once that setting has another value or none. |
 
 ### Settings search
 
@@ -455,14 +459,14 @@ found by, built once from `ProfileFields`. The result rows are made once for
 each load of the profile, the first time a search or filter is on; a search
 then shows and hides them, and one that finds the same changes nothing.
 
-| State   | Event                                      | Next                                                                                                                                |
-| ------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Tabs    | Type a search, or turn on a filter         | Results: the settings that fit, across every settings tab, with a matched sub-option's setting shown above it. The tabs are hidden. |
-| Results | Change the search or a filter              | Results, found again; Tabs when the search is blank and every filter is off.                                                        |
-| Results | Edit, undo or remove a setting, or Discard | Results, unchanged: a row that no longer fits stays until the search or a filter changes, so it doesn't vanish while being edited.  |
-| Results | The profile loads, reloads or saves        | Results, found again among the new rows.                                                                                            |
-| Results | Escape in the search box                   | The search is cleared: Results while a filter is on, otherwise Tabs.                                                                |
-| Results | **Clear**                                  | Tabs, with the search cleared and every filter off.                                                                                 |
+| State   | Event                                      | Next                                                                                                                                                                             |
+| ------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tabs    | Type a search, or turn on a filter         | Results: the settings that fit, across every settings tab, with a matched sub-option's setting, and any setting that hides or turns it off, shown above it. The tabs are hidden. |
+| Results | Change the search or a filter              | Results, found again; Tabs when the search is blank and every filter is off.                                                                                                     |
+| Results | Edit, undo or remove a setting, or Discard | Results, unchanged: a row that no longer fits stays until the search or a filter changes, so it doesn't vanish while being edited.                                               |
+| Results | The profile loads, reloads or saves        | Results, found again among the new rows.                                                                                                                                         |
+| Results | Escape in the search box                   | The search is cleared: Results while a filter is on, otherwise Tabs.                                                                                                             |
+| Results | **Clear**                                  | Tabs, with the search cleared and every filter off.                                                                                                                              |
 
 The compare view's search and its **Differs from GitHub** and **Can't
 change** filters live on `CompareViewModel` and each

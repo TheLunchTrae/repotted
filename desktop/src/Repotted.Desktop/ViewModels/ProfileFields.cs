@@ -16,6 +16,9 @@ internal enum SettingKind
 
     /// <summary>A line of text.</summary>
     Text,
+
+    /// <summary>A list of text, one item a line, such as allowed action patterns.</summary>
+    List,
 }
 
 /// <summary>
@@ -49,11 +52,12 @@ internal sealed record SettingField(string Section, string Key, string Label, IR
     public bool EmptyIsNull { get; init; }
 
     /// <summary>
-    /// The value of another setting in the section that turns this one off,
-    /// as standard runners do a runner label, which only labeled runners use.
-    /// The setting stays on while the other has no value.
+    /// The values of another setting in the section that hide this one or
+    /// turn it off, as GitHub's settings page does: turning Actions off hides
+    /// which actions are allowed, and standard runners turn a runner label
+    /// off. The setting stays as it is while the other has no value.
     /// </summary>
-    public SettingCondition? OffWhen { get; init; }
+    public SettingCondition? DependsOn { get; init; }
 
     /// <summary>
     /// Whether a profile that sets it can set nothing else in its section, as
@@ -74,12 +78,22 @@ internal sealed record SettingField(string Section, string Key, string Label, IR
 
     public SettingField Also(params string[] synonyms) => this with { Synonyms = synonyms };
 
-    /// <summary>The setting, turned off while the setting at <paramref name="key"/> in the section has <paramref name="value"/>.</summary>
-    public SettingField OffWhile(string key, string value) => this with { OffWhen = new(key, value) };
+    /// <summary>The setting, hidden while the setting at <paramref name="key"/> in the section has one of <paramref name="values"/>.</summary>
+    public SettingField HiddenWhile(string key, params JsonNode[] values) => this with { DependsOn = new(key, values, Hides: true) };
+
+    /// <summary>The setting, shown but turned off while the setting at <paramref name="key"/> in the section has one of <paramref name="values"/>.</summary>
+    public SettingField OffWhile(string key, params JsonNode[] values) => this with { DependsOn = new(key, values, Hides: false) };
 }
 
-/// <summary>A setting in the same section, by its <paramref name="Key"/>, holding the text <paramref name="Value"/>.</summary>
-internal sealed record SettingCondition(string Key, string Value);
+/// <summary>
+/// A setting in the same section, by its <paramref name="Key"/>, holding one
+/// of <paramref name="Values"/>, which hides this one when <paramref name="Hides"/>
+/// and otherwise turns it off.
+/// </summary>
+internal sealed record SettingCondition(string Key, IReadOnlyList<JsonNode> Values, bool Hides)
+{
+    public bool Holds(JsonNode? value) => value is not null && Values.Any(off => JsonNode.DeepEquals(off, value));
+}
 
 internal sealed record SettingGroup(string Title, string Description, IReadOnlyList<SettingField> Fields);
 
@@ -90,8 +104,10 @@ internal sealed record SettingSection(string Name, string Section, IReadOnlyList
 /// The settings the app edits, by tab, with the labels GitHub's settings pages
 /// use. Keys are the profile's, which are the GitHub REST API's field names.
 /// A sub-option follows the setting it belongs to, marked
-/// <see cref="SettingField.Nested"/>. Lists, such as topics, are edited in the
-/// YAML, and a group's description says so.
+/// <see cref="SettingField.Nested"/>, and is hidden or turned off where
+/// GitHub's page does that, as <see cref="SettingField.DependsOn"/> says;
+/// docs/developer/settings-coverage.md lists why each one is. Most lists,
+/// such as topics, are edited in the YAML, and a group's description says so.
 /// </summary>
 internal static class ProfileFields
 {
@@ -112,11 +128,16 @@ internal static class ProfileFields
     private static SettingField Choice(string section, string key, string label, params (string Label, string Value)[] options) =>
         new(section, key, label, [.. options.Select(option => new SettingOption(option.Label, option.Value))]);
 
+    private static SettingField List(string section, string key, string label) =>
+        new(section, key, label, []) { Kind = SettingKind.List };
+
     private static SettingField Number(string section, string key, string label) =>
         new(section, key, label, []) { Kind = SettingKind.Number };
 
     private static SettingField Text(string section, string key, string label, bool allowsEmpty = false, bool emptyIsNull = false) =>
         new(section, key, label, []) { Kind = SettingKind.Text, AllowsEmpty = allowsEmpty, EmptyIsNull = emptyIsNull };
+
+    private static readonly JsonNode Disabled = Status[1].Value;
 
     /// <summary>
     /// The runner label of a code scanning or code quality setup, under its
@@ -159,12 +180,16 @@ internal static class ProfileFields
                     .Also("forum", "questions"),
                 Switch("repository", "has_pull_requests", "Pull requests"),
                 Choice("repository", "pull_request_creation_policy", "Who can create pull requests",
-                    ("Everyone", "all"), ("Collaborators only", "collaborators_only")).Under(),
+                    ("Everyone", "all"), ("Collaborators only", "collaborators_only")).Under()
+                    .HiddenWhile("has_pull_requests", false),
                 Switch("repository", "pull_request_creation_cap.enabled", "Limit open pull requests per user")
                     .Also("spam", "cap").Under()
+                    .HiddenWhile("has_pull_requests", false)
                     .Noted("Exemptions by account age or merged pull requests have no API, so they are set on GitHub only."),
-                Number("repository", "pull_request_creation_cap.max_open_pull_requests", "Open pull requests allowed").Under(),
-                Switch("repository", "pull_request_creation_cap.include_drafts", "Count draft pull requests").Under(),
+                Number("repository", "pull_request_creation_cap.max_open_pull_requests", "Open pull requests allowed").Under()
+                    .HiddenWhile("pull_request_creation_cap.enabled", false),
+                Switch("repository", "pull_request_creation_cap.include_drafts", "Count draft pull requests").Under()
+                    .HiddenWhile("pull_request_creation_cap.enabled", false),
             ]),
             new("Pull requests", "How branches update and clean up after a merge.",
             [
@@ -190,31 +215,43 @@ internal static class ProfileFields
                 Switch("merge", "allow_merge_commit", "Allow merge commits")
                     .Also("merge button", "no fast-forward"),
                 Choice("merge", "merge_commit_title", "Merge commit title",
-                    ("Pull request title", "PR_TITLE"), ("Default message", "MERGE_MESSAGE")).Under(),
+                    ("Pull request title", "PR_TITLE"), ("Default message", "MERGE_MESSAGE")).Under()
+                    .HiddenWhile("allow_merge_commit", false),
                 Choice("merge", "merge_commit_message", "Merge commit message",
-                    ("Pull request body", "PR_BODY"), ("Pull request title", "PR_TITLE"), ("Blank", "BLANK")).Under(),
+                    ("Pull request body", "PR_BODY"), ("Pull request title", "PR_TITLE"), ("Blank", "BLANK")).Under()
+                    .HiddenWhile("allow_merge_commit", false),
                 Switch("merge", "allow_squash_merge", "Allow squash merging")
                     .Also("squash and merge", "single commit"),
                 Choice("merge", "squash_merge_commit_title", "Squash commit title",
-                    ("Pull request title", "PR_TITLE"), ("Commit or pull request title", "COMMIT_OR_PR_TITLE")).Under(),
+                    ("Pull request title", "PR_TITLE"), ("Commit or pull request title", "COMMIT_OR_PR_TITLE")).Under()
+                    .HiddenWhile("allow_squash_merge", false),
                 Choice("merge", "squash_merge_commit_message", "Squash commit message",
-                    ("Pull request body", "PR_BODY"), ("Commit messages", "COMMIT_MESSAGES"), ("Blank", "BLANK")).Under(),
+                    ("Pull request body", "PR_BODY"), ("Commit messages", "COMMIT_MESSAGES"), ("Blank", "BLANK")).Under()
+                    .HiddenWhile("allow_squash_merge", false),
                 Switch("merge", "allow_rebase_merge", "Allow rebase merging")
                     .Also("rebase and merge", "linear history", "fast-forward"),
             ]),
         ]),
         new("Actions", "actions",
         [
-            new("Policy", "Whether workflows run, and which actions they may use. Allowed action patterns are edited in the YAML.",
+            new("Policy", "Whether workflows run, and which actions they may use.",
             [
                 Switch("actions", "enabled", "Actions")
                     .Also("workflows", "ci", "github actions"),
                 Choice("actions", "allowed_actions", "Allowed actions",
                     ("All", "all"), ("This owner's", "local_only"), ("Selected", "selected")).Under()
+                    .HiddenWhile("enabled", false)
                     .Also("allowlist", "third-party", "marketplace"),
-                Switch("actions", "selected_actions.github_owned_allowed", "Actions by GitHub").Under(),
-                Switch("actions", "selected_actions.verified_allowed", "Actions by verified creators").Under(),
+                Switch("actions", "selected_actions.github_owned_allowed", "Actions by GitHub").Under()
+                    .HiddenWhile("allowed_actions", "all", "local_only"),
+                Switch("actions", "selected_actions.verified_allowed", "Actions by verified creators").Under()
+                    .HiddenWhile("allowed_actions", "all", "local_only"),
+                List("actions", "selected_actions.patterns_allowed", "Allowed action patterns").Under()
+                    .HiddenWhile("allowed_actions", "all", "local_only")
+                    .Noted("One pattern a line, such as octo-org/*. Start one with ! to block it.")
+                    .Also("allowlist", "blocklist", "patterns", "wildcard"),
                 Switch("actions", "sha_pinning_required", "Require pinning to a full commit SHA").Under()
+                    .HiddenWhile("enabled", false)
                     .Also("pin", "pinned", "supply chain"),
             ]),
             new("Workflow permissions", "What the GITHUB_TOKEN may do.",
@@ -240,9 +277,12 @@ internal static class ProfileFields
                     .Also("forks", "first-time contributor", "outside collaborator"),
                 Switch("actions", "fork_pr_workflows_private_repos.run_workflows_from_fork_pull_requests", "Run workflows from fork pull requests")
                     .Noted("Private repositories only."),
-                Switch("actions", "fork_pr_workflows_private_repos.send_write_tokens_to_workflows", "Send write tokens to workflows").Under(),
-                Switch("actions", "fork_pr_workflows_private_repos.send_secrets_and_variables", "Send secrets and variables").Under(),
-                Switch("actions", "fork_pr_workflows_private_repos.require_approval_for_fork_pr_workflows", "Require approval for each run").Under(),
+                Switch("actions", "fork_pr_workflows_private_repos.send_write_tokens_to_workflows", "Send write tokens to workflows").Under()
+                    .OffWhile("fork_pr_workflows_private_repos.run_workflows_from_fork_pull_requests", false),
+                Switch("actions", "fork_pr_workflows_private_repos.send_secrets_and_variables", "Send secrets and variables").Under()
+                    .OffWhile("fork_pr_workflows_private_repos.run_workflows_from_fork_pull_requests", false),
+                Switch("actions", "fork_pr_workflows_private_repos.require_approval_for_fork_pr_workflows", "Require approval for each run").Under()
+                    .OffWhile("fork_pr_workflows_private_repos.run_workflows_from_fork_pull_requests", false),
             ]),
             new("Artifacts and caches", "How long workflow output stays, and how much the cache holds.",
             [
@@ -277,6 +317,7 @@ internal static class ProfileFields
                     .Also("vulnerable dependencies", "cve", "security alerts")
                     .Noted("Malware alerts, Dependabot rules, and preventing direct dismissals have no API here, so they are set on GitHub or in a security configuration."),
                 Switch("security", "automated_security_fixes", "Dependabot security updates").Under()
+                    .OffWhile("vulnerability_alerts", false)
                     .Also("dependabot pull requests", "automatic fixes")
                     .Noted("Grouping security updates has no API; groups in dependabot.yml do it instead."),
                 Choice("security", "dependabot_runner_settings.runner_type", "Dependabot runners",
@@ -294,12 +335,15 @@ internal static class ProfileFields
                     .Noted("Copilot Autofix, Agentic Autofix, and preventing direct dismissals have no API here, so they are set on GitHub or in a security configuration.")
                     .Also("codeql", "sast", "static analysis"),
                 Choice("security", "code_scanning_default_setup.query_suite", "Query suite",
-                    ("Default", "default"), ("Extended", "extended")).Under(),
+                    ("Default", "default"), ("Extended", "extended")).Under()
+                    .HiddenWhile("code_scanning_default_setup.state", "not-configured"),
                 Choice("security", "code_scanning_default_setup.threat_model", "Threat model",
                     ("Remote", "remote"), ("Remote and local", "remote_and_local")).Under()
+                    .HiddenWhile("code_scanning_default_setup.state", "not-configured")
                     .Also("codeql"),
                 Choice("security", "code_scanning_default_setup.runner_type", "Runner type",
                     ("Standard", "standard"), ("Labeled", "labeled")).Under()
+                    .HiddenWhile("code_scanning_default_setup.state", "not-configured")
                     .Also("self-hosted"),
                 RunnerLabel("code_scanning_default_setup"),
                 Choice("security", "code_scanning_ai_scan.pr_scan", "AI Scan on pull requests",
@@ -310,9 +354,11 @@ internal static class ProfileFields
                 Choice("security", "code_quality_setup.state", "Code quality",
                     ("Configured", "configured"), ("Not configured", "not-configured")),
                 Choice("security", "code_quality_setup.ai_findings_option", "AI findings",
-                    ("Off", "disabled"), ("On push", "on_push")).Under(),
+                    ("Off", "disabled"), ("On push", "on_push")).Under()
+                    .HiddenWhile("code_quality_setup.state", "not-configured"),
                 Choice("security", "code_quality_setup.runner_type", "Runner type",
                     ("Standard", "standard"), ("Labeled", "labeled")).Under()
+                    .HiddenWhile("code_quality_setup.state", "not-configured")
                     .Also("self-hosted"),
                 RunnerLabel("code_quality_setup"),
             ]),
@@ -321,14 +367,20 @@ internal static class ProfileFields
                 Feature("secret_scanning", "Secret Protection")
                     .Also("secret scanning", "leaked secrets", "credentials", "tokens"),
                 Feature("secret_scanning_push_protection", "Push protection").Under()
+                    .OffWhile("security_and_analysis.secret_scanning", Disabled)
                     .Also("block secrets")
                     .Noted("Push protection for AI-detected secrets is set only in a security configuration."),
-                Feature("secret_scanning_ai_detection", "AI detection").Under(),
-                Feature("secret_scanning_non_provider_patterns", "Non-provider patterns").Under(),
+                Feature("secret_scanning_ai_detection", "AI detection").Under()
+                    .OffWhile("security_and_analysis.secret_scanning", Disabled),
+                Feature("secret_scanning_non_provider_patterns", "Non-provider patterns").Under()
+                    .OffWhile("security_and_analysis.secret_scanning", Disabled),
                 Feature("secret_scanning_validity_checks", "Validity checks").Under()
+                    .OffWhile("security_and_analysis.secret_scanning", Disabled)
                     .Noted("GitHub Enterprise Cloud only. Extended metadata is set only in a security configuration."),
-                Feature("secret_scanning_delegated_alert_dismissal", "Delegated alert dismissal").Under(),
+                Feature("secret_scanning_delegated_alert_dismissal", "Delegated alert dismissal").Under()
+                    .OffWhile("security_and_analysis.secret_scanning", Disabled),
                 Feature("secret_scanning_delegated_bypass", "Delegated bypass").Under()
+                    .OffWhile("security_and_analysis.secret_scanning", Disabled)
                     .Noted("Who can approve a bypass is edited in the YAML."),
             ]),
         ]),
@@ -341,8 +393,10 @@ internal static class ProfileFields
                     .Noted("It deletes the site on each repository. Remove it to describe a site instead."),
                 Choice("pages", "build_type", "Build from", ("A branch", "legacy"), ("GitHub Actions", "workflow"))
                     .Also("jekyll", "static site", "website"),
-                Text("pages", "source.branch", "Branch").Under(),
-                Choice("pages", "source.path", "Folder", ("/ (root)", "/"), ("/docs", "/docs")).Under(),
+                Text("pages", "source.branch", "Branch").Under()
+                    .HiddenWhile("build_type", "workflow"),
+                Choice("pages", "source.path", "Folder", ("/ (root)", "/"), ("/docs", "/docs")).Under()
+                    .HiddenWhile("build_type", "workflow"),
                 Text("pages", "cname", "Custom domain")
                     .Also("cname", "dns", "website")
                     .Noted("To clear a domain, set cname to null in the YAML."),

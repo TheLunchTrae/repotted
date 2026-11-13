@@ -336,6 +336,7 @@ internal sealed partial class ProfileViewModel(
                 var fits = group.Rows.Where(row => Fits(row.Setting, words)).ToList();
                 count += fits.Count;
                 var parents = fits.Select(row => SettingSearch.Parent(row.Setting.Field)).OfType<SettingField>()
+                    .Concat(fits.SelectMany(row => Above(row.Setting)).Select(above => above.Field))
                     .ToHashSet(ReferenceEqualityComparer.Instance);
                 foreach (var row in group.Rows)
                 {
@@ -717,13 +718,14 @@ internal sealed partial class ProfileViewModel(
                         ])),
                 ]));
         }
-        // A row that another setting can turn off follows that setting's row.
+        // A row that another setting can hide or turn off follows that setting's row.
         var rows = Settings.ToList();
         foreach (var row in rows)
         {
-            if (row.Field.OffWhen is { } off)
+            if (row.Field.DependsOn is { } condition)
             {
-                row.ControlledBy = rows.Single(other => other.Field.Section == row.Field.Section && other.Field.Key == off.Key);
+                row.ControlledBy = rows.Single(other => other.Field.Section == row.Field.Section && other.Field.Key == condition.Key);
+                row.ControlledBy.Dependents.Add(row);
             }
         }
         Tabs.Add(EntriesTab("Rulesets", "rulesets"));
@@ -804,11 +806,13 @@ internal sealed partial class ProfileViewModel(
     /// A setting that must stand alone in its section, such as Pages'
     /// <c>absent</c>, can't be saved beside the others there: setting one
     /// leaves the others out of this profile's file, and the other way round.
-    /// A row that the changed setting can turn off shows it again.
+    /// The rows that the changed setting hides or turns off show it again, and
+    /// so do the rows above it, which count the settings they hide.
     /// </summary>
     private void OnRowChanged(SettingViewModel row)
     {
-        foreach (var other in Settings.Where(other => other.ControlledBy == row))
+        // What the row hides or turns off, and the rows above it that count what they hide.
+        foreach (var other in Below(row).Concat(Above(row)))
         {
             other.Refresh();
         }
@@ -823,6 +827,17 @@ internal sealed partial class ProfileViewModel(
             }
         }
         OnSettingChanged();
+    }
+
+    private static IEnumerable<SettingViewModel> Below(SettingViewModel row) =>
+        row.Dependents.SelectMany(other => Below(other).Prepend(other));
+
+    private static IEnumerable<SettingViewModel> Above(SettingViewModel row)
+    {
+        for (var parent = row.ControlledBy; parent is not null; parent = parent.ControlledBy)
+        {
+            yield return parent;
+        }
     }
 
     private void OnSettingChanged()

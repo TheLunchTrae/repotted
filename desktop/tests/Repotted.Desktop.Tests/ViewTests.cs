@@ -271,6 +271,56 @@ public sealed class ViewTests : IDisposable
 
     [AvaloniaTheory]
     [MemberData(nameof(Themes))]
+    public async Task A_tab_leaves_out_what_a_setting_that_is_off_hides_and_lists_action_patterns(string theme)
+    {
+        var @base = folders.Write("base.yaml", "repository: {}\n");
+        var own = folders.Write("orgs.yaml", "extends: base.yaml\nactions:\n  enabled: false\n");
+        var resolved = $$$"""
+            {"chain":[{{{Json(own)}}},{{{Json(@base)}}}],
+             "profile":{"actions":{"enabled":false,"allowed_actions":"selected",
+               "selected_actions":{"github_owned_allowed":true,"patterns_allowed":["octo-org/*","!octo-org/old@*"]},
+               "fork_pr_workflows_private_repos":{"run_workflows_from_fork_pull_requests":false} } },
+             {{{Documents.NoDrafts}}},
+             "sources":{
+               "repository":{},"merge":{},
+               "actions":{"enabled":{{{Json(own)}}},"allowed_actions":{{{Json(own)}}},
+                 "selected_actions.github_owned_allowed":{{{Json(own)}}},"selected_actions.patterns_allowed":{{{Json(own)}}},
+                 "fork_pr_workflows_private_repos.run_workflows_from_fork_pull_requests":{{{Json(own)}}} },
+               "security":{},"custom_properties":{},"pages":{},"autolinks":{},"rulesets":{},"environments":{},"labels":{},
+               {{{Documents.NoDraftSources}}} } }
+            """;
+        var window = await Show(theme, FakeCli.SignedIn()
+            .On(folders.List(), Documents.Profiles(own, @base))
+            .On($"profile {own} --json", resolved)
+            .On($"profile {@base} --json", Documents.ResolvedBase(@base)));
+        window.Height = 1500;
+        var shell = Assert.IsType<ShellViewModel>(((MainViewModel)window.DataContext!).Page);
+        shell.Page = 1;
+        shell.Profiles.Selected = shell.Profiles.Items.Single(item => item.Name == "orgs");
+        var editor = shell.Profiles.Current!;
+        editor.SelectedTab = editor.Tab("Actions");
+
+        // Actions off: the tab leaves out what it hides, and says the profile still names some of it.
+        var text = Texts(window);
+        Assert.DoesNotContain("Allowed actions", text);
+        Assert.DoesNotContain("Allowed action patterns", text);
+        Assert.Contains("This profile still names 3 settings hidden under it.", text);
+        // What GitHub greys out shows off, with why.
+        Assert.Contains("Off while Run workflows from fork pull requests is set to Off.", text);
+        Save(window, $"settings-actions-off-{theme}");
+
+        editor.Tabs.SelectMany(tab => tab.Groups).SelectMany(group => group.Settings).Single(setting => setting.Key == "enabled")
+            .Options.Single(option => option.Label == "On").ChooseCommand.Execute(null);
+        text = Texts(window);
+        Assert.Contains("Allowed actions", text);
+        var patterns = window.GetVisualDescendants().OfType<TextBox>()
+            .Single(box => AutomationProperties.GetName(box) == "Allowed action patterns");
+        Assert.Equal(("octo-org/*\n!octo-org/old@*", true, true), (patterns.Text, patterns.AcceptsReturn, patterns.IsEnabled));
+        Save(window, $"settings-actions-selected-{theme}");
+    }
+
+    [AvaloniaTheory]
+    [MemberData(nameof(Themes))]
     public async Task The_settings_search_shows_what_it_found_on_every_tab(string theme)
     {
         var @base = folders.Write("base.yaml", "repository:\n  has_issues: true\nmerge:\n  allow_rebase_merge: true\n");

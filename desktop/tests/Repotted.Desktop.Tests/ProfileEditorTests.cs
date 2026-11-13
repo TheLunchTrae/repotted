@@ -139,7 +139,7 @@ public sealed class ProfileEditorTests : ViewModelTests
         Assert.Equal(["Repository / Features: Wiki"], Found(editor));
         // A sub-option shows under the setting it belongs to.
         editor.Query = "draft pull";
-        Assert.Equal(["Repository / Features: Pull requests, Count draft pull requests"], Found(editor));
+        Assert.Equal(["Repository / Features: Pull requests, Limit open pull requests per user, Count draft pull requests"], Found(editor));
         // Searching a setting finds its sub-options too.
         editor.Query = "secret protection";
         Assert.Equal(
@@ -364,7 +364,7 @@ public sealed class ProfileEditorTests : ViewModelTests
         // Standard runners, set here or in the base, turn the box off; it keeps its value and its way back.
         Assert.Equal((false, true, false), (scanning.Enabled, quality.Enabled, group.Enabled));
         // Screen readers hear why a box is off before where its value comes from.
-        Assert.Equal($"Used only with labeled runners. Leave it empty for no label. {scanning.Note}", scanning.TypedHelp);
+        Assert.Equal($"Off while Runner type is set to Standard. {scanning.Note}", scanning.TypedHelp);
         Assert.Equal(quality.Note, quality.TypedHelp);
         Assert.Equal(("gpu", "Remove"), (scanning.Typed, scanning.ResetLabel));
 
@@ -386,6 +386,197 @@ public sealed class ProfileEditorTests : ViewModelTests
         type.Undo();
         type.ResetCommand.Execute(null);
         Assert.Equal(("Removed when saved", true), (type.Note, quality.Enabled));
+    }
+
+    [AvaloniaFact]
+    public async Task Settings_that_depend_on_one_that_is_off_hide_as_GitHub_hides_them_and_keep_their_values()
+    {
+        var (editor, cli, own, resolved) = await OpenOwn(
+            """{"actions":{"enabled":false,"allowed_actions":"selected","selected_actions":{"github_owned_allowed":true}}}""",
+            """{"actions":{"enabled":OWN,"allowed_actions":OWN,"selected_actions.github_owned_allowed":OWN}}""");
+        var actions = Find(editor, "enabled");
+        var allowed = Find(editor, "allowed_actions");
+        var byGitHub = Find(editor, "selected_actions.github_owned_allowed");
+        var patterns = Find(editor, "selected_actions.patterns_allowed");
+        var pinning = Find(editor, "sha_pinning_required");
+
+        // Actions off hides which actions are allowed and what Selected allows, through the setting between.
+        Assert.Equal((true, true, true, true), (allowed.Hidden, byGitHub.Hidden, patterns.Hidden, pinning.Hidden));
+        Assert.Equal((false, false), (actions.Hidden, Find(editor, "default_workflow_permissions").Hidden));
+        Assert.Equal("Hidden while Actions is set to Off.", byGitHub.WhyOff);
+        Assert.False(byGitHub.Enabled);
+        // The profile keeps them, and the setting that hides them says so.
+        Assert.Equal(("Set here", "This profile still names 2 settings hidden under it."), (byGitHub.Note, actions.HiddenNote));
+        Assert.Null(allowed.HiddenNote);
+
+        // Turning Actions on shows them again; Selected is what shows its options.
+        Choose(editor, "enabled", "On");
+        Assert.Equal((false, false, false, false), (allowed.Hidden, byGitHub.Hidden, patterns.Hidden, pinning.Hidden));
+        Assert.Null(actions.HiddenNote);
+        Choose(editor, "allowed_actions", "All");
+        Assert.Equal((true, true, false), (byGitHub.Hidden, patterns.Hidden, pinning.Hidden));
+        Assert.Equal("Hidden while Allowed actions is set to All.", patterns.WhyOff);
+        Assert.Equal("This profile still names 1 setting hidden under it.", allowed.HiddenNote);
+        Assert.Null(actions.HiddenNote);
+
+        // A hidden setting's own change still saves, as the YAML would keep it.
+        Choose(editor, "allowed_actions", "Selected");
+        patterns.Typed = "octo-org/*";
+        Choose(editor, "enabled", "Off");
+        Assert.Equal("This profile still names 3 settings hidden under it.", actions.HiddenNote);
+        var save = $"profile {own} --set actions.enabled=true --set actions.selected_actions.patterns_allowed=[\"octo-org/*\"] --json";
+        Choose(editor, "enabled", "On");
+        cli.On(save, resolved);
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Contains(save, cli.Calls);
+    }
+
+    [Fact]
+    public void Each_dependency_names_a_setting_above_it_in_its_group_and_values_that_setting_takes()
+    {
+        foreach (var group in ProfileFields.Sections.SelectMany(tab => tab.Groups))
+        {
+            foreach (var (field, index) in group.Fields.Select((field, index) => (field, index)))
+            {
+                if (field.DependsOn is not { } condition)
+                {
+                    continue;
+                }
+                // Above it in its group, so it shows under what hides it, and a value a misspelling would never match.
+                var parent = Assert.Single(group.Fields.Take(index), other => other.Section == field.Section && other.Key == condition.Key);
+                Assert.All(condition.Values, value => Assert.Contains(parent.Options, option => JsonNode.DeepEquals(option.Value, value)));
+                // A setting GitHub hides sits under one that is hidden too, or under none: under one GitHub only
+                // greys out, it would show off rather than hidden while that is off.
+                Assert.True(!condition.Hides || parent.DependsOn is null or { Hides: true }, $"{field.Key} hides under {parent.Key}, which only turns off.");
+            }
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Search_and_filters_find_a_hidden_setting_and_show_it_off()
+    {
+        var (editor, _, _, _) = await OpenOwn(
+            """{"merge":{"allow_squash_merge":false,"squash_merge_commit_title":"PR_TITLE"}}""",
+            """{"merge":{"allow_squash_merge":OWN,"squash_merge_commit_title":OWN}}""");
+        var title = Find(editor, "squash_merge_commit_title");
+
+        editor.OnlyManaged = true;
+        Assert.Equal(["Merge / Merge methods: Allow squash merging, Squash commit title"], Found(editor));
+        Assert.Equal((true, false), (title.Hidden, title.Enabled));
+        Assert.Equal($"Hidden while Allow squash merging is set to Off. {title.Note}", title.OptionHelp);
+    }
+
+    [AvaloniaFact]
+    public async Task A_hidden_setting_removed_from_the_profile_is_no_longer_counted_as_named()
+    {
+        var (editor, _, _, _) = await OpenOwn(
+            """{"merge":{"allow_squash_merge":false,"squash_merge_commit_title":"PR_TITLE"}}""",
+            """{"merge":{"allow_squash_merge":OWN,"squash_merge_commit_title":OWN}}""");
+        var squash = Find(editor, "allow_squash_merge");
+        Assert.Equal("This profile still names 1 setting hidden under it.", squash.HiddenNote);
+
+        Find(editor, "squash_merge_commit_title").ResetCommand.Execute(null);
+        Assert.Null(squash.HiddenNote);
+    }
+
+    [AvaloniaFact]
+    public async Task Search_shows_the_setting_that_hides_or_turns_off_what_it_finds()
+    {
+        var (editor, _, _, _) = await OpenOwn("""{"actions":{"enabled":true,"allowed_actions":"all"}}""",
+            """{"actions":{"enabled":OWN,"allowed_actions":OWN}}""");
+
+        editor.Query = "patterns_allowed";
+        Assert.Equal(["Actions / Policy: Actions, Allowed actions, Allowed action patterns"], Found(editor));
+        editor.Query = "include_drafts";
+        Assert.Equal(["Repository / Features: Pull requests, Limit open pull requests per user, Count draft pull requests"], Found(editor));
+    }
+
+    [AvaloniaFact]
+    public async Task A_choice_tells_screen_readers_when_the_setting_above_turns_it_off_and_back_on()
+    {
+        var (editor, _, _, _) = await OpenOwn("""{"merge":{"allow_squash_merge":true}}""", """{"merge":{"allow_squash_merge":OWN}}""");
+        var title = Find(editor, "squash_merge_commit_title");
+        var option = title.Options[0];
+        var told = 0;
+        option.PropertyChanged += (_, args) => told += args.PropertyName is nameof(OptionViewModel.Help) or null or "" ? 1 : 0;
+
+        Choose(editor, "allow_squash_merge", "Off");
+        Assert.StartsWith("Hidden while Allow squash merging is set to Off.", option.Help, StringComparison.Ordinal);
+        Assert.True(told > 0);
+        var before = told;
+        Find(editor, "allow_squash_merge").ResetCommand.Execute(null);
+        Assert.DoesNotContain("while", option.Help, StringComparison.Ordinal);
+        Assert.True(told > before);
+        Assert.False(title.Hidden);
+    }
+
+    [AvaloniaFact]
+    public async Task The_pattern_box_tells_screen_readers_how_to_fill_it()
+    {
+        var (editor, _, _, _) = await OpenOwn("""{"actions":{"allowed_actions":"selected"}}""", """{"actions":{"allowed_actions":OWN}}""");
+        var patterns = Find(editor, "selected_actions.patterns_allowed");
+        Assert.Equal($"{patterns.FieldNote} {patterns.Note}", patterns.TypedHelp);
+    }
+
+    [AvaloniaFact]
+    public async Task A_setting_GitHub_turns_off_shows_off_and_follows_what_turns_it_off()
+    {
+        var (editor, _, _, _) = await OpenOwn(
+            """{"security":{"vulnerability_alerts":false,"automated_security_fixes":true}}""",
+            """{"security":{"vulnerability_alerts":BASE,"automated_security_fixes":OWN}}""");
+        var updates = Find(editor, "automated_security_fixes");
+
+        // Off, inherited from the base, still turns it off; it shows, unlike a hidden one.
+        Assert.Equal((false, false), (updates.Enabled, updates.Hidden));
+        Assert.Equal("Off while Dependabot alerts is set to Off.", updates.WhyOff);
+        Choose(editor, "vulnerability_alerts", "On");
+        Assert.True(updates.Enabled);
+        Assert.Null(updates.WhyOff);
+    }
+
+    [AvaloniaFact]
+    public async Task Allowed_action_patterns_are_typed_one_a_line_and_save_as_a_list()
+    {
+        var (editor, cli, own, resolved) = await OpenOwn(
+            """{"actions":{"allowed_actions":"selected","selected_actions":{"patterns_allowed":["octo-org/*","!octo-org/old@*"]}}}""",
+            """{"actions":{"allowed_actions":OWN,"selected_actions.patterns_allowed":OWN}}""");
+        var patterns = Find(editor, "selected_actions.patterns_allowed");
+        Assert.Equal(("octo-org/*\n!octo-org/old@*", true), (patterns.Typed, patterns.IsList));
+
+        // Blank lines and spaces around a pattern change nothing.
+        patterns.Typed = " octo-org/*\n\n!octo-org/old@* \n";
+        Assert.False(patterns.Pending);
+        // Commas separate patterns too, as GitHub's box writes them.
+        patterns.Typed = "octo-org/*, actions/checkout@v5\n!octo-org/old@*";
+        Assert.Equal("Changed", patterns.Note);
+        // More patterns than GitHub takes is held back until fixed.
+        var many = string.Join('\n', Enumerable.Range(0, 1001).Select(index => $"octo-org/a{index}"));
+        patterns.Typed = many;
+        Assert.Equal(("GitHub takes at most 1000 patterns.", false), (patterns.TypedProblem, editor.SaveCommand.CanExecute(null)));
+        patterns.Typed = "octo-org/*, actions/checkout@v5\n!octo-org/old@*";
+        Assert.Null(patterns.TypedProblem);
+
+        var save = $"profile {own} --set actions.selected_actions.patterns_allowed=[\"octo-org/*\",\"actions/checkout@v5\",\"!octo-org/old@*\"] --json";
+        cli.On(save, resolved);
+        await editor.SaveCommand.ExecuteAsync(null);
+        Assert.Contains(save, cli.Calls);
+        Assert.Null(editor.SaveError);
+    }
+
+    [AvaloniaFact]
+    public async Task Emptying_the_pattern_list_allows_none_and_a_draft_of_patterns_reads_with_commas()
+    {
+        var (editor, _, _, _) = await OpenOwn(
+            """{"actions":{"allowed_actions":"selected","selected_actions":{"patterns_allowed":["a/*"]}}}""",
+            """{"actions":{"allowed_actions":OWN,"selected_actions.patterns_allowed":OWN}}""");
+        var patterns = Find(editor, "selected_actions.patterns_allowed");
+
+        // An emptied box is a list of none, which differs from leaving the patterns out.
+        patterns.Typed = "";
+        Assert.Equal(("Changed", "[]"), (patterns.Note, patterns.Change?.Value?.ToJsonString()));
+        patterns.Typed = "a/*\nb/*";
+        patterns.SaveAsDraftCommand.Execute(null);
+        Assert.Equal("a/*, b/*", patterns.DraftLabel);
     }
 
     [AvaloniaFact]
