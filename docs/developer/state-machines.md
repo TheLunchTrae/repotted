@@ -165,8 +165,42 @@ kept: each visit starts with the hidden repositories out of the list.
 | Every one shown     | Show hidden off                   | The list says every repository here is hidden and offers Show hidden, whatever the search.                                    |
 | Some                | A search that matches only hidden | The list says no repository matches, how many hidden ones do, and offers Show hidden.                                         |
 
-A browser that refuses storage keeps the choice for the visit only. Both
-lists are read from the shared preferences each time, so a file read from
+It keeps the user's folders under `repository-folders`, as a list of
+`{ name, repositories }` with the repositories by `owner/name`, sorted by
+name, or nothing when there is no folder. It keeps the closed folders, by
+name, under `closed-repository-folders`. Folder names and repository names
+match in any case. A repository is in one folder at most; a filed repository
+shows in its folder and not under its owner. A folder shows the repositories
+its owner's group would: none of a hidden owner, and no hidden repository
+unless hidden ones show.
+
+| Folders                      | Event                                  | Next                                                                                                          |
+| ---------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Any                          | New folder with a free name            | The folder, saved, with the ticked repositories, or the one repository whose **Folder** picked it, if chosen. |
+| Any                          | New folder or Rename with a taken name | Nothing saved; the dialog says which folder has the name. An empty name is refused the same way.              |
+| A folder                     | Rename                                 | The new name, saved; a closed folder stays closed.                                                            |
+| A folder                     | Delete folder, confirmed               | The folder and its closed state gone, saved; its repositories go back under their owners.                     |
+| Any                          | Move, or a repository's own **Folder** | Those repositories out of every folder and at the end of that one, saved; **No folder** files none.           |
+| A folder                     | Its heading clicked, with no search    | Open or closed, saved. Closing the selected repository's folder closes its panel until the folder opens.      |
+| Some                         | A search                               | A folder whose name matches shows all it shows; another shows the matching ones; each shows open.             |
+| A folder with none in view   | No search, or a search for its name    | An empty folder shows, saying how to fill it; one whose repositories are all hidden doesn't show.             |
+| A repository not in the list | The list is read again                 | It stays filed, so it is in its folder again if it returns.                                                   |
+| A hand-edited file           | It is read                             | A folder named twice, or a repository in two folders, counts only the first time.                             |
+
+Each folder change is saved as a change to the folders, not as the list
+that showed, so it applies to the folders the file holds when it is read
+or saved, and keeps any made elsewhere. A folder made meanwhile elsewhere
+with the same name takes the repositories instead of a second folder, both
+when one is made and when one is renamed to that name. A move into a folder
+deleted elsewhere meanwhile makes it again, so no repository loses its filing.
+
+The ticked panel's **Move to a folder** shows the folder last picked there,
+or the folder last made, under any name it was given since. When that folder
+is gone, or none was picked, it shows the first folder, or **New folder…**
+when there is none. It is not kept.
+
+A browser that refuses storage keeps the choice for the visit only. Every
+list is read from the shared preferences each time, so a file read from
 the profiles repository changes what the list hides as soon as it arrives.
 Each save is a change to the list, such as adding a name or taking one out,
 not the list as this page last saw it, so it keeps names another browser

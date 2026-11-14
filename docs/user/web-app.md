@@ -50,13 +50,24 @@ and click **Show in list** to bring it back for good. If a search matches
 only hidden repositories, or every repository is hidden, the list says so
 and offers **Show hidden**.
 
+To keep repositories together, put them in folders. Click **New folder**
+beside the count, name it, and leave the box that puts the ticked
+repositories in it ticked to fill it at once. To move repositories later,
+tick them, pick a folder under **Move to a folder** in the panel and click
+**Move**, or open one repository and pick its **Folder**. A repository is in
+one folder at most, and **No folder** takes it out. Folders show above the owners, in name order;
+click a folder's name to close or open it, and use its **Edit** menu to
+rename or delete it. Deleting a folder puts its repositories back under their
+owners, and nothing changes on GitHub. A search looks in folders too, and a
+folder whose name matches shows everything in it.
+
 When your profiles are kept in a GitHub repository, the owners and
-repositories you hid are kept there too, in `.repotted-preferences.json`
-beside the profiles, so they follow you to any browser you sign in on. Each
-change is committed straight to the repository, and **Refresh** picks up
-changes made in another browser. When your profiles are kept
-in this browser or a folder on this computer, this browser remembers them
-instead. Choices made in one place don't move to the other.
+repositories you hid, and your folders, are kept there too, in
+`.repotted-preferences.json` beside the profiles, so they follow you to any
+browser you sign in on. Each change is committed straight to the repository,
+and **Refresh** picks up changes made in another browser. When your profiles
+are kept in this browser or a folder on this computer, this browser remembers
+them instead. Choices made in one place don't move to the other.
 
 Click a repository to open its panel. **Open on GitHub** opens it there, and
 **Capture as a new profile** starts [a profile](#make-a-profile) that

@@ -23,9 +23,33 @@ export interface OwnerGroup {
   readonly repositories: readonly Repository[];
 }
 
+/** A folder the user made, with its repositories by `owner/name`, in the order they were put in. */
+export interface Folder {
+  readonly name: string;
+  readonly repositories: readonly string[];
+}
+
+export interface FolderGroup {
+  readonly name: string;
+  readonly open: boolean;
+  /** The repositories that show in it: as in the owners' groups, and while searching, those that match. */
+  readonly repositories: readonly Repository[];
+  /** Whether the folder holds no repository the list has. */
+  readonly empty: boolean;
+}
+
+/** Where the ticked panel moves the ticked repositories: a folder, out of every folder, or a new folder. */
+export type MoveTarget =
+  | { readonly kind: 'folder'; readonly name: string }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'new' };
+
 const hiddenOwnersKey = 'hidden-repository-owners';
 const hiddenRepositoriesKey = 'hidden-repositories';
+const foldersKey = 'repository-folders';
+const closedFoldersKey = 'closed-repository-folders';
 const names = z.array(z.string());
+const savedFolders = z.array(z.object({ name: z.string(), repositories: z.array(z.string()) }));
 
 function ownerOf(repository: Repository): string {
   return repository.full_name.split('/')[0] ?? repository.full_name;
@@ -35,9 +59,60 @@ function sameOwner(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
 }
 
+/** GitHub names are case-insensitive, and so are folder names. */
+const sameName = sameOwner;
+
+function byName(left: Folder, right: Folder): number {
+  return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
+}
+
+/**
+ * The folders a saved value holds, by name. A file edited by hand may name a
+ * folder twice or a repository in two folders: the first of each counts.
+ */
+function foldersIn(value: unknown): readonly Folder[] {
+  const parsed = savedFolders.safeParse(value);
+  if (!parsed.success) {
+    return [];
+  }
+  const folders: Folder[] = [];
+  const filed: string[] = [];
+  for (const folder of parsed.data) {
+    if (folders.some((kept) => sameName(kept.name, folder.name))) {
+      continue;
+    }
+    const repositories = folder.repositories.filter(
+      (name, index) =>
+        !filed.some((other) => sameName(other, name)) &&
+        folder.repositories.findIndex((other) => sameName(other, name)) === index,
+    );
+    filed.push(...repositories);
+    folders.push({ name: folder.name, repositories });
+  }
+  return folders.toSorted(byName);
+}
+
 function namesIn(value: unknown): readonly string[] {
   const parsed = names.safeParse(value);
   return parsed.success ? parsed.data : [];
+}
+
+/**
+ * The folders with these repositories taken out of every one and put at the
+ * end of the named one, if any. A named folder that is missing, say deleted
+ * elsewhere meanwhile, is made again, so the repositories aren't lost.
+ */
+function withMoved(folders: readonly Folder[], repositories: readonly string[], name: string | undefined): Folder[] {
+  const moving = (filed: string): boolean => repositories.some((repository) => sameName(repository, filed));
+  if (name !== undefined && !folders.some((folder) => sameName(folder.name, name))) {
+    return [...withMoved(folders, repositories, undefined), { name, repositories: [...repositories] }];
+  }
+  return folders.map((folder) => {
+    const kept = folder.repositories.filter((filed) => !moving(filed));
+    return name !== undefined && sameName(folder.name, name)
+      ? { ...folder, repositories: [...kept, ...repositories] }
+      : { ...folder, repositories: kept };
+  });
 }
 
 /** The list, or undefined to delete the key, when it holds none. */
@@ -69,6 +144,11 @@ export class Repositories {
   readonly #hiddenNames = computed<ReadonlySet<string>>(
     () => new Set(namesIn(this.preferences.read(hiddenRepositoriesKey)).map((name) => name.toLowerCase())),
   );
+  /** The folders, by name. */
+  readonly #folders = computed<readonly Folder[]>(() => foldersIn(this.preferences.read(foldersKey)));
+  readonly #closedFolders = computed<readonly string[]>(() => namesIn(this.preferences.read(closedFoldersKey)));
+  /** The folder last picked to move the ticked repositories to, or made from the ticked panel. */
+  readonly #moveTarget = signal<MoveTarget | undefined>(undefined);
   readonly #selectedName = signal<string | undefined>(undefined);
   readonly #tickedNames = signal<ReadonlySet<string>>(new Set());
 
@@ -123,15 +203,65 @@ export class Repositories {
   /** Whether hidden repositories leave the list short: some are hidden and they don't show. */
   readonly #hidingRepositories = computed(() => this.hiddenCount.value > 0 && !this.showHidden.value);
 
+  /** The repositories that show without a search: the owners' not hidden, without the hidden ones unless they show. */
+  readonly #listedRepositories = computed<readonly Repository[]>(() =>
+    this.#ownersRepositories.value.filter((repository) => this.showHidden.value || !this.isHidden(repository)),
+  );
+
+  /** The folders' names, in order. */
+  readonly folderNames = computed<readonly string[]>(() => this.#folders.value.map((folder) => folder.name));
+
   /**
-   * The repositories that show, by owner: those of owners not hidden whose
-   * name holds the search, without the hidden ones unless they show.
+   * The folders that show, by name. A folder whose name holds the search
+   * shows all of its repositories, and one with a repository that matches
+   * shows those, open while the search lasts. A folder whose repositories are
+   * all out of view, of hidden owners or hidden themselves, doesn't show, as
+   * they wouldn't in their owners' groups; an empty one does, so it can be
+   * filled.
+   */
+  readonly folders = computed<readonly FolderGroup[]>(() => {
+    const words = this.search.value.trim().toLowerCase();
+    const listed = this.list.value?.repositories ?? [];
+    const visible = this.#listedRepositories.value;
+    return this.#folders.value.flatMap((folder) => {
+      const filed = (repository: Repository): boolean =>
+        folder.repositories.some((name) => sameName(name, repository.full_name));
+      const empty = !listed.some(filed);
+      const inView = visible.filter(filed);
+      const named = words === '' || folder.name.toLowerCase().includes(words);
+      const matching = named
+        ? inView
+        : inView.filter((repository) => repository.full_name.toLowerCase().includes(words));
+      if (matching.length === 0 && !(empty && named)) {
+        return [];
+      }
+      return [
+        {
+          name: folder.name,
+          open: words !== '' || !this.#closedFolders.value.some((name) => sameName(name, folder.name)),
+          repositories: matching,
+          empty,
+        },
+      ];
+    });
+  });
+
+  /** The name of the folder the repository is in, if any. */
+  folderOf(repository: Pick<Repository, 'full_name'>): string | undefined {
+    return this.#folders.value.find((folder) =>
+      folder.repositories.some((name) => sameName(name, repository.full_name)),
+    )?.name;
+  }
+
+  /**
+   * The repositories in no folder that show, by owner: those of owners not
+   * hidden whose name holds the search, without the hidden ones unless they
+   * show.
    */
   readonly groups = computed<readonly OwnerGroup[]>(() => {
     const words = this.search.value.trim().toLowerCase();
-    const repositories = this.#ownersRepositories.value.filter(
-      (repository) =>
-        repository.full_name.toLowerCase().includes(words) && (this.showHidden.value || !this.isHidden(repository)),
+    const repositories = this.#listedRepositories.value.filter(
+      (repository) => this.folderOf(repository) === undefined && repository.full_name.toLowerCase().includes(words),
     );
     return this.owners.value
       .filter((owner) => owner.shown)
@@ -150,7 +280,10 @@ export class Repositories {
     }
     const words = this.search.value.trim().toLowerCase();
     return this.#ownersRepositories.value.filter(
-      (repository) => this.isHidden(repository) && repository.full_name.toLowerCase().includes(words),
+      (repository) =>
+        this.isHidden(repository) &&
+        (repository.full_name.toLowerCase().includes(words) ||
+          (this.folderOf(repository)?.toLowerCase().includes(words) ?? false)),
     ).length;
   });
 
@@ -159,9 +292,12 @@ export class Repositories {
     () => this.#hidingRepositories.value && this.hiddenCount.value === this.#ownersRepositories.value.length,
   );
 
-  /** The selected repository, while it shows; a search or a hide that takes it out of view clears it. */
+  /**
+   * The selected repository, while it shows; a search, a hide, or a closed
+   * folder that takes it out of view clears it.
+   */
   readonly selected = computed<Repository | undefined>(() =>
-    this.groups.value
+    [...this.folders.value.filter((folder) => folder.open), ...this.groups.value]
       .flatMap((group) => group.repositories)
       .find((repository) => repository.full_name === this.#selectedName.value),
   );
@@ -314,6 +450,124 @@ export class Repositories {
   /** Shows every owner, including any that was hidden and is not in the list now. */
   showAllOwners(): void {
     this.preferences.write(hiddenOwnersKey, undefined);
+  }
+
+  /** Why a folder can't take this name, or undefined when it can. `current` is the folder being renamed. */
+  folderNameProblem(name: string, current?: string): string | undefined {
+    const trimmed = name.trim();
+    if (trimmed === '') {
+      return 'Give the folder a name.';
+    }
+    const taken = this.#folders.value.find(
+      (folder) => sameName(folder.name, trimmed) && (current === undefined || !sameName(folder.name, current)),
+    );
+    return taken === undefined ? undefined : `There's already a folder called ${taken.name}.`;
+  }
+
+  /**
+   * Where the ticked panel moves the ticked repositories: what was last
+   * picked there, or the folder last made, while it is still there under any
+   * name it was given since; else the first folder, or a new one when there
+   * is none.
+   */
+  readonly moveTarget = computed<MoveTarget>(() => {
+    const picked = this.#moveTarget.value;
+    const names = this.folderNames.value;
+    if (picked !== undefined && picked.kind !== 'folder') {
+      return picked;
+    }
+    const name = names.find((folder) => picked !== undefined && sameName(folder, picked.name)) ?? names[0];
+    return name === undefined ? { kind: 'new' } : { kind: 'folder', name };
+  });
+
+  pickMoveTarget(target: MoveTarget): void {
+    this.#moveTarget.value = target;
+  }
+
+  /**
+   * Makes a folder and moves these repositories into it. Answers why not when
+   * the name can't be used. A folder of that name saved elsewhere meanwhile
+   * takes the repositories instead.
+   */
+  createFolder(name: string, repositories: readonly Repository[] = []): string | undefined {
+    const problem = this.folderNameProblem(name);
+    if (problem !== undefined) {
+      return problem;
+    }
+    const trimmed = name.trim();
+    const moving = repositories.map((repository) => repository.full_name);
+    this.#updateFolders((folders) => withMoved(folders, moving, trimmed));
+    this.#moveTarget.value = { kind: 'folder', name: trimmed };
+    return undefined;
+  }
+
+  /**
+   * Renames a folder, keeping whether it is open. Answers why not when the
+   * name can't be used. A folder of the new name saved elsewhere meanwhile
+   * takes this folder's repositories instead.
+   */
+  renameFolder(name: string, to: string): string | undefined {
+    const problem = this.folderNameProblem(to, name);
+    if (problem !== undefined) {
+      return problem;
+    }
+    const trimmed = to.trim();
+    this.#updateFolders((folders) => {
+      const renamed = folders.find((folder) => sameName(folder.name, name));
+      if (renamed === undefined) {
+        return folders;
+      }
+      const into = folders.find((folder) => folder !== renamed && sameName(folder.name, trimmed));
+      return into === undefined
+        ? folders.map((folder) => (folder === renamed ? { ...folder, name: trimmed } : folder))
+        : withMoved(
+            folders.filter((folder) => folder !== renamed),
+            renamed.repositories,
+            into.name,
+          );
+    });
+    this.#updateClosed((closed) =>
+      closed.some((folder) => sameName(folder, name))
+        ? [...closed.filter((folder) => !sameName(folder, name)), trimmed]
+        : closed,
+    );
+    const picked = this.#moveTarget.value;
+    if (picked?.kind === 'folder' && sameName(picked.name, name)) {
+      this.#moveTarget.value = { kind: 'folder', name: trimmed };
+    }
+    return undefined;
+  }
+
+  /** Deletes a folder. Its repositories go back to their owners' groups; no repository is changed. */
+  deleteFolder(name: string): void {
+    this.#updateFolders((folders) => folders.filter((folder) => !sameName(folder.name, name)));
+    this.#updateClosed((closed) => closed.filter((folder) => !sameName(folder, name)));
+  }
+
+  /** Moves the repositories into the folder, out of any other, or out of every folder when none is named. */
+  moveToFolder(repositories: readonly Repository[], name: string | undefined): void {
+    const moving = repositories.map((repository) => repository.full_name);
+    this.#updateFolders((folders) => withMoved(folders, moving, name));
+  }
+
+  /** Opens or closes a folder. */
+  setFolderOpen(name: string, open: boolean): void {
+    this.#updateClosed((closed) => [...closed.filter((folder) => !sameName(folder, name)), ...(open ? [] : [name])]);
+  }
+
+  /** Changes the folders as they are when saved, so folders saved elsewhere, or not yet read, are kept. */
+  #updateFolders(change: (folders: readonly Folder[]) => readonly Folder[]): void {
+    this.preferences.update(foldersKey, (current) => {
+      const next = change(foldersIn(current));
+      return next.length > 0 ? next.toSorted(byName) : undefined;
+    });
+  }
+
+  #updateClosed(change: (closed: readonly string[]) => readonly string[]): void {
+    this.preferences.update(closedFoldersKey, (current) => {
+      const next = change(namesIn(current));
+      return next.length > 0 ? next : undefined;
+    });
   }
 
   #clearJustHidden(): void {
