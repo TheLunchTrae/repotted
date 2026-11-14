@@ -14,6 +14,7 @@ import * as z from 'zod/mini';
 import { mkdir, readdir, readFile, rm, stat, writeFile } from '../engine/files.js';
 import { basename, dirname, join, relative } from '../engine/path.js';
 import { isSignedOut } from './account.js';
+import type { SaveMode } from './entry-edits.js';
 import type { Preferences } from './preferences.js';
 import { ProfileEditor } from './profile-editor.js';
 import { SerialQueue } from './serial-queue.js';
@@ -474,15 +475,22 @@ export class Profiles {
    * are kept on GitHub, a sync first brings in what changed there, so the
    * save lands on the file as it is now, and a sync after commits it.
    */
-  async save(): Promise<void> {
-    await this.editor.value?.save((write) =>
-      this.#work(async () => {
-        await this.#sync({});
-        await write();
-        await this.#sync({});
-        await this.#list();
-      }),
-    );
+  async save(mode: SaveMode = 'applies'): Promise<void> {
+    await this.editor.value?.save((write) => this.#write(write), mode);
+  }
+
+  /** Takes the open profile's draft out of its file, in a turn of the queue as a save has. */
+  async discardDraft(): Promise<void> {
+    await this.editor.value?.discardDraft((write) => this.#write(write));
+  }
+
+  async #write(write: () => Promise<void>): Promise<void> {
+    await this.#work(async () => {
+      await this.#sync({});
+      await write();
+      await this.#sync({});
+      await this.#list();
+    });
   }
 
   toggleFolder(path: string): void {

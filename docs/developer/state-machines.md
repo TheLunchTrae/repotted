@@ -250,6 +250,12 @@ whenever the list is read.
 Each change is previewed through the engine's `previewProfile`, so the
 editor shows what a save would give, base profiles included.
 
+A profile with a [draft](#drafts) of its own opens on it: each setting,
+ruleset, environment, and label in the draft starts from the draft, and from
+what applies otherwise. A base profile's draft is left out, since its own
+file finishes it. So "saved" below is the file as last read, draft included,
+and "what the file has" for a setting is its draft's value when it has one.
+
 | State   | Event                                                | Next                                                                                                                                                                                             |
 | ------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Saved   | A setting is chosen or typed                         | Unsaved, previewed. A change back to what the file has is no change.                                                                                                                             |
@@ -263,6 +269,37 @@ editor shows what a save would give, base profiles included.
 | Unsaved | Save                                                 | Saving: a turn in the profiles' queue. A sync first brings in what changed on GitHub, then only the settings changed are written, so what the file gained stays, and a sync commits them.        |
 | Saving  | The write ends                                       | Saved, then a sync when profiles are kept on GitHub. A change made while it ran stays unsaved.                                                                                                   |
 | Saving  | The write fails                                      | Unsaved, with why, and **Save** on to try again. A setting changed back meanwhile to what the save was writing keeps its change.                                                                 |
+
+### The draft
+
+**Save** and **Save as draft** are the two ways out of Unsaved above, and
+both take the same turn in the queue. The draft is the open file's own:
+its settings under `drafts`, its entries with `draft: true`, and its keys of
+`drafts.unset`.
+
+| State                 | Event                                                     | Next                                                                                                                                                                                                                                        |
+| --------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unsaved               | Save as draft                                             | Saving. Each setting or entry that ends as something other than what applies is written as a draft, one that ends as what applies loses its draft, and what the file stops naming is listed in `drafts.unset`. What applies stays as it is. |
+| Unsaved               | A new or renamed entry has no name, or another's          | **Save as draft** is off, with why. Nothing else about an entry holds it back, since a draft may be unfinished.                                                                                                                             |
+| Unsaved               | A setting is cleared to an empty value, as a runner label | **Save as draft** is off, with why: a draft of no value reads as no draft. **Save** can still apply it.                                                                                                                                     |
+| Saved, with a draft   | Opened, or read again                                     | Each drafted row shows the draft, marked **Draft**, with what applies now beside a setting. The banner counts the draft's changes and lists what stops each from applying.                                                                  |
+| Saved, with a draft   | Save, with or without unsaved changes                     | Saving. Every row is written as it ends, so it applies, and the whole draft is taken out: each draft setting, each draft entry, and `drafts.unset` but for the keys the editor has no row for.                                              |
+| Saved, with a draft   | The draft can't apply as it stands                        | **Save** is off, with the engine's reason above it, or **Not finished** on the entry. **Save as draft** still keeps further changes.                                                                                                        |
+| Saved, with a draft   | A drafted setting or entry is changed to what applies     | Unsaved. Either save takes it out of the draft.                                                                                                                                                                                             |
+| Saved, with a draft   | **Put it back** on an entry the draft takes out           | Unsaved, as the entry applies. Either save takes its key out of `drafts.unset`.                                                                                                                                                             |
+| Saved, with a draft   | Discard draft, with nothing unsaved                       | Confirming. **Keep it** goes back. **Discard draft** takes the draft out of the file in a save's turn, and keeps what the editor has no row for.                                                                                            |
+| Unsaved, with a draft | Discard draft                                             | Off until the changes are saved or reset, since it writes at once.                                                                                                                                                                          |
+| Saving, either way    | An entry with a change is out of date                     | Nothing is written, as in the table below. An entry's draft counts as its saved entry, so a draft that changed elsewhere holds its change back.                                                                                             |
+
+The editor has no rows for custom properties and autolinks. A save that
+applies finishes a draft custom property as it is, and both saves and
+**Discard draft** leave a draft autolink, and an `autolinks/` key of
+`drafts.unset`, in the file. A draft of a key no section has stays too, with
+the profile's warning.
+
+A ruleset, environment, or label renamed in a draft is a draft under the new
+name and a `drafts.unset` key for the one that applies, so its row becomes
+two: the old one taken out in the draft, and the new one new in it.
 
 ### Each ruleset, environment, or label
 
@@ -283,7 +320,7 @@ number for one that is new, so its row is found whatever its name becomes.
 | Any held back | Another setting or entry changes                                   | The entries that can be saved as they stand are still previewed; **Save** stays off.                                                                                          |
 | Managed       | Remove it from the repository                                      | Unsaved: only its name and `absent: true` are written. What it had is kept with the change.                                                                                   |
 | Removing      | Manage it                                                          | What it had comes back, under its name as it is then; for one saved as removing, only its name.                                                                               |
-| Saved here    | Take out of profile                                                | Unsaved and struck through: the file stops naming it. **Put it back** undoes that before a save.                                                                              |
+| Saved here    | Take out of profile                                                | Unsaved and struck through: the file stops naming it. **Put it back** undoes that before a save. One only the draft has is taken out of the draft.                            |
 | New           | Take out of profile                                                | Gone, with no change.                                                                                                                                                         |
 | From a base   | A field changes                                                    | Unsaved: the save writes the entry here, over the base's. Its name can't change.                                                                                              |
 | Unsaved       | Reset, on one saved before                                         | Saved.                                                                                                                                                                        |
@@ -294,8 +331,9 @@ number for one that is new, so its row is found whatever its name becomes.
 | Saving        | The write ends                                                     | Saved, under the name the save gave it. One changed again while the save ran, even back to what it was, stays unsaved, based on what was written.                             |
 | Saving        | The write fails                                                    | Unsaved, every change as it is.                                                                                                                                               |
 
-Only an entry with a change is checked, so a profile the engine takes can
-always be saved, whatever its other entries hold.
+Only an entry with a change or a draft is checked, so a profile the engine
+takes can always be saved, whatever its other entries hold, and a draft the
+form would hold back says so on its row.
 
 A renamed ruleset or environment is renamed in the file; applying creates
 one of the new name and leaves the old on each repository, and the form says

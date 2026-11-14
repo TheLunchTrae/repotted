@@ -720,12 +720,12 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
   const renamable = row.source === 'here' || row.source === undefined;
   const name = typeof entry['name'] === 'string' ? entry['name'] : '';
   // GitHub knows an environment by its name in any case, and a ruleset by its name as written.
+  // A name only this profile's draft has is on no repository yet, so changing it leaves nothing behind.
+  const appliedName = typeof row.applied?.['name'] === 'string' ? row.applied['name'] : undefined;
   const renamed =
-    row.savedName !== undefined &&
+    appliedName !== undefined &&
     name.trim() !== '' &&
-    (row.list === 'rulesets'
-      ? name.trim() !== row.savedName
-      : name.trim().toLowerCase() !== row.savedName.toLowerCase());
+    (row.list === 'rulesets' ? name.trim() !== appliedName : name.trim().toLowerCase() !== appliedName.toLowerCase());
   return (
     <div class="groups">
       <div class="entry-bar">
@@ -735,9 +735,13 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
         <span class="muted small">
           {row.source === undefined
             ? 'New, not saved yet.'
-            : row.source === 'here'
-              ? 'Set in this profile.'
-              : `From ${row.source}. Changing it here overrides it.`}
+            : row.inDraft === 'new'
+              ? 'New in the draft. It applies once you save.'
+              : row.inDraft === 'changed'
+                ? 'Changed in the draft. It applies once you save.'
+                : row.source === 'here'
+                  ? 'Set in this profile.'
+                  : `From ${row.source}. Changing it here overrides it.`}
         </span>
         {row.unsaved && row.savedName !== undefined && (
           <button
@@ -798,7 +802,7 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
             !renamable
               ? `It comes from ${row.source}, so it keeps its name.`
               : renamed && row.list !== 'labels'
-                ? `GitHub knows each ${noun.one} by its name, so applying this profile creates ${name.trim()} and leaves ${row.savedName} on each repository as it is.`
+                ? `GitHub knows each ${noun.one} by its name, so applying this profile creates ${name.trim()} and leaves ${appliedName} on each repository as it is.`
                 : undefined
           }
           onText={(typed) => {
@@ -839,7 +843,7 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
       )}
       {!absent && row.list === 'environments' && <EnvironmentForm entry={entry} saved={row.saved} change={change} />}
       {!absent && row.list === 'labels' && (
-        <LabelForm entry={entry} saved={row.saved} change={change} savedName={row.savedName} />
+        <LabelForm entry={entry} saved={row.saved} change={change} savedName={appliedName} />
       )}
     </div>
   );
@@ -951,6 +955,11 @@ export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Eleme
                     row.problem !== undefined && <span class="pill pill-remove">Not finished</span>
                   )}
                   {row.unsaved && <span class="pill pill-drift">Not saved</span>}
+                  {row.inDraft !== undefined && (
+                    <span class="pill pill-draft">
+                      {row.inDraft === 'taken-out' ? 'Taken out in the draft' : 'Draft'}
+                    </span>
+                  )}
                   {row.source !== 'here' && row.source !== undefined && (
                     <span class="muted small">From {row.source}</span>
                   )}
@@ -960,7 +969,7 @@ export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Eleme
                     class="button button-quiet button-small"
                     type="button"
                     onClick={() => {
-                      run(editor.resetEntry(row));
+                      run(editor.putBack(row));
                     }}
                   >
                     Put it back

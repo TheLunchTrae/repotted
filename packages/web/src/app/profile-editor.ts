@@ -1,9 +1,10 @@
 import { computed, signal } from '@preact/signals';
-import { editProfile, previewProfile, resolveProfile } from '@repotted/core';
+import { editProfile, type ProfileEdit, previewProfile, resolveProfile } from '@repotted/core';
 
 import { basename } from '../engine/path.js';
-import { EntryEdits, type EntryList, type EntryRow } from './entry-edits.js';
+import { EntryEdits, type EntryList, type EntryRow, type SaveMode } from './entry-edits.js';
 import type { Entry } from './entry-forms.js';
+import { ownUnsets } from './own-drafts.js';
 import { sameValue } from './same-value.js';
 import { type SettingField, type SettingGroup, settingSections } from './setting-fields.js';
 
@@ -24,6 +25,10 @@ export interface SettingRow {
   readonly source: string | undefined;
   /** Whether it has a change that isn't saved. */
   readonly unsaved: boolean;
+  /** Whether the value shown is this profile's draft of it, which doesn't apply until a save finishes the draft. */
+  readonly inDraft: boolean;
+  /** What applies now, from this profile or a base profile, whatever the draft and the unsaved changes say. */
+  readonly applied: unknown;
   /** Whether GitHub greys it out for the value of the setting it follows. */
   readonly off: boolean;
   /** What is being typed for it, as typed, until the box is left. */
@@ -57,6 +62,11 @@ function reasonOf(error: unknown, file: string): string {
     .replaceAll('✖ ', '')
     .replaceAll(/\s*→ at /gu, ', at ');
 }
+
+/** This profile's own draft of a setting: a value, or that finishing the draft stops setting it here. */
+type SettingDraft = { readonly value: unknown } | 'unset';
+
+const entryKeys = /^(?:rulesets|environments|labels)\//u;
 
 function keyOf(path: readonly string[]): string {
   return path.join('.');
@@ -95,11 +105,13 @@ function parse(field: SettingField, text: string): { readonly value: unknown } |
   return { value: trimmed };
 }
 
+const allFields: readonly SettingField[] = settingSections.flatMap((section) =>
+  section.groups.flatMap((group) => group.fields),
+);
+
 /** Every setting of one section, in the editor's order. */
 function fieldsOf(section: string): readonly SettingField[] {
-  return settingSections
-    .flatMap((item) => item.groups.flatMap((group) => group.fields))
-    .filter((item) => item.section === section);
+  return allFields.filter((item) => item.section === section);
 }
 
 /**
@@ -149,15 +161,65 @@ export class ProfileEditor {
     () => this.loaded.value && (this.#edits.value.size > 0 || this.#entryEdits.count.value > 0 || this.#refused.value),
   );
 
+  /**
+   * How many changes this profile's own draft holds, of those the editor
+   * saves and discards: settings, rulesets, environments, and labels. A
+   * save that applies finishes them all.
+   */
+  readonly draftCount = computed(() => {
+    const saved = this.#saved.value;
+    if (saved === undefined) {
+      return 0;
+    }
+    const settings = allFields.filter((field) => this.#draft(field) !== undefined).map((field) => keyOf(field.path));
+    const others = this.#ownUnsets.value.filter((key) => !key.includes('/') && !settings.includes(key));
+    return settings.length + this.#otherDrafts().length + others.length + this.#entryEdits.draftCount.value;
+  });
+
+  /** What stops each draft from applying as it stands, as the profile was last read or saved. */
+  readonly warnings = computed(() => this.#saved.value?.warnings ?? []);
+
+  /** Whether Save can run: it applies the unsaved changes and the draft together, so it needs one of them. */
   readonly canSave = computed(
     () =>
       this.loaded.value &&
-      (this.#edits.value.size > 0 || this.#entryEdits.count.value > 0) &&
+      (this.#changed.value || this.draftCount.value > 0) &&
       !this.#refused.value &&
       !this.#entryEdits.held.value &&
       this.problem.value === undefined &&
       !this.saving.value,
   );
+
+  /**
+   * Why the unsaved changes can't be kept as a draft, when nothing typed is
+   * in the way: a draft may be unfinished, so only an entry's name and a
+   * value a draft can't hold stop it.
+   */
+  readonly draftProblem = computed(() => {
+    if (this.#entryEdits.draftHeld.value) {
+      return 'Give each new or renamed ruleset, environment, and label a name no other has, to keep them as a draft.';
+    }
+    const empty = allFields.find((field) => {
+      const edit = this.#edits.value.get(keyOf(field.path));
+      return edit?.value === null && this.#applied(field) !== null;
+    });
+    return empty === undefined
+      ? undefined
+      : `${empty.label}: an empty value can't be kept in a draft. Save it, or reset it.`;
+  });
+
+  /** Whether Save as draft can run: it keeps the unsaved changes without applying them. */
+  readonly canSaveAsDraft = computed(
+    () =>
+      this.loaded.value &&
+      this.#changed.value &&
+      !this.#refused.value &&
+      this.draftProblem.value === undefined &&
+      !this.saving.value,
+  );
+
+  /** Whether the draft can be discarded: that writes at once, so it waits until nothing unsaved would go with it. */
+  readonly canDiscardDraft = computed(() => this.draftCount.value > 0 && !this.dirty.value && !this.saving.value);
 
   /** Each tab's groups and settings, as they stand with the unsaved changes. */
   readonly sections = computed(() =>
@@ -169,6 +231,10 @@ export class ProfileEditor {
 
   /** The rulesets, environments, and labels, by list, as they stand with the unsaved changes. */
   readonly entries = this.#entryEdits.rows;
+
+  readonly #changed = computed(() => this.#edits.value.size > 0 || this.#entryEdits.count.value > 0);
+
+  readonly #ownUnsets = computed(() => (this.#saved.value === undefined ? [] : ownUnsets(this.#saved.value)));
 
   /** Whether something typed can't be a value. */
   readonly #refused = computed(() => [...this.#typed.value.values()].some((typed) => typed.problem !== undefined));
@@ -242,6 +308,12 @@ export class ProfileEditor {
     await this.#entriesChanged();
   }
 
+  /** Puts back an entry that an unsaved change, or the draft, takes out of the profile. */
+  async putBack(row: EntryRow): Promise<void> {
+    this.#entryEdits.putBack(row);
+    await this.#entriesChanged();
+  }
+
   /** Puts an entry back as it is saved. */
   async resetEntry(row: EntryRow): Promise<void> {
     this.#entryEdits.reset(row);
@@ -275,19 +347,59 @@ export class ProfileEditor {
 
   /**
    * Writes the unsaved changes to the file through `write`, which gives the
-   * save its turn among syncs. Only the settings changed are written, so
-   * what the file gained meanwhile stays. A save that fails keeps the
-   * changes, with why, and can be tried again.
+   * save its turn among syncs. Saving so they apply finishes the profile's
+   * draft with them; saving as a draft keeps them in it and leaves what
+   * applies as it is. Only what differs is written, so what the file gained
+   * meanwhile stays. A save that fails keeps the changes, with why, and can
+   * be tried again.
    */
-  async save(write: (work: () => Promise<void>) => Promise<void>): Promise<void> {
-    if (!this.canSave.value) {
+  async save(write: (work: () => Promise<void>) => Promise<void>, mode: SaveMode = 'applies'): Promise<void> {
+    if (!(mode === 'applies' ? this.canSave.value : this.canSaveAsDraft.value)) {
       return;
     }
+    await this.#write(write, this.#edits.value, (writing) => {
+      if (
+        this.#entryEdits.writesOverChange() ||
+        (mode === 'applies' ? this.#entryEdits.held.value : this.#entryEdits.draftHeld.value)
+      ) {
+        throw new Error(
+          'A ruleset, environment, or label changed elsewhere since you changed it. Open it to keep yours or reset it.',
+        );
+      }
+      const entries = this.#entryEdits.saving(mode);
+      return [...this.#settingWrites(writing, mode, entries.unsets), ...entries.writes];
+    });
+  }
+
+  /**
+   * Takes this profile's own draft out of its file, so only what applies
+   * stays. It keeps what the editor doesn't show, such as a draft autolink.
+   */
+  async discardDraft(write: (work: () => Promise<void>) => Promise<void>): Promise<void> {
+    if (!this.canDiscardDraft.value) {
+      return;
+    }
+    await this.#write(write, new Map(), () => [
+      ...allFields.flatMap((field) => {
+        const draft = this.#draft(field);
+        return draft === undefined || draft === 'unset' ? [] : [{ path: ['drafts', ...field.path], value: undefined }];
+      }),
+      ...this.#otherDrafts().map(({ path }) => ({ path: ['drafts', ...path], value: undefined })),
+      ...this.#unsetWrite(this.#ownUnsets.value.filter((key) => key.startsWith('autolinks/'))),
+      ...this.#entryEdits.discards(),
+    ]);
+  }
+
+  /** Writes what `edits` gives, once the file is read again in the write's turn, and settles the changes it wrote. */
+  async #write(
+    write: (work: () => Promise<void>) => Promise<void>,
+    writing: ReadonlyMap<string, SettingEdit>,
+    edits: (writing: ReadonlyMap<string, SettingEdit>) => readonly ProfileEdit[],
+  ): Promise<void> {
     this.saving.value = true;
     this.saveError.value = undefined;
-    const writing = this.#edits.value;
     this.#writing = writing;
-    const entries = this.#entryEdits.begin();
+    this.#entryEdits.begin();
     let wrote = false;
     try {
       await write(async () => {
@@ -296,12 +408,7 @@ export class ProfileEditor {
         const current = await resolveProfile(this.file);
         this.#saved.value = current;
         this.#entryEdits.setSaved(current);
-        if (this.#entryEdits.writesOverChange() || this.#entryEdits.held.value) {
-          throw new Error(
-            'A ruleset, environment, or label changed elsewhere since you changed it. Open it to keep yours or reset it.',
-          );
-        }
-        this.#saved.value = await editProfile(this.file, [...writing.values(), ...entries]);
+        this.#saved.value = await editProfile(this.file, edits(writing));
         this.#entryEdits.setSaved(this.#saved.value);
         wrote = true;
       });
@@ -316,11 +423,11 @@ export class ProfileEditor {
     } catch (error) {
       // A setting changed back, while the save ran, to what the save was writing lost its
       // edit as no change. The save wrote nothing, so that edit stands again.
-      const edits = new Map(writing);
+      const kept = new Map(writing);
       for (const [key, edit] of this.#edits.value) {
-        edits.set(key, edit);
+        kept.set(key, edit);
       }
-      this.#edits.value = edits;
+      this.#edits.value = kept;
       this.saveError.value = reasonOf(error, this.file);
     } finally {
       this.#entryEdits.saved(wrote);
@@ -330,13 +437,113 @@ export class ProfileEditor {
     await this.#previewEdits();
   }
 
+  /** This profile's own draft of a setting, as saved. */
+  #draft(field: SettingField): SettingDraft | undefined {
+    const saved = this.#saved.value;
+    if (saved === undefined) {
+      return undefined;
+    }
+    if (saved.sources.drafts[sectionOf(field)][field.key] === saved.chain[0]) {
+      const value = getIn(saved.drafts, field.path);
+      return value === undefined ? undefined : { value };
+    }
+    // Only a setting this file sets can stop being set in it.
+    return this.#applied(field) !== undefined && this.#ownUnsets.value.includes(keyOf(field.path))
+      ? 'unset'
+      : undefined;
+  }
+
+  /** What the file gives a setting as last saved, which its row starts from: the draft's value, or what the file applies. */
+  #start(field: SettingField): unknown {
+    const draft = this.#draft(field);
+    return draft === undefined ? this.#applied(field) : draft === 'unset' ? undefined : draft.value;
+  }
+
+  /** This profile's own draft settings the editor has no row for and still finishes and discards: custom properties. */
+  #otherDrafts(): SettingEdit[] {
+    const saved = this.#saved.value;
+    if (saved === undefined) {
+      return [];
+    }
+    return Object.entries(saved.sources.drafts.custom_properties)
+      .filter(([, file]) => file === saved.chain[0])
+      .map(([key]) => ({ path: ['custom_properties', key], value: getIn(saved.drafts, ['custom_properties', key]) }));
+  }
+
+  /** The edit that makes the file's `drafts.unset` hold `keys`, or none when it already does. */
+  #unsetWrite(keys: readonly string[]): SettingEdit[] {
+    return sameValue(keys, this.#ownUnsets.value)
+      ? []
+      : [{ path: ['drafts', 'unset'], value: keys.length === 0 ? undefined : keys }];
+  }
+
+  /**
+   * What a save writes for the settings: each one that has a change or a
+   * draft as it ends. Saving so they apply writes what differs from what
+   * applies and takes the draft out. Saving as a draft writes what differs
+   * under `drafts`, lists what stops being set in `drafts.unset` with
+   * `entryUnsets`, and leaves what applies as it is.
+   */
+  #settingWrites(
+    edits: ReadonlyMap<string, SettingEdit>,
+    mode: SaveMode,
+    entryUnsets: readonly string[],
+  ): SettingEdit[] {
+    const writes: SettingEdit[] = [];
+    const unsets: string[] = [];
+    const rows = new Set(allFields.map((field) => keyOf(field.path)));
+    for (const field of allFields) {
+      const key = keyOf(field.path);
+      const edit = edits.get(key);
+      const draft = this.#draft(field);
+      if (edit === undefined && draft === undefined) {
+        continue;
+      }
+      const applied = this.#applied(field);
+      const final = edit === undefined ? this.#start(field) : edit.value;
+      const differs = !sameValue(final, applied);
+      const drafted = draft !== undefined && draft !== 'unset';
+      if (mode === 'applies') {
+        if (differs) {
+          writes.push({ path: field.path, value: final });
+        }
+        if (drafted) {
+          writes.push({ path: ['drafts', ...field.path], value: undefined });
+        }
+      } else if (final !== undefined && differs) {
+        if (!drafted || !sameValue(draft.value, final)) {
+          writes.push({ path: ['drafts', ...field.path], value: final });
+        }
+      } else {
+        if (drafted) {
+          writes.push({ path: ['drafts', ...field.path], value: undefined });
+        }
+        if (differs) {
+          unsets.push(key);
+        }
+      }
+    }
+    // A key no row stands for: an autolink's stays either way, and a custom property's until the draft is finished.
+    const others = this.#ownUnsets.value.filter((key) => !entryKeys.test(key) && !rows.has(key));
+    if (mode === 'applies') {
+      for (const draft of this.#otherDrafts()) {
+        writes.push(draft, { path: ['drafts', ...draft.path], value: undefined });
+      }
+      for (const key of others.filter((other) => !other.includes('/'))) {
+        writes.push({ path: key.split('.'), value: undefined });
+      }
+      return [...writes, ...this.#unsetWrite(others.filter((key) => key.includes('/')))];
+    }
+    return [...writes, ...this.#unsetWrite([...others, ...unsets, ...entryUnsets])];
+  }
+
   async #change(field: SettingField, value: unknown): Promise<void> {
     const edits = new Map(this.#edits.value);
     const change = (target: SettingField, next: unknown): void => {
       const key = keyOf(target.path);
       // A change back to what the file has, or will have once a save under way ends, is no change.
       const writing = this.#writing.get(key);
-      if (sameValue(next, writing === undefined ? this.#own(target) : writing.value)) {
+      if (sameValue(next, writing === undefined ? this.#start(target) : writing.value)) {
         edits.delete(key);
       } else {
         edits.set(key, { path: target.path, value: next });
@@ -364,8 +571,8 @@ export class ProfileEditor {
     }
   }
 
-  /** What the open file itself sets for a setting, as saved; undefined when a base sets it or nothing does. */
-  #own(field: SettingField): unknown {
+  /** What the open file itself sets for a setting so it applies, as saved; undefined when a base sets it or nothing does. */
+  #applied(field: SettingField): unknown {
     const saved = this.#saved.value;
     const source = saved?.sources[sectionOf(field)][field.key];
     return saved !== undefined && source === saved.chain[0] ? getIn(saved.profile, field.path) : undefined;
@@ -378,10 +585,9 @@ export class ProfileEditor {
    */
   #valueOf(field: SettingField, edits: ReadonlyMap<string, SettingEdit>): unknown {
     const edit = edits.get(keyOf(field.path));
-    // A null is a value, which clears the setting on GitHub; only an edit with no value falls through.
-    return edit?.value === undefined
-      ? getIn((this.#preview.value ?? this.#saved.value)?.profile, field.path)
-      : edit.value;
+    const final = edit === undefined ? this.#start(field) : edit.value;
+    // A null is a value, which clears the setting on GitHub; only no value here falls through.
+    return final === undefined ? getIn((this.#preview.value ?? this.#saved.value)?.profile, field.path) : final;
   }
 
   async #entriesChanged(): Promise<void> {
@@ -392,8 +598,11 @@ export class ProfileEditor {
   async #previewEdits(): Promise<void> {
     const turn = (this.#previews += 1);
     // An entry that can't be saved as it stands, such as one with no name, is held back before the engine sees it.
-    const edits = [...this.#edits.value.values(), ...this.#entryEdits.writes()];
-    if (edits.length === 0 || this.#saved.value === undefined) {
+    const edits =
+      this.#saved.value === undefined
+        ? []
+        : [...this.#settingWrites(this.#edits.value, 'applies', []), ...this.#entryEdits.writes()];
+    if (edits.length === 0) {
       this.#preview.value = undefined;
       this.problem.value = undefined;
       return;
@@ -440,6 +649,8 @@ export class ProfileEditor {
           value: this.#valueOf(field, edits),
           source: source === undefined ? undefined : source === shown.chain[0] ? 'here' : basename(source),
           unsaved: edits.has(key),
+          inDraft: !edits.has(key) && this.#draft(field) !== undefined,
+          applied: getIn(this.#saved.value?.profile, field.path),
           off: field.dependsOn?.hides === false && holds(field),
           text: typed?.text,
           invalid: typed?.problem,
