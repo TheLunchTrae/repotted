@@ -604,6 +604,10 @@ input[type='checkbox'] {
   color: var(--remove);
 }
 
+.problem:empty {
+  display: none;
+}
+
 .pill-remove {
   background: var(--remove-bg);
   color: var(--remove);

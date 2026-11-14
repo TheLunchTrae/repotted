@@ -2,6 +2,8 @@ import { computed, signal } from '@preact/signals';
 import { editProfile, previewProfile, resolveProfile } from '@repotted/core';
 
 import { basename } from '../engine/path.js';
+import { EntryEdits, type EntryList, type EntryRow } from './entry-edits.js';
+import type { Entry } from './entry-forms.js';
 import { type SettingField, type SettingGroup, settingSections } from './setting-fields.js';
 
 type ResolvedProfile = Awaited<ReturnType<typeof resolveProfile>>;
@@ -29,43 +31,6 @@ export interface SettingRow {
   readonly invalid: string | undefined;
   /** How many settings under it GitHub hides for its value while a profile still names them. */
   readonly hiddenNamed: number;
-}
-
-export const entryLists = ['rulesets', 'environments', 'labels'] as const;
-export type EntryList = (typeof entryLists)[number];
-export type Entry = Readonly<Record<string, unknown>>;
-
-/** One ruleset, environment, or label as the editor draws it. */
-export interface EntryRow {
-  readonly list: EntryList;
-  /** What the editor knows the entry by while it is open, whatever its name becomes. */
-  readonly key: string;
-  /** The entry as it stands with the unsaved changes, or undefined when they take it out of this profile. */
-  readonly entry: Entry | undefined;
-  /** Its name as saved, or undefined for one that is new. */
-  readonly savedName: string | undefined;
-  /** The profile that sets it: 'here', a base profile's file name, or undefined for one that is new. */
-  readonly source: string | undefined;
-  readonly unsaved: boolean;
-  /** Why it can't be saved as it stands, such as a name another entry has. */
-  readonly problem: string | undefined;
-}
-
-/** A change to one entry: the entry to write under the name the file knows it by, or undefined to stop naming it. */
-interface EntryChange {
-  readonly list: EntryList;
-  readonly name: string | undefined;
-  readonly entry: Entry | undefined;
-}
-
-const entryNouns: Readonly<Record<EntryList, string>> = {
-  rulesets: 'a ruleset',
-  environments: 'an environment',
-  labels: 'a label',
-};
-
-function nameOf(entry: Entry | undefined): string {
-  return typeof entry?.['name'] === 'string' ? entry['name'].trim() : '';
 }
 
 export interface GroupRows {
@@ -134,22 +99,6 @@ function parse(field: SettingField, text: string): { readonly value: unknown } |
   return { value: trimmed };
 }
 
-function isEntry(value: unknown): value is Entry {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** What GitHub would refuse in an entry that the profile's schema lets through. */
-function fieldProblem(list: EntryList, entry: Entry): string | undefined {
-  if (list !== 'rulesets' || !Array.isArray(entry['rules'])) {
-    return undefined;
-  }
-  const checks = entry['rules'].filter(isEntry).find((rule) => rule['type'] === 'required_status_checks');
-  const named = isEntry(checks?.['parameters']) ? checks['parameters']['required_status_checks'] : undefined;
-  return checks !== undefined && (!Array.isArray(named) || named.length === 0)
-    ? 'Name at least one status check that must pass.'
-    : undefined;
-}
-
 /** Every setting of one section, in the editor's order. */
 function fieldsOf(section: string): readonly SettingField[] {
   return settingSections
@@ -181,9 +130,8 @@ export class ProfileEditor {
   readonly #typed = signal<ReadonlyMap<string, { readonly text: string; readonly problem: string | undefined }>>(
     new Map(),
   );
-  readonly #entryEdits = signal<ReadonlyMap<string, EntryChange>>(new Map());
-  /** Numbers the new entries, so each has a key before it has a name. */
-  #newEntries = 0;
+  /** The rulesets, environments, and labels, with the changes to them that aren't saved. */
+  readonly #entryEdits = new EntryEdits();
   /** The changes a save under way is writing, which the file has as soon as it ends. */
   #writing: ReadonlyMap<string, SettingEdit> = new Map();
   /** Counts previews, so a slow one never replaces a later one's result. */
@@ -202,15 +150,15 @@ export class ProfileEditor {
    * changes come back if it reads again.
    */
   readonly dirty = computed(
-    () => this.loaded.value && (this.#edits.value.size > 0 || this.#entryEdits.value.size > 0 || this.#refused.value),
+    () => this.loaded.value && (this.#edits.value.size > 0 || this.#entryEdits.count.value > 0 || this.#refused.value),
   );
 
   readonly canSave = computed(
     () =>
       this.loaded.value &&
-      (this.#edits.value.size > 0 || this.#entryEdits.value.size > 0) &&
+      (this.#edits.value.size > 0 || this.#entryEdits.count.value > 0) &&
       !this.#refused.value &&
-      !this.#entryProblems.value &&
+      !this.#entryEdits.held.value &&
       this.problem.value === undefined &&
       !this.saving.value,
   );
@@ -224,15 +172,7 @@ export class ProfileEditor {
   );
 
   /** The rulesets, environments, and labels, by list, as they stand with the unsaved changes. */
-  readonly entries = computed<Readonly<Record<EntryList, readonly EntryRow[]>>>(() => ({
-    rulesets: this.#entryRows('rulesets'),
-    environments: this.#entryRows('environments'),
-    labels: this.#entryRows('labels'),
-  }));
-
-  readonly #entryProblems = computed(() =>
-    entryLists.some((list) => this.entries.value[list].some((row) => row.problem !== undefined)),
-  );
+  readonly entries = this.#entryEdits.rows;
 
   /** Whether something typed can't be a value. */
   readonly #refused = computed(() => [...this.#typed.value.values()].some((typed) => typed.problem !== undefined));
@@ -241,9 +181,11 @@ export class ProfileEditor {
   async load(): Promise<void> {
     try {
       this.#saved.value = await resolveProfile(this.file);
+      this.#entryEdits.setSaved(this.#saved.value);
       this.loadError.value = undefined;
     } catch (error) {
       this.#saved.value = undefined;
+      this.#entryEdits.setSaved(undefined);
       this.#preview.value = undefined;
       this.loadError.value = reasonOf(error, this.file);
       return;
@@ -281,36 +223,39 @@ export class ProfileEditor {
 
   /** Starts a ruleset, environment, or label, and answers the key the editor knows it by. */
   async addEntry(list: EntryList, entry: Entry): Promise<string> {
-    this.#newEntries += 1;
-    const key = `${list}/+${this.#newEntries}`;
-    await this.#changeEntry(key, { list, name: undefined, entry });
+    const key = this.#entryEdits.add(list, entry);
+    await this.#entriesChanged();
     return key;
   }
 
-  /**
-   * Replaces an entry with what the editor made of it. The whole entry is
-   * written, so what the editor doesn't show stays as the caller left it in
-   * `entry`. An entry changed back to what is saved is no change.
-   */
+  /** Replaces an entry with what its form made of it. */
   async changeEntry(row: EntryRow, entry: Entry): Promise<void> {
-    const saved = this.#savedEntry(row.list, row.savedName);
-    await this.#changeEntry(
-      row.key,
-      saved !== undefined && sameValue(saved, entry) ? undefined : { list: row.list, name: row.savedName, entry },
-    );
+    this.#entryEdits.change(row, entry);
+    await this.#entriesChanged();
+  }
+
+  /** Has the profile remove the entry from each repository, or manage it again with what it had. */
+  async setAbsent(row: EntryRow, absent: boolean): Promise<void> {
+    this.#entryEdits.setAbsent(row, absent);
+    await this.#entriesChanged();
   }
 
   /** Stops this profile from managing an entry it names itself, or lets go of one that is new. */
   async takeOut(row: EntryRow): Promise<void> {
-    await this.#changeEntry(
-      row.key,
-      row.savedName === undefined ? undefined : { list: row.list, name: row.savedName, entry: undefined },
-    );
+    this.#entryEdits.takeOut(row);
+    await this.#entriesChanged();
   }
 
   /** Puts an entry back as it is saved. */
   async resetEntry(row: EntryRow): Promise<void> {
-    await this.#changeEntry(row.key, undefined);
+    this.#entryEdits.reset(row);
+    await this.#entriesChanged();
+  }
+
+  /** Keeps a change to an entry that changed elsewhere since, over that change. */
+  async keepEntry(row: EntryRow): Promise<void> {
+    this.#entryEdits.keepMine(row);
+    await this.#entriesChanged();
   }
 
   /** Puts a setting back as it is saved. */
@@ -326,7 +271,7 @@ export class ProfileEditor {
   /** Puts the whole profile back as it is saved. */
   async resetAll(): Promise<void> {
     this.#edits.value = new Map();
-    this.#entryEdits.value = new Map();
+    this.#entryEdits.resetAll();
     this.#typed.value = new Map();
     this.saveError.value = undefined;
     await this.#previewEdits();
@@ -345,25 +290,25 @@ export class ProfileEditor {
     this.saving.value = true;
     this.saveError.value = undefined;
     const writing = this.#edits.value;
-    const entries = this.#entryEdits.value;
     this.#writing = writing;
+    const entries = this.#entryEdits.begin();
+    let wrote = false;
     try {
       await write(async () => {
-        this.#saved.value = await editProfile(this.file, [...writing.values(), ...this.#entryWrites(entries)]);
-      });
-      // An entry changed again while the save ran stays unsaved, under the name the file has for it then.
-      const entriesLeft = new Map<string, EntryChange>();
-      for (const [key, change] of this.#entryEdits.value) {
-        const written = entries.get(key);
-        if (written === undefined) {
-          entriesLeft.set(key, change);
-        } else if (written !== change) {
-          // The file has the entry under the name the save gave it, which is where its row is from now on.
-          const name = written.entry === undefined ? change.name : nameOf(written.entry);
-          entriesLeft.set(name === undefined ? key : `${change.list}/${name}`, { ...change, name });
+        // The file may have changed since it was read, as by the sync before this turn. An entry is
+        // written whole, so one that changed under its change is not written over.
+        const current = await resolveProfile(this.file);
+        this.#saved.value = current;
+        this.#entryEdits.setSaved(current);
+        if (this.#entryEdits.held.value) {
+          throw new Error(
+            'A ruleset, environment, or label changed elsewhere since you changed it. Open it to keep yours or reset it.',
+          );
         }
-      }
-      this.#entryEdits.value = entriesLeft;
+        this.#saved.value = await editProfile(this.file, [...writing.values(), ...entries]);
+        this.#entryEdits.setSaved(this.#saved.value);
+        wrote = true;
+      });
       // Changes made while the save ran stay unsaved.
       const left = new Map(this.#edits.value);
       for (const [key, edit] of writing) {
@@ -382,6 +327,7 @@ export class ProfileEditor {
       this.#edits.value = edits;
       this.saveError.value = reasonOf(error, this.file);
     } finally {
+      this.#entryEdits.saved(wrote);
       this.#writing = new Map();
       this.saving.value = false;
     }
@@ -442,96 +388,15 @@ export class ProfileEditor {
       : edit.value;
   }
 
-  async #changeEntry(key: string, change: EntryChange | undefined): Promise<void> {
-    const edits = new Map(this.#entryEdits.value);
-    if (change === undefined) {
-      edits.delete(key);
-    } else {
-      edits.set(key, change);
-    }
-    this.#entryEdits.value = edits;
+  async #entriesChanged(): Promise<void> {
     this.saveError.value = undefined;
     await this.#previewEdits();
   }
 
-  #savedEntries(list: EntryList): readonly Entry[] {
-    const entries: unknown = this.#saved.value?.profile[list];
-    return Array.isArray(entries) ? entries.filter(isEntry) : [];
-  }
-
-  #savedEntry(list: EntryList, name: string | undefined): Entry | undefined {
-    return this.#savedEntries(list).find((entry) => entry['name'] === name);
-  }
-
-  /** The entry changes as the engine takes them: by the name the file has, or the new entry's own. */
-  #entryWrites(
-    changes: ReadonlyMap<string, EntryChange>,
-  ): { list: EntryList; name: string; entry: Entry | undefined }[] {
-    return [...changes.values()].map((change) => ({
-      list: change.list,
-      name: change.name ?? nameOf(change.entry),
-      entry: change.entry === undefined ? undefined : { ...change.entry, name: nameOf(change.entry) },
-    }));
-  }
-
-  #entryRows(list: EntryList): EntryRow[] {
-    const saved = this.#saved.value;
-    if (saved === undefined) {
-      return [];
-    }
-    const edits = this.#entryEdits.value;
-    const rows = this.#savedEntries(list).map((entry) => {
-      const name = nameOf(entry);
-      const key = `${list}/${name}`;
-      const edit = edits.get(key);
-      const source = Object.entries(saved.sources[list]).find(
-        ([known]) => known.toLowerCase() === name.toLowerCase(),
-      )?.[1];
-      return {
-        list,
-        key,
-        entry: edit === undefined ? entry : edit.entry,
-        savedName: name,
-        source: source === undefined || source === saved.chain[0] ? 'here' : basename(source),
-        unsaved: edit !== undefined,
-      };
-    });
-    const added = [...edits]
-      .filter(([, change]) => change.list === list && change.name === undefined)
-      .map(([key, change]) => ({
-        list,
-        key,
-        entry: change.entry,
-        savedName: undefined,
-        source: undefined,
-        unsaved: true,
-      }));
-    const all = [...rows, ...added];
-    return all.map((row) => {
-      const name = nameOf(row.entry).toLowerCase();
-      const taken = all.some(
-        (other) => other !== row && other.entry !== undefined && nameOf(other.entry).toLowerCase() === name,
-      );
-      return {
-        ...row,
-        problem:
-          row.entry === undefined
-            ? undefined
-            : name === ''
-              ? 'Give it a name.'
-              : taken
-                ? `The profile already has ${entryNouns[list]} named ${nameOf(row.entry)}.`
-                : fieldProblem(list, row.entry),
-      };
-    });
-  }
-
   async #previewEdits(): Promise<void> {
     const turn = (this.#previews += 1);
-    // An entry with no name, or another's, is held back before the engine sees it.
-    const edits = this.#entryProblems.value
-      ? [...this.#edits.value.values()]
-      : [...this.#edits.value.values(), ...this.#entryWrites(this.#entryEdits.value)];
+    // An entry that can't be saved as it stands, such as one with no name, is held back before the engine sees it.
+    const edits = [...this.#edits.value.values(), ...this.#entryEdits.writes()];
     if (edits.length === 0 || this.#saved.value === undefined) {
       this.#preview.value = undefined;
       this.problem.value = undefined;

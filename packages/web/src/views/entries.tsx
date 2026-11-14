@@ -1,13 +1,33 @@
 import type { ComponentChildren, JSX } from 'preact';
-import { useRef, useState } from 'preact/hooks';
+import { useEffect, useId, useRef, useState } from 'preact/hooks';
 
-import { type Entry, type EntryList, type EntryRow, type ProfileEditor, sameValue } from '../app/profile-editor.js';
+import type { EntryList, EntryRow } from '../app/entry-edits.js';
+import {
+  branchPolicies,
+  deploymentBranches,
+  type DeploymentBranches,
+  type Entry,
+  hexColor,
+  isEntry,
+  linesOf,
+  refNames,
+  ruleOf,
+  statusChecks,
+  withBranchPolicies,
+  withDeploymentBranches,
+  withKey,
+  withRefNames,
+  withRule,
+  withRuleParameter,
+  withStatusChecks,
+} from '../app/entry-forms.js';
+import { type ProfileEditor, sameValue } from '../app/profile-editor.js';
 import { run } from './run.js';
 
 const nouns: Readonly<Record<EntryList, { readonly one: string; readonly many: string; readonly title: string }>> = {
-  rulesets: { one: 'ruleset', many: 'rulesets', title: 'Rulesets' },
-  environments: { one: 'environment', many: 'environments', title: 'Environments' },
-  labels: { one: 'label', many: 'labels', title: 'Labels' },
+  rulesets: { one: 'ruleset', many: 'rulesets', title: 'Ruleset' },
+  environments: { one: 'environment', many: 'environments', title: 'Environment' },
+  labels: { one: 'label', many: 'labels', title: 'Label' },
 };
 
 /** GitHub's own label colors, as its color picker offers them. */
@@ -49,8 +69,6 @@ const ruleKinds: readonly (readonly [string, string, string])[] = [
   ],
 ];
 
-const statusChecksProblem = 'Name at least one status check that must pass.';
-
 const pullRequestFlags: readonly (readonly [string, string])[] = [
   ['dismiss_stale_reviews_on_push', 'Dismiss approvals when new commits are pushed'],
   ['require_code_owner_review', 'Require review from code owners'],
@@ -58,14 +76,10 @@ const pullRequestFlags: readonly (readonly [string, string])[] = [
   ['required_review_thread_resolution', 'Require conversations to be resolved'],
 ];
 
-function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? Object.fromEntries(Object.entries(value))
-    : undefined;
-}
-
-function list(value: unknown): readonly unknown[] {
-  return Array.isArray(value) ? value : [];
+/** How light a color is, from 0 to 1, by the weights the eye gives red, green, and blue. */
+function luminance(hex: string): number {
+  const [red = 0, green = 0, blue = 0] = [0, 2, 4].map((at) => Number.parseInt(hex.slice(at, at + 2), 16) / 255);
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 }
 
 /** A string or a number as text, and anything else as none. */
@@ -73,70 +87,58 @@ function text(value: unknown): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
 }
 
-/** How light a color is, from 0 to 1, by the weights the eye gives red, green, and blue. */
-function luminance(hex: string): number {
-  const [red = 0, green = 0, blue = 0] = [0, 2, 4].map((at) => Number.parseInt(hex.slice(at, at + 2), 16) / 255);
-  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-}
-
-function lines(text: string): string[] {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '');
-}
-
-/** An entry with one key set, or with undefined left out, so GitHub keeps its own. */
-function withKey(entry: Entry, key: string, value: unknown): Entry {
-  const { [key]: _old, ...rest } = entry;
-  return value === undefined ? rest : { ...rest, [key]: value };
+function items(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 interface FormProps {
   readonly entry: Entry;
+  /** The entry as the profile has it saved, when it does. */
+  readonly saved: Entry | undefined;
   readonly change: (entry: Entry) => void;
 }
 
-interface ChoiceProps extends FormProps {
-  readonly name: string;
+interface ChoiceProps {
   readonly label: string;
   readonly options: readonly (readonly [string, unknown])[];
-  /** Whether the choice can be cleared, so each repository keeps its own. */
-  readonly optional?: boolean;
+  /** The value chosen, or undefined when each repository keeps its own. */
+  readonly value: unknown;
+  /** Takes the choice, or undefined to leave it to GitHub. */
+  readonly onChoose: (value: unknown) => void;
 }
 
-function Choice({ entry, change, name, label, options, optional = true }: ChoiceProps): JSX.Element {
-  const value = entry[name];
+function Choice({ label, options, value, onChoose }: ChoiceProps): JSX.Element {
+  const id = useId();
   return (
     <div class="setting">
       <div class="setting-head">
         <div class="setting-text">
-          <strong id={`entry-${name}`}>{label}</strong>
+          <strong id={id}>{label}</strong>
           {value === undefined && <span class="muted small">Not set here, so each repository keeps its own.</span>}
         </div>
-        <div class="segments" role="radiogroup" aria-labelledby={`entry-${name}`}>
-          {options.map(([text, option]) => (
-            <label key={text}>
+        <div class="segments" role="radiogroup" aria-labelledby={id}>
+          {options.map(([name, option]) => (
+            <label key={name}>
               <input
                 type="radio"
-                name={`entry-${name}`}
+                name={id}
                 checked={value !== undefined && sameValue(option, value)}
                 onChange={() => {
-                  change(withKey(entry, name, option));
+                  onChoose(option);
                 }}
               />
-              <span>{text}</span>
+              <span>{name}</span>
             </label>
           ))}
         </div>
         <div class="setting-actions">
-          {optional && value !== undefined && (
+          {value !== undefined && (
             <button
               class="button button-quiet button-small"
               type="button"
               aria-label={`Leave ${label} to GitHub`}
               onClick={() => {
-                change(withKey(entry, name, undefined));
+                onChoose(undefined);
               }}
             >
               Leave it to GitHub
@@ -151,36 +153,60 @@ function Choice({ entry, change, name, label, options, optional = true }: Choice
 interface TextProps {
   readonly label: string;
   readonly value: string;
-  readonly onText: (text: string) => void;
+  /** Takes what is typed, and answers why it can't be a value when it can't. */
+  readonly onText: (text: string) => string | undefined;
   readonly multiline?: boolean;
   readonly mono?: boolean;
   readonly placeholder?: string;
   readonly note?: string | undefined;
   readonly problem?: string | undefined;
+  readonly disabled?: boolean;
 }
 
-/** A text box that keeps what is typed in it, as typed, while the entry it edits is redrawn. */
-function TextBox({ label, value, onText, multiline, mono, placeholder, note, problem }: TextProps): JSX.Element {
+/**
+ * A text box that keeps what is typed in it, as typed, while the entry it
+ * edits is redrawn. Text that can't be a value stays with why until the box
+ * is left, when it shows the entry's value again.
+ */
+function TextBox({
+  label,
+  value,
+  onText,
+  multiline,
+  mono,
+  placeholder,
+  note,
+  problem,
+  disabled,
+}: TextProps): JSX.Element {
+  const id = useId();
   const [typed, setTyped] = useState<string | undefined>(undefined);
+  const [refused, setRefused] = useState<string | undefined>(undefined);
+  const wrong = refused ?? problem;
   const shared = {
+    id,
     class: `field${mono === true ? ' mono' : ''}${multiline === true ? ' field-lines' : ''}`,
-    'aria-label': label,
-    'aria-invalid': problem !== undefined,
+    'aria-invalid': wrong !== undefined,
+    'aria-describedby': `${id}-help`,
     placeholder,
+    disabled,
     value: typed ?? value,
     onBlur: (): void => {
       setTyped(undefined);
+      setRefused(undefined);
     },
   };
-  const take = (text: string): void => {
-    setTyped(text);
-    onText(text);
+  const take = (next: string): void => {
+    setTyped(next);
+    setRefused(onText(next));
   };
   return (
     <div class="setting">
       <div class="setting-head">
         <div class="setting-text">
-          <strong>{label}</strong>
+          <label for={id}>
+            <strong>{label}</strong>
+          </label>
           {note !== undefined && <span class="muted small">{note}</span>}
         </div>
         {multiline === true ? (
@@ -200,26 +226,21 @@ function TextBox({ label, value, onText, multiline, mono, placeholder, note, pro
           />
         )}
       </div>
-      {problem !== undefined && (
-        <p class="problem small" role="alert">
-          {problem}
-        </p>
-      )}
+      <p id={`${id}-help`} class="problem small" role={wrong === undefined ? undefined : 'alert'}>
+        {wrong}
+      </p>
     </div>
   );
 }
 
-function Check({
-  label,
-  checked,
-  onCheck,
-  note,
-}: {
+interface CheckProps {
   readonly label: string;
   readonly checked: boolean;
   readonly onCheck: (checked: boolean) => void;
   readonly note?: string;
-}): JSX.Element {
+}
+
+function Check({ label, checked, onCheck, note }: CheckProps): JSX.Element {
   return (
     <label class="check check-row">
       <input
@@ -237,15 +258,13 @@ function Check({
   );
 }
 
-function Group({
-  title,
-  description,
-  children,
-}: {
+interface GroupProps {
   readonly title: string;
   readonly description?: string;
   readonly children: ComponentChildren;
-}): JSX.Element {
+}
+
+function Group({ title, description, children }: GroupProps): JSX.Element {
   return (
     <section class="settings-group" aria-label={title}>
       <div>
@@ -257,190 +276,187 @@ function Group({
   );
 }
 
-/** A list the editor shows as kept or cleared, since its items, such as reviewers by id, are set in the profile file. */
-function Kept({
-  entry,
-  change,
-  name,
-  label,
-  none,
-  noun,
-}: FormProps & {
+interface KeptProps extends FormProps {
   readonly name: string;
   readonly label: string;
   readonly none: string;
   readonly noun: string;
-}): JSX.Element {
-  const [kept] = useState(() => list(entry[name]));
+}
+
+/**
+ * A list the form keeps or clears, since its items, such as reviewers by id,
+ * are set in the profile file. The list to keep is the saved entry's, so it
+ * can be chosen again after it was cleared.
+ */
+function Kept({ entry, saved, change, name, label, none, noun }: KeptProps): JSX.Element {
+  const kept = items(saved?.[name]);
   const options: (readonly [string, unknown])[] = [[none, []]];
   if (kept.length > 0) {
     options.push([`${kept.length} ${kept.length === 1 ? noun : `${noun}s`}, as in the profile file`, kept]);
   }
-  return <Choice entry={entry} change={change} name={name} label={label} options={options} />;
+  return (
+    <Choice
+      label={label}
+      options={options}
+      value={entry[name]}
+      onChoose={(value) => {
+        change(withKey(entry, name, value));
+      }}
+    />
+  );
 }
 
-function RulesetForm({ entry, change, pushes }: FormProps & { readonly pushes: boolean }): JSX.Element {
-  const conditions = record(entry['conditions']) ?? {};
-  const refName = record(conditions['ref_name']);
-  const rules = list(entry['rules'])
-    .map(record)
-    .filter((rule) => rule !== undefined);
-  const setRefs = (key: 'include' | 'exclude', text: string): void => {
-    const next = { include: list(refName?.['include']), exclude: list(refName?.['exclude']), [key]: lines(text) };
-    const { ref_name: _old, ...others } = conditions;
-    const merged = next.include.length + next.exclude.length > 0 ? { ...others, ref_name: next } : others;
-    change(withKey(entry, 'conditions', Object.keys(merged).length > 0 ? merged : undefined));
-  };
-  const setRule = (type: string, rule: Readonly<Record<string, unknown>> | undefined): void => {
-    const has = rules.some((item) => item['type'] === type);
-    const next =
-      rule === undefined
-        ? rules.filter((item) => item['type'] !== type)
-        : has
-          ? rules.map((item) => (item['type'] === type ? rule : item))
-          : [...rules, rule];
-    change(withKey(entry, 'rules', next));
-  };
-  const setParameter = (rule: Readonly<Record<string, unknown>>, key: string, value: unknown): void => {
-    const parameters = withKey(record(rule['parameters']) ?? {}, key, value);
-    setRule(
-      String(rule['type']),
-      Object.keys(parameters).length > 0 ? { ...rule, parameters } : withKey(rule, 'parameters', undefined),
-    );
-  };
+/** A whole number from 0 up to a limit, as typed, or why the text isn't one. */
+function count(typed: string, most: number, what: string): { readonly value: number | undefined } | string {
+  const digits = typed.trim();
+  if (digits === '') {
+    return { value: undefined };
+  }
+  return /^\d+$/u.test(digits) && Number(digits) <= most
+    ? { value: Number(digits) }
+    : `${what} is a whole number, from 0 to ${most}.`;
+}
+
+function RulesetForm({ entry, saved, change, pushes }: FormProps & { readonly pushes: boolean }): JSX.Element {
   const known = new Set(ruleKinds.map(([type]) => type));
-  const others = rules.map((rule) => String(rule['type'])).filter((type) => !known.has(type));
-  const pullRequest = rules.find((rule) => rule['type'] === 'pull_request');
-  const checks = rules.find((rule) => rule['type'] === 'required_status_checks');
-  const pullParameters = record(pullRequest?.['parameters']) ?? {};
-  const checkParameters = record(checks?.['parameters']) ?? {};
-  const contexts = list(checkParameters['required_status_checks']).map((item) => text(record(item)?.['context']));
+  const others = items(entry['rules'])
+    .filter(isEntry)
+    .map((rule) => text(rule['type']))
+    .filter((type) => !known.has(type));
+  const pullRequest = ruleOf(entry, 'pull_request');
+  const pullParameters = isEntry(pullRequest?.['parameters']) ? pullRequest['parameters'] : {};
+  const checks = ruleOf(entry, 'required_status_checks');
+  const checkParameters = isEntry(checks?.['parameters']) ? checks['parameters'] : {};
+  const refs = (side: 'include' | 'exclude', note?: string): JSX.Element => (
+    <TextBox
+      label={side === 'include' ? 'Include' : 'Exclude'}
+      mono
+      multiline
+      value={refNames(entry, side).join('\n')}
+      note={note}
+      onText={(typed) => {
+        change(withRefNames(entry, side, linesOf(typed), saved));
+        return undefined;
+      }}
+    />
+  );
   return (
     <>
       <Group title="Target">
         <Choice
-          entry={entry}
-          change={change}
-          name="target"
           label="Applies to"
           options={[['Branches', 'branch'], ['Tags', 'tag'], ...(pushes ? [['Pushes', 'push'] as const] : [])]}
+          value={entry['target']}
+          onChoose={(value) => {
+            change(withKey(entry, 'target', value));
+          }}
         />
         <Choice
-          entry={entry}
-          change={change}
-          name="enforcement"
           label="Enforcement"
           options={[
             ['Active', 'active'],
             ['Evaluate', 'evaluate'],
             ['Disabled', 'disabled'],
           ]}
-        />
-        <Kept entry={entry} change={change} name="bypass_actors" label="Bypass" none="Nobody" noun="actor" />
-        <TextBox
-          label="Include"
-          mono
-          multiline
-          value={list(refName?.['include']).join('\n')}
-          note="One pattern a line, such as ~DEFAULT_BRANCH, ~ALL, or refs/heads/release/*."
-          onText={(text) => {
-            setRefs('include', text);
+          value={entry['enforcement']}
+          onChoose={(value) => {
+            change(withKey(entry, 'enforcement', value));
           }}
         />
-        <TextBox
-          label="Exclude"
-          mono
-          multiline
-          value={list(refName?.['exclude']).join('\n')}
-          onText={(text) => {
-            setRefs('exclude', text);
-          }}
+        <Kept
+          entry={entry}
+          saved={saved}
+          change={change}
+          name="bypass_actors"
+          label="Bypass"
+          none="Nobody"
+          noun="actor"
         />
+        {refs('include', 'One pattern a line, such as ~DEFAULT_BRANCH, ~ALL, or refs/heads/release/*.')}
+        {refs('exclude')}
       </Group>
       <Group
         title="Rules"
         description={
           entry['rules'] === undefined
             ? 'The profile sets no rules for it, so each repository keeps the rules its ruleset has.'
-            : 'The rules it has on each repository. Every other rule of the ruleset is removed.'
+            : 'The ruleset has exactly these rules on each repository. Applying removes every other rule it has there.'
         }
       >
-        {ruleKinds.map(([type, label, description]) => {
-          const rule = rules.find((item) => item['type'] === type);
-          return (
-            <div class="setting" key={type}>
-              <Check
-                label={label}
-                note={description}
-                checked={rule !== undefined}
-                onCheck={(checked) => {
-                  setRule(type, checked ? { type } : undefined);
-                }}
-              />
-              {type === 'pull_request' && pullRequest !== undefined && (
-                <div class="setting-nested rule-options">
-                  <TextBox
-                    label="Required approvals"
-                    value={
-                      pullParameters['required_approving_review_count'] === undefined
-                        ? ''
-                        : text(pullParameters['required_approving_review_count'])
+        {entry['rules'] !== undefined && (
+          <div class="setting">
+            <button
+              class="button button-quiet button-small"
+              type="button"
+              onClick={() => {
+                change(withKey(entry, 'rules', undefined));
+              }}
+            >
+              Leave its rules to GitHub
+            </button>
+          </div>
+        )}
+        {ruleKinds.map(([type, label, description]) => (
+          <div class="setting" key={type}>
+            <Check
+              label={label}
+              note={description}
+              checked={ruleOf(entry, type) !== undefined}
+              onCheck={(checked) => {
+                change(withRule(entry, type, checked, saved));
+              }}
+            />
+            {type === 'pull_request' && pullRequest !== undefined && (
+              <div class="setting-nested rule-options">
+                <TextBox
+                  label="Required approvals"
+                  value={text(pullParameters['required_approving_review_count'])}
+                  placeholder="Each repository's own"
+                  onText={(typed) => {
+                    const approvals = count(typed, 10, 'Required approvals');
+                    if (typeof approvals === 'string') {
+                      return approvals;
                     }
-                    placeholder="Each repository's own"
-                    problem={undefined}
-                    onText={(text) => {
-                      const count = text.trim();
-                      if (count === '' || /^\d+$/u.test(count)) {
-                        setParameter(
-                          pullRequest,
-                          'required_approving_review_count',
-                          count === '' ? undefined : Number(count),
-                        );
-                      }
-                    }}
-                  />
-                  {pullRequestFlags.map(([key, text]) => (
-                    <Check
-                      key={key}
-                      label={text}
-                      checked={pullParameters[key] === true}
-                      onCheck={(checked) => {
-                        setParameter(pullRequest, key, checked);
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-              {type === 'required_status_checks' && checks !== undefined && (
-                <div class="setting-nested rule-options">
+                    change(withRuleParameter(entry, type, 'required_approving_review_count', approvals.value));
+                    return undefined;
+                  }}
+                />
+                {pullRequestFlags.map(([key, flag]) => (
                   <Check
-                    label="Require branches to be up to date before merging"
-                    checked={checkParameters['strict_required_status_checks_policy'] === true}
+                    key={key}
+                    label={flag}
+                    checked={pullParameters[key] === true}
                     onCheck={(checked) => {
-                      setParameter(checks, 'strict_required_status_checks_policy', checked);
+                      change(withRuleParameter(entry, type, key, checked));
                     }}
                   />
-                  <TextBox
-                    label="Status checks"
-                    mono
-                    multiline
-                    value={contexts.join('\n')}
-                    note="One check a line, by the name it reports."
-                    problem={contexts.length === 0 ? statusChecksProblem : undefined}
-                    onText={(text) => {
-                      const kept = list(checkParameters['required_status_checks']).map(record);
-                      setParameter(
-                        checks,
-                        'required_status_checks',
-                        lines(text).map((context) => kept.find((item) => item?.['context'] === context) ?? { context }),
-                      );
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          );
-        })}
+                ))}
+              </div>
+            )}
+            {type === 'required_status_checks' && checks !== undefined && (
+              <div class="setting-nested rule-options">
+                <Check
+                  label="Require branches to be up to date before merging"
+                  checked={checkParameters['strict_required_status_checks_policy'] === true}
+                  onCheck={(checked) => {
+                    change(withRuleParameter(entry, type, 'strict_required_status_checks_policy', checked));
+                  }}
+                />
+                <TextBox
+                  label="Status checks"
+                  mono
+                  multiline
+                  value={statusChecks(entry).join('\n')}
+                  note="One check a line, by the name it reports."
+                  onText={(typed) => {
+                    change(withStatusChecks(entry, linesOf(typed)));
+                    return undefined;
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        ))}
         {others.length > 0 && (
           <p class="setting muted small">Also keeps these rules from the profile file: {others.join(', ')}.</p>
         )}
@@ -449,105 +465,104 @@ function RulesetForm({ entry, change, pushes }: FormProps & { readonly pushes: b
   );
 }
 
-function EnvironmentForm({ entry, change }: FormProps): JSX.Element {
-  const policy = record(entry['deployment_branch_policy']);
-  const custom = policy?.['custom_branch_policies'] === true;
-  const policies = list(entry['branch_policies'])
-    .map(record)
-    .filter((item) => item !== undefined);
-  const timer = entry['wait_timer'];
-  const [timerProblem, setTimerProblem] = useState<string | undefined>(undefined);
-  const setBranches = (value: unknown): void => {
-    // The patterns belong to chosen branches and tags, and go with any other choice.
-    const next = withKey(entry, 'deployment_branch_policy', value);
-    change(record(value)?.['custom_branch_policies'] === true ? next : withKey(next, 'branch_policies', undefined));
-  };
+const branchChoices: readonly (readonly [string, DeploymentBranches])[] = [
+  ['Any branch', 'any'],
+  ['Protected branches', 'protected'],
+  ['Chosen branches and tags', 'chosen'],
+];
+
+function isDeploymentBranches(value: unknown): value is DeploymentBranches | undefined {
+  return value === undefined || branchChoices.some(([, choice]) => choice === value);
+}
+
+function EnvironmentForm({ entry, saved, change }: FormProps): JSX.Element {
+  const branches = deploymentBranches(entry);
+  const patterns = (type: 'branch' | 'tag'): JSX.Element => (
+    <TextBox
+      label={type === 'branch' ? 'Branch patterns' : 'Tag patterns'}
+      mono
+      multiline
+      value={branchPolicies(entry, type).join('\n')}
+      note={type === 'branch' ? 'One pattern a line, such as main or release/*.' : 'One pattern a line, such as v*.'}
+      onText={(typed) => {
+        change(withBranchPolicies(entry, type, linesOf(typed)));
+        return undefined;
+      }}
+    />
+  );
   return (
     <>
       <Group title="Protection rules">
         <TextBox
           label="Wait timer, in minutes"
-          value={typeof timer === 'number' ? String(timer) : ''}
+          value={text(entry['wait_timer'])}
           placeholder="Each repository's own"
-          problem={timerProblem}
-          onText={(text) => {
-            const minutes = text.trim();
-            const valid = minutes === '' || (/^\d+$/u.test(minutes) && Number(minutes) <= 43_200);
-            setTimerProblem(valid ? undefined : 'The wait timer is a whole number of minutes, from 0 to 43200.');
-            if (valid) {
-              change(withKey(entry, 'wait_timer', minutes === '' ? undefined : Number(minutes)));
+          onText={(typed) => {
+            const minutes = count(typed, 43_200, 'The wait timer');
+            if (typeof minutes === 'string') {
+              return minutes;
             }
+            change(withKey(entry, 'wait_timer', minutes.value));
+            return undefined;
           }}
         />
-        <Kept entry={entry} change={change} name="reviewers" label="Required reviewers" none="None" noun="reviewer" />
-        <Choice
+        <Kept
           entry={entry}
+          saved={saved}
           change={change}
-          name="prevent_self_review"
+          name="reviewers"
+          label="Required reviewers"
+          none="None"
+          noun="reviewer"
+        />
+        <Choice
           label="Prevent self-review"
           options={[
             ['On', true],
             ['Off', false],
           ]}
+          value={entry['prevent_self_review']}
+          onChoose={(value) => {
+            change(withKey(entry, 'prevent_self_review', value));
+          }}
         />
       </Group>
       <Group title="Deployment branches and tags">
         <Choice
-          entry={{ deployment_branch_policy: entry['deployment_branch_policy'] }}
-          change={(next) => {
-            setBranches(next['deployment_branch_policy']);
-          }}
-          name="deployment_branch_policy"
           label="Deployment branches"
-          options={[
-            ['Any branch', null],
-            ['Protected branches', { protected_branches: true, custom_branch_policies: false }],
-            ['Chosen branches and tags', { protected_branches: false, custom_branch_policies: true }],
-          ]}
+          options={branchChoices}
+          value={branches}
+          onChoose={(value) => {
+            if (isDeploymentBranches(value)) {
+              change(withDeploymentBranches(entry, value, saved));
+            }
+          }}
         />
-        {custom && (
-          <TextBox
-            label="Branch and tag patterns"
-            mono
-            multiline
-            value={policies
-              .map((item) => (item['type'] === 'tag' ? `tag: ${String(item['name'])}` : String(item['name'])))
-              .join('\n')}
-            note="One pattern a line, such as main or release/*. Start a line with tag: for a tag pattern."
-            onText={(text) => {
-              change(
-                withKey(
-                  entry,
-                  'branch_policies',
-                  lines(text).map((line) =>
-                    line.startsWith('tag:') ? { name: line.slice(4).trim(), type: 'tag' } : { name: line },
-                  ),
-                ),
-              );
-            }}
-          />
-        )}
+        {branches === 'chosen' && patterns('branch')}
+        {branches === 'chosen' && patterns('tag')}
       </Group>
     </>
   );
 }
 
 function LabelForm({ entry, change, savedName }: FormProps & { readonly savedName: string | undefined }): JSX.Element {
-  const color = typeof entry['color'] === 'string' ? entry['color'].replace(/^#/u, '').toLowerCase() : undefined;
+  const id = useId();
+  const color = hexColor(entry);
+  const typedColor = typeof entry['color'] === 'string' ? entry['color'] : '';
   const description = entry['description'];
-  const renamedFrom = list(entry['renamed_from']).map(String);
+  const renamedFrom = items(entry['renamed_from']).map(String);
   const name = typeof entry['name'] === 'string' ? entry['name'].trim() : '';
-  const renamed = savedName !== undefined && name !== '' && name !== savedName;
-  const light = color !== undefined && /^[0-9a-f]{6}$/u.test(color) && luminance(color) > 0.6;
+  // A label is the same one in any case, so only another name is a rename.
+  const renamed = savedName !== undefined && name !== '' && name.toLowerCase() !== savedName.toLowerCase();
   return (
     <>
       <Group title="Look">
         <div class="setting">
           <div class="setting-head">
             <div class="setting-text">
-              <strong id="label-color">Color</strong>
+              <strong id={id}>Color</strong>
               <span class="muted small">
-                {color === undefined
+                {entry['color'] === undefined
                   ? "Not set here, so each repository keeps the label's own."
                   : 'One of GitHub’s colors, or six hex digits.'}
               </span>
@@ -555,21 +570,21 @@ function LabelForm({ entry, change, savedName }: FormProps & { readonly savedNam
             <span
               class="label-preview"
               style={
-                color !== undefined && /^[0-9a-f]{6}$/u.test(color)
-                  ? { background: `#${color}`, color: light ? '#14281a' : '#ffffff' }
-                  : undefined
+                color === undefined
+                  ? undefined
+                  : { background: `#${color}`, color: luminance(color) > 0.6 ? '#14281a' : '#ffffff' }
               }
             >
               {name === '' ? 'label' : name}
             </span>
           </div>
-          <div class="swatches" role="radiogroup" aria-labelledby="label-color">
-            {palette.map(([hex, text]) => (
-              <label key={hex} title={text}>
+          <div class="swatches" role="radiogroup" aria-labelledby={id}>
+            {palette.map(([hex, swatch]) => (
+              <label key={hex} title={swatch}>
                 <input
                   type="radio"
-                  name="label-color"
-                  aria-label={text}
+                  name={id}
+                  aria-label={swatch}
                   checked={color === hex}
                   onChange={() => {
                     change(withKey(entry, 'color', hex));
@@ -583,15 +598,16 @@ function LabelForm({ entry, change, savedName }: FormProps & { readonly savedNam
         <TextBox
           label="Hex color"
           mono
-          value={color ?? ''}
+          value={typedColor}
           placeholder="Each repository's own"
           problem={
-            color !== undefined && !/^[0-9a-f]{6}$/u.test(color)
+            typedColor !== '' && color === undefined
               ? 'The color is six hex digits, such as a2eeef, with or without #.'
               : undefined
           }
-          onText={(text) => {
-            change(withKey(entry, 'color', text.trim() === '' ? undefined : text.trim()));
+          onText={(typed) => {
+            change(withKey(entry, 'color', typed.trim() === '' ? undefined : typed.trim()));
+            return undefined;
           }}
         />
         <TextBox
@@ -602,8 +618,9 @@ function LabelForm({ entry, change, savedName }: FormProps & { readonly savedNam
               ? 'Each repository keeps its own description.'
               : 'An empty description clears each repository’s.'
           }
-          onText={(text) => {
-            change(withKey(entry, 'description', text));
+          onText={(typed) => {
+            change(withKey(entry, 'description', typed));
+            return undefined;
           }}
         />
         {description !== undefined && (
@@ -629,12 +646,13 @@ function LabelForm({ entry, change, savedName }: FormProps & { readonly savedNam
           multiline
           value={renamedFrom.join('\n')}
           note="One old name a line."
-          onText={(text) => {
-            const names = lines(text);
+          onText={(typed) => {
+            const names = linesOf(typed);
             change(withKey(entry, 'renamed_from', names.length > 0 ? names : undefined));
+            return undefined;
           }}
         />
-        {renamed && !renamedFrom.includes(savedName) && (
+        {renamed && !renamedFrom.some((old) => old.toLowerCase() === savedName.toLowerCase()) && (
           <div class="setting">
             <p class="muted small">
               Applying creates {name} and leaves {savedName} on each repository, unless Renamed from lists {savedName}.
@@ -664,19 +682,166 @@ function summary(row: EntryRow): string {
     return 'Removed from each repository.';
   }
   if (row.list === 'rulesets') {
-    const rules = list(entry['rules']).length;
+    const rules = items(entry['rules']).length;
     return [
       text(entry['target']),
       text(entry['enforcement']),
-      entry['rules'] === undefined ? undefined : `${rules} ${rules === 1 ? 'rule' : 'rules'}`,
+      entry['rules'] === undefined ? '' : `${rules} ${rules === 1 ? 'rule' : 'rules'}`,
     ]
-      .filter((part) => part !== undefined && part !== '')
+      .filter((part) => part !== '')
       .join(', ');
   }
   if (row.list === 'labels') {
-    return typeof entry['description'] === 'string' ? entry['description'] : '';
+    return text(entry['description']);
   }
   return typeof entry['wait_timer'] === 'number' ? `Waits ${entry['wait_timer']} minutes` : '';
+}
+
+interface EntryFormProps {
+  readonly editor: ProfileEditor;
+  readonly row: EntryRow;
+  readonly entry: Entry;
+  readonly pushes: boolean;
+  readonly onBack: () => void;
+}
+
+function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.Element {
+  const noun = nouns[row.list];
+  const back = useRef<HTMLButtonElement>(null);
+  // The form takes the keyboard when it opens, since the row that opened it is gone.
+  useEffect(() => {
+    back.current?.focus();
+  }, []);
+  const change = (next: Entry): void => {
+    run(editor.changeEntry(row, next));
+  };
+  const absent = entry['absent'] === true;
+  const renamable = row.source === 'here' || row.source === undefined;
+  const name = typeof entry['name'] === 'string' ? entry['name'] : '';
+  // GitHub knows an environment by its name in any case, and a ruleset by its name as written.
+  const renamed =
+    row.savedName !== undefined &&
+    name.trim() !== '' &&
+    (row.list === 'rulesets'
+      ? name.trim() !== row.savedName
+      : name.trim().toLowerCase() !== row.savedName.toLowerCase());
+  return (
+    <div class="groups">
+      <div class="entry-bar">
+        <button class="button button-quiet" type="button" ref={back} onClick={onBack}>
+          Back to {noun.many}
+        </button>
+        <span class="muted small">
+          {row.source === undefined
+            ? 'New, not saved yet.'
+            : row.source === 'here'
+              ? 'Set in this profile.'
+              : `From ${row.source}. Changing it here overrides it.`}
+        </span>
+        {row.unsaved && row.savedName !== undefined && (
+          <button
+            class="button button-quiet button-small"
+            type="button"
+            onClick={() => {
+              run(editor.resetEntry(row));
+            }}
+          >
+            Reset
+          </button>
+        )}
+        {renamable && (
+          <button
+            class="button button-quiet button-small"
+            type="button"
+            onClick={() => {
+              run(editor.takeOut(row));
+              onBack();
+            }}
+          >
+            Take out of profile
+          </button>
+        )}
+      </div>
+      {row.outOfDate && (
+        <div class="notice notice-drift" role="alert">
+          <p>{row.problem}</p>
+          <div class="notice-actions">
+            <button
+              class="button"
+              type="button"
+              onClick={() => {
+                run(editor.keepEntry(row));
+              }}
+            >
+              Keep mine
+            </button>
+            <button
+              class="button"
+              type="button"
+              onClick={() => {
+                run(editor.resetEntry(row));
+              }}
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+      )}
+      <Group title={noun.title}>
+        <TextBox
+          label="Name"
+          value={name}
+          disabled={!renamable}
+          problem={row.outOfDate ? undefined : row.problem}
+          note={
+            !renamable
+              ? `It comes from ${row.source}, so it keeps its name.`
+              : renamed && row.list !== 'labels'
+                ? `GitHub knows each ${noun.one} by its name, so applying this profile creates ${name.trim()} and leaves ${row.savedName} on each repository as it is.`
+                : undefined
+          }
+          onText={(typed) => {
+            change({ ...entry, name: typed });
+            return undefined;
+          }}
+        />
+        <div class="setting">
+          <div class="segments" role="radiogroup" aria-label={`What the profile does with the ${noun.one}`}>
+            <label>
+              <input
+                type="radio"
+                name="entry-state"
+                checked={!absent}
+                onChange={() => {
+                  run(editor.setAbsent(row, false));
+                }}
+              />
+              <span>Manage it</span>
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="entry-state"
+                checked={absent}
+                onChange={() => {
+                  run(editor.setAbsent(row, true));
+                }}
+              />
+              <span>Remove it from the repository</span>
+            </label>
+          </div>
+          {absent && <p class="muted small">Applying deletes it from each repository that follows the profile.</p>}
+        </div>
+      </Group>
+      {!absent && row.list === 'rulesets' && (
+        <RulesetForm entry={entry} saved={row.saved} change={change} pushes={pushes} />
+      )}
+      {!absent && row.list === 'environments' && <EnvironmentForm entry={entry} saved={row.saved} change={change} />}
+      {!absent && row.list === 'labels' && (
+        <LabelForm entry={entry} saved={row.saved} change={change} savedName={row.savedName} />
+      )}
+    </div>
+  );
 }
 
 interface EntriesProps {
@@ -691,117 +856,36 @@ export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Eleme
   const [openKey, setOpenKey] = useState<string | undefined>(undefined);
   const rows = editor.entries.value[kind];
   const noun = nouns[kind];
-  // A save gives a new or renamed entry the key of its saved name, so the open one is found by name then.
+  // A save gives a new or renamed entry the key of its saved name, so the open one is found by that name then.
   const openName = useRef<string | undefined>(undefined);
   const open =
     rows.find((row) => row.key === openKey) ??
-    (openKey === undefined ? undefined : rows.find((row) => row.savedName === openName.current));
+    (openKey === undefined || openName.current === undefined
+      ? undefined
+      : rows.find((row) => row.savedName === openName.current));
   openName.current = typeof open?.entry?.['name'] === 'string' ? open.entry['name'].trim() : undefined;
+  const add = useRef<HTMLButtonElement>(null);
+  const shown = open?.entry === undefined ? undefined : open;
+  // Once the open entry is gone, as after a reset of a new one, the list shows, with the keyboard on it.
+  useEffect(() => {
+    if (openKey !== undefined && shown === undefined) {
+      setOpenKey(undefined);
+      add.current?.focus();
+    }
+  }, [openKey, shown]);
 
-  if (open?.entry !== undefined) {
-    const entry = open.entry;
-    const change = (next: Entry): void => {
-      run(editor.changeEntry(open, next));
-    };
-    const absent = entry['absent'] === true;
-    const renamable = open.source === 'here' || open.source === undefined;
-    const name = typeof entry['name'] === 'string' ? entry['name'] : '';
-    const renamed = open.savedName !== undefined && name.trim() !== '' && name.trim() !== open.savedName;
+  if (shown?.entry !== undefined) {
     return (
-      <div class="groups">
-        <div class="entry-bar">
-          <button
-            class="button button-quiet"
-            type="button"
-            onClick={() => {
-              setOpenKey(undefined);
-            }}
-          >
-            Back to {noun.many}
-          </button>
-          <span class="muted small">
-            {open.source === undefined
-              ? 'New, not saved yet.'
-              : open.source === 'here'
-                ? 'Set in this profile.'
-                : `From ${open.source}. Changing it here overrides it.`}
-          </span>
-          {open.unsaved && open.savedName !== undefined && (
-            <button
-              class="button button-quiet button-small"
-              type="button"
-              onClick={() => {
-                run(editor.resetEntry(open));
-              }}
-            >
-              Reset
-            </button>
-          )}
-          {renamable && (
-            <button
-              class="button button-quiet button-small"
-              type="button"
-              onClick={() => {
-                run(editor.takeOut(open));
-                setOpenKey(undefined);
-              }}
-            >
-              Take out of profile
-            </button>
-          )}
-        </div>
-        <Group title={noun.title.slice(0, -1)}>
-          <TextBox
-            label="Name"
-            value={name}
-            problem={open.problem === statusChecksProblem ? undefined : open.problem}
-            note={
-              !renamable
-                ? `It comes from ${open.source}, so it keeps its name.`
-                : renamed && kind !== 'labels'
-                  ? `GitHub knows each ${noun.one} by its name, so applying this profile creates ${name.trim()} and leaves ${open.savedName} on each repository as it is.`
-                  : undefined
-            }
-            onText={(text) => {
-              if (renamable) {
-                change({ ...entry, name: text });
-              }
-            }}
-          />
-          <div class="setting">
-            <div class="segments" role="radiogroup" aria-label={`What the profile does with the ${noun.one}`}>
-              <label>
-                <input
-                  type="radio"
-                  name="entry-state"
-                  checked={!absent}
-                  onChange={() => {
-                    change({ name });
-                  }}
-                />
-                <span>Manage it</span>
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="entry-state"
-                  checked={absent}
-                  onChange={() => {
-                    change({ name, absent: true });
-                  }}
-                />
-                <span>Remove it from the repository</span>
-              </label>
-            </div>
-            {absent && <p class="muted small">Applying deletes it from each repository that follows the profile.</p>}
-          </div>
-        </Group>
-        {!absent && kind === 'rulesets' && <RulesetForm key={open.key} entry={entry} change={change} pushes={pushes} />}
-        {!absent && kind === 'environments' && <EnvironmentForm key={open.key} entry={entry} change={change} />}
-        {!absent && kind === 'labels' && (
-          <LabelForm key={open.key} entry={entry} change={change} savedName={open.savedName} />
-        )}
-      </div>
+      <EntryForm
+        key={shown.savedName ?? shown.key}
+        editor={editor}
+        row={shown}
+        entry={shown.entry}
+        pushes={pushes}
+        onBack={() => {
+          setOpenKey(undefined);
+        }}
+      />
     );
   }
 
@@ -816,6 +900,7 @@ export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Eleme
         <button
           class="button"
           type="button"
+          ref={add}
           onClick={() => {
             run(editor.addEntry(kind, { name: '' }).then(setOpenKey));
           }}
@@ -827,9 +912,8 @@ export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Eleme
         <ul class="rows">
           {rows.map((row) => {
             const entry = row.entry;
-            const name =
-              entry === undefined ? (row.savedName ?? '') : typeof entry['name'] === 'string' ? entry['name'] : '';
-            const color = typeof entry?.['color'] === 'string' ? entry['color'].replace(/^#/u, '') : undefined;
+            const name = entry === undefined ? (row.savedName ?? '') : text(entry['name']);
+            const color = entry === undefined ? undefined : hexColor(entry);
             return (
               <li key={row.key} class="entry-row">
                 <button
@@ -840,13 +924,10 @@ export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Eleme
                     setOpenKey(row.key);
                   }}
                 >
-                  {kind === 'labels' && color !== undefined && /^[0-9a-f]{6}$/iu.test(color) ? (
+                  {kind === 'labels' && color !== undefined ? (
                     <span
                       class="label-preview"
-                      style={{
-                        background: `#${color}`,
-                        color: luminance(color.toLowerCase()) > 0.6 ? '#14281a' : '#ffffff',
-                      }}
+                      style={{ background: `#${color}`, color: luminance(color) > 0.6 ? '#14281a' : '#ffffff' }}
                     >
                       {name}
                     </span>
@@ -856,7 +937,11 @@ export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Eleme
                     </span>
                   )}
                   <span class="muted small entry-summary">{summary(row)}</span>
-                  {row.problem !== undefined && <span class="pill pill-remove">Not finished</span>}
+                  {row.outOfDate ? (
+                    <span class="pill pill-remove">Changed elsewhere</span>
+                  ) : (
+                    row.problem !== undefined && <span class="pill pill-remove">Not finished</span>
+                  )}
                   {row.unsaved && <span class="pill pill-drift">Not saved</span>}
                   {row.source !== 'here' && row.source !== undefined && (
                     <span class="muted small">From {row.source}</span>

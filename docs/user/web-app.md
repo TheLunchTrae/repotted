@@ -122,12 +122,27 @@ and so does a sync that finds the profile deleted or renamed on GitHub.
 **Rulesets**, **Environments**, and **Labels** each list what the profile
 names, with **New ruleset**, **New environment**, or **New label**. Click
 one to open it. Its form changes only what you edit, so anything it doesn't
-show, such as a ruleset's bypass actors or an environment's reviewers, stays
-as the profile's file has it. **Leave it to GitHub** clears a choice, so each
+show, such as the merge methods a pull request rule allows or a rule the form
+has no box for, stays as the profile's file has it. Bypass actors and
+required reviewers can be kept as the file has them or cleared. **Leave it to GitHub** clears a choice, so each
 repository keeps its own. Choose **Manage it**, or **Remove it from the
 repository** to delete it from each repository that follows the profile.
-**Take out of profile** stops the profile from managing it at all; **Put it
-back** in the list undoes that before you save.
+Removing keeps what the entry had, in case you choose **Manage it** again
+before saving. **Take out of profile** stops the profile from managing it at
+all; **Put it back** in the list undoes that before you save.
+
+A ruleset with no rule ticked leaves each repository's rules as they are.
+Once any rule is ticked, the ruleset has exactly the ticked rules, and
+applying removes every other rule it has on a repository; the form says
+which holds. **Leave its rules to GitHub** goes back to leaving them alone.
+
+An environment that deploys from **Chosen branches and tags** takes
+**Branch patterns** and **Tag patterns**, one a line.
+
+A ruleset, environment, or label is saved whole. If it changed elsewhere
+since you edited it, such as in a sync with GitHub, the page says so and
+doesn't save over that change: **Keep mine** saves your version over it, and
+**Reset** shows the new one.
 
 GitHub knows rulesets and environments by name. If you rename one, applying
 the profile creates a new one with the new name and leaves the old one on the

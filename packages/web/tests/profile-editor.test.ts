@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'vitest';
 
-import { type EntryList, type EntryRow, ProfileEditor, type SettingRow } from '../src/app/profile-editor.js';
+import type { EntryList, EntryRow } from '../src/app/entry-edits.js';
+import { ProfileEditor, type SettingRow } from '../src/app/profile-editor.js';
 import { type SettingField, settingSections } from '../src/app/setting-fields.js';
 import { mkdir, readFile, rm, writeFile } from '../src/engine/files.js';
 
@@ -481,4 +482,162 @@ test('a ruleset that requires status checks and names none is held back', async 
   });
   expect(entry(editor, 'rulesets', 'Main').problem).toBeUndefined();
   expect(editor.canSave.value).toBe(true);
+});
+
+test('an entry that changed elsewhere since its change is held back until the user keeps theirs or resets', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const main = entry(editor, 'rulesets', 'Main');
+  await editor.changeEntry(main, { ...main.entry, enforcement: 'evaluate' });
+
+  // A sync brings in a teammate's change to the same ruleset.
+  const theirs = entries.replace('      - type: deletion', '      - type: deletion\n      - type: non_fast_forward');
+  await writeFile('/profiles/web.yaml', theirs);
+  await editor.load();
+
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ outOfDate: true, unsaved: true });
+  expect(entry(editor, 'rulesets', 'Main').problem).toContain('changed elsewhere');
+  expect(editor.canSave.value).toBe(false);
+
+  await editor.keepEntry(entry(editor, 'rulesets', 'Main'));
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ outOfDate: false, problem: undefined });
+  await editor.save(write);
+  const text = await readFile('/profiles/web.yaml', 'utf8');
+  expect(text).toContain('enforcement: evaluate');
+  expect(text).not.toContain('non_fast_forward');
+});
+
+test("a save stops when the file's entry changed after the editor last read it, and writes nothing", async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const main = entry(editor, 'rulesets', 'Main');
+  await editor.changeEntry(main, { ...main.entry, enforcement: 'evaluate' });
+  await editor.set(field('repository.has_wiki'), true);
+  const theirs = entries.replace('enforcement: active', 'enforcement: disabled');
+
+  await editor.save(async (work) => {
+    // The sync that runs before the save's write brings the change in.
+    await writeFile('/profiles/web.yaml', theirs);
+    await work();
+  });
+
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(theirs);
+  expect(editor.saveError.value).toContain('changed elsewhere');
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ outOfDate: true });
+
+  await editor.resetEntry(entry(editor, 'rulesets', 'Main'));
+  expect(entry(editor, 'rulesets', 'Main').entry?.['enforcement']).toBe('disabled');
+  await editor.save(write);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toContain('has_wiki: true');
+});
+
+test('a change to an entry that was removed elsewhere stays in view, to add it again or let it go', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const bug = entry(editor, 'labels', 'bug');
+  await editor.changeEntry(bug, { ...bug.entry, color: '5319e7' });
+  await editor.takeOut(entry(editor, 'rulesets', 'Main'));
+
+  await writeFile('/profiles/web.yaml', 'repository:\n  has_wiki: false\n');
+  await editor.load();
+
+  // Taking out what is already gone has nothing left to do.
+  expect(editor.entries.value.rulesets).toEqual([]);
+  const orphan = entry(editor, 'labels', 'bug');
+  expect(orphan).toMatchObject({ outOfDate: true, saved: undefined, savedName: 'bug' });
+  expect(orphan.problem).toContain('removed elsewhere');
+  expect(editor.canSave.value).toBe(false);
+
+  await editor.keepEntry(orphan);
+  expect(entry(editor, 'labels', 'bug')).toMatchObject({ outOfDate: false, savedName: undefined, problem: undefined });
+  await editor.save(write);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toMatch(/color: "?5319e7/u);
+});
+
+test('only a changed entry is checked, so a profile the engine takes can always be saved', async () => {
+  const editor = await opened({
+    'web.yaml':
+      'rulesets:\n  - name: CI\n    rules:\n      - type: required_status_checks\n  - name: ci\n    target: tag\n',
+  });
+
+  expect(editor.entries.value.rulesets.map((row) => row.problem)).toEqual([undefined, undefined]);
+  await editor.set(field('repository.has_wiki'), true);
+  expect(editor.canSave.value).toBe(true);
+
+  // Rulesets are told apart by case, so each can change without the other in its way.
+  const lower = entry(editor, 'rulesets', 'ci');
+  await editor.changeEntry(lower, { ...lower.entry, target: 'branch' });
+  expect(entry(editor, 'rulesets', 'ci').problem).toBeUndefined();
+  await editor.save(write);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toContain('target: branch');
+});
+
+test('removing an entry from repositories keeps what it had for managing it again', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const main = entry(editor, 'rulesets', 'Main');
+
+  await editor.setAbsent(main, true);
+  expect(entry(editor, 'rulesets', 'Main').entry).toEqual({ name: 'Main', absent: true });
+  await editor.setAbsent(entry(editor, 'rulesets', 'Main'), false);
+  expect(editor.dirty.value).toBe(false);
+
+  // One that is new keeps what was filled in, too.
+  const key = await editor.addEntry('labels', { name: 'docs', color: '0075ca' });
+  const added = (): EntryRow => entry(editor, 'labels', 'docs');
+  expect(added().key).toBe(key);
+  await editor.setAbsent(added(), true);
+  await editor.changeEntry(added(), { name: 'guides', absent: true });
+  await editor.setAbsent(entry(editor, 'labels', 'guides'), false);
+  expect(entry(editor, 'labels', 'guides').entry).toEqual({ name: 'guides', color: '0075ca' });
+});
+
+test('a name typed and put back is no change, and a saved name in use by an unsaved change is not free', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const bug = entry(editor, 'labels', 'bug');
+
+  await editor.changeEntry(bug, { ...bug.entry, name: 'bug ' });
+  expect(editor.dirty.value).toBe(false);
+
+  await editor.takeOut(entry(editor, 'labels', 'bug'));
+  await editor.addEntry('labels', { name: 'Bug' });
+  expect(editor.entries.value.labels.find((row) => row.savedName === undefined)?.problem).toContain(
+    'is the saved name of one you renamed or took out',
+  );
+  expect(editor.canSave.value).toBe(false);
+});
+
+test('an entry with a problem holds the save back, while the other changes are still previewed', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  await editor.addEntry('labels', { name: '' });
+
+  for (const name of ['merge.allow_merge_commit', 'merge.allow_squash_merge', 'merge.allow_rebase_merge']) {
+    await editor.set(field(name), false);
+  }
+
+  expect(editor.problem.value).toMatch(/merge/iu);
+  expect(editor.canSave.value).toBe(false);
+});
+
+test('an entry put back to what it was while a save writes it stays changed, and a failed save keeps every change', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const main = entry(editor, 'rulesets', 'Main');
+  await editor.changeEntry(main, { ...main.entry, enforcement: 'evaluate' });
+  const held = Promise.withResolvers<undefined>();
+
+  const saving = editor.save(async (work) => {
+    await held.promise;
+    await work();
+  });
+  await editor.changeEntry(entry(editor, 'rulesets', 'Main'), { ...main.entry });
+  held.resolve(undefined);
+  await saving;
+
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toContain('enforcement: evaluate');
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ unsaved: true, outOfDate: false });
+  expect(entry(editor, 'rulesets', 'Main').entry?.['enforcement']).toBe('active');
+
+  await editor.save(() => Promise.reject(new Error('The file is gone.')));
+  expect(editor.saveError.value).toBe('The file is gone.');
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ unsaved: true });
+  expect(editor.canSave.value).toBe(true);
+
+  await editor.resetAll();
+  expect(editor.dirty.value).toBe(false);
 });
