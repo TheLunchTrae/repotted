@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import { ActionSearch, type FoundAction } from '../src/app/action-search.js';
+import { ActionSearch, type FoundAction, foundNotes } from '../src/app/action-search.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -117,4 +117,28 @@ test("a search that fails says why, and GitHub's limit says when to try again", 
   search.enter();
   await github.fail(new Error('Failed to fetch'));
   expect(search.state.value).toEqual({ kind: 'message', text: 'Failed to fetch' });
+});
+
+test('Enter held down asks once, and the results stay while new words wait', async () => {
+  const github = held();
+  const search = new ActionSearch(github.find);
+  search.type('checkout');
+
+  for (let press = 0; press < 30; press += 1) {
+    search.enter();
+  }
+  expect(github.asked).toEqual(['checkout']);
+
+  await github.land([checkout]);
+  search.type('checkout v4');
+  // What was found stays up through the pause, until the new search starts.
+  expect(search.state.value).toEqual({ kind: 'results', found: [checkout] });
+  vi.advanceTimersByTime(500);
+  expect(search.state.value).toEqual({ kind: 'searching' });
+  expect(github.asked).toEqual(['checkout', 'checkout v4']);
+});
+
+test('a repository found says its stars and its action file in a few words', () => {
+  expect(foundNotes(checkout)).toBe('6.0k stars, action.yml');
+  expect(foundNotes({ ...checkout, stars: 1, action_file: null })).toBe('1 star, no action file at its top');
 });

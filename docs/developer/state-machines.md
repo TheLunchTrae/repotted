@@ -370,19 +370,22 @@ under the list. It runs the engine's `findActions` and shows the
 repositories under the box. One search counts at a time: a newer one leaves
 the one before it behind, so an older answer never replaces a newer one.
 
-| State              | Event                                                | Next                                                                                                   |
-| ------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Closed             | Two characters or more are typed                     | Waiting, closed still. Each further key starts the 500 ms pause again.                                 |
-| Any                | The text drops under two characters                  | Closed, with any pause dropped and any search left behind.                                             |
-| Waiting            | The pause ends, or Enter                             | Searching, for the text trimmed, in place of any results of the search before.                         |
-| Searching          | The text changes                                     | Waiting, with the search left behind. The box still says it is searching.                              |
-| Searching          | The search lands with repositories                   | Results.                                                                                               |
-| Searching          | The search lands with none                           | Message: GitHub found no repositories for the words.                                                   |
-| Searching          | The search fails                                     | Message: GitHub's search limit is reached, or the error. A lost sign-in also goes to the sign-in page. |
-| Results            | **Add**                                              | Results, with `owner/repo@*` on a new line at the end of the list and the row showing Added.           |
-| Results            | The list changes                                     | Results, each row showing Added while the list holds its `owner/repo@*` on a line, in any case.        |
-| Results or Message | Enter                                                | Searching, at once, for the text as it is.                                                             |
-| Open, in any state | Escape, or the keyboard or pointer leaves the search | Closed, with any search left behind. The text stays, and Enter searches again.                         |
+| State              | Event                                                                                    | Next                                                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Closed             | Two characters or more are typed                                                         | Waiting, closed still. Each further key starts the 500 ms pause again.                                 |
+| Any                | The text drops under two characters                                                      | Closed, with any pause dropped and any search left behind.                                             |
+| Waiting            | The pause ends, or Enter                                                                 | Searching, for the text trimmed, in place of any results of the search before.                         |
+| Searching          | The text changes                                                                         | Waiting, with the search left behind. The box still says it is searching.                              |
+| Searching          | The search lands with repositories                                                       | Results.                                                                                               |
+| Searching          | The search lands with none                                                               | Message: GitHub found no repositories for the words.                                                   |
+| Searching          | The search fails                                                                         | Message: GitHub's search limit is reached, or the error. A lost sign-in also goes to the sign-in page. |
+| Results            | **Add**                                                                                  | Results, with `owner/repo@*` on a new line at the end of the list and the row showing Added.           |
+| Results            | The list changes                                                                         | Results, each row showing Added while the list holds its `owner/repo@*` on a line, in any case.        |
+| Results or Message | Enter                                                                                    | Searching, at once, for the text as it is.                                                             |
+| Searching          | Enter, for the words of the search under way                                             | Searching still: a key held down asks once.                                                            |
+| Results or Message | The text changes, two characters or more                                                 | Waiting, with what shows left up until the new search starts.                                          |
+| Any                | The search's row goes, as when the list is hidden or another profile is opened           | Closed, with any pause dropped and any search left behind.                                             |
+| Open, in any state | Escape, the pointer pressed outside the search, or the keyboard moved to another control | Closed, with any search left behind. The text stays, and Enter searches again.                         |
 
 ### Search and filters
 

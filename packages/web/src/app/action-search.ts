@@ -12,6 +12,12 @@ export type ActionSearchState =
 /** The fewest characters worth a search. */
 const fewest = 2;
 
+/** A repository found, in the few words after its name: its stars, and the action file at its top if it has one. */
+export function foundNotes(found: FoundAction): string {
+  const stars = found.stars < 1000 ? String(found.stars) : `${(found.stars / 1000).toFixed(1)}k`;
+  return `${stars} ${found.stars === 1 ? 'star' : 'stars'}, ${found.action_file ?? 'no action file at its top'}`;
+}
+
 function failureOf(error: unknown): string {
   if (error instanceof Error && 'rateLimited' in error && error.rateLimited === true) {
     return "GitHub's search limit is reached. Try again in a minute.";
@@ -33,6 +39,8 @@ export class ActionSearch {
   #timer: ReturnType<typeof setTimeout> | undefined;
   /** Counts searches, so only the last one's answer is shown. */
   #searches = 0;
+  /** The words of the search under way. */
+  #asking: string | undefined;
 
   constructor(find: (words: string) => Promise<FoundAction[]>, pause = 500) {
     this.#find = find;
@@ -60,7 +68,9 @@ export class ActionSearch {
 
   /** Searches at once for the text as it is. */
   enter(): void {
-    if (this.#text.value.trim().length >= fewest) {
+    const words = this.#text.value.trim();
+    // A key held down asks once: the search under way is already for these words.
+    if (words.length >= fewest && !(this.#state.value.kind === 'searching' && this.#asking === words)) {
       this.#cancel();
       this.#search();
     }
@@ -76,11 +86,13 @@ export class ActionSearch {
     clearTimeout(this.#timer);
     this.#timer = undefined;
     this.#searches += 1;
+    this.#asking = undefined;
   }
 
   #search(): void {
     const words = this.#text.value.trim();
     const turn = (this.#searches += 1);
+    this.#asking = words;
     this.#state.value = { kind: 'searching' };
     this.#find(words).then(
       (found) => {

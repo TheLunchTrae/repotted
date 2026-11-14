@@ -476,30 +476,31 @@ export class ProfileEditor {
     }
   }
 
-  /** The allowed action patterns as the box has them, a line each. */
+  /** The allowed action patterns as the box has them, a line each, or undefined while the list doesn't show. */
   readonly #patternLines = computed(() => {
     const row = this.sections.value
       .flatMap((section) => section.groups.flatMap((group) => group.rows))
       .find((item) => keyOf(item.field.path) === patternsPath);
-    return row === undefined ? [] : (row.text?.split('\n') ?? (Array.isArray(row.value) ? row.value.map(String) : []));
+    return row === undefined
+      ? undefined
+      : (row.text?.split('\n') ?? (Array.isArray(row.value) ? row.value.map(String) : []));
   });
 
   /** Whether the list allows every action of a repository, as `owner/name@*` on a line, in any case. */
   allowsRepository(repository: string): boolean {
     const pattern = `${repository}@*`.toLowerCase();
-    return this.#patternLines.value.some((line) => line.trim().toLowerCase() === pattern);
+    return (this.#patternLines.value ?? []).some((line) => line.trim().toLowerCase() === pattern);
   }
 
   /** Adds `owner/name@*` on a new line at the end of the allowed action patterns. */
   async allowRepository(repository: string): Promise<void> {
     const field = allFields.find((item) => keyOf(item.path) === patternsPath);
-    if (field === undefined || this.allowsRepository(repository)) {
+    // A list that doesn't show, as with every action allowed, is not added to: its lines aren't the box's to read.
+    if (field === undefined || this.#patternLines.value === undefined || this.allowsRepository(repository)) {
       return;
     }
-    const lines = this.#patternLines.value;
-    // A box left with an empty last line takes the pattern there.
-    const kept = lines.at(-1)?.trim() === '' ? lines.slice(0, -1) : lines;
-    await this.set(field, [...kept.map((line) => line.trim()).filter((line) => line !== ''), `${repository}@*`]);
+    const lines = this.#patternLines.value.map((line) => line.trim()).filter((line) => line !== '');
+    await this.set(field, [...lines, `${repository}@*`]);
   }
 
   /** The box was left: what was typed shows as its value from now on, unless it can't be one. */
