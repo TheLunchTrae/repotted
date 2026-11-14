@@ -3,9 +3,9 @@
 The Repotted web app runs at <https://repotted.dev>. It needs nothing
 installed: it runs in your browser and talks to GitHub from there.
 
-The web app signs in, lists your repositories, and shows your profiles. To
-write profiles, compare, and apply, use the [desktop app](desktop.md) or the
-[command line](cli.md).
+The web app signs in, lists your repositories, and makes, captures, shows,
+and deletes profiles. To edit a profile's settings, compare, and apply, use
+the [desktop app](desktop.md) or the [command line](cli.md).
 
 Use Repotted in one tab at a time. A second tab says that Repotted is open
 in another one, so that two tabs can't save over each other's profiles;
@@ -40,8 +40,9 @@ click **Only personal** or **Show all**. If every owner is hidden, the list
 says so and offers **Show all**. The browser remembers which owners you hid,
 and an owner that's new to the list shows.
 
-Click a repository to open its panel, where **Open on GitHub** opens it
-there. Click it again to close the panel.
+Click a repository to open its panel. **Open on GitHub** opens it there, and
+**Capture as a new profile** starts [a profile](#make-a-profile) that
+describes it. Click the repository again to close the panel.
 
 ## Profiles
 
@@ -54,6 +55,40 @@ Repotted can't use is marked **Problem**, and opening it says why.
 Click a profile to open it. The page says what owns the repositories it is
 for and which profile it extends. **Show YAML** shows the profile's file as
 it is saved; it starts hidden.
+
+### Make a profile
+
+Click **New profile** above the list, name it, and choose what it starts
+from:
+
+- **Nothing**: an empty profile, which manages nothing until you set
+  something.
+- **Another profile**: the new profile extends the one you pick, so it gets
+  every setting the other one sets.
+- **A repository**: Repotted reads the repository's settings, rulesets,
+  environments, and labels as they are on GitHub now, and saves them as a
+  profile. Capturing only reads from GitHub. The profile appears only once
+  the capture finishes; one that fails, or whose form you leave, makes
+  nothing. If the capture had to leave something out, the new profile's page
+  lists what.
+
+When there are folders, **Folder** chooses where the profile goes. Under
+**For repositories owned by**, choose **Personal accounts**,
+**Organizations**, or **Any owner**. A profile that extends one with a type
+has that type, and a captured profile has the repository's owner type.
+[Owner type](profiles.md#owner-type) describes what each type takes.
+
+Repotted never replaces a profile that is already there, whatever the case of
+its name.
+
+### Delete a profile
+
+Open the profile and click **Delete profile**. Repotted asks first, naming
+the file. If other profiles extend it, directly or through another profile,
+the question names them: they stop loading until you point them at another
+profile, but nothing stops you. A profile in the browser can't be brought
+back. When your profiles are kept on GitHub, the deletion is a commit, so the
+repository's history keeps the file as it was at the last sync.
 
 ### Keep profiles on GitHub
 

@@ -1,9 +1,18 @@
 import { computed, signal } from '@preact/signals';
-import { type GitHub, listProfiles, parseRepo, syncFolder } from '@repotted/core';
+import {
+  captureProfile,
+  describeWarning,
+  type GitHub,
+  listProfiles,
+  type OwnerType,
+  parseRepo,
+  stringifyProfile,
+  syncFolder,
+} from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from '../engine/files.js';
-import { dirname, join, relative } from '../engine/path.js';
+import { basename, dirname, join, relative } from '../engine/path.js';
 import { isSignedOut } from './account.js';
 import type { Preferences } from './preferences.js';
 import { SerialQueue } from './serial-queue.js';
@@ -20,6 +29,29 @@ export type SyncState =
   | { readonly status: 'syncing' }
   | { readonly status: 'synced'; readonly pulled: number; readonly pushed: number }
   | { readonly status: 'failed'; readonly message: string };
+
+/** What a new profile starts from. */
+export type NewProfileStart =
+  | { readonly kind: 'empty' }
+  /** It extends this profile, so it gets every setting that one sets. */
+  | { readonly kind: 'extends'; readonly base: ProfileListing }
+  /** It describes this repository, `owner/name`, as it is on GitHub now. */
+  | { readonly kind: 'repository'; readonly repository: string };
+
+export interface NewProfile {
+  readonly name: string;
+  /** The folder it goes in, from the profiles folder; '' for the profiles folder itself. */
+  readonly folder: string;
+  readonly start: NewProfileStart;
+  /**
+   * What owns the repositories it is for. A capture takes the repository's
+   * owner type, and a profile that extends a typed one takes that type.
+   */
+  readonly ownerType: OwnerType | undefined;
+}
+
+// Names no file can have on Windows, where a config repository's profiles may also be used.
+const windowsNames = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu;
 
 /** A folder of profiles in the sidebar, with the folders and profiles in it that show. */
 export interface ProfileFolderNode {
@@ -97,6 +129,10 @@ export class Profiles {
   readonly search = signal('');
   /** Why the last try to keep profiles in a repository failed, until the next change of where they are kept. */
   readonly connectError = signal<string | undefined>(undefined);
+  /** What a capture left out of the profile it made, for that profile's page. */
+  readonly captureWarnings = signal<{ readonly file: string; readonly warnings: readonly string[] } | undefined>(
+    undefined,
+  );
   /** The open profile's file as it is saved, once read. */
   readonly opened = signal<{ readonly file: string; readonly text: string } | undefined>(undefined);
 
@@ -106,6 +142,8 @@ export class Profiles {
   readonly #queue = new SerialQueue();
   readonly #closedFolders = signal<ReadonlySet<string>>(new Set());
   readonly #selectedFile = signal<string | undefined>(undefined);
+  /** The files that captures under way will make, so no other new profile takes their names. */
+  readonly #capturing = new Set<string>();
 
   constructor(github: GitHub, preferences: Preferences, onSignedOut: () => void) {
     this.#github = github;
@@ -240,6 +278,152 @@ export class Profiles {
     });
   }
 
+  /** Every folder that holds a profile, from the profiles folder, with '' for the profiles folder itself first. */
+  readonly folders = computed<readonly string[]>(() => {
+    const folders = new Set(['']);
+    for (const listing of this.listings.value) {
+      const parts = listing.folder === '' ? [] : listing.folder.split('/');
+      parts.forEach((_part, index) => folders.add(parts.slice(0, index + 1).join('/')));
+    }
+    return [...folders].sort();
+  });
+
+  /** Why a new profile can't have this name in this folder, or undefined when it can. */
+  nameProblem(name: string, folder: string): string | undefined {
+    const trimmed = name.trim();
+    if (trimmed === '') {
+      return 'Give the profile a name.';
+    }
+    // What a sync refuses in a profile's path, so a profile made here always reaches GitHub.
+    if (/^\.|[/\\:*?"<>|\p{Cc}]|[. ]$/u.test(trimmed)) {
+      return 'A name cannot start with a dot, end with a dot or a space, or hold / \\ : * ? " < > |.';
+    }
+    if (/\.ya?ml$/iu.test(trimmed)) {
+      return 'Leave out the file ending; Repotted adds .yaml.';
+    }
+    if (windowsNames.test(trimmed.split('.')[0] ?? trimmed)) {
+      return `Windows keeps the name ${trimmed} for itself, so it cannot be a file there.`;
+    }
+    const place = folder === '' ? 'the profiles folder' : folder;
+    const taken = this.listings.value.find(
+      (listing) => listing.folder === folder && listing.name.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (taken !== undefined) {
+      return `${basename(taken.file)} is already in ${place}.`;
+    }
+    return this.#capturing.has(this.#fileOf(trimmed, folder).toLowerCase())
+      ? `Another capture is making ${trimmed}.yaml.`
+      : undefined;
+  }
+
+  /**
+   * Makes a profile and opens it. It never replaces a file that is there. A
+   * capture reads GitHub first, outside the queue, and holds its name
+   * meanwhile; a `signal` aborted before it ends leaves nothing behind. It
+   * answers why it couldn't.
+   */
+  async create(profile: NewProfile, signal?: AbortSignal): Promise<string | undefined> {
+    const problem = this.nameProblem(profile.name, profile.folder);
+    if (problem !== undefined) {
+      return problem;
+    }
+    const file = this.#fileOf(profile.name.trim(), profile.folder);
+    const folder = this.folder.value;
+    let text: string;
+    let warnings: readonly string[] = [];
+    if (profile.start.kind === 'repository') {
+      this.#capturing.add(file.toLowerCase());
+      try {
+        const captured = await captureProfile(this.#github, parseRepo(profile.start.repository));
+        text = stringifyProfile(captured.profile);
+        warnings = captured.warnings.map(describeWarning);
+      } catch (error) {
+        if (isSignedOut(error)) {
+          this.#onSignedOut();
+        }
+        return messageOf(error);
+      } finally {
+        this.#capturing.delete(file.toLowerCase());
+      }
+    } else {
+      const owner = profile.ownerType === undefined ? '' : `owner_type: ${profile.ownerType}\n`;
+      text =
+        profile.start.kind === 'empty'
+          ? owner
+          : `extends: ${JSON.stringify(relative(dirname(file), profile.start.base.file))}\n${
+              profile.start.base.owner_type === null ? owner : ''
+            }`;
+    }
+    return this.#work(async () => {
+      // A capture whose form closed makes nothing. A profile asked for outright is made even so.
+      if (profile.start.kind === 'repository' && signal?.aborted === true) {
+        return undefined;
+      }
+      // Where profiles are kept may have changed while this waited or GitHub was read.
+      if (this.folder.value !== folder) {
+        return 'Where profiles are kept changed, so the profile was not made.';
+      }
+      // The list is as the turns before this one left it, such as a sync that pulled a profile of that name.
+      const taken = this.nameProblem(profile.name, profile.folder);
+      if (taken !== undefined) {
+        return taken;
+      }
+      // A folder is one that holds profiles, or a new one under the profiles folder, never a way out of it.
+      if (
+        profile.folder.split('/').some((part) => profile.folder !== '' && /^\.|^$|[\\:*?"<>|\p{Cc}]|[. ]$/u.test(part))
+      ) {
+        return `${profile.folder} is not a folder a profile can go in.`;
+      }
+      try {
+        await mkdir(dirname(file), { recursive: true });
+        await writeFile(file, text, { flag: 'wx' });
+      } catch (error) {
+        const exists = error instanceof Error && 'code' in error && error.code === 'EEXIST';
+        return exists ? `${basename(file)} is already there.` : messageOf(error);
+      }
+      await this.#sync({});
+      await this.#list();
+      this.captureWarnings.value = warnings.length > 0 ? { file, warnings } : undefined;
+      await this.select(this.listings.value.find((listing) => listing.file === file));
+      return undefined;
+    });
+  }
+
+  /** The listed profiles that extend this one, directly or through another, which stop loading without it. */
+  dependents(listing: ProfileListing): readonly ProfileListing[] {
+    const found = new Set<string>([listing.file]);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const other of this.listings.value) {
+        if (other.extends !== null && found.has(other.extends) && !found.has(other.file)) {
+          found.add(other.file);
+          grew = true;
+        }
+      }
+    }
+    return this.listings.value.filter((other) => other.file !== listing.file && found.has(other.file));
+  }
+
+  /**
+   * Deletes a profile's file, after any sync under way, and commits that when
+   * profiles are kept on GitHub. It answers why it couldn't.
+   */
+  remove(listing: ProfileListing): Promise<string | undefined> {
+    return this.#work(async () => {
+      // The list may have been read again, from another place, since the user asked.
+      if (!this.listings.value.some((item) => item.file === listing.file)) {
+        return undefined;
+      }
+      await rm(listing.file, { force: true });
+      if (this.captureWarnings.value?.file === listing.file) {
+        this.captureWarnings.value = undefined;
+      }
+      await this.#sync({});
+      await this.#list();
+      return undefined;
+    });
+  }
+
   /** Opens a profile from the list, or with undefined leaves none open. */
   async select(listing: ProfileListing | undefined): Promise<void> {
     this.#selectedFile.value = listing?.file;
@@ -267,10 +451,15 @@ export class Profiles {
     return relative(this.folder.value, listing.file);
   }
 
+  #fileOf(name: string, folder: string): string {
+    return join(this.folder.value, folder, `${name}.yaml`);
+  }
+
   #use(source: ProfilesSource): void {
     this.source.value = source;
     this.#preferences.write(sourceKey, source);
     this.#closedFolders.value = new Set();
+    this.captureWarnings.value = undefined;
     this.#selectedFile.value = undefined;
     this.opened.value = undefined;
   }

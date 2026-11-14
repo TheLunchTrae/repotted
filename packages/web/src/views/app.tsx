@@ -1,7 +1,7 @@
 import type { Signal } from '@preact/signals';
 import type { GitHub } from '@repotted/core';
 import type { JSX } from 'preact';
-import { useEffect, useMemo } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
 import type { Keeping } from '../app/kept-files.js';
@@ -20,6 +20,7 @@ import { SignIn } from './sign-in.js';
 const titles: Readonly<Record<string, string>> = {
   '/': 'Repositories',
   '/profiles': 'Profiles',
+  '/profiles/new': 'New profile',
   '/settings': 'Settings',
 };
 
@@ -54,7 +55,14 @@ function SignedIn({
     run(repositories.refresh());
     run(profiles.refresh());
   }, [repositories, profiles]);
+  // The repository a new profile was asked to capture, from the repositories page.
+  const [captureFrom, setCaptureFrom] = useState<string | undefined>(undefined);
   const path = router.path.value;
+  useEffect(() => {
+    if (path !== '/profiles/new') {
+      setCaptureFrom(undefined);
+    }
+  }, [path]);
   const title = titles[path];
   useEffect(() => {
     document.title = title === undefined ? 'Repotted' : `${title} - Repotted`;
@@ -68,9 +76,20 @@ function SignedIn({
         </p>
       )}
       {path === '/' ? (
-        <RepositoriesPage repositories={repositories} />
-      ) : path === '/profiles' ? (
-        <ProfilesPage profiles={profiles} router={router} />
+        <RepositoriesPage
+          repositories={repositories}
+          onCapture={(repository) => {
+            setCaptureFrom(repository);
+            router.go('/profiles/new');
+          }}
+        />
+      ) : path === '/profiles' || path === '/profiles/new' ? (
+        <ProfilesPage
+          profiles={profiles}
+          repositories={repositories}
+          router={router}
+          creating={path === '/profiles/new' ? { repository: captureFrom } : undefined}
+        />
       ) : path === '/settings' ? (
         <SettingsPage
           account={account}
