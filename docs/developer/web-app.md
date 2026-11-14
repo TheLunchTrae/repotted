@@ -144,8 +144,11 @@ such as `hidden-repositories`, `hidden-repository-owners` and
 `repository-folders`, with keys in order so a commit changes only the values
 that did. It is a hidden file, so a profile sync and the profile list leave
 it alone. Another list setting that should follow the user takes its own key
-in the same file, and changes it through `update`, as folders do. Nothing
-moves between the browser and the file when the profiles move.
+in the same file, and changes it through `update`, as folders do. A choice
+that changes often and matters to one browser, such as which folders are
+closed (`closed-repository-folders`), goes straight to the browser's
+`Preferences` instead, so it never makes a commit. Nothing moves between the
+browser and the file when the profiles move.
 [State machines](state-machines.md#web-shared-preferences) lists the
 transitions.
 

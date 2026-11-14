@@ -49,7 +49,7 @@ function inBrowser(github: GitHub, preferences: Preferences = memory()): SharedP
 }
 
 async function opened(github: FakeGitHub, preferences: Preferences = memory()): Promise<Repositories> {
-  const repositories = new Repositories(github, user, inBrowser(github, preferences), () => undefined);
+  const repositories = new Repositories(github, user, inBrowser(github, preferences), preferences, () => undefined);
   await repositories.refresh();
   return repositories;
 }
@@ -152,7 +152,7 @@ test('a refused sign-in is reported as signed out, not as an error on the page',
   const github = new FakeGitHub({ account: account(everyone) });
   github.fail('GET /user/installations', answered(401, 'Bad credentials'));
   const signedOut = vi.fn();
-  const repositories = new Repositories(github, user, inBrowser(github), signedOut);
+  const repositories = new Repositories(github, user, inBrowser(github), memory(), signedOut);
 
   await repositories.refresh();
 
@@ -163,7 +163,7 @@ test('a refused sign-in is reported as signed out, not as an error on the page',
 test('a refresh asked for while one runs starts no second read', async () => {
   const held = Promise.withResolvers<unknown>();
   const request = vi.fn<FakeGitHub['request']>(() => held.promise);
-  const repositories = new Repositories({ request }, user, inBrowser({ request }), () => undefined);
+  const repositories = new Repositories({ request }, user, inBrowser({ request }), memory(), () => undefined);
 
   const first = repositories.refresh();
   await repositories.refresh();
@@ -193,7 +193,7 @@ test('a refresh keeps the list in use while it reads, and the selection when the
 
 test('ticked repositories stay ticked through a search, and one the account no longer lists drops out', async () => {
   const github = new FakeGitHub({ account: account(everyone) });
-  const repositories = new Repositories(github, user, inBrowser(github), () => undefined);
+  const repositories = new Repositories(github, user, inBrowser(github), memory(), () => undefined);
   await repositories.refresh();
   const all = repositories.list.value?.repositories ?? [];
   const named = (name: string): (typeof all)[number] => {
@@ -324,7 +324,7 @@ test('with profiles in a repository, the list hides what its file holds and a hi
   const browser = memory({ 'hidden-repositories': ['trae/dotfiles'] });
   const preferences = new SharedPreferences(github, browser, () => undefined);
   const reading = preferences.use({ kind: 'repository', repository: 'lunch/config', path: 'profiles' });
-  const repositories = new Repositories(github, user, preferences, () => undefined);
+  const repositories = new Repositories(github, user, preferences, browser, () => undefined);
 
   await repositories.refresh();
   await reading;
@@ -415,6 +415,15 @@ test('a folder name must be new, in any case, except the folder being renamed', 
   expect(repositories.folderNames.value).toEqual(['APPS']);
 });
 
+test('the folders closed in this browser are closed when the page opens again', async () => {
+  const preferences = memory({
+    'closed-repository-folders': ['sites'],
+    'repository-folders': [{ name: 'Sites', repositories: ['zeta/site'] }],
+  });
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
+  expect(folders(repositories)).toEqual(['Sites (closed):', 'zeta/site']);
+});
+
 test('a closed folder stays closed when renamed, opens while a search finds something in it, and is forgotten when deleted', async () => {
   const preferences = memory();
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
@@ -492,7 +501,7 @@ test('folders are kept in the preferences file beside the profiles when they are
   const browser = memory();
   const preferences = new SharedPreferences(config, browser, () => undefined);
   const github = new FakeGitHub({ account: account(everyone) });
-  const repositories = new Repositories(github, user, preferences, () => undefined);
+  const repositories = new Repositories(github, user, preferences, browser, () => undefined);
   await repositories.refresh();
   expect(folders(repositories)).toEqual([]);
 
@@ -500,14 +509,22 @@ test('folders are kept in the preferences file beside the profiles when they are
   expect(folders(repositories)).toEqual(['Sites:', 'zeta/site']);
 
   repositories.moveToFolder(several(repositories, 'acme/web'), 'Sites');
-  repositories.setFolderOpen('Sites', false);
   await vi.waitFor(() => {
     expect(JSON.parse(config.files()[file] ?? '{}')).toEqual({
-      'closed-repository-folders': ['Sites'],
       'repository-folders': [{ name: 'Sites', repositories: ['zeta/site', 'acme/web'] }],
     });
   });
   expect(browser.kept).toEqual({});
+
+  // Which folders are closed stays in this browser, so closing or opening one commits nothing.
+  const request = vi.spyOn(config, 'request');
+  repositories.setFolderOpen('Sites', false);
+  expect(folders(repositories)).toEqual(['Sites (closed):', 'acme/web', 'zeta/site']);
+  expect(browser.kept).toEqual({ 'closed-repository-folders': ['Sites'] });
+  repositories.setFolderOpen('Sites', true);
+  expect(browser.kept['closed-repository-folders']).toBeUndefined();
+  await preferences.reload();
+  expect(request.mock.calls.filter(([method]) => method !== 'GET')).toEqual([]);
 });
 
 test('a folder change made before the preferences file is read keeps the folders it holds', async () => {
@@ -524,11 +541,13 @@ test('a folder change made before the preferences file is read keeps the folders
     await held;
     return read(...args);
   });
-  const preferences = new SharedPreferences(config, memory(), () => undefined);
+  const browser = memory();
+  const preferences = new SharedPreferences(config, browser, () => undefined);
   const repositories = new Repositories(
     new FakeGitHub({ account: account(everyone) }),
     user,
     preferences,
+    browser,
     () => undefined,
   );
   await repositories.refresh();
@@ -541,9 +560,9 @@ test('a folder change made before the preferences file is read keeps the folders
   await reading;
 
   expect(folders(repositories)).toEqual(['Sites:', 'zeta/site', 'Tools (closed):', 'trae/dotfiles']);
+  expect(browser.kept['closed-repository-folders']).toEqual(['Tools']);
   await vi.waitFor(() => {
     expect(JSON.parse(config.files()[file] ?? '{}')).toEqual({
-      'closed-repository-folders': ['Tools'],
       'repository-folders': [
         { name: 'Sites', repositories: ['zeta/site'] },
         { name: 'Tools', repositories: ['trae/dotfiles'] },
@@ -566,11 +585,13 @@ test('a folder renamed to, or moved into, a name changed elsewhere meanwhile kee
     await held;
     return read(...args);
   });
-  const preferences = new SharedPreferences(config, memory(), () => undefined);
+  const browser = memory();
+  const preferences = new SharedPreferences(config, browser, () => undefined);
   const repositories = new Repositories(
     new FakeGitHub({ account: account(everyone) }),
     user,
     preferences,
+    browser,
     () => undefined,
   );
   await repositories.refresh();

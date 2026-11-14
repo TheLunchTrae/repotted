@@ -168,24 +168,25 @@ kept: each visit starts with the hidden repositories out of the list.
 It keeps the user's folders under `repository-folders`, as a list of
 `{ name, repositories }` with the repositories by `owner/name`, sorted by
 name, or nothing when there is no folder. It keeps the closed folders, by
-name, under `closed-repository-folders`. Folder names and repository names
+name, under `closed-repository-folders` in this browser alone, wherever the
+profiles are, so opening or closing a folder commits nothing. Folder names and repository names
 match in any case. A repository is in one folder at most; a filed repository
 shows in its folder and not under its owner. A folder shows the repositories
 its owner's group would: none of a hidden owner, and no hidden repository
 unless hidden ones show.
 
-| Folders                      | Event                                  | Next                                                                                                          |
-| ---------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Any                          | New folder with a free name            | The folder, saved, with the ticked repositories, or the one repository whose **Folder** picked it, if chosen. |
-| Any                          | New folder or Rename with a taken name | Nothing saved; the dialog says which folder has the name. An empty name is refused the same way.              |
-| A folder                     | Rename                                 | The new name, saved; a closed folder stays closed.                                                            |
-| A folder                     | Delete folder, confirmed               | The folder and its closed state gone, saved; its repositories go back under their owners.                     |
-| Any                          | Move, or a repository's own **Folder** | Those repositories out of every folder and at the end of that one, saved; **No folder** files none.           |
-| A folder                     | Its heading clicked, with no search    | Open or closed, saved. Closing the selected repository's folder closes its panel until the folder opens.      |
-| Some                         | A search                               | A folder whose name matches shows all it shows; another shows the matching ones; each shows open.             |
-| A folder with none in view   | No search, or a search for its name    | An empty folder shows, saying how to fill it; one whose repositories are all hidden doesn't show.             |
-| A repository not in the list | The list is read again                 | It stays filed, so it is in its folder again if it returns.                                                   |
-| A hand-edited file           | It is read                             | A folder named twice, or a repository in two folders, counts only the first time.                             |
+| Folders                      | Event                                  | Next                                                                                                                    |
+| ---------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Any                          | New folder with a free name            | The folder, saved, with the ticked repositories, or the one repository whose **Folder** picked it, if chosen.           |
+| Any                          | New folder or Rename with a taken name | Nothing saved; the dialog says which folder has the name. An empty name is refused the same way.                        |
+| A folder                     | Rename                                 | The new name, saved; a closed folder stays closed.                                                                      |
+| A folder                     | Delete folder, confirmed               | The folder and its closed state gone, saved; its repositories go back under their owners.                               |
+| Any                          | Move, or a repository's own **Folder** | Those repositories out of every folder and at the end of that one, saved; **No folder** files none.                     |
+| A folder                     | Its heading clicked, with no search    | Open or closed, kept in this browser. Closing the selected repository's folder closes its panel until the folder opens. |
+| Some                         | A search                               | A folder whose name matches shows all it shows; another shows the matching ones; each shows open.                       |
+| A folder with none in view   | No search, or a search for its name    | An empty folder shows, saying how to fill it; one whose repositories are all hidden doesn't show.                       |
+| A repository not in the list | The list is read again                 | It stays filed, so it is in its folder again if it returns.                                                             |
+| A hand-edited file           | It is read                             | A folder named twice, or a repository in two folders, counts only the first time.                                       |
 
 Each folder change is saved as a change to the folders, not as the list
 that showed, so it applies to the folders the file holds when it is read

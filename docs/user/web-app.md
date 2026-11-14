@@ -67,7 +67,9 @@ repositories you hid, and your folders, are kept there too, in
 browser you sign in on. Each change is committed straight to the repository,
 and **Refresh** picks up changes made in another browser. When your profiles
 are kept in this browser or a folder on this computer, this browser remembers
-them instead. Choices made in one place don't move to the other.
+them instead. Choices made in one place don't move to the other. Which
+folders are closed is always remembered by this browser alone, so opening or
+closing one commits nothing.
 
 Click a repository to open its panel. **Open on GitHub** opens it there, and
 **Capture as a new profile** starts [a profile](#make-a-profile) that

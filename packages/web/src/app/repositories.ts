@@ -3,6 +3,7 @@ import { type GitHub, listRepositories } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { isSignedOut, type User } from './account.js';
+import type { Preferences } from './preferences.js';
 import type { SharedPreferences } from './shared-preferences.js';
 
 type RepositoryList = Awaited<ReturnType<typeof listRepositories>>;
@@ -138,6 +139,7 @@ export class Repositories {
 
   readonly #github: GitHub;
   readonly #user: User;
+  readonly #browser: Preferences;
   readonly #onSignedOut: () => void;
   readonly #hiddenOwners = computed(() => namesIn(this.preferences.read(hiddenOwnersKey)));
   /** Hidden repositories by `owner/name`, kept lowercase, since GitHub matches names in any case. */
@@ -146,16 +148,25 @@ export class Repositories {
   );
   /** The folders, by name. */
   readonly #folders = computed<readonly Folder[]>(() => foldersIn(this.preferences.read(foldersKey)));
-  readonly #closedFolders = computed<readonly string[]>(() => namesIn(this.preferences.read(closedFoldersKey)));
+  /** The closed folders, by name. Kept in this browser alone, so opening or closing a folder commits nothing. */
+  readonly #closedFolders = signal<readonly string[]>([]);
   /** The folder last picked to move the ticked repositories to, or made from the ticked panel. */
   readonly #moveTarget = signal<MoveTarget | undefined>(undefined);
   readonly #selectedName = signal<string | undefined>(undefined);
   readonly #tickedNames = signal<ReadonlySet<string>>(new Set());
 
-  constructor(github: GitHub, user: User, preferences: SharedPreferences, onSignedOut: () => void) {
+  constructor(
+    github: GitHub,
+    user: User,
+    preferences: SharedPreferences,
+    browser: Preferences,
+    onSignedOut: () => void,
+  ) {
     this.#github = github;
     this.#user = user;
     this.preferences = preferences;
+    this.#browser = browser;
+    this.#closedFolders.value = namesIn(browser.read(closedFoldersKey));
     this.#onSignedOut = onSignedOut;
   }
 
@@ -564,10 +575,9 @@ export class Repositories {
   }
 
   #updateClosed(change: (closed: readonly string[]) => readonly string[]): void {
-    this.preferences.update(closedFoldersKey, (current) => {
-      const next = change(namesIn(current));
-      return next.length > 0 ? next : undefined;
-    });
+    const next = change(this.#closedFolders.value);
+    this.#closedFolders.value = next;
+    this.#browser.write(closedFoldersKey, next.length > 0 ? next : undefined);
   }
 
   #clearJustHidden(): void {
