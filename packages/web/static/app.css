@@ -896,7 +896,8 @@ input[type='checkbox'] {
     display: none;
   }
 
-  .profiles-back {
+  /* button.link, so it keeps its own spacing over the touch screen's link target. */
+  button.link.profiles-back {
     display: inline-flex;
     align-items: center;
     gap: 8px;
