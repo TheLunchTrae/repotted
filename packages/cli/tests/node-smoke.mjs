@@ -1,7 +1,10 @@
 // Runs the built CLI under Node, the way npx would: it starts, answers an MCP
-// handshake, and loads and validates profiles from disk. It never reaches
-// GitHub, because the profile it plans with is invalid. Run it with Node after
-// `pnpm run build`.
+// handshake, and loads and validates profiles from disk. Its plan never
+// reaches GitHub, because the profile it plans with is invalid. Its status
+// check runs without the token variables or the GitHub CLI's sign-in, so in
+// CI it reads a signed-out status; a `repotted login` sign-in in the keychain
+// still applies, and on such a machine it calls GitHub. Run it with Node
+// after `pnpm run build`.
 import { spawn, spawnSync } from 'node:child_process';
 import { log } from 'node:console';
 import { env, execPath, version as nodeVersion } from 'node:process';
