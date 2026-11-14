@@ -425,7 +425,9 @@ GitHub repository, while the folder lacks changes made here.
 the whole app in this browser.
 
 **Account** shows who you're signed in as, with **Add repositories** and
-**Sign out**. **Profiles** shows where your profiles are kept and how the
+**Sign out**. When a profile has unsaved changes, **Sign out** asks
+first: **Save and sign out**, **Discard and sign out**, or **Stay signed
+in**, since signing out discards changes that aren't saved. **Profiles** shows where your profiles are kept and how the
 last sync went, with **Sync now** (or **Refresh** for profiles in the
 browser), and the buttons that move them to a GitHub repository or back to
 the browser.

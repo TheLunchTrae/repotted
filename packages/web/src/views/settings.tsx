@@ -178,9 +178,18 @@ interface SettingsProps {
   readonly profiles: Profiles;
   readonly repositories: Repositories;
   readonly keeping: Keeping;
+  /** Signs out, after asking about unsaved changes when there are any. */
+  readonly onSignOut: () => void;
 }
 
-export function SettingsPage({ account, user, profiles, repositories, keeping }: SettingsProps): JSX.Element {
+export function SettingsPage({
+  account,
+  user,
+  profiles,
+  repositories,
+  keeping,
+  onSignOut,
+}: SettingsProps): JSX.Element {
   const [connecting, setConnecting] = useState(false);
   const source = profiles.source.value;
   const busy = profiles.busy.value;
@@ -222,14 +231,7 @@ export function SettingsPage({ account, user, profiles, repositories, keeping }:
               <a class="button button-quiet" href={installUrl} target="_blank" rel="noreferrer">
                 Add repositories
               </a>
-              <button
-                class="button button-quiet"
-                type="button"
-                disabled={account.signingOut.value}
-                onClick={() => {
-                  run(account.signOut());
-                }}
-              >
+              <button class="button button-quiet" type="button" disabled={account.signingOut.value} onClick={onSignOut}>
                 Sign out
               </button>
             </div>

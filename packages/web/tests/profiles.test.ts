@@ -682,6 +682,41 @@ test('unsaved changes outlast a look at another profile, hold a move back, and a
   expect(profiles.opened.value?.text).toContain('has_wiki: true');
 });
 
+test('every unsaved profile is saved or discarded at once, and one that cannot be saved keeps its changes', async () => {
+  await inBrowser({ 'base.yaml': base, 'other.yaml': base });
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  await profiles.refresh();
+  const change = async (index: number, value: unknown): Promise<void> => {
+    await profiles.select(profiles.listings.value[index]);
+    const editor = profiles.editor.value;
+    const wiki = editor?.sections.value
+      .flatMap((section) => section.groups.flatMap((group) => group.rows))
+      .find((row) => row.field.key === 'has_wiki')?.field;
+    if (editor === undefined || wiki === undefined) {
+      throw new Error('The open profile should have an editor with a wiki setting.');
+    }
+    await editor.set(wiki, value);
+  };
+  await change(0, true);
+  await change(1, true);
+  expect(profiles.unsavedNames.value).toEqual(['base', 'other']);
+
+  expect(await profiles.saveAll()).toBe(true);
+  expect(await readFile('/profiles/browser/base.yaml', 'utf8')).toBe('repository:\n  has_wiki: true\n');
+  expect(await readFile('/profiles/browser/other.yaml', 'utf8')).toBe('repository:\n  has_wiki: true\n');
+
+  // A value that isn't valid can't be saved, so its profile stays unsaved while the other is saved.
+  await change(0, 'sometimes');
+  await change(1, false);
+  expect(await profiles.saveAll()).toBe(false);
+  expect(profiles.unsavedNames.value).toEqual(['base']);
+  expect(await readFile('/profiles/browser/other.yaml', 'utf8')).toBe('repository:\n  has_wiki: false\n');
+
+  await profiles.discardAll();
+  expect(profiles.unsavedNames.value).toEqual([]);
+  expect(await readFile('/profiles/browser/base.yaml', 'utf8')).toBe('repository:\n  has_wiki: true\n');
+});
+
 test('a deleted profile takes its unsaved changes with it', async () => {
   await inBrowser({ 'base.yaml': base });
   const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);

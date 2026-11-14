@@ -152,17 +152,21 @@ refresh revokes the one before.
 `Account` (`packages/web/src/app/account.ts`) holds who is signed in to the
 tab. The app draws the sign-in page in every state but Signed in.
 
-| State       | Event                                                    | Next                                                                                                 |
-| ----------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Checking    | GitHub names the user                                    | Signed in.                                                                                           |
-| Checking    | The browser isn't signed in, or GitHub refuses the token | Signed out, with why the sign-in failed when the Worker's redirect gave a reason.                    |
-| Checking    | GitHub or the Worker can't be reached                    | Unreachable, with **Try again**.                                                                     |
-| Unreachable | Try again                                                | Checking.                                                                                            |
-| Signed in   | Any request in the app gets a 401                        | Signed out with "GitHub no longer accepts this sign-in."; what the page held goes with it.           |
-| Signed out  | A request that was under way gets a 401                  | Signed out, with what it already said.                                                               |
-| Signed in   | Sign out                                                 | Signing out: **Sign out** is off, and a second press sends nothing.                                  |
-| Signing out | The Worker clears the cookies                            | Signed out with "Signed out."                                                                        |
-| Signing out | The Worker can't be reached or fails                     | Signed in, with "Signing out didn't finish. Try again." in the account menu until the next sign-out. |
+| State       | Event                                                    | Next                                                                                                                                              |
+| ----------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Checking    | GitHub names the user                                    | Signed in.                                                                                                                                        |
+| Checking    | The browser isn't signed in, or GitHub refuses the token | Signed out, with why the sign-in failed when the Worker's redirect gave a reason.                                                                 |
+| Checking    | GitHub or the Worker can't be reached                    | Unreachable, with **Try again**.                                                                                                                  |
+| Unreachable | Try again                                                | Checking.                                                                                                                                         |
+| Signed in   | Any request in the app gets a 401                        | Signed out with "GitHub no longer accepts this sign-in."; what the page held goes with it.                                                        |
+| Signed out  | A request that was under way gets a 401                  | Signed out, with what it already said.                                                                                                            |
+| Signed in   | Sign out, with no profile holding unsaved changes        | Signing out: **Sign out** is off, and a second press sends nothing. An apply's edits that can be saved are saved first, as when its page is left. |
+| Signed in   | Sign out, with unsaved changes in a profile              | Asking, by the profiles' names, since signing out drops what the editors hold.                                                                    |
+| Asking      | Save and sign out                                        | Each unsaved profile is saved in its own turn. Signing out when none is left unsaved; Asking still, with word of it, when one can't be saved.     |
+| Asking      | Discard and sign out                                     | The changes are dropped: Signing out.                                                                                                             |
+| Asking      | Stay signed in, or Escape                                | Signed in, with every change kept.                                                                                                                |
+| Signing out | The Worker clears the cookies                            | Signed out with "Signed out."                                                                                                                     |
+| Signing out | The Worker can't be reached or fails                     | Signed in, with "Signing out didn't finish. Try again." in the account menu until the next sign-out.                                              |
 
 ## Web repositories
 

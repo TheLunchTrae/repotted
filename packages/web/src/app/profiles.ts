@@ -203,6 +203,31 @@ export class Profiles {
 
   readonly selected = computed(() => this.listings.value.find((listing) => listing.file === this.#selectedFile.value));
 
+  /** The names of the profiles with changes that aren't saved, as the list has them. */
+  readonly unsavedNames = computed(() =>
+    this.listings.value.filter((listing) => this.unsaved.value.has(listing.file)).map((listing) => listing.name),
+  );
+
+  /**
+   * Saves every profile with unsaved changes, each in its own turn of the
+   * queue as a save of the open one has. It answers whether none is left
+   * unsaved; one whose changes can't be saved, as with a value that isn't
+   * valid, keeps them.
+   */
+  async saveAll(): Promise<boolean> {
+    for (const editor of this.#editors.value.filter((item) => item.dirty.value)) {
+      await editor.save((write) => this.#write(write));
+    }
+    return this.unsaved.value.size === 0;
+  }
+
+  /** Drops every profile's unsaved changes. */
+  async discardAll(): Promise<void> {
+    for (const editor of this.#editors.value.filter((item) => item.dirty.value)) {
+      await editor.resetAll();
+    }
+  }
+
   /** The profiles folder as the sidebar draws it: the profiles whose name or folder holds the search, by folder. */
   readonly tree = computed<ProfileFolderNode>(() => {
     const words = this.search.value.trim().toLowerCase();

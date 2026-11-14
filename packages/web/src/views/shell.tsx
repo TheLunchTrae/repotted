@@ -5,7 +5,6 @@ import type { Account, User } from '../app/account.js';
 import { installUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
 import { Link } from './link.js';
-import { run } from './run.js';
 
 /** Closes an open `details` menu when the user clicks outside it or presses Escape, as a menu does. */
 export function useDismiss(): RefObject<HTMLDetailsElement | null> {
@@ -35,7 +34,7 @@ export function useDismiss(): RefObject<HTMLDetailsElement | null> {
   return menu;
 }
 
-function AccountMenu({ account, user, router }: Omit<ShellProps, 'children'>): JSX.Element {
+function AccountMenu({ account, user, router, onSignOut }: Omit<ShellProps, 'children'>): JSX.Element {
   const menu = useDismiss();
   return (
     <details class="menu account-menu" ref={menu}>
@@ -67,14 +66,7 @@ function AccountMenu({ account, user, router }: Omit<ShellProps, 'children'>): J
         <a class="menu-item" href={installUrl} target="_blank" rel="noreferrer">
           Add repositories
         </a>
-        <button
-          class="menu-item"
-          type="button"
-          disabled={account.signingOut.value}
-          onClick={() => {
-            run(account.signOut());
-          }}
-        >
+        <button class="menu-item" type="button" disabled={account.signingOut.value} onClick={onSignOut}>
           Sign out
         </button>
         {account.signOutError.value !== undefined && (
@@ -91,11 +83,13 @@ interface ShellProps {
   readonly account: Account;
   readonly user: User;
   readonly router: Router;
+  /** Signs out, after asking about unsaved changes when there are any. */
+  readonly onSignOut: () => void;
   readonly children: ComponentChildren;
 }
 
 /** The frame every signed-in page sits in: the app's name, its pages, and the account. */
-export function Shell({ account, user, router, children }: ShellProps): JSX.Element {
+export function Shell({ account, user, router, onSignOut, children }: ShellProps): JSX.Element {
   return (
     <div class="shell">
       <header class="shell-bar">
@@ -113,7 +107,7 @@ export function Shell({ account, user, router, children }: ShellProps): JSX.Elem
             Settings
           </Link>
         </nav>
-        <AccountMenu account={account} user={user} router={router} />
+        <AccountMenu account={account} user={user} router={router} onSignOut={onSignOut} />
       </header>
       <main class="shell-main">{children}</main>
     </div>
