@@ -141,9 +141,15 @@ so an address works when opened directly.
 
 `Profiles` (`src/app/profiles.ts`) holds where the profiles are kept, how the
 last sync went, and the list the sidebar draws. Profiles are files in the
-engine's in-memory files, in one of two folders:
+engine's in-memory files, in one of three folders:
 
 - `/profiles/browser`, for profiles kept in this browser only.
+- `/profiles/folder`, the working copy of a folder on the user's computer,
+  which `syncLocalFolder` keeps in line with the folder through the File
+  System Access API. Only Chromium browsers have that API, so elsewhere
+  Settings offers no folder. `src/engine/local-folders.ts` holds the API's
+  calls and keeps the folder's handle in an IndexedDB database of its own;
+  the browser asks the user again on each visit before the page may use it.
 - `/profiles/github/<owner>/<name>/@<folder>`, a working copy of a folder in
   a config repository, with the engine's sync record in it. `syncFolder`
   brings it and the repository in line through GitHub's API, as it does a

@@ -99,7 +99,9 @@ function DeleteProfile({ listing, profiles, onClose }: ProfileProps & { readonly
           This deletes <span class="mono">{profiles.pathOf(listing)}</span>.{' '}
           {onGitHub
             ? "The deletion is committed to the repository, whose history keeps the file as it was at the last sync. Changes made since then can't be brought back."
-            : "It can't be brought back."}
+            : profiles.source.value.kind === 'folder'
+              ? "The file is deleted from the folder on this computer too. It can't be brought back from here."
+              : "It can't be brought back."}
         </p>
         {dependents.length > 0 && (
           <p>
@@ -264,14 +266,19 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
   const conflicts = profiles.conflicts.value;
   const busy = profiles.busy.value;
   const total = profiles.listings.value.length;
+  const elsewhere = source.kind === 'folder' ? 'in the folder' : 'on GitHub';
 
   return (
     <div class="page page-with-sidebar">
       <aside class="sidebar" aria-label="Profiles">
         <div class="sidebar-heading">
           <div class="sidebar-source">
-            <strong class={source.kind === 'repository' ? 'mono' : undefined}>
-              {source.kind === 'repository' ? source.repository : 'This browser'}
+            <strong class={source.kind === 'browser' ? undefined : 'mono'}>
+              {source.kind === 'repository'
+                ? source.repository
+                : source.kind === 'folder'
+                  ? source.name
+                  : 'This browser'}
             </strong>
             <span class="muted count">{total}</span>
           </div>
@@ -283,7 +290,7 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
               run(profiles.refresh());
             }}
           >
-            {source.kind === 'repository' ? 'Sync' : 'Refresh'}
+            {source.kind === 'browser' ? 'Refresh' : 'Sync'}
           </button>
         </div>
         <Link class="button button-primary" router={router} to="/profiles/new">
@@ -335,8 +342,8 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
               <div class="notice notice-drift" role="alert">
                 <p>
                   {conflicts.length === 1
-                    ? `${conflicts[0]} changed both here and on GitHub since the last sync.`
-                    : `${conflicts.length} profiles changed both here and on GitHub since the last sync: ${conflicts.join(', ')}.`}{' '}
+                    ? `${conflicts[0]} changed both here and ${elsewhere} since the last sync.`
+                    : `${conflicts.length} profiles changed both here and ${elsewhere} since the last sync: ${conflicts.join(', ')}.`}{' '}
                   Which version do you want to keep?
                 </p>
                 <div class="notice-actions">
@@ -358,7 +365,7 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
                       run(profiles.keep('remote'));
                     }}
                   >
-                    Use GitHub's
+                    {source.kind === 'folder' ? "Use the folder's" : "Use GitHub's"}
                   </button>
                 </div>
               </div>
@@ -385,6 +392,10 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
             <div class="empty">
               {total > 0 ? (
                 <p>Choose a profile from the list.</p>
+              ) : source.kind === 'folder' ? (
+                <p>
+                  <span class="mono">{source.name}</span> has no profiles yet.
+                </p>
               ) : source.kind === 'repository' ? (
                 <p>
                   <span class="mono">{source.repository}</span> has no profiles

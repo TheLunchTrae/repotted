@@ -8,6 +8,7 @@ import { Apply } from '../app/apply.js';
 import { BatchApply } from '../app/batch-apply.js';
 import { Comparison } from '../app/comparison.js';
 import type { Keeping } from '../app/kept-files.js';
+import type { LocalFolders } from '../app/local-folder.js';
 import type { Preferences } from '../app/preferences.js';
 import { Profiles } from '../app/profiles.js';
 import { Repositories } from '../app/repositories.js';
@@ -40,6 +41,8 @@ interface AppProps {
   readonly router: Router;
   /** Whether the browser keeps the engine's files between visits. */
   readonly keeping: Signal<Keeping>;
+  /** The browser's way to a folder on this computer. */
+  readonly folders: LocalFolders;
 }
 
 function SignedIn({
@@ -48,6 +51,7 @@ function SignedIn({
   preferences,
   router,
   keeping,
+  folders,
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
   // One of each per sign-in. The repository list is the account's; the profiles are the browser's, whoever signs in.
@@ -55,7 +59,7 @@ function SignedIn({
     const refused = (): void => {
       account.refused();
     };
-    const kept = new Profiles(github, preferences, refused);
+    const kept = new Profiles(github, preferences, refused, folders);
     return {
       repositories: new Repositories(github, user, preferences, refused),
       profiles: kept,
@@ -64,7 +68,7 @@ function SignedIn({
       apply: new Apply(github, refused, (work) => kept.write(work)),
       batch: new BatchApply(github, refused),
     };
-  }, [account, github, preferences, user]);
+  }, [account, github, preferences, folders, user]);
   useEffect(() => {
     run(repositories.refresh());
     run(profiles.refresh());

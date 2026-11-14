@@ -19,15 +19,23 @@ import { isSignedOut } from './account.js';
 import { ActionPatternChecks } from './action-pattern-checks.js';
 import { ActionSearch } from './action-search.js';
 import type { SaveMode } from './entry-edits.js';
+import {
+  type LocalFolder,
+  type LocalFolders,
+  replaceWorkingCopy,
+  syncLocalFolder,
+  unsyncedFiles,
+} from './local-folder.js';
 import type { Preferences } from './preferences.js';
 import { type OwnerChoice, ProfileEditor } from './profile-editor.js';
 import { SerialQueue } from './serial-queue.js';
 
 export type ProfileListing = Awaited<ReturnType<typeof listProfiles>>[number];
 
-/** Where the profiles are kept: in this browser only, or in a folder of a GitHub repository. */
+/** Where the profiles are kept: in this browser only, in a folder on this computer, or in a folder of a GitHub repository. */
 export type ProfilesSource =
   | { readonly kind: 'browser' }
+  | { readonly kind: 'folder'; readonly name: string }
   | { readonly kind: 'repository'; readonly repository: string; readonly path: string };
 
 export type SyncState =
@@ -74,17 +82,26 @@ export interface ProfileFolderNode {
 const sourceKey = 'profiles-source';
 const savedSource = z.union([
   z.object({ kind: z.literal('browser') }),
+  z.object({ kind: z.literal('folder'), name: z.string() }),
   z.object({ kind: z.literal('repository'), repository: z.string(), path: z.string() }),
 ]);
 
 // The engine's record of what a folder and its repository last agreed on.
 const syncRecord = '.repotted-sync.json';
 const browserFolder = '/profiles/browser';
+// The working copy of the folder on this computer, and where one is made ready before it takes that place.
+const computerFolder = '/profiles/folder';
+const nextComputerFolder = '/profiles/folder-next';
 const unsavedFirst = 'Save or reset your unsaved changes first.';
+const unsyncedFirst =
+  'The folder on this computer has not received every change made here. Sync with it first, or choose the folder again.';
 
 function folderOf(source: ProfilesSource): string {
   if (source.kind === 'browser') {
     return browserFolder;
+  }
+  if (source.kind === 'folder') {
+    return computerFolder;
   }
   // One working copy for each repository and folder in it, since a copy syncs with only one.
   return `/profiles/github/${source.repository.toLowerCase()}/@${encodeURIComponent(source.path)}`;
@@ -119,14 +136,14 @@ async function profileFiles(folder: string, prefix = ''): Promise<string[]> {
 }
 
 /**
- * The profiles: where they are kept, how the last sync with GitHub went,
+ * The profiles: where they are kept, how the last sync went, with GitHub or a folder on this computer,
  * and the list the sidebar shows. Syncs and changes to the folder take
  * turns, so a sync never reads a folder that is being changed.
  */
 export class Profiles {
   readonly source = signal<ProfilesSource>({ kind: 'browser' });
   readonly sync = signal<SyncState>({ status: 'none' });
-  /** The profiles that changed both here and on GitHub since the last sync, by path in the folder. */
+  /** The profiles that changed both here and where they sync with since the last sync, by path in the folder. */
   readonly conflicts = signal<readonly string[]>([]);
   readonly listings = signal<readonly ProfileListing[]>([]);
   /** Why the folder couldn't be listed. */
@@ -134,8 +151,13 @@ export class Profiles {
   /** Whether a sync, a listing, or a change of where profiles are kept is under way. */
   readonly busy = signal(false);
   readonly search = signal('');
-  /** Why the last try to keep profiles in a repository failed, until the next change of where they are kept. */
+  /** Why the last try to keep profiles in a repository or a folder failed, until the next change of where they are kept. */
   readonly connectError = signal<string | undefined>(undefined);
+  /**
+   * Whether the browser wants the user's leave again before the folder on
+   * this computer can be used, as it does on each visit.
+   */
+  readonly needsFolderAccess = signal(false);
   /** What a capture left out of the profile it made, for that profile's page. */
   readonly captureWarnings = signal<{ readonly file: string; readonly warnings: readonly string[] } | undefined>(
     undefined,
@@ -153,11 +175,15 @@ export class Profiles {
   readonly #editors = signal<readonly ProfileEditor[]>([]);
   /** The files that captures under way will make, so no other new profile takes their names. */
   readonly #capturing = new Set<string>();
+  readonly #folders: LocalFolders | undefined;
+  /** The folder on this computer, once the browser has let the page use it this visit. */
+  #localFolder: LocalFolder | undefined;
 
-  constructor(github: GitHub, preferences: Preferences, onSignedOut: () => void) {
+  constructor(github: GitHub, preferences: Preferences, onSignedOut: () => void, folders?: LocalFolders) {
     this.#github = github;
     this.#preferences = preferences;
     this.#onSignedOut = onSignedOut;
+    this.#folders = folders;
     const saved = savedSource.safeParse(preferences.read(sourceKey));
     if (saved.success) {
       this.source.value = saved.data;
@@ -204,17 +230,128 @@ export class Profiles {
     return build('');
   });
 
-  /** Syncs with GitHub when the profiles are kept there, then lists the folder. */
+  /** Whether this browser can keep profiles in a folder on the computer. */
+  get foldersSupported(): boolean {
+    return this.#folders?.supported ?? false;
+  }
+
+  /** Syncs with GitHub or the folder on this computer when the profiles are kept there, then lists the folder. */
   refresh(): Promise<void> {
     return this.#work(async () => {
-      if (this.source.value.kind === 'repository') {
-        await this.#sync({});
-      }
+      await this.#sync({});
       await this.#list();
     });
   }
 
-  /** Settles every conflict for one side: `local` commits this browser's versions, `remote` takes GitHub's. */
+  /**
+   * Keeps the profiles in a folder on this computer from now on, which the
+   * user picks, after a first sync with it. `addLocal` first copies the
+   * profiles kept now beside the folder's own, skipping names it already
+   * has. It answers why it couldn't, having left where profiles are kept as
+   * it was; picking no folder is no failure. It must be called from a press
+   * of a button, since the browser's picker needs one.
+   */
+  async useFolder(addLocal: boolean): Promise<string | undefined> {
+    if (this.unsaved.value.size > 0) {
+      this.connectError.value = unsavedFirst;
+      return unsavedFirst;
+    }
+    let folder: LocalFolder | undefined;
+    try {
+      // Asked before the turn in the queue, while the press still counts with the browser.
+      folder = await this.#folders?.pick();
+    } catch (error) {
+      this.connectError.value = messageOf(error);
+      return this.connectError.value;
+    }
+    if (folder === undefined) {
+      return undefined;
+    }
+    const picked = folder;
+    return this.#work(async () => {
+      if (this.unsaved.value.size > 0) {
+        this.connectError.value = unsavedFirst;
+        return unsavedFirst;
+      }
+      this.connectError.value = await this.#useFolder(picked, addLocal);
+      return this.connectError.value;
+    });
+  }
+
+  async #useFolder(folder: LocalFolder, addLocal: boolean): Promise<string | undefined> {
+    const from = this.folder.value;
+    try {
+      // Made ready apart, so a folder that can't be synced leaves the profiles kept now as they are.
+      await rm(nextComputerFolder, { recursive: true, force: true });
+      await mkdir(nextComputerFolder, { recursive: true });
+      const theirs = await folder.files();
+      const taken = new Set([...theirs.keys()].map((path) => path.toLowerCase()));
+      // What a folder used until now never received goes to the one picked, where a
+      // profile that differs from the folder's is a conflict to settle, not a loss.
+      const carried = from === computerFolder ? await unsyncedFiles(from) : new Map<string, string>();
+      for (const [file, text] of carried) {
+        await mkdir(dirname(join(nextComputerFolder, file)), { recursive: true });
+        await writeFile(join(nextComputerFolder, file), text);
+      }
+      if (addLocal) {
+        for (const file of await profileFiles(from)) {
+          // A name the folder has in any case is skipped, since some computers take the two for one file.
+          if (!taken.has(file.toLowerCase()) && !carried.has(file)) {
+            await mkdir(dirname(join(nextComputerFolder, file)), { recursive: true });
+            await writeFile(join(nextComputerFolder, file), await readFile(join(from, file)));
+          }
+        }
+      }
+      const result = await syncLocalFolder(nextComputerFolder, folder);
+      const [failure] = result.failures;
+      if (failure !== undefined) {
+        throw new Error(failure);
+      }
+      await replaceWorkingCopy(nextComputerFolder, computerFolder);
+      await this.#folders?.remember(folder);
+      this.#localFolder = folder;
+      this.needsFolderAccess.value = false;
+      this.#use({ kind: 'folder', name: folder.name });
+      this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
+      this.conflicts.value = result.conflicts;
+      await this.#list();
+      return undefined;
+    } catch (error) {
+      await rm(nextComputerFolder, { recursive: true, force: true });
+      return messageOf(error);
+    }
+  }
+
+  /**
+   * Asks the browser to let the page use the folder on this computer again,
+   * then syncs with it. It must be called from a press of a button.
+   */
+  async allowFolder(): Promise<void> {
+    let allowed = false;
+    try {
+      allowed = (await this.#folders?.allow()) ?? false;
+    } catch {
+      // A browser that won't ask leaves the folder as it was: not allowed.
+    }
+    if (allowed) {
+      await this.refresh();
+    } else if (this.source.value.kind === 'folder') {
+      this.sync.value = {
+        status: 'failed',
+        message:
+          "The browser didn't allow it. If it no longer asks, allow the folder in the site's settings, or choose it again in Settings",
+      };
+    }
+  }
+
+  /** Why profiles kept in a folder on this computer can't move elsewhere yet, when the folder lacks changes made here. */
+  async #unsynced(): Promise<string | undefined> {
+    return this.source.value.kind === 'folder' && (await unsyncedFiles(this.folder.value)).size > 0
+      ? unsyncedFirst
+      : undefined;
+  }
+
+  /** Settles every conflict for one side: `local` keeps this browser's versions, `remote` takes GitHub's or the folder's. */
   keep(prefer: 'local' | 'remote'): Promise<void> {
     return this.#work(async () => {
       await this.#sync({ prefer, only: this.conflicts.value });
@@ -233,6 +370,15 @@ export class Profiles {
       if (this.unsaved.value.size > 0) {
         this.connectError.value = unsavedFirst;
         return unsavedFirst;
+      }
+      // A last sync gives the folder on this computer what it lacks, when it can.
+      if (this.source.value.kind === 'folder') {
+        await this.#sync({});
+      }
+      const unsynced = await this.#unsynced();
+      if (unsynced !== undefined) {
+        this.connectError.value = unsynced;
+        return unsynced;
       }
       this.connectError.value = await this.#connect(repository, path, addLocal);
       return this.connectError.value;
@@ -296,6 +442,15 @@ export class Profiles {
     return this.#work(async () => {
       if (this.unsaved.value.size > 0) {
         this.connectError.value = unsavedFirst;
+        return;
+      }
+      // A last sync gives the folder on this computer what it lacks, when it can.
+      if (this.source.value.kind === 'folder') {
+        await this.#sync({});
+      }
+      const unsynced = await this.#unsynced();
+      if (unsynced !== undefined) {
+        this.connectError.value = unsynced;
         return;
       }
       this.#use({ kind: 'browser' });
@@ -390,6 +545,11 @@ export class Profiles {
       // Where profiles are kept may have changed while this waited or GitHub was read.
       if (this.folder.value !== folder) {
         return 'Where profiles are kept changed, so the profile was not made.';
+      }
+      // A file a tool put in the folder on this computer since the last sync counts too.
+      if (this.source.value.kind === 'folder') {
+        await this.#sync({});
+        await this.#list();
       }
       // The list is as the turns before this one left it, such as a sync that pulled a profile of that name.
       const taken = this.nameProblem(profile.name, profile.folder);
@@ -544,6 +704,14 @@ export class Profiles {
   }
 
   #use(source: ProfilesSource): void {
+    if (source.kind !== 'folder') {
+      this.#localFolder = undefined;
+      this.needsFolderAccess.value = false;
+      if (this.source.value.kind === 'folder') {
+        // A folder the browser can't forget is only a handle left behind, which the next folder picked replaces.
+        this.#folders?.forget().catch(() => undefined);
+      }
+    }
     this.source.value = source;
     this.#preferences.write(sourceKey, source);
     this.#closedFolders.value = new Set();
@@ -566,6 +734,10 @@ export class Profiles {
 
   async #sync(options: { readonly prefer?: 'local' | 'remote'; readonly only?: readonly string[] }): Promise<void> {
     const source = this.source.value;
+    if (source.kind === 'folder') {
+      await this.#syncFolder(options);
+      return;
+    }
     if (source.kind !== 'repository') {
       return;
     }
@@ -583,6 +755,43 @@ export class Profiles {
       if (isSignedOut(error)) {
         this.#onSignedOut();
       }
+      this.sync.value = { status: 'failed', message: messageOf(error) };
+    }
+  }
+
+  async #syncFolder(options: {
+    readonly prefer?: 'local' | 'remote';
+    readonly only?: readonly string[];
+  }): Promise<void> {
+    this.sync.value = { status: 'syncing' };
+    try {
+      if (this.#localFolder === undefined) {
+        const saved = await this.#folders?.saved();
+        if (saved === undefined) {
+          throw new Error('This browser no longer has the folder. Choose it again in Settings.');
+        }
+        this.needsFolderAccess.value = !saved.allowed;
+        if (!saved.allowed) {
+          this.sync.value = { status: 'failed', message: 'The browser asks before Repotted uses the folder again' };
+          return;
+        }
+        this.#localFolder = saved.folder;
+      }
+      const result = await syncLocalFolder(this.folder.value, this.#localFolder, options);
+      this.conflicts.value = result.conflicts;
+      const [failure] = result.failures;
+      if (failure !== undefined) {
+        const more = result.failures.length - 1;
+        throw new Error(more === 0 ? failure : `${failure}, and ${more} more ${more === 1 ? 'profile' : 'profiles'}`);
+      }
+      this.needsFolderAccess.value = false;
+      this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
+    } catch (error) {
+      // The browser may have taken its leave back, as it does when the tab was away for long,
+      // so the folder is asked for afresh next time, and the user for their leave if it went.
+      this.#localFolder = undefined;
+      const saved = await this.#folders?.saved().catch(() => undefined);
+      this.needsFolderAccess.value = saved !== undefined && !saved.allowed;
       this.sync.value = { status: 'failed', message: messageOf(error) };
     }
   }
