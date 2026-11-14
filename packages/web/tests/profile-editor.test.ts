@@ -704,3 +704,23 @@ test("the order a form leaves an entry's keys in never reads as a change, here o
   expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ unsaved: true, outOfDate: false, problem: undefined });
   expect(editor.canSave.value).toBe(true);
 });
+
+test('a new entry is not written over one of its name that arrived while the save waited', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  await editor.addEntry('labels', { name: 'docs', color: '0075ca' });
+  const theirs = `${entries}  - name: Docs\n    color: ffffff\n`;
+  const held = Promise.withResolvers<undefined>();
+
+  const saving = editor.save(async (work) => {
+    await held.promise;
+    await writeFile('/profiles/web.yaml', theirs);
+    await work();
+  });
+  // Taken out while the save waits, so only the save's own copy still names it.
+  await editor.takeOut(entry(editor, 'labels', 'docs'));
+  held.resolve(undefined);
+  await saving;
+
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(theirs);
+  expect(editor.saveError.value).toContain('changed elsewhere');
+});

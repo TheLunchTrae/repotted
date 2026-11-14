@@ -226,8 +226,13 @@ export class EntryEdits {
    * file in its turn, whatever became of the change while it waited.
    */
   writesOverChange(): boolean {
-    return [...this.#writing.values()].some(
-      (change) => change.name !== undefined && !sameValue(change.base, this.#savedEntry(change.list, change.name)),
+    return [...this.#writing.values()].some((change) =>
+      change.name === undefined
+        ? // A new entry whose name the file has by now would be written over that entry.
+          this.#savedEntries(change.list).some(
+            (entry) => identity(change.list, nameOf(entry)) === identity(change.list, nameOf(change.entry)),
+          )
+        : !sameValue(change.base, this.#savedEntry(change.list, change.name)),
     );
   }
 
