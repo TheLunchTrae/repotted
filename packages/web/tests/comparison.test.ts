@@ -99,9 +99,12 @@ test('the search and the filter narrow the differences, and a new comparison cle
     true,
   );
 
-  await comparison.compare('lunch/app', profile);
+  // Comparing again reads the profile as it is saved by then.
+  await saved('repository:\n  has_wiki: false\n');
+  await comparison.again();
   expect(comparison.onlyLocked.value).toBe(false);
   expect(comparison.search.value).toBe('');
+  expect(rows(comparison)).toEqual(['Repository | Wiki | repository.has_wiki | On -> Off']);
 });
 
 test("a profile for the other kind of owner can't be compared, and says how to use its settings there", async () => {
@@ -266,6 +269,12 @@ test('a failure names a base profile by its file beside the profile, not by wher
 
   await comparison.compare('lunch/app', profile);
 
+  expect(failure(comparison)).toContain('base.yaml');
+  expect(failure(comparison)).not.toContain('/profiles/');
+
+  await mkdir('/profiles/teams', { recursive: true });
+  await writeFile('/profiles/teams/api.yaml', 'extends: ../base.yaml\n');
+  await comparison.compare('lunch/app', { file: '/profiles/teams/api.yaml', name: 'teams/api', folder: '/profiles' });
   expect(failure(comparison)).toContain('base.yaml');
   expect(failure(comparison)).not.toContain('/profiles/');
 });

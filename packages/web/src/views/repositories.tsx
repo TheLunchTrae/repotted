@@ -1,6 +1,7 @@
 import type { JSX, RefObject } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
+import type { ComparedProfile } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
 import type { Profiles } from '../app/profiles.js';
 import type { Repositories, Repository } from '../app/repositories.js';
@@ -63,7 +64,7 @@ interface PanelProps {
   readonly repository: Repository;
   readonly profiles: Profiles;
   readonly onCapture: (repository: string) => void;
-  readonly onCompare: (repository: string, profile: { readonly file: string; readonly name: string }) => void;
+  readonly onCompare: (repository: string, profile: ComparedProfile) => void;
 }
 
 function RepositoryPanel({ repository, profiles, onCapture, onCompare }: PanelProps): JSX.Element {
@@ -106,7 +107,11 @@ function RepositoryPanel({ repository, profiles, onCapture, onCompare }: PanelPr
           event.preventDefault();
           if (profile !== undefined) {
             // The profile goes by its path in the list, which tells two of one name apart.
-            onCompare(repository.full_name, { file: profile.file, name: nameOf(profile) });
+            onCompare(repository.full_name, {
+              file: profile.file,
+              name: nameOf(profile),
+              folder: profiles.folder.value,
+            });
           }
         }}
       >

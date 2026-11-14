@@ -83,8 +83,7 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
               class="button"
               type="button"
               onClick={() => {
-                // The profile is read again as it is saved now, and GitHub as it is now.
-                run(comparison.compare(state.repository, { file: state.file, name: state.profile }));
+                run(comparison.again());
               }}
             >
               Compare again

@@ -59,6 +59,15 @@ export interface Compared {
   readonly warnings: readonly string[];
 }
 
+/** The profile a comparison is made with. */
+export interface ComparedProfile {
+  readonly file: string;
+  /** Its name as the list has it. */
+  readonly name: string;
+  /** The folder the profiles are kept in, which paths in a message are given from; the profile's own when left out. */
+  readonly folder?: string;
+}
+
 export type ComparisonState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'comparing'; readonly repository: string; readonly file: string; readonly profile: string }
@@ -144,7 +153,7 @@ function identityOf(item: unknown): string | undefined {
     return undefined;
   }
   if (item['actor_type'] !== undefined) {
-    return `${say(item['actor_type'], '')} ${say(item['actor_id'], 'any')}`;
+    return `${say(item['actor_type'], '')} ${say(item['actor_id'] ?? undefined, 'any')}`.trim();
   }
   if (item['type'] !== undefined && item['id'] !== undefined) {
     return `${say(item['type'], '')} ${say(item['id'], '')}`;
@@ -285,6 +294,7 @@ export class Comparison {
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
   #turn = 0;
+  #last: { readonly repository: string; readonly profile: ComparedProfile } | undefined;
 
   constructor(github: GitHub, onSignedOut: () => void) {
     this.#github = github;
@@ -318,8 +328,9 @@ export class Comparison {
   });
 
   /** Compares a repository with a profile as it is saved, by the profile's file and its name in the list. */
-  async compare(repository: string, profile: { readonly file: string; readonly name: string }): Promise<void> {
+  async compare(repository: string, profile: ComparedProfile): Promise<void> {
     const turn = (this.#turn += 1);
+    this.#last = { repository, profile };
     this.search.value = '';
     this.onlyLocked.value = false;
     this.state.value = { kind: 'comparing', repository, file: profile.file, profile: profile.name };
@@ -359,13 +370,20 @@ export class Comparison {
           repository,
           file: profile.file,
           profile: profile.name,
-          // The profile goes by its name, and a base profile by its file beside it, not by where the browser keeps them.
+          // The profile goes by its name, and a base profile by its path among the profiles, not by where the browser keeps them.
           message: (error instanceof Error ? error.message : String(error))
             .replaceAll(profile.file, profile.name)
-            .replaceAll(`${dirname(profile.file)}/`, ''),
+            .replaceAll(`${profile.folder ?? dirname(profile.file)}/`, ''),
           mismatch: error instanceof OwnerMismatchError,
         };
       }
+    }
+  }
+
+  /** Compares the same two again: the profile as it is saved now, and GitHub as it is now. */
+  async again(): Promise<void> {
+    if (this.#last !== undefined) {
+      await this.compare(this.#last.repository, this.#last.profile);
     }
   }
 
