@@ -15,6 +15,7 @@ import {
 
 import { basename } from '../engine/path.js';
 import type { ActionPatternChecks } from './action-pattern-checks.js';
+import type { ActionSearch } from './action-search.js';
 import { EntryEdits, type EntryList, type EntryRow, type SaveMode } from './entry-edits.js';
 import type { Entry } from './entry-forms.js';
 import { type DiffFold, type DiffLine, diffLines, foldUnchanged } from './line-diff.js';
@@ -242,10 +243,13 @@ export class ProfileEditor {
 
   /** What each allowed action pattern matches on GitHub, when the editor has a way to ask. */
   readonly patterns: ActionPatternChecks | undefined;
+  /** The search for repositories to allow actions from, when the editor has a way to ask. */
+  readonly actionSearch: ActionSearch | undefined;
 
-  constructor(file: string, patterns?: ActionPatternChecks) {
+  constructor(file: string, github?: { readonly patterns: ActionPatternChecks; readonly search: ActionSearch }) {
     this.file = file;
-    this.patterns = patterns;
+    this.patterns = github?.patterns;
+    this.actionSearch = github?.search;
   }
 
   /** Whether the profile has been read. */
@@ -470,6 +474,32 @@ export class ProfileEditor {
     if ('value' in parsed) {
       await this.#change(field, parsed.value);
     }
+  }
+
+  /** The allowed action patterns as the box has them, a line each. */
+  readonly #patternLines = computed(() => {
+    const row = this.sections.value
+      .flatMap((section) => section.groups.flatMap((group) => group.rows))
+      .find((item) => keyOf(item.field.path) === patternsPath);
+    return row === undefined ? [] : (row.text?.split('\n') ?? (Array.isArray(row.value) ? row.value.map(String) : []));
+  });
+
+  /** Whether the list allows every action of a repository, as `owner/name@*` on a line, in any case. */
+  allowsRepository(repository: string): boolean {
+    const pattern = `${repository}@*`.toLowerCase();
+    return this.#patternLines.value.some((line) => line.trim().toLowerCase() === pattern);
+  }
+
+  /** Adds `owner/name@*` on a new line at the end of the allowed action patterns. */
+  async allowRepository(repository: string): Promise<void> {
+    const field = allFields.find((item) => keyOf(item.path) === patternsPath);
+    if (field === undefined || this.allowsRepository(repository)) {
+      return;
+    }
+    const lines = this.#patternLines.value;
+    // A box left with an empty last line takes the pattern there.
+    const kept = lines.at(-1)?.trim() === '' ? lines.slice(0, -1) : lines;
+    await this.set(field, [...kept.map((line) => line.trim()).filter((line) => line !== ''), `${repository}@*`]);
   }
 
   /** The box was left: what was typed shows as its value from now on, unless it can't be one. */

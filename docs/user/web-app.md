@@ -139,6 +139,13 @@ pattern GitHub accepts. When GitHub can't be reached, or its limit is
 reached, the line says so. **Check again** asks GitHub about every line
 again, such as after you make the repository or push the tag.
 
+**Find an action on GitHub**, under the patterns, searches GitHub for
+repositories by name or description, a moment after you stop typing or when
+you press Enter. Each one found says how many stars it has and whether it has
+an action file at its top. **Add** puts `owner/name@*` on a new line of the
+list, which allows every action in that repository at any version; edit the
+line to narrow it. Escape puts the results away.
+
 On the **Pages** tab, **Take the site down** deletes the Pages site on each
 repository that follows the profile. Choosing it takes out the profile's
 other Pages settings, and setting any of them takes it out again.

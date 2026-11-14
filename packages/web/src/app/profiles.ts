@@ -3,6 +3,7 @@ import {
   captureProfile,
   checkActionPatterns,
   describeWarning,
+  findActions,
   type GitHub,
   listProfiles,
   type OwnerType,
@@ -16,6 +17,7 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from '../engine/files.j
 import { basename, dirname, join, relative } from '../engine/path.js';
 import { isSignedOut } from './account.js';
 import { ActionPatternChecks } from './action-pattern-checks.js';
+import { ActionSearch } from './action-search.js';
 import type { SaveMode } from './entry-edits.js';
 import type { Preferences } from './preferences.js';
 import { type OwnerChoice, ProfileEditor } from './profile-editor.js';
@@ -461,19 +463,10 @@ export class Profiles {
     }
     let editor = this.#editors.value.find((item) => item.file === listing.file);
     if (editor === undefined) {
-      editor = new ProfileEditor(
-        listing.file,
-        new ActionPatternChecks(async (patterns) => {
-          try {
-            return await checkActionPatterns(this.#github, patterns);
-          } catch (error) {
-            if (isSignedOut(error)) {
-              this.#onSignedOut();
-            }
-            throw error;
-          }
-        }),
-      );
+      editor = new ProfileEditor(listing.file, {
+        patterns: new ActionPatternChecks((patterns) => this.#asking(checkActionPatterns(this.#github, patterns))),
+        search: new ActionSearch((words) => this.#asking(findActions(this.#github, words))),
+      });
       this.#editors.value = [...this.#editors.value, editor];
       await editor.load();
     }
@@ -510,6 +503,18 @@ export class Profiles {
       await this.#sync({});
       await this.#list();
     });
+  }
+
+  /** What an editor asks GitHub: a sign-in GitHub refuses there goes to the sign-in page, as anywhere. */
+  async #asking<Answer>(asked: Promise<Answer>): Promise<Answer> {
+    try {
+      return await asked;
+    } catch (error) {
+      if (isSignedOut(error)) {
+        this.#onSignedOut();
+      }
+      throw error;
+    }
   }
 
   toggleFolder(path: string): void {
