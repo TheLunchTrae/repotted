@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import { type ActionPatternCheck, ActionPatternChecks } from '../src/app/action-pattern-checks.js';
+import { type ActionPatternCheck, ActionPatternChecks, patternNote } from '../src/app/action-pattern-checks.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -143,13 +143,69 @@ test('nothing is asked while the list is hidden, and it is checked at once when 
   expect(github.runs[1]).toEqual(['x/y']);
 });
 
-test('a long list is asked about a hundred patterns a run', () => {
+test('a long list is asked about a hundred patterns a run, one run after another', async () => {
   const github = held();
   const checks = new ActionPatternChecks(github.check);
 
   checks.follow(Array.from({ length: 150 }, (_, index) => `owner/repo-${index}`));
+  expect(github.runs.map((run) => run.length)).toEqual([100]);
+  expect(kinds(checks).every((kind) => kind === 'checking')).toBe(true);
 
+  await github.land();
   expect(github.runs.map((run) => run.length)).toEqual([100, 50]);
+  await github.land();
+  expect(kinds(checks).every((kind) => kind === 'checked')).toBe(true);
+});
+
+test('a change to another setting hands the same list over and starts no pause again', () => {
+  const github = held();
+  const checks = new ActionPatternChecks(github.check);
+  checks.follow(['a/b']);
+
+  checks.follow(['a/b', 'c/d']);
+  for (let turn = 0; turn < 5; turn += 1) {
+    vi.advanceTimersByTime(500);
+    checks.follow(['a/b', 'c/d']);
+  }
+
+  expect(github.runs[1]).toEqual(['c/d']);
+});
+
+test('check again during a pause asks about every line at once, the waiting one too', async () => {
+  const github = held();
+  const checks = new ActionPatternChecks(github.check);
+  checks.follow(['a/b']);
+  await github.land();
+  checks.follow(['a/b', 'c/d']);
+
+  checks.checkAgain();
+
+  expect(github.runs[1]).toEqual(['a/b', 'c/d']);
+  vi.advanceTimersByTime(600);
+  expect(github.runs).toHaveLength(2);
+});
+
+test('a note starts with a capital, but for a repository, which keeps its name', () => {
+  const note = (check: ActionPatternCheck): string => patternNote({ kind: 'checked', check }).text;
+  const found = {
+    status: 'match',
+    repository: 'actions/checkout',
+    archived: false,
+    ref: 'v4',
+    ref_kind: 'tag',
+  } as const;
+
+  expect(note({ pattern: 'actions/checkout@v4', blocks: false, ...found })).toBe('actions/checkout, tag v4.');
+  expect(note({ pattern: '!actions/checkout@v4', blocks: true, ...found })).toBe('Blocks actions/checkout, tag v4.');
+  expect(
+    patternNote({
+      kind: 'checked',
+      check: { pattern: 'x/y', blocks: false, status: 'not_found', missing: 'repository', name: 'x/y' },
+    }),
+  ).toEqual({ tone: 'warning', text: 'No repository x/y you can see.' });
+  expect(patternNote({ kind: 'failed', message: 'Failed to fetch' }).text).toBe(
+    'Could not be checked: Failed to fetch',
+  );
 });
 
 test("an editor's list is followed as it is typed, and only while GitHub shows it", async () => {
@@ -184,6 +240,14 @@ test("an editor's list is followed as it is typed, and only while GitHub shows i
 
   await editor.set(field('actions.allowed_actions'), 'all');
   expect(editor.patterns?.lines.value).toEqual([]);
+
+  // A profile that stops reading has no list to ask about.
+  await editor.resetAll();
+  await editor.type(field('actions.selected_actions.patterns_allowed'), 'actions/*\nnew/one');
+  await writeFile('/profiles/web.yaml', 'actions: 5\n');
+  await editor.load();
+  vi.advanceTimersByTime(600);
+  expect(github.runs).toHaveLength(2);
 
   await rm('/', { recursive: true });
 });

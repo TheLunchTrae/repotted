@@ -646,7 +646,7 @@ input[type='checkbox'] {
 }
 
 .pattern-good::before {
-  content: '✓';
+  content: '✓' / '';
 }
 
 .pattern-warning {
@@ -654,7 +654,7 @@ input[type='checkbox'] {
 }
 
 .pattern-warning::before {
-  content: '!';
+  content: '!' / '';
 }
 
 .pattern-bad {
@@ -662,7 +662,7 @@ input[type='checkbox'] {
 }
 
 .pattern-bad::before {
-  content: '✕';
+  content: '✕' / '';
 }
 
 .pattern-muted {
@@ -670,7 +670,7 @@ input[type='checkbox'] {
 }
 
 .pattern-muted::before {
-  content: '·';
+  content: '·' / '';
 }
 
 @media (width < 40rem) {

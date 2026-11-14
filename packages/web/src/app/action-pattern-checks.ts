@@ -1,5 +1,5 @@
 import { computed, signal } from '@preact/signals';
-import type { checkActionPatterns } from '@repotted/core';
+import { type checkActionPatterns, describeActionCheck } from '@repotted/core';
 
 export type ActionPatternCheck = Awaited<ReturnType<typeof checkActionPatterns>>[number];
 
@@ -18,6 +18,40 @@ export interface PatternLine {
    * and is never checked, and otherwise what is known of its pattern.
    */
   readonly state: Known | { readonly kind: 'several' } | undefined;
+}
+
+/** What a line says about its pattern, and how loudly: fine, worth a look, wrong, or nothing to judge. */
+export interface PatternNote {
+  readonly tone: 'good' | 'warning' | 'bad' | 'muted';
+  readonly text: string;
+}
+
+/** What a line's state reads as beside its pattern. */
+export function patternNote(state: NonNullable<PatternLine['state']>): PatternNote {
+  if (state.kind === 'several') {
+    return { tone: 'muted', text: "Several patterns on one line can't be checked. Put each on its own line." };
+  }
+  if (state.kind === 'failed') {
+    return { tone: 'muted', text: `Could not be checked: ${state.message}` };
+  }
+  if (state.kind !== 'checked') {
+    return { tone: 'muted', text: 'Checking…' };
+  }
+  const { check } = state;
+  // The engine says it after the pattern, as its text output prints it; the line here already shows the pattern.
+  const said = describeActionCheck(check).slice(check.pattern.length + 2);
+  // It starts with a word, or with a repository's name, which keeps its case.
+  const named =
+    !said.startsWith('blocks ') &&
+    (check.status === 'match' || check.status === 'missing_ref' || check.status === 'missing_path');
+  const text = `${named ? said : `${said.slice(0, 1).toUpperCase()}${said.slice(1)}`}.`;
+  if (check.status === 'match' || check.status === 'owner') {
+    return { tone: 'good', text };
+  }
+  if (check.status === 'invalid') {
+    return { tone: 'bad', text };
+  }
+  return { tone: check.status === 'unchecked' ? 'muted' : 'warning', text };
 }
 
 /** The patterns one run asks GitHub about. */
@@ -106,6 +140,11 @@ export class ActionPatternChecks {
    * lookup.
    */
   follow(lines: readonly string[] | undefined): void {
+    // The list is handed over after every change to the profile, and only a change to the list starts the pause again.
+    const before = this.#lines.value;
+    if (lines?.join('\n') === before?.join('\n') && (lines === undefined) === (before === undefined)) {
+      return;
+    }
     this.#lines.value = lines;
     const patterns = new Set(this.#patterns());
     // A pattern that left the list before its pause ended is not asked about.
@@ -156,9 +195,15 @@ export class ActionPatternChecks {
       return kind === undefined || kind === 'waiting';
     });
     this.#set(asking, () => ({ kind: 'checking' }));
+    // Each run's failure is kept as its patterns' state, so nothing is left to catch here.
+    this.#ask(asking).catch(() => undefined);
+  }
+
+  /** One run after another, so a long list asks no more at once than a short one, and a limit met stops the rest early. */
+  async #ask(asking: readonly string[]): Promise<void> {
     for (let start = 0; start < asking.length; start += perRun) {
       const patterns = asking.slice(start, start + perRun);
-      this.#check(patterns).then(
+      await this.#check(patterns).then(
         (checks) => {
           const answers = new Map(checks.map((check) => [check.pattern, check]));
           this.#set(patterns, (pattern) => {

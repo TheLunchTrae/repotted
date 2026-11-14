@@ -443,6 +443,7 @@ export class ProfileEditor {
       this.#entryEdits.setSaved(undefined);
       this.#preview.value = undefined;
       this.closePreview();
+      this.patterns?.follow(undefined);
       this.loadError.value = reasonOf(error, this.file);
       return;
     }
