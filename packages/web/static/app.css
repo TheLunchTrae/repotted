@@ -196,6 +196,141 @@ input[type='checkbox'] {
   accent-color: var(--rail);
 }
 
+/* On a touch screen every control is at least 44px tall, and fields use 16px
+   type, under which iOS Safari zooms in on focus. These rules come before the
+   rules they change, so a selector adds a class or an element where a later
+   rule sets the same property. */
+@media (pointer: coarse) {
+  .field,
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .button,
+  .button.button-small,
+  .field,
+  .tab,
+  .tree-item,
+  .account-menu > summary,
+  .check,
+  .owner-choices label,
+  .diff-fold,
+  button.folder-toggle,
+  button.row {
+    min-height: 44px;
+  }
+
+  a.wordmark,
+  .nav-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .menu-panel .menu-item {
+    min-height: 44px;
+    padding-block: 12px;
+  }
+
+  .segments label > span {
+    padding-block: 11px;
+  }
+
+  /* A link in a line of text gets a 44px target that overlaps the lines next
+     to it, so the text keeps its spacing; a list of them gets room for it. */
+  button.link {
+    padding-block: 12px;
+    margin-block: -12px;
+  }
+
+  /* Two links in one paragraph can wrap onto lines next to each other, where
+     the later target would cover the earlier link. Links in a sentence are
+     exempt from the target size, so these keep their text's height. */
+  p:has(button.link ~ button.link) button.link {
+    padding-block: 0;
+    margin-block: 0;
+  }
+
+  /* A batch's left-out keys each get a line of their own. */
+  p > .left-out-key {
+    display: block;
+    padding-block: 12px;
+  }
+
+  p > .left-out-key + .left-out-key::before {
+    content: none;
+  }
+
+  .page-body p > a:not([class]) {
+    padding-block: 13px;
+  }
+
+  ul.left-out li {
+    padding-block: 12px;
+  }
+
+  /* A native checkbox fills its whole box, so this one draws a box of the usual
+     size inside a 44px target. */
+  .ticked-row > input.tick {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin: 0 0 0 3px;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .ticked-row > input.tick + .row {
+    padding-inline-start: 4px;
+  }
+
+  .ticked-row > input.tick::before,
+  .ticked-row > input.tick::after {
+    content: '';
+    grid-area: 1 / 1;
+  }
+
+  .ticked-row > input.tick::before {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--muted);
+    border-radius: 4px;
+    background: var(--surface);
+  }
+
+  .ticked-row > input.tick:checked::before {
+    border-color: var(--rail);
+    background: var(--rail);
+  }
+
+  .ticked-row > input.tick:checked::after {
+    width: 6px;
+    height: 11px;
+    margin-top: -3px;
+    border: solid var(--surface);
+    border-width: 0 2px 2px 0;
+    rotate: 45deg;
+  }
+
+  .ticked-row > input.tick:focus-visible {
+    outline: none;
+  }
+
+  .ticked-row > input.tick:focus-visible::before {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .swatches label > span {
+    width: 44px;
+    height: 44px;
+  }
+}
+
 .pill {
   padding: 1px 8px;
   border-radius: 999px;
