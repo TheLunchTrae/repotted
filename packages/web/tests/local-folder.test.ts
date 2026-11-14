@@ -112,6 +112,7 @@ test('a first sync brings each side what the other has and deletes nothing, and 
     pulled: ['base.yaml', 'teams/web.yaml'],
     pushed: ['mine.yaml'],
     conflicts: [],
+    failures: [],
   });
   expect(await readFile(`${working}/teams/web.yaml`, 'utf8')).toBe('extends: ../base.yaml\n');
   expect(disk.kept.get('mine.yaml')).toBe('merge: {}\n');
@@ -125,6 +126,7 @@ test('a first sync brings each side what the other has and deletes nothing, and 
     pulled: ['new.yaml', 'teams/web.yaml'],
     pushed: ['base.yaml', 'mine.yaml'],
     conflicts: [],
+    failures: [],
   });
   expect(disk.kept.get('base.yaml')).toBe('repository:\n  has_wiki: true\n');
   expect(disk.kept.has('mine.yaml')).toBe(false);
@@ -147,6 +149,7 @@ test('a profile changed on both sides stays as it is in both until one side is k
     pulled: [],
     pushed: [],
     conflicts: ['base.yaml', 'other.yaml'],
+    failures: [],
   });
   expect(await readFile(`${working}/base.yaml`, 'utf8')).toBe('mine\n');
   expect(disk.kept.get('base.yaml')).toBe('theirs\n');
@@ -156,11 +159,13 @@ test('a profile changed on both sides stays as it is in both until one side is k
     pulled: ['base.yaml'],
     pushed: [],
     conflicts: ['other.yaml'],
+    failures: [],
   });
   expect(await readFile(`${working}/base.yaml`, 'utf8')).toBe('theirs\n');
   expect(await syncLocalFolder(working, disk, { prefer: 'local', only: ['other.yaml'] })).toMatchObject({
     pushed: ['other.yaml'],
     conflicts: [],
+    failures: [],
   });
   expect(disk.kept.get('other.yaml')).toBe('mine too\n');
 });
@@ -169,7 +174,9 @@ test('a profile that cannot be written fails the sync without holding up the res
   const disk = new Disk('config', { 'theirs.yaml': base });
   await here({ 'a.yaml': 'a\n', 'refused.yaml': 'r\n', 'z.yaml': 'z\n' });
 
-  await expect(syncLocalFolder(working, disk)).rejects.toThrow('refused.yaml: The browser refused to write');
+  expect(await syncLocalFolder(working, disk)).toMatchObject({
+    failures: ['refused.yaml: The browser refused to write refused.yaml'],
+  });
   // The profiles on either side of the one refused were settled all the same.
   expect(disk.kept.get('a.yaml')).toBe('a\n');
   expect(disk.kept.get('z.yaml')).toBe('z\n');
@@ -178,7 +185,7 @@ test('a profile that cannot be written fails the sync without holding up the res
   // What reached the folder before the failure is not taken for something deleted here, or there.
   disk.kept.delete('a.yaml');
   await rm(`${working}/refused.yaml`);
-  expect(await syncLocalFolder(working, disk)).toEqual({ pulled: ['a.yaml'], pushed: [], conflicts: [] });
+  expect(await syncLocalFolder(working, disk)).toEqual({ pulled: ['a.yaml'], pushed: [], conflicts: [], failures: [] });
   await expect(readFile(`${working}/a.yaml`, 'utf8')).rejects.toThrow();
 });
 
@@ -187,7 +194,12 @@ test('a profile made here is never written over a file in the folder whose name 
   await syncLocalFolder(working, disk);
   await here({ 'team.yaml': 'mine\n' });
 
-  expect(await syncLocalFolder(working, disk)).toEqual({ pulled: [], pushed: [], conflicts: ['team.yaml'] });
+  expect(await syncLocalFolder(working, disk)).toEqual({
+    pulled: [],
+    pushed: [],
+    conflicts: ['team.yaml'],
+    failures: [],
+  });
   // Keeping this side writes nothing either, since on some computers the two names are one file.
   expect(await syncLocalFolder(working, disk, { prefer: 'local', only: ['team.yaml'] })).toMatchObject({
     pushed: [],
@@ -198,6 +210,7 @@ test('a profile made here is never written over a file in the folder whose name 
   expect(await syncLocalFolder(working, disk, { prefer: 'remote', only: ['team.yaml'] })).toMatchObject({
     pulled: ['team.yaml'],
     conflicts: [],
+    failures: [],
   });
   await expect(readFile(`${working}/team.yaml`, 'utf8')).rejects.toThrow();
 });
@@ -222,6 +235,7 @@ test('a working copy is replaced record first, so one cut short never reads as p
     pulled: [],
     pushed: [],
     conflicts: [],
+    failures: [],
   });
 });
 
@@ -463,4 +477,21 @@ test('unsaved changes made while the picker is open still hold a change of folde
 
   expect(await using).toBe('Save or reset your unsaved changes first.');
   expect(profiles.source.value).toEqual({ kind: 'folder', name: 'config' });
+});
+
+test('a profile that cannot be written is said, and a conflict found in the same sync still shows', async () => {
+  const folders = new Folders();
+  const disk = new Disk('config', { 'base.yaml': base });
+  folders.next = disk;
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined, folders);
+  await profiles.useFolder(false);
+
+  disk.kept.set('base.yaml', 'theirs\n');
+  await writeFile(`${working}/base.yaml`, 'mine\n');
+  await writeFile(`${working}/refused.yaml`, 'r\n');
+  await profiles.refresh();
+
+  const sync = profiles.sync.value;
+  expect(sync.status === 'failed' ? sync.message : '').toContain('refused.yaml: The browser refused to write');
+  expect(profiles.conflicts.value).toEqual(['base.yaml']);
 });

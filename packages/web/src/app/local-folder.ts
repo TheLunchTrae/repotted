@@ -35,6 +35,8 @@ export interface FolderSyncResult {
   readonly pushed: readonly string[];
   /** The profiles that changed both here and in the folder since the last sync, which stay as they are in both. */
   readonly conflicts: readonly string[];
+  /** The profiles that couldn't be read or written, each with why. They stay as they are in both. */
+  readonly failures: readonly string[];
 }
 
 // What the working copy and the folder last agreed on, by path, so a sync can tell which side changed.
@@ -45,7 +47,8 @@ async function workingFiles(folder: string, prefix = ''): Promise<Map<string, st
   const files = new Map<string, string>();
   for (const entry of await readdir(join(folder, prefix), { withFileTypes: true })) {
     const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
-    if (entry.name.startsWith('.')) {
+    // The same files stay out on both sides, or one left out of the folder's would read as deleted there.
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') {
       continue;
     }
     if (entry.isDirectory()) {
@@ -96,7 +99,7 @@ export async function unsyncedFiles(working: string): Promise<ReadonlyMap<string
  * it would replace the other.
  *
  * A profile that can't be read or written doesn't hold up the rest: every
- * other one is settled, and the sync then fails with why.
+ * other one is settled, and it is named in `failures` with why.
  */
 export async function syncLocalFolder(
   working: string,
@@ -105,9 +108,12 @@ export async function syncLocalFolder(
 ): Promise<FolderSyncResult> {
   await mkdir(working, { recursive: true });
   const [here, listed, base] = await Promise.all([workingFiles(working), folder.files(), agreed(working)]);
-  // Only profiles sync: a hidden file or folder, or a file of another kind, is never read, written, or deleted.
+  // Only profiles sync: a hidden file or folder, installed packages, or a file of another kind, is never read, written, or deleted.
   const there = new Map(
-    [...listed].filter(([path]) => /\.ya?ml$/iu.test(path) && !path.split('/').some((part) => part.startsWith('.'))),
+    [...listed].filter(
+      ([path]) =>
+        /\.ya?ml$/iu.test(path) && !path.split('/').some((part) => part.startsWith('.') || part === 'node_modules'),
+    ),
   );
   const pulled: string[] = [];
   const pushed: string[] = [];
@@ -160,15 +166,7 @@ export async function syncLocalFolder(
     // What was settled before a failure stays settled, so the next sync doesn't take it for a change.
     await writeFile(join(working, record), JSON.stringify(Object.fromEntries(next)));
   }
-  const [first] = failures;
-  if (first !== undefined) {
-    throw new Error(
-      failures.length === 1
-        ? first
-        : `${first}, and ${failures.length - 1} more ${failures.length === 2 ? 'profile' : 'profiles'}`,
-    );
-  }
-  return { pulled, pushed, conflicts };
+  return { pulled, pushed, conflicts, failures };
 }
 
 /** Replaces one working copy with another, its record of the last sync included, and removes the other. */

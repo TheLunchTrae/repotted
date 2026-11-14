@@ -303,6 +303,10 @@ export class Profiles {
         }
       }
       const result = await syncLocalFolder(nextComputerFolder, folder);
+      const [failure] = result.failures;
+      if (failure !== undefined) {
+        throw new Error(failure);
+      }
       await replaceWorkingCopy(nextComputerFolder, computerFolder);
       await this.#folders?.remember(folder);
       this.#localFolder = folder;
@@ -367,7 +371,10 @@ export class Profiles {
         this.connectError.value = unsavedFirst;
         return unsavedFirst;
       }
-      await this.#sync({});
+      // A last sync gives the folder on this computer what it lacks, when it can.
+      if (this.source.value.kind === 'folder') {
+        await this.#sync({});
+      }
       const unsynced = await this.#unsynced();
       if (unsynced !== undefined) {
         this.connectError.value = unsynced;
@@ -437,7 +444,10 @@ export class Profiles {
         this.connectError.value = unsavedFirst;
         return;
       }
-      await this.#sync({});
+      // A last sync gives the folder on this computer what it lacks, when it can.
+      if (this.source.value.kind === 'folder') {
+        await this.#sync({});
+      }
       const unsynced = await this.#unsynced();
       if (unsynced !== undefined) {
         this.connectError.value = unsynced;
@@ -768,9 +778,14 @@ export class Profiles {
         this.#localFolder = saved.folder;
       }
       const result = await syncLocalFolder(this.folder.value, this.#localFolder, options);
+      this.conflicts.value = result.conflicts;
+      const [failure] = result.failures;
+      if (failure !== undefined) {
+        const more = result.failures.length - 1;
+        throw new Error(more === 0 ? failure : `${failure}, and ${more} more ${more === 1 ? 'profile' : 'profiles'}`);
+      }
       this.needsFolderAccess.value = false;
       this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
-      this.conflicts.value = result.conflicts;
     } catch (error) {
       // The browser may have taken its leave back, as it does when the tab was away for long,
       // so the folder is asked for afresh next time, and the user for their leave if it went.
