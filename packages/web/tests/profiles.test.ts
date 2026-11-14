@@ -682,6 +682,30 @@ test('unsaved changes outlast a look at another profile, hold a move back, and a
   expect(profiles.opened.value?.text).toContain('has_wiki: true');
 });
 
+test('closing the open profile leaves none open, and its unsaved changes wait for it to open again', async () => {
+  await inBrowser({ 'base.yaml': base });
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  await profiles.refresh();
+  const [listed] = profiles.listings.value;
+  await profiles.select(listed);
+  const editor = profiles.editor.value;
+  const field = editor?.sections.value[0]?.groups[1]?.rows[0]?.field;
+  if (listed === undefined || editor === undefined || field === undefined) {
+    throw new Error('The open profile should have an editor.');
+  }
+  await editor.set(field, false);
+
+  await profiles.select(undefined);
+  expect(profiles.selected.value).toBeUndefined();
+  expect(profiles.editor.value).toBeUndefined();
+  expect(profiles.opened.value).toBeUndefined();
+  expect([...profiles.unsaved.value]).toEqual([listed.file]);
+
+  await profiles.select(listed);
+  expect(profiles.editor.value).toBe(editor);
+  expect(editor.dirty.value).toBe(true);
+});
+
 test('every unsaved profile is saved or discarded at once, and one that cannot be saved keeps its changes', async () => {
   await inBrowser({ 'base.yaml': base, 'other.yaml': base });
   const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
@@ -778,6 +802,7 @@ test('a deleted profile takes its unsaved changes with it', async () => {
 
   expect(profiles.unsaved.value.size).toBe(0);
   expect(profiles.editor.value).toBeUndefined();
+  expect(profiles.selected.value).toBeUndefined();
 });
 
 test('an editor goes with its profile when a sync removes it, and every editor goes when profiles move', async () => {

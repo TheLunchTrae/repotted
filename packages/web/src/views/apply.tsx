@@ -1,10 +1,12 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
+import { repositoryAddress } from '../app/address-selection.js';
 import type { Apply } from '../app/apply.js';
 import type { CompareRow } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
+import { BarActions } from './action-bar.js';
 import { Link } from './link.js';
 import { ProfileSettings } from './profile-editor.js';
 import { run } from './run.js';
@@ -89,8 +91,9 @@ interface ApplyProps {
 export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
   const state = apply.state.value;
   const [confirming, setConfirming] = useState(false);
+  // Back to the repository this is about, open on the repositories page.
   const back = (
-    <Link router={router} to="/">
+    <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
       Back to repositories
     </Link>
   );
@@ -237,17 +240,19 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                         Save edits to profile
                       </button>
                     )}
-                    <button
-                      class="button button-primary"
-                      type="button"
-                      disabled={editor.saving.value || (editor.dirty.value && !editor.canSave.value)}
-                      onClick={() => {
-                        run(apply.review());
-                      }}
-                    >
-                      Review changes
-                    </button>
                   </>
+                ),
+                next: (
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    disabled={editor.saving.value || (editor.dirty.value && !editor.canSave.value)}
+                    onClick={() => {
+                      run(apply.review());
+                    }}
+                  >
+                    Review changes
+                  </button>
                 ),
               }}
             />
@@ -341,41 +346,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
             </div>
           </>
         )}
-        {state.kind !== 'applied' && state.kind !== 'unfinished' && state.kind !== 'editing' && (
-          <div class="save-bar">
-            {discard}
-            <button
-              class="button"
-              type="button"
-              disabled={working}
-              onClick={() => {
-                run(apply.backToEdits());
-              }}
-            >
-              Back to edits
-            </button>
-            <button
-              class="button"
-              type="button"
-              disabled={working}
-              onClick={() => {
-                run(apply.reviewAgain());
-              }}
-            >
-              Review again
-            </button>
-            <button
-              class="button button-primary"
-              type="button"
-              disabled={!apply.canApply.value}
-              onClick={() => {
-                setConfirming(true);
-              }}
-            >
-              Apply
-            </button>
-          </div>
-        )}
+        {/* Before the action bar, so the bar stays the page's last child. */}
         {confirming && (
           <Confirm
             apply={apply}
@@ -383,6 +354,49 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
               setConfirming(false);
             }}
           />
+        )}
+        {state.kind !== 'applied' && state.kind !== 'unfinished' && state.kind !== 'editing' && (
+          <div class="save-bar">
+            <BarActions
+              main={
+                <button
+                  class="button button-primary"
+                  type="button"
+                  disabled={!apply.canApply.value}
+                  onClick={() => {
+                    setConfirming(true);
+                  }}
+                >
+                  Apply
+                </button>
+              }
+              others={
+                <>
+                  {discard}
+                  <button
+                    class="button"
+                    type="button"
+                    disabled={working}
+                    onClick={() => {
+                      run(apply.backToEdits());
+                    }}
+                  >
+                    Back to edits
+                  </button>
+                  <button
+                    class="button"
+                    type="button"
+                    disabled={working}
+                    onClick={() => {
+                      run(apply.reviewAgain());
+                    }}
+                  >
+                    Review again
+                  </button>
+                </>
+              }
+            />
+          </div>
         )}
       </article>
     </div>

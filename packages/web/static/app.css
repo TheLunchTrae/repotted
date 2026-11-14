@@ -196,6 +196,141 @@ input[type='checkbox'] {
   accent-color: var(--rail);
 }
 
+/* On a touch screen every control is at least 44px tall, and fields use 16px
+   type, under which iOS Safari zooms in on focus. These rules come before the
+   rules they change, so a selector adds a class or an element where a later
+   rule sets the same property. */
+@media (pointer: coarse) {
+  .field,
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .button,
+  .button.button-small,
+  .field,
+  .tab,
+  .tree-item,
+  .account-menu > summary,
+  .check,
+  .owner-choices label,
+  .diff-fold,
+  button.folder-toggle,
+  button.row {
+    min-height: 44px;
+  }
+
+  a.wordmark,
+  .nav-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .menu-panel .menu-item {
+    min-height: 44px;
+    padding-block: 12px;
+  }
+
+  .segments label > span {
+    padding-block: 11px;
+  }
+
+  /* A link in a line of text gets a 44px target that overlaps the lines next
+     to it, so the text keeps its spacing; a list of them gets room for it. */
+  button.link {
+    padding-block: 12px;
+    margin-block: -12px;
+  }
+
+  /* Two links in one paragraph can wrap onto lines next to each other, where
+     the later target would cover the earlier link. Links in a sentence are
+     exempt from the target size, so these keep their text's height. */
+  p:has(button.link ~ button.link) button.link {
+    padding-block: 0;
+    margin-block: 0;
+  }
+
+  /* A batch's left-out keys each get a line of their own. */
+  p > .left-out-key {
+    display: block;
+    padding-block: 12px;
+  }
+
+  p > .left-out-key + .left-out-key::before {
+    content: none;
+  }
+
+  .page-body p > a:not([class]) {
+    padding-block: 13px;
+  }
+
+  ul.left-out li {
+    padding-block: 12px;
+  }
+
+  /* A native checkbox fills its whole box, so this one draws a box of the usual
+     size inside a 44px target. */
+  .ticked-row > input.tick {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin: 0 0 0 3px;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .ticked-row > input.tick + .row {
+    padding-inline-start: 4px;
+  }
+
+  .ticked-row > input.tick::before,
+  .ticked-row > input.tick::after {
+    content: '';
+    grid-area: 1 / 1;
+  }
+
+  .ticked-row > input.tick::before {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--muted);
+    border-radius: 4px;
+    background: var(--surface);
+  }
+
+  .ticked-row > input.tick:checked::before {
+    border-color: var(--rail);
+    background: var(--rail);
+  }
+
+  .ticked-row > input.tick:checked::after {
+    width: 6px;
+    height: 11px;
+    margin-top: -3px;
+    border: solid var(--surface);
+    border-width: 0 2px 2px 0;
+    rotate: 45deg;
+  }
+
+  .ticked-row > input.tick:focus-visible {
+    outline: none;
+  }
+
+  .ticked-row > input.tick:focus-visible::before {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .swatches label > span {
+    width: 44px;
+    height: 44px;
+  }
+}
+
 .pill {
   padding: 1px 8px;
   border-radius: 999px;
@@ -486,13 +621,18 @@ input[type='checkbox'] {
 }
 
 .page-body {
+  /* The page's side and bottom padding, which a .save-bar among its
+     children reaches across. */
+  --page-inline: 24px;
+  --page-end: 48px;
+
   display: grid;
   gap: 16px;
   align-content: start;
   width: 100%;
   max-width: 1000px;
   margin: 0 auto;
-  padding: 28px 24px 48px;
+  padding: 28px var(--page-inline) var(--page-end);
 }
 
 .page-heading {
@@ -648,6 +788,45 @@ input[type='checkbox'] {
 .panel h2 {
   font-size: 19px;
   overflow-wrap: anywhere;
+}
+
+/* On a phone a repository's details are a screen of their own, in place of the list. */
+@media (max-width: 760px) {
+  .page-details > .page-body {
+    display: none;
+  }
+
+  .page-details > .panel {
+    border-top: 0;
+  }
+
+  .panel-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    margin: -10px 0 0 -10px;
+    padding: 0 12px 0 10px;
+    border: 0;
+    border-radius: var(--control-radius);
+    background: none;
+    color: var(--link);
+    font: 500 15px/1 var(--sans);
+    cursor: pointer;
+  }
+
+  .panel-back::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border: solid currentColor;
+    border-width: 0 0 2px 2px;
+    rotate: 45deg;
+  }
+
+  .panel-back:hover {
+    background: var(--tint);
+  }
 }
 
 .page-narrow {
@@ -928,6 +1107,53 @@ input[type='checkbox'] {
 
 .tree-folder[aria-expanded='true']::before {
   rotate: 45deg;
+}
+
+/* The way back to the list from an open profile, which only a phone needs. */
+.profiles-back {
+  display: none;
+}
+
+/* On a phone the list and the open profile take the page in turn, as data-screen says. */
+@media (max-width: 760px) {
+  .page-with-sidebar[data-screen='profile'] > .sidebar {
+    display: none;
+  }
+
+  /* The list screen keeps the page's heading for screen readers, without the prompt to choose. */
+  .page-with-sidebar .profiles-choose {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .profiles-choose .empty {
+    display: none;
+  }
+
+  /* button.link, so it keeps its own spacing over the touch screen's link target. */
+  button.link.profiles-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    margin: 4px 8px -12px;
+    padding: 0 8px;
+    text-underline-offset: 3px;
+  }
+
+  .profiles-back::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border: solid currentColor;
+    border-width: 0 0 1.5px 1.5px;
+    rotate: 45deg;
+  }
 }
 
 /* Settings */
@@ -1524,10 +1750,54 @@ select.field {
   align-items: center;
   justify-content: end;
   gap: 8px 12px;
-  margin: 0 -24px -48px;
-  padding: 12px 24px;
+  margin: 0 calc(-1 * var(--page-inline)) calc(-1 * var(--page-end));
+  padding: 12px var(--page-inline);
   border-top: 1px solid var(--border);
   background: var(--surface);
+}
+
+/* Only the page's last child reaches into its bottom padding; a bar with more
+   after it would overlap that, so views render their dialogs before the bar. */
+.save-bar:not(:last-child) {
+  margin-bottom: 0;
+}
+
+/* The menu's panel lines up with the whole group, not with More, so a wide main button can't push it off the screen. */
+.bar-actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 8px 12px;
+  min-width: 0;
+  margin-inline-start: auto;
+}
+
+.bar-actions .bar-more {
+  position: static;
+}
+
+/* The bar sits at the foot of the screen, so its menu opens upward. */
+.menu-panel-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.bar-more .menu-panel {
+  min-width: 220px;
+}
+
+/* Its actions read as a menu's items, not a stack of buttons. */
+.bar-more .menu-panel .button {
+  justify-content: flex-start;
+  width: 100%;
+  border-color: transparent;
+  background: none;
+  font-weight: 400;
+}
+
+.bar-more .menu-panel .button:hover:not(:disabled) {
+  background: var(--tint);
 }
 
 .save-bar .problem {
@@ -1658,6 +1928,7 @@ select.field {
   }
 }
 
+/* The phone layout. action-bar.tsx's usePhone matches this width; change both together. */
 @media (max-width: 760px) {
   .shell-bar {
     gap: 12px;
@@ -1684,7 +1955,10 @@ select.field {
   }
 
   .page-body {
-    padding: 20px 16px 32px;
+    --page-inline: 16px;
+    --page-end: 32px;
+
+    padding-top: 20px;
   }
 
   .folder-toggle,
