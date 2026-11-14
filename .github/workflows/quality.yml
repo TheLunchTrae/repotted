@@ -31,7 +31,49 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The parent commit too, to tell whether the change touches the web app.
+          fetch-depth: 2
       - name: Run the mandatory gate
         uses: ./.github/actions/gate
         with:
           cache: true
+      # The layout check needs a browser, so it runs only when a change can
+      # move the web app's layout. Its steps skip rather than the job, so the
+      # required check still reports. A pull request's merge commit, and a
+      # push or merge queue commit, has the base as its first parent.
+      - name: Find web app changes
+        id: changes
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ] || ! git rev-parse --quiet --verify 'HEAD^1' > /dev/null; then
+            web=true
+          elif git diff --quiet 'HEAD^1' HEAD -- packages/web packages/core/tests/fake-github.ts pnpm-lock.yaml .config/mise .github/workflows/quality.yml; then
+            web=false
+          else
+            web=true
+          fi
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+      - name: Find the Playwright version
+        id: playwright
+        if: steps.changes.outputs.web == 'true'
+        shell: bash
+        run: echo "version=$(mise exec -- pnpm --filter @repotted/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+      - name: Restore Chromium
+        id: chromium
+        if: steps.changes.outputs.web == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+      # apt's packages aren't cached, so the system libraries install on every run.
+      - name: Install Chromium
+        if: steps.changes.outputs.web == 'true' && steps.chromium.outputs.cache-hit != 'true'
+        run: mise exec -- pnpm --filter @repotted/web exec playwright install --with-deps --only-shell chromium
+      - name: Install Chromium's system libraries
+        if: steps.changes.outputs.web == 'true' && steps.chromium.outputs.cache-hit == 'true'
+        run: mise exec -- pnpm --filter @repotted/web exec playwright install-deps chromium-headless-shell
+      - name: Check the web app's layout
+        if: steps.changes.outputs.web == 'true'
+        run: mise run ts:web:layout
