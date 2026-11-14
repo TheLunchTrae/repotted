@@ -263,9 +263,14 @@ export class Apply {
         await saveStagedEdits(stagedFile(state.repository));
       });
     } catch (error) {
-      this.editError.value = cleaned(messageOf(error), state.repository);
+      // Said only on the edits it is about: the apply may have been left or discarded while the turn ran.
+      if (this.state.value === state) {
+        this.editError.value = cleaned(messageOf(error), state.repository);
+      }
     }
-    await this.editor.value?.load();
+    if (this.state.value === state) {
+      await this.editor.value?.load();
+    }
   }
 
   /** Saves the editor's unsaved edits to the apply, and says whether nothing is left unsaved. */
@@ -330,7 +335,7 @@ export class Apply {
     const state = this.state.value;
     if (state.kind === 'editing' && !out) {
       // Put back from the edits, where what is left out can't be edited: the edits stay open, with the value back.
-      if (await this.#saveEdits()) {
+      if ((await this.#saveEdits()) && this.state.value === state) {
         await this.#work(state.repository, state.profile, 'reviewing', async () => {
           await editStagedApply(stagedFile(state.repository), [{ exclude: key, excluded: false }]);
           return this.#edit(state.repository);
