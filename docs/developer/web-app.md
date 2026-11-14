@@ -183,6 +183,10 @@ Its first step is the profile editor over the staged apply's file: an
 write its file, the engine's profile functions for a profile and its staged
 apply functions for an apply.
 
+`batch-apply.ts` does the same for several repositories through the engine's
+batch, whose members are the staged applies of single applies, so one can
+join the other.
+
 `action-pattern-checks.ts` asks GitHub what each allowed action pattern
 matches, with the engine's `checkActionPatterns`, and keeps the answers by
 pattern text. `action-search.ts` searches GitHub for repositories to add to

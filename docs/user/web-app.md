@@ -123,7 +123,49 @@ edits that could be saved. The repository's panel says **An apply here is
 not finished** with **Resume**. Starting another apply there offers to pick
 the unfinished one up or start over.
 
-Applying to several repositories at once is not in the web app yet.
+### Apply a profile to several repositories
+
+A batch apply applies one profile to several repositories, with each
+repository's changes reviewed on its own first. Nothing is written to GitHub
+until you confirm.
+
+To start one, tick the repositories on the **Repositories** page, pick a
+profile in the panel, and click **Review apply**. Ticks stay while you
+search, so you can find repositories one search at a time. A repository that
+already has an apply in progress joins the batch as it is, one-off edits and
+all. When that apply starts from another profile, or from none, the batch
+page says so on that repository. One batch is in progress at a time: while a
+batch is unfinished, **Review apply** waits until you resume it and apply or
+discard it.
+
+The page starts with **All repositories**, which lists each change that can
+be left out with how many repositories it reaches. **Leave out
+everywhere** leaves a change out of every repository's apply; the profile
+keeps it, and **Put back everywhere** undoes it. A repository whose one-off
+edits set that change keeps them, and the page says which.
+
+Under it, each repository shows its status: how many changes, **Already in
+line**, **Needs access** for a change GitHub would refuse, or **Couldn't
+compare** with why, and then its changes, each with **Leave out**. Untick
+**In this batch** to leave a repository out; its apply stays, and ticking it
+puts it back. **Remove from batch**, on a repository that is left out or
+couldn't be compared, takes it out for good: an apply the batch started for
+it is discarded, and one that joined the batch stays.
+
+Click **Apply to N repositories** and then **Apply now** to write them, one
+repository at a time. Repotted checks each on GitHub first, and writes
+nothing to one that changed since you reviewed it. A repository with a
+change GitHub would refuse waits, as do those you left out.
+
+Then the page lists the repositories that didn't finish first, with why, and
+**Review again** plans them again. Those that finished, or needed nothing,
+have left the batch, and the batch ends with the last of them. A batch you
+leave before it finishes is kept in this browser: the **Repositories** page
+says **A batch apply is not finished** with **Resume**. **Discard batch**
+throws it away; an apply that joined it stays, to resume on its own.
+
+To change one repository's one-off edits, open its own apply from the
+**Repositories** page.
 
 ## Profiles
 

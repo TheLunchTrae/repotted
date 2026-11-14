@@ -48,6 +48,7 @@ export class Repositories {
   readonly #onSignedOut: () => void;
   readonly #hiddenOwners = signal<readonly string[]>([]);
   readonly #selectedName = signal<string | undefined>(undefined);
+  readonly #tickedNames = signal<ReadonlySet<string>>(new Set());
 
   constructor(github: GitHub, user: User, preferences: Preferences, onSignedOut: () => void) {
     this.#github = github;
@@ -106,6 +107,15 @@ export class Repositories {
       .find((repository) => repository.full_name === this.#selectedName.value),
   );
 
+  /**
+   * The ticked repositories the account still lists, in the list's order. One
+   * a search or a hidden owner takes out of view stays ticked, since ticking
+   * across searches is how several are found.
+   */
+  readonly ticked = computed<readonly Repository[]>(() =>
+    (this.list.value?.repositories ?? []).filter((repository) => this.#tickedNames.value.has(repository.full_name)),
+  );
+
   readonly ownersFiltered = computed(() => this.owners.value.some((owner) => !owner.shown));
   readonly everyOwnerHidden = computed(
     () => this.owners.value.length > 0 && this.owners.value.every((owner) => !owner.shown),
@@ -153,6 +163,21 @@ export class Repositories {
 
   select(repository: Repository | undefined): void {
     this.#selectedName.value = repository?.full_name;
+  }
+
+  /** Ticks a repository for an apply to several, or unticks it. */
+  tick(repository: Repository, ticked: boolean): void {
+    const names = new Set(this.#tickedNames.value);
+    if (ticked) {
+      names.add(repository.full_name);
+    } else {
+      names.delete(repository.full_name);
+    }
+    this.#tickedNames.value = names;
+  }
+
+  clearTicks(): void {
+    this.#tickedNames.value = new Set();
   }
 
   setOwnerShown(owner: string, shown: boolean): void {

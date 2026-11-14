@@ -1115,6 +1115,44 @@ select.field {
   padding-inline-start: 20px;
 }
 
+/* Ticking several repositories */
+.ticked-row {
+  display: flex;
+  align-items: center;
+}
+
+.ticked-row .row {
+  flex: 1;
+  min-width: 0;
+}
+
+.tick {
+  width: 18px;
+  height: 18px;
+  margin: 0 4px 0 14px;
+  accent-color: var(--rail);
+}
+
+.ticked-names {
+  display: grid;
+  gap: 2px;
+  max-height: 12rem;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.left-out-key + .left-out-key::before {
+  content: ' · ';
+}
+
 /* A comparison */
 .left-out {
   display: grid;

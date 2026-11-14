@@ -53,6 +53,7 @@ export {
   discardBatch,
   discardBatchMember,
   editEverywhere,
+  isBatch,
   isBatchPlan,
   isUnfinished,
   leaveOut,
