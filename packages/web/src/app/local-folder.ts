@@ -71,11 +71,32 @@ async function agreed(working: string): Promise<Map<string, string>> {
 }
 
 /**
+ * The profiles of a working copy that the folder has not received as they
+ * are: made or changed since the last sync, or never synced. A profile
+ * deleted here since then is not among them.
+ */
+export async function unsyncedFiles(working: string): Promise<ReadonlyMap<string, string>> {
+  const [here, base] = await Promise.all([
+    workingFiles(working).catch(() => new Map<string, string>()),
+    agreed(working),
+  ]);
+  return new Map([...here].filter(([path, text]) => base.get(path) !== text));
+}
+
+/**
  * Brings a working copy and a folder on the computer in line. A profile
  * that changed on one side since the last sync goes to the other, and so
  * does one made or deleted there. One that changed on both stays as it is
  * in both and is a conflict, until `prefer` names the side to keep for the
  * paths in `only`. On a first sync nothing is deleted on either side.
+ *
+ * A profile made here whose name differs only in case from a file in the
+ * folder is a conflict too, and is never written whichever side is
+ * preferred: on a computer that takes the two names for one file, writing
+ * it would replace the other.
+ *
+ * A profile that can't be read or written doesn't hold up the rest: every
+ * other one is settled, and the sync then fails with why.
  */
 export async function syncLocalFolder(
   working: string,
@@ -91,6 +112,7 @@ export async function syncLocalFolder(
   const pulled: string[] = [];
   const pushed: string[] = [];
   const conflicts: string[] = [];
+  const failures: string[] = [];
   const next = new Map(base);
   const settle = (path: string, text: string | undefined): void => {
     if (text === undefined) {
@@ -99,6 +121,8 @@ export async function syncLocalFolder(
       next.set(path, text);
     }
   };
+  const clashes = (path: string): boolean =>
+    [...there.keys()].some((other) => other !== path && other.toLowerCase() === path.toLowerCase());
   try {
     for (const path of [...new Set([...here.keys(), ...there.keys(), ...base.keys()])].sort()) {
       const mine = here.get(path);
@@ -109,26 +133,40 @@ export async function syncLocalFolder(
         continue;
       }
       const preferred = options.only?.includes(path) === true ? options.prefer : undefined;
-      if (preferred === 'remote' || (preferred === undefined && mine === was)) {
-        if (theirs === undefined) {
-          await rm(join(working, path), { force: true });
+      try {
+        if (preferred === 'remote' || (preferred === undefined && mine === was)) {
+          if (theirs === undefined) {
+            await rm(join(working, path), { force: true });
+          } else {
+            await mkdir(dirname(join(working, path)), { recursive: true });
+            await writeFile(join(working, path), theirs);
+          }
+          settle(path, theirs);
+          pulled.push(path);
+        } else if (mine !== undefined && theirs === undefined && clashes(path)) {
+          conflicts.push(path);
+        } else if (preferred === 'local' || theirs === was) {
+          await (mine === undefined ? folder.remove(path) : folder.write(path, mine));
+          settle(path, mine);
+          pushed.push(path);
         } else {
-          await mkdir(dirname(join(working, path)), { recursive: true });
-          await writeFile(join(working, path), theirs);
+          conflicts.push(path);
         }
-        settle(path, theirs);
-        pulled.push(path);
-      } else if (preferred === 'local' || theirs === was) {
-        await (mine === undefined ? folder.remove(path) : folder.write(path, mine));
-        settle(path, mine);
-        pushed.push(path);
-      } else {
-        conflicts.push(path);
+      } catch (error) {
+        failures.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   } finally {
     // What was settled before a failure stays settled, so the next sync doesn't take it for a change.
     await writeFile(join(working, record), JSON.stringify(Object.fromEntries(next)));
+  }
+  const [first] = failures;
+  if (first !== undefined) {
+    throw new Error(
+      failures.length === 1
+        ? first
+        : `${first}, and ${failures.length - 1} more ${failures.length === 2 ? 'profile' : 'profiles'}`,
+    );
   }
   return { pulled, pushed, conflicts };
 }
@@ -137,13 +175,16 @@ export async function syncLocalFolder(
 export async function replaceWorkingCopy(from: string, to: string): Promise<void> {
   const files = await workingFiles(from);
   const agreedOn = await readFile(join(from, record));
+  // The record goes first and comes back last. What the browser keeps of a
+  // copy cut short then reads as profiles never synced, which a sync brings
+  // back, never as profiles deleted here, which it would delete in the folder.
+  await rm(join(to, record), { force: true });
   await rm(to, { recursive: true, force: true });
   for (const [path, text] of files) {
     await mkdir(dirname(join(to, path)), { recursive: true });
     await writeFile(join(to, path), text);
   }
   await mkdir(to, { recursive: true });
-  // Last, so a copy cut short reads as profiles the folder lacks, never as profiles deleted here.
   await writeFile(join(to, record), agreedOn);
   await rm(from, { recursive: true, force: true });
 }

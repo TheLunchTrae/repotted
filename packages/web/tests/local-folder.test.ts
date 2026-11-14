@@ -1,10 +1,10 @@
 import { afterEach, expect, test } from 'vitest';
 
 import { FakeGitRepository } from '../../core/tests/fake-git.js';
-import { type LocalFolder, type LocalFolders, syncLocalFolder } from '../src/app/local-folder.js';
+import { type LocalFolder, type LocalFolders, replaceWorkingCopy, syncLocalFolder } from '../src/app/local-folder.js';
 import type { Preferences } from '../src/app/preferences.js';
 import { Profiles } from '../src/app/profiles.js';
-import { mkdir, readFile, rm, writeFile } from '../src/engine/files.js';
+import { mkdir, readFile, rm, watchFiles, writeFile } from '../src/engine/files.js';
 
 afterEach(async () => {
   await rm('/', { recursive: true });
@@ -165,28 +165,70 @@ test('a profile changed on both sides stays as it is in both until one side is k
   expect(disk.kept.get('other.yaml')).toBe('mine too\n');
 });
 
-test('a sync that fails partway keeps what it settled, so the next one finishes without undoing it', async () => {
+test('a profile that cannot be written fails the sync without holding up the rest, and what was settled stays settled', async () => {
   const disk = new Disk('config', { 'theirs.yaml': base });
-  await here({ 'a.yaml': 'a\n', 'refused.yaml': 'r\n' });
+  await here({ 'a.yaml': 'a\n', 'refused.yaml': 'r\n', 'z.yaml': 'z\n' });
 
-  await expect(syncLocalFolder(working, disk)).rejects.toThrow('refused to write');
+  await expect(syncLocalFolder(working, disk)).rejects.toThrow('refused.yaml: The browser refused to write');
+  // The profiles on either side of the one refused were settled all the same.
   expect(disk.kept.get('a.yaml')).toBe('a\n');
+  expect(disk.kept.get('z.yaml')).toBe('z\n');
+  expect(await readFile(`${working}/theirs.yaml`, 'utf8')).toBe(base);
 
   // What reached the folder before the failure is not taken for something deleted here, or there.
   disk.kept.delete('a.yaml');
   await rm(`${working}/refused.yaml`);
-  expect(await syncLocalFolder(working, disk)).toEqual({
-    pulled: ['a.yaml', 'theirs.yaml'],
+  expect(await syncLocalFolder(working, disk)).toEqual({ pulled: ['a.yaml'], pushed: [], conflicts: [] });
+  await expect(readFile(`${working}/a.yaml`, 'utf8')).rejects.toThrow();
+});
+
+test('a profile made here is never written over a file in the folder whose name differs only in case', async () => {
+  const disk = new Disk('config', { 'Team.yaml': 'theirs\n' });
+  await syncLocalFolder(working, disk);
+  await here({ 'team.yaml': 'mine\n' });
+
+  expect(await syncLocalFolder(working, disk)).toEqual({ pulled: [], pushed: [], conflicts: ['team.yaml'] });
+  // Keeping this side writes nothing either, since on some computers the two names are one file.
+  expect(await syncLocalFolder(working, disk, { prefer: 'local', only: ['team.yaml'] })).toMatchObject({
+    pushed: [],
+    conflicts: ['team.yaml'],
+  });
+  expect([...disk.kept]).toEqual([['Team.yaml', 'theirs\n']]);
+
+  expect(await syncLocalFolder(working, disk, { prefer: 'remote', only: ['team.yaml'] })).toMatchObject({
+    pulled: ['team.yaml'],
+    conflicts: [],
+  });
+  await expect(readFile(`${working}/team.yaml`, 'utf8')).rejects.toThrow();
+});
+
+test('a working copy is replaced record first, so one cut short never reads as profiles deleted here', async () => {
+  const disk = new Disk('config', { 'one.yaml': base, 'two.yaml': base });
+  await syncLocalFolder(working, disk);
+  await syncLocalFolder('/profiles/folder-next', new Disk('other', { 'three.yaml': base }));
+  const changes: string[] = [];
+  const stop = watchFiles((file, content) => {
+    changes.push(`${content === undefined ? 'rm' : 'write'} ${file}`);
+  });
+
+  await replaceWorkingCopy('/profiles/folder-next', working);
+  stop();
+
+  const inPlace = changes.filter((change) => change.includes(`${working}/`));
+  expect(inPlace[0]).toBe(`rm ${working}/.repotted-folder.json`);
+  expect(inPlace.at(-1)).toBe(`write ${working}/.repotted-folder.json`);
+  // The copy syncs as one that agrees with its folder.
+  expect(await syncLocalFolder(working, new Disk('other', { 'three.yaml': base }))).toEqual({
+    pulled: [],
     pushed: [],
     conflicts: [],
   });
-  await expect(readFile(`${working}/a.yaml`, 'utf8')).rejects.toThrow();
 });
 
 test('profiles kept in a folder on the computer sync with it on each change, and the folder is remembered', async () => {
   const folders = new Folders();
   folders.next = new Disk('config', { 'base.yaml': base });
-  await here({ 'local.yaml': 'merge: {}\n', 'base.yaml': 'not this one\n' }, '/profiles/browser');
+  await here({ 'local.yaml': 'merge: {}\n', 'Base.yaml': 'not this one\n' }, '/profiles/browser');
   const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined, folders);
   await profiles.refresh();
 
@@ -194,8 +236,9 @@ test('profiles kept in a folder on the computer sync with it on each change, and
 
   expect(profiles.source.value).toEqual({ kind: 'folder', name: 'config' });
   expect(folders.remembered).toBe(folders.next);
-  // The browser's profiles are added beside the folder's, and never over one of the same name.
+  // The browser's profiles are added beside the folder's, and never over one of the same name in any case.
   expect(names(profiles)).toEqual(['base.yaml', 'local.yaml']);
+  expect(profiles.conflicts.value).toEqual([]);
   expect(folders.next.kept.get('base.yaml')).toBe(base);
   expect(folders.next.kept.get('local.yaml')).toBe('merge: {}\n');
   expect(profiles.sync.value).toEqual({ status: 'synced', pulled: 1, pushed: 1 });
@@ -309,4 +352,115 @@ test('a folder the browser no longer has says so, and unsaved changes hold a cha
   folders.next = new Disk('other');
   expect(await later.useFolder(false)).toBe('Save or reset your unsaved changes first.');
   expect(later.source.value).toEqual({ kind: 'folder', name: 'config' });
+});
+
+test('changes the folder never received go with a change of folder, and hold back a move elsewhere', async () => {
+  const folders = new Folders();
+  const disk = new Disk('config', { 'base.yaml': base });
+  folders.next = disk;
+  const preferences = memory();
+  await new Profiles(new FakeGitRepository(), preferences, () => undefined, folders).useFolder(false);
+
+  // A later visit without the browser's leave: a save and a new profile stay in this browser.
+  folders.allowed = false;
+  const later = new Profiles(new FakeGitRepository(), preferences, () => undefined, folders);
+  await later.write(() => writeFile(`${working}/base.yaml`, 'mine\n'));
+  expect(
+    await later.create({ name: 'new', folder: '', start: { kind: 'empty' }, ownerType: undefined }),
+  ).toBeUndefined();
+  expect(disk.kept.get('base.yaml')).toBe(base);
+
+  await later.keepInBrowser();
+  expect(later.source.value).toEqual({ kind: 'folder', name: 'config' });
+  expect(later.connectError.value).toContain('has not received every change');
+  expect(await later.connect('lunch/config', '', false)).toContain('has not received every change');
+
+  // Choosing the folder again, as the app says to, keeps both: the new profile goes to the folder,
+  // and the one that differs from the folder's is a conflict to settle.
+  expect(await later.useFolder(false)).toBeUndefined();
+  expect(disk.kept.get('new.yaml')).toBe('');
+  expect(later.conflicts.value).toEqual(['base.yaml']);
+  expect(await readFile(`${working}/base.yaml`, 'utf8')).toBe('mine\n');
+
+  await later.keep('local');
+  expect(later.conflicts.value).toEqual([]);
+  expect(disk.kept.get('base.yaml')).toBe('mine\n');
+
+  await later.keepInBrowser();
+  expect(later.source.value).toEqual({ kind: 'browser' });
+});
+
+test('a new profile is checked against the folder as it is now, and a folder that fails partway is not taken up', async () => {
+  const folders = new Folders();
+  const disk = new Disk('config', { 'base.yaml': base });
+  folders.next = disk;
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined, folders);
+  await profiles.useFolder(false);
+
+  disk.kept.set('Team.yaml', 'labels: []\n');
+  expect(await profiles.create({ name: 'team', folder: '', start: { kind: 'empty' }, ownerType: undefined })).toBe(
+    'Team.yaml is already in the profiles folder.',
+  );
+  expect(disk.kept.has('team.yaml')).toBe(false);
+
+  // A folder that refuses a write is not the one used, or remembered.
+  await here({ 'refused.yaml': 'r\n' }, '/profiles/browser');
+  await profiles.keepInBrowser();
+  folders.next = new Disk('strict');
+  expect(await profiles.useFolder(true)).toContain('refused to write');
+  expect(profiles.source.value).toEqual({ kind: 'browser' });
+  expect(folders.remembered).toBeUndefined();
+});
+
+test("a folder the browser stops allowing mid-visit asks for the user's leave again, and a refusal says so", async () => {
+  const folders = new Folders();
+  const disk = new Disk('config', { 'base.yaml': base });
+  folders.next = disk;
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined, folders);
+  await profiles.useFolder(false);
+
+  disk.failing = new Error('The request is not allowed by the user agent');
+  folders.allowed = false;
+  await profiles.refresh();
+  expect(profiles.needsFolderAccess.value).toBe(true);
+
+  folders.grants = false;
+  await profiles.allowFolder();
+  const sync = profiles.sync.value;
+  expect(sync.status === 'failed' ? sync.message : '').toContain("didn't allow it");
+
+  // The folder is taken afresh from the browser once it is allowed again.
+  const fresh = new Disk('config', { 'base.yaml': base, 'fresh.yaml': base });
+  folders.remembered = fresh;
+  folders.grants = true;
+  await profiles.allowFolder();
+  expect(names(profiles)).toEqual(['base.yaml', 'fresh.yaml']);
+});
+
+test('unsaved changes made while the picker is open still hold a change of folder back', async () => {
+  const folders = new Folders();
+  folders.next = new Disk('config', { 'base.yaml': base });
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined, folders);
+  await profiles.useFolder(false);
+  await profiles.select(profiles.listings.value[0]);
+  const editor = profiles.editor.value;
+  const wiki = editor?.sections.value
+    .flatMap((section) => section.groups.flatMap((group) => group.rows))
+    .find((row) => row.field.key === 'has_wiki')?.field;
+  if (editor === undefined || wiki === undefined) {
+    throw new Error('The open profile should have an editor with a wiki setting.');
+  }
+
+  // The picker is held open while the user changes a setting.
+  let picked: (folder: LocalFolder | undefined) => void = () => undefined;
+  folders.pick = () =>
+    new Promise((resolve) => {
+      picked = resolve;
+    });
+  const using = profiles.useFolder(false);
+  await editor.set(wiki, true);
+  picked(new Disk('other'));
+
+  expect(await using).toBe('Save or reset your unsaved changes first.');
+  expect(profiles.source.value).toEqual({ kind: 'folder', name: 'config' });
 });

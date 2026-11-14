@@ -49,8 +49,8 @@ async function files(directory: Directory, prefix = ''): Promise<Map<string, str
   const found = new Map<string, string>();
   for await (const entry of directory.values()) {
     const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
-    // Hidden files and folders stay out, as they do in a sync with GitHub.
-    if (entry.name.startsWith('.')) {
+    // Hidden files and folders stay out, as they do in a sync with GitHub, and so do installed packages.
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') {
       continue;
     }
     if (isDirectory(entry)) {
@@ -87,8 +87,14 @@ function folderOf(directory: Directory): LocalFolder {
     async write(path, text) {
       const [at, name] = await parent(directory, path, true);
       const writable = await (await at.getFileHandle(name, { create: true })).createWritable();
-      await writable.write(text);
-      await writable.close();
+      try {
+        await writable.write(text);
+        await writable.close();
+      } catch (error) {
+        // The file stays as it was when a write is cut short.
+        await writable.abort().catch(() => undefined);
+        throw error;
+      }
     },
     async remove(path) {
       try {

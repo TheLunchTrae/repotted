@@ -316,8 +316,9 @@ export function SettingsPage({ account, user, profiles, repositories, keeping }:
                   {profiles.foldersSupported ? (
                     <>
                       <span class="muted small">
-                        Profiles are files in a folder you pick, which other tools can read and change. The browser asks
-                        again on each visit before Repotted uses it.
+                        Profiles are files in a folder you pick, which other tools can read and change. Pick one that
+                        holds only profiles: every YAML file in it and its subfolders is read as one. The browser may
+                        ask again on a later visit before Repotted uses it.
                       </span>
                       {!inFolder && count > 0 && (
                         <label class="check small">
