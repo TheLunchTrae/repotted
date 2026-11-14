@@ -983,6 +983,23 @@ select.field {
 }
 
 /* The profile editor */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.filters .field {
+  flex: 1 1 14rem;
+  max-width: 24rem;
+}
+
+.filters p {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
 .tabs {
   display: flex;
   flex-wrap: wrap;

@@ -2,7 +2,7 @@ import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { entryLists } from '../app/entry-edits.js';
-import type { ProfileEditor, SettingRow } from '../app/profile-editor.js';
+import type { ProfileEditor, SettingFilter, SettingRow } from '../app/profile-editor.js';
 import type { Profiles } from '../app/profiles.js';
 import { sameValue } from '../app/same-value.js';
 import { Entries } from './entries.js';
@@ -252,6 +252,12 @@ function DraftBanner({ editor, profiles }: DraftProps): JSX.Element | null {
   );
 }
 
+const filterNames: readonly { readonly id: SettingFilter; readonly name: string }[] = [
+  { id: 'managed', name: 'Managed' },
+  { id: 'unsaved', name: 'Not saved yet' },
+  { id: 'drafts', name: 'Drafts' },
+];
+
 /** The open profile's settings, a tab for each section, with the footer that saves them. */
 const entryTitles = { rulesets: 'Rulesets', environments: 'Environments', labels: 'Labels' } as const;
 
@@ -284,6 +290,8 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
     })),
   ];
   const current = list ?? shown?.section.section ?? '';
+  const filtering = editor.filtering.value;
+  const search = useRef<HTMLInputElement>(null);
   const problem = editor.problem.value ?? editor.saveError.value;
   const tabs = useRef<HTMLDivElement>(null);
   // The arrow keys move between tabs, as in a tab list, and only the shown tab is a Tab stop.
@@ -299,41 +307,68 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
   return (
     <>
       <DraftBanner editor={editor} profiles={profiles} />
-      <div class="tabs" role="tablist" aria-label="Settings" ref={tabs}>
-        {tabNames.map(({ id, name, unsaved, drafted }, index) => (
+      <div class="filters" role="search" aria-label="Settings">
+        <input
+          class="field"
+          type="search"
+          ref={search}
+          placeholder="Find a setting"
+          aria-label="Find a setting"
+          value={editor.query.value}
+          onInput={(event) => {
+            editor.search(event.currentTarget.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              editor.search('');
+            }
+          }}
+        />
+        <div class="segments" role="group" aria-label="Show only">
+          {filterNames
+            .filter(({ id }) => id !== 'drafts' || editor.draftCount.value > 0 || editor.filters.value.has(id))
+            .map(({ id, name }) => (
+              <label key={id}>
+                <input
+                  type="checkbox"
+                  checked={editor.filters.value.has(id)}
+                  onChange={(event) => {
+                    editor.filter(id, event.currentTarget.checked);
+                    // The Drafts filter goes once it is off on a profile with no draft, and takes the keyboard with it.
+                    if (id === 'drafts' && !event.currentTarget.checked) {
+                      search.current?.focus();
+                    }
+                  }}
+                />
+                <span>{name}</span>
+              </label>
+            ))}
+        </div>
+        {filtering && (
           <button
-            key={id}
-            class="tab"
+            class="button button-quiet button-small"
             type="button"
-            role="tab"
-            id={`tab-${id}`}
-            aria-selected={current === id}
-            aria-controls="settings-panel"
-            tabIndex={current === id ? 0 : -1}
             onClick={() => {
-              setTab(id);
-            }}
-            onKeyDown={(event) => {
-              move(event, index);
+              editor.clearFilters();
+              search.current?.focus();
             }}
           >
-            {name}
-            {drafted && <span class="pill pill-draft">Draft</span>}
-            {unsaved && (
-              <>
-                <span class="dot" aria-hidden="true" />
-                <span class="visually-hidden">, not saved yet</span>
-              </>
-            )}
+            Show every setting
           </button>
-        ))}
+        )}
+        {/* The message is there before it has anything to say, so a screen reader announces what it comes to say. */}
+        <p class={filtering ? 'muted small' : 'visually-hidden'} role="status">
+          {filtering ? editor.foundSummary.value : ''}
+        </p>
       </div>
-      {shown !== undefined && (
-        <div id="settings-panel" class="groups" role="tabpanel" aria-labelledby={`tab-${shown.section.section}`}>
-          {shown.groups.map(({ group, rows }) => (
-            <section key={group.title} class="settings-group" aria-label={group.title}>
+      {filtering && (
+        <div class="groups">
+          {editor.found.value.map(({ tab: name, group, rows }) => (
+            <section key={`${name} ${group.title}`} class="settings-group" aria-label={`${name}: ${group.title}`}>
               <div>
-                <h2>{group.title}</h2>
+                <h2>
+                  <span class="muted">{name}</span> {group.title}
+                </h2>
                 <p class="muted small">{group.description}</p>
               </div>
               <div class="settings">
@@ -345,10 +380,60 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
           ))}
         </div>
       )}
-      {list !== undefined && (
-        <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${list}`}>
-          <Entries key={list} editor={editor} list={list} pushes={pushes} />
-        </div>
+      {!filtering && (
+        <>
+          <div class="tabs" role="tablist" aria-label="Settings" ref={tabs}>
+            {tabNames.map(({ id, name, unsaved, drafted }, index) => (
+              <button
+                key={id}
+                class="tab"
+                type="button"
+                role="tab"
+                id={`tab-${id}`}
+                aria-selected={current === id}
+                aria-controls="settings-panel"
+                tabIndex={current === id ? 0 : -1}
+                onClick={() => {
+                  setTab(id);
+                }}
+                onKeyDown={(event) => {
+                  move(event, index);
+                }}
+              >
+                {name}
+                {drafted && <span class="pill pill-draft">Draft</span>}
+                {unsaved && (
+                  <>
+                    <span class="dot" aria-hidden="true" />
+                    <span class="visually-hidden">, not saved yet</span>
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
+          {shown !== undefined && (
+            <div id="settings-panel" class="groups" role="tabpanel" aria-labelledby={`tab-${shown.section.section}`}>
+              {shown.groups.map(({ group, rows }) => (
+                <section key={group.title} class="settings-group" aria-label={group.title}>
+                  <div>
+                    <h2>{group.title}</h2>
+                    <p class="muted small">{group.description}</p>
+                  </div>
+                  <div class="settings">
+                    {rows.map((row) => (
+                      <Setting key={row.field.key} row={row} editor={editor} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
+          {list !== undefined && (
+            <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${list}`}>
+              <Entries key={list} editor={editor} list={list} pushes={pushes} />
+            </div>
+          )}
+        </>
       )}
       <div class="save-bar">
         {problem !== undefined && (
