@@ -39,6 +39,10 @@ const screens: Readonly<Record<string, Screen>> = {
     open: (page) => page.getByText('All owners').click(),
     ready: (page) => page.getByRole('button', { name: 'Only personal' }),
   },
+  'repository details': {
+    path: '/?repository=lunch/website-with-a-rather-long-repository-name',
+    ready: (page) => page.getByRole('heading', { name: 'website-with-a-rather-long-repository-name' }),
+  },
   settings: { path: '/settings', ready: (page) => page.getByRole('heading', { name: 'Account' }) },
   profiles: { path: '/profiles', ready: (page) => page.getByText('website', { exact: true }) },
 };
