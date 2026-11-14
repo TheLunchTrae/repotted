@@ -199,11 +199,15 @@ export class ActionPatternChecks {
     this.#ask(asking).catch(() => undefined);
   }
 
-  /** One run after another, so a long list asks no more at once than a short one, and a limit met stops the rest early. */
+  /**
+   * One run after another, so a long list asks no more at once than a short
+   * one. A run that fails as a whole, as with no network or a lost sign-in,
+   * fails the runs after it without asking.
+   */
   async #ask(asking: readonly string[]): Promise<void> {
     for (let start = 0; start < asking.length; start += perRun) {
       const patterns = asking.slice(start, start + perRun);
-      await this.#check(patterns).then(
+      const failed = await this.#check(patterns).then(
         (checks) => {
           const answers = new Map(checks.map((check) => [check.pattern, check]));
           this.#set(patterns, (pattern) => {
@@ -219,11 +223,16 @@ export class ActionPatternChecks {
                 }
               : { kind: 'checked', check };
           });
+          return false;
         },
         (error: unknown) => {
-          this.#set(patterns, () => ({ kind: 'failed', message: messageOf(error) }));
+          this.#set(asking.slice(start), () => ({ kind: 'failed', message: messageOf(error) }));
+          return true;
         },
       );
+      if (failed) {
+        return;
+      }
     }
   }
 

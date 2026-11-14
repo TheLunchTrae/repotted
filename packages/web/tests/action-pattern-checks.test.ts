@@ -157,6 +157,17 @@ test('a long list is asked about a hundred patterns a run, one run after another
   expect(kinds(checks).every((kind) => kind === 'checked')).toBe(true);
 });
 
+test('a run that fails as a whole fails the runs after it without asking', async () => {
+  const github = held();
+  const checks = new ActionPatternChecks(github.check);
+  checks.follow(Array.from({ length: 150 }, (_, index) => `owner/repo-${index}`));
+
+  await github.fail(new Error('Bad credentials'));
+
+  expect(github.runs).toHaveLength(1);
+  expect(kinds(checks).every((kind) => kind === 'failed')).toBe(true);
+});
+
 test('a change to another setting hands the same list over and starts no pause again', () => {
   const github = held();
   const checks = new ActionPatternChecks(github.check);
