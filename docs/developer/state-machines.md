@@ -290,12 +290,18 @@ its settings under `drafts`, its entries with `draft: true`, and its keys of
 | Saved, with a draft   | Discard draft, with nothing unsaved                       | Confirming. **Keep it** goes back. **Discard draft** takes the draft out of the file in a save's turn, and keeps what the editor has no row for.                                                                                            |
 | Unsaved, with a draft | Discard draft                                             | Off until the changes are saved or reset, since it writes at once.                                                                                                                                                                          |
 | Saving, either way    | An entry with a change is out of date                     | Nothing is written, as in the table below. An entry's draft counts as its saved entry, so a draft that changed elsewhere holds its change back.                                                                                             |
+| Saving, or discarding | The file's own draft differs from the one shown           | Nothing is written. The editor shows the draft as it is now, with "The profile's draft changed elsewhere." Saving again acts on that draft.                                                                                                 |
+| Unsaved               | An entry is given the name of one the draft takes out     | Held back from both saves, with why, until that one is put back.                                                                                                                                                                            |
+| Discarding            | The write fails                                           | Saved, with the draft, and why.                                                                                                                                                                                                             |
 
-The editor has no rows for custom properties and autolinks. A save that
-applies finishes a draft custom property as it is, and both saves and
-**Discard draft** leave a draft autolink, and an `autolinks/` key of
-`drafts.unset`, in the file. A draft of a key no section has stays too, with
-the profile's warning.
+The editor has no rows for custom properties, topics, and the other
+settings its tabs leave to the profile's file. Their drafts count in the
+banner, a save that applies finishes each as it is, and **Discard draft**
+takes them out. Autolinks are the exception: both saves and **Discard
+draft** leave a draft autolink, and an `autolinks/` key of `drafts.unset`,
+in the file. A draft of a key no section has stays too, with the profile's
+warning. A save as a draft drops a key of `drafts.unset` that names what the
+file doesn't set, which finishing the draft would not change.
 
 A ruleset, environment, or label renamed in a draft is a draft under the new
 name and a `drafts.unset` key for the one that applies, so its row becomes

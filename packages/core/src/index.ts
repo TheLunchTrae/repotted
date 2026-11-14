@@ -24,6 +24,7 @@ export {
   parseProfile,
   previewProfile,
   resolveProfile,
+  settingPath,
   stringifyProfile,
 } from './profile.js';
 export { ownerTypes } from './owner.js';

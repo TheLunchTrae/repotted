@@ -266,7 +266,9 @@ export class EntryEdits {
       this.#put(row, { entry: { name, absent: true }, kept: entry });
       return;
     }
-    const kept = this.#changes.value.get(row.key)?.kept ?? (row.saved?.['absent'] === true ? undefined : row.saved);
+    // An entry saved as removing has nothing to bring back but what applies, when its draft is what removes it.
+    const managed = [row.saved, row.applied].find((found) => found !== undefined && found['absent'] !== true);
+    const kept = this.#changes.value.get(row.key)?.kept ?? managed;
     this.#put(row, { entry: kept === undefined ? { name } : { ...kept, name } });
   }
 
@@ -612,6 +614,10 @@ export class EntryEdits {
     const others = all.filter((other) => other !== row);
     if (others.some((other) => other.entry !== undefined && identity(list, nameOf(other.entry)) === id)) {
       return `The profile already has ${nouns[list]} named ${name}.`;
+    }
+    // An entry the draft takes out keeps its name in the file, and the draft can't both take it out and change it.
+    if (others.some((other) => other.inDraft === 'taken-out' && identity(list, other.savedName ?? '') === id)) {
+      return `The draft takes ${name} out of the profile. Put that one back to change it, or choose another name.`;
     }
     // The file still has that name for an entry whose change renames it or takes it out, until a save.
     if (

@@ -274,3 +274,115 @@ test('a draft that changed elsewhere under a change to its entry is not written 
   expect(await readFile(file, 'utf8')).toContain('type: creation');
   expect(entry(editor, 'rulesets', 'Main').outOfDate).toBe(true);
 });
+
+test('the name of an entry the draft takes out waits until that one is put back', async () => {
+  const editor = await opened({
+    'web.yaml': `rulesets:\n${ruleset('Main')}${ruleset('Trunk', '    draft: true\n')}drafts:\n  unset:\n    - rulesets/Main\n`,
+  });
+
+  await editor.changeEntry(entry(editor, 'rulesets', 'Trunk'), {
+    ...entry(editor, 'rulesets', 'Trunk').entry,
+    name: 'Main',
+  });
+
+  const renamed = editor.entries.value.rulesets.find((item) => item.unsaved);
+  expect(renamed?.problem).toContain('Put that one back');
+  expect(renamed?.draftProblem).toContain('Put that one back');
+  expect(editor.canSave.value).toBe(false);
+  expect(editor.canSaveAsDraft.value).toBe(false);
+});
+
+test('a draft that changed elsewhere is shown before any save acts on it', async () => {
+  const text = 'repository:\n  has_wiki: false\n  has_issues: true\n';
+  const editor = await opened({ 'web.yaml': text });
+  await editor.set(field('repository.has_wiki'), true);
+  const elsewhere = `${text}drafts:\n  repository:\n    has_issues: false\n`;
+  await writeFile(file, elsewhere);
+
+  await editor.save(write);
+
+  expect(editor.saveError.value).toContain('draft changed elsewhere');
+  expect(await readFile(file, 'utf8')).toBe(elsewhere);
+  expect(row(editor, 'repository.has_issues')).toMatchObject({ value: false, inDraft: true });
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: true, unsaved: true });
+
+  await editor.save(write);
+
+  expect(editor.saveError.value).toBeUndefined();
+  expect((await resolveProfile(file)).profile.repository).toEqual({ has_wiki: true, has_issues: false });
+});
+
+const topics = 'repository:\n  has_wiki: false\ndrafts:\n  repository:\n    topics:\n      - infra\n    made_up: 1\n';
+
+test('a draft setting the tabs leave to the file is counted, finished, and discarded with the rest', async () => {
+  const editor = await opened({ 'web.yaml': topics });
+  // The key no section has is not the editor's: it stays, with the profile's warning.
+  expect(editor.draftCount.value).toBe(1);
+  expect(editor.warnings.value.join('\n')).toContain('made_up');
+
+  await editor.save(write);
+
+  expect(editor.saveError.value).toBeUndefined();
+  const saved = await resolveProfile(file);
+  expect(saved.profile.repository).toEqual({ has_wiki: false, topics: ['infra'] });
+  expect(saved.drafts).toEqual({ repository: { made_up: 1 } });
+
+  await writeFile(file, topics);
+  await editor.load();
+  await editor.discardDraft(write);
+
+  expect((await resolveProfile(file)).drafts).toEqual({ repository: { made_up: 1 } });
+  expect(editor.draftCount.value).toBe(0);
+});
+
+test('managing an entry again, after its draft removes it, brings back what applies', async () => {
+  const editor = await opened({
+    'web.yaml': 'environments:\n  - name: Prod\n    wait_timer: 5\n  - name: Prod\n    absent: true\n    draft: true\n',
+  });
+  expect(entry(editor, 'environments', 'Prod').entry).toEqual({ name: 'Prod', absent: true });
+
+  await editor.setAbsent(entry(editor, 'environments', 'Prod'), false);
+
+  expect(entry(editor, 'environments', 'Prod').entry).toEqual({ name: 'Prod', wait_timer: 5 });
+});
+
+test('a change made while a draft is being saved stays unsaved, on the draft as written', async () => {
+  const editor = await opened({ 'web.yaml': `repository:\n  has_wiki: false\nrulesets:\n${ruleset('Main')}` });
+  await editor.set(field('repository.has_wiki'), true);
+  const main = entry(editor, 'rulesets', 'Main');
+  await editor.changeEntry(main, { ...main.entry, enforcement: 'disabled' });
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  const saving = editor.save(async (work) => {
+    await held;
+    await work();
+  }, 'draft');
+  await editor.set(field('repository.has_issues'), false);
+  await editor.changeEntry(entry(editor, 'rulesets', 'Main'), { ...main.entry, enforcement: 'evaluate' });
+  release();
+  await saving;
+
+  expect(editor.saveError.value).toBeUndefined();
+  const saved = await resolveProfile(file);
+  expect(saved.drafts.repository).toEqual({ has_wiki: true });
+  expect(saved.drafts.rulesets).toMatchObject([{ name: 'Main', enforcement: 'disabled' }]);
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({ inDraft: true, unsaved: false });
+  expect(row(editor, 'repository.has_issues')).toMatchObject({ value: false, unsaved: true });
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ unsaved: true, outOfDate: false });
+  expect(entry(editor, 'rulesets', 'Main').entry?.['enforcement']).toBe('evaluate');
+  expect(entry(editor, 'rulesets', 'Main').saved?.['enforcement']).toBe('disabled');
+});
+
+test('a discard that fails leaves the draft, with why', async () => {
+  const editor = await opened({ 'web.yaml': drafted });
+
+  await editor.discardDraft(() => Promise.reject(new Error('GitHub is not answering.')));
+
+  expect(editor.saveError.value).toBe('GitHub is not answering.');
+  expect(editor.draftCount.value).toBe(5);
+  expect(await readFile(file, 'utf8')).toBe(drafted);
+  expect(editor.saving.value).toBe(false);
+});

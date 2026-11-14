@@ -1,10 +1,10 @@
 import { computed, signal } from '@preact/signals';
-import { editProfile, type ProfileEdit, previewProfile, resolveProfile } from '@repotted/core';
+import { editProfile, type ProfileEdit, previewProfile, resolveProfile, settingPath } from '@repotted/core';
 
 import { basename } from '../engine/path.js';
 import { EntryEdits, type EntryList, type EntryRow, type SaveMode } from './entry-edits.js';
 import type { Entry } from './entry-forms.js';
-import { ownUnsets } from './own-drafts.js';
+import { ownDraft, ownUnsets } from './own-drafts.js';
 import { sameValue } from './same-value.js';
 import { type SettingField, type SettingGroup, settingSections } from './setting-fields.js';
 
@@ -65,6 +65,8 @@ function reasonOf(error: unknown, file: string): string {
 
 /** This profile's own draft of a setting: a value, or that finishing the draft stops setting it here. */
 type SettingDraft = { readonly value: unknown } | 'unset';
+
+const draftSections = ['repository', 'merge', 'actions', 'security', 'custom_properties', 'pages'] as const;
 
 const entryKeys = /^(?:rulesets|environments|labels)\//u;
 
@@ -358,13 +360,13 @@ export class ProfileEditor {
       return;
     }
     await this.#write(write, this.#edits.value, (writing) => {
-      if (
-        this.#entryEdits.writesOverChange() ||
-        (mode === 'applies' ? this.#entryEdits.held.value : this.#entryEdits.draftHeld.value)
-      ) {
+      if (this.#entryEdits.writesOverChange()) {
         throw new Error(
           'A ruleset, environment, or label changed elsewhere since you changed it. Open it to keep yours or reset it.',
         );
+      }
+      if (mode === 'applies' ? this.#entryEdits.held.value : this.#entryEdits.draftHeld.value) {
+        throw new Error("A ruleset, environment, or label can't be saved as it stands. Open it to see why.");
       }
       const entries = this.#entryEdits.saving(mode);
       return [...this.#settingWrites(writing, mode, entries.unsets), ...entries.writes];
@@ -401,6 +403,7 @@ export class ProfileEditor {
     this.#writing = writing;
     this.#entryEdits.begin();
     let wrote = false;
+    const shown = this.#saved.value === undefined ? undefined : ownDraft(this.#saved.value);
     try {
       await write(async () => {
         // The file may have changed since it was read, as by the sync before this turn. An entry is
@@ -408,6 +411,10 @@ export class ProfileEditor {
         const current = await resolveProfile(this.file);
         this.#saved.value = current;
         this.#entryEdits.setSaved(current);
+        // Every save finishes, adds to, or discards the whole draft, so it acts only on the draft that was shown.
+        if (!sameValue(shown, ownDraft(current))) {
+          throw new Error("The profile's draft changed elsewhere. Look at it as it is now, then save again.");
+        }
         this.#saved.value = await editProfile(this.file, edits(writing));
         this.#entryEdits.setSaved(this.#saved.value);
         wrote = true;
@@ -459,15 +466,25 @@ export class ProfileEditor {
     return draft === undefined ? this.#applied(field) : draft === 'unset' ? undefined : draft.value;
   }
 
-  /** This profile's own draft settings the editor has no row for and still finishes and discards: custom properties. */
+  /**
+   * This profile's own draft settings the editor has no row for and still
+   * finishes and discards: a custom property, and any setting the tabs
+   * leave to the profile's file. A draft of a key no section has is not one.
+   */
   #otherDrafts(): SettingEdit[] {
     const saved = this.#saved.value;
     if (saved === undefined) {
       return [];
     }
-    return Object.entries(saved.sources.drafts.custom_properties)
-      .filter(([, file]) => file === saved.chain[0])
-      .map(([key]) => ({ path: ['custom_properties', key], value: getIn(saved.drafts, ['custom_properties', key]) }));
+    const rows = new Set(allFields.map((field) => keyOf(field.path)));
+    return draftSections.flatMap((section) =>
+      Object.entries(saved.sources.drafts[section])
+        .filter(([, file]) => file === saved.chain[0])
+        // A custom property's name may hold a dot, and is one key whatever it holds.
+        .map(([key]) => [section, ...(section === 'custom_properties' ? [key] : key.split('.'))])
+        .filter((path) => !rows.has(keyOf(path)) && settingPath(path) === 'setting')
+        .map((path) => ({ path, value: getIn(saved.drafts, path) })),
+    );
   }
 
   /** The edit that makes the file's `drafts.unset` hold `keys`, or none when it already does. */

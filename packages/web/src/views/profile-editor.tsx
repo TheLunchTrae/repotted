@@ -96,10 +96,10 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
     <div class={`setting${field.nested ? ' setting-nested' : ''}${row.unsaved ? ' setting-unsaved' : ''}`}>
       <div class="setting-head">
         <div class="setting-text">
-          <strong id={`${id}-label`}>
-            {field.label}
+          <span>
+            <strong id={`${id}-label`}>{field.label}</strong>
             {row.inDraft && <span class="pill pill-draft">Draft</span>}
-          </strong>
+          </span>
           <span class="muted small">
             {row.inDraft
               ? `In the draft${managed ? '' : ': not managed'}. Applies now: ${describe(field, row.applied)}.`
@@ -208,8 +208,8 @@ function DraftBanner({ editor, profiles }: DraftProps): JSX.Element | null {
     return null;
   }
   return (
-    <div class="notice notice-drift" role="status">
-      <p>
+    <div class="notice notice-drift">
+      <p role="status">
         <strong>{count === 1 ? 'Draft: 1 change.' : `Draft: ${count} changes.`}</strong>{' '}
         {count === 1 ? "It doesn't" : "They don't"} apply yet: a plan leaves {count === 1 ? 'it' : 'them'} out until you
         save.
@@ -226,13 +226,18 @@ function DraftBanner({ editor, profiles }: DraftProps): JSX.Element | null {
           class="button button-small"
           type="button"
           disabled={!editor.canDiscardDraft.value}
+          aria-describedby={editor.dirty.value ? 'discard-hint' : undefined}
           onClick={() => {
             setDiscarding(true);
           }}
         >
           Discard draft
         </button>
-        {editor.dirty.value && <span class="small">Save or reset your changes to discard the draft.</span>}
+        {editor.dirty.value && (
+          <span class="small" id="discard-hint">
+            Save or reset your changes to discard the draft.
+          </span>
+        )}
       </div>
       {discarding && (
         <DiscardDraft
