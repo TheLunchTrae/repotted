@@ -207,7 +207,9 @@ sections still plan: rulesets on a GitHub plan that doesn't support them, or
 environments with a token that can't list them. The same holds for each
 setting at an endpoint of its own. A setting the repository doesn't have gives
 a warning with GitHub's reason, and one GitHub refuses with a `403` gives a
-warning that names the permission it needs, from `permissions.ts`. `capture`
+warning that names the permission it needs, from `permissions.ts`; one it
+refuses with a `402`, for want of a payment method on file, gives a warning
+with GitHub's reason and the same `refused` cause. `capture`
 warns only about the refused settings and sections, since a feature the
 repository lacks is no news: every reader returns the same `Unavailable` from
 `endpoints.ts`, whose `cause` says which it is. A `403` on a write stops
@@ -242,7 +244,7 @@ permissions of the App's installation that covers it. `lockChanges` in
 can't make, by index. The CLI adds both to the plan document as `access` and
 `locks`, outside `changes`, so the plan that apply compares is unchanged.
 Apply checks neither: GitHub decides at the write, and `failureReason` in
-`plan.ts` turns a lasting `403` or `422` into a short reason.
+`plan.ts` turns a lasting `402`, `403` or `422` into a short reason.
 
 The engine reaches GitHub only through the `GitHub` interface in
 `github.ts`. `createGitHub` turns a refused request into a `GitHubError` read

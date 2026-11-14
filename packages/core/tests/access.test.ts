@@ -188,6 +188,15 @@ describe('failureReason', () => {
     expect(failureReason(failed(new GitHubError(403, 'Organization policy prevents this change')))).toBe(
       'Organization policy prevents this change',
     );
+    expect(
+      failureReason(
+        failed(
+          responseError(402, {
+            message: 'Please ensure your account has a valid payment method on file to access this service.',
+          }),
+        ),
+      ),
+    ).toBe('Please ensure your account has a valid payment method on file to access this service.');
   });
 
   test('gives no reason for a failure that says nothing lasting', () => {

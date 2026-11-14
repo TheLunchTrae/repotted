@@ -76,7 +76,10 @@ A setting the repository doesn't have, because of its plan, its owner or its
 visibility, reads as unavailable. A plan skips it with a warning that gives
 GitHub's reason, and `capture` leaves it out silently. A setting GitHub
 refuses to show, with a `403`, is skipped with a warning in both, and the
-warning names the permission it needs. A `403` on a write stops apply, and
+warning names the permission it needs. A billed setting that GitHub answers
+with a `402` while the account has no payment method on file, as it can for
+the Actions cache limits, is skipped the same way, and its warning says a
+payment method is missing. A `403` on a write stops apply, and
 `describeFailure` names the permission too. Both come from
 `requiredPermission` in `packages/core/src/permissions.ts`, which records the
 permission GitHub's docs give for each endpoint that needs more than

@@ -62,7 +62,7 @@ export type Change =
 
 /**
  * Why a plan or capture leaves something out: GitHub `refused` to show it,
- * as for want of a permission or a role; the repository does not offer it
+ * as for want of a permission, a role or a payment method on file; the repository does not offer it
  * (`unavailable`); it does not apply with the other settings
  * (`not_applicable`); or, in a capture, a profile cannot hold what GitHub
  * reports (`unloadable`).

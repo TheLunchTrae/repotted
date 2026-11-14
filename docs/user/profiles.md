@@ -38,7 +38,9 @@ Actions access level for private repositories, and custom properties exist
 only on some repositories, for example. A plan skips a setting the repository
 doesn't have, with a warning that says why. When GitHub refuses to read or
 change a setting because the Repotted App lacks a permission, the warning or
-the error names the permission.
+the error names the permission. When GitHub withholds a billed setting, such
+as an Actions cache limit, because the account has no payment method on file,
+a capture leaves it out and its warning says so.
 
 A few options on GitHub's settings pages have no API, such as wiki's
 **Restrict editing to collaborators only**, so no profile can set them.
