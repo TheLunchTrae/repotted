@@ -426,13 +426,17 @@ input[type='checkbox'] {
 }
 
 .page-body {
+  /* The page's side and bottom padding, which the action bar reaches across. */
+  --page-inline: 24px;
+  --page-end: 48px;
+
   display: grid;
   gap: 16px;
   align-content: start;
   width: 100%;
   max-width: 1000px;
   margin: 0 auto;
-  padding: 28px 24px 48px;
+  padding: 28px var(--page-inline) var(--page-end);
 }
 
 .page-heading {
@@ -1348,8 +1352,8 @@ select.field {
   align-items: center;
   justify-content: end;
   gap: 8px 12px;
-  margin: 0 -24px -48px;
-  padding: 12px 24px;
+  margin: 0 calc(-1 * var(--page-inline)) calc(-1 * var(--page-end));
+  padding: 12px var(--page-inline);
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
@@ -1507,7 +1511,10 @@ select.field {
   }
 
   .page-body {
-    padding: 20px 16px 32px;
+    --page-inline: 16px;
+    --page-end: 32px;
+
+    padding-top: 20px;
   }
 
   .panel {
