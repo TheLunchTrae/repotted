@@ -12,7 +12,7 @@
       "project": ["src/**/*.ts", "tests/**/*.ts"],
     },
     "packages/cli": {
-      "entry": ["src/main.ts", "build.ts", "sea.ts", "tests/**/*.test.ts", "tests/*.mjs"],
+      "entry": ["src/main.ts", "build.ts", "tests/**/*.test.ts", "tests/*.mjs"],
       "project": ["src/**/*.ts", "tests/**/*.{ts,mjs}"],
       // The build bundles @repotted/core and leaves this to npm, so the
       // published package needs it although no file in cli imports it.

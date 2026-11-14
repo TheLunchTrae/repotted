@@ -16,7 +16,7 @@ import { type Io, run } from '../src/commands.js';
 const examples = path.join(import.meta.dirname, '../../../examples');
 // A real path: the CLI prints the real path of each file it reads, and macOS's temp folder is a symlink.
 const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-cli-')));
-const fixtures = path.join(import.meta.dirname, '../../../desktop/tests/Repotted.Desktop.Tests/Fixtures');
+const fixtures = path.join(import.meta.dirname, 'fixtures');
 
 afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
@@ -62,8 +62,8 @@ function document(result: Result): unknown {
 }
 
 /**
- * Saves a document the app reads from the CLI as one of the app's test
- * fixtures, which its tests parse with the type the app reads it with. Each
+ * Holds a document `--json` prints to its fixture, so a change to what
+ * scripts read from the CLI shows in review as a change to the file. Each
  * string that starts with this test's folder, or with a key of `names`,
  * starts with a placeholder instead, with forward slashes, and so does one
  * that is a key of `names` alone, such as a random id. The file is then the

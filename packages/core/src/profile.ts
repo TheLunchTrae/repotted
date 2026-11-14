@@ -1038,7 +1038,7 @@ export async function parseProfile(text: string, directory: string): Promise<Res
     .resolved;
 }
 
-/** A profile file in a folder of profiles, for the desktop app's list. */
+/** A profile file in a folder of profiles, as a list of them shows it. */
 export interface ProfileListing {
   /** The file name without its extension. */
   readonly name: string;

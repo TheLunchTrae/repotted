@@ -1,22 +1,34 @@
 // Runs the built CLI under Node, the way npx would: it starts, answers an MCP
-// handshake, and loads and validates profiles from disk. It never reaches
-// GitHub, because the profile it plans with is invalid. Run it with Node after
-// `pnpm run build`, or pass the path of the desktop app's compiled CLI to run
-// the same checks against that executable.
+// handshake, and loads and validates profiles from disk. Its plan never
+// reaches GitHub, because the profile it plans with is invalid. Its status
+// check runs without the token variables or the GitHub CLI's sign-in, so in
+// CI it reads a signed-out status; a `repotted login` sign-in in the keychain
+// still applies, and on such a machine it calls GitHub. Run it with Node
+// after `pnpm run build`.
 import { spawn, spawnSync } from 'node:child_process';
 import { log } from 'node:console';
-import { argv, execPath, version as nodeVersion } from 'node:process';
+import { env, execPath, version as nodeVersion } from 'node:process';
 import { clearTimeout, setTimeout } from 'node:timers';
 import { fileURLToPath, URL } from 'node:url';
 
-const compiled = argv[2];
-const [command, ...prefix] =
-  compiled === undefined ? [execPath, fileURLToPath(new URL('../dist/repotted.js', import.meta.url))] : [compiled];
+const command = execPath;
+const prefix = [fileURLToPath(new URL('../dist/repotted.js', import.meta.url))];
 const examples = fileURLToPath(new URL('../../../examples/', import.meta.url));
 
 const version = spawnSync(command, [...prefix, '--version'], { encoding: 'utf8' });
 if (version.status !== 0 || !/^\d+\.\d+\.\d+/u.test(version.stdout)) {
   throw new Error(`repotted --version failed: ${version.stderr}`);
+}
+
+// A signed-out status reads the keychain, so the native module that reads it
+// has to load on this platform, whether or not a keychain answers.
+const status = spawnSync(command, [...prefix, 'status', '--json'], {
+  encoding: 'utf8',
+  env: { ...env, GITHUB_TOKEN: '', GH_TOKEN: '', GH_CONFIG_DIR: fileURLToPath(new URL('./no-gh/', import.meta.url)) },
+});
+const reported = JSON.parse(status.stdout);
+if (typeof reported !== 'object' || /cannot find|failed to load|native binding/iu.test(status.stdout)) {
+  throw new Error(`repotted status --json could not load the keychain module: ${status.stdout}${status.stderr}`);
 }
 
 const server = spawn(command, [...prefix, 'mcp', '--read-only'], { cwd: examples, stdio: ['pipe', 'pipe', 'inherit'] });
@@ -75,7 +87,7 @@ try {
   if (planned.result?.isError !== true || !text.includes('Every merge method is off')) {
     throw new Error(`Unexpected plan reply: ${JSON.stringify(planned)}`);
   }
-  const runtime = compiled === undefined ? `node ${nodeVersion}` : compiled;
+  const runtime = `node ${nodeVersion}`;
   log(`${runtime}: repotted ${version.stdout.trim()} starts, serves ${names.join(', ')} and validates profiles`);
 } finally {
   server.kill();

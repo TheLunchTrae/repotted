@@ -2,7 +2,7 @@
 
 `--json` on `capture`, `plan`, `apply`, `profile`, `profiles`, `schema`, `stage`, `sync`,
 `repos`, `check-actions`, `find-actions`, `status` and `logout` prints exactly one JSON
-document on stdout, for scripts and programs such as the desktop app. Repotted writes nothing to stderr in this mode;
+document on stdout, for scripts and other programs. Repotted writes nothing to stderr in this mode;
 anything that appears there, such as a deprecation notice from the GitHub client, is
 diagnostic and not a failure. `--help` and `--version` still print text.
 

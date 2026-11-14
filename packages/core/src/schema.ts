@@ -766,8 +766,7 @@ function propertySchemas(schema: Record<string, unknown>, key: string): Record<s
 /**
  * Marks each setting that only some owners have with `x-repotted-owner`,
  * the owner it needs, and each value that only some owners have under
- * `x-repotted-owner-values`, so tools that read the schema, such as the
- * desktop app's tests, know them.
+ * `x-repotted-owner-values`, so tools that read the schema know them.
  */
 function markOwners(schema: Record<string, unknown>): void {
   for (const rule of settingRules) {

@@ -1,4 +1,4 @@
-# Node runs the workspace, the tests, the build and the desktop app's CLI;
+# Node runs the workspace, the tests and the build;
 # pnpm installs the workspace. package.json's devEngines allows the same pnpm
 # major.
 [tools]
@@ -83,14 +83,6 @@ fi
 node packages/cli/tests/node-smoke.mjs
 """
 
-[tasks."ts:sea:check"]
-description = "Build the desktop app's compiled CLI and check its startup snapshot"
-depends = ["ts:install"]
-# Otherwise only the desktop packaging builds the executable, for a release or
-# by hand, and its startup snapshot limits what any CLI or core module may do
-# at load time; see docs/developer/architecture.md.
-run = "node packages/cli/tests/sea-check.mjs"
-
 [tasks."ts:web:check"]
 description = "Build the web app and check that its Worker bundles for deploy"
 depends = ["ts:install"]
@@ -106,7 +98,7 @@ run = "pnpm run standards"
 
 [tasks."ts:standards:check"]
 description = "Run the TypeScript standards CI gate"
-# Tests and the Node and executable checks run after the static checks, so a
+# Tests and the Node and web checks run after the static checks, so a
 # test that writes temporary files cannot race the static scans.
 depends = ["ts:lint", "ts:type", "ts:fmt:check", "ts:audit", "ts:knip"]
-run = [{ task = "ts:test" }, { task = "ts:node:check" }, { task = "ts:sea:check" }, { task = "ts:web:check" }]
+run = [{ task = "ts:test" }, { task = "ts:node:check" }, { task = "ts:web:check" }]

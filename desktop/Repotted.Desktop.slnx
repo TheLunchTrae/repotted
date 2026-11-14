@@ -1,8 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="src/Repotted.Desktop/Repotted.Desktop.csproj" />
-  </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/Repotted.Desktop.Tests/Repotted.Desktop.Tests.csproj" />
-  </Folder>
-</Solution>

@@ -11,9 +11,9 @@ and GitHub Enterprise Cloud, in
 [github/rest-api-description](https://github.com/github/rest-api-description),
 and GitHub's docs. When GitHub adds a setting, add it to
 `schema.ts`, the adapter for its section, `permissions.ts` when it needs a
-permission other than Administration, the desktop app's
-`ViewModels/ProfileFields.cs` (or, for a setting the app leaves to the YAML,
-the list of those in its `ContractTests.cs`), and this page.
+permission other than Administration, the web app's
+`packages/web/src/app/setting-fields.ts` (or, for a setting the app leaves to
+the YAML, the list of those in its `profile-editor.test.ts`), and this page.
 
 ## How a setting is wired
 
@@ -156,10 +156,10 @@ an old one, the plan leaves the old one and warns.
 ## Settings that depend on another
 
 On GitHub's settings pages some options only show, or only take a change,
-while the setting above them has a certain value. The desktop app's editor
+while the setting above them has a certain value. The web app's editor
 does the same, so a profile reads like the page it sets. In
-`ProfileFields.cs` a field says which setting it depends on, in the same
-section and group, with `HiddenWhile` or `OffWhile`:
+`setting-fields.ts` a field says which setting it depends on, in the same
+section and group, with `hiddenWhile` or `offWhile`:
 
 - **Hidden**: GitHub leaves the option off the page. The tab leaves the row
   out; search and the filters still find it, shown off, with the reason.
@@ -215,9 +215,9 @@ through `repotted check-actions` and `repotted find-actions`.
 Some settings exist only for repositories that organizations own, and a few
 only for organizations on GitHub Enterprise Cloud. A profile's
 [owner type](../user/profiles.md#owner-type) refuses them on a personal
-profile, and the desktop app hides them there. `settingRules` and the sets
-under it in `packages/core/src/owner.ts` list them, and `Owners` in the
-desktop app mirrors them.
+profile, and the web app hides them there. `settingRules` and the sets
+under it in `packages/core/src/owner.ts` list them, and the web app reads
+them from there.
 
 | What                                                                           | Who has it                        | GitHub's docs                                                                                                                                                                                                          |
 | ------------------------------------------------------------------------------ | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -311,7 +311,7 @@ custom patterns, whose delete removes their alerts unless told otherwise.
 ## Settings with no API
 
 These options appear on a repository's settings pages, but no REST endpoint
-at the repository's level sets them, so no profile can. In the desktop app,
+at the repository's level sets them, so no profile can. In the web app,
 each one that belongs to a setting the app shows is a note under that
 setting, not a control. "Config only" means
 they can be set only through an organization's or enterprise's code security

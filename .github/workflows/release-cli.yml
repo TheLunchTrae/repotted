@@ -256,9 +256,8 @@ jobs:
           if [[ -n $previous ]]; then
             notes+=(--notes-start-tag "v$previous")
           fi
-          # CLI releases are never the latest, so the latest stays the desktop app.
           gh release create "$tag" ./* --draft --target "$GITHUB_SHA" --title "$tag" "${notes[@]}"
-          if ! gh release edit "$tag" --draft=false --latest=false; then
+          if ! gh release edit "$tag" --draft=false --latest; then
             echo "::error::GitHub refused to publish $tag. A tag ruleset that blocks creating v* tags stops the release; the draft stays, and re-running this job replaces it."
             exit 1
           fi

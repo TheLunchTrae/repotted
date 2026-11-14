@@ -2,11 +2,6 @@
 
 lockfile_version = 3
 
-[[tools.dotnet]]
-version = "10.0.403"
-backend = "core:dotnet"
-specifiers = ["10"]
-
 [[tools.gitleaks]]
 version = "8.30.1"
 backend = "aqua:gitleaks/gitleaks"

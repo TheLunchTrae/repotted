@@ -2,8 +2,8 @@
 
 Repotted has one engine and three ways in. `packages/core` holds the engine:
 the profile schema, one adapter per section, and the plan engine.
-`packages/cli` wraps it as the `repotted` CLI and the MCP server. The desktop
-app in `desktop/` runs that CLI and shows what it prints. Each layer does one
+`packages/cli` wraps it as the `repotted` CLI and the MCP server, and
+`packages/web` runs it in the browser as the web app. Each layer does one
 job, so the rules about what Repotted may write live in one place.
 
 ## Profiles
@@ -49,7 +49,7 @@ records, and saving a staged apply's edits all read a group the same way. A
 ruleset, environment, label, or autolink replaces the base's entry of the same
 name or prefix whole, and `pages: { absent: true }` replaces a base's site. The
 resolved profile records which file sets each value, which
-`repotted profile --json` reports and the desktop app shows.
+`repotted profile --json` reports and the web app shows.
 
 ### Owner types
 
@@ -61,8 +61,8 @@ the type the nearest file names, so one file's type holds for every file it
 builds on. `resolveChain` checks the chain's draft settings too, and warns of
 a draft ruleset or environment that has what the type lacks, since a draft
 entry may be unfinished. The schema's JSON Schema marks the same settings and
-values with `x-repotted-owner` and `x-repotted-owner-values`, which the
-desktop app's contract test holds its `Owners` list to.
+values with `x-repotted-owner` and `x-repotted-owner-values`, for tools that
+read the schema.
 
 `changeOwnerType` writes the new type and the edits that `ownerConflicts`
 names in the file, drafts included: an unset setting, a dropped push ruleset,
@@ -118,7 +118,7 @@ profile to every computer that syncs it.
 so an edit changes only what differs and keeps comments, line endings, and
 indent width. Edits under `drafts` take any key below a settings section,
 and a key inside one of its groups, since a draft may name a key that
-doesn't exist yet. The desktop app saves through it, so a profile edited
+doesn't exist yet. The web app saves through it, so a profile edited
 both by hand and in the app keeps both sets of changes, except inside an
 entry the app rewrites. An edit writes nothing when the result is not a
 valid profile, and it refuses a list that shares parts through YAML anchors
@@ -340,6 +340,11 @@ Tests run the real commands against the in-memory GitHub in
 `packages/core/tests/fake-github.ts`, and `main.ts` only wires in the token,
 the terminal, and the version. With `--json`, each command prints the
 documents described in [JSON output](../user/json-output.md).
+`commands.test.ts` holds each document to a fixture in
+`packages/cli/tests/fixtures`, with the test folder's paths and random ids as
+placeholders, so a change to what scripts read fails the tests until its
+fixture is written again with `pnpm vitest run -u`, and shows in review as a
+change to the file.
 
 `packages/cli/src/mcp.ts` serves `capture`, `plan`, and `apply`, and the two
 action lookups below. The server
@@ -372,235 +377,9 @@ The CLI ships to npm as one file bundled for Node, so shipped code uses only
 imports the server and the MCP SDK when it runs, so the other commands, each
 a short process, start without loading the SDK and its JSON Schema validator.
 
-## The desktop app
+## The web app
 
-The app does no GitHub work itself. It runs the CLI with `--json` and shows
-what it prints, so the CLI's sign-in, keychain, and plan checks apply unchanged
-and exist once. `Services/RepottedCli.cs` runs the CLI as a child process,
-streams its JSON Lines, and kills the run whenever whatever started it ends.
-`Services/RepottedClient.cs` reads each document strictly with source-generated
-System.Text.Json, so a renamed or missing member is an error rather than a
-null. A failure with `kind: signed_out`, from any command, raises
-`SignInLost`, and `MainViewModel` then checks the sign-in again, so a sign-in
-that stops working mid-session leads back to the sign-in page, while one that
-still works keeps the app.
-
-`ContractTests.cs` in `csharp:test` runs the built CLI and reads what it
-prints for the commands that need no GitHub: signed-out `status`, `profiles`,
-`profile`, profile saves through `--set`, `--ruleset`, and `--environment`,
-drafts included, and a staged apply through `stage` from `--new` to
-`--discard`. A change to those documents that the app doesn't expect fails the
-gate. It also reads `schema`, the profile file's JSON Schema, and checks the
-settings the app edits in `ViewModels/ProfileFields.cs` against it: every
-setting in the schema is a field there or on the test's list of settings left
-to the YAML, and each field with choices offers exactly the values the schema
-allows. Labels, groups and notes stay in `ProfileFields.cs`, since they are
-the app's own words. The documents that need GitHub, such as `capture`,
-`plan`, `apply`, `repos`, `sync` and the staged and batch ones, come from the
-CLI's own tests instead: `commands.test.ts` saves what each prints against
-the in-memory GitHub to `desktop/tests/Repotted.Desktop.Tests/Fixtures`, with
-the test folder's paths and random ids as placeholders, and
-`CliFixtureTests.cs` reads each through `RepottedClient`, as the app does,
-and checks what the app takes from it. A change to one fails the CLI's tests
-until its fixture is written again with `pnpm vitest run -u`, and then fails
-the app's tests if the app reads it differently: a renamed member that a
-fixture carries, even one the app doesn't require, or a changed value such as
-a status. The same test checks that every fixture in the folder has a test.
-Vitest leaves a file it no longer writes in place, so a removed `fixture()`
-call needs its file and test removed by hand, and an incremental local build
-can keep a renamed fixture in its output folder until it is cleaned. The
-view-model tests keep hand-written documents, for the states they need. The
-app reads a warning's `cause`, `section`, `key`, `field` and `exclusion` to
-place it, and `WarningDocument.Text` in
-`Services/CliDocuments.cs` builds the line it lists the way `describeWarning`
-does, so a change to that line changes both. `PatternNote.For` in
-`ViewModels/ActionPatternsViewModel.cs` words an allowed action pattern's
-check from the `check-actions` document the same way beside
-`describeActionCheck`, in the same words, with the name set apart to show
-in semibold and a blocking pattern's "Blocks" as a tag. A change to either
-changes both. The app ships its own CLI, so
-every member that CLI always prints is required, and a hand-written example
-that leaves one out fails to parse rather than reading as empty.
-
-Each package ships the CLI beside the app as `repotted-cli`, a Node single
-executable application that `packages/cli/sea.ts` builds: the CLI and its
-dependencies in one bundle inside the pinned Node, so it needs no Node on the
-machine. The keychain module is native code, which Node loads only from a real
-file, so it ships beside the CLI as `repotted-keyring.node` and is signed with
-the app on macOS. The CLI has a name of its own because macOS and Windows ignore case in
-file names, where `repotted` would collide with the app. It ignores
-`NODE_OPTIONS`, so nothing in the environment can add Node flags to the process
-that holds the token.
-[Development](development.md#run-the-desktop-app) describes how the app finds
-the CLI.
-
-The app starts the CLI for every read and save, so the executable starts from a
-V8 startup snapshot: `sea.ts` has Node evaluate the bundle once at build time
-and store the resulting heap, and each run starts from that heap and calls
-`main` through `v8.startupSnapshot.setDeserializeMainFunction`. That skips
-evaluating the bundle, about half the time a short command takes. The snapshot
-sets how the code is built:
-
-- Node builds a snapshot only from a CommonJS main script, which can't
-  `import()`, so the executable's bundle is CommonJS and turns each `import()`
-  of a built-in module into a `require`. The npm bundle stays an ES module.
-  esbuild only warns about code that breaks in CommonJS, such as
-  `import.meta`, which it leaves empty, so `sea.ts` fails the build on any
-  esbuild warning.
-- The snapshot freezes whatever the bundle computes at load time, so code reads
-  the environment, the working directory, the arguments, and the time when it
-  runs, not at module scope.
-- A snapshot can't hold a native module, so the keychain module loads on first
-  use, after the snapshot.
-- Node hasn't verified some built-in modules, such as `child_process` and
-  `readline`, in snapshots, so the code that uses them loads them on use, and
-  `sea.ts` fails the build when Node warns that the bundle loaded one.
-- A snapshot runs only on the platform that built it, so each package builds
-  its CLI on a runner of its own platform.
-
-The snapshot makes the executable about 9 MB larger. The MCP server is in the
-executable's bundle, but it loads on use, so the snapshot holds it unevaluated
-and `repotted mcp` evaluates it when it runs.
-
-Releases build the executable only in the desktop packaging, so
-`ts:sea:check`, part of the gate on every pull request, also builds it, on
-Linux in CI, with fake `GITHUB_TOKEN` and `REPOTTED_GITHUB_CLIENT_ID` values.
-It fails when the executable holds either value, then runs `node-smoke.mjs`
-and a relative `profile` from the examples folder, and `status --json` without
-those values. A CLI or core change that reads those variables or the working
-directory at load time, or that breaks the snapshot, fails before a release.
-Other variables aren't checked, so code reads the environment only when a
-command runs.
-
-### Applying from the app
-
-The Apply page is a staged apply, as `repotted stage` makes one, kept in the
-app data folder per repository. Its edit step, where it opens, is the profile
-editor over the staged file: `ProfileStore` swaps the editor's reads and saves for
-`stage`, which takes the same edits as `profile`, so every setting the editor
-shows can be overridden once. A profile's store writes in its turn with the
-syncs of the profiles folder; the staged file is the app's alone, so its
-store writes at once. The page plans with `plan --staged`, whose
-`exclusions` name the key that leaves out each row, so the app never maps a
-plan field to a profile key itself. It applies the saved plan file with
-`apply --yes`, which re-plans and stops on any difference.
-[State machines](state-machines.md#desktop-apply) lists its transitions.
-
-Compare and Apply list every section a plan changes. Sections the profile
-editor has no tab for, such as security, Pages, autolinks and custom
-properties, show as a row per change. `ViewModels/PlanSections.cs` turns a
-plan into those sections and rows, and `Views/PlanTable.axaml` shows them on
-both pages. A list's rows, and its lines in the diff below, belong to the
-entry each change's `entry` names, and `target` only labels them. Apply adds
-**Leave out**, or the **One-off edit** chip, to each row it can leave out.
-
-Beside the one-off edits, the Apply page shows the plan as a diff of profile
-YAML, which `PlanDiff` builds in the app from the plan's `desired` and
-`changes`. Both sides start from the resolved profile, and each field a change
-writes takes GitHub's value on one side and the written value on the other.
-GitHub's value is cut down to the keys the profile sets, and a list follows
-the profile's order, matching items by the keys that name them, such as a
-rule's `type`, so the diff shows what the plan compares and not GitHub's
-defaults, nor the defaults the API body adds for a new rule, which the
-comparison lists. It only shapes what the page shows: the plan decides what
-differs, and the diff is rebuilt from each plan the page shows.
-
-### Profiles in the app
-
-The app edits a folder of YAML files. Settings change through
-`repotted profile --set` and `--unset`; an empty runner label box sets the
-label to `null`, the profile's value for no label. Rulesets, environments and
-labels open in an editor that starts from the entry as the profile resolves it
-and saves it through `--ruleset`, `--environment`, `--label`, and their
-`--drop-` forms. The label editor checks each label's name and
-`renamed_from` against the other labels as the save would leave them, removed
-labels included and drafts left out, as `addRenameIssues` does, so a clash
-shows before the save. The editor changes only what is edited, so keys and rules it doesn't show stay as
-they are, and a choice left unset leaves that key to GitHub.
-
-- Editing a base profile's entry sets the whole entry in this profile, over the
-  base's, under the same name. So only an entry that this profile alone names
-  can be renamed.
-- Renaming an entry, or taking it out of the profile, frees its old name only
-  once the profile is saved.
-- Saving writes each edited entry whole through `--ruleset` or
-  `--environment`, so it would undo a change to that entry made since the
-  editor read the file, such as by a sync. An edited inherited entry is
-  written whole as an override, so it would hide a change to the base's copy
-  too. The editor keeps the text of the profile's file and of each file it
-  extends as it read them. A save with an edited entry compares the profile's
-  own file with that text, and the files it extends too when an edited entry
-  is inherited. When one differs, the save waits for the user to keep their
-  version or reload, as [State machines](state-machines.md#profile-editor)
-  describes.
-- The editor also resolves the profile it extends alone, for the value each
-  setting falls back to. It keeps that base beside the text of the files it
-  resolves from, the same copy the save check compares, and resolves it again
-  only when one of them differs, so a save or a reload runs the CLI once.
-  Keeping it in the editor, rather than having `profile --json` print the base
-  as well, leaves the documents scripts read as they are.
-- When a refresh no longer lists the file of an editor with unsaved changes,
-  the editor stays in the cache as removed and the list shows it. A save
-  writes the text the editor read back as a new file first, then saves the
-  edits over it, and deletes that file again if the save doesn't go through.
-
-A new profile starts empty, extends another profile in the folder, or is
-captured with `repotted capture --output`. The app never replaces a file
-already in the folder. A capture writes a dot-prefixed file and gives it the
-profile's name only once it is whole, so neither the profiles list nor a sync
-reads a capture under way, and one that fails or is cancelled leaves nothing
-behind; [State machines](state-machines.md#new-profile-form) has the details.
-A profile that extends another names that file as the folder lists it, so the
-reference still works when the folder is reached through a link.
-
-Profiles kept in a config repository live in a working copy under `config`
-in the app data folder, one per repository and folder in it, which the app
-edits like any profiles folder and keeps in line with `repotted sync`: once
-before the repository is remembered, on every refresh, and after every save.
-Saves and syncs run one at a time, so a sync never reads a file a save is
-writing. A save and a pull both write through `replaceFile` in `files.ts`,
-which keeps the file's permissions and tries the move again while Windows
-holds the file, as antivirus and the search indexer do just after a write.
-The sync itself is a three-way merge per file against the record it
-keeps in `.repotted-sync.json`, and it starts over as a first sync, deleting
-nothing, whenever the branch no longer holds the commit that record names.
-
-The app keeps its own settings in `settings.json` in the per-user app data
-folder and never writes beside itself, since an update replaces the app's own
-folder and it may not be writable. Besides where profiles live, it remembers
-which owners' repositories the repository list hides, as
-[Desktop repository owners](state-machines.md#desktop-repository-owners)
-describes.
-
-### Compare
-
-Compare runs `repotted plan --json`, which only reads, and shows each change by
-section: what GitHub has now and what the profile sets. A ruleset change names
-the part that differs, such as
-`rules[pull_request].parameters.allowed_merge_methods`. Matching settings are
-counted and shown on request. The app doesn't apply plans.
-
-### Source layout
-
-- `src/Repotted.Desktop/Services`: runs the CLI (`RepottedCli`) and reads its
-  JSON (`RepottedClient`).
-- `src/Repotted.Desktop/ViewModels`: one view model per page, with
-  CommunityToolkit.Mvvm. A row that only bindings listen to tells them
-  everything changed at once, with `OnAllPropertiesChanged`; a page view
-  model that other code listens to raises each name.
-- `src/Repotted.Desktop/Views`: the pages in XAML, bound with compiled
-  bindings. `SettingsAccountView` and `SettingsProfilesView` are the settings'
-  panes, shown together by `SettingsView` as a page on Windows and Linux, and
-  as tabs by `SettingsWindow` on macOS, where `App` also adds Settings… to the
-  app menu.
-- `src/Repotted.Desktop/Theme`: the custom theme. `Colors.axaml` holds the
-  light and dark colors, and `Controls.axaml` styles the controls over Fluent.
-- `src/Repotted.Desktop/Assets/Fonts`: Atkinson Hyperlegible Next and Mono,
-  under the SIL Open Font License.
-- `src/Repotted.Desktop/Assets/repotted.ico` and
-  `packaging/macos/Repotted.icns`: the app icon, the seedling mark of
-  `Views/BrandMark.axaml` on a green tile.
-- `packaging`: `package.sh`, which builds the packages, with the macOS bundle's
-  `Info.plist` and entitlements and the Windows installer's Inno Setup script.
-- `tests/Repotted.Desktop.Tests`: the client, view model, process runner, and
-  headless view tests.
+The web app bundles the engine into its page and calls it directly, with its
+state in classes the tests drive against the same in-memory GitHub. It runs
+no CLI and reads no JSON output. [The web app](web-app.md) describes it, and
+[State machines](state-machines.md) lists the flows it moves through.

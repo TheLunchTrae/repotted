@@ -10,7 +10,7 @@ settings, merge methods, Actions policy, rulesets, environments, and labels. `RE
 minimal; put context that agents need in this file. Docs live in `docs/`, in
 two sets for two readers:
 
-- `docs/user/`: how to install and use the desktop app, the CLI, and the MCP
+- `docs/user/`: how to use the web app, the CLI, and the MCP
   server, the profile format, and the JSON output scripts read. No
   implementation detail: no source paths, internal names, or design rationale.
 - `docs/developer/`: how Repotted works and why: the architecture and design
@@ -24,7 +24,7 @@ and the developer page for how and why.
 - [docs/developer/README.md](docs/developer/README.md): the developer guide's
   index and the repository layout.
 - [docs/developer/architecture.md](docs/developer/architecture.md): how
-  profiles, plans, apply, the CLI, the MCP server, and the desktop app work.
+  profiles, plans, apply, the CLI, the MCP server, and the web app work.
 
 `packages/core` is the engine: the profile schema, one adapter per section,
 and the plan engine. `packages/cli` is the published `repotted` package: the
@@ -33,8 +33,7 @@ repotted.dev: a Cloudflare Worker that serves the site and its GitHub
 sign-in; see [the web app](docs/developer/web-app.md). Its state lives in
 `src/app/`, in classes with no DOM in them that the tests drive, and
 `src/views/` draws it. All text it shows is in sentence case, by the rules
-under [C# and the desktop app](#c-and-the-desktop-app), with no
-per-platform casing.
+under [Text in the web app](#text-in-the-web-app).
 
 ### Safety
 
@@ -50,11 +49,8 @@ per-platform casing.
   Never run `apply` against a real repository, and never change a real
   repository's settings, rulesets, or branch protection, without the owner's
   explicit yes for that repository and that plan.
-- Do not run Release CLI or Release Desktop, publish to npm, push a tag, or
-  publish a release without the owner's explicit yes. A test build of Release
-  Desktop, with Publish not selected, on a pull request's branch, which
-  [Releasing](docs/developer/releasing.md#the-desktop-app) describes,
-  releases nothing and needs no yes.
+- Do not run Release CLI, publish to npm, push a tag, or publish a release
+  without the owner's explicit yes.
 - Do not run Deploy Web or `wrangler deploy`, or change the Worker's secrets
   or domain, without the owner's explicit yes.
 
@@ -152,8 +148,7 @@ version-numbered names.
   when the contract changes. State each policy once and link to it elsewhere.
 - Executable config is the source of truth; docs point at it rather than
   restate it.
-- Quote a desktop app label in bold, as written in the app, which is how
-  Windows shows it.
+- Quote a web app label in bold, as written in the app.
 - Keep the workflows, contracts, and current state discoverable from local
   files, so a fresh agent can find them.
 - Write in the present tense. Do not date text or narrate history, as in "now
@@ -182,7 +177,7 @@ version-numbered names.
 ## State machines
 
 [State machines](docs/developer/state-machines.md) lists the flows whose state
-no type names, in the engine, the CLI, the desktop app, and releases: sign-in,
+no type names, in the engine, the CLI, the web app, and releases: sign-in,
 sync, the profile editor and its cache, captures, and the rest. Each flow has
 a table of its states, the events they meet, and what comes next. Implicit
 state includes flags, nullable fields, caches, files on disk, and the order of
@@ -191,7 +186,7 @@ asynchronous work.
 - When a change adds, removes, or changes a state or a transition, update the
   owning table in the same change. A new flow gets its own section.
 - Test each transition, failure transitions included, at the narrowest stable
-  interface, such as a view model over `FakeCli`. A transition that needs
+  interface, such as a state class over `FakeGitHub`. A transition that needs
   overlapping work, such as a save queued behind a sync or a command pressed
   while a load runs, needs a test that holds that work open.
 - A known defect, a failure that leaves the user worse off than where they
@@ -208,8 +203,7 @@ through `npx`, so shipped code uses only `node:` APIs, and `ts:node:check` runs
 the built CLI under the oldest supported Node. `packages/core` also runs in the
 web app's page, so it uses web platform APIs, and of Node's modules only
 `node:fs/promises` and `node:path`, which the page
-[maps to its own](docs/developer/web-app.md#the-engine). The desktop app ships the CLI as
-a Node single executable that `packages/cli/sea.ts` builds. `packages/web`
+[maps to its own](docs/developer/web-app.md#the-engine). `packages/web`
 runs in the browser and on Cloudflare Workers instead, so its `src/` uses web
 platform APIs and no `node:` modules.
 
@@ -218,17 +212,10 @@ Select checks for the change:
 | Change                  | First checks                                     |
 | ----------------------- | ------------------------------------------------ |
 | Source or tests         | `ts:lint`, `ts:type`, `ts:test`                  |
-| CLI, build, or runtime  | `ts:build`, `ts:node:check`, `ts:sea:check`      |
+| CLI, build, or runtime  | `ts:build`, `ts:node:check`                      |
 | Dependencies or exports | `ts:audit`, `ts:knip`                            |
 | Formatting              | `ts:fmt:check`; `ts:standards` applies autofixes |
 | Web app or Worker       | `ts:test`, `ts:type`, `ts:web:check`             |
-
-`ts:sea:check` builds the single executable, on Linux in CI, and checks its
-startup snapshot, so the gate catches a CLI or core change that breaks it. A
-change to the desktop packaging, or to what `sea.ts` does on macOS or Windows,
-such as signing or picking the keychain module, also needs a Release Desktop
-test build on its branch, since only its macOS and Windows runners package the
-app.
 
 Before handoff, run `mise run standards:check`. Run `mise run ts:lock` after
 changing declared dependencies and commit `pnpm-lock.yaml`.
@@ -251,65 +238,25 @@ exports and keep module bindings immutable. Tests live in each package's
   mise tasks for lost coverage, and justify every relaxation.
 - A behavior change needs a test that fails without it.
 
-## C# and the desktop app
+## Text in the web app
 
-`desktop/` is the desktop app: C# on .NET 10 with Avalonia. The `csharp:*`
-mise tasks run from there, and `csharp:standards:check` is part of
-`standards:check`. mise's lockfile pins the exact SDK, so the analyzers and
-`dotnet format` match CI; `desktop/global.json` only sets the floor for
-builds outside mise.
-
-- `Directory.Build.props` holds the compiler and analyzer contract: warnings
-  are errors under `AnalysisMode=Recommended`, with code style enforced in the
-  build. Fix the cause of a diagnostic; an exception is a per-site
-  `[SuppressMessage]` with a real `Justification`.
-- Package versions live in `Directory.Packages.props`. Run
-  `mise run csharp:lock` after changing them and commit the lock files; CI
-  restores in locked mode.
-- The app does no GitHub work itself: it runs the CLI with `--json`.
-  `csharp:test` runs the contract test against the CLI's source, so a change
-  to the documents it covers fails there; see
-  [the architecture](docs/developer/architecture.md#the-desktop-app).
-- Keep asynchronous work owned and cancellable, and avoid `async void`. A CLI
-  run must not outlive what started it.
-- View tests draw pages headlessly in light and dark. Set
-  `REPOTTED_SCREENSHOTS` to a folder to save them for review.
 - Write all text the app shows or reads aloud in sentence case: capitalize
   the first word and proper names, and nothing else. That covers buttons,
-  links, menu items, tabs, segmented options, window and page titles,
-  headings, field labels, placeholders, tooltips, accessible names, and
-  messages: "Keep mine" and "Back to rulesets", not "Keep Mine".
-  - The proper names are product and brand names: Repotted, Repotted App,
-    GitHub, GitHub App, macOS, and Windows, plus GitHub's own names for its
-    features and permissions, such as Actions and Contents. Acronyms,
-    identifiers, and key names keep their own form, such as YAML, SHA,
-    `GITHUB_TOKEN`, and Ctrl.
-  - App concepts stay lowercase, however central they are: repository,
-    profile, ruleset, environment, and the other terms in `CONTEXT.md`.
-    Write "New profile" and "New ruleset", not "New Profile". This is
-    deliberate, so that no one has to judge which nouns are important
-    enough.
-  - A word inserted into a label stays lowercase unless it is a proper name.
-    Text that names another control uses that control's label as written,
-    as in "Reload discards your unsaved changes."
-- Each platform shows labels in its own casing. `Theme/ControlLabel.cs`
-  turns a label into Apple's title style on macOS, as in "Sign In with
-  GitHub", and leaves it as written on Windows. It applies to buttons,
-  segmented options, tabs, page titles, and menu items, and a button's accessible name
-  follows its shown label unless the view sets one. Everything else stays
-  in sentence case on both.
-  - A button's or toggle button's string content gets it from
-    `ControlLabel.ApplyToButtons`, which the app calls at startup. Show a
-    name or other data inside a button in a `TextBlock`, so it keeps its own
-    casing. Don't set a `ContentTemplate` on every button in a style: any
-    template shows a button's control content as its type name.
-  - A tab's or page title's `TextBlock` needs it written in: bind with
-    `Converter={x:Static theme:ControlLabel.Converter}`, or use
-    `{theme:Label 'New profile'}` for a fixed title. A menu item's header
-    uses `{theme:Label ...}` too.
-  - View tests compare a label through `ControlLabel.For`, so they pass on
-    both platforms. CI runs them on Linux, so run them on a Mac after
-    changing how labels are cased.
+  links, menu items, tabs, segmented options, page titles, headings, field
+  labels, placeholders, tooltips, accessible names, and messages: "Keep
+  mine" and "Back to rulesets", not "Keep Mine".
+- The proper names are product and brand names: Repotted, Repotted App,
+  GitHub, and GitHub App, plus GitHub's own names for its features and
+  permissions, such as Actions and Contents. Acronyms, identifiers, and key
+  names keep their own form, such as YAML, SHA, `GITHUB_TOKEN`, and Ctrl.
+- App concepts stay lowercase, however central they are: repository,
+  profile, ruleset, environment, and the other terms in `CONTEXT.md`. Write
+  "New profile" and "New ruleset", not "New Profile". This is deliberate, so
+  that no one has to judge which nouns are important enough.
+- A word inserted into a label stays lowercase unless it is a proper name.
+  Text that names another control uses that control's label as written, as
+  in "Reload discards your unsaved changes."
+- The casing is the same in every browser and on every platform.
 
 ## Git
 
