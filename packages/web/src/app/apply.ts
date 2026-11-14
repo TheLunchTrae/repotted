@@ -128,20 +128,28 @@ export class Apply {
     if (this.state.value.kind === 'applying') {
       return;
     }
+    const unfinished = await this.unfinished(repository);
+    // Looked at again, since an apply may have begun to write while the browser's files were read.
+    if (this.state.value.kind === 'applying') {
+      return;
+    }
     this.#profile = profile;
-    if (await this.unfinished(repository)) {
+    if (unfinished) {
       this.#turn += 1;
       this.state.value = { kind: 'unfinished', repository, profile: profile.name };
       return;
     }
-    await this.#work(repository, profile.name, 'reviewing', async () => {
+    await this.#work(repository, profile.name, 'reviewing', async (current) => {
       await mkdir(dirname(stagedFile(repository)), { recursive: true });
       await createStagedApply(stagedFile(repository), repository, profile.file);
       try {
         return await this.#review(repository, undefined);
       } catch (error) {
         // An apply that couldn't be reviewed even once holds nothing yet, so it is not left to pick up.
-        await forget(repository);
+        // One the page has since moved on from may have been picked up and changed, so it stays.
+        if (current()) {
+          await forget(repository);
+        }
         throw error;
       }
     });
@@ -227,10 +235,13 @@ export class Apply {
           );
         }
         if (error instanceof ApplyError) {
-          return this.#review(
-            state.repository,
-            `${describeFailure(error)} ${error.applied.length === 1 ? 'The 1 change before it stays' : `The ${error.applied.length} changes before it stay`} written, and nothing after it was. This is what is left.`,
-          );
+          const partly = `${describeFailure(error)} ${error.applied.length === 1 ? 'The 1 change before it stays' : `The ${error.applied.length} changes before it stay`} written, and nothing after it was.`;
+          try {
+            return await this.#review(state.repository, `${partly} This is what is left.`);
+          } catch (again) {
+            // What was written is said even when what is left can't be read.
+            throw new Error(`${partly} What is left couldn't be read: ${messageOf(again)}`, { cause: again });
+          }
         }
         throw error;
       }
@@ -290,12 +301,12 @@ export class Apply {
     repository: string,
     profile: string,
     kind: 'reviewing' | 'applying',
-    work: () => Promise<ApplyState>,
+    work: (current: () => boolean) => Promise<ApplyState>,
   ): Promise<void> {
     const turn = (this.#turn += 1);
     this.state.value = { kind, repository, profile };
     try {
-      const next = await work();
+      const next = await work(() => turn === this.#turn);
       if (turn === this.#turn) {
         this.state.value = next;
       }

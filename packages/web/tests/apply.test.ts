@@ -333,3 +333,39 @@ test('an apply whose profile is gone says so by its name, and one whose file is 
     message: 'This apply is no longer in this browser. Start it again from its repository.',
   });
 });
+
+test('a first review that fails late leaves an apply that was picked up and changed meanwhile', async () => {
+  await saved();
+  const github = new Held();
+  const apply = new Apply(github, () => undefined);
+
+  github.hold();
+  const first = apply.start('lunch/app', profile);
+  // The apply's file is there as soon as it starts; the page moves on and picks it up.
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+  apply.close();
+  github.fail('GET /repos/lunch/app/labels', answered(500, 'Server Error'), 1);
+  const picked = apply.pickUp('lunch/app');
+  await github.release();
+  await Promise.all([first, picked]);
+
+  expect(await apply.unfinished('lunch/app')).toBe(true);
+});
+
+test('a failure names a profile kept on GitHub by its path there, not by where the browser keeps it', async () => {
+  const kept = '/profiles/github/lunch/config/@profiles';
+  await mkdir(kept, { recursive: true });
+  await writeFile(`${kept}/web.yaml`, text);
+  const apply = new Apply(new FakeGitHub(), () => undefined);
+  await apply.start('lunch/app', { file: `${kept}/web.yaml`, name: 'web', folder: kept });
+  apply.close();
+
+  await rm(`${kept}/web.yaml`);
+  await apply.pickUp('lunch/app');
+
+  const state = apply.state.value;
+  expect(state.kind === 'failed' ? state.message : '').toContain('web.yaml');
+  expect(state.kind === 'failed' ? state.message : '').not.toContain('github/lunch');
+});
