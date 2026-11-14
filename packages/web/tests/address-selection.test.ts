@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import { FakeGitHub } from '../../core/tests/fake-github.js';
 import { AddressSelection } from '../src/app/address-selection.js';
+import type { Preferences } from '../src/app/preferences.js';
 import { Repositories } from '../src/app/repositories.js';
 import { SharedPreferences } from '../src/app/shared-preferences.js';
 import { browser } from './fake-browser.js';
@@ -23,12 +24,9 @@ function page(start: string) {
     },
   });
   const kept: Record<string, unknown> = {};
-  const preferences = new SharedPreferences(
-    github,
-    { read: (key) => kept[key], write: (key, value) => (kept[key] = value) },
-    () => undefined,
-  );
-  const repositories = new Repositories(github, { login: 'octo', name: null }, preferences, () => undefined);
+  const inBrowser: Preferences = { read: (key) => kept[key], write: (key, value) => (kept[key] = value) };
+  const preferences = new SharedPreferences(github, inBrowser, () => undefined);
+  const repositories = new Repositories(github, { login: 'octo', name: null }, preferences, inBrowser, () => undefined);
   const fake = browser(start);
   const address = new AddressSelection(repositories, fake.router);
   return { repositories, address, ...fake, refreshing: repositories.refresh() };
@@ -98,4 +96,44 @@ test('following the address keeps the Undo of a hide while the selection is alre
   address.follow();
 
   expect(repositories.justHidden.value).toEqual(['octo/app']);
+});
+
+test('a repository that leaves view is let go of and taken off the address, and Undo of its hide opens it again', async () => {
+  const { repositories, address, entries, history, refreshing } = page('/');
+  await refreshing;
+  address.arrive();
+  repositories.select({ full_name: 'octo/app' });
+  address.keep('push');
+  const app = repositories.selected.value;
+  repositories.hide(app === undefined ? [] : [app]);
+
+  address.release();
+  address.follow();
+
+  expect(history.back).toHaveBeenCalledTimes(1);
+  expect(entries()).toEqual(['/', '/?repository=octo/app']);
+  expect(repositories.selectedName).toBeUndefined();
+  expect(repositories.justHidden.value).toEqual(['octo/app']);
+  // Showing hidden ones brings back no selection; Undo of the hide does.
+  repositories.setShowHidden(true);
+  expect(repositories.selected.value).toBeUndefined();
+  repositories.setShowHidden(false);
+  repositories.unhide([{ full_name: 'octo/app' }]);
+  repositories.select({ full_name: 'octo/app' });
+  repositories.hide(app === undefined ? [] : [app]);
+  address.release();
+  repositories.undoHide();
+  expect(repositories.selected.value?.full_name).toBe('octo/app');
+});
+
+test('a link to a repository the list does not show is let go of, in place', async () => {
+  const { repositories, address, entries, history, refreshing } = page('/?repository=octo/nope');
+  address.arrive();
+  await refreshing;
+
+  address.release();
+
+  expect(history.back).not.toHaveBeenCalled();
+  expect(entries()).toEqual(['/']);
+  expect(repositories.selectedName).toBeUndefined();
 });

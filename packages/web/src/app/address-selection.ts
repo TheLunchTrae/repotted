@@ -64,6 +64,16 @@ export class AddressSelection {
     this.#router.returnTo(queryFor(undefined));
   }
 
+  /**
+   * Lets go of a selection that is out of view, as one hidden, moved into a
+   * closed folder, or gone from the list, and takes it off the address.
+   * A hide's Undo selects it again.
+   */
+  release(): void {
+    this.#repositories.dropSelection();
+    this.close();
+  }
+
   #select(name: string | undefined): void {
     // Selecting again what is selected would clear the Undo of a hide.
     if (name !== this.#repositories.selectedName) {

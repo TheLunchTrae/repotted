@@ -316,6 +316,7 @@ function RepositoryRow({ repository, repositories, withOwner }: RowProps): JSX.E
       <button
         class="row"
         type="button"
+        data-repository={repository.full_name}
         aria-pressed={selected?.full_name === repository.full_name}
         onClick={() => {
           repositories.select(selected?.full_name === repository.full_name ? undefined : repository);
@@ -634,16 +635,24 @@ function usePhone(): boolean {
 }
 
 /**
- * Keeps the selection and the page's address together. A selection from the
- * list that `opensScreen` gets a history entry of its own, so the browser's
- * back returns to the list.
+ * Keeps the selection and the page's address together. Opening a
+ * repository's screen of its own, as on a phone, adds a history entry, so the
+ * browser's back returns to the list. On a phone the selection is let go of
+ * once its repository is out of view, as one hidden or moved into a closed
+ * folder, so the address names only what shows.
  */
-function useAddressedSelection(address: AddressSelection, repositories: Repositories, opensScreen: boolean): void {
+function useAddressedSelection(address: AddressSelection, repositories: Repositories, phone: boolean): void {
   const named = address.named;
   const name = repositories.selectedName;
+  const shown = repositories.selected.value?.full_name;
+  const listed = repositories.list.value !== undefined;
+  const screen = phone && shown !== undefined;
   const arrived = useRef(false);
-  // The selection the address last took, to tell one opened from the list from one changed to another.
-  const before = useRef<string | undefined>(undefined);
+  // What the address last took, to tell a screen opened with the selection from a selection changed.
+  const before = useRef<{ readonly name: string | undefined; readonly screen: boolean }>({
+    name: undefined,
+    screen: false,
+  });
   useEffect(() => {
     if (arrived.current) {
       address.follow();
@@ -651,21 +660,32 @@ function useAddressedSelection(address: AddressSelection, repositories: Reposito
       arrived.current = true;
       address.arrive();
     }
-    before.current = repositories.selectedName;
+    before.current = { name: repositories.selectedName, screen: before.current.screen };
   }, [address, repositories, named]);
-  // Only a change of the selection moves the address; a change of screen alone doesn't.
   useEffect(() => {
-    const opened = before.current === undefined && repositories.selectedName !== undefined;
-    before.current = repositories.selectedName;
-    address.keep(opened && opensScreen ? 'push' : 'replace');
-  }, [address, repositories, name]);
+    if (name !== before.current.name) {
+      address.keep(screen && !before.current.screen ? 'push' : 'replace');
+    }
+    before.current = { name, screen };
+  }, [address, name, screen]);
+  useEffect(() => {
+    if (phone && listed && name !== undefined && shown === undefined) {
+      address.release();
+    }
+  }, [address, phone, listed, name, shown]);
 }
 
 /**
  * On a phone, the list comes back from a repository's details where it was
- * left, with the focus on the row that opened them.
+ * left, with the focus on the row that opened them, or on the page's heading
+ * when that row is out of view.
  */
-function useListReturn(details: boolean, name: string | undefined): void {
+function useListReturn(
+  details: boolean,
+  phone: boolean,
+  name: string | undefined,
+): RefObject<HTMLHeadingElement | null> {
+  const heading = useRef<HTMLHeadingElement>(null);
   const scrolled = useRef(0);
   const closed = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
@@ -673,15 +693,13 @@ function useListReturn(details: boolean, name: string | undefined): void {
       closed.current = name;
       return undefined;
     }
-    if (closed.current !== undefined) {
+    // Details that close because the screen grew stay beside the list, which wasn't left.
+    if (closed.current !== undefined && phone) {
       scrollTo(0, scrolled.current);
-      document
-        .querySelector(`input.tick[aria-label="Tick ${CSS.escape(closed.current)}"]`)
-        ?.closest('li')
-        ?.querySelector<HTMLElement>('button.row')
-        ?.focus({ preventScroll: true });
-      closed.current = undefined;
+      const row = document.querySelector<HTMLElement>(`button.row[data-repository="${CSS.escape(closed.current)}"]`);
+      (row ?? heading.current)?.focus({ preventScroll: true });
     }
+    closed.current = undefined;
     // Kept as it changes, since opening the details takes the list out of the page and the scroll with it.
     const keep = (): void => {
       scrolled.current = scrollY;
@@ -690,7 +708,8 @@ function useListReturn(details: boolean, name: string | undefined): void {
     return () => {
       removeEventListener('scroll', keep);
     };
-  }, [details, name]);
+  }, [details, phone, name]);
+  return heading;
 }
 
 interface RepositoriesProps {
@@ -907,9 +926,10 @@ export function RepositoriesPage({
   // On a phone a repository's details take the place of the list, unless ticked ones take the panel, as they do
   // beside the list.
   const phone = usePhone();
-  const details = phone && selected !== undefined && ticked.length === 0;
-  useAddressedSelection(address, repositories, phone && ticked.length === 0);
-  useListReturn(details, selected?.full_name);
+  // On a phone the details are a screen of their own, which leaves any ticked repositories with the list.
+  const details = phone && selected !== undefined;
+  useAddressedSelection(address, repositories, phone);
+  const heading = useListReturn(details, phone, selected?.full_name);
 
   return (
     <div
@@ -936,7 +956,9 @@ export function RepositoriesPage({
         )}
         <div class="page-heading">
           <div>
-            <h1 id="repositories-heading">Repositories</h1>
+            <h1 id="repositories-heading" ref={heading} tabIndex={-1}>
+              Repositories
+            </h1>
             {list !== undefined && (
               <p class="muted">
                 {fromApp
@@ -1150,7 +1172,7 @@ export function RepositoriesPage({
           </>
         )}
       </section>
-      {ticked.length > 0 ? (
+      {ticked.length > 0 && !details ? (
         <TickedPanel
           repositories={repositories}
           onDialog={setDialog}

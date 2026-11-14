@@ -136,6 +136,8 @@ export class Repositories {
   readonly justHidden = signal<readonly string[]>([]);
   /** Of those, the ones that were ticked, which Undo ticks again. */
   #justUnticked: readonly string[] = [];
+  /** The selection let go of when the last hide took it out of view, which Undo selects again. */
+  #justDeselected: string | undefined;
 
   readonly #github: GitHub;
   readonly #user: User;
@@ -384,6 +386,19 @@ export class Repositories {
     this.#clearJustHidden();
   }
 
+  /**
+   * Lets go of the selection, as when it has gone out of view, without
+   * moving on from the last hide: its Undo selects it again if the hide took
+   * it out of view.
+   */
+  dropSelection(): void {
+    const name = this.#selectedName.value;
+    if (name !== undefined && this.justHidden.value.includes(name)) {
+      this.#justDeselected = name;
+    }
+    this.#selectedName.value = undefined;
+  }
+
   setShowHidden(shown: boolean): void {
     this.showHidden.value = shown;
     this.#clearJustHidden();
@@ -410,6 +425,7 @@ export class Repositories {
     this.#justUnticked = repositories
       .map((repository) => repository.full_name)
       .filter((name) => this.#tickedNames.value.has(name));
+    this.#justDeselected = undefined;
     this.#tickedNames.value = ticked;
   }
 
@@ -425,8 +441,12 @@ export class Repositories {
   /** Shows the repositories the last hide took out of the list again, ticked as they were. */
   undoHide(): void {
     const unticked = this.#justUnticked;
+    const deselected = this.#justDeselected;
     this.unhide(this.justHidden.value.map((full_name) => ({ full_name })));
     this.#tickedNames.value = new Set([...this.#tickedNames.value, ...unticked]);
+    if (deselected !== undefined) {
+      this.#selectedName.value = deselected;
+    }
   }
 
   /** Ticks a repository for an apply to several, or unticks it. */
@@ -589,5 +609,6 @@ export class Repositories {
   #clearJustHidden(): void {
     this.justHidden.value = [];
     this.#justUnticked = [];
+    this.#justDeselected = undefined;
   }
 }

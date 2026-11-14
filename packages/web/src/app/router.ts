@@ -21,6 +21,8 @@ export class Router {
   readonly search = signal('');
 
   readonly #history: Pick<History, 'pushState' | 'replaceState' | 'back' | 'state'>;
+  /** Whether a back this router asked for is under way, until the browser says it arrived. */
+  #returning = false;
 
   constructor(
     location: Pick<Location, 'pathname' | 'search'>,
@@ -31,14 +33,15 @@ export class Router {
     this.path.value = clean(location.pathname);
     this.search.value = location.search;
     window.addEventListener('popstate', () => {
+      this.#returning = false;
       this.path.value = clean(location.pathname);
       this.search.value = location.search;
     });
   }
 
-  /** Goes to another page. On the page already shown it does nothing, whatever the query. */
+  /** Goes to a page, or to the page shown without its query. */
   go(path: string): void {
-    if (path !== this.path.value) {
+    if (path !== this.path.value || this.search.value !== '') {
       this.#history.pushState(null, '', path);
       this.path.value = path;
       this.search.value = '';
@@ -51,7 +54,8 @@ export class Router {
    * of the one shown.
    */
   query(search: string, entry: 'push' | 'replace'): void {
-    if (search === this.search.value) {
+    // While a back is under way, the address is the browser's to set.
+    if (search === this.search.value || this.#returning) {
       return;
     }
     const address = `${this.path.value}${search}`;
@@ -71,7 +75,11 @@ export class Router {
    */
   returnTo(search: string): void {
     const state: unknown = this.#history.state;
+    if (this.#returning) {
+      return;
+    }
     if (isQueryEntry(state) && state.from === search) {
+      this.#returning = true;
       this.#history.back();
     } else {
       this.query(search, 'replace');
