@@ -137,7 +137,7 @@ list for one sign-in.
 | A repository selected | A search, a hidden owner, or a hide takes it out of view | Its panel closes. It is selected again when it comes back into view.                             |
 
 It keeps the owners the list hides, by login, under `hidden-repository-owners`
-in the browser's [preferences](web-app.md#the-app), or nothing when it hides
+in its [shared preferences](#web-shared-preferences), or nothing when it hides
 no owner. A hidden owner matches its login in any case. Keeping the hidden
 owners rather than the shown ones means an owner new to the list shows.
 
@@ -165,7 +165,32 @@ kept: each visit starts with the hidden repositories out of the list.
 | Every one shown     | Show hidden off, no search        | The list says every repository here is hidden and offers Show hidden.                 |
 | Some                | A search that matches only hidden | The list says no repository matches, how many hidden ones do, and offers Show hidden. |
 
-A browser that refuses storage keeps the choice for the visit only.
+A browser that refuses storage keeps the choice for the visit only. Both
+lists are read from the shared preferences each time, so a file read from
+the profiles repository changes what the list hides as soon as it arrives.
+
+## Web shared preferences
+
+`SharedPreferences` (`packages/web/src/app/shared-preferences.ts`) keeps the
+preferences that follow the user where the profiles are. Its saves and reads
+run one at a time, in order.
+
+| State             | Event                                      | Next                                                                                                                                             |
+| ----------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| In the browser    | Profiles kept in a config repository       | Reading `.repotted-preferences.json` beside the profiles; until it is read, every preference reads as unset.                                     |
+| Reading           | GitHub answers                             | In the repository, with the file's values. A file that is missing, not JSON, or not an object reads as empty.                                    |
+| Reading           | A write                                    | The value shows at once, and is kept over the file's value when the read finishes, then saved.                                                   |
+| Reading           | The read fails                             | In the repository with no values, and why above the list.                                                                                        |
+| In the repository | A write                                    | The value shows at once; saving.                                                                                                                 |
+| Saving            | —                                          | Reads the file again, puts the values written here onto it, and commits it only if that changes it. Writes made meanwhile go in the next commit. |
+| Saving            | GitHub answers 409 or 422                  | The file changed elsewhere since it was read: read again and try again, up to three tries in all.                                                |
+| Saving            | The commit fails otherwise                 | The value is kept here, why shows above the list, and the next write saves it too.                                                               |
+| Reading or saving | GitHub answers 401                         | The account is signed out.                                                                                                                       |
+| In the repository | Profiles kept in the browser or a folder   | In the browser, with the browser's values. A commit already sent still lands; one not yet sent is dropped.                                       |
+| In the repository | Profiles kept in another config repository | Reading that repository's file, as above; what was written for the old one and not yet saved is dropped.                                         |
+
+Two browsers that write different keys both keep theirs, since each save
+reads the file first. Two that write the same key keep the later save.
 
 ## Web profiles source
 

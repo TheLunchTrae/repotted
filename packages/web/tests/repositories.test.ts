@@ -1,8 +1,10 @@
+import type { GitHub } from '@repotted/core';
 import { expect, test, vi } from 'vitest';
 
 import { answered, type FakeAccount, FakeGitHub } from '../../core/tests/fake-github.js';
 import type { Preferences } from '../src/app/preferences.js';
 import { Repositories, type Repository } from '../src/app/repositories.js';
+import { SharedPreferences } from '../src/app/shared-preferences.js';
 
 const user = { login: 'Trae', name: null };
 
@@ -40,8 +42,13 @@ function names(repositories: Repositories): string[] {
   ]);
 }
 
+/** Preferences kept in this browser, as when profiles are not kept in a repository. */
+function inBrowser(github: GitHub, preferences: Preferences = memory()): SharedPreferences {
+  return new SharedPreferences(github, preferences, () => undefined);
+}
+
 async function opened(github: FakeGitHub, preferences: Preferences = memory()): Promise<Repositories> {
-  const repositories = new Repositories(github, user, preferences, () => undefined);
+  const repositories = new Repositories(github, user, inBrowser(github, preferences), () => undefined);
   await repositories.refresh();
   return repositories;
 }
@@ -144,7 +151,7 @@ test('a refused sign-in is reported as signed out, not as an error on the page',
   const github = new FakeGitHub({ account: account(everyone) });
   github.fail('GET /user/installations', answered(401, 'Bad credentials'));
   const signedOut = vi.fn();
-  const repositories = new Repositories(github, user, memory(), signedOut);
+  const repositories = new Repositories(github, user, inBrowser(github), signedOut);
 
   await repositories.refresh();
 
@@ -155,7 +162,7 @@ test('a refused sign-in is reported as signed out, not as an error on the page',
 test('a refresh asked for while one runs starts no second read', async () => {
   const held = Promise.withResolvers<unknown>();
   const request = vi.fn<FakeGitHub['request']>(() => held.promise);
-  const repositories = new Repositories({ request }, user, memory(), () => undefined);
+  const repositories = new Repositories({ request }, user, inBrowser({ request }), () => undefined);
 
   const first = repositories.refresh();
   await repositories.refresh();
@@ -185,7 +192,7 @@ test('a refresh keeps the list in use while it reads, and the selection when the
 
 test('ticked repositories stay ticked through a search, and one the account no longer lists drops out', async () => {
   const github = new FakeGitHub({ account: account(everyone) });
-  const repositories = new Repositories(github, user, memory(), () => undefined);
+  const repositories = new Repositories(github, user, inBrowser(github), () => undefined);
   await repositories.refresh();
   const all = repositories.list.value?.repositories ?? [];
   const named = (name: string): (typeof all)[number] => {

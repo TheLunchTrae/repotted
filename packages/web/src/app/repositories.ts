@@ -3,7 +3,7 @@ import { type GitHub, listRepositories } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { isSignedOut, type User } from './account.js';
-import type { Preferences } from './preferences.js';
+import type { SharedPreferences } from './shared-preferences.js';
 
 type RepositoryList = Awaited<ReturnType<typeof listRepositories>>;
 export type Repository = RepositoryList['repositories'][number];
@@ -42,6 +42,8 @@ export class Repositories {
   /** Undefined until the first list arrives. */
   readonly list = signal<RepositoryList | undefined>(undefined);
   readonly search = signal('');
+  /** Where the hidden owners and repositories are kept, and why they couldn't be read or saved. */
+  readonly preferences: SharedPreferences;
   /** Whether the hidden repositories show, marked, among the rest. */
   readonly showHidden = signal(false);
   /** The repositories the last hide took out of the list, which Undo brings back. */
@@ -49,25 +51,24 @@ export class Repositories {
 
   readonly #github: GitHub;
   readonly #user: User;
-  readonly #preferences: Preferences;
   readonly #onSignedOut: () => void;
-  readonly #hiddenOwners = signal<readonly string[]>([]);
+  readonly #hiddenOwners = computed<readonly string[]>(() => {
+    const hidden = names.safeParse(this.preferences.read(hiddenOwnersKey));
+    return hidden.success ? hidden.data : [];
+  });
   /** Hidden repositories by `owner/name`, kept lowercase, since GitHub matches names in any case. */
-  readonly #hiddenNames = signal<ReadonlySet<string>>(new Set());
+  readonly #hiddenNames = computed<ReadonlySet<string>>(() => {
+    const hidden = names.safeParse(this.preferences.read(hiddenRepositoriesKey));
+    return new Set(hidden.success ? hidden.data.map((name) => name.toLowerCase()) : []);
+  });
   readonly #selectedName = signal<string | undefined>(undefined);
   readonly #tickedNames = signal<ReadonlySet<string>>(new Set());
 
-  constructor(github: GitHub, user: User, preferences: Preferences, onSignedOut: () => void) {
+  constructor(github: GitHub, user: User, preferences: SharedPreferences, onSignedOut: () => void) {
     this.#github = github;
     this.#user = user;
-    this.#preferences = preferences;
+    this.preferences = preferences;
     this.#onSignedOut = onSignedOut;
-    const hidden = names.safeParse(preferences.read(hiddenOwnersKey));
-    this.#hiddenOwners.value = hidden.success ? hidden.data : [];
-    const hiddenRepositories = names.safeParse(preferences.read(hiddenRepositoriesKey));
-    this.#hiddenNames.value = new Set(
-      hiddenRepositories.success ? hiddenRepositories.data.map((name) => name.toLowerCase()) : [],
-    );
   }
 
   isHidden(repository: Repository): boolean {
@@ -290,12 +291,10 @@ export class Repositories {
   }
 
   #saveHidden(hidden: ReadonlySet<string>): void {
-    this.#hiddenNames.value = hidden;
-    this.#preferences.write(hiddenRepositoriesKey, hidden.size > 0 ? [...hidden] : undefined);
+    this.preferences.write(hiddenRepositoriesKey, hidden.size > 0 ? [...hidden] : undefined);
   }
 
   #save(hidden: readonly string[]): void {
-    this.#hiddenOwners.value = hidden;
-    this.#preferences.write(hiddenOwnersKey, hidden.length > 0 ? hidden : undefined);
+    this.preferences.write(hiddenOwnersKey, hidden.length > 0 ? hidden : undefined);
   }
 }

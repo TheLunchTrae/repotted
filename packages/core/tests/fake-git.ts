@@ -98,6 +98,8 @@ export class FakeGitRepository implements GitHub {
   beforeRefUpdate: (() => void) | undefined;
   /** Runs just before a blob is read, as an edit made here during a sync would. */
   beforeBlobRead: (() => void) | undefined;
+  /** Runs just before a file is written through the contents API, as a push that lands first would. */
+  beforeContentsWrite: (() => void) | undefined;
   /** The error GitHub answers every write with, as a ruleset or a missing permission would. */
   refuseWrites: GitHubError | undefined;
 
@@ -322,11 +324,32 @@ export class FakeGitRepository implements GitHub {
       }
       return { sha: this.storeCommit({ tree: String(tree), parents: parents.map(String), message: String(message) }) };
     }
-    if (method === 'PUT' && route.startsWith(`${base}/contents/`)) {
-      const file = route.slice(`${base}/contents/`.length).split('/').map(decodeURIComponent).join('/');
-      const { content, message, branch } = object(body);
-      if (typeof content !== 'string' || branch !== this.defaultBranch || this.files()[file] !== undefined) {
+    const contents = route.startsWith(`${base}/contents/`)
+      ? route.slice(`${base}/contents/`.length).split('/').map(decodeURIComponent).join('/')
+      : undefined;
+    if (method === 'GET' && contents !== undefined) {
+      const text = this.files()[contents];
+      if (text === undefined) {
+        throw new GitHubError(404, 'Not Found');
+      }
+      const bytes = new TextEncoder().encode(text);
+      // GitHub breaks the content into lines of 60 characters.
+      return { sha: blobId(bytes), content: toBase64(bytes).replace(/.{60}/gu, '$&\n'), encoding: 'base64' };
+    }
+    if (method === 'PUT' && contents !== undefined) {
+      const file = contents;
+      const { content, message, branch = this.defaultBranch, sha } = object(body);
+      this.beforeContentsWrite?.();
+      this.beforeContentsWrite = undefined;
+      const current = this.files()[file];
+      if (typeof content !== 'string' || branch !== this.defaultBranch) {
         throw new GitHubError(422, 'Invalid request');
+      }
+      if (current === undefined ? sha !== undefined : sha === undefined) {
+        throw new GitHubError(422, current === undefined ? 'sha does not match' : '"sha" wasn\'t supplied.');
+      }
+      if (current !== undefined && sha !== blobId(new TextEncoder().encode(current))) {
+        throw new GitHubError(409, `${file} does not match ${String(sha)}`);
       }
       const commit = this.write(
         { [file]: new TextDecoder().decode(fromBase64(content)) },

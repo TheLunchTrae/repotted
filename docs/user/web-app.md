@@ -38,7 +38,7 @@ organization, or other account, in name order. When there's more than one
 owner, the button beside the count, **All owners** until you change it,
 chooses whose repositories show. Untick an owner to hide its repositories, or
 click **Only personal** or **Show all**. If every owner is hidden, the list
-says so and offers **Show all**. The browser remembers which owners you hid,
+says so and offers **Show all**. Repotted remembers which owners you hid,
 and an owner that's new to the list shows.
 
 To set aside a repository you no longer use, open its panel and click
@@ -48,8 +48,14 @@ note above the list brings them back. **Show hidden**, beside the count,
 shows the hidden repositories among the rest, marked **Hidden**; open one
 and click **Show in list** to bring it back for good. If a search matches
 only hidden repositories, or every repository is hidden, the list says so
-and offers **Show hidden**. The browser remembers which repositories you
-hid.
+and offers **Show hidden**.
+
+When your profiles are kept in a GitHub repository, the owners and
+repositories you hid are kept there too, in `.repotted-preferences.json`
+beside the profiles, so they follow you to any browser you sign in on. Each
+change is committed straight to the repository. When your profiles are kept
+in this browser or a folder on this computer, this browser remembers them
+instead. Choices made in one place don't move to the other.
 
 Click a repository to open its panel. **Open on GitHub** opens it there, and
 **Capture as a new profile** starts [a profile](#make-a-profile) that

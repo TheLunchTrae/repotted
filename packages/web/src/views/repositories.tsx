@@ -409,6 +409,7 @@ export function RepositoriesPage({
   const selected = repositories.selected.value;
   const justHidden = repositories.justHidden.value;
   const hiddenMatches = repositories.hiddenMatches.value;
+  const preferencesError = repositories.preferences.error.value;
   const fromApp = list?.source === 'installations';
   const total = list?.repositories.length ?? 0;
 
@@ -464,6 +465,11 @@ export function RepositoriesPage({
         {error !== undefined && (
           <p class="notice notice-problem" role="alert">
             Couldn't read your repositories: {error}
+          </p>
+        )}
+        {preferencesError !== undefined && (
+          <p class="notice notice-problem" role="alert">
+            {preferencesError}
           </p>
         )}
         {list === undefined && loading && (
