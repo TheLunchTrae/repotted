@@ -189,6 +189,8 @@ export class ProfileEditor {
   #writing: ReadonlyMap<string, SettingEdit> = new Map();
   /** Counts previews, so a slow one never replaces a later one's result. */
   #previews = 0;
+  /** Counts what a preview of a save can go out of date by, so one made before then is never shown. */
+  #opens = 0;
 
   constructor(file: string) {
     this.file = file;
@@ -407,11 +409,16 @@ export class ProfileEditor {
     }
     const unsaved = this.#edits.value.size + this.#entryEdits.count.value;
     const drafted = this.draftCount.value;
+    const turn = (this.#opens += 1);
     try {
       const { before, after } = await previewProfile(this.file, [
         ...this.#settingWrites(this.#edits.value, 'applies', []),
         ...this.#entryEdits.writes(),
       ]);
+      // A change, a save, or a fresh read since Preview was pressed leaves this one behind.
+      if (turn !== this.#opens) {
+        return;
+      }
       const lines = diffLines(yamlLines(before), yamlLines(after));
       this.preview.value = {
         lines: foldUnchanged(lines),
@@ -420,11 +427,15 @@ export class ProfileEditor {
         unsaved,
       };
     } catch (error) {
-      this.saveError.value = reasonOf(error, this.file);
+      if (turn === this.#opens) {
+        this.saveError.value = reasonOf(error, this.file);
+      }
     }
   }
 
+  /** Closes the preview, and leaves behind one that is still being made. */
   closePreview(): void {
+    this.#opens += 1;
     this.preview.value = undefined;
   }
 
@@ -596,6 +607,7 @@ export class ProfileEditor {
   ): Promise<void> {
     this.saving.value = true;
     this.saveError.value = undefined;
+    this.closePreview();
     this.#writing = writing;
     this.#entryEdits.begin();
     let wrote = false;
@@ -809,6 +821,8 @@ export class ProfileEditor {
   }
 
   async #previewEdits(): Promise<void> {
+    // Every change, save, and fresh read comes through here, and each leaves an open preview of a save out of date.
+    this.closePreview();
     const turn = (this.#previews += 1);
     // An entry that can't be saved as it stands, such as one with no name, is held back before the engine sees it.
     const edits =

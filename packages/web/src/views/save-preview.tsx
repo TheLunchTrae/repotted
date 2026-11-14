@@ -1,4 +1,4 @@
-import type { JSX } from 'preact';
+import { Fragment, type JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { DiffFold, DiffLine } from '../app/line-diff.js';
@@ -24,7 +24,7 @@ function Line({ line }: { readonly line: DiffLine }): JSX.Element {
   if (line.kind === 'added') {
     return (
       <ins class="diff-line diff-added">
-        <span aria-hidden="true">+ </span>
+        <span>+ </span>
         {line.text}
       </ins>
     );
@@ -32,7 +32,7 @@ function Line({ line }: { readonly line: DiffLine }): JSX.Element {
   if (line.kind === 'removed') {
     return (
       <del class="diff-line diff-removed">
-        <span aria-hidden="true">- </span>
+        <span>- </span>
         {line.text}
       </del>
     );
@@ -48,14 +48,19 @@ function Line({ line }: { readonly line: DiffLine }): JSX.Element {
 /** A profile's YAML as a diff, with each run of unchanged lines folded until it is asked for. */
 function Diff({ lines }: { readonly lines: readonly (DiffLine | DiffFold)[] }): JSX.Element {
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
+  const region = useRef<HTMLDivElement>(null);
   return (
-    <div class="code diff" role="region" tabIndex={0} aria-label="Changes to what applies">
+    <div class="code diff" role="region" tabIndex={0} aria-label="Changes to what applies" ref={region}>
       {lines.map((line, index) =>
         line.kind !== 'fold' ? (
           // A diff's lines are made once for a preview and never move, so each is known by its place.
           <Line key={index} line={line} />
         ) : open.has(index) ? (
-          line.lines.map((text) => <Line line={{ kind: 'same', text }} />)
+          <Fragment key={index}>
+            {line.lines.map((text, at) => (
+              <Line key={at} line={{ kind: 'same', text }} />
+            ))}
+          </Fragment>
         ) : (
           <button
             key={index}
@@ -63,6 +68,8 @@ function Diff({ lines }: { readonly lines: readonly (DiffLine | DiffFold)[] }): 
             type="button"
             onClick={() => {
               setOpen(new Set([...open, index]));
+              // The button goes with its fold, so the keyboard moves to the lines it opened.
+              region.current?.focus();
             }}
           >
             Show {count(line.lines.length, 'unchanged line')}
@@ -85,7 +92,11 @@ export function SavePreviewDialog({ name, editor, profiles, preview }: SavePrevi
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     dialog.current?.showModal();
-  }, []);
+    // A dialog taken away with its page, as by the browser's Back, closes its preview too.
+    return () => {
+      editor.closePreview();
+    };
+  }, [editor]);
   return (
     <dialog
       class="dialog dialog-wide"

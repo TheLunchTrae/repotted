@@ -136,8 +136,7 @@ it is marked **Draft**, and a setting says what applies now.
 **Save** applies the whole draft together with your unsaved changes, so it
 waits until the draft is valid. **Preview** shows what saving would change
 first: the profile as it applies now against the profile as it would apply,
-with a minus beside each line that goes and a plus beside each that comes in. You can save
-either way from there. To take one change out of a draft, set it
+with a minus beside each line that goes and a plus beside each that comes in. You can save from there. The preview closes if the profile changes under it, as when a sync brings in a change. To take one change out of a draft, set it
 back to what applies and save either way. **Discard draft** takes the whole
 draft out and leaves what applies; it asks first, and waits until you have
 saved or reset any other changes.
