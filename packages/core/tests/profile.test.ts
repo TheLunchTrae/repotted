@@ -474,6 +474,14 @@ describe('editProfile', () => {
     expect(dropped.profile.environments).toEqual([{ name: 'Production', wait_timer: 5 }]);
   });
 
+  test('writes the first entry of a list written as empty as a block, not on one line', async () => {
+    const file = await write('empty-lists.yaml', 'labels: []\nrulesets: []\n');
+
+    await editProfile(file, [{ list: 'labels', name: 'bug', entry: { name: 'bug', color: 'd73a4a' } }]);
+
+    expect(await readFile(file, 'utf8')).toBe('labels:\n  - name: bug\n    color: d73a4a\nrulesets: []\n');
+  });
+
   test('renames an entry in place, and keeps the comments of rules it still holds', async () => {
     const file = await write(
       'entries-rename.yaml',

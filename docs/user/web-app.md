@@ -4,9 +4,8 @@ The Repotted web app runs at <https://repotted.dev>. It needs nothing
 installed: it runs in your browser and talks to GitHub from there.
 
 The web app signs in, lists your repositories, and makes, captures, edits,
-and deletes profiles. To edit rulesets, environments, and labels, and to
-compare and apply, use the [desktop app](desktop.md) or the
-[command line](cli.md).
+and deletes profiles. To compare a repository with a profile and apply the
+changes, use the [desktop app](desktop.md) or the [command line](cli.md).
 
 Use Repotted in one tab at a time. A second tab says that Repotted is open
 in another one, so that two tabs can't save over each other's profiles;
@@ -85,7 +84,8 @@ its name.
 ### Edit a profile
 
 Open a profile to edit it. Its tabs follow the parts of a repository's
-setup: **Repository**, **Merge**, **Actions**, **Security**, and **Pages**. A
+setup: **Repository**, **Merge**, **Actions**, **Security**, **Pages**,
+**Rulesets**, **Environments**, and **Labels**. A
 setting's own options sit indented under it. Names and numbers are typed in a
 box; until what you type is valid, the page says what's wrong and won't save,
 and **Reset** beside the setting puts it back.
@@ -119,8 +119,32 @@ until you save or reset them, and the browser asks before a reload or a
 closed tab discards them. Deleting a profile discards its unsaved changes,
 and so does a sync that finds the profile deleted or renamed on GitHub.
 
-Topics, custom properties, autolinks, rulesets, environments, and labels are
-not edited here yet.
+**Rulesets**, **Environments**, and **Labels** each list what the profile
+names, with **New ruleset**, **New environment**, or **New label**. Click
+one to open it. Its form changes only what you edit, so anything it doesn't
+show, such as a ruleset's bypass actors or an environment's reviewers, stays
+as the profile's file has it. **Leave it to GitHub** clears a choice, so each
+repository keeps its own. Choose **Manage it**, or **Remove it from the
+repository** to delete it from each repository that follows the profile.
+**Take out of profile** stops the profile from managing it at all; **Put it
+back** in the list undoes that before you save.
+
+GitHub knows rulesets and environments by name. If you rename one, applying
+the profile creates a new one with the new name and leaves the old one on the
+repository, and the form says so. You can rename only an entry that this
+profile names on its own; one from a base profile keeps its name, and
+changing it here overrides the base profile's.
+
+In a label's form, pick one of GitHub's colors or type six hex digits; an
+empty color leaves each repository's own. An empty description clears each
+repository's description, and **Leave each repository's own description**
+leaves it alone. **Renamed from** lists old names, one per line: a repository
+that has one of them and not the label has it renamed, so issues and pull
+requests keep the label. When you rename a label, **Rename it on GitHub too**
+adds its old name there. See [Labels](profiles.md#labels) for what apply does
+with renames.
+
+Topics, custom properties, and autolinks are not edited here yet.
 
 ### Delete a profile
 

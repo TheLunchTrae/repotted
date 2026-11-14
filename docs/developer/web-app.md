@@ -163,6 +163,9 @@ tab by tab, with what each depends on; a test sets every one through the
 engine, so a setting the engine doesn't take fails there. A change is
 previewed with the engine's `previewProfile` and saved with `editProfile`,
 which writes only the settings that changed and keeps the file's comments.
+Rulesets, environments, and labels are edited whole: `views/entries.tsx`
+changes the fields it shows on a copy of the entry and leaves the rest of it
+as the file has it.
 
 `keepFiles` (`src/app/kept-files.ts`) keeps the in-memory files across
 visits: it loads what IndexedDB holds into memory before the app draws, then

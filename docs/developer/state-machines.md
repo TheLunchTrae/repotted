@@ -264,6 +264,29 @@ editor shows what a save would give, base profiles included.
 | Saving  | The write ends                                       | Saved, then a sync when profiles are kept on GitHub. A change made while it ran stays unsaved.                                                                                                   |
 | Saving  | The write fails                                      | Unsaved, with why, and **Save** on to try again. A setting changed back meanwhile to what the save was writing keeps its change.                                                                 |
 
+### Each ruleset, environment, or label
+
+The editor writes an entry whole, so what a form doesn't show stays as the
+form was given it. An entry's key is its saved name, or a number for one
+that is new, so its row is found whatever its name becomes.
+
+| State       | Event                                                 | Next                                                                                                        |
+| ----------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Saved       | A field changes                                       | Unsaved, previewed with the settings. An entry changed back to what is saved is no change.                  |
+| None        | New ruleset, environment, or label                    | New: unsaved, with "Give it a name." until it has one.                                                      |
+| Unsaved     | Its name is empty, or another entry's in any case     | Held back with why; no change to any entry is previewed or saved until it is corrected.                     |
+| Unsaved     | A ruleset requires status checks and names none       | Held back with why.                                                                                         |
+| Unsaved     | The engine refuses it, such as a color that isn't one | Unsaved, with why above **Save**, which is off.                                                             |
+| Saved here  | Take out of profile                                   | Unsaved and struck through: the file stops naming it. **Put it back** undoes that before a save.            |
+| New         | Take out of profile                                   | Gone, with no change.                                                                                       |
+| From a base | A field changes                                       | Unsaved: the save writes the entry here, over the base's. Its name can't change.                            |
+| Unsaved     | Reset, on one saved before                            | Saved.                                                                                                      |
+| Unsaved     | Save                                                  | Saved, under the name the save gave it. One changed again while the save ran stays unsaved under that name. |
+
+A renamed ruleset or environment is renamed in the file; applying creates
+one of the new name and leaves the old on each repository, and the form says
+so. A renamed label offers to list its old name under `renamed_from`.
+
 A setting GitHub hides for the value of the one it follows is not drawn, and
 that one counts how many such settings a profile still names. A setting
 GitHub greys out stays in place, off.

@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
 
-import { ProfileEditor, type SettingRow } from '../src/app/profile-editor.js';
+import { type EntryList, type EntryRow, ProfileEditor, type SettingRow } from '../src/app/profile-editor.js';
 import { type SettingField, settingSections } from '../src/app/setting-fields.js';
 import { mkdir, readFile, rm, writeFile } from '../src/engine/files.js';
 
@@ -321,4 +321,164 @@ test('every setting the editor offers, with every choice it gives, is one the en
       expect(row(editor, item.path.join('.')), item.path.join('.')).toMatchObject({ value, unsaved: true });
     }
   }
+});
+
+const entries = `rulesets:
+  # Protects the default branch.
+  - name: Main
+    target: branch
+    enforcement: active
+    rules:
+      - type: deletion
+labels:
+  - name: bug
+    color: d73a4a
+`;
+
+function entry(editor: ProfileEditor, list: EntryList, name: string): EntryRow {
+  const found = editor.entries.value[list].find((row) => row.entry?.['name'] === name || row.savedName === name);
+  if (found === undefined) {
+    throw new Error(`The editor has no ${list} entry ${name}.`);
+  }
+  return found;
+}
+
+test('lists each ruleset, environment, and label with the profile that sets it', async () => {
+  const editor = await opened({
+    'base.yaml': entries,
+    'web.yaml': 'extends: base.yaml\nenvironments:\n  - name: production\n    wait_timer: 5\n',
+  });
+
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ source: 'base.yaml', unsaved: false, problem: undefined });
+  expect(entry(editor, 'environments', 'production')).toMatchObject({ source: 'here', savedName: 'production' });
+  expect(editor.entries.value.labels.map((row) => row.entry?.['name'])).toEqual(['bug']);
+});
+
+test('an entry is written whole, keeps what the editor did not touch, and renames in place', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const main = entry(editor, 'rulesets', 'Main');
+
+  await editor.changeEntry(main, { ...main.entry, name: 'Default', enforcement: 'evaluate' });
+  expect(entry(editor, 'rulesets', 'Default')).toMatchObject({ savedName: 'Main', unsaved: true });
+  expect(editor.canSave.value).toBe(true);
+  await editor.save(write);
+
+  const text = await readFile('/profiles/web.yaml', 'utf8');
+  expect(text).toContain('name: Default');
+  expect(text).toContain('enforcement: evaluate');
+  expect(text).toContain('type: deletion');
+  expect(text).not.toContain('name: Main');
+  expect(editor.dirty.value).toBe(false);
+  expect(entry(editor, 'rulesets', 'Default')).toMatchObject({ savedName: 'Default', unsaved: false });
+});
+
+test('a new entry needs a name no other has, in any case, before it can be saved', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+
+  const key = await editor.addEntry('labels', { name: '' });
+  const added = (): EntryRow => {
+    const found = editor.entries.value.labels.find((row) => row.key === key);
+    if (found === undefined) {
+      throw new Error('The new label should be listed.');
+    }
+    return found;
+  };
+  expect(added()).toMatchObject({ problem: 'Give it a name.', savedName: undefined, source: undefined });
+  expect(editor.canSave.value).toBe(false);
+
+  await editor.changeEntry(added(), { name: 'BUG' });
+  expect(added().problem).toBe('The profile already has a label named BUG.');
+
+  await editor.changeEntry(added(), { name: ' docs ', color: '0075ca' });
+  expect(added().problem).toBeUndefined();
+  await editor.save(write);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toMatch(/- name: docs\n\s+color: 0075ca/u);
+  expect(editor.entries.value.labels.map((row) => row.savedName)).toEqual(['bug', 'docs']);
+});
+
+test('an entry taken out stops being named here, and can be put back before the save', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+
+  await editor.takeOut(entry(editor, 'labels', 'bug'));
+  expect(entry(editor, 'labels', 'bug')).toMatchObject({ entry: undefined, unsaved: true });
+  await editor.resetEntry(entry(editor, 'labels', 'bug'));
+  expect(editor.dirty.value).toBe(false);
+
+  await editor.takeOut(entry(editor, 'labels', 'bug'));
+  await editor.save(write);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).not.toContain('bug');
+  expect(editor.entries.value.labels).toEqual([]);
+
+  // A new entry taken out is simply let go.
+  await editor.addEntry('labels', { name: 'later' });
+  await editor.takeOut(entry(editor, 'labels', 'later'));
+  expect(editor.dirty.value).toBe(false);
+});
+
+test('an entry the engine refuses says why and holds the save back', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const bug = entry(editor, 'labels', 'bug');
+
+  await editor.changeEntry(bug, { ...bug.entry, color: 'not-a-color' });
+
+  expect(editor.problem.value).toMatch(/color/iu);
+  expect(editor.canSave.value).toBe(false);
+  await editor.changeEntry(entry(editor, 'labels', 'bug'), { ...bug.entry });
+  expect(editor.dirty.value).toBe(false);
+});
+
+test("changing a base profile's entry writes it here, over the base's", async () => {
+  const editor = await opened({ 'base.yaml': entries, 'web.yaml': 'extends: base.yaml\n' });
+  const main = entry(editor, 'rulesets', 'Main');
+
+  await editor.changeEntry(main, { ...main.entry, enforcement: 'disabled' });
+  await editor.save(write);
+
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toContain('enforcement: disabled');
+  expect(await readFile('/profiles/base.yaml', 'utf8')).toBe(entries);
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ source: 'here', unsaved: false });
+});
+
+test('an entry changed again while a save runs stays unsaved under its new name', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const main = entry(editor, 'rulesets', 'Main');
+  await editor.changeEntry(main, { ...main.entry, name: 'Default' });
+  const held = Promise.withResolvers<undefined>();
+
+  const saving = editor.save(async (work) => {
+    await held.promise;
+    await work();
+  });
+  await editor.changeEntry(entry(editor, 'rulesets', 'Default'), {
+    ...main.entry,
+    name: 'Default',
+    enforcement: 'evaluate',
+  });
+  held.resolve(undefined);
+  await saving;
+
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toContain('enforcement: active');
+  expect(editor.dirty.value).toBe(true);
+  expect(entry(editor, 'rulesets', 'Default')).toMatchObject({ savedName: 'Default', unsaved: true });
+  expect(entry(editor, 'rulesets', 'Default').entry?.['enforcement']).toBe('evaluate');
+  await editor.save(write);
+  const text = await readFile('/profiles/web.yaml', 'utf8');
+  expect(text).toContain('enforcement: evaluate');
+  expect(text.match(/- name:/gu)).toHaveLength(2);
+});
+
+test('a ruleset that requires status checks and names none is held back', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const main = entry(editor, 'rulesets', 'Main');
+
+  await editor.changeEntry(main, { ...main.entry, rules: [{ type: 'required_status_checks' }] });
+  expect(entry(editor, 'rulesets', 'Main').problem).toBe('Name at least one status check that must pass.');
+  expect(editor.canSave.value).toBe(false);
+
+  await editor.changeEntry(entry(editor, 'rulesets', 'Main'), {
+    ...main.entry,
+    rules: [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'quality' }] } }],
+  });
+  expect(entry(editor, 'rulesets', 'Main').problem).toBeUndefined();
+  expect(editor.canSave.value).toBe(true);
 });
