@@ -57,6 +57,18 @@ function SignedIn({
   }, [repositories, profiles]);
   // The repository a new profile was asked to capture, from the repositories page.
   const [captureFrom, setCaptureFrom] = useState<string | undefined>(undefined);
+  // The browser asks before a reload or a closed tab discards changes that aren't saved.
+  useEffect(() => {
+    const ask = (event: BeforeUnloadEvent): void => {
+      if (profiles.unsaved.value.size > 0) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', ask);
+    return () => {
+      window.removeEventListener('beforeunload', ask);
+    };
+  }, [profiles]);
   const path = router.path.value;
   useEffect(() => {
     if (path !== '/profiles/new') {

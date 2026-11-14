@@ -6,6 +6,7 @@ import type { Repositories } from '../app/repositories.js';
 import type { Router } from '../app/router.js';
 import { Link } from './link.js';
 import { NewProfileForm } from './new-profile.js';
+import { ProfileSettings } from './profile-editor.js';
 import { run } from './run.js';
 import { SyncNote } from './settings.js';
 
@@ -34,6 +35,7 @@ function Folder({ node, profiles, onOpen }: FolderProps): JSX.Element {
             }}
           >
             <span class="tree-name">{listing.name}</span>
+            {profiles.unsaved.value.has(listing.file) && <span class="pill pill-drift">Not saved</span>}
             {listing.problem !== null && <span class="pill pill-remove">Problem</span>}
           </button>
         </li>
@@ -127,6 +129,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
   const [showYaml, setShowYaml] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const warnings = profiles.captureWarnings.value;
+  const editor = profiles.editor.value;
   const opened = profiles.opened.value;
   const base = profiles.listings.value.find((item) => item.file === listing.extends);
   return (
@@ -198,6 +201,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           {listing.problem}
         </p>
       )}
+      {editor?.loaded.value === true && <ProfileSettings key={editor.file} editor={editor} profiles={profiles} />}
       {showYaml && opened?.file === listing.file && (
         <pre class="code" role="region" tabIndex={0} aria-label={`${listing.name} as YAML`}>
           {opened.text}

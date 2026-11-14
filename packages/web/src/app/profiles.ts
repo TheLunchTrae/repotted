@@ -15,6 +15,7 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from '../engine/files.j
 import { basename, dirname, join, relative } from '../engine/path.js';
 import { isSignedOut } from './account.js';
 import type { Preferences } from './preferences.js';
+import { ProfileEditor } from './profile-editor.js';
 import { SerialQueue } from './serial-queue.js';
 
 export type ProfileListing = Awaited<ReturnType<typeof listProfiles>>[number];
@@ -74,6 +75,7 @@ const savedSource = z.union([
 // The engine's record of what a folder and its repository last agreed on.
 const syncRecord = '.repotted-sync.json';
 const browserFolder = '/profiles/browser';
+const unsavedFirst = 'Save or reset your unsaved changes first.';
 
 function folderOf(source: ProfilesSource): string {
   if (source.kind === 'browser') {
@@ -142,6 +144,8 @@ export class Profiles {
   readonly #queue = new SerialQueue();
   readonly #closedFolders = signal<ReadonlySet<string>>(new Set());
   readonly #selectedFile = signal<string | undefined>(undefined);
+  /** An editor for each profile opened since profiles were last moved, so unsaved changes outlast a look at another profile. */
+  readonly #editors = signal<readonly ProfileEditor[]>([]);
   /** The files that captures under way will make, so no other new profile takes their names. */
   readonly #capturing = new Set<string>();
 
@@ -157,6 +161,14 @@ export class Profiles {
 
   /** The folder that holds the profiles, in the engine's files. */
   readonly folder = computed(() => folderOf(this.source.value));
+
+  /** The open profile's editor. */
+  readonly editor = computed(() => this.#editors.value.find((editor) => editor.file === this.#selectedFile.value));
+
+  /** The profiles with changes that aren't saved, by file. */
+  readonly unsaved = computed<ReadonlySet<string>>(
+    () => new Set(this.#editors.value.filter((editor) => editor.dirty.value).map((editor) => editor.file)),
+  );
 
   readonly selected = computed(() => this.listings.value.find((listing) => listing.file === this.#selectedFile.value));
 
@@ -213,6 +225,10 @@ export class Profiles {
    */
   connect(repository: string, path: string, addLocal: boolean): Promise<string | undefined> {
     return this.#work(async () => {
+      if (this.unsaved.value.size > 0) {
+        this.connectError.value = unsavedFirst;
+        return unsavedFirst;
+      }
       this.connectError.value = await this.#connect(repository, path, addLocal);
       return this.connectError.value;
     });
@@ -267,9 +283,16 @@ export class Profiles {
     }
   }
 
-  /** Keeps the profiles in this browser only from now on. A repository keeps every profile it has. */
+  /**
+   * Keeps the profiles in this browser only from now on. A repository keeps
+   * every profile it has. Unsaved changes hold it back, with why in `connectError`.
+   */
   keepInBrowser(): Promise<void> {
     return this.#work(async () => {
+      if (this.unsaved.value.size > 0) {
+        this.connectError.value = unsavedFirst;
+        return;
+      }
       this.#use({ kind: 'browser' });
       this.connectError.value = undefined;
       this.sync.value = { status: 'none' };
@@ -415,6 +438,8 @@ export class Profiles {
         return undefined;
       }
       await rm(listing.file, { force: true });
+      // Its unsaved changes go with it.
+      this.#editors.value = this.#editors.value.filter((editor) => editor.file !== listing.file);
       if (this.captureWarnings.value?.file === listing.file) {
         this.captureWarnings.value = undefined;
       }
@@ -431,11 +456,33 @@ export class Profiles {
     if (listing === undefined) {
       return;
     }
+    let editor = this.#editors.value.find((item) => item.file === listing.file);
+    if (editor === undefined) {
+      editor = new ProfileEditor(listing.file);
+      this.#editors.value = [...this.#editors.value, editor];
+      await editor.load();
+    }
     const text = await readFile(listing.file, 'utf8').catch(() => undefined);
     // Another profile may have been chosen while this one was read.
     if (text !== undefined && this.#selectedFile.value === listing.file) {
       this.opened.value = { file: listing.file, text };
     }
+  }
+
+  /**
+   * Saves the open profile's changes in one turn of the queue. When profiles
+   * are kept on GitHub, a sync first brings in what changed there, so the
+   * save lands on the file as it is now, and a sync after commits it.
+   */
+  async save(): Promise<void> {
+    await this.editor.value?.save((write) =>
+      this.#work(async () => {
+        await this.#sync({});
+        await write();
+        await this.#sync({});
+        await this.#list();
+      }),
+    );
   }
 
   toggleFolder(path: string): void {
@@ -459,6 +506,7 @@ export class Profiles {
     this.source.value = source;
     this.#preferences.write(sourceKey, source);
     this.#closedFolders.value = new Set();
+    this.#editors.value = [];
     this.captureWarnings.value = undefined;
     this.#selectedFile.value = undefined;
     this.opened.value = undefined;
@@ -506,6 +554,11 @@ export class Profiles {
     } catch (error) {
       this.error.value = messageOf(error);
     }
+    // Each editor reads its profile again, since a sync may have changed it or one it extends,
+    // and lays its unsaved changes over what it finds. An editor whose profile is gone goes too.
+    const listed = new Set(this.listings.value.map((listing) => listing.file));
+    this.#editors.value = this.#editors.value.filter((editor) => listed.has(editor.file));
+    await Promise.all(this.#editors.value.map((editor) => editor.load()));
     // The open profile may have changed in the sync, or gone.
     const open = this.selected.value;
     if (open === undefined) {
