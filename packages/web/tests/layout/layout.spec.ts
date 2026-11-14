@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, type Locator, type Page, test as base } from '@playwright/test';
 import { build } from 'esbuild';
 
-import { engineAliases } from '../../aliases.ts';
+import { pageBundle } from '../../aliases.ts';
 
 interface Screen {
   /** The address that opens it, or the page to start from. */
@@ -54,14 +54,8 @@ const test = base.extend<object, { bundle: string }>({
     async ({}, use) => {
       const result = await build({
         entryPoints: [fileURLToPath(new URL('harness.tsx', import.meta.url))],
-        bundle: true,
+        ...pageBundle,
         write: false,
-        alias: engineAliases,
-        format: 'esm',
-        jsx: 'automatic',
-        jsxImportSource: 'preact',
-        target: 'es2024',
-        logLevel: 'warning',
       });
       await use(result.outputFiles.map((file) => file.text).join(''));
     },

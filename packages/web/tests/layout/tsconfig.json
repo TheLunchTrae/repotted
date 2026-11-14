@@ -1,11 +1,10 @@
 {
-  // The layout test and its config run under Node and drive the page, so they
-  // get Node's types and the DOM library both, as Playwright's types need.
-  // harness.tsx runs in the page and is checked with the web app.
+  // The layout test and its config run under Node and drive the page. They
+  // keep the root config's Node types and add the DOM library, as Playwright's
+  // types need both. harness.tsx runs in the page and is checked with the web app.
   "extends": "../../../../tsconfig.json",
   "compilerOptions": {
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
-    "types": ["node"],
     "tsBuildInfoFile": ".tsbuildinfo"
   },
   "include": ["*.ts"],

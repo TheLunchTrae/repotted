@@ -26,6 +26,9 @@ jobs:
     env:
       MISE_LOCKED: '1'
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,28 +41,55 @@ jobs:
         with:
           cache: true
       # The layout check needs a browser, so it runs only when a change can
-      # move the web app's layout. Its steps skip rather than the job, so the
-      # required check still reports. A pull request's merge commit, and a
-      # push or merge queue commit, has the base as its first parent.
+      # move the web app's layout: the web app, the engine it bundles, the
+      # fake GitHub it runs on, or how CI runs it. Its steps skip rather than
+      # the job, so the required check still reports. A change is diffed
+      # against what it lands on: a pull request's merge commit against its
+      # first parent, a merge group against its base, and a push against the
+      # commit it replaced. When that base can't be read, the check runs.
       - name: Find web app changes
         id: changes
-        shell: bash
         env:
           EVENT: ${{ github.event_name }}
+          GROUP_BASE: ${{ github.event.merge_group.base_sha }}
+          PUSHED_OVER: ${{ github.event.before }}
         run: |
-          if [ "$EVENT" = workflow_dispatch ] || ! git rev-parse --quiet --verify 'HEAD^1' > /dev/null; then
-            web=true
-          elif git diff --quiet 'HEAD^1' HEAD -- packages/web packages/core/tests/fake-github.ts pnpm-lock.yaml .config/mise .github/workflows/quality.yml; then
+          paths=(
+            packages/web
+            packages/core/src
+            packages/core/package.json
+            packages/core/tests/fake-github.ts
+            pnpm-lock.yaml
+            .config/mise
+            .github/actions/gate
+            .github/workflows/quality.yml
+          )
+          case "$EVENT" in
+            merge_group) base="$GROUP_BASE" ;;
+            push) base="$PUSHED_OVER" ;;
+            *) base='HEAD^1' ;;
+          esac
+          # A push that creates a branch has no commit before it.
+          if [ -z "${base//0/}" ]; then
+            base='HEAD^1'
+          fi
+          web=true
+          if [ "$EVENT" != workflow_dispatch ] \
+            && { [ "$base" = 'HEAD^1' ] || git fetch --quiet --depth=1 origin "$base"; } \
+            && git diff --quiet "$base" HEAD -- "${paths[@]}"; then
             web=false
-          else
-            web=true
           fi
           echo "web=$web" >> "$GITHUB_OUTPUT"
       - name: Find the Playwright version
         id: playwright
         if: steps.changes.outputs.web == 'true'
-        shell: bash
-        run: echo "version=$(mise exec -- pnpm --filter @repotted/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(mise exec -- node -p "require('./packages/web/node_modules/@playwright/test/package.json').version")"
+          if [ -z "$version" ]; then
+            echo '::error::Found no version of @playwright/test in packages/web.'
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Restore Chromium
         id: chromium
         if: steps.changes.outputs.web == 'true'
@@ -77,3 +107,10 @@ jobs:
       - name: Check the web app's layout
         if: steps.changes.outputs.web == 'true'
         run: mise run ts:web:layout
+      - name: Upload the layout check's screenshots
+        if: failure() && steps.changes.outputs.web == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-layout
+          path: artifacts/web-layout
+          if-no-files-found: ignore

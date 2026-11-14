@@ -1,5 +1,7 @@
 import { fileURLToPath } from 'node:url';
 
+import type { BuildOptions } from 'esbuild';
+
 /**
  * The engine's two Node modules and what stands in for each in the page: the
  * files it keeps in memory, and POSIX paths. The build and the tests both
@@ -9,3 +11,14 @@ export const engineAliases = {
   'node:fs/promises': fileURLToPath(new URL('src/engine/files.ts', import.meta.url)),
   'node:path': fileURLToPath(new URL('src/engine/path.ts', import.meta.url)),
 };
+
+/** How esbuild bundles the page, for the site's build and the layout test's harness. */
+export const pageBundle = {
+  bundle: true,
+  alias: engineAliases,
+  format: 'esm',
+  jsx: 'automatic',
+  jsxImportSource: 'preact',
+  target: 'es2024',
+  logLevel: 'warning',
+} satisfies BuildOptions;

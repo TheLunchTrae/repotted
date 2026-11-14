@@ -13,11 +13,9 @@ const executablePath = process.env['CHROMIUM_PATH'];
 
 // eslint-disable-next-line standards/no-default-export -- Playwright reads the config from the module's default export
 export default defineConfig({
-  testDir: '.',
   outputDir: '../../../../artifacts/web-layout',
   forbidOnly: process.env['CI'] !== undefined,
   use: {
-    browserName: 'chromium',
     // layout.spec.ts serves the app at this address from memory; nothing reaches the network.
     baseURL: 'https://repotted.test',
     isMobile: true,
