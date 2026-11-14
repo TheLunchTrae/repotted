@@ -321,18 +321,19 @@ save. A profile for any owner draws them all, each marked with who alone has
 it. The type changes only through the dialog, which writes at once with the
 engine's `changeOwnerType`.
 
-| State    | Event                                                     | Next                                                                                                             |
-| -------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Closed   | **Change** beside the type                                | Open, with the profile's type picked.                                                                            |
-| Open     | Another type is picked                                    | Open, listing what `owner_changes` says the file would stop managing as that type.                               |
-| Open     | The type comes from a base profile                        | Open, with the choices off and the base's name: a chain has one type, so that profile changes it.                |
-| Open     | Change, with unsaved changes                              | Not offered: the change writes at once, so it waits for a save or a reset.                                       |
-| Open     | Change                                                    | Changing, in a save's turn of the profiles' queue, with a sync first when profiles are kept on GitHub.           |
-| Changing | The file read in that turn would leave something else     | Open, with why, and the list as the file is now. Nothing is written.                                             |
-| Changing | The file's own draft differs from the one shown           | Open, with why, as for a save. Nothing is written.                                                               |
-| Changing | It succeeds                                               | Closed. The editor shows the file as the engine resolved it, without what the type lacks, and a sync commits it. |
-| Changing | It fails, as when a base profile sets what the type lacks | Open, with the engine's reason, which names the base. The file is as it was.                                     |
-| Open     | Cancel, or Escape                                         | Closed.                                                                                                          |
+| State    | Event                                                            | Next                                                                                                             |
+| -------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Closed   | **Change** beside the type                                       | Open, with the profile's type picked.                                                                            |
+| Open     | Another type is picked                                           | Open, listing what `owner_changes` says the file would stop managing as that type.                               |
+| Open     | A base profile sets the type, whether or not the file repeats it | Open, with the choices off and the base's name: a chain has one type, so that profile changes it.                |
+| Open     | Change, with unsaved changes                                     | Not offered: the change writes at once, so it waits for a save or a reset.                                       |
+| Open     | Change                                                           | Changing, in a save's turn of the profiles' queue, with a sync first when profiles are kept on GitHub.           |
+| Changing | The file read in that turn would leave something else            | Open, with why, and the list as the file is now. Nothing is written.                                             |
+| Changing | The file's own draft differs from the one shown                  | Open, with why, as for a save. Nothing is written.                                                               |
+| Changing | It succeeds                                                      | Closed. The editor shows the file as the engine resolved it, without what the type lacks, and a sync commits it. |
+| Changing | A setting the new type lacks was changed while the change waited | That change is dropped with the row that showed it.                                                              |
+| Changing | It fails, as when a base profile sets what the type lacks        | Open, with the engine's reason, which names the base. The file is as it was.                                     |
+| Open     | Cancel, or Escape                                                | Closed.                                                                                                          |
 
 ### Search and filters
 

@@ -147,6 +147,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
                 <button
                   class="link"
                   type="button"
+                  aria-label="Change who the profile is for"
                   onClick={() => {
                     setChangingOwner(true);
                   }}

@@ -277,7 +277,8 @@ export class ProfileEditor {
    */
   readonly ownerTypeFrom = computed(() => {
     const saved = this.#saved.value;
-    const source = saved?.owner_source ?? undefined;
+    // A base's type holds whether or not the open file repeats it, so the file's own line changes nothing.
+    const source = this.#baseOwnerSource.value ?? saved?.owner_source ?? undefined;
     return source === undefined || source === saved?.chain[0] ? undefined : basename(source);
   });
 
@@ -417,6 +418,9 @@ export class ProfileEditor {
 
   readonly #finding = signal<Finding>(nothingFound);
 
+  /** The profile among those the open one extends that sets their owner type, when one does. */
+  readonly #baseOwnerSource = signal<string | undefined>(undefined);
+
   /** Whether something typed can't be a value. */
   readonly #refused = computed(() => [...this.#typed.value.values()].some((typed) => typed.problem !== undefined));
 
@@ -425,6 +429,7 @@ export class ProfileEditor {
     try {
       this.#saved.value = await resolveProfile(this.file);
       this.#entryEdits.setSaved(this.#saved.value);
+      await this.#readBaseOwner();
       this.loadError.value = undefined;
     } catch (error) {
       this.#saved.value = undefined;
@@ -659,7 +664,11 @@ export class ProfileEditor {
    * the change stops when the file would now leave something else.
    */
   async changeOwnerType(write: (work: () => Promise<void>) => Promise<void>, type: OwnerChoice): Promise<void> {
-    if (!this.canChangeOwnerType.value) {
+    if (
+      !this.canChangeOwnerType.value ||
+      this.ownerTypeFrom.value !== undefined ||
+      type === (this.ownerType.value ?? 'any')
+    ) {
       return;
     }
     const shown = this.ownerLeaving(type);
@@ -671,6 +680,20 @@ export class ProfileEditor {
       }
       return changeOwnerType(this.file, type === 'any' ? undefined : type);
     });
+    // A change made while this one waited, to a setting the new type doesn't have, has no row to show or reset it.
+    const owner = this.ownerType.value;
+    const kept = new Map([...this.#edits.value].filter(([, edit]) => fits(owner, needOf(edit.path))));
+    if (kept.size !== this.#edits.value.size) {
+      this.#edits.value = kept;
+      await this.#previewEdits();
+    }
+  }
+
+  async #readBaseOwner(): Promise<void> {
+    const base = this.#saved.value?.chain[1];
+    // A base that can't be read fails the open profile's own read, so this one only ever follows a read that worked.
+    this.#baseOwnerSource.value =
+      base === undefined ? undefined : ((await resolveProfile(base).catch(() => undefined))?.owner_source ?? undefined);
   }
 
   /**
@@ -719,10 +742,11 @@ export class ProfileEditor {
         this.#entryEdits.setSaved(current);
         // Every save finishes, adds to, or discards the whole draft, so it acts only on the draft that was shown.
         if (!sameValue(shown, ownDraft(current))) {
-          throw new Error("The profile's draft changed elsewhere. Look at it as it is now, then save again.");
+          throw new Error("The profile's draft changed elsewhere. Look at it as it is now, then try again.");
         }
         this.#saved.value = await act(writing);
         this.#entryEdits.setSaved(this.#saved.value);
+        await this.#readBaseOwner();
         wrote = true;
       });
       // Changes made while the save ran stay unsaved.

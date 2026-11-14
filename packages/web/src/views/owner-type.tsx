@@ -37,8 +37,10 @@ export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): 
   const current: OwnerChoice = editor.ownerType.value ?? 'any';
   const [picked, setPicked] = useState<OwnerChoice>(current);
   useEffect(() => {
+    // The dialog shows why its own change failed, not what an earlier save left in the bar behind it.
+    editor.saveError.value = undefined;
     dialog.current?.showModal();
-  }, []);
+  }, [editor]);
   const from = editor.ownerTypeFrom.value;
   const leaving = editor.ownerLeaving(picked);
   const label = choices.find((choice) => choice.type === picked)?.label ?? '';
@@ -84,7 +86,7 @@ export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): 
             </label>
           ))}
         </fieldset>
-        {leaving.length > 0 && (
+        {picked !== current && leaving.length > 0 && (
           <div class="notice notice-drift">
             <p>
               {label} don't have {leaving.length === 1 ? '1 thing' : `${leaving.length} things`} this profile sets.

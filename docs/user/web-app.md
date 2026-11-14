@@ -94,7 +94,8 @@ Under the profile's name, the page says who it is for: personal accounts,
 organizations, or any owner. A profile for personal accounts hides the
 settings and choices only organizations have, and says how many. A profile
 for any owner shows them all and marks each one that only organizations, or
-only organizations on GitHub Enterprise Cloud, have. **Change** beside it
+only organizations on GitHub Enterprise Cloud, have; a profile for
+organizations marks the Enterprise Cloud ones. **Change** beside it
 picks another [owner type](profiles.md#owner-type). Before anything is
 written, it lists what the profile sets that the new type doesn't have, since
 changing the type stops the profile managing those. It waits until you have

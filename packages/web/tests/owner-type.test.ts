@@ -142,3 +142,48 @@ test("a type from a base profile is that profile's to change, and a base that se
   expect(await readFile(file, 'utf8')).toBe(text);
   expect(editor.ownerType.value).toBeUndefined();
 });
+
+test("a base profile's type holds even when the file repeats it, so the change is left to the base", async () => {
+  const text = 'extends: base.yaml\nowner_type: organization\n';
+  const editor = await opened({ 'base.yaml': 'owner_type: organization\n', 'web.yaml': text });
+
+  expect(editor.ownerTypeFrom.value).toBe('base.yaml');
+  await editor.changeOwnerType(write, 'any');
+
+  expect(await readFile(file, 'utf8')).toBe(text);
+});
+
+test('a change to a setting the new type lacks, made while the type change waits, goes with its row', async () => {
+  const editor = await opened({ 'web.yaml': 'owner_type: organization\nrepository:\n  has_wiki: false\n' });
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  const changing = editor.changeOwnerType(async (work) => {
+    await held;
+    await work();
+  }, 'user');
+  await editor.set(field('repository.allow_forking'), true);
+  await editor.set(field('repository.has_wiki'), true);
+  release();
+  await changing;
+
+  expect(editor.saveError.value).toBeUndefined();
+  expect(editor.ownerType.value).toBe('user');
+  expect(editor.problem.value).toBeUndefined();
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: true, unsaved: true });
+  expect(editor.canSave.value).toBe(true);
+});
+
+test('a type change stops when the draft it would act on is not the one shown', async () => {
+  const text = 'owner_type: organization\nrepository:\n  has_wiki: false\n';
+  const editor = await opened({ 'web.yaml': text });
+  const elsewhere = `${text}drafts:\n  repository:\n    has_issues: false\n`;
+  await writeFile(file, elsewhere);
+
+  await editor.changeOwnerType(write, 'user');
+
+  expect(editor.saveError.value).toContain('draft changed elsewhere');
+  expect(await readFile(file, 'utf8')).toBe(elsewhere);
+});
