@@ -13,6 +13,7 @@ import {
   skippedDrafts,
 } from '@repotted/core';
 
+import { dirname } from '../engine/path.js';
 import { isSignedOut } from './account.js';
 import { settingSections } from './setting-fields.js';
 import { searchWords } from './setting-search.js';
@@ -60,10 +61,11 @@ export interface Compared {
 
 export type ComparisonState =
   | { readonly kind: 'idle' }
-  | { readonly kind: 'comparing'; readonly repository: string; readonly profile: string }
+  | { readonly kind: 'comparing'; readonly repository: string; readonly file: string; readonly profile: string }
   | {
       readonly kind: 'failed';
       readonly repository: string;
+      readonly file: string;
       readonly profile: string;
       readonly message: string;
       /** Whether the profile is for the other kind of owner, which a copy of another type gets past. */
@@ -136,49 +138,124 @@ function settingRow(path: string, from: unknown, to: unknown, lock: string | und
   };
 }
 
-/** The rows of one change: a row a field for a setting or a changed entry, and one row for an entry made or removed. */
+/** What an item of a list is known by, so the same item is compared with itself wherever it sits. */
+function identityOf(item: unknown): string | undefined {
+  if (!isRecord(item)) {
+    return undefined;
+  }
+  if (item['actor_type'] !== undefined) {
+    return `${say(item['actor_type'], '')} ${say(item['actor_id'], 'any')}`;
+  }
+  if (item['type'] !== undefined && item['id'] !== undefined) {
+    return `${say(item['type'], '')} ${say(item['id'], '')}`;
+  }
+  const known = item['type'] ?? item['context'] ?? item['name'];
+  return typeof known === 'string' ? known : undefined;
+}
+
+/**
+ * What differs between two values of an entry's field, narrowed to where
+ * they differ: a key of an object, or an item of a list by what it is known
+ * by, so a rule with one changed number is that number and not two whole
+ * lists of rules.
+ */
+function narrowed(path: string, from: unknown, to: unknown): { path: string; from: unknown; to: unknown }[] {
+  if (JSON.stringify(from) === JSON.stringify(to)) {
+    return [];
+  }
+  if (isRecord(from) && isRecord(to)) {
+    return [...new Set([...Object.keys(from), ...Object.keys(to)])].flatMap((key) =>
+      narrowed(`${path}.${key}`, from[key], to[key]),
+    );
+  }
+  if (Array.isArray(from) && Array.isArray(to)) {
+    const before = new Map(from.map((item: unknown) => [identityOf(item), item]));
+    const after = new Map(to.map((item: unknown) => [identityOf(item), item]));
+    // Items with nothing to know them by, or two known by the same, are compared as the whole list.
+    if (!before.has(undefined) && !after.has(undefined) && before.size === from.length && after.size === to.length) {
+      return [...new Set([...before.keys(), ...after.keys()])].flatMap((key) =>
+        narrowed(`${path}[${key ?? ''}]`, before.get(key), after.get(key)),
+      );
+    }
+  }
+  return [{ path, from, to }];
+}
+
+/** The rows of one change: a row a field for a setting or a changed entry, and one row for what is made or removed whole. */
 function rowsOf(change: Change, lock: string | undefined): CompareRow[] {
   if (change.entry !== undefined) {
-    const noun = nouns[change.section] ?? 'entry';
-    const name =
-      change.entry.branch_policy === undefined
-        ? change.entry.name
-        : `${change.entry.name}: ${change.entry.branch_policy.type} ${change.entry.branch_policy.name}`;
+    const policy = change.entry.branch_policy;
+    const noun = policy === undefined ? (nouns[change.section] ?? 'entry') : `${policy.type} policy`;
+    const name = policy === undefined ? change.entry.name : `${change.entry.name}: ${policy.name}`;
     if (change.action === 'create') {
       return [{ kind: 'adds', label: name, key: `new ${noun}`, now: 'Not on GitHub', wanted: 'Created', lock }];
     }
     if (change.action === 'delete') {
       return [{ kind: 'removes', label: name, key: `${noun} removed`, now: 'On GitHub', wanted: 'Removed', lock }];
     }
-    return change.fields.map((field) => ({
-      kind: kindOf(field.from, field.to),
-      label: name,
-      key: field.field,
-      now: say(field.from, 'Not set'),
-      wanted: say(field.to, 'Not set'),
-      lock,
-    }));
+    return change.fields
+      .flatMap((field) => narrowed(field.field, field.from, field.to))
+      .map((field) => ({
+        kind: kindOf(field.from, field.to),
+        label: name,
+        key: field.path,
+        now: say(field.from, 'Not set'),
+        wanted: say(field.to, 'Not set'),
+        lock,
+      }));
   }
-  return change.fields.flatMap((field) => {
-    const path = `${change.section}.${field.field}`;
-    // A group of settings, such as the selected actions, is a row for each setting in it that differs.
-    const grouped = fields.some((item) => item.path.join('.').startsWith(`${path}.`));
-    if (grouped && (isRecord(field.to) || isRecord(field.from))) {
-      const from = isRecord(field.from) ? field.from : {};
-      const to = isRecord(field.to) ? field.to : {};
-      return Object.keys(to)
-        .filter((key) => JSON.stringify(from[key]) !== JSON.stringify(to[key]))
-        .map((key) => settingRow(`${path}.${key}`, from[key], to[key], lock));
-    }
-    return [settingRow(path, field.from, field.to, lock)];
-  });
+  // A settings section GitHub makes or deletes whole, as it does a Pages site, says so before its settings.
+  const whole: CompareRow[] =
+    change.action === 'update'
+      ? []
+      : [
+          {
+            kind: change.action === 'create' ? 'adds' : 'removes',
+            label: change.section === 'pages' ? 'GitHub Pages site' : change.target,
+            key: change.section,
+            now: change.action === 'create' ? 'Not on GitHub' : 'On GitHub',
+            wanted: change.action === 'create' ? 'Created' : 'Deleted',
+            lock,
+          },
+        ];
+  return [
+    ...whole,
+    ...change.fields.flatMap((field) => {
+      const path = `${change.section}.${field.field}`;
+      // A group of settings, such as the selected actions, is a row for each setting in it that differs.
+      const grouped = fields.some((item) => item.path.join('.').startsWith(`${path}.`));
+      if (grouped && (isRecord(field.to) || isRecord(field.from))) {
+        const from = isRecord(field.from) ? field.from : {};
+        const to = isRecord(field.to) ? field.to : {};
+        return Object.keys(to)
+          .filter((key) => JSON.stringify(from[key]) !== JSON.stringify(to[key]))
+          .map((key) => settingRow(`${path}.${key}`, from[key], to[key], lock));
+      }
+      return [settingRow(path, field.from, field.to, lock)];
+    }),
+  ];
 }
 
 /** A plan as the sections of a comparison, in the order the plan applies them. */
 export function compareSections(plan: Plan, locks: ReadonlyMap<number, string>): CompareSection[] {
   const sections: CompareSection[] = [];
+  // GitHub can't edit an autolink, so a plan remakes one with a delete and a create, which is one change to it here.
+  const autolinks = (action: Change['action']): Map<string, number> =>
+    new Map(
+      plan.changes.flatMap((change, index) =>
+        change.section === 'autolinks' && change.action === action ? [[change.entry.name, index] as const] : [],
+      ),
+    );
+  const deleted = autolinks('delete');
+  const created = autolinks('create');
   for (const [index, change] of plan.changes.entries()) {
-    const rows = rowsOf(change, locks.get(index));
+    const remade = change.section === 'autolinks' && deleted.has(change.entry.name) && created.has(change.entry.name);
+    if (remade && change.action === 'delete') {
+      continue;
+    }
+    const rows = remade
+      ? rowsOf({ ...change, action: 'update' }, locks.get(index) ?? locks.get(deleted.get(change.entry.name) ?? index))
+      : rowsOf(change, locks.get(index));
     const last = sections.at(-1);
     if (last?.section === change.section) {
       sections[sections.length - 1] = { ...last, rows: [...last.rows, ...rows] };
@@ -240,12 +317,12 @@ export class Comparison {
       .filter((section) => section.rows.length > 0);
   });
 
-  /** Compares a repository with a profile, by the profile's file and its name in the list. */
+  /** Compares a repository with a profile as it is saved, by the profile's file and its name in the list. */
   async compare(repository: string, profile: { readonly file: string; readonly name: string }): Promise<void> {
     const turn = (this.#turn += 1);
     this.search.value = '';
     this.onlyLocked.value = false;
-    this.state.value = { kind: 'comparing', repository, profile: profile.name };
+    this.state.value = { kind: 'comparing', repository, file: profile.file, profile: profile.name };
     try {
       const repo = parseRepo(repository);
       const resolved = await resolveProfile(profile.file);
@@ -280,8 +357,12 @@ export class Comparison {
         this.state.value = {
           kind: 'failed',
           repository,
+          file: profile.file,
           profile: profile.name,
-          message: (error instanceof Error ? error.message : String(error)).replaceAll(profile.file, profile.name),
+          // The profile goes by its name, and a base profile by its file beside it, not by where the browser keeps them.
+          message: (error instanceof Error ? error.message : String(error))
+            .replaceAll(profile.file, profile.name)
+            .replaceAll(`${dirname(profile.file)}/`, ''),
           mismatch: error instanceof OwnerMismatchError,
         };
       }

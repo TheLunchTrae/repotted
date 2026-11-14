@@ -51,7 +51,9 @@ click **Compare**. The page shows each difference by section, with what
 GitHub has now and what the profile sets. What already matches is left out,
 and so is the profile's draft, which the page names. To find something in a
 long comparison, type in **Search this comparison**. Comparing only reads
-from GitHub.
+from GitHub. It compares the profile as saved, so save your changes to
+the profile first. **Compare again** reads both again, such as after you
+save the profile or change the repository.
 
 Each difference Repotted can't change says what it needs, such as **Needs
 Actions write**. The Repotted App's installation may not have been granted

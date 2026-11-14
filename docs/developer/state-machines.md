@@ -458,18 +458,20 @@ GitHub greys out stays in place, off.
 `Comparison` (`packages/web/src/app/comparison.ts`) compares one repository
 with one profile: it resolves the profile, plans it with the engine's
 `createPlan`, and reads the account's access to mark what Repotted can't
-change. It only reads from GitHub. One comparison counts at a time.
+change. It only reads from GitHub, and reads the profile as saved, without
+the editor's unsaved changes. One comparison counts at a time.
 
-| State     | Event                                                           | Next                                                                                                                                       |
-| --------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Idle      | **Compare** on a repository's panel, with a profile picked      | Comparing, on the compare page, with the search and the filter cleared.                                                                    |
-| Comparing | The plan and the access land                                    | Compared: the differences by section, each locked one with what it needs, the profile's drafts named as left out, and the plan's warnings. |
-| Comparing | The profile is for the other kind of owner                      | Failed, with the engine's reason, which says to copy the profile and change the copy's type.                                               |
-| Comparing | The profile can't be read, or GitHub can't                      | Failed, with why, by the profile's name. A lost sign-in also goes to the sign-in page.                                                     |
-| Comparing | Another comparison starts                                       | Comparing, for the new one. The first one's result is dropped when it lands.                                                               |
-| Compared  | Words are typed in the search, or **Can't change** is turned on | Compared, showing the differences that fit both.                                                                                           |
-| Any       | The comparison is put away                                      | Idle. One still being made shows nothing when it lands.                                                                                    |
-| Idle      | The compare page is opened by its address                       | Idle, with how to start a comparison.                                                                                                      |
+| State              | Event                                                           | Next                                                                                                                                       |
+| ------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Idle               | **Compare** on a repository's panel, with a profile picked      | Comparing, on the compare page, with the search and the filter cleared.                                                                    |
+| Comparing          | The plan and the access land                                    | Compared: the differences by section, each locked one with what it needs, the profile's drafts named as left out, and the plan's warnings. |
+| Comparing          | The profile is for the other kind of owner                      | Failed, with the engine's reason, which says to copy the profile and change the copy's type.                                               |
+| Comparing          | The profile can't be read, or GitHub can't                      | Failed, with why, by the profile's name. A lost sign-in also goes to the sign-in page.                                                     |
+| Comparing          | Another comparison starts                                       | Comparing, for the new one. The first one's result is dropped when it lands.                                                               |
+| Compared           | Words are typed in the search, or **Can't change** is turned on | Compared, showing the differences that fit both.                                                                                           |
+| Compared or Failed | **Compare again**                                               | Comparing, with the profile read again as it is saved then, and GitHub as it is then. A shown comparison is never refreshed otherwise.     |
+| Any                | The compare page is left                                        | Idle. One still being made shows nothing when it lands.                                                                                    |
+| Idle               | The compare page is opened by its address                       | Idle, with how to start a comparison.                                                                                                      |
 
 ## Web new profile
 

@@ -74,6 +74,12 @@ function SignedIn({
     };
   }, [profiles]);
   const path = router.path.value;
+  // A comparison is put away with its page, so one still being made shows nothing later.
+  useEffect(() => {
+    if (path !== '/compare') {
+      comparison.close();
+    }
+  }, [path, comparison]);
   useEffect(() => {
     if (path !== '/profiles/new') {
       setCaptureFrom(undefined);

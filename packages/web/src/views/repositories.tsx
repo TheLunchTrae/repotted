@@ -71,6 +71,7 @@ function RepositoryPanel({ repository, profiles, onCapture, onCompare }: PanelPr
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const profile = listings.find((listing) => listing.file === picked) ?? listings[0];
+  const nameOf = (listing: (typeof listings)[number]): string => profiles.pathOf(listing).replace(/\.ya?ml$/u, '');
   const [owner, name] = repository.full_name.split('/');
   const panel = useRef<HTMLElement>(null);
   // On a narrow screen the panel sits under the list, out of view of the row that opened it.
@@ -104,15 +105,19 @@ function RepositoryPanel({ repository, profiles, onCapture, onCompare }: PanelPr
         onSubmit={(event) => {
           event.preventDefault();
           if (profile !== undefined) {
-            onCompare(repository.full_name, profile);
+            // The profile goes by its path in the list, which tells two of one name apart.
+            onCompare(repository.full_name, { file: profile.file, name: nameOf(profile) });
           }
         }}
       >
-        <label for="compare-profile">Compare with a profile</label>
         {listings.length === 0 ? (
-          <p class="muted small">Make a profile first, on the Profiles page.</p>
+          <>
+            <strong>Compare with a profile</strong>
+            <p class="muted small">Make a profile first, on the Profiles page.</p>
+          </>
         ) : (
           <>
+            <label for="compare-profile">Compare with a profile</label>
             <select
               id="compare-profile"
               class="field"
@@ -123,13 +128,16 @@ function RepositoryPanel({ repository, profiles, onCapture, onCompare }: PanelPr
             >
               {listings.map((listing) => (
                 <option key={listing.file} value={listing.file}>
-                  {profiles.pathOf(listing).replace(/\.ya?ml$/u, '')}
+                  {nameOf(listing)}
                 </option>
               ))}
             </select>
             <button class="button button-primary" type="submit">
               Compare
             </button>
+            {profile !== undefined && profiles.unsaved.value.has(profile.file) && (
+              <p class="muted small">It compares the profile as saved, without your unsaved changes.</p>
+            )}
           </>
         )}
       </form>

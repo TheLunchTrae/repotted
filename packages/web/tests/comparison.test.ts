@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeGitHub } from '../../core/tests/fake-github.js';
-import { Comparison } from '../src/app/comparison.js';
+import { type CompareRow, compareSections, Comparison } from '../src/app/comparison.js';
 import { mkdir, rm, writeFile } from '../src/engine/files.js';
 
 afterEach(async () => {
@@ -146,4 +146,126 @@ test('a slower comparison never replaces a later one, and one put away shows not
   comparison.close();
   await third;
   expect(comparison.state.value).toEqual({ kind: 'idle' });
+});
+
+type Changes = Parameters<typeof compareSections>[0]['changes'];
+
+/** The rows a plan of these changes compares as, each in a line. */
+function compared(changes: Changes, locks: ReadonlyMap<number, string> = new Map()): string[] {
+  const plan = { repository: 'lunch/app', desired: {}, changes, skipped: [], warnings: [] };
+  return compareSections(plan, locks).flatMap((section) =>
+    section.rows.map(
+      (row: CompareRow) =>
+        `${row.kind} | ${row.label} | ${row.key} | ${row.now} -> ${row.wanted}${row.lock === undefined ? '' : ` | ${row.lock}`}`,
+    ),
+  );
+}
+
+const request = { method: 'PUT', path: '/repos/lunch/app/x' } as const;
+
+test('a Pages site made or deleted whole is a difference, with its settings after it', () => {
+  expect(
+    compared(
+      [{ section: 'pages', action: 'delete', target: 'pages', fields: [], request }],
+      new Map([[0, 'Needs Pages write']]),
+    ),
+  ).toEqual(['removes | GitHub Pages site | pages | On GitHub -> Deleted | Needs Pages write']);
+  expect(
+    compared([
+      { section: 'pages', action: 'create', target: 'pages', fields: [{ field: 'https_enforced', to: true }], request },
+    ]),
+  ).toEqual([
+    'adds | GitHub Pages site | pages | Not on GitHub -> Created',
+    'adds | Enforce HTTPS | pages.https_enforced | Not set -> On',
+  ]);
+});
+
+test("an environment's branch policy is what is made or removed, not the environment", () => {
+  const policy = (name: string, type: 'branch' | 'tag', action: 'create' | 'delete'): Changes[number] => ({
+    section: 'environments',
+    action,
+    target: 'prod',
+    fields: [],
+    request,
+    entry: { name: 'prod', branch_policy: { name, type } },
+  });
+
+  expect(compared([policy('release/*', 'branch', 'delete'), policy('v*', 'tag', 'create')])).toEqual([
+    'removes | prod: release/* | branch policy removed | On GitHub -> Removed',
+    'adds | prod: v* | new tag policy | Not on GitHub -> Created',
+  ]);
+});
+
+test("a changed entry is a row for each thing that differs, down to one rule's number", () => {
+  const rule = (count: number): unknown => ({
+    type: 'pull_request',
+    parameters: { required_approving_review_count: count, dismiss_stale_reviews_on_push: true },
+  });
+  expect(
+    compared([
+      {
+        section: 'rulesets',
+        action: 'update',
+        target: 'Main',
+        request,
+        entry: { name: 'Main' },
+        fields: [
+          { field: 'enforcement', from: 'evaluate', to: 'active' },
+          { field: 'rules', from: [{ type: 'deletion' }, rule(1)], to: [rule(2), { type: 'non_fast_forward' }] },
+        ],
+      },
+    ]),
+  ).toEqual([
+    'changes | Main | enforcement | evaluate -> active',
+    'removes | Main | rules[deletion] | {"type":"deletion"} -> Not set',
+    'changes | Main | rules[pull_request].parameters.required_approving_review_count | 1 -> 2',
+    'adds | Main | rules[non_fast_forward] | Not set -> {"type":"non_fast_forward"}',
+  ]);
+});
+
+test('an autolink GitHub has to remake is one change to it, and a group of settings is a row for each', () => {
+  const autolink = (action: 'create' | 'delete'): Changes[number] => ({
+    section: 'autolinks',
+    action,
+    target: 'JIRA-',
+    request,
+    entry: { name: 'JIRA-' },
+    fields: action === 'delete' ? [] : [{ field: 'url_template', from: 'https://old/<num>', to: 'https://new/<num>' }],
+  });
+  expect(compared([autolink('delete'), autolink('create')], new Map([[0, 'Needs Administration write']]))).toEqual([
+    'changes | JIRA- | url_template | https://old/<num> -> https://new/<num> | Needs Administration write',
+  ]);
+
+  expect(
+    compared([
+      {
+        section: 'pages',
+        action: 'update',
+        target: 'pages',
+        request,
+        fields: [{ field: 'source', from: { branch: 'main', path: '/' }, to: { branch: 'main', path: '/docs' } }],
+      },
+    ]),
+  ).toEqual(['changes | Folder | pages.source.path | / (root) -> /docs']);
+});
+
+test('an App that is not installed on the repository locks every difference and offers to install it', async () => {
+  await saved('repository:\n  has_wiki: false\n');
+  const github = new FakeGitHub({ account: { login: 'lunch', name: null, repositories: [], installations: [] } });
+  const comparison = new Comparison(github, () => undefined);
+
+  await comparison.compare('lunch/app', profile);
+
+  expect(comparison.state.value).toMatchObject({ kind: 'compared', appAccess: 'install' });
+  expect(comparison.shown.value[0]?.rows[0]?.lock).toBe('Needs the GitHub App installed on this repository');
+});
+
+test('a failure names a base profile by its file beside the profile, not by where the browser keeps it', async () => {
+  await saved('extends: base.yaml\n');
+  const comparison = new Comparison(new FakeGitHub(), () => undefined);
+
+  await comparison.compare('lunch/app', profile);
+
+  expect(failure(comparison)).toContain('base.yaml');
+  expect(failure(comparison)).not.toContain('/profiles/');
 });

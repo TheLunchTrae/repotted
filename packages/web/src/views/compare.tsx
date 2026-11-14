@@ -4,6 +4,7 @@ import type { CompareRow, Comparison } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
 import { Link } from './link.js';
+import { run } from './run.js';
 
 const kinds: Readonly<Record<CompareRow['kind'], string>> = { changes: 'Changes', adds: 'Adds', removes: 'Removes' };
 
@@ -67,13 +68,29 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                 : state.kind === 'failed'
                   ? "The comparison couldn't be made."
                   : counts.differences === 0
-                    ? 'The repository already has everything the profile sets.'
+                    ? state.warnings.length > 0
+                      ? 'No differences in what the comparison could read.'
+                      : 'The repository already has everything the profile applies.'
                     : `${counts.differences === 1 ? '1 difference' : `${counts.differences} differences`}${
                         counts.locked === 0 ? '' : `, ${counts.locked} that Repotted can't change`
                       }. Comparing only reads from GitHub.`}
             </p>
           </div>
         </div>
+        {state.kind !== 'comparing' && (
+          <p>
+            <button
+              class="button"
+              type="button"
+              onClick={() => {
+                // The profile is read again as it is saved now, and GitHub as it is now.
+                run(comparison.compare(state.repository, { file: state.file, name: state.profile }));
+              }}
+            >
+              Compare again
+            </button>
+          </p>
+        )}
         {state.kind === 'failed' && (
           <p class="notice notice-problem" role="alert">
             {state.message}
