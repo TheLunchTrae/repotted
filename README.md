@@ -2,13 +2,14 @@
 
 Keep GitHub repositories set up the way you want. Repotted captures a
 repository's setup as a YAML profile: its settings, merge methods, Actions and
-security settings, Pages site, rulesets, deployment environments, and labels.
+security settings, Pages site, custom properties, autolinks, rulesets,
+deployment environments, and labels.
 A profile manages only what it names, so it can describe one repository or a
 standard that many share.
 
 Use it at [repotted.dev](https://repotted.dev). Sign in with GitHub, choose the
-repositories the Repotted App can reach, and capture, write, and edit profiles
-in your browser. Keep profiles in the browser, or in a GitHub repository so
+repositories the Repotted App can reach, and make profiles from scratch or by
+capturing a repository, then edit them in your browser. Keep profiles in the browser, or in a GitHub repository so
 they follow you to any browser. Comparing a repository with a profile and
 applying the changes from the web app is still being built.
 
