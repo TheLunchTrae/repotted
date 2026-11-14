@@ -373,7 +373,13 @@ export class Repositories {
     }
   }
 
-  select(repository: Repository | undefined): void {
+  /** The selected repository's `owner/name`, kept while it is out of view or before the list arrives. */
+  get selectedName(): string | undefined {
+    return this.#selectedName.value;
+  }
+
+  /** Selects a repository by its `owner/name`, which shows once the list has it in view. */
+  select(repository: Pick<Repository, 'full_name'> | undefined): void {
     this.#selectedName.value = repository?.full_name;
     this.#clearJustHidden();
   }

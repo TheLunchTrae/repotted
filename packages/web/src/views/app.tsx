@@ -4,6 +4,7 @@ import type { JSX } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
+import { AddressSelection } from '../app/address-selection.js';
 import { Apply } from '../app/apply.js';
 import { BatchApply } from '../app/batch-apply.js';
 import { Comparison } from '../app/comparison.js';
@@ -76,6 +77,7 @@ function SignedIn({
       batch: new BatchApply(github, refused),
     };
   }, [account, github, preferences, folders, user]);
+  const address = useMemo(() => new AddressSelection(repositories, router), [repositories, router]);
   useEffect(() => {
     run(repositories.refresh());
     run(profiles.refresh());
@@ -174,6 +176,7 @@ function SignedIn({
       {path === '/' ? (
         <RepositoriesPage
           repositories={repositories}
+          address={address}
           profiles={profiles}
           onCapture={(repository) => {
             setCaptureFrom(repository);
