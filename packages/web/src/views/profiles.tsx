@@ -11,6 +11,9 @@ import { ProfileSettings } from './profile-editor.js';
 import { run } from './run.js';
 import { SyncNote } from './settings.js';
 
+/** The widths at which app.css shows the profile list and the open profile one at a time. */
+const phone = '(max-width: 760px)';
+
 const ownerTypes = { user: 'For personal accounts', organization: 'For organizations' } as const;
 
 interface FolderProps {
@@ -267,10 +270,43 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
   const busy = profiles.busy.value;
   const total = profiles.listings.value.length;
   const elsewhere = source.kind === 'folder' ? 'in the folder' : 'on GitHub';
+  // On a phone the list and the open profile are two screens; app.css shows the one this names.
+  const showing = creating !== undefined ? '/profiles/new' : selected?.file;
+  const open = showing !== undefined;
+  const sidebar = useRef<HTMLElement>(null);
+  /** The list's item for the profile left by the back button, to take the focus back to. */
+  const returnTo = useRef<HTMLElement | null>(null);
+  const first = useRef(true);
+  const previous = useRef(showing);
+  useEffect(() => {
+    const left = previous.current;
+    previous.current = showing;
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    // A new screen on a phone starts at its top, with the focus on it: the button that was pressed
+    // is gone with the screen it was on. Side by side, nothing moves.
+    if (!window.matchMedia(phone).matches) {
+      return;
+    }
+    window.scrollTo(0, 0);
+    if (open) {
+      document.querySelector<HTMLElement>('.profiles-back')?.focus();
+    } else {
+      // Back to the row that was open, or to New profile after its form, or else to the list itself,
+      // as when the open profile was deleted or synced away.
+      const row = returnTo.current?.isConnected === true ? returnTo.current : null;
+      const form =
+        left === '/profiles/new' ? sidebar.current?.querySelector<HTMLElement>('a[href="/profiles/new"]') : null;
+      (row ?? form ?? sidebar.current)?.focus();
+    }
+    returnTo.current = null;
+  }, [showing]);
 
   return (
-    <div class="page page-with-sidebar">
-      <aside class="sidebar" aria-label="Profiles">
+    <div class="page page-with-sidebar" data-screen={open ? 'profile' : 'list'}>
+      <aside class="sidebar" aria-label="Profiles" ref={sidebar} tabIndex={-1}>
         <div class="sidebar-heading">
           <div class="sidebar-source">
             <strong class={source.kind === 'browser' ? undefined : 'mono'}>
@@ -326,6 +362,22 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
       </aside>
 
       <div class="page-main">
+        {open && (
+          <button
+            class="link profiles-back"
+            type="button"
+            onClick={() => {
+              returnTo.current = sidebar.current?.querySelector<HTMLElement>('.tree-item[aria-current="true"]') ?? null;
+              // An editor keeps its unsaved changes when its profile is closed, and the list marks it Not saved.
+              run(profiles.select(undefined));
+              if (creating !== undefined) {
+                router.go('/profiles');
+              }
+            }}
+          >
+            All profiles
+          </button>
+        )}
         {(conflicts.length > 0 || profiles.sync.value.status === 'failed' || profiles.error.value !== undefined) && (
           <div class="banners">
             {profiles.error.value !== undefined && (
@@ -382,7 +434,7 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
         ) : selected !== undefined ? (
           <Profile key={selected.file} listing={selected} profiles={profiles} />
         ) : (
-          <div class="page-body">
+          <div class={total > 0 ? 'page-body profiles-choose' : 'page-body'}>
             <div class="page-heading">
               <div>
                 <h1>Profiles</h1>
