@@ -881,15 +881,6 @@ input[type='checkbox'] {
     display: none;
   }
 
-  /* The list screen is the list: its banners come first, and nothing follows it to need a border. */
-  .page-with-sidebar[data-screen='list'] > .page-main {
-    order: -1;
-  }
-
-  .page-with-sidebar[data-screen='list'] > .sidebar {
-    border-bottom: 0;
-  }
-
   /* The list screen keeps the page's heading for screen readers, without the prompt to choose. */
   .page-with-sidebar .profiles-choose {
     position: absolute;
