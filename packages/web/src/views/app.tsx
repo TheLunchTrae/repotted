@@ -16,6 +16,7 @@ import type { Router } from '../app/router.js';
 import { ApplyPage } from './apply.js';
 import { BatchPage } from './batch.js';
 import { ComparePage } from './compare.js';
+import { SignOutQuestion } from './leave.js';
 import { Link } from './link.js';
 import { ProfilesPage } from './profiles.js';
 import { RepositoriesPage } from './repositories.js';
@@ -110,8 +111,50 @@ function SignedIn({
   useEffect(() => {
     document.title = title === undefined ? 'Repotted' : `${title} - Repotted`;
   }, [title]);
+  const [leaving, setLeaving] = useState(false);
+  /** Whether a press of Sign out did nothing because an apply was writing. */
+  const [held, setHeld] = useState(false);
+  const leave = (): void => {
+    // An apply's edits that can be saved are, as when its page is left.
+    apply.close();
+    run(account.signOut());
+  };
+  const writing = apply.state.value.kind === 'applying' || batch.state.value.kind === 'applying';
+  // Signing out drops what the profiles' editors hold, so unsaved changes are asked about first,
+  // and it ends the sign-in an apply that is writing still needs.
+  const signOut = (): void => {
+    if (writing) {
+      setHeld(true);
+      return;
+    }
+    setHeld(false);
+    if (profiles.unsaved.value.size > 0) {
+      setLeaving(true);
+    } else {
+      leave();
+    }
+  };
+  // The account menu, where this is also said, closes with the question, so it is said on the page too.
+  const signOutProblem =
+    held && writing
+      ? 'Changes are being written to GitHub. Sign out once the apply has finished.'
+      : account.signOutError.value;
   return (
-    <Shell account={account} user={user} router={router}>
+    <Shell account={account} user={user} router={router} onSignOut={signOut}>
+      {signOutProblem !== undefined && (
+        <p class="notice notice-problem shell-notice" role="alert">
+          {signOutProblem}
+        </p>
+      )}
+      {leaving && (
+        <SignOutQuestion
+          profiles={profiles}
+          onLeave={leave}
+          onClose={() => {
+            setLeaving(false);
+          }}
+        />
+      )}
       {keeping.value === 'stopped' && (
         <p class="notice notice-problem shell-notice" role="alert">
           This browser stopped keeping your changes, as it does when its storage is full. What you change now lasts
@@ -174,6 +217,7 @@ function SignedIn({
           profiles={profiles}
           repositories={repositories}
           keeping={keeping.value}
+          onSignOut={signOut}
         />
       ) : (
         <div class="page">

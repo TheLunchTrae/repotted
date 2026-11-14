@@ -425,7 +425,14 @@ GitHub repository, while the folder lacks changes made here.
 the whole app in this browser.
 
 **Account** shows who you're signed in as, with **Add repositories** and
-**Sign out**. **Profiles** shows where your profiles are kept and how the
+**Sign out**. When a profile has unsaved changes, **Sign out** asks first: **Save and
+sign out**, **Discard and sign out**, or **Stay signed in**, since signing
+out discards changes that aren't saved. A profile with a draft, or with a
+value that isn't valid, is saved from its own page, so the question stays
+and says so. If the changes are saved but a sync didn't finish, it asks once
+more before signing out. While an apply to one repository or
+several is writing to GitHub, **Sign out** does nothing but say so; press it
+again once the apply has finished. **Profiles** shows where your profiles are kept and how the
 last sync went, with **Sync now** (or **Refresh** for profiles in the
 browser), and the buttons that move them to a GitHub repository or back to
 the browser.

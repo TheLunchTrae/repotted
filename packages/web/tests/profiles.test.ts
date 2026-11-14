@@ -682,6 +682,85 @@ test('unsaved changes outlast a look at another profile, hold a move back, and a
   expect(profiles.opened.value?.text).toContain('has_wiki: true');
 });
 
+test('every unsaved profile is saved or discarded at once, and one that cannot be saved keeps its changes', async () => {
+  await inBrowser({ 'base.yaml': base, 'other.yaml': base });
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  await profiles.refresh();
+  const change = async (index: number, value: unknown): Promise<void> => {
+    await profiles.select(profiles.listings.value[index]);
+    const editor = profiles.editor.value;
+    const wiki = editor?.sections.value
+      .flatMap((section) => section.groups.flatMap((group) => group.rows))
+      .find((row) => row.field.key === 'has_wiki')?.field;
+    if (editor === undefined || wiki === undefined) {
+      throw new Error('The open profile should have an editor with a wiki setting.');
+    }
+    await editor.set(wiki, value);
+  };
+  await change(0, true);
+  await change(1, true);
+  expect(profiles.unsavedNames.value).toEqual(['base', 'other']);
+
+  expect(await profiles.saveAll()).toBe('saved');
+  expect(await readFile('/profiles/browser/base.yaml', 'utf8')).toBe('repository:\n  has_wiki: true\n');
+  expect(await readFile('/profiles/browser/other.yaml', 'utf8')).toBe('repository:\n  has_wiki: true\n');
+
+  // A value that isn't valid can't be saved, so its profile stays unsaved while the other is saved.
+  await change(0, 'sometimes');
+  await change(1, false);
+  expect(await profiles.saveAll()).toBe('unsaved');
+  expect(profiles.unsavedNames.value).toEqual(['base']);
+  expect(await readFile('/profiles/browser/other.yaml', 'utf8')).toBe('repository:\n  has_wiki: false\n');
+
+  await profiles.discardAll();
+  expect(profiles.unsavedNames.value).toEqual([]);
+  expect(await readFile('/profiles/browser/base.yaml', 'utf8')).toBe('repository:\n  has_wiki: true\n');
+});
+
+test('saving every profile leaves one with a draft unsaved, and says when the sync did not take the rest', async () => {
+  const github = repository();
+  github.write({
+    'profiles/drafted.yaml': 'repository:\n  has_wiki: false\ndrafts:\n  repository:\n    has_issues: false\n',
+  });
+  const profiles = await connected(github);
+  const change = async (name: string): Promise<void> => {
+    await profiles.select(profiles.listings.value.find((listing) => listing.name === name));
+    const editor = profiles.editor.value;
+    const wiki = editor?.sections.value
+      .flatMap((section) => section.groups.flatMap((group) => group.rows))
+      .find((row) => row.field.key === 'has_wiki')?.field;
+    if (editor === undefined || wiki === undefined) {
+      throw new Error('The open profile should have an editor with a wiki setting.');
+    }
+    await editor.set(wiki, true);
+  };
+  await change('drafted');
+
+  // A save here would apply the draft unseen, so the profile keeps its changes and its draft.
+  expect(await profiles.saveAll()).toBe('unsaved');
+  expect(profiles.unsavedNames.value).toEqual(['drafted']);
+  expect(github.files()['profiles/drafted.yaml']).toContain('drafts:');
+  await profiles.discardAll();
+
+  // A profile in a folder goes by its path from the profiles folder.
+  await change('web');
+  expect(profiles.unsavedNames.value).toEqual(['teams/web']);
+  await profiles.discardAll();
+
+  await change('base');
+  github.fail(answered(500, 'Server Error'), 2);
+  expect(await profiles.saveAll()).toBe('unsynced');
+  expect(profiles.unsavedNames.value).toEqual([]);
+  expect(github.files()['profiles/base.yaml']).toBe(base);
+
+  // A profile changed in both places since is as much a reason to ask again as a failed sync.
+  github.write({ 'profiles/base.yaml': 'repository:\n  has_issues: true\n' });
+  await change('web');
+  expect(await profiles.saveAll()).toBe('unsynced');
+  expect(profiles.sync.value.status).toBe('synced');
+  expect(profiles.conflicts.value).toEqual(['base.yaml']);
+});
+
 test('a deleted profile takes its unsaved changes with it', async () => {
   await inBrowser({ 'base.yaml': base });
   const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
