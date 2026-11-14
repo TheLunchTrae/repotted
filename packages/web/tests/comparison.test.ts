@@ -345,16 +345,22 @@ actions:
 pages:
   build_type: workflow
   https_enforced: true
+labels:
+  - name: bug
+    color: d73a4a
 `);
-  const github = new FakeGitHub();
+  const github = new FakeGitHub({
+    labels: [{ id: 1, name: 'bug', color: 'd73a4a', description: null, default: false }],
+  });
+  github.fail('GET /repos/lunch/app/labels', answered(403, 'Resource not accessible by integration'));
   github.state.settings['/actions/oidc/customization/sub'] = { use_default: true };
   const comparison = new Comparison(github, () => undefined);
   await comparison.compare('lunch/app', profile);
   comparison.onlyDifferences.value = false;
 
   // The selected actions don't apply while all are allowed, GitHub ignores
-  // the claim keys with the default subject, and the Pages site is new, so
-  // none of its settings is there yet.
+  // the claim keys with the default subject, the Pages site is new, so none
+  // of its settings is there yet, and the labels couldn't be read.
   expect(rows(comparison)).toContain('Pages | GitHub Pages site | pages | Not on GitHub -> Created');
   expect(matches(comparison)).toEqual([
     'Repository | Wiki | repository.has_wiki | On',

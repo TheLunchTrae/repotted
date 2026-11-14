@@ -76,7 +76,7 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                       }. Comparing only reads from GitHub.`}
               {state.kind === 'compared' &&
                 counts.matches > 0 &&
-                ` ${counts.matches === 1 ? '1 thing the profile sets needs' : `${counts.matches} things the profile set need`} no change${
+                ` ${counts.matches === 1 ? '1 thing the profile sets needs' : `${counts.matches} things the profile sets need`} no change${
                   comparison.onlyDifferences.value || comparison.onlyLocked.value ? ', folded away' : ''
                 }.`}
             </p>
