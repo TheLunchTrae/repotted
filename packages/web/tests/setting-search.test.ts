@@ -99,3 +99,62 @@ test('the filters show what is managed, unsaved, or drafted, and a row stays whi
   editor.search('proj');
   expect(found(editor)).toEqual(['repository.has_projects']);
 });
+
+test('a found setting that a change hides leaves the one above it to change back, and the count follows', async () => {
+  const editor = await opened('repository:\n  has_pull_requests: true\n');
+  editor.search('who can create');
+
+  await editor.set(field('repository.has_pull_requests'), false);
+
+  expect(found(editor)).toEqual(['repository.has_pull_requests']);
+  expect(editor.foundCount.value).toBe(0);
+
+  await editor.set(field('repository.has_pull_requests'), true);
+  expect(found(editor)).toEqual(['repository.has_pull_requests', 'repository.pull_request_creation_policy']);
+  expect(editor.foundCount.value).toBe(1);
+});
+
+test('a setting hidden for the value of the one above it is not found', async () => {
+  const editor = await opened('repository:\n  has_pull_requests: false\n');
+
+  editor.search('who can create');
+
+  expect(found(editor)).toEqual([]);
+  expect(editor.foundSummary.value).toBe('No settings match “who can create”.');
+});
+
+test('a save or a discard finds again, so what it settled leaves the filters', async () => {
+  const editor = await opened('repository:\n  has_wiki: false\ndrafts:\n  repository:\n    has_projects: true\n');
+  const write = (work: () => Promise<void>): Promise<void> => work();
+  await editor.set(field('repository.has_wiki'), true);
+  editor.filter('unsaved', true);
+  expect(found(editor)).toEqual(['repository.has_wiki']);
+
+  await editor.save(write, 'draft');
+  expect(found(editor)).toEqual([]);
+
+  editor.filter('unsaved', false);
+  editor.filter('drafts', true);
+  expect(found(editor)).toEqual(['repository.has_projects', 'repository.has_wiki']);
+  await editor.discardDraft(write);
+  expect(found(editor)).toEqual([]);
+  expect(editor.foundSummary.value).toBe('No settings match these filters.');
+});
+
+test('with nothing found, the message says why and where else to look, and an emptied search shows the tabs', async () => {
+  const editor = await opened('repository:\n  has_wiki: false\n');
+  await editor.addEntry('labels', { name: 'bug' });
+
+  editor.filter('unsaved', true);
+  expect(editor.foundSummary.value).toContain('Unsaved changes to rulesets, environments, and labels');
+  // Punctuation alone is no word, so the filters are why nothing was found.
+  editor.search('-');
+  expect(editor.foundSummary.value).toContain('these filters');
+
+  editor.filter('unsaved', false);
+  expect(editor.filtering.value).toBe(false);
+  editor.search('wiki');
+  expect(editor.foundSummary.value).toBe('1 setting found.');
+  editor.search('');
+  expect(editor.filtering.value).toBe(false);
+});

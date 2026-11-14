@@ -311,17 +311,20 @@ two: the old one taken out in the draft, and the new one new in it.
 
 The search and the **Managed**, **Not saved yet**, and **Drafts** filters
 find settings across the tabs. What they found is worked out when the search
-or a filter changes, and not when a row does.
+or a filter changes, or the profile is read or written, and not when a row
+changes.
 
-| State | Event                                           | Next                                                                                                                                                |
-| ----- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tabs  | A word is typed, or a filter is turned on       | Found: the settings that fit every word and every filter show group by group in place of the tabs, each sub-option under the setting it belongs to. |
-| Found | A found setting is changed, saved, or reset     | Found, with the same settings, so a row doesn't vanish as it is edited. Its value and marks follow the change.                                      |
-| Found | The search or a filter changes                  | Found, worked out again from the rows as they are then.                                                                                             |
-| Found | Nothing fits                                    | Found, with why: the words typed, or the filters, and that rulesets, environments, and labels are on their own tabs when one of them would fit.     |
-| Found | A setting GitHub hides for another's value fits | Left out, as on its tab.                                                                                                                            |
-| Found | The search is emptied and every filter is off   | Tabs, on the tab that was open.                                                                                                                     |
-| Found | Show every setting, or Escape in the search     | Tabs for the first; the second empties the search and keeps the filters.                                                                            |
+| State | Event                                                                   | Next                                                                                                                                                |
+| ----- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tabs  | A word is typed, or a filter is turned on                               | Found: the settings that fit every word and every filter show group by group in place of the tabs, each sub-option under the setting it belongs to. |
+| Found | A found setting is changed or reset                                     | Found, with the same settings, so a row doesn't vanish as it is edited. Its value and marks follow the change.                                      |
+| Found | A change hides a found setting, as turning off the one above it does    | Found: the hidden one goes, as on its tab, and the one above it stays to change back. The count follows what shows.                                 |
+| Found | A save or a discard ends, or the profile is read again, as after a sync | Found, worked out again, so a setting a save settled leaves **Not saved yet**, and a finished or discarded draft leaves **Drafts**.                 |
+| Found | The search or a filter changes                                          | Found, worked out again from the rows as they are then.                                                                                             |
+| Found | Nothing fits                                                            | Found, with why: the words typed, or the filters, and that rulesets, environments, and labels are on their own tabs when one of them would fit.     |
+| Found | A setting GitHub hides for another's value fits                         | Left out, as on its tab.                                                                                                                            |
+| Found | The search is emptied and every filter is off                           | Tabs, on the tab that was open.                                                                                                                     |
+| Found | Show every setting, or Escape in the search                             | Tabs for the first; the second empties the search and keeps the filters.                                                                            |
 
 ### Each ruleset, environment, or label
 

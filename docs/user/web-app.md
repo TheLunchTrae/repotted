@@ -93,10 +93,11 @@ and **Reset** beside the setting puts it back.
 **Find a setting** above the tabs searches every settings tab at once. Type
 part of a setting's name, its key in a profile such as `allow_squash_merge`,
 or a word people know it by, such as "dco" for sign-off. **Managed** shows
-only the settings the profile or a base profile sets, **Not saved yet** only
-those with a change you haven't saved, and **Drafts**, on a profile with a
-draft, only those in it. The settings found show in place of the tabs, each
-under its tab's and group's name, and stay while you edit them. **Show every
+only the settings that have a value once you save, from the profile or a
+base profile, **Not saved yet** only those with a change you haven't saved,
+and **Drafts**, on a profile with a draft, only those in it. The settings
+found show in place of the tabs, each under its tab's and group's name, and
+stay while you edit them, until you save or search again. **Show every
 setting** goes back to the tabs. Rulesets, environments, and labels are not
 searched; they stay on their own tabs.
 

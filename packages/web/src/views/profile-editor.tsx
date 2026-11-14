@@ -258,27 +258,6 @@ const filterNames: readonly { readonly id: SettingFilter; readonly name: string 
   { id: 'drafts', name: 'Drafts' },
 ];
 
-/** How many settings a search or filter found, or why none, and where else to look. */
-function foundSummary(editor: ProfileEditor): string {
-  const count = editor.foundCount.value;
-  const query = editor.query.value.trim();
-  const filters = editor.filters.value;
-  const entries = entryLists.flatMap((list) => editor.entries.value[list]);
-  if (count > 0) {
-    return count === 1 ? '1 setting found.' : `${count} settings found.`;
-  }
-  if (query !== '') {
-    return `No settings match “${query}”.`;
-  }
-  if (filters.has('unsaved') && entries.some((row) => row.unsaved)) {
-    return 'No settings match these filters. Unsaved changes to rulesets, environments, and labels are on their own tabs.';
-  }
-  if (filters.has('drafts') && entries.some((row) => row.inDraft !== undefined)) {
-    return 'No settings match these filters. Drafts of rulesets, environments, and labels are on their own tabs.';
-  }
-  return 'No settings match these filters.';
-}
-
 /** The open profile's settings, a tab for each section, with the footer that saves them. */
 const entryTitles = { rulesets: 'Rulesets', environments: 'Environments', labels: 'Labels' } as const;
 
@@ -312,6 +291,7 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
   ];
   const current = list ?? shown?.section.section ?? '';
   const filtering = editor.filtering.value;
+  const search = useRef<HTMLInputElement>(null);
   const problem = editor.problem.value ?? editor.saveError.value;
   const tabs = useRef<HTMLDivElement>(null);
   // The arrow keys move between tabs, as in a tab list, and only the shown tab is a Tab stop.
@@ -331,6 +311,7 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
         <input
           class="field"
           type="search"
+          ref={search}
           placeholder="Find a setting"
           aria-label="Find a setting"
           value={editor.query.value}
@@ -353,6 +334,10 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
                   checked={editor.filters.value.has(id)}
                   onChange={(event) => {
                     editor.filter(id, event.currentTarget.checked);
+                    // The Drafts filter goes once it is off on a profile with no draft, and takes the keyboard with it.
+                    if (id === 'drafts' && !event.currentTarget.checked) {
+                      search.current?.focus();
+                    }
                   }}
                 />
                 <span>{name}</span>
@@ -360,22 +345,24 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
             ))}
         </div>
       </div>
+      {/* The message is there before it has anything to say, so a screen reader announces what it comes to say. */}
+      <div class="entry-bar" hidden={!filtering}>
+        <p class="muted small" role="status">
+          {filtering ? editor.foundSummary.value : ''}
+        </p>
+        <button
+          class="button button-quiet button-small"
+          type="button"
+          onClick={() => {
+            editor.clearFilters();
+            search.current?.focus();
+          }}
+        >
+          Show every setting
+        </button>
+      </div>
       {filtering && (
         <div class="groups">
-          <div class="entry-bar">
-            <p class="muted small" role="status">
-              {foundSummary(editor)}
-            </p>
-            <button
-              class="button button-quiet button-small"
-              type="button"
-              onClick={() => {
-                editor.clearFilters();
-              }}
-            >
-              Show every setting
-            </button>
-          </div>
           {editor.found.value.map(({ tab: name, group, rows }) => (
             <section key={`${name} ${group.title}`} class="settings-group" aria-label={`${name}: ${group.title}`}>
               <div>

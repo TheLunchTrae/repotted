@@ -261,24 +261,54 @@ export class ProfileEditor {
     () => searchWords(this.#finding.value.query).length > 0 || this.#finding.value.filters.size > 0,
   );
 
-  /** How many settings the search and filters found. */
-  readonly foundCount = computed(() => this.#finding.value.fits.size);
+  /** How many of the settings shown the search and filters found; one shown only for what sits under it is not counted. */
+  readonly foundCount = computed(() => {
+    const { fits } = this.#finding.value;
+    return this.found.value.reduce(
+      (count, group) => count + group.rows.filter((row) => fits.has(keyOf(row.field.path))).length,
+      0,
+    );
+  });
+
+  /** How many settings were found, or why none were, and where else to look. */
+  readonly foundSummary = computed(() => {
+    const count = this.foundCount.value;
+    const { query, filters } = this.#finding.value;
+    if (count > 0) {
+      return count === 1 ? '1 setting found.' : `${count} settings found.`;
+    }
+    if (searchWords(query).length > 0) {
+      return `No settings match “${query.trim()}”.`;
+    }
+    const entries = Object.values(this.entries.value).flat();
+    if (filters.has('unsaved') && entries.some((row) => row.unsaved)) {
+      return 'No settings match these filters. Unsaved changes to rulesets, environments, and labels are on their own tabs.';
+    }
+    if (filters.has('drafts') && entries.some((row) => row.inDraft !== undefined)) {
+      return 'No settings match these filters. Drafts of rulesets, environments, and labels are on their own tabs.';
+    }
+    return 'No settings match these filters.';
+  });
 
   /**
    * The settings the search and filters found, group by group across the
    * tabs, each sub-option with the setting it sits under. What is found
-   * changes only when the search or a filter does, so a row doesn't vanish
-   * as it is edited.
+   * changes when the search or a filter does, or the profile is read again,
+   * and not as a row is edited, so a row doesn't vanish under the hand. A
+   * found setting that an edit hides, as GitHub does for the value of the
+   * one above it, leaves that one in place to change back.
    */
   readonly found = computed((): FoundGroup[] => {
     const { fits, shown } = this.#finding.value;
     return this.sections.value.flatMap(({ section, groups }) =>
       groups
-        .filter(({ rows }) => rows.some((row) => fits.has(keyOf(row.field.path))))
+        .map(({ group, rows }) => ({ group, rows: rows.filter((row) => shown.has(keyOf(row.field.path))) }))
+        // A setting shown only for what sits under it goes when a new search leaves nothing under it, not before.
+        .filter(({ rows }) => rows.length > 0 && fits.size > 0)
         .map(({ group, rows }) => ({
           tab: section.name,
           group,
-          rows: rows.filter((row) => shown.has(keyOf(row.field.path))),
+          rows,
         })),
     );
   });
@@ -309,6 +339,7 @@ export class ProfileEditor {
       return;
     }
     await this.#previewEdits();
+    this.#findAgain();
   }
 
   /** Sets a setting in this profile, or with undefined stops setting it here, so a base profile's value applies. */
@@ -358,6 +389,13 @@ export class ProfileEditor {
   /** Clears the search and every filter, so the tabs show again. */
   clearFilters(): void {
     this.#finding.value = nothingFound;
+  }
+
+  /** Finds again over the profile as it was just read or written, so what a save or a discard settled leaves the filters. */
+  #findAgain(): void {
+    if (this.filtering.value) {
+      this.#find(this.#finding.value.query, this.#finding.value.filters);
+    }
   }
 
   #find(query: string, filters: ReadonlySet<SettingFilter>): void {
@@ -538,6 +576,7 @@ export class ProfileEditor {
       this.saving.value = false;
     }
     await this.#previewEdits();
+    this.#findAgain();
   }
 
   /** This profile's own draft of a setting, as saved. */
