@@ -385,6 +385,28 @@ Repotted on it sees them; on a shared computer, use a private window or keep
 none there. **Use this browser** in Settings goes back to profiles kept in
 the browser alone; the repository keeps every profile it has.
 
+### Keep profiles in a folder on this computer
+
+In Chrome, Edge, and other Chromium browsers, profiles can be files in a
+folder on your computer, where other tools, such as the `repotted` command
+or Git, can read and change them. In [Settings](#settings), click **Choose a
+folder…** and pick the folder; tick the box first to add the profiles kept
+now beside the folder's own. Other browsers can't give a site a folder, and
+Settings says so in place of the button.
+
+Repotted syncs with the folder when it opens, when you click **Sync**, and
+each time you save, make, or delete a profile. A profile changed in the
+folder shows up in Repotted, and one changed in both since the last sync
+asks which version to keep: **Keep mine** or **Use the folder's**. Only
+profile files sync, those ending in `.yaml` or `.yml`; Repotted leaves
+hidden files and folders and every other file alone.
+
+The browser asks again on each visit before a site uses a folder. Until you
+click **Allow access** and agree, Repotted shows the profiles as they were
+at the last sync and changes nothing in the folder. **Use this browser** in
+Settings goes back to profiles kept in the browser alone; the folder keeps
+every profile it has.
+
 ## Settings
 
 **Settings**, at the top right and in the account menu, holds what applies to

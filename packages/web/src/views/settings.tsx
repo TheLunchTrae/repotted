@@ -11,26 +11,39 @@ import { run } from './run.js';
 /** What the last sync did, or why it failed, as a line under where the profiles are kept. */
 export function SyncNote({ profiles }: { readonly profiles: Profiles }): JSX.Element | null {
   const sync = profiles.sync.value;
+  // What the profiles sync with: GitHub, or the folder on this computer.
+  const other = profiles.source.value.kind === 'folder' ? 'the folder' : 'GitHub';
   if (sync.status === 'failed') {
     return (
       <p class="problem small" role="alert">
         Not synced. {/[.!?]$/u.test(sync.message) ? sync.message : `${sync.message}.`} Profiles stay in this browser
-        until a sync works.
+        until a sync works.{' '}
+        {profiles.needsFolderAccess.value && (
+          <button
+            class="link"
+            type="button"
+            onClick={() => {
+              run(profiles.allowFolder());
+            }}
+          >
+            Allow access
+          </button>
+        )}
       </p>
     );
   }
   if (sync.status === 'syncing') {
     return (
       <p class="muted small" role="status">
-        Syncing with GitHub…
+        Syncing with {other}…
       </p>
     );
   }
   if (sync.status === 'synced') {
     const conflicts = profiles.conflicts.value.length;
     const moved = [
-      sync.pulled > 0 ? `${sync.pulled} from GitHub` : undefined,
-      sync.pushed > 0 ? `${sync.pushed} to GitHub` : undefined,
+      sync.pulled > 0 ? `${sync.pulled} from ${other}` : undefined,
+      sync.pushed > 0 ? `${sync.pushed} to ${other}` : undefined,
     ].filter((part) => part !== undefined);
     return (
       <p class="muted small" role="status">
@@ -38,7 +51,7 @@ export function SyncNote({ profiles }: { readonly profiles: Profiles }): JSX.Ele
           ? `Synced, with ${conflicts} ${conflicts === 1 ? 'profile' : 'profiles'} changed in both places.`
           : moved.length > 0
             ? `Synced: ${moved.join(', ')}.`
-            : 'In sync with GitHub.'}
+            : `In sync with ${other}.`}
       </p>
     );
   }
@@ -133,7 +146,7 @@ function ConnectForm({ profiles, repositories, onClose }: ConnectFormProps): JSX
           />
           <span>
             Add the {count === 1 ? 'profile' : `${count} profiles`} from{' '}
-            {source.kind === 'browser' ? 'this browser' : source.repository}
+            {source.kind === 'browser' ? 'this browser' : source.kind === 'folder' ? source.name : source.repository}
           </span>
         </label>
       )}
@@ -172,6 +185,9 @@ export function SettingsPage({ account, user, profiles, repositories, keeping }:
   const source = profiles.source.value;
   const busy = profiles.busy.value;
   const onGitHub = source.kind === 'repository';
+  const inFolder = source.kind === 'folder';
+  const [addToFolder, setAddToFolder] = useState(false);
+  const count = profiles.listings.value.length;
 
   return (
     <div class="page">
@@ -239,17 +255,25 @@ export function SettingsPage({ account, user, profiles, repositories, keeping }:
             <div class="settings">
               {profiles.connectError.value !== undefined && (
                 <p class="setting-row problem" role="alert">
-                  Couldn't use the repository: {profiles.connectError.value}
+                  Couldn't change where profiles are kept: {profiles.connectError.value}
                 </p>
               )}
               <div class="setting-row">
                 <div class="setting-text">
-                  <strong>{onGitHub ? 'In a GitHub repository' : 'In this browser'}</strong>
+                  <strong>
+                    {onGitHub
+                      ? 'In a GitHub repository'
+                      : inFolder
+                        ? 'In a folder on this computer'
+                        : 'In this browser'}
+                  </strong>
                   {onGitHub ? (
                     <span class="mono small">
                       {source.repository}
                       {source.path === '' ? '' : `/${source.path}`}
                     </span>
+                  ) : inFolder ? (
+                    <span class="mono small">{source.name}</span>
                   ) : (
                     <span class="muted small">
                       {keeping === 'visit-only'
@@ -267,7 +291,7 @@ export function SettingsPage({ account, user, profiles, repositories, keeping }:
                     run(profiles.refresh());
                   }}
                 >
-                  {onGitHub ? 'Sync now' : 'Refresh'}
+                  {onGitHub || inFolder ? 'Sync now' : 'Refresh'}
                 </button>
               </div>
               <div class="setting-row">
@@ -286,11 +310,59 @@ export function SettingsPage({ account, user, profiles, repositories, keeping }:
                   {onGitHub ? 'Change repository…' : 'Use a GitHub repository…'}
                 </button>
               </div>
-              {onGitHub && (
+              <div class="setting-row">
+                <div class="setting-text">
+                  <strong>{inFolder ? 'Use another folder' : 'Keep profiles in a folder on this computer'}</strong>
+                  {profiles.foldersSupported ? (
+                    <>
+                      <span class="muted small">
+                        Profiles are files in a folder you pick, which other tools can read and change. The browser asks
+                        again on each visit before Repotted uses it.
+                      </span>
+                      {!inFolder && count > 0 && (
+                        <label class="check small">
+                          <input
+                            type="checkbox"
+                            checked={addToFolder}
+                            onChange={(event) => {
+                              setAddToFolder(event.currentTarget.checked);
+                            }}
+                          />
+                          <span>
+                            Add the {count === 1 ? 'profile' : `${count} profiles`} from{' '}
+                            {source.kind === 'browser' ? 'this browser' : source.repository}
+                          </span>
+                        </label>
+                      )}
+                    </>
+                  ) : (
+                    <span class="muted small">
+                      This browser can't give a site a folder. Chrome, Edge, and other Chromium browsers can.
+                    </span>
+                  )}
+                </div>
+                {profiles.foldersSupported && (
+                  <button
+                    class="button button-quiet"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      run(profiles.useFolder(addToFolder && !inFolder));
+                    }}
+                  >
+                    {inFolder ? 'Change folder…' : 'Choose a folder…'}
+                  </button>
+                )}
+              </div>
+              {(onGitHub || inFolder) && (
                 <div class="setting-row">
                   <div class="setting-text">
                     <strong>Keep profiles in this browser</strong>
-                    <span class="muted small">The repository keeps every profile it has.</span>
+                    <span class="muted small">
+                      {onGitHub
+                        ? 'The repository keeps every profile it has.'
+                        : 'The folder keeps every profile it has.'}
+                    </span>
                   </div>
                   <button
                     class="button button-quiet"

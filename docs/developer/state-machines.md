@@ -202,23 +202,43 @@ saved as `profiles-source` in the browser's
 [preferences](web-app.md#the-app), and the sync state the pages show. Every
 event below waits its turn in one queue.
 
-| State      | Event                                   | Next                                                                                                                        |
-| ---------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| In browser | Refresh, or the app opens               | The folder is listed.                                                                                                       |
-| On GitHub  | Sync, or the app opens                  | Syncing, then listed.                                                                                                       |
-| Syncing    | It records                              | In sync, or conflicts when any file changed on both sides.                                                                  |
-| Syncing    | It fails                                | Not synced, with why; the working copy is listed as it is.                                                                  |
-| Syncing    | GitHub answers 401                      | Not synced, and the account is signed out.                                                                                  |
-| Conflicts  | Keep mine or Use GitHub's               | Syncing, with `prefer` for the files in conflict only.                                                                      |
-| Any        | Use a repository, from the connect form | Connecting: profiles kept now are copied into the repository's working copy if asked, skipping names it has, then it syncs. |
-| Connecting | The sync records                        | On GitHub, saved, with the working copy listed.                                                                             |
-| Connecting | The name isn't `owner/name`             | As before, with why; GitHub isn't asked.                                                                                    |
-| Connecting | GitHub answers 401                      | As for a failed sync, and the account is signed out.                                                                        |
-| Connecting | The sync fails                          | As before, with why. A working copy that never synced is removed, and one that had loses only what was copied in.           |
-| On GitHub  | Use this browser                        | In browser, saved; the repository and its working copy keep what they have.                                                 |
+| State                  | Event                                                                               | Next                                                                                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| In browser             | Refresh, or the app opens                                                           | The folder is listed.                                                                                                                         |
+| On GitHub              | Sync, or the app opens                                                              | Syncing, then listed.                                                                                                                         |
+| Syncing                | It records                                                                          | In sync, or conflicts when any file changed on both sides.                                                                                    |
+| Syncing                | It fails                                                                            | Not synced, with why; the working copy is listed as it is.                                                                                    |
+| Syncing                | GitHub answers 401                                                                  | Not synced, and the account is signed out.                                                                                                    |
+| Conflicts              | Keep mine or Use GitHub's                                                           | Syncing, with `prefer` for the files in conflict only.                                                                                        |
+| Any                    | Use a repository, from the connect form                                             | Connecting: profiles kept now are copied into the repository's working copy if asked, skipping names it has, then it syncs.                   |
+| Connecting             | The sync records                                                                    | On GitHub, saved, with the working copy listed.                                                                                               |
+| Connecting             | The name isn't `owner/name`                                                         | As before, with why; GitHub isn't asked.                                                                                                      |
+| Connecting             | GitHub answers 401                                                                  | As for a failed sync, and the account is signed out.                                                                                          |
+| Connecting             | The sync fails                                                                      | As before, with why. A working copy that never synced is removed, and one that had loses only what was copied in.                             |
+| On GitHub              | Use this browser                                                                    | In browser, saved; the repository and its working copy keep what they have.                                                                   |
+| Any                    | **Choose a folder…** in Settings, in a browser that can give a site a folder        | Picking: the browser's own picker shows. Unsaved changes refuse it first, with why.                                                           |
+| Picking                | No folder is picked                                                                 | As before.                                                                                                                                    |
+| Picking                | A folder is picked                                                                  | Connecting to it, in a working copy made ready apart: profiles kept now are copied in if asked, skipping names the folder has, then it syncs. |
+| Connecting to a folder | The sync records                                                                    | In a folder, saved, with the folder remembered in place of any other and the working copy put in place and listed.                            |
+| Connecting to a folder | The folder can't be read or written                                                 | As before, with why, the profiles kept before untouched, and a folder used before still the one remembered.                                   |
+| In a folder            | Sync, a save, a new profile, a deletion, or the app opens, with the browser's leave | Syncing with the folder, then listed. A profile changed on one side goes to the other; one changed on both is a conflict.                     |
+| In a folder            | The same, on a later visit, before the browser's leave is given again               | Not synced, needing access: the working copy is listed as the last sync left it.                                                              |
+| Needing access         | **Allow access**, and the user agrees                                               | Syncing.                                                                                                                                      |
+| Needing access         | **Allow access**, and the user refuses                                              | Needing access still.                                                                                                                         |
+| In a folder            | The browser no longer has the folder                                                | Not synced, with word to choose it again in Settings.                                                                                         |
+| Syncing with a folder  | It fails partway                                                                    | Not synced, with why. What was settled before the failure stays settled; the next sync takes the folder afresh from the browser.              |
+| Conflicts, in a folder | Keep mine or Use the folder's                                                       | Syncing, with that side kept for the files in conflict only.                                                                                  |
+| In a folder            | Use this browser, or a repository connects                                          | In browser or On GitHub, saved, and the folder forgotten. The folder keeps every profile it has.                                              |
 
 A profile open when the list is read again shows its file as it is then, and
 closes when the file is gone.
+
+A folder on the computer syncs through `syncLocalFolder`
+(`packages/web/src/app/local-folder.ts`), which compares the working copy,
+the folder, and its own record of what the two last agreed on, kept in the
+working copy. A first sync, with no record, deletes nothing on either side.
+Only profile files sync: a hidden file or folder, or a file of another kind,
+is never read, written, or deleted.
 
 A repository that is remembered while its working copy is gone, as after the
 browser's storage was cleared, syncs as a first sync. Why the last connect

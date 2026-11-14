@@ -5,6 +5,7 @@ import { browserFiles, keepFiles } from './app/kept-files.js';
 import { browserPreferences } from './app/preferences.js';
 import { Router } from './app/router.js';
 import { sessionGitHub } from './engine/github.js';
+import { browserFolders } from './engine/local-folders.js';
 import { Session } from './session.js';
 import { App } from './views/app.js';
 import { run } from './views/run.js';
@@ -35,6 +36,12 @@ render(
     preferences={browserPreferences(() => localStorage)}
     router={new Router(location, history, window)}
     keeping={keeping}
+    folders={browserFolders(
+      () => indexedDB,
+      // Undefined outside Chromium browsers, which is how the app knows to offer no folder.
+      () => ('showDirectoryPicker' in window ? window.showDirectoryPicker : undefined),
+      window,
+    )}
   />,
   document.body,
 );
