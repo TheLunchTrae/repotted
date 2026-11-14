@@ -12,7 +12,8 @@ and GitHub Enterprise Cloud, in
 and GitHub's docs. When GitHub adds a setting, add it to
 `schema.ts`, the adapter for its section, `permissions.ts` when it needs a
 permission other than Administration, the web app's
-`packages/web/src/app/setting-fields.ts`, and this page.
+`packages/web/src/app/setting-fields.ts` (or, for a setting the app leaves to
+the YAML, the list of those in its `profile-editor.test.ts`), and this page.
 
 ## How a setting is wired
 

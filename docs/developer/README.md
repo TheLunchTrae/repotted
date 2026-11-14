@@ -36,4 +36,4 @@ use Repotted, see the [user guide](../user/README.md).
 - `.config/mise/`: the pinned tools, the tasks, and the lockfile.
 - `.github/workflows/`: Quality, the gate on every pull request; Release
   CLI, which publishes the CLI; and Deploy Web, which deploys the web app.
-  All three run the gate through `.github/actions/gate`.
+  All three run the gate, or a task of it, through `.github/actions/gate`.

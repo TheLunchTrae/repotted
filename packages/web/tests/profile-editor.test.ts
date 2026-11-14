@@ -1,3 +1,4 @@
+import { profileFileJsonSchema } from '@repotted/core';
 import { afterEach, expect, test } from 'vitest';
 
 import type { EntryList, EntryRow } from '../src/app/entry-edits.js';
@@ -322,6 +323,52 @@ test('every setting the editor offers, with every choice it gives, is one the en
       expect(row(editor, item.path.join('.')), item.path.join('.')).toMatchObject({ value, unsaved: true });
     }
   }
+});
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Every setting under a node of the profile's JSON Schema, by path: the properties that have none of their own. */
+function schemaSettings(node: unknown, path: string): string[] {
+  const branches = isRecord(node) ? [node, ...['anyOf', 'oneOf', 'allOf'].flatMap((key) => node[key] ?? [])] : [];
+  const properties = branches.flatMap((branch) =>
+    isRecord(branch) && isRecord(branch['properties']) ? Object.entries(branch['properties']) : [],
+  );
+  return properties.length === 0
+    ? [path]
+    : properties.flatMap(([key, value]) => schemaSettings(value, `${path}.${key}`));
+}
+
+test('every setting a profile can hold is one the editor offers, or one it leaves to the YAML', () => {
+  const schema = profileFileJsonSchema()['properties'];
+  const held = new Set(
+    ['repository', 'merge', 'security', 'actions', 'pages'].flatMap((section) =>
+      schemaSettings(isRecord(schema) ? schema[section] : undefined, section),
+    ),
+  );
+  const offered = new Set(
+    settingSections.flatMap((section) =>
+      section.groups.flatMap((group) => group.fields.map((item) => item.path.join('.'))),
+    ),
+  );
+
+  // The editor offers a setting by its own path, or as a part of one it shows whole, such as a feature's status.
+  const offers = (setting: string): boolean =>
+    [...offered].some((field) => setting === field || setting.startsWith(`${field}.`));
+
+  // A setting new to the schema fails here until the editor offers it or this list names it.
+  expect([...held].filter((setting) => !offers(setting)).sort()).toEqual([
+    'actions.oidc_customization_sub.include_claim_keys',
+    'repository.topics',
+    'security.code_quality_setup.languages',
+    'security.code_scanning_default_setup.languages',
+    'security.dependabot_runner_settings.runner_labels',
+    'security.security_and_analysis.secret_scanning_delegated_bypass_options.reviewers',
+  ]);
+  expect(
+    [...offered].filter((field) => ![...held].some((setting) => setting === field || setting.startsWith(`${field}.`))),
+  ).toEqual([]);
 });
 
 const entries = `rulesets:

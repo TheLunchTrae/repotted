@@ -22,9 +22,10 @@ everything else runs mise's newer Node, and it fails when `engines` names
 another major version. A local run checks the same Node as CI.
 
 `mise run standards:check` is the gate that CI runs on every pull request.
-Quality, Release CLI, and Deploy Web run it through one composite action,
+Quality and Release CLI run it through one composite action,
 `.github/actions/gate`, which installs the pinned tools first; the task graph
-installs the locked dependencies where a task first needs them. Only Quality
+installs the locked dependencies where a task first needs them. Deploy Web
+runs `ts:web:check` alone through the same action. Only Quality
 caches mise's tools; a release builds from the locked, checksummed downloads
 alone.
 [AGENTS.md](../../AGENTS.md) lists the narrower checks to run for each kind of

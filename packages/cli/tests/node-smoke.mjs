@@ -4,7 +4,7 @@
 // `pnpm run build`.
 import { spawn, spawnSync } from 'node:child_process';
 import { log } from 'node:console';
-import { execPath, version as nodeVersion } from 'node:process';
+import { env, execPath, version as nodeVersion } from 'node:process';
 import { clearTimeout, setTimeout } from 'node:timers';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -15,6 +15,17 @@ const examples = fileURLToPath(new URL('../../../examples/', import.meta.url));
 const version = spawnSync(command, [...prefix, '--version'], { encoding: 'utf8' });
 if (version.status !== 0 || !/^\d+\.\d+\.\d+/u.test(version.stdout)) {
   throw new Error(`repotted --version failed: ${version.stderr}`);
+}
+
+// A signed-out status reads the keychain, so the native module that reads it
+// has to load on this platform, whether or not a keychain answers.
+const status = spawnSync(command, [...prefix, 'status', '--json'], {
+  encoding: 'utf8',
+  env: { ...env, GITHUB_TOKEN: '', GH_TOKEN: '', GH_CONFIG_DIR: fileURLToPath(new URL('./no-gh/', import.meta.url)) },
+});
+const reported = JSON.parse(status.stdout);
+if (typeof reported !== 'object' || /cannot find|failed to load|native binding/iu.test(status.stdout)) {
+  throw new Error(`repotted status --json could not load the keychain module: ${status.stdout}${status.stderr}`);
 }
 
 const server = spawn(command, [...prefix, 'mcp', '--read-only'], { cwd: examples, stdio: ['pipe', 'pipe', 'inherit'] });

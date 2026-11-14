@@ -21,8 +21,7 @@ const { outputFiles } = await build({
   write: false,
 });
 
-// The contract tests and the smoke checks can run the bundle while another
-// task builds it, so the new bundle replaces the old one in a single rename
+// The smoke checks can run the bundle while another task builds it, so the new bundle replaces the old one in a single rename
 // rather than being written over it.
 const [bundle, ...rest] = outputFiles;
 if (bundle === undefined || rest.length > 0) {
