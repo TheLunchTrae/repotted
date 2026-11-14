@@ -1,6 +1,7 @@
 import type { JSX, RefObject } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
+import type { Apply } from '../app/apply.js';
 import type { ComparedProfile } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
 import type { Profiles } from '../app/profiles.js';
@@ -65,9 +66,28 @@ interface PanelProps {
   readonly profiles: Profiles;
   readonly onCapture: (repository: string) => void;
   readonly onCompare: (repository: string, profile: ComparedProfile) => void;
+  readonly apply: Apply;
+  /** Starts an apply of the profile to the repository, or picks up the unfinished one when no profile is given. */
+  readonly onApply: (repository: string, profile: ComparedProfile | undefined) => void;
 }
 
-function RepositoryPanel({ repository, profiles, onCapture, onCompare }: PanelProps): JSX.Element {
+function RepositoryPanel({ repository, profiles, apply, onCapture, onCompare, onApply }: PanelProps): JSX.Element {
+  // Whether an apply here was left unfinished, which the browser keeps.
+  const [unfinished, setUnfinished] = useState(false);
+  useEffect(() => {
+    let current = true;
+    setUnfinished(false);
+    run(
+      apply.unfinished(repository.full_name).then((found) => {
+        if (current) {
+          setUnfinished(found);
+        }
+      }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [apply, repository.full_name]);
   // A profile that can't be read has nothing to compare with.
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const [picked, setPicked] = useState<string | undefined>(undefined);
@@ -101,6 +121,22 @@ function RepositoryPanel({ repository, profiles, onCapture, onCompare }: PanelPr
       >
         Capture as a new profile
       </button>
+      {unfinished && (
+        <div class="notice notice-drift">
+          <p>An apply here is not finished.</p>
+          <p class="notice-actions">
+            <button
+              class="button button-small"
+              type="button"
+              onClick={() => {
+                onApply(repository.full_name, undefined);
+              }}
+            >
+              Resume
+            </button>
+          </p>
+        </div>
+      )}
       <form
         class="panel-form"
         onSubmit={(event) => {
@@ -137,9 +173,26 @@ function RepositoryPanel({ repository, profiles, onCapture, onCompare }: PanelPr
                 </option>
               ))}
             </select>
-            <button class="button button-primary" type="submit">
-              Compare
-            </button>
+            <div class="form-actions">
+              <button class="button button-primary" type="submit">
+                Compare
+              </button>
+              <button
+                class="button"
+                type="button"
+                onClick={() => {
+                  if (profile !== undefined) {
+                    onApply(repository.full_name, {
+                      file: profile.file,
+                      name: nameOf(profile),
+                      folder: profiles.folder.value,
+                    });
+                  }
+                }}
+              >
+                Apply
+              </button>
+            </div>
             {profile !== undefined && profiles.unsaved.value.has(profile.file) && (
               <p class="muted small">It compares the profile as saved, without your unsaved changes.</p>
             )}
@@ -177,9 +230,18 @@ interface RepositoriesProps {
   readonly onCapture: (repository: string) => void;
   /** Compares this repository, `owner/name`, with a profile. */
   readonly onCompare: PanelProps['onCompare'];
+  readonly apply: Apply;
+  readonly onApply: PanelProps['onApply'];
 }
 
-export function RepositoriesPage({ repositories, profiles, onCapture, onCompare }: RepositoriesProps): JSX.Element {
+export function RepositoriesPage({
+  repositories,
+  profiles,
+  apply,
+  onCapture,
+  onCompare,
+  onApply,
+}: RepositoriesProps): JSX.Element {
   const search = useSearchKey();
   const list = repositories.list.value;
   const loading = repositories.loading.value;
@@ -328,7 +390,14 @@ export function RepositoriesPage({ repositories, profiles, onCapture, onCompare 
         )}
       </section>
       {selected !== undefined && (
-        <RepositoryPanel repository={selected} profiles={profiles} onCapture={onCapture} onCompare={onCompare} />
+        <RepositoryPanel
+          repository={selected}
+          profiles={profiles}
+          apply={apply}
+          onCapture={onCapture}
+          onCompare={onCompare}
+          onApply={onApply}
+        />
       )}
     </div>
   );

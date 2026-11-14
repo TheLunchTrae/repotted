@@ -473,6 +473,36 @@ the editor's unsaved changes. One comparison counts at a time.
 | Any                | The compare page is left                                        | Idle. One still being made shows nothing when it lands.                                                                                    |
 | Idle               | The compare page is opened by its address                       | Idle, with how to start a comparison.                                                                                                      |
 
+## Web apply
+
+`Apply` (`packages/web/src/app/apply.ts`) is one apply of a profile to one
+repository, kept as the engine's [staged apply](#staged-apply) in the
+browser's files under `/staged/<owner>/<name>.yaml`. It writes to GitHub
+only in Applying, with the engine's `applyPlan` over the plan last reviewed,
+as [Plan and apply](#plan-and-apply) describes. One piece of work counts at a
+time, so work that lands late changes nothing.
+
+| State            | Event                                                    | Next                                                                                                                                                 |
+| ---------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idle             | **Apply** on a repository's panel, with a profile picked | Reviewing, with a staged apply started from the profile. Unfinished when the repository already has one.                                             |
+| Idle             | **Resume** on a repository with an unfinished apply      | Reviewing, the apply as it was left.                                                                                                                 |
+| Unfinished       | Pick it up                                               | Reviewing, the apply as it was left, whatever profile it started from.                                                                               |
+| Unfinished       | Start over                                               | Reviewing, with the old apply discarded and one started from the profile picked.                                                                     |
+| Reviewing        | The plan and the access land                             | Reviewed: the changes by section, each with what leaves it out, the locked ones with what they need, what is left out, the drafts, and the warnings. |
+| Reviewing        | The profile can't be read, or GitHub can't               | Failed, with why. A lost sign-in also goes to the sign-in page. An apply whose profile couldn't be read was never started.                           |
+| Failed           | Review again                                             | Reviewing; from the start when the apply was never started.                                                                                          |
+| Reviewed         | Leave out, or Put back                                   | Reviewing, with the staged apply's exclusions changed. The profile keeps the change either way.                                                      |
+| Reviewed         | A change GitHub would refuse is in the review            | Reviewed, with **Apply** off: the apply would stop there and leave the changes after it unwritten.                                                   |
+| Reviewed         | Review again                                             | Reviewing, with the profile and GitHub read again.                                                                                                   |
+| Reviewed         | Apply, then Apply now                                    | Applying. Cancel in the question goes back with nothing written.                                                                                     |
+| Applying         | The repository changed since the review                  | Reviewed again, with nothing written and a notice that says so.                                                                                      |
+| Applying         | GitHub refuses a change partway                          | Reviewed again, showing what is left, with a notice naming the change and how many before it stay written. The staged apply stays to pick up.        |
+| Applying         | Every change is written                                  | Applied, with the count, and the staged apply removed.                                                                                               |
+| Applying         | The run fails otherwise, as with no network              | Failed, with why. The staged apply stays.                                                                                                            |
+| Any but Applying | Discard apply                                            | Idle, with the staged apply removed. The profile and GitHub stay as they are.                                                                        |
+| Any but Applying | The apply page is left                                   | Idle. The staged apply stays, and its repository's panel says an apply there is not finished.                                                        |
+| Applying         | The apply page is left                                   | Applying still: the run goes on, and the page shows how it ended when it is opened again in the same visit.                                          |
+
 ## Web new profile
 
 `Profiles.create` (`packages/web/src/app/profiles.ts`) makes a profile for

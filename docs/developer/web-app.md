@@ -173,6 +173,12 @@ changed elsewhere. `views/entries.tsx` only draws them.
 `createPlan` over the resolved profile, shown as rows by section, with
 `lockChanges` marking what the account's access can't change.
 
+`apply.ts` applies a profile to a repository through the engine's staged
+apply, a file the browser keeps, so that leaving changes out and picking an
+apply up later are the engine's own. It reviews with `planStagedApply` and
+writes with `applyPlan`, which plans again and refuses when the repository
+has changed.
+
 `action-pattern-checks.ts` asks GitHub what each allowed action pattern
 matches, with the engine's `checkActionPatterns`, and keeps the answers by
 pattern text. `action-search.ts` searches GitHub for repositories to add to
