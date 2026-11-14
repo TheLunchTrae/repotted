@@ -1,8 +1,11 @@
+import type { GitHub } from '@repotted/core';
 import { expect, test, vi } from 'vitest';
 
+import { FakeGitRepository } from '../../core/tests/fake-git.js';
 import { answered, type FakeAccount, FakeGitHub } from '../../core/tests/fake-github.js';
 import type { Preferences } from '../src/app/preferences.js';
-import { Repositories } from '../src/app/repositories.js';
+import { Repositories, type Repository } from '../src/app/repositories.js';
+import { preferencesFile, SharedPreferences } from '../src/app/shared-preferences.js';
 
 const user = { login: 'Trae', name: null };
 
@@ -40,8 +43,13 @@ function names(repositories: Repositories): string[] {
   ]);
 }
 
+/** Preferences kept in this browser, as when profiles are not kept in a repository. */
+function inBrowser(github: GitHub, preferences: Preferences = memory()): SharedPreferences {
+  return new SharedPreferences(github, preferences, () => undefined);
+}
+
 async function opened(github: FakeGitHub, preferences: Preferences = memory()): Promise<Repositories> {
-  const repositories = new Repositories(github, user, preferences, () => undefined);
+  const repositories = new Repositories(github, user, inBrowser(github, preferences), () => undefined);
   await repositories.refresh();
   return repositories;
 }
@@ -144,7 +152,7 @@ test('a refused sign-in is reported as signed out, not as an error on the page',
   const github = new FakeGitHub({ account: account(everyone) });
   github.fail('GET /user/installations', answered(401, 'Bad credentials'));
   const signedOut = vi.fn();
-  const repositories = new Repositories(github, user, memory(), signedOut);
+  const repositories = new Repositories(github, user, inBrowser(github), signedOut);
 
   await repositories.refresh();
 
@@ -155,7 +163,7 @@ test('a refused sign-in is reported as signed out, not as an error on the page',
 test('a refresh asked for while one runs starts no second read', async () => {
   const held = Promise.withResolvers<unknown>();
   const request = vi.fn<FakeGitHub['request']>(() => held.promise);
-  const repositories = new Repositories({ request }, user, memory(), () => undefined);
+  const repositories = new Repositories({ request }, user, inBrowser({ request }), () => undefined);
 
   const first = repositories.refresh();
   await repositories.refresh();
@@ -185,7 +193,7 @@ test('a refresh keeps the list in use while it reads, and the selection when the
 
 test('ticked repositories stay ticked through a search, and one the account no longer lists drops out', async () => {
   const github = new FakeGitHub({ account: account(everyone) });
-  const repositories = new Repositories(github, user, memory(), () => undefined);
+  const repositories = new Repositories(github, user, inBrowser(github), () => undefined);
   await repositories.refresh();
   const all = repositories.list.value?.repositories ?? [];
   const named = (name: string): (typeof all)[number] => {
@@ -213,4 +221,127 @@ test('ticked repositories stay ticked through a search, and one the account no l
 
   repositories.clearTicks();
   expect(repositories.ticked.value).toEqual([]);
+});
+
+function listed(repositories: Repositories, name: string): Repository {
+  const found = repositories.list.value?.repositories.find((repository) => repository.full_name === name);
+  if (found === undefined) {
+    throw new Error(`The list has no ${name}.`);
+  }
+  return found;
+}
+
+test('a hidden repository leaves the list, unticked and out of the selection, until Undo or Show hidden', async () => {
+  const preferences = memory();
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
+  const web = listed(repositories, 'acme/web');
+  repositories.select(web);
+  repositories.tick(web, true);
+
+  repositories.hide([web]);
+
+  expect(names(repositories)).toEqual(['trae:', 'trae/dotfiles', 'Acme:', 'Acme/api', 'zeta:', 'zeta/site']);
+  expect(preferences.kept['hidden-repositories']).toEqual(['acme/web']);
+  expect(repositories.selected.value).toBeUndefined();
+  expect(repositories.ticked.value).toEqual([]);
+  expect(repositories.hiddenCount.value).toBe(1);
+  expect(repositories.countLabel.value).toBe('3 of 4');
+  expect(repositories.justHidden.value).toEqual(['acme/web']);
+
+  repositories.setShowHidden(true);
+  expect(names(repositories)).toContain('acme/web');
+  expect(repositories.isHidden(web)).toBe(true);
+  expect(repositories.countLabel.value).toBe('All 4');
+  expect(repositories.justHidden.value).toEqual([]);
+
+  repositories.setShowHidden(false);
+  repositories.unhide([web]);
+  expect(preferences.kept['hidden-repositories']).toBeUndefined();
+  repositories.hide([web]);
+  repositories.undoHide();
+  expect(names(repositories)).toContain('acme/web');
+  expect(preferences.kept['hidden-repositories']).toBeUndefined();
+});
+
+test('hidden repositories stay hidden across visits in any case, and one out of the list stays hidden', async () => {
+  const preferences = memory({ 'hidden-repositories': ['ACME/WEB', 'gone/app'] });
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
+
+  expect(names(repositories)).not.toContain('acme/web');
+
+  repositories.unhide([listed(repositories, 'acme/web')]);
+  expect(preferences.kept['hidden-repositories']).toEqual(['gone/app']);
+});
+
+test('says when every repository of the shown owners is hidden, and when only hidden ones match a search', async () => {
+  const preferences = memory({ 'hidden-repositories': ['acme/api', 'acme/web'], 'hidden-repository-owners': ['trae'] });
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
+
+  repositories.search.value = 'web';
+  expect(repositories.groups.value).toEqual([]);
+  expect(repositories.hiddenMatches.value).toBe(1);
+  expect(repositories.everyRepositoryHidden.value).toBe(false);
+
+  repositories.search.value = '';
+  repositories.setOwnerShown('zeta', false);
+  expect(repositories.hiddenCount.value).toBe(2);
+  expect(repositories.everyRepositoryHidden.value).toBe(true);
+  expect(repositories.everyOwnerHidden.value).toBe(false);
+  expect(repositories.countLabel.value).toBe('0 of 4');
+
+  repositories.setShowHidden(true);
+  expect(repositories.everyRepositoryHidden.value).toBe(false);
+  expect(repositories.hiddenMatches.value).toBe(0);
+});
+
+test('Undo shows only what the hide took out of the list, and ticks again what it unticked', async () => {
+  const preferences = memory({ 'hidden-repositories': ['acme/web'] });
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
+  repositories.setShowHidden(true);
+  const web = listed(repositories, 'acme/web');
+  const site = listed(repositories, 'zeta/site');
+  repositories.tick(web, true);
+  repositories.tick(site, true);
+
+  repositories.hide([web, site]);
+  expect(repositories.justHidden.value).toEqual(['zeta/site']);
+  expect(repositories.ticked.value).toEqual([]);
+
+  repositories.undoHide();
+  expect(preferences.kept['hidden-repositories']).toEqual(['acme/web']);
+  expect(repositories.ticked.value.map((repository) => repository.full_name).sort()).toEqual(['acme/web', 'zeta/site']);
+});
+
+test('with profiles in a repository, the list hides what its file holds and a hide is committed there', async () => {
+  const config = new FakeGitRepository();
+  const file = `profiles/${preferencesFile}`;
+  config.write({ [file]: '{ "hidden-repositories": ["acme/web"], "hidden-repository-owners": ["zeta"] }' });
+  const list = new FakeGitHub({ account: account(everyone) });
+  const github: GitHub = {
+    request: (method, path, body) =>
+      path.startsWith('/repos/lunch/config/') ? config.request(method, path, body) : list.request(method, path, body),
+  };
+  const browser = memory({ 'hidden-repositories': ['trae/dotfiles'] });
+  const preferences = new SharedPreferences(github, browser, () => undefined);
+  const reading = preferences.use({ kind: 'repository', repository: 'lunch/config', path: 'profiles' });
+  const repositories = new Repositories(github, user, preferences, () => undefined);
+
+  await repositories.refresh();
+  await reading;
+  expect(names(repositories)).toEqual(['trae:', 'trae/dotfiles', 'Acme:', 'Acme/api']);
+
+  // A file saved elsewhere arrives with the next refresh.
+  config.write({ [file]: '{ "hidden-repositories": ["acme/web", "acme/api"], "hidden-repository-owners": ["zeta"] }' });
+  await repositories.refresh();
+  expect(names(repositories)).toEqual(['trae:', 'trae/dotfiles']);
+
+  repositories.hide([listed(repositories, 'trae/dotfiles')]);
+  repositories.setOwnerShown('zeta', true);
+  await vi.waitFor(() => {
+    expect(JSON.parse(config.files()[file] ?? '{}')).toEqual({
+      'hidden-repositories': ['acme/web', 'acme/api', 'trae/dotfiles'],
+    });
+  });
+  expect(names(repositories)).toEqual(['zeta:', 'zeta/site']);
+  expect(browser.kept['hidden-repositories']).toEqual(['trae/dotfiles']);
 });

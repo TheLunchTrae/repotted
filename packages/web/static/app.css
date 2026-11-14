@@ -1126,6 +1126,23 @@ select.field {
   min-width: 0;
 }
 
+/* A hidden repository, shown while Show hidden is on. */
+.ticked-row-hidden .row-name {
+  color: var(--muted);
+}
+
+.segments .count {
+  display: inline;
+  padding: 0;
+  font-weight: 400;
+}
+
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .tick {
   width: 18px;
   height: 18px;

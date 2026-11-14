@@ -3,7 +3,7 @@ import { type GitHub, listRepositories } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { isSignedOut, type User } from './account.js';
-import type { Preferences } from './preferences.js';
+import type { SharedPreferences } from './shared-preferences.js';
 
 type RepositoryList = Awaited<ReturnType<typeof listRepositories>>;
 export type Repository = RepositoryList['repositories'][number];
@@ -24,7 +24,8 @@ export interface OwnerGroup {
 }
 
 const hiddenOwnersKey = 'hidden-repository-owners';
-const ownerNames = z.array(z.string());
+const hiddenRepositoriesKey = 'hidden-repositories';
+const names = z.array(z.string());
 
 function ownerOf(repository: Repository): string {
   return repository.full_name.split('/')[0] ?? repository.full_name;
@@ -34,6 +35,16 @@ function sameOwner(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
 }
 
+function namesIn(value: unknown): readonly string[] {
+  const parsed = names.safeParse(value);
+  return parsed.success ? parsed.data : [];
+}
+
+/** The list, or undefined to delete the key, when it holds none. */
+function kept(list: readonly string[]): readonly string[] | undefined {
+  return list.length > 0 ? list : undefined;
+}
+
 /** The repositories page: the list, whose repositories show, the search, and the selection. */
 export class Repositories {
   readonly loading = signal(false);
@@ -41,22 +52,35 @@ export class Repositories {
   /** Undefined until the first list arrives. */
   readonly list = signal<RepositoryList | undefined>(undefined);
   readonly search = signal('');
+  /** Where the hidden owners and repositories are kept, and why they couldn't be read or saved. */
+  readonly preferences: SharedPreferences;
+  /** Whether the hidden repositories show, marked, among the rest. */
+  readonly showHidden = signal(false);
+  /** The repositories the last hide took out of the list, which Undo brings back. */
+  readonly justHidden = signal<readonly string[]>([]);
+  /** Of those, the ones that were ticked, which Undo ticks again. */
+  #justUnticked: readonly string[] = [];
 
   readonly #github: GitHub;
   readonly #user: User;
-  readonly #preferences: Preferences;
   readonly #onSignedOut: () => void;
-  readonly #hiddenOwners = signal<readonly string[]>([]);
+  readonly #hiddenOwners = computed(() => namesIn(this.preferences.read(hiddenOwnersKey)));
+  /** Hidden repositories by `owner/name`, kept lowercase, since GitHub matches names in any case. */
+  readonly #hiddenNames = computed<ReadonlySet<string>>(
+    () => new Set(namesIn(this.preferences.read(hiddenRepositoriesKey)).map((name) => name.toLowerCase())),
+  );
   readonly #selectedName = signal<string | undefined>(undefined);
   readonly #tickedNames = signal<ReadonlySet<string>>(new Set());
 
-  constructor(github: GitHub, user: User, preferences: Preferences, onSignedOut: () => void) {
+  constructor(github: GitHub, user: User, preferences: SharedPreferences, onSignedOut: () => void) {
     this.#github = github;
     this.#user = user;
-    this.#preferences = preferences;
+    this.preferences = preferences;
     this.#onSignedOut = onSignedOut;
-    const hidden = ownerNames.safeParse(preferences.read(hiddenOwnersKey));
-    this.#hiddenOwners.value = hidden.success ? hidden.data : [];
+  }
+
+  isHidden(repository: Repository): boolean {
+    return this.#hiddenNames.value.has(repository.full_name.toLowerCase());
   }
 
   /** Every owner in the list, the signed-in account first, then by name. An owner new to the list shows. */
@@ -83,24 +107,59 @@ export class Repositories {
       );
   });
 
-  /** The repositories that show, by owner: those of owners not hidden whose name holds the search. */
+  /** The repositories of the owners not hidden, in the list's order. */
+  readonly #ownersRepositories = computed<readonly Repository[]>(() => {
+    const shown = this.owners.value.filter((owner) => owner.shown);
+    return (this.list.value?.repositories ?? []).filter((repository) =>
+      shown.some((owner) => sameOwner(owner.owner, ownerOf(repository))),
+    );
+  });
+
+  /** How many of the shown owners' repositories are hidden. */
+  readonly hiddenCount = computed(
+    () => this.#ownersRepositories.value.filter((repository) => this.isHidden(repository)).length,
+  );
+
+  /** Whether hidden repositories leave the list short: some are hidden and they don't show. */
+  readonly #hidingRepositories = computed(() => this.hiddenCount.value > 0 && !this.showHidden.value);
+
+  /**
+   * The repositories that show, by owner: those of owners not hidden whose
+   * name holds the search, without the hidden ones unless they show.
+   */
   readonly groups = computed<readonly OwnerGroup[]>(() => {
     const words = this.search.value.trim().toLowerCase();
-    const repositories = this.list.value?.repositories ?? [];
+    const repositories = this.#ownersRepositories.value.filter(
+      (repository) =>
+        repository.full_name.toLowerCase().includes(words) && (this.showHidden.value || !this.isHidden(repository)),
+    );
     return this.owners.value
       .filter((owner) => owner.shown)
       .map((owner) => ({
         owner: owner.owner,
         personal: owner.personal,
-        repositories: repositories.filter(
-          (repository) =>
-            sameOwner(ownerOf(repository), owner.owner) && repository.full_name.toLowerCase().includes(words),
-        ),
+        repositories: repositories.filter((repository) => sameOwner(ownerOf(repository), owner.owner)),
       }))
       .filter((group) => group.repositories.length > 0);
   });
 
-  /** The selected repository, while it shows; a search or a hidden owner that takes it out of view clears it. */
+  /** How many hidden repositories hold the search while they don't show, which a search with no match names. */
+  readonly hiddenMatches = computed(() => {
+    if (this.showHidden.value) {
+      return 0;
+    }
+    const words = this.search.value.trim().toLowerCase();
+    return this.#ownersRepositories.value.filter(
+      (repository) => this.isHidden(repository) && repository.full_name.toLowerCase().includes(words),
+    ).length;
+  });
+
+  /** Whether the shown owners have repositories and every one of them is hidden. */
+  readonly everyRepositoryHidden = computed(
+    () => this.#hidingRepositories.value && this.hiddenCount.value === this.#ownersRepositories.value.length,
+  );
+
+  /** The selected repository, while it shows; a search or a hide that takes it out of view clears it. */
   readonly selected = computed<Repository | undefined>(() =>
     this.groups.value
       .flatMap((group) => group.repositories)
@@ -110,7 +169,7 @@ export class Repositories {
   /**
    * The ticked repositories the account still lists, in the list's order. One
    * a search or a hidden owner takes out of view stays ticked, since ticking
-   * across searches is how several are found.
+   * across searches is how several are found; hiding a repository unticks it.
    */
   readonly ticked = computed<readonly Repository[]>(() =>
     (this.list.value?.repositories ?? []).filter((repository) => this.#tickedNames.value.has(repository.full_name)),
@@ -134,22 +193,28 @@ export class Repositories {
     return shown.length > 1 ? `${shown.length} owners` : only.personal ? 'Personal' : only.owner;
   });
 
-  /** How many repositories the shown owners have, of all in the list. */
+  /** How many repositories show without a search, of all in the list. */
   readonly countLabel = computed(() => {
     const total = this.list.value?.repositories.length ?? 0;
-    const shown = this.owners.value.filter((owner) => owner.shown).reduce((sum, owner) => sum + owner.count, 0);
-    return this.ownersFiltered.value ? `${shown} of ${total}` : `All ${total}`;
+    const shown = this.#ownersRepositories.value.length - (this.#hidingRepositories.value ? this.hiddenCount.value : 0);
+    return shown === total ? `All ${total}` : `${shown} of ${total}`;
   });
 
-  /** Reads the list from GitHub. A refresh under way is left to finish; a failure keeps the list already shown. */
+  /**
+   * Reads the list from GitHub, and the hidden owners and repositories again,
+   * so the list shows once both are known. A refresh under way is left to
+   * finish; a failure keeps the list already shown.
+   */
   async refresh(): Promise<void> {
     if (this.loading.value) {
       return;
     }
     this.loading.value = true;
     this.error.value = undefined;
+    this.#clearJustHidden();
     try {
-      this.list.value = await listRepositories(this.#github);
+      const [list] = await Promise.all([listRepositories(this.#github), this.preferences.reload()]);
+      this.list.value = list;
     } catch (error) {
       if (isSignedOut(error)) {
         this.#onSignedOut();
@@ -163,6 +228,52 @@ export class Repositories {
 
   select(repository: Repository | undefined): void {
     this.#selectedName.value = repository?.full_name;
+    this.#clearJustHidden();
+  }
+
+  setShowHidden(shown: boolean): void {
+    this.showHidden.value = shown;
+    this.#clearJustHidden();
+  }
+
+  /**
+   * Hides these repositories from the list, unticks them, and keeps them for
+   * Undo. A hidden repository stays hidden when the list no longer has it,
+   * so it is still hidden if it returns.
+   */
+  hide(repositories: readonly Repository[]): void {
+    const hiding = repositories.filter((repository) => !this.isHidden(repository));
+    const adding = hiding.map((repository) => repository.full_name.toLowerCase());
+    this.preferences.update(hiddenRepositoriesKey, (current) => {
+      const hidden = namesIn(current);
+      const have = new Set(hidden.map((name) => name.toLowerCase()));
+      return kept([...hidden, ...adding.filter((name) => !have.has(name))]);
+    });
+    const ticked = new Set(this.#tickedNames.value);
+    for (const repository of repositories) {
+      ticked.delete(repository.full_name);
+    }
+    this.justHidden.value = hiding.map((repository) => repository.full_name);
+    this.#justUnticked = repositories
+      .map((repository) => repository.full_name)
+      .filter((name) => this.#tickedNames.value.has(name));
+    this.#tickedNames.value = ticked;
+  }
+
+  /** Shows these repositories in the list again. */
+  unhide(repositories: readonly Pick<Repository, 'full_name'>[]): void {
+    const showing = new Set(repositories.map((repository) => repository.full_name.toLowerCase()));
+    this.preferences.update(hiddenRepositoriesKey, (current) =>
+      kept(namesIn(current).filter((name) => !showing.has(name.toLowerCase()))),
+    );
+    this.#clearJustHidden();
+  }
+
+  /** Shows the repositories the last hide took out of the list again, ticked as they were. */
+  undoHide(): void {
+    const unticked = this.#justUnticked;
+    this.unhide(this.justHidden.value.map((full_name) => ({ full_name })));
+    this.#tickedNames.value = new Set([...this.#tickedNames.value, ...unticked]);
   }
 
   /** Ticks a repository for an apply to several, or unticks it. */
@@ -181,31 +292,32 @@ export class Repositories {
   }
 
   setOwnerShown(owner: string, shown: boolean): void {
-    this.#hide(this.owners.value.filter((item) => (sameOwner(item.owner, owner) ? !shown : !item.shown)));
+    this.preferences.update(hiddenOwnersKey, (current) => {
+      const others = namesIn(current).filter((name) => !sameOwner(name, owner));
+      return kept(shown ? others : [...others, owner]);
+    });
   }
 
+  /**
+   * Hides every owner of the list's but the signed-in account, and keeps
+   * hidden any owner that was hidden and is not in the list now, so it stays
+   * hidden when it returns.
+   */
   showOnlyPersonal(): void {
-    this.#hide(this.owners.value.filter((owner) => !owner.personal));
+    const listed = this.owners.value;
+    this.preferences.update(hiddenOwnersKey, (current) => {
+      const absent = namesIn(current).filter((name) => !listed.some((owner) => sameOwner(owner.owner, name)));
+      return kept([...absent, ...listed.filter((owner) => !owner.personal).map((owner) => owner.owner)]);
+    });
   }
 
   /** Shows every owner, including any that was hidden and is not in the list now. */
   showAllOwners(): void {
-    this.#save([]);
+    this.preferences.write(hiddenOwnersKey, undefined);
   }
 
-  /**
-   * Hides these owners of the list's, and keeps hidden any owner that was
-   * hidden and is not in the list now, so it stays hidden when it returns.
-   */
-  #hide(owners: readonly OwnerChoice[]): void {
-    const absent = this.#hiddenOwners.value.filter(
-      (name) => !this.owners.value.some((owner) => sameOwner(owner.owner, name)),
-    );
-    this.#save([...absent, ...owners.map((owner) => owner.owner)]);
-  }
-
-  #save(hidden: readonly string[]): void {
-    this.#hiddenOwners.value = hidden;
-    this.#preferences.write(hiddenOwnersKey, hidden.length > 0 ? hidden : undefined);
+  #clearJustHidden(): void {
+    this.justHidden.value = [];
+    this.#justUnticked = [];
   }
 }

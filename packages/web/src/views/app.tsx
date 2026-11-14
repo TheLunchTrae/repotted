@@ -13,6 +13,7 @@ import type { Preferences } from '../app/preferences.js';
 import { Profiles } from '../app/profiles.js';
 import { Repositories } from '../app/repositories.js';
 import type { Router } from '../app/router.js';
+import { SharedPreferences } from '../app/shared-preferences.js';
 import { ApplyPage } from './apply.js';
 import { BatchPage } from './batch.js';
 import { ComparePage } from './compare.js';
@@ -61,8 +62,12 @@ function SignedIn({
       account.refused();
     };
     const kept = new Profiles(github, preferences, refused, folders);
+    // The hidden repositories and owners follow the profiles: to their repository, or this browser. Using
+    // the profiles' place from the start means the first list shows what that place hides.
+    const shared = new SharedPreferences(github, preferences, refused);
+    run(shared.use(kept.source.value));
     return {
-      repositories: new Repositories(github, user, preferences, refused),
+      repositories: new Repositories(github, user, shared, refused),
       profiles: kept,
       comparison: new Comparison(github, refused),
       // An apply's edits saved to a profile take their turn among the profiles' syncs.
@@ -74,6 +79,10 @@ function SignedIn({
     run(repositories.refresh());
     run(profiles.refresh());
   }, [repositories, profiles]);
+  const source = profiles.source.value;
+  useEffect(() => {
+    run(repositories.preferences.use(source));
+  }, [repositories, source]);
   // The repository a new profile was asked to capture, from the repositories page.
   const [captureFrom, setCaptureFrom] = useState<string | undefined>(undefined);
   // The browser asks before a reload or a closed tab discards changes that aren't saved.

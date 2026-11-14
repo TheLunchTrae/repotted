@@ -126,31 +126,84 @@ asked about. A sign-in GitHub refuses mid-visit asks nothing either.
 `Repositories` (`packages/web/src/app/repositories.ts`) holds the repository
 list for one sign-in.
 
-| State                 | Event                                           | Next                                                                                             |
-| --------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| No list               | The page opens                                  | Reading, with "Reading your repositories…".                                                      |
-| Reading               | GitHub answers                                  | The list, grouped by owner. A selected repository stays selected when the new list still has it. |
-| Reading               | Refresh                                         | Nothing: the read under way finishes, and the button is off.                                     |
-| Reading               | The read fails                                  | The list it had, if any, with why above it.                                                      |
-| Reading               | GitHub answers 401                              | The account is signed out, as above.                                                             |
-| A list                | Refresh                                         | Reading, with the list dimmed and in use.                                                        |
-| A repository selected | A search or a hidden owner takes it out of view | Its panel closes. It is selected again when it comes back into view.                             |
+| State                 | Event                                                    | Next                                                                                                                                                                        |
+| --------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No list               | The page opens                                           | Reading, with "Reading your repositories…".                                                                                                                                 |
+| Reading               | GitHub answers                                           | The list, grouped by owner, once the [shared preferences](#web-shared-preferences) are read again too. A selected repository stays selected when the new list still has it. |
+| Reading               | Refresh                                                  | Nothing: the read under way finishes, and the button is off.                                                                                                                |
+| Reading               | The read fails                                           | The list it had, if any, with why above it.                                                                                                                                 |
+| Reading               | GitHub answers 401                                       | The account is signed out, as above.                                                                                                                                        |
+| A list                | Refresh                                                  | Reading, with the list dimmed and in use.                                                                                                                                   |
+| A repository selected | A search, a hidden owner, or a hide takes it out of view | Its panel closes. It is selected again when it comes back into view.                                                                                                        |
 
 It keeps the owners the list hides, by login, under `hidden-repository-owners`
-in the browser's [preferences](web-app.md#the-app), or nothing when it hides
+in its [shared preferences](#web-shared-preferences), or nothing when it hides
 no owner. A hidden owner matches its login in any case. Keeping the hidden
 owners rather than the shown ones means an owner new to the list shows.
 
 | Hidden                  | Event                                            | Next                                                                                           |
 | ----------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| None                    | An owner is unticked                             | That owner, saved.                                                                             |
+| Any                     | An owner is unticked or ticked                   | That owner added or taken out, saved.                                                          |
 | Any                     | Only personal                                    | Every owner in the list but the signed-in account, saved.                                      |
 | Any                     | Show all                                         | None, saved as nothing.                                                                        |
 | Some owners             | The list is read again                           | The hidden owners in the list stay hidden; an owner new to it shows.                           |
 | An owner not in list    | An owner is ticked or unticked, or Only personal | The owner not in the list stays hidden, with the new choice, saved.                            |
 | Every owner in the list | The list is read again or the page opens         | The list shows no repositories and says every owner is hidden; the filter shows **No owners**. |
 
-A browser that refuses storage keeps the choice for the visit only.
+It keeps the hidden repositories, by `owner/name` in lowercase, under
+`hidden-repositories`, or nothing when it hides none. Show hidden is not
+kept: each visit starts with the hidden repositories out of the list.
+
+| Hidden repositories | Event                             | Next                                                                                                                          |
+| ------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Any                 | Hide one or the ticked            | Those added, saved, and unticked; the note above the list offers Undo for those that weren't hidden already, and takes focus. |
+| Just hidden         | Undo                              | Those taken out, saved, ticked again if they were, and the note gone.                                                         |
+| Just hidden         | Select, Show hidden, or Refresh   | The note gone; the hidden stay hidden.                                                                                        |
+| Some                | Show hidden                       | The list shows them, marked Hidden; the count and the search include them.                                                    |
+| Some                | Show in list                      | That repository taken out, saved.                                                                                             |
+| One not in the list | The list is read again            | It stays hidden, so it is still hidden if it returns.                                                                         |
+| Every one shown     | Show hidden off                   | The list says every repository here is hidden and offers Show hidden, whatever the search.                                    |
+| Some                | A search that matches only hidden | The list says no repository matches, how many hidden ones do, and offers Show hidden.                                         |
+
+A browser that refuses storage keeps the choice for the visit only. Both
+lists are read from the shared preferences each time, so a file read from
+the profiles repository changes what the list hides as soon as it arrives.
+Each save is a change to the list, such as adding a name or taking one out,
+not the list as this page last saw it, so it keeps names another browser
+saved meanwhile.
+
+## Web shared preferences
+
+`SharedPreferences` (`packages/web/src/app/shared-preferences.ts`) keeps the
+preferences that follow the user where the profiles are. Its saves and reads
+run one at a time, in order. It is given the profiles' place when it is made,
+so the first list read already knows what that place hides.
+
+A change is kept as the change (`update(key, change)`, a function from the
+value now to the next; `write` is one that ignores the value now), not as
+its result, until it is saved. What a preference reads is the file as last
+read or saved with the unsaved changes made onto it in order. A save makes
+the same changes onto the file as it is then.
+
+| State             | Event                                      | Next                                                                                                                                                            |
+| ----------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| In the browser    | Profiles kept in a config repository       | Reading `.repotted-preferences.json` beside the profiles; until it is read, the unsaved changes made onto nothing.                                              |
+| Reading           | GitHub answers                             | In the repository, with the file's values and the unsaved changes made onto them. A file that is missing, not JSON, or not an object reads as empty.            |
+| Reading           | A change                                   | It shows at once, made onto what is known; it is made onto the file's values when the read finishes, then saved.                                                |
+| Reading           | The read fails                             | In the repository with the unsaved changes made onto nothing, and why above the list. A refresh reads again.                                                    |
+| In the repository | A change                                   | It shows at once; saving.                                                                                                                                       |
+| In the repository | Refresh on the repositories page           | Reading again, so changes saved elsewhere show. A read under way is the one waited for.                                                                         |
+| Saving            | —                                          | Reads the file again, makes the unsaved changes onto it, and commits it only if that changes it. Changes made meanwhile go in the next commit.                  |
+| Saving            | GitHub answers 409 or 422                  | The file changed or was made elsewhere since it was read: read again and try again, up to three tries in all.                                                   |
+| Saving            | The commit fails otherwise                 | The changes stay unsaved and show here, and why shows above the list until they are saved. The next change or the next read, such as Refresh, saves them again. |
+| Reading or saving | GitHub answers 401                         | The account is signed out.                                                                                                                                      |
+| In the repository | Profiles kept in the browser or a folder   | In the browser, with the browser's values. Changes made for the file are still saved there; any that fail are saved again when that file is read again.         |
+| In the repository | Profiles kept in another config repository | Reading that repository's file, as above. Changes made for the old one are still saved there, not here.                                                         |
+
+Two browsers that change different keys, or add different names to the same
+list, both keep theirs. A browser shows a change saved elsewhere at its next
+refresh or visit. Every change is its own commit, unless it is made while
+another is saving.
 
 ## Web profiles source
 

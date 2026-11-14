@@ -51,7 +51,8 @@ export class Session {
       const headers = new Headers(init.headers);
       headers.set('Accept', 'application/vnd.github+json');
       headers.set('Authorization', `Bearer ${token}`);
-      return fetch(`${gitHubApi}${path}`, { ...init, headers });
+      // GitHub lets a browser cache a read for a minute, which would hide a change made elsewhere since.
+      return fetch(`${gitHubApi}${path}`, { cache: 'no-store', ...init, headers });
     };
     const token = await this.accessToken();
     if (token === undefined) {

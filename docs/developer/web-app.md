@@ -11,7 +11,7 @@ browser. It signs in and lists the user's repositories.
 ## Layout
 
 - `src/worker.ts`: the Worker. It answers only `/api/*`.
-- `src/session.ts`: the page's access token, refreshed through the Worker.
+- `src/session.ts`: the page's access token, refreshed through the Worker, and its calls to GitHub, which skip the browser's cache so a read shows changes made elsewhere.
 - `src/main.tsx`: the page's entry. It makes the session, the engine's GitHub
   client, and the account, and renders the app.
 - `src/app/`: the app's state. Each part, such as `Account` and
@@ -128,10 +128,24 @@ setting picks, and the
 Atkinson Hyperlegible fonts are served from `static/fonts/`. All text is in
 sentence case: only the first word and proper names are capitalized.
 
-Choices that belong to the browser, such as the owners whose repositories
-are hidden and where profiles are kept, are in `localStorage` through
-`Preferences`, under keys that start with `repotted:`. They are not kept per
-account.
+Choices that belong to the browser, such as where profiles are kept, are in
+`localStorage` through `Preferences`, under keys that start with `repotted:`.
+They are not kept per account.
+
+Choices that follow the user, such as the owners and repositories the list
+hides, go through `SharedPreferences` (`src/app/shared-preferences.ts`), which
+has the same `read` and `write`, and `update`, which saves a change to a
+value, such as adding a name to a list, rather than the value. While profiles are kept in a config
+repository, it keeps them in `.repotted-preferences.json` beside the profiles
+and commits each change there through the contents API; otherwise it passes
+them to the browser's `Preferences`. The file is a JSON object keyed by
+preference key, such as `hidden-repositories` and `hidden-repository-owners`,
+with keys in order so a commit changes only the values that did. It is a
+hidden file, so a profile sync and the profile list leave it alone. Another
+list setting that should follow the user takes its own key in the same file.
+Nothing moves between the browser and the file when the profiles move.
+[State machines](state-machines.md#web-shared-preferences) lists the
+transitions.
 
 `Router` holds the page's address, and `Link` changes it without loading the
 page again. The Worker's asset config answers every path with `index.html`,
