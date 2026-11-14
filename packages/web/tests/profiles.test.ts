@@ -756,3 +756,24 @@ test('unsaved changes hold back a move to another repository, and a save waits i
   expect(github.files()['profiles/base.yaml']).toBe('repository:\n  has_wiki: true\n');
   expect(editor.dirty.value).toBe(false);
 });
+
+test("a sign-in refused while a profile's action patterns are checked is reported as signed out", async () => {
+  await inBrowser({
+    'ci.yaml':
+      'actions:\n  allowed_actions: selected\n  selected_actions:\n    patterns_allowed:\n      - octo-org/deploy\n',
+  });
+  const signedOut = vi.fn();
+  const request = vi.fn(() => Promise.reject(answered(401, 'Bad credentials')));
+  const profiles = new Profiles({ request }, memory(), signedOut);
+  await profiles.refresh();
+
+  await profiles.select(profiles.listings.value[0]);
+  await vi.waitFor(() => {
+    expect(signedOut).toHaveBeenCalledOnce();
+  });
+
+  expect(profiles.editor.value?.patterns?.lines.value[0]?.state).toEqual({
+    kind: 'failed',
+    message: 'Bad credentials',
+  });
+});

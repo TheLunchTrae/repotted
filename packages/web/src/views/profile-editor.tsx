@@ -6,6 +6,7 @@ import type { ProfileEditor, SettingFilter, SettingRow } from '../app/profile-ed
 import type { Profiles } from '../app/profiles.js';
 import { sameValue } from '../app/same-value.js';
 import { Entries } from './entries.js';
+import { PatternChecks } from './pattern-checks.js';
 import { run } from './run.js';
 import { SavePreviewDialog } from './save-preview.js';
 
@@ -157,6 +158,9 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
         </p>
       )}
       {field.note !== undefined && <p class="muted small">{field.note}</p>}
+      {field.kind === 'list' && field.key === 'selected_actions.patterns_allowed' && editor.patterns !== undefined && (
+        <PatternChecks checks={editor.patterns} />
+      )}
     </div>
   );
 }

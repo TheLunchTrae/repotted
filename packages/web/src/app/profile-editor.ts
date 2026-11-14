@@ -14,6 +14,7 @@ import {
 } from '@repotted/core';
 
 import { basename } from '../engine/path.js';
+import type { ActionPatternChecks } from './action-pattern-checks.js';
 import { EntryEdits, type EntryList, type EntryRow, type SaveMode } from './entry-edits.js';
 import type { Entry } from './entry-forms.js';
 import { type DiffFold, type DiffLine, diffLines, foldUnchanged } from './line-diff.js';
@@ -119,6 +120,8 @@ function yamlLines(resolved: ResolvedProfile): string[] {
 
 /** This profile's own draft of a setting: a value, or that finishing the draft stops setting it here. */
 type SettingDraft = { readonly value: unknown } | 'unset';
+
+const patternsPath = 'actions.selected_actions.patterns_allowed';
 
 const entryKeys = /^(?:rulesets|environments|labels)\//u;
 
@@ -237,8 +240,12 @@ export class ProfileEditor {
   /** Counts what a preview of a save can go out of date by, so one made before then is never shown. */
   #opens = 0;
 
-  constructor(file: string) {
+  /** What each allowed action pattern matches on GitHub, when the editor has a way to ask. */
+  readonly patterns: ActionPatternChecks | undefined;
+
+  constructor(file: string, patterns?: ActionPatternChecks) {
     this.file = file;
+    this.patterns = patterns;
   }
 
   /** Whether the profile has been read. */
@@ -436,6 +443,7 @@ export class ProfileEditor {
       this.#entryEdits.setSaved(undefined);
       this.#preview.value = undefined;
       this.closePreview();
+      this.patterns?.follow(undefined);
       this.loadError.value = reasonOf(error, this.file);
       return;
     }
@@ -942,8 +950,20 @@ export class ProfileEditor {
     await this.#previewEdits();
   }
 
+  /** Every change, save, and fresh read comes through here: each previews what a save would give, and what follows from it. */
   async #previewEdits(): Promise<void> {
-    // Every change, save, and fresh read comes through here, and each leaves an open preview of a save out of date.
+    await this.#previewSave();
+    // The list is followed as it is typed, and only while GitHub would show it.
+    const row = this.sections.value
+      .flatMap((section) => section.groups.flatMap((group) => group.rows))
+      .find((item) => keyOf(item.field.path) === patternsPath);
+    this.patterns?.follow(
+      row === undefined || !Array.isArray(row.value) ? undefined : (row.text?.split('\n') ?? row.value.map(String)),
+    );
+  }
+
+  async #previewSave(): Promise<void> {
+    // Each leaves an open preview of a save out of date.
     this.closePreview();
     const turn = (this.#previews += 1);
     // An entry that can't be saved as it stands, such as one with no name, is held back before the engine sees it.

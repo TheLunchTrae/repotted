@@ -169,6 +169,10 @@ the file has it, and `entry-edits.ts` holds each change with the saved entry
 it was made on, so a save never writes an entry over one that has since
 changed elsewhere. `views/entries.tsx` only draws them.
 
+`action-pattern-checks.ts` asks GitHub what each allowed action pattern
+matches, with the engine's `checkActionPatterns`, and keeps the answers by
+pattern text. `Profiles` gives each editor its own.
+
 `setting-search.ts` finds settings by the words typed: each must start a
 word of the setting's label, key, note, choices, group, tab, or the other
 names it lists, and a sub-option is also found by the setting it sits under.
