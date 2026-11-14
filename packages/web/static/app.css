@@ -621,13 +621,18 @@ input[type='checkbox'] {
 }
 
 .page-body {
+  /* The page's side and bottom padding, which a .save-bar among its
+     children reaches across. */
+  --page-inline: 24px;
+  --page-end: 48px;
+
   display: grid;
   gap: 16px;
   align-content: start;
   width: 100%;
   max-width: 1000px;
   margin: 0 auto;
-  padding: 28px 24px 48px;
+  padding: 28px var(--page-inline) var(--page-end);
 }
 
 .page-heading {
@@ -1745,10 +1750,54 @@ select.field {
   align-items: center;
   justify-content: end;
   gap: 8px 12px;
-  margin: 0 -24px -48px;
-  padding: 12px 24px;
+  margin: 0 calc(-1 * var(--page-inline)) calc(-1 * var(--page-end));
+  padding: 12px var(--page-inline);
   border-top: 1px solid var(--border);
   background: var(--surface);
+}
+
+/* Only the page's last child reaches into its bottom padding; a bar with more
+   after it would overlap that, so views render their dialogs before the bar. */
+.save-bar:not(:last-child) {
+  margin-bottom: 0;
+}
+
+/* The menu's panel lines up with the whole group, not with More, so a wide main button can't push it off the screen. */
+.bar-actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 8px 12px;
+  min-width: 0;
+  margin-inline-start: auto;
+}
+
+.bar-actions .bar-more {
+  position: static;
+}
+
+/* The bar sits at the foot of the screen, so its menu opens upward. */
+.menu-panel-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.bar-more .menu-panel {
+  min-width: 220px;
+}
+
+/* Its actions read as a menu's items, not a stack of buttons. */
+.bar-more .menu-panel .button {
+  justify-content: flex-start;
+  width: 100%;
+  border-color: transparent;
+  background: none;
+  font-weight: 400;
+}
+
+.bar-more .menu-panel .button:hover:not(:disabled) {
+  background: var(--tint);
 }
 
 .save-bar .problem {
@@ -1879,6 +1928,7 @@ select.field {
   }
 }
 
+/* The phone layout. action-bar.tsx's usePhone matches this width; change both together. */
 @media (max-width: 760px) {
   .shell-bar {
     gap: 12px;
@@ -1905,7 +1955,10 @@ select.field {
   }
 
   .page-body {
-    padding: 20px 16px 32px;
+    --page-inline: 16px;
+    --page-end: 32px;
+
+    padding-top: 20px;
   }
 
   .folder-toggle,
