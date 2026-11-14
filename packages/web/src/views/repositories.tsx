@@ -443,7 +443,8 @@ function RepositoryPanel({
   // A screen of its own takes the focus to the way back, since the row that opened it is gone. One opened by a
   // link as the page loads leaves the focus at the start of the page, before the navigation.
   useLayoutEffect(() => {
-    if (screen && navigator.userActivation.hasBeenActive) {
+    // Safari before 16.4 has no record of activation; treat it as active.
+    if (screen && ((navigator as { userActivation?: UserActivation }).userActivation?.hasBeenActive ?? true)) {
       back.current?.focus({ preventScroll: true });
     }
   }, [screen, repository.full_name]);
@@ -650,12 +651,12 @@ function useAddressedSelection(address: AddressSelection, repositories: Reposito
   // Before the page paints, so a phone arriving at the list doesn't show a kept selection's screen first.
   useLayoutEffect(() => {
     if (arrived.current) {
-      address.follow();
+      address.follow(phone);
     } else {
       arrived.current = true;
       address.arrive(phone);
     }
-    // Arrival reads the screen's width once; a back or forward doesn't depend on it.
+    // The screen's width is read as the address changes; a change of width alone moves no address.
   }, [address, named]);
   useLayoutEffect(() => {
     address.update(phone);
@@ -687,7 +688,7 @@ function useListReturn(
       const row = document.querySelector<HTMLElement>(`button.row[data-repository="${CSS.escape(closed.current)}"]`);
       // Only focus that went with the details moves; one left elsewhere, as on the link that came here, stays.
       const lost = document.activeElement === null || document.activeElement === document.body;
-      if (phone) {
+      if (phone && row !== null) {
         const y = scrolled.current;
         scrollTo(0, y);
         // Again once a back has run its course, since the browser puts back the scroll it kept for the entry,
@@ -696,7 +697,13 @@ function useListReturn(
           scrollTo(0, y);
         });
         if (lost) {
-          (row ?? heading.current)?.focus({ preventScroll: true });
+          row.focus({ preventScroll: true });
+        }
+      } else if (phone) {
+        // With the row out of the list, as after a hide or a move into a closed folder, the list stays at its
+        // top, and the heading, or Undo after it, takes the focus where it is.
+        if (lost) {
+          heading.current?.focus();
         }
       } else if (lost) {
         // Details that close because the screen grew stay beside the list, which wasn't left.

@@ -27,9 +27,16 @@ function page(start: string) {
   const inBrowser: Preferences = { read: (key) => kept[key], write: (key, value) => (kept[key] = value) };
   const preferences = new SharedPreferences(github, inBrowser, () => undefined);
   const repositories = new Repositories(github, { login: 'octo', name: null }, preferences, inBrowser, () => undefined);
-  const fake = browser(start);
+  const fake = browser(start, true);
   const address = new AddressSelection(repositories, fake.router);
-  return { repositories, address, ...fake, refreshing: repositories.refresh() };
+  /** Lets the backs asked for arrive, and the page follow the address, as it does on each change of the address. */
+  const traverse = (phone: boolean): void => {
+    fake.traversals.splice(0).forEach((arrive) => {
+      arrive();
+    });
+    address.follow(phone);
+  };
+  return { repositories, address, traverse, ...fake, refreshing: repositories.refresh() };
 }
 
 test('a link to a repository opens it once the list has it, with no entry of its own', async () => {
@@ -80,7 +87,7 @@ test('on a phone a repository opened from the list gets an entry that back leave
   phone.address.update(true);
   expect(phone.entries()).toEqual(['/', '/?repository=octo/app']);
   phone.address.close();
-  phone.address.follow();
+  phone.traverse(true);
   phone.address.update(true);
   expect(phone.history.back).toHaveBeenCalledTimes(1);
   expect(phone.repositories.selectedName).toBeUndefined();
@@ -96,13 +103,13 @@ test('on a phone a repository opened from the list gets an entry that back leave
 });
 
 test('a repository opened by a link has no list entry before it, so closing it puts the list in its place', async () => {
-  const { repositories, address, entries, history, refreshing } = page('/?repository=octo/app');
+  const { repositories, address, entries, history, traverse, refreshing } = page('/?repository=octo/app');
   address.arrive(true);
   await refreshing;
   address.update(true);
 
   address.close();
-  address.follow();
+  traverse(true);
 
   expect(history.back).not.toHaveBeenCalled();
   expect(entries()).toEqual(['/']);
@@ -136,6 +143,7 @@ async function hiddenFromItsScreen() {
   }
   opened.repositories.hide([app]);
   opened.address.update(true);
+  opened.traverse(true);
   return opened;
 }
 
@@ -168,10 +176,10 @@ test('Undo of the hide opens the repository again, in an entry of its own', asyn
 });
 
 test('forward to a repository hidden since takes it off the address in place, keeping its Undo', async () => {
-  const { repositories, address, entries, history, router, forward } = await hiddenFromItsScreen();
+  const { repositories, address, entries, history, router, forward, traverse } = await hiddenFromItsScreen();
   forward();
 
-  address.follow();
+  traverse(true);
   address.update(true);
 
   expect(router.search.value).toBe('');
@@ -179,4 +187,49 @@ test('forward to a repository hidden since takes it off the address in place, ke
   expect(history.back).toHaveBeenCalledTimes(1);
   expect(repositories.selectedName).toBeUndefined();
   expect(repositories.justHidden.value).toEqual(['octo/app']);
+});
+
+test('on a phone a link in another case corrects the address in place, adding no entry', async () => {
+  const { repositories, address, entries, refreshing } = page('/?repository=OCTO/Web');
+  address.arrive(true);
+  address.update(true);
+  await refreshing;
+
+  address.update(true);
+
+  expect(repositories.selected.value?.full_name).toBe('octo/web');
+  expect(entries()).toEqual(['/?repository=octo/web']);
+});
+
+test("on a wide screen arriving keeps a selection a search took out of view, and the address it writes isn't followed", async () => {
+  const { repositories, address, router, traverse, refreshing } = page('/');
+  await refreshing;
+  repositories.select({ full_name: 'octo/app' });
+  repositories.search.value = 'web';
+
+  address.arrive(false);
+  traverse(false);
+  address.update(false);
+  expect(router.search.value).toBe('?repository=octo/app');
+  repositories.search.value = '';
+
+  expect(repositories.selected.value?.full_name).toBe('octo/app');
+});
+
+test('on a wide screen back or forward to a repository a search took out of view keeps it selected', async () => {
+  const { repositories, address, traverse, forward, refreshing } = page('/');
+  await refreshing;
+  // An entry for it, as a phone's screen leaves behind once the window grows.
+  address.arrive(true);
+  repositories.select({ full_name: 'octo/app' });
+  address.update(true);
+  address.close();
+  traverse(true);
+  repositories.search.value = 'web';
+
+  forward();
+  traverse(false);
+  repositories.search.value = '';
+
+  expect(repositories.selected.value?.full_name).toBe('octo/app');
 });
