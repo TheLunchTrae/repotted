@@ -11,7 +11,7 @@ browser. It signs in and lists the user's repositories.
 ## Layout
 
 - `src/worker.ts`: the Worker. It answers only `/api/*`.
-- `src/session.ts`: the page's access token, refreshed through the Worker.
+- `src/session.ts`: the page's access token, refreshed through the Worker, and its calls to GitHub, which skip the browser's cache so a read shows changes made elsewhere.
 - `src/main.tsx`: the page's entry. It makes the session, the engine's GitHub
   client, and the account, and renders the app.
 - `src/app/`: the app's state. Each part, such as `Account` and
@@ -134,7 +134,8 @@ They are not kept per account.
 
 Choices that follow the user, such as the owners and repositories the list
 hides, go through `SharedPreferences` (`src/app/shared-preferences.ts`), which
-has the same `read` and `write`. While profiles are kept in a config
+has the same `read` and `write`, and `update`, which saves a change to a
+value, such as adding a name to a list, rather than the value. While profiles are kept in a config
 repository, it keeps them in `.repotted-preferences.json` beside the profiles
 and commits each change there through the contents API; otherwise it passes
 them to the browser's `Preferences`. The file is a JSON object keyed by

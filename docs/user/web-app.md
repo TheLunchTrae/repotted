@@ -53,7 +53,8 @@ and offers **Show hidden**.
 When your profiles are kept in a GitHub repository, the owners and
 repositories you hid are kept there too, in `.repotted-preferences.json`
 beside the profiles, so they follow you to any browser you sign in on. Each
-change is committed straight to the repository. When your profiles are kept
+change is committed straight to the repository, and **Refresh** picks up
+changes made in another browser. When your profiles are kept
 in this browser or a folder on this computer, this browser remembers them
 instead. Choices made in one place don't move to the other.
 

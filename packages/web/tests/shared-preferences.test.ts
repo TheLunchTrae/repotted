@@ -20,6 +20,11 @@ function memory(start: Record<string, unknown> = {}): Preferences & { readonly k
   };
 }
 
+/** Adds a name to a list, as the repositories page does. */
+function adding(name: string): (current: unknown) => unknown {
+  return (current) => [...(Array.isArray(current) ? (current as unknown[]) : []), name];
+}
+
 function saved(repository: FakeGitRepository): unknown {
   const text = repository.files()[file];
   return text === undefined ? undefined : JSON.parse(text);
@@ -150,4 +155,113 @@ test('a refused sign-in while reading is reported as signed out', async () => {
 
   expect(signedOut).toHaveBeenCalledOnce();
   expect(preferences.error.value).toBeUndefined();
+});
+
+test('a change made from an old copy of the file is made onto the file as it is, keeping names added elsewhere', async () => {
+  const repository = new FakeGitRepository();
+  repository.write({ [file]: '{ "hidden-repositories": ["lunch/old"] }' });
+  const preferences = new SharedPreferences(repository, memory(), () => undefined);
+  await preferences.use(source);
+
+  // Another browser hides one after this one read the file.
+  repository.write({ [file]: '{ "hidden-repositories": ["lunch/old", "acme/web"] }' });
+  preferences.update('hidden-repositories', adding('zeta/site'));
+  expect(preferences.read('hidden-repositories')).toEqual(['lunch/old', 'zeta/site']);
+  await settled(preferences);
+
+  expect(saved(repository)).toEqual({ 'hidden-repositories': ['lunch/old', 'acme/web', 'zeta/site'] });
+  expect(preferences.read('hidden-repositories')).toEqual(['lunch/old', 'acme/web', 'zeta/site']);
+});
+
+test('a change made while the file is read, or after the read failed, keeps what the file holds', async () => {
+  const repository = new FakeGitRepository();
+  repository.write({ [file]: '{ "hidden-repositories": ["acme/web", "acme/api"] }' });
+  const preferences = new SharedPreferences(repository, memory(), () => undefined);
+
+  const reading = preferences.use(source);
+  expect(preferences.reading.value).toBe(true);
+  preferences.update('hidden-repositories', adding('zeta/site'));
+  await reading;
+  expect(preferences.reading.value).toBe(false);
+  expect(preferences.read('hidden-repositories')).toEqual(['acme/web', 'acme/api', 'zeta/site']);
+  await settled(preferences);
+  expect(saved(repository)).toEqual({ 'hidden-repositories': ['acme/web', 'acme/api', 'zeta/site'] });
+
+  const failing = new SharedPreferences(repository, memory(), () => undefined);
+  const request = repository.request.bind(repository);
+  const once = vi.spyOn(repository, 'request').mockRejectedValueOnce(new GitHubError(500, 'Server error'));
+  await failing.use(source);
+  expect(failing.error.value).toBe("Couldn't read your preferences from lunch/config: Server error");
+  once.mockImplementation(request);
+  failing.update('hidden-repositories', adding('lunch/new'));
+  await settled(failing);
+  expect(saved(repository)).toEqual({ 'hidden-repositories': ['acme/web', 'acme/api', 'zeta/site', 'lunch/new'] });
+});
+
+test('a reload shows what was saved elsewhere since the file was read', async () => {
+  const repository = new FakeGitRepository();
+  const preferences = new SharedPreferences(repository, memory(), () => undefined);
+  await preferences.use(source);
+
+  repository.write({ [file]: '{ "hidden-repositories": ["acme/web"] }' });
+  expect(preferences.read('hidden-repositories')).toBeUndefined();
+  await preferences.reload();
+
+  expect(preferences.read('hidden-repositories')).toEqual(['acme/web']);
+});
+
+test('a save that finds the file made meanwhile tries again onto it', async () => {
+  const repository = new FakeGitRepository();
+  const preferences = new SharedPreferences(repository, memory(), () => undefined);
+  await preferences.use(source);
+  repository.beforeContentsWrite = () => {
+    repository.write({ [file]: '{ "other": 1 }' });
+  };
+
+  preferences.write('hidden-repositories', ['lunch/old']);
+  await settled(preferences);
+
+  expect(saved(repository)).toEqual({ 'hidden-repositories': ['lunch/old'], other: 1 });
+});
+
+test('a save that keeps losing gives up after three tries and says why', async () => {
+  const repository = new FakeGitRepository();
+  repository.write({ [file]: '{}' });
+  const preferences = new SharedPreferences(repository, memory(), () => undefined);
+  await preferences.use(source);
+  const put = vi.fn();
+  const request = repository.request.bind(repository);
+  vi.spyOn(repository, 'request').mockImplementation(async (method, path, body) => {
+    if (method === 'PUT') {
+      put();
+      throw new GitHubError(409, 'is at a different sha');
+    }
+    return request(method, path, body);
+  });
+
+  preferences.write('hidden-repositories', ['lunch/old']);
+  await vi.waitFor(() => {
+    expect(preferences.error.value).toBe("Couldn't save your preferences to lunch/config: is at a different sha");
+  });
+
+  expect(put).toHaveBeenCalledTimes(3);
+  expect(preferences.read('hidden-repositories')).toEqual(['lunch/old']);
+});
+
+test('a read of a file no longer used is thrown away, and a change made for it is still saved there', async () => {
+  const repository = new FakeGitRepository();
+  repository.write({ [file]: '{ "hidden-repositories": ["lunch/old"] }' });
+  const browser = memory({ 'hidden-repositories': ['lunch/mine'] });
+  const preferences = new SharedPreferences(repository, browser, () => undefined);
+
+  const reading = preferences.use(source);
+  preferences.update('hidden-repositories', adding('acme/web'));
+  await preferences.use({ kind: 'browser' });
+  await reading;
+  expect(preferences.read('hidden-repositories')).toEqual(['lunch/mine']);
+
+  await preferences.use(source);
+  await settled(preferences);
+  expect(saved(repository)).toEqual({ 'hidden-repositories': ['lunch/old', 'acme/web'] });
+  expect(browser.kept['hidden-repositories']).toEqual(['lunch/mine']);
 });

@@ -62,9 +62,12 @@ function SignedIn({
       account.refused();
     };
     const kept = new Profiles(github, preferences, refused, folders);
+    // The hidden repositories and owners follow the profiles: to their repository, or this browser. Using
+    // the profiles' place from the start means the first list shows what that place hides.
+    const shared = new SharedPreferences(github, preferences, refused);
+    run(shared.use(kept.source.value));
     return {
-      // The hidden repositories and owners follow the profiles: to their repository, or this browser.
-      repositories: new Repositories(github, user, new SharedPreferences(github, preferences, refused), refused),
+      repositories: new Repositories(github, user, shared, refused),
       profiles: kept,
       comparison: new Comparison(github, refused),
       // An apply's edits saved to a profile take their turn among the profiles' syncs.

@@ -15,6 +15,9 @@ import { SerialQueue } from './serial-queue.js';
  */
 export const preferencesFile = '.repotted-preferences.json';
 
+/** Makes a preference's next value from its value now; undefined deletes it. */
+export type Change = (current: unknown) => unknown;
+
 const message = 'Update Repotted preferences';
 const contents = z.object({ sha: z.string(), content: z.string() });
 const saved = z.record(z.string(), z.unknown());
@@ -27,10 +30,20 @@ interface Place {
   readonly file: string;
 }
 
+interface Pending {
+  readonly place: Place;
+  readonly key: string;
+  readonly change: Change;
+}
+
 interface Remote {
   /** The file's blob, or undefined when the repository lacks the file. */
   readonly sha: string | undefined;
   readonly values: Record<string, unknown>;
+}
+
+function samePlace(left: Place | undefined, right: Place | undefined): boolean {
+  return left?.repository === right?.repository && left?.file === right?.file;
 }
 
 function decode(base64: string): string {
@@ -47,14 +60,17 @@ function stringify(values: Record<string, unknown>): string {
   return `${JSON.stringify(sorted, null, 2)}\n`;
 }
 
-function withChanges(values: Record<string, unknown>, changes: ReadonlyMap<string, unknown>): Record<string, unknown> {
-  const next = Object.entries(values).filter(([key]) => !changes.has(key));
-  for (const [key, value] of changes) {
+/** The values with each change made in turn, onto whatever the value is by then. */
+function withChanges(values: Record<string, unknown>, changes: readonly Pending[]): Record<string, unknown> {
+  let next = values;
+  for (const { key, change } of changes) {
+    const value = change(next[key]);
+    next = Object.fromEntries(Object.entries(next).filter(([other]) => other !== key));
     if (value !== undefined) {
-      next.push([key, value]);
+      next[key] = value;
     }
   }
-  return Object.fromEntries(next);
+  return next;
 }
 
 function messageOf(error: unknown): string {
@@ -67,10 +83,17 @@ function messageOf(error: unknown): string {
  * in `preferencesFile` beside them and committed there; otherwise they are
  * kept in this browser. Reading one inside a computed tracks it, so a value
  * that arrives from the repository updates what depends on it.
+ *
+ * A change made here is kept as the change, not its result, and is made again
+ * onto the file as it is when it is saved. So a change to one name in a list
+ * keeps the names another browser added since this one read the file, or
+ * before it finished reading it.
  */
 export class SharedPreferences implements Preferences {
   /** Why the file couldn't be read or saved, until a read or save succeeds. */
   readonly error = signal<string | undefined>(undefined);
+  /** Whether the file is being read, so what it holds is not known yet. */
+  readonly reading = signal(false);
 
   readonly #github: GitHub;
   readonly #browser: Preferences;
@@ -80,9 +103,14 @@ export class SharedPreferences implements Preferences {
   readonly #version = signal(0);
   /** The file they are kept in, or undefined for this browser. */
   #place: Place | undefined;
+  /** The file as last read or saved. */
+  #base: Record<string, unknown> = {};
+  /** The base with the changes not saved yet. */
   #values: Record<string, unknown> = {};
-  /** What was written here that the file has yet to get, by key; undefined deletes the key. */
-  #pending = new Map<string, unknown>();
+  /** Changes not saved yet, in the order they were made. A change for a file no longer used stays until it is saved there. */
+  #pending: readonly Pending[] = [];
+  /** The read under way, which a reload waits for rather than starting another. */
+  #read: Promise<void> | undefined;
 
   constructor(github: GitHub, browser: Preferences, onSignedOut: () => void) {
     this.#github = github;
@@ -91,33 +119,54 @@ export class SharedPreferences implements Preferences {
   }
 
   /** Keeps them where the profiles are, reading the file when that is a repository. */
-  async use(source: ProfilesSource): Promise<void> {
+  use(source: ProfilesSource): Promise<void> {
     const place =
       source.kind === 'repository'
         ? { repository: source.repository, file: join(source.path, preferencesFile) }
         : undefined;
-    if (place?.repository === this.#place?.repository && place?.file === this.#place?.file) {
-      return;
+    if (samePlace(place, this.#place)) {
+      return this.#read ?? Promise.resolve();
     }
     this.#place = place;
-    this.#values = {};
-    this.#pending = new Map();
+    this.#base = {};
+    this.#read = undefined;
+    this.reading.value = false;
     this.error.value = undefined;
-    this.#version.value += 1;
+    this.#changed();
+    return this.reload();
+  }
+
+  /** Reads the file again, so changes made elsewhere show. A read already under way is the one waited for. */
+  reload(): Promise<void> {
+    const place = this.#place;
     if (place === undefined) {
-      return;
+      return Promise.resolve();
     }
-    await this.#queue.run(async () => {
-      try {
-        const remote = await this.#read(place);
-        if (this.#place === place) {
-          this.#values = withChanges(remote.values, this.#pending);
-          this.#version.value += 1;
+    if (this.#read !== undefined) {
+      return this.#read;
+    }
+    const reading: Promise<void> = this.#queue
+      .run(async () => {
+        try {
+          const remote = await this.#fetch(place);
+          if (samePlace(this.#place, place)) {
+            this.#base = remote.values;
+            this.error.value = undefined;
+            this.#changed();
+          }
+        } catch (error) {
+          this.#failed(place, error, `Couldn't read your preferences from ${place.repository}`);
         }
-      } catch (error) {
-        this.#failed(place, error, `Couldn't read your preferences from ${place.repository}`);
-      }
-    });
+      })
+      .finally(() => {
+        if (this.#read === reading) {
+          this.#read = undefined;
+          this.reading.value = false;
+        }
+      });
+    this.#read = reading;
+    this.reading.value = true;
+    return reading;
   }
 
   read(key: string): unknown {
@@ -127,29 +176,42 @@ export class SharedPreferences implements Preferences {
   }
 
   write(key: string, value: unknown): void {
+    this.update(key, () => value);
+  }
+
+  /** Changes a preference from its value now, and again from the file's value when it is saved. */
+  update(key: string, change: Change): void {
     const place = this.#place;
     if (place === undefined) {
-      this.#browser.write(key, value);
-    } else {
-      this.#values = withChanges(this.#values, new Map([[key, value]]));
-      this.#pending.set(key, value);
-      // Writes made while one saves wait their turn and go in one commit.
-      // A save reports its own failure in error.
-      this.#queue.run(() => this.#save(place)).catch(() => undefined);
+      this.#browser.write(key, change(this.#browser.read(key)));
+      this.#version.value += 1;
+      return;
     }
+    this.#pending = [...this.#pending, { place, key, change }];
+    this.#changed();
+    // Changes made while one saves wait their turn and go in one commit. A save reports its own failure in error.
+    this.#queue.run(() => this.#save(place)).catch(() => undefined);
+  }
+
+  #changed(): void {
+    const place = this.#place;
+    this.#values = withChanges(
+      this.#base,
+      this.#pending.filter((pending) => samePlace(pending.place, place)),
+    );
     this.#version.value += 1;
   }
 
-  /** Commits what was written here onto the file as it is now, so keys changed elsewhere are kept. */
+  /** Commits the changes for this file onto it as it is now, so keys and values changed elsewhere are kept. */
   async #save(place: Place): Promise<void> {
-    if (this.#place !== place || this.#pending.size === 0) {
+    const changes = this.#pending.filter((pending) => samePlace(pending.place, place));
+    if (changes.length === 0) {
       return;
     }
-    const changes = new Map(this.#pending);
     try {
       let merged: Record<string, unknown> | undefined;
       for (let attempt = 1; merged === undefined; attempt += 1) {
-        const remote = await this.#read(place);
+        const remote = await this.#fetch(place);
         const next = withChanges(remote.values, changes);
         try {
           if (stringify(next) !== stringify(remote.values)) {
@@ -168,23 +230,19 @@ export class SharedPreferences implements Preferences {
           }
         }
       }
-      if (this.#place !== place) {
-        return;
+      this.#pending = this.#pending.filter((pending) => !changes.includes(pending));
+      if (samePlace(this.#place, place)) {
+        this.#base = merged;
+        this.error.value = undefined;
+        this.#changed();
       }
-      for (const [key, value] of changes) {
-        if (this.#pending.get(key) === value) {
-          this.#pending.delete(key);
-        }
-      }
-      this.#values = withChanges(merged, this.#pending);
-      this.error.value = undefined;
-      this.#version.value += 1;
     } catch (error) {
+      // The changes stay, so the next save tries them again.
       this.#failed(place, error, `Couldn't save your preferences to ${place.repository}`);
     }
   }
 
-  async #read(place: Place): Promise<Remote> {
+  async #fetch(place: Place): Promise<Remote> {
     let answer: unknown;
     try {
       answer = await this.#github.request('GET', this.#path(place));
@@ -215,7 +273,7 @@ export class SharedPreferences implements Preferences {
   #failed(place: Place, error: unknown, what: string): void {
     if (isSignedOut(error)) {
       this.#onSignedOut();
-    } else if (this.#place === place) {
+    } else if (samePlace(this.#place, place)) {
       this.error.value = `${what}: ${messageOf(error)}`;
     }
   }

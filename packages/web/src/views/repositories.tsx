@@ -410,6 +410,13 @@ export function RepositoriesPage({
   const justHidden = repositories.justHidden.value;
   const hiddenMatches = repositories.hiddenMatches.value;
   const preferencesError = repositories.preferences.error.value;
+  // A hide takes away the button that did it, so focus moves to Undo, which also brings it into view on a phone.
+  const undo = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (justHidden.length > 0) {
+      undo.current?.focus();
+    }
+  }, [justHidden]);
   const fromApp = list?.source === 'installations';
   const total = list?.repositories.length ?? 0;
 
@@ -550,6 +557,7 @@ export function RepositoriesPage({
                 </p>
                 <p class="notice-actions">
                   <button
+                    ref={undo}
                     class="button button-small"
                     type="button"
                     onClick={() => {
