@@ -61,7 +61,7 @@ test('a comparison says what the profile would change, by section, and leaves ou
     'Labels | bug | new label | Not on GitHub -> Created',
   ]);
   expect(comparison.state.value).toMatchObject({ skipped: ['repository.has_projects'] });
-  expect(comparison.counts.value).toEqual({ differences: 5, locked: 0 });
+  expect(comparison.counts.value).toEqual({ differences: 5, locked: 0, matches: 1 });
   // GitHub didn't say which installations the account has, so nothing is locked and there is nowhere to send them.
   expect(comparison.state.value).toMatchObject({ appAccess: undefined });
   // Comparing only reads.
@@ -93,7 +93,7 @@ test('the search and the filter narrow the differences, and a new comparison cle
   // The installation was granted Administration, which settings need, and not Issues, which labels need.
   expect(comparison.shown.value.map((section) => section.title)).toEqual(['Labels']);
   expect(comparison.shown.value[0]?.rows[0]?.lock).toBe('Needs Issues write');
-  expect(comparison.counts.value).toEqual({ differences: 4, locked: 1 });
+  expect(comparison.counts.value).toEqual({ differences: 4, locked: 1, matches: 1 });
   const compared = comparison.state.value;
   expect(compared.kind === 'compared' && compared.appAccess !== 'install' && compared.appAccess !== undefined).toBe(
     true,
@@ -277,4 +277,73 @@ test('a failure names a base profile by its file beside the profile, not by wher
   await comparison.compare('lunch/app', { file: '/profiles/teams/api.yaml', name: 'teams/api', folder: '/profiles' });
   expect(failure(comparison)).toContain('base.yaml');
   expect(failure(comparison)).not.toContain('/profiles/');
+});
+
+function matches(comparison: Comparison): string[] {
+  return comparison.shown.value.flatMap((section) =>
+    section.matches.map((row) => `${section.title} | ${row.label} | ${row.key} | ${row.value ?? 'whole'}`),
+  );
+}
+
+test('what matches is folded away at first, and shows with the differences when asked for', async () => {
+  await saved(`repository:
+  has_wiki: false
+  has_issues: true
+merge:
+  allow_squash_merge: true
+actions:
+  allowed_actions: selected
+  selected_actions:
+    github_owned_allowed: true
+    verified_allowed: false
+labels:
+  - name: bug
+    color: d73a4a
+  - name: kept
+    color: ffffff
+  - name: gone
+    absent: true
+`);
+  const github = new FakeGitHub({
+    labels: [{ id: 1, name: 'kept', color: 'ffffff', description: null, default: false }],
+    actions: { enabled: true, allowed_actions: 'selected' },
+    selected: { github_owned_allowed: false, verified_allowed: false, patterns_allowed: [] },
+  });
+  const comparison = new Comparison(github, () => undefined);
+  await comparison.compare('lunch/app', profile);
+
+  expect(matches(comparison)).toEqual([]);
+  expect(comparison.counts.value).toMatchObject({ differences: 3, matches: 5 });
+
+  comparison.onlyDifferences.value = false;
+  // A label the profile removes that is already gone is neither a difference nor a match.
+  expect(matches(comparison)).toEqual([
+    'Repository | Issues | repository.has_issues | On',
+    'Merge | Allow squash merging | merge.allow_squash_merge | On',
+    'Actions | Allowed actions | actions.allowed_actions | Selected',
+    'Actions | Actions by verified creators | actions.selected_actions.verified_allowed | Off',
+    'Labels | kept | label | whole',
+  ]);
+  // A section with only matches shows too, in the profile's order.
+  expect(comparison.shown.value.map((section) => section.title)).toEqual(['Repository', 'Merge', 'Actions', 'Labels']);
+
+  comparison.search.value = 'squash';
+  expect(matches(comparison)).toEqual(['Merge | Allow squash merging | merge.allow_squash_merge | On']);
+  expect(rows(comparison)).toEqual([]);
+});
+
+test('nothing is said to match in what the comparison left out', async () => {
+  await saved(
+    'repository:\n  has_wiki: true\nactions:\n  allowed_actions: all\n  selected_actions:\n    verified_allowed: true\npages:\n  https_enforced: true\n',
+  );
+  const github = new FakeGitHub();
+  const comparison = new Comparison(github, () => undefined);
+  await comparison.compare('lunch/app', profile);
+  comparison.onlyDifferences.value = false;
+
+  // The selected actions don't apply while all are allowed, and the Pages site couldn't be planned.
+  expect(matches(comparison)).toEqual([
+    'Repository | Wiki | repository.has_wiki | On',
+    'Actions | Allowed actions | actions.allowed_actions | All',
+  ]);
 });

@@ -74,6 +74,11 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                     : `${counts.differences === 1 ? '1 difference' : `${counts.differences} differences`}${
                         counts.locked === 0 ? '' : `, ${counts.locked} that Repotted can't change`
                       }. Comparing only reads from GitHub.`}
+              {state.kind === 'compared' &&
+                counts.matches > 0 &&
+                ` ${counts.matches === 1 ? '1 thing the profile sets matches' : `${counts.matches} things the profile sets match`}${
+                  comparison.onlyDifferences.value ? ', folded away' : ''
+                }.`}
             </p>
           </div>
         </div>
@@ -131,7 +136,7 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                 </a>
               </p>
             )}
-            {counts.differences > 0 && (
+            {counts.differences + counts.matches > 0 && (
               <div class="filters" role="search" aria-label="This comparison">
                 <input
                   class="field"
@@ -143,8 +148,20 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                     comparison.search.value = event.currentTarget.value;
                   }}
                 />
-                {counts.locked > 0 && (
-                  <div class="segments" role="group" aria-label="Show only">
+                <div class="segments" role="group" aria-label="Show only">
+                  {counts.matches > 0 && (
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={comparison.onlyDifferences.value}
+                        onChange={(event) => {
+                          comparison.onlyDifferences.value = event.currentTarget.checked;
+                        }}
+                      />
+                      <span>Differs from GitHub</span>
+                    </label>
+                  )}
+                  {counts.locked > 0 && (
                     <label>
                       <input
                         type="checkbox"
@@ -155,11 +172,17 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                       />
                       <span>Can't change</span>
                     </label>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )}
-            {counts.differences > 0 && shown.length === 0 && <p class="empty">No difference matches.</p>}
+            {shown.length === 0 && comparison.search.value.trim() !== '' && (
+              <p class="empty">
+                {comparison.onlyDifferences.value || comparison.onlyLocked.value
+                  ? `No difference matches "${comparison.search.value.trim()}".`
+                  : `Nothing in this comparison matches "${comparison.search.value.trim()}".`}
+              </p>
+            )}
             <div class="groups">
               {shown.map((section) => (
                 <section key={section.section} class="settings-group" aria-label={section.title}>
@@ -167,6 +190,18 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                   <ul class="rows" role="list">
                     {section.rows.map((row) => (
                       <Row key={`${row.label} ${row.key}`} row={row} />
+                    ))}
+                    {section.matches.map((row) => (
+                      <li key={`matches ${row.label} ${row.key}`} class="compare-row compare-match">
+                        <span class="compare-what">
+                          <strong>{row.label}</strong>
+                          <span class="mono small muted">{row.key}</span>
+                        </span>
+                        <span class="compare-values muted">
+                          {row.value === undefined ? 'Same as the profile' : `${row.value}, as on GitHub`}
+                        </span>
+                        <span class="pill">Matches</span>
+                      </li>
                     ))}
                   </ul>
                 </section>
