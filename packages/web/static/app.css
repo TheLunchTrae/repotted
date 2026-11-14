@@ -217,6 +217,7 @@ input[type='checkbox'] {
   .check,
   .owner-choices label,
   .diff-fold,
+  button.folder-toggle,
   button.row {
     min-height: 44px;
   }
@@ -240,16 +241,34 @@ input[type='checkbox'] {
   /* A link in a line of text gets a 44px target that overlaps the lines next
      to it, so the text keeps its spacing; a list of them gets room for it. */
   button.link {
-    padding-block: 11px;
-    margin-block: -11px;
+    padding-block: 12px;
+    margin-block: -12px;
   }
 
-  .page-body p > a:not([class]) {
+  /* Two links in one paragraph can wrap onto lines next to each other, where
+     the later target would cover the earlier link. Links in a sentence are
+     exempt from the target size, so these keep their text's height. */
+  p:has(button.link ~ button.link) button.link {
+    padding-block: 0;
+    margin-block: 0;
+  }
+
+  /* A batch's left-out keys each get a line of their own. */
+  p > .left-out-key {
+    display: block;
     padding-block: 12px;
   }
 
+  p > .left-out-key + .left-out-key::before {
+    content: none;
+  }
+
+  .page-body p > a:not([class]) {
+    padding-block: 13px;
+  }
+
   ul.left-out li {
-    padding-block: 11px;
+    padding-block: 12px;
   }
 
   /* A native checkbox fills its whole box, so this one draws a box of the usual
