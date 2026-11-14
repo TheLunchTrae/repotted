@@ -169,6 +169,10 @@ the file has it, and `entry-edits.ts` holds each change with the saved entry
 it was made on, so a save never writes an entry over one that has since
 changed elsewhere. `views/entries.tsx` only draws them.
 
+`setting-search.ts` finds settings by the words typed: each must start a
+word of the setting's label, key, note, choices, group, tab, or the other
+names it lists, and a sub-option is also found by the setting it sits under.
+
 The editor opens on the file's own [draft](architecture.md#drafts) and saves
 two ways, as [the draft's table](state-machines.md#the-draft) lists. Each
 row has what applies, the draft, and the change over them, and one function

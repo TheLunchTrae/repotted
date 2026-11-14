@@ -7,6 +7,7 @@ import type { Entry } from './entry-forms.js';
 import { ownDraft, ownUnsets, settingsSections as draftSections } from './own-drafts.js';
 import { sameValue } from './same-value.js';
 import { type SettingField, type SettingGroup, settingSections } from './setting-fields.js';
+import { matchesSearch, parentOf, searchWords } from './setting-search.js';
 
 type ResolvedProfile = Awaited<ReturnType<typeof resolveProfile>>;
 
@@ -25,6 +26,8 @@ export interface SettingRow {
   readonly source: string | undefined;
   /** Whether it has a change that isn't saved. */
   readonly unsaved: boolean;
+  /** Whether this profile's draft has the setting, whatever unsaved change is over it. */
+  readonly drafted: boolean;
   /** Whether the value shown is this profile's draft of it, which doesn't apply until a save finishes the draft. */
   readonly inDraft: boolean;
   /** What applies now, from this profile or a base profile, whatever the draft and the unsaved changes say. */
@@ -43,6 +46,24 @@ export interface GroupRows {
   readonly group: SettingGroup;
   readonly rows: readonly SettingRow[];
 }
+
+/** The filters over the settings: each shows only the settings it names. */
+export type SettingFilter = 'managed' | 'unsaved' | 'drafts';
+
+/** One group of the settings a search or filter found, under its tab's name. */
+export interface FoundGroup extends GroupRows {
+  readonly tab: string;
+}
+
+interface Finding {
+  readonly query: string;
+  readonly filters: ReadonlySet<SettingFilter>;
+  /** The paths of the settings that fit, and with them those they sit under. */
+  readonly fits: ReadonlySet<string>;
+  readonly shown: ReadonlySet<string>;
+}
+
+const nothingFound: Finding = { query: '', filters: new Set(), fits: new Set(), shown: new Set() };
 
 function getIn(value: unknown, keys: readonly string[]): unknown {
   return keys.reduce<unknown>(
@@ -229,12 +250,47 @@ export class ProfileEditor {
     })),
   );
 
+  /** What is typed in the settings search. */
+  readonly query = computed(() => this.#finding.value.query);
+
+  /** The filters that are on. */
+  readonly filters = computed(() => this.#finding.value.filters);
+
+  /** Whether a search or filter is on, so the settings it found show in place of the tabs. */
+  readonly filtering = computed(
+    () => searchWords(this.#finding.value.query).length > 0 || this.#finding.value.filters.size > 0,
+  );
+
+  /** How many settings the search and filters found. */
+  readonly foundCount = computed(() => this.#finding.value.fits.size);
+
+  /**
+   * The settings the search and filters found, group by group across the
+   * tabs, each sub-option with the setting it sits under. What is found
+   * changes only when the search or a filter does, so a row doesn't vanish
+   * as it is edited.
+   */
+  readonly found = computed((): FoundGroup[] => {
+    const { fits, shown } = this.#finding.value;
+    return this.sections.value.flatMap(({ section, groups }) =>
+      groups
+        .filter(({ rows }) => rows.some((row) => fits.has(keyOf(row.field.path))))
+        .map(({ group, rows }) => ({
+          tab: section.name,
+          group,
+          rows: rows.filter((row) => shown.has(keyOf(row.field.path))),
+        })),
+    );
+  });
+
   /** The rulesets, environments, and labels, by list, as they stand with the unsaved changes. */
   readonly entries = this.#entryEdits.rows;
 
   readonly #changed = computed(() => this.#edits.value.size > 0 || this.#entryEdits.count.value > 0);
 
   readonly #ownUnsets = computed(() => (this.#saved.value === undefined ? [] : ownUnsets(this.#saved.value)));
+
+  readonly #finding = signal<Finding>(nothingFound);
 
   /** Whether something typed can't be a value. */
   readonly #refused = computed(() => [...this.#typed.value.values()].some((typed) => typed.problem !== undefined));
@@ -281,6 +337,48 @@ export class ProfileEditor {
     if (this.#typed.value.get(keyOf(field.path))?.problem === undefined) {
       this.#forget(field);
     }
+  }
+
+  /** Finds the settings the words typed fit, among those the filters leave. */
+  search(query: string): void {
+    this.#find(query, this.#finding.value.filters);
+  }
+
+  /** Turns a filter on or off. */
+  filter(filter: SettingFilter, on: boolean): void {
+    const filters = new Set(this.#finding.value.filters);
+    if (on) {
+      filters.add(filter);
+    } else {
+      filters.delete(filter);
+    }
+    this.#find(this.#finding.value.query, filters);
+  }
+
+  /** Clears the search and every filter, so the tabs show again. */
+  clearFilters(): void {
+    this.#finding.value = nothingFound;
+  }
+
+  #find(query: string, filters: ReadonlySet<SettingFilter>): void {
+    const words = searchWords(query);
+    const rows = this.sections.value.flatMap((section) => section.groups.flatMap((group) => group.rows));
+    const fits = rows.filter(
+      (row) =>
+        matchesSearch(row.field, words) &&
+        (!filters.has('managed') || row.value !== undefined) &&
+        (!filters.has('unsaved') || row.unsaved || row.invalid !== undefined) &&
+        (!filters.has('drafts') || row.drafted),
+    );
+    // A setting shows under the one it belongs to, and the one whose value decides whether it shows.
+    const above = fits.flatMap(({ field }) => [
+      parentOf(field),
+      fieldsOf(field.section).find((other) => other.key === field.dependsOn?.key),
+    ]);
+    const paths = (fields: readonly (SettingField | undefined)[]): Set<string> =>
+      new Set(fields.flatMap((field) => (field === undefined ? [] : [keyOf(field.path)])));
+    const found = paths(fits.map((row) => row.field));
+    this.#finding.value = { query, filters, fits: found, shown: new Set([...found, ...paths(above)]) };
   }
 
   /** Starts a ruleset, environment, or label, and answers the key the editor knows it by. */
@@ -663,6 +761,7 @@ export class ProfileEditor {
           value: this.#valueOf(field, edits),
           source: source === undefined ? undefined : source === shown.chain[0] ? 'here' : basename(source),
           unsaved: edits.has(key),
+          drafted: this.#draft(field) !== undefined,
           inDraft: !edits.has(key) && this.#draft(field) !== undefined,
           applied: getIn(this.#saved.value?.profile, field.path),
           off: field.dependsOn?.hides === false && holds(field),
