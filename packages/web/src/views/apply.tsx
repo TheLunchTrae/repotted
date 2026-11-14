@@ -190,6 +190,28 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 {apply.editError.value}
               </p>
             )}
+            {state.leftOut.length > 0 && (
+              <div class="notice">
+                <p>This apply leaves these out, so they can't be edited here until they are put back:</p>
+                <ul class="left-out">
+                  {state.leftOut.map((key) => (
+                    <li key={key}>
+                      <span class="mono small">{key}</span>{' '}
+                      <button
+                        class="link"
+                        type="button"
+                        aria-label={`Put back ${key}`}
+                        onClick={() => {
+                          run(apply.leaveOut(key, false));
+                        }}
+                      >
+                        Put back
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <ProfileSettings
               key={editor.file}
               name={state.profile}
@@ -207,7 +229,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                       <button
                         class="button"
                         type="button"
-                        disabled={editor.saving.value}
+                        disabled={editor.saving.value || (editor.dirty.value && !editor.canSave.value)}
                         onClick={() => {
                           run(apply.saveToProfile());
                         }}

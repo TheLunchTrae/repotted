@@ -213,6 +213,8 @@ test('an apply that cannot be reviewed says why and can be tried again, from the
   expect(await apply.unfinished('lunch/app')).toBe(false);
   await saved();
   await apply.reviewAgain();
+  expect(apply.state.value).toMatchObject({ kind: 'editing' });
+  await apply.review();
   expect(rows(apply)).toEqual(['repository.has_projects', 'repository.has_wiki', 'new label']);
 });
 
@@ -331,17 +333,30 @@ test('an apply that is writing is neither replaced nor joined, and its outcome s
   expect(await apply.unfinished('lunch/app')).toBe(true);
 });
 
-test('an apply that could not be reviewed even once is not left to pick up', async () => {
+test('an apply whose review fails is kept, and goes back to its edits or is reviewed again', async () => {
   await saved('owner_type: user\nrepository:\n  has_wiki: false\n');
-  const apply = new Apply(new FakeGitHub({ ownerType: 'Organization' }), () => undefined);
-
+  const github = new FakeGitHub({ ownerType: 'Organization' });
+  const apply = new Apply(github, () => undefined);
   await apply.start('lunch/app', profile);
-
   await apply.review();
 
   const state = apply.state.value;
   expect(state.kind === 'failed' ? state.message : '').toContain('make a copy of the profile');
-  expect(await apply.unfinished('lunch/app')).toBe(false);
+  expect(await apply.unfinished('lunch/app')).toBe(true);
+
+  await apply.backToEdits();
+  expect(apply.state.value).toMatchObject({ kind: 'editing' });
+
+  // An apply picked up from its repository, with no profile picked, is reviewed again as it is.
+  apply.close();
+  await apply.pickUp('lunch/app');
+  github.fail('GET /repos/lunch/app', answered(500, 'Server Error'), 1);
+  await apply.review();
+  expect(apply.state.value).toMatchObject({ kind: 'failed', message: 'Server Error' });
+  expect(await apply.unfinished('lunch/app')).toBe(true);
+  github.state.ownerType = 'User';
+  await apply.reviewAgain();
+  expect(apply.state.value).toMatchObject({ kind: 'reviewed' });
 });
 
 test('an apply whose profile is gone says so by its name, and one whose file is gone says to start again', async () => {
@@ -413,7 +428,13 @@ test('an apply opens on its one-off edits, which change this apply only and show
   const apply = new Apply(github, () => undefined);
 
   await apply.start('lunch/app', profile);
-  expect(apply.state.value).toEqual({ kind: 'editing', repository: 'lunch/app', profile: 'web', fromProfile: true });
+  expect(apply.state.value).toEqual({
+    kind: 'editing',
+    repository: 'lunch/app',
+    profile: 'web',
+    fromProfile: true,
+    leftOut: [],
+  });
   const editor = apply.editor.value;
   expect(editor?.drafts).toBe(false);
   expect(writes(github)).toEqual([]);
@@ -459,16 +480,109 @@ test('settings are changed once, with no profile, from the repository as it is',
   const apply = new Apply(github, () => undefined);
 
   await apply.startWithoutProfile('lunch/app');
-  expect(apply.state.value).toEqual({ kind: 'editing', repository: 'lunch/app', profile: '', fromProfile: false });
+  expect(apply.state.value).toEqual({
+    kind: 'editing',
+    repository: 'lunch/app',
+    profile: '',
+    fromProfile: false,
+    leftOut: [],
+  });
   const wiki = settingSections
     .flatMap((section) => section.groups.flatMap((group) => group.fields))
     .find((field) => field.path.join('.') === 'repository.has_wiki');
   await apply.editor.value?.set(wiki ?? neverField(), false);
+  // With no profile to save to, the edits stay in the apply.
   await apply.saveToProfile();
-  expect(await exists(staged)).toBe(true);
+  expect(apply.editor.value?.dirty.value).toBe(true);
   await apply.review();
   await apply.apply();
 
   expect(apply.state.value).toMatchObject({ kind: 'applied', changes: 1 });
   expect(github.state.repository).toMatchObject({ has_wiki: false });
+});
+
+function setting(path: string): SettingField {
+  return (
+    settingSections
+      .flatMap((section) => section.groups.flatMap((group) => group.fields))
+      .find((field) => field.path.join('.') === path) ?? neverField()
+  );
+}
+
+test('edits saved to the profile take a turn among its syncs, and a refusal says why and keeps them in the apply', async () => {
+  await saved();
+  const turns: string[] = [];
+  const apply = new Apply(
+    new FakeGitHub(),
+    () => undefined,
+    async (work) => {
+      turns.push('sync');
+      await work();
+      turns.push('sync');
+    },
+  );
+  await apply.start('lunch/app', profile);
+  await apply.editor.value?.set(setting('repository.has_issues'), false);
+
+  await apply.saveToProfile();
+
+  expect(turns).toEqual(['sync', 'sync']);
+  expect(await readFile(profile.file, 'utf8')).toContain('has_issues: false');
+  expect(apply.editError.value).toBeUndefined();
+
+  // The profile becomes unreadable under the apply: the edit can't be saved to it, and stays in the apply.
+  await apply.editor.value?.set(setting('repository.has_projects'), true);
+  await apply.review();
+  await apply.backToEdits();
+  const before = await readFile(staged, 'utf8');
+  await writeFile(profile.file, 'repository: 5\n');
+  await apply.saveToProfile();
+  expect(apply.editError.value).toBeDefined();
+  expect(await readFile(staged, 'utf8')).toBe(before);
+});
+
+test('leaving the page keeps the edits that can be saved in the apply', async () => {
+  await saved();
+  const apply = new Apply(new FakeGitHub(), () => undefined);
+  await apply.start('lunch/app', profile);
+  await apply.editor.value?.set(setting('repository.has_issues'), false);
+
+  apply.close();
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+  await apply.pickUp('lunch/app');
+
+  expect(await readFile(staged, 'utf8')).toContain('has_issues: false');
+  expect(apply.editor.value?.dirty.value).toBe(false);
+  expect(await readFile(profile.file, 'utf8')).toBe(text);
+});
+
+test('what an apply leaves out is named on its edits, and put back there to be edited', async () => {
+  await saved();
+  const apply = new Apply(new FakeGitHub(), () => undefined);
+  await apply.start('lunch/app', profile);
+  await apply.review();
+  await apply.leaveOut('repository.has_wiki', true);
+  await apply.backToEdits();
+  expect(apply.state.value).toMatchObject({ kind: 'editing', leftOut: ['repository.has_wiki'] });
+
+  await apply.leaveOut('repository.has_wiki', false);
+
+  expect(apply.state.value).toMatchObject({ kind: 'editing', leftOut: [] });
+  await apply.editor.value?.set(setting('repository.has_wiki'), true);
+  expect(apply.editor.value?.problem.value).toBeUndefined();
+});
+
+test('changing settings once starts nothing over an apply that is unfinished', async () => {
+  await saved();
+  const apply = new Apply(new FakeGitHub(), () => undefined);
+  await apply.start('lunch/app', profile);
+  const before = await readFile(staged, 'utf8');
+  apply.close();
+
+  await apply.startWithoutProfile('lunch/app');
+
+  expect(apply.state.value).toEqual({ kind: 'idle' });
+  expect(await readFile(staged, 'utf8')).toBe(before);
 });

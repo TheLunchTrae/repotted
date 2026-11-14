@@ -94,6 +94,8 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
   const { field } = row;
   const id = `setting-${field.path.join('-')}`;
   const managed = row.value !== undefined;
+  // An apply's editor sets values in the apply, which a profile's sets in the profile.
+  const here = editor.drafts ? 'profile' : 'apply';
   return (
     <div class={`setting${field.nested ? ' setting-nested' : ''}${row.unsaved ? ' setting-unsaved' : ''}`}>
       <div class="setting-head">
@@ -109,9 +111,9 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
               : !managed
                 ? 'Not managed: each repository keeps its own.'
                 : row.source === 'here'
-                  ? 'Set in this profile.'
+                  ? `Set in this ${here}.`
                   : row.source === undefined
-                    ? 'Set in this profile, not saved yet.'
+                    ? `Set in this ${here}, not saved yet.`
                     : `From ${row.source}.`}
             {row.unsaved && managed && row.source !== undefined && ' Not saved yet.'}
             {row.off && ' Off on GitHub for the setting above.'}

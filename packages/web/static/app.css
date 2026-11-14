@@ -1116,6 +1116,11 @@ select.field {
 }
 
 /* A comparison */
+.left-out {
+  display: grid;
+  gap: 2px;
+}
+
 .compare-row {
   display: flex;
   flex-wrap: wrap;

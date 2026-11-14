@@ -94,6 +94,9 @@ From there you can:
 - Click **Discard apply** to throw the apply away. The profile stays as it
   is.
 
+What the apply leaves out is listed above the edits with **Put back**, since
+a change can't be both left out and edited.
+
 The second step shows each change by section, with what GitHub has now and
 what it will have after the apply. From there you can:
 

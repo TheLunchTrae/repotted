@@ -356,6 +356,9 @@ export class ProfileEditor {
    * value a draft can't hold stop it.
    */
   readonly draftProblem = computed(() => {
+    if (!this.drafts) {
+      return undefined;
+    }
     if (this.#entryEdits.draftHeld.value) {
       return 'Give each new or renamed ruleset, environment, and label a name no other has, to keep them as a draft.';
     }

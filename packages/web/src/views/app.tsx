@@ -52,11 +52,13 @@ function SignedIn({
     const refused = (): void => {
       account.refused();
     };
+    const kept = new Profiles(github, preferences, refused);
     return {
       repositories: new Repositories(github, user, preferences, refused),
-      profiles: new Profiles(github, preferences, refused),
+      profiles: kept,
       comparison: new Comparison(github, refused),
-      apply: new Apply(github, refused),
+      // An apply's edits saved to a profile take their turn among the profiles' syncs.
+      apply: new Apply(github, refused, (work) => kept.write(work)),
     };
   }, [account, github, preferences, user]);
   useEffect(() => {

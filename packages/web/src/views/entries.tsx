@@ -740,7 +740,9 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
               : row.inDraft === 'changed'
                 ? 'Changed in the draft. It applies once you save.'
                 : row.source === 'here'
-                  ? 'Set in this profile.'
+                  ? editor.drafts
+                    ? 'Set in this profile.'
+                    : 'Set in this apply.'
                   : `From ${row.source}. Changing it here overrides it.`}
         </span>
         {row.unsaved && row.savedName !== undefined && (
