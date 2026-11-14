@@ -52,5 +52,21 @@ export function browser(start: string, later = false) {
       listeners.push(listener);
     },
   });
-  return { router, history, traversals, entries: () => entries.map((entry) => entry.address), listeners, show };
+  /** The browser's forward, to the entry after this one. */
+  const forward = (): void => {
+    at += 1;
+    show(entries[at]?.address ?? '/');
+    listeners.forEach((listener) => {
+      listener();
+    });
+  };
+  return {
+    router,
+    history,
+    traversals,
+    forward,
+    entries: () => entries.map((entry) => entry.address),
+    listeners,
+    show,
+  };
 }

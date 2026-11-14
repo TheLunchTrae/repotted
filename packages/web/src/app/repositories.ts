@@ -309,11 +309,22 @@ export class Repositories {
    * The selected repository, while it shows; a search, a hide, or a closed
    * folder that takes it out of view clears it.
    */
-  readonly selected = computed<Repository | undefined>(() =>
-    [...this.folders.value.filter((folder) => folder.open), ...this.groups.value]
-      .flatMap((group) => group.repositories)
-      .find((repository) => repository.full_name === this.#selectedName.value),
+  readonly selected = computed<Repository | undefined>(() => {
+    const name = this.#selectedName.value;
+    return name === undefined ? undefined : this.inView(name);
+  });
+
+  /** The repositories in view: those in open folders, then those by owner. */
+  readonly #inView = computed<readonly Repository[]>(() =>
+    [...this.folders.value.filter((folder) => folder.open), ...this.groups.value].flatMap(
+      (group) => group.repositories,
+    ),
   );
+
+  /** The repository in view with this `owner/name`, in any case, since GitHub matches names in any case. */
+  inView(name: string): Repository | undefined {
+    return this.#inView.value.find((repository) => sameName(repository.full_name, name));
+  }
 
   /**
    * The ticked repositories the account still lists, in the list's order. One

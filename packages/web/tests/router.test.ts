@@ -44,15 +44,37 @@ test('a return to a query that no entry before holds, as after a link to the add
   expect(router.search.value).toBe('');
 });
 
-test('a link to the page shown drops its query, and one to the page as it is does nothing', () => {
+test('a link to the page shown goes back to it without its query when that entry is the one before', () => {
+  const { router, history, entries } = browser('/');
+  router.query('?repository=octo/app', 'push');
+
+  router.go('/');
+
+  expect(history.back).toHaveBeenCalledTimes(1);
+  expect(entries()).toEqual(['/', '/?repository=octo/app']);
+  expect(router.search.value).toBe('');
+});
+
+test('a link to the page shown drops its query in place when no entry before has it without, and else does nothing', () => {
   const { router, history, entries } = browser('/?repository=octo/app');
 
   router.go('/');
-  expect(entries()).toEqual(['/?repository=octo/app', '/']);
-  expect(router.search.value).toBe('');
-
   router.go('/');
-  expect(history.pushState).toHaveBeenCalledTimes(1);
+
+  expect(history.back).not.toHaveBeenCalled();
+  expect(history.pushState).not.toHaveBeenCalled();
+  expect(entries()).toEqual(['/']);
+  expect(router.search.value).toBe('');
+});
+
+test('a link to another page with a query takes both', () => {
+  const { router, entries } = browser('/apply');
+
+  router.go('/?repository=octo/app');
+
+  expect(entries()).toEqual(['/apply', '/?repository=octo/app']);
+  expect(router.path.value).toBe('/');
+  expect(router.search.value).toBe('?repository=octo/app');
 });
 
 test('a second return while the first back is under way asks for no second back', () => {

@@ -440,10 +440,10 @@ function RepositoryPanel({
   const hidden = repositories.isHidden(repository);
   const back = useRef<HTMLButtonElement>(null);
   const screen = onBack !== undefined;
-  // A screen of its own opens at its top, with the focus on the way back, since the row that opened it is gone.
+  // A screen of its own takes the focus to the way back, since the row that opened it is gone. One opened by a
+  // link as the page loads leaves the focus at the start of the page, before the navigation.
   useLayoutEffect(() => {
-    if (screen) {
-      scrollTo(0, 0);
+    if (screen && navigator.userActivation.hasBeenActive) {
       back.current?.focus({ preventScroll: true });
     }
   }, [screen, repository.full_name]);
@@ -602,9 +602,11 @@ function useSearchKey(): RefObject<HTMLInputElement | null> {
     const focus = (event: KeyboardEvent): void => {
       const typing = event.target instanceof HTMLElement && event.target.matches('input, textarea, select');
       // Without a search on the page, the key stays the browser's.
-      if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey && input.current !== null) {
+      // Nor while the search is out of view, as behind a repository's details on a phone.
+      const shown = input.current !== null && input.current.getClientRects().length > 0;
+      if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey && shown) {
         event.preventDefault();
-        input.current.focus();
+        input.current?.focus();
       }
     };
     document.addEventListener('keydown', focus);
@@ -635,49 +637,35 @@ function usePhone(): boolean {
 }
 
 /**
- * Keeps the selection and the page's address together. Opening a
- * repository's screen of its own, as on a phone, adds a history entry, so the
- * browser's back returns to the list. On a phone the selection is let go of
- * once its repository is out of view, as one hidden or moved into a closed
- * folder, so the address names only what shows.
+ * Keeps the selection and the page's address together, as `AddressSelection`
+ * says. Returns whether a phone is arriving at the list, with no repository
+ * named, which drops the selection kept from before before the page paints.
  */
-function useAddressedSelection(address: AddressSelection, repositories: Repositories, phone: boolean): void {
+function useAddressedSelection(address: AddressSelection, repositories: Repositories, phone: boolean): boolean {
   const named = address.named;
   const name = repositories.selectedName;
   const shown = repositories.selected.value?.full_name;
   const listed = repositories.list.value !== undefined;
-  const screen = phone && shown !== undefined;
   const arrived = useRef(false);
-  // What the address last took, to tell a screen opened with the selection from a selection changed.
-  const before = useRef<{ readonly name: string | undefined; readonly screen: boolean }>({
-    name: undefined,
-    screen: false,
-  });
-  useEffect(() => {
+  // Before the page paints, so a phone arriving at the list doesn't show a kept selection's screen first.
+  useLayoutEffect(() => {
     if (arrived.current) {
       address.follow();
     } else {
       arrived.current = true;
-      address.arrive();
+      address.arrive(phone);
     }
-    before.current = { name: repositories.selectedName, screen: before.current.screen };
-  }, [address, repositories, named]);
-  useEffect(() => {
-    if (name !== before.current.name) {
-      address.keep(screen && !before.current.screen ? 'push' : 'replace');
-    }
-    before.current = { name, screen };
-  }, [address, name, screen]);
-  useEffect(() => {
-    if (phone && listed && name !== undefined && shown === undefined) {
-      address.release();
-    }
-  }, [address, phone, listed, name, shown]);
+    // Arrival reads the screen's width once; a back or forward doesn't depend on it.
+  }, [address, named]);
+  useLayoutEffect(() => {
+    address.update(phone);
+  }, [address, phone, name, shown, listed]);
+  return phone && !arrived.current && named === undefined;
 }
 
 /**
- * On a phone, the list comes back from a repository's details where it was
- * left, with the focus on the row that opened them, or on the page's heading
+ * On a phone, a repository's details open at their top, and the list comes
+ * back from them where it was left, with the focus on the row that opened them, or on the page's heading
  * when that row is out of view.
  */
 function useListReturn(
@@ -690,14 +678,30 @@ function useListReturn(
   const closed = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     if (details) {
+      // The details open at their top.
       closed.current = name;
+      scrollTo(0, 0);
       return undefined;
     }
-    // Details that close because the screen grew stay beside the list, which wasn't left.
-    if (closed.current !== undefined && phone) {
-      scrollTo(0, scrolled.current);
+    if (closed.current !== undefined) {
       const row = document.querySelector<HTMLElement>(`button.row[data-repository="${CSS.escape(closed.current)}"]`);
-      (row ?? heading.current)?.focus({ preventScroll: true });
+      // Only focus that went with the details moves; one left elsewhere, as on the link that came here, stays.
+      const lost = document.activeElement === null || document.activeElement === document.body;
+      if (phone) {
+        const y = scrolled.current;
+        scrollTo(0, y);
+        // Again once a back has run its course, since the browser puts back the scroll it kept for the entry,
+        // which it took after the details had opened.
+        requestAnimationFrame(() => {
+          scrollTo(0, y);
+        });
+        if (lost) {
+          (row ?? heading.current)?.focus({ preventScroll: true });
+        }
+      } else if (lost) {
+        // Details that close because the screen grew stay beside the list, which wasn't left.
+        row?.focus();
+      }
     }
     closed.current = undefined;
     // Kept as it changes, since opening the details takes the list out of the page and the scroll with it.
@@ -927,8 +931,8 @@ export function RepositoriesPage({
   // beside the list.
   const phone = usePhone();
   // On a phone the details are a screen of their own, which leaves any ticked repositories with the list.
-  const details = phone && selected !== undefined;
-  useAddressedSelection(address, repositories, phone);
+  const toList = useAddressedSelection(address, repositories, phone);
+  const details = phone && selected !== undefined && !toList;
   const heading = useListReturn(details, phone, selected?.full_name);
 
   return (

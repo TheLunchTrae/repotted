@@ -39,13 +39,26 @@ export class Router {
     });
   }
 
-  /** Goes to a page, or to the page shown without its query. */
-  go(path: string): void {
-    if (path !== this.path.value || this.search.value !== '') {
-      this.#history.pushState(null, '', path);
-      this.path.value = path;
-      this.search.value = '';
+  /**
+   * Goes to an address, `/path` with an optional `?query`, in a new history
+   * entry. The page shown, without a query, is the page as it was before its
+   * query: back to that entry when it is the one before, else in place.
+   */
+  go(address: string): void {
+    const at = address.indexOf('?');
+    const path = at === -1 ? address : address.slice(0, at);
+    const search = at === -1 ? '' : address.slice(at);
+    if (path === this.path.value) {
+      if (search === '') {
+        this.returnTo('');
+      } else {
+        this.query(search, 'push');
+      }
+      return;
     }
+    this.#history.pushState(null, '', address);
+    this.path.value = path;
+    this.search.value = search;
   }
 
   /**
@@ -75,7 +88,7 @@ export class Router {
    */
   returnTo(search: string): void {
     const state: unknown = this.#history.state;
-    if (this.#returning) {
+    if (this.#returning || search === this.search.value) {
       return;
     }
     if (isQueryEntry(state) && state.from === search) {
