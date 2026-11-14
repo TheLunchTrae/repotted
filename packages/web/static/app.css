@@ -276,6 +276,66 @@ input[type='checkbox'] {
   left: auto;
 }
 
+/* On a phone. These rules come before the rules they change, so a selector
+   adds an element where a later rule sets the same property. */
+@media (max-width: 760px) {
+  /* A menu that opens from its start edge can wrap anywhere in a toolbar, so
+     its panel spans the page under its button and can't run off the side.
+     It spans its nearest positioned ancestor, which for today's menus is the
+     page; one inside a sticky bar, a dialog or a panel would span that. */
+  .menu:not(:has(> .menu-panel-end)) {
+    position: static;
+  }
+
+  .menu-panel:not(.menu-panel-end) {
+    top: auto;
+    right: 16px;
+    left: 16px;
+    min-width: 0;
+    margin-top: 6px;
+  }
+
+  /* The account menu's button can wrap alone to the start of the shell bar,
+     so its panel keeps to the page's end edge instead of the button's. */
+  .account-menu {
+    position: static;
+  }
+
+  .account-menu > .menu-panel {
+    top: auto;
+    right: 16px;
+    margin-top: 6px;
+  }
+
+  /* An entry's status takes its own line under the entry's buttons. */
+  .entry-bar > span.muted {
+    flex: 1 1 100%;
+    order: 1;
+  }
+
+  /* Options keep each label on one line and wrap as whole options, with a
+     1px line between them in either direction. */
+  div.segments {
+    flex-wrap: wrap;
+    gap: 1px;
+    background: var(--border);
+  }
+
+  div.segments label {
+    flex: 1 1 auto;
+    background: var(--surface);
+  }
+
+  div.segments label + label {
+    border-inline-start: 0;
+  }
+
+  div.segments span {
+    white-space: nowrap;
+    text-align: center;
+  }
+}
+
 .menu-heading {
   display: grid;
   padding: 6px 10px 10px;
