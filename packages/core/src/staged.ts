@@ -14,6 +14,7 @@ import {
   editProfile,
   flattenSettings,
   type Layer,
+  previewLayer,
   type ProfileEdit,
   ProfileError,
   type ProfileSources,
@@ -428,6 +429,19 @@ export async function editStagedApply(file: string, edits: readonly StagedEdit[]
       },
     }),
   );
+}
+
+/**
+ * What a staged apply resolves to now and with these one-off edits, as
+ * `editStagedApply` would leave it. Nothing is written, so an editor can
+ * show what its unsaved edits give before it saves them.
+ */
+export async function previewStagedApply(
+  file: string,
+  edits: readonly ProfileEdit[],
+): Promise<{ before: StagedApply; after: StagedApply }> {
+  const { before, after } = await previewLayer(file, () => edits, stagedLayer);
+  return { before: staged(before), after: staged(after) };
 }
 
 /** The edits that write a profile layer's own settings and entries into another file, or clear them. */

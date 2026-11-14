@@ -34,6 +34,11 @@ export interface CompareRow {
   readonly lock: string | undefined;
   /** In an apply, what leaves the row's change out of it, such as `repository.has_wiki` or `rulesets/Main`. */
   readonly leaveOut?: string | undefined;
+  /**
+   * In an apply, whether the row comes from one of the apply's one-off
+   * edits, which is changed or undone on the edits and not left out.
+   */
+  readonly oneOff?: boolean;
 }
 
 /** What leaves one change of an apply's plan out, or one field of it, as the engine's staged plan lists it. */
@@ -41,6 +46,8 @@ export interface RowExclusion {
   readonly change: number;
   readonly field: string | null;
   readonly key: string;
+  /** Whether the apply's own one-off edits set what the key names. */
+  readonly edited: boolean;
 }
 
 export interface CompareSection {
@@ -267,8 +274,12 @@ export function compareSections(
     const field = of.find(
       (exclusion) => exclusion.field !== null && (row.key === exclusion.key || row.key.startsWith(`${exclusion.key}.`)),
     );
-    const key = (field ?? of.find((exclusion) => exclusion.field === null))?.key;
-    return key === undefined ? row : { ...row, leaveOut: key };
+    const found = field ?? of.find((exclusion) => exclusion.field === null);
+    if (found === undefined) {
+      return row;
+    }
+    // The engine refuses to exclude what the apply itself edits, so such a row is undone on the edits instead.
+    return found.edited ? { ...row, oneOff: true } : { ...row, leaveOut: found.key };
   };
   // GitHub can't edit an autolink, so a plan remakes one with a delete and a create, which is one change to it here.
   const autolinks = (action: Change['action']): Map<string, number> =>

@@ -67,8 +67,12 @@ interface PanelProps {
   readonly onCapture: (repository: string) => void;
   readonly onCompare: (repository: string, profile: ComparedProfile) => void;
   readonly apply: Apply;
-  /** Starts an apply of the profile to the repository, or picks up the unfinished one when no profile is given. */
-  readonly onApply: (repository: string, profile: ComparedProfile | undefined) => void;
+  /**
+   * Starts an apply of the profile to the repository, picks up the
+   * unfinished one when no profile is given, or with `once` starts one that
+   * changes settings without a profile.
+   */
+  readonly onApply: (repository: string, profile: ComparedProfile | 'once' | undefined) => void;
 }
 
 function RepositoryPanel({ repository, profiles, apply, onCapture, onCompare, onApply }: PanelProps): JSX.Element {
@@ -123,6 +127,18 @@ function RepositoryPanel({ repository, profiles, apply, onCapture, onCompare, on
       >
         Capture as a new profile
       </button>
+      {/* One apply a repository at a time: an unfinished one is resumed or discarded first. */}
+      {!unfinished && (
+        <button
+          class="button"
+          type="button"
+          onClick={() => {
+            onApply(repository.full_name, 'once');
+          }}
+        >
+          Change settings once
+        </button>
+      )}
       {unfinished && (
         <div class="notice notice-drift">
           <p>An apply here is not finished.</p>

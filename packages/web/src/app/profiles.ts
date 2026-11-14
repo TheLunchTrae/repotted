@@ -486,6 +486,15 @@ export class Profiles {
     await this.editor.value?.save((write) => this.#write(write), mode);
   }
 
+  /**
+   * Gives a write to a profile's file, made from outside its editor, its
+   * turn among syncs: what changed on GitHub comes in first, the write is
+   * committed after, and the list and the editors are read again.
+   */
+  async write(work: () => Promise<void>): Promise<void> {
+    await this.#write(work);
+  }
+
   /** Makes the open profile one for another kind of owner, in a turn of the queue as a save has. */
   async changeOwnerType(type: OwnerChoice): Promise<void> {
     await this.editor.value?.changeOwnerType((write) => this.#write(write), type);

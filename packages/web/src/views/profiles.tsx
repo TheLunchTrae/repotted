@@ -232,7 +232,11 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           key={editor.file}
           name={listing.name}
           editor={editor}
-          profiles={profiles}
+          saving={{
+            save: (mode) => profiles.save(mode),
+            discardDraft: () => profiles.discardDraft(),
+            onGitHub: profiles.source.value.kind === 'repository',
+          }}
           pushes={listing.owner_type !== 'user'}
         />
       )}

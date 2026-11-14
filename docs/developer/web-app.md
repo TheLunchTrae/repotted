@@ -178,6 +178,10 @@ apply, a file the browser keeps, so that leaving changes out and picking an
 apply up later are the engine's own. It reviews with `planStagedApply` and
 writes with `applyPlan`, which plans again and refuses when the repository
 has changed.
+Its first step is the profile editor over the staged apply's file: an
+`EditorStore` gives `ProfileEditor` the functions that read, preview, and
+write its file, the engine's profile functions for a profile and its staged
+apply functions for an apply.
 
 `action-pattern-checks.ts` asks GitHub what each allowed action pattern
 matches, with the engine's `checkActionPatterns`, and keeps the answers by

@@ -1,9 +1,8 @@
-import type { JSX } from 'preact';
+import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { entryLists } from '../app/entry-edits.js';
+import { entryLists, type SaveMode } from '../app/entry-edits.js';
 import type { ProfileEditor, SettingFilter, SettingRow } from '../app/profile-editor.js';
-import type { Profiles } from '../app/profiles.js';
 import { sameValue } from '../app/same-value.js';
 import { ActionSearchBox } from './action-search.js';
 import { Entries } from './entries.js';
@@ -95,6 +94,8 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
   const { field } = row;
   const id = `setting-${field.path.join('-')}`;
   const managed = row.value !== undefined;
+  // An apply's editor sets values in the apply, which a profile's sets in the profile.
+  const here = editor.drafts ? 'profile' : 'apply';
   return (
     <div class={`setting${field.nested ? ' setting-nested' : ''}${row.unsaved ? ' setting-unsaved' : ''}`}>
       <div class="setting-head">
@@ -110,9 +111,9 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
               : !managed
                 ? 'Not managed: each repository keeps its own.'
                 : row.source === 'here'
-                  ? 'Set in this profile.'
+                  ? `Set in this ${here}.`
                   : row.source === undefined
-                    ? 'Set in this profile, not saved yet.'
+                    ? `Set in this ${here}, not saved yet.`
                     : `From ${row.source}.`}
             {row.unsaved && managed && row.source !== undefined && ' Not saved yet.'}
             {row.off && ' Off on GitHub for the setting above.'}
@@ -169,13 +170,25 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
   );
 }
 
+/** How an editor's page saves its file: a profile's through its profiles, an apply's edits into the apply. */
+export interface EditorSaving {
+  readonly save: (mode?: SaveMode) => Promise<void>;
+  readonly discardDraft: () => Promise<void>;
+  /** Whether the file is kept on GitHub, whose history can bring back what is discarded. */
+  readonly onGitHub: boolean;
+  /** What Save is called here, when it isn't a profile's Save. */
+  readonly saveLabel?: string;
+  /** What the page adds at the end of the bar, as an apply's way on to its review. */
+  readonly more?: ComponentChildren;
+}
+
 interface DraftProps {
   readonly editor: ProfileEditor;
-  readonly profiles: Profiles;
+  readonly saving: EditorSaving;
 }
 
 /** Asks before the draft is discarded, which writes at once and can't be undone. */
-function DiscardDraft({ profiles, onClose }: DraftProps & { readonly onClose: () => void }): JSX.Element {
+function DiscardDraft({ saving, onClose }: DraftProps & { readonly onClose: () => void }): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     dialog.current?.showModal();
@@ -186,14 +199,14 @@ function DiscardDraft({ profiles, onClose }: DraftProps & { readonly onClose: ()
         method="dialog"
         onSubmit={(event) => {
           if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'discard') {
-            run(profiles.discardDraft());
+            run(saving.discardDraft());
           }
         }}
       >
         <h2 id="discard-heading">Discard the draft?</h2>
         <p>
           The profile goes back to what applies now. The changes in the draft can't be brought back
-          {profiles.source.value.kind === 'repository' ? ", except from the repository's history" : ''}.
+          {saving.onGitHub ? ", except from the repository's history" : ''}.
         </p>
         <div class="form-actions">
           <button class="button button-danger" type="submit" value="discard">
@@ -210,7 +223,7 @@ function DiscardDraft({ profiles, onClose }: DraftProps & { readonly onClose: ()
 }
 
 /** Says that the profile has a draft, what it still needs before it can apply, and offers to discard it. */
-function DraftBanner({ editor, profiles }: DraftProps): JSX.Element | null {
+function DraftBanner({ editor, saving }: DraftProps): JSX.Element | null {
   const [discarding, setDiscarding] = useState(false);
   const count = editor.draftCount.value;
   const warnings = editor.warnings.value;
@@ -252,7 +265,7 @@ function DraftBanner({ editor, profiles }: DraftProps): JSX.Element | null {
       {discarding && (
         <DiscardDraft
           editor={editor}
-          profiles={profiles}
+          saving={saving}
           onClose={() => {
             setDiscarding(false);
           }}
@@ -275,12 +288,12 @@ interface ProfileSettingsProps {
   /** The profile's name, as the list has it. */
   readonly name: string;
   readonly editor: ProfileEditor;
-  readonly profiles: Profiles;
+  readonly saving: EditorSaving;
   /** Whether the profile's owner type has push rulesets, which personal accounts lack. */
   readonly pushes: boolean;
 }
 
-export function ProfileSettings({ name, editor, profiles, pushes }: ProfileSettingsProps): JSX.Element {
+export function ProfileSettings({ name, editor, saving, pushes }: ProfileSettingsProps): JSX.Element {
   const sections = editor.sections.value;
   const [tab, setTab] = useState(sections[0]?.section.section ?? '');
   const entries = editor.entries.value;
@@ -319,7 +332,7 @@ export function ProfileSettings({ name, editor, profiles, pushes }: ProfileSetti
   };
   return (
     <>
-      <DraftBanner editor={editor} profiles={profiles} />
+      <DraftBanner editor={editor} saving={saving} />
       <div class="filters" role="search" aria-label="Settings">
         <input
           class="field"
@@ -455,7 +468,7 @@ export function ProfileSettings({ name, editor, profiles, pushes }: ProfileSetti
           )}
         </>
       )}
-      {preview !== undefined && <SavePreviewDialog name={name} editor={editor} profiles={profiles} preview={preview} />}
+      {preview !== undefined && <SavePreviewDialog name={name} editor={editor} saving={saving} preview={preview} />}
       <div class="save-bar">
         {problem !== undefined && (
           <p class="problem" role="alert">
@@ -485,36 +498,41 @@ export function ProfileSettings({ name, editor, profiles, pushes }: ProfileSetti
         >
           Reset
         </button>
+        {editor.drafts && (
+          <>
+            <button
+              class="button button-quiet"
+              type="button"
+              disabled={!editor.canSave.value}
+              onClick={() => {
+                run(editor.openPreview());
+              }}
+            >
+              Preview
+            </button>
+            <button
+              class="button"
+              type="button"
+              disabled={!editor.canSaveAsDraft.value}
+              onClick={() => {
+                run(saving.save('draft'));
+              }}
+            >
+              Save as draft
+            </button>
+          </>
+        )}
         <button
-          class="button button-quiet"
+          class={saving.more === undefined ? 'button button-primary' : 'button'}
           type="button"
           disabled={!editor.canSave.value}
           onClick={() => {
-            run(editor.openPreview());
+            run(saving.save());
           }}
         >
-          Preview
+          {saving.saveLabel ?? 'Save'}
         </button>
-        <button
-          class="button"
-          type="button"
-          disabled={!editor.canSaveAsDraft.value}
-          onClick={() => {
-            run(profiles.save('draft'));
-          }}
-        >
-          Save as draft
-        </button>
-        <button
-          class="button button-primary"
-          type="button"
-          disabled={!editor.canSave.value}
-          onClick={() => {
-            run(profiles.save());
-          }}
-        >
-          Save
-        </button>
+        {saving.more}
       </div>
     </>
   );

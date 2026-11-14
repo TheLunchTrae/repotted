@@ -52,11 +52,13 @@ function SignedIn({
     const refused = (): void => {
       account.refused();
     };
+    const kept = new Profiles(github, preferences, refused);
     return {
       repositories: new Repositories(github, user, preferences, refused),
-      profiles: new Profiles(github, preferences, refused),
+      profiles: kept,
       comparison: new Comparison(github, refused),
-      apply: new Apply(github, refused),
+      // An apply's edits saved to a profile take their turn among the profiles' syncs.
+      apply: new Apply(github, refused, (work) => kept.write(work)),
     };
   }, [account, github, preferences, user]);
   useEffect(() => {
@@ -68,7 +70,7 @@ function SignedIn({
   // The browser asks before a reload or a closed tab discards changes that aren't saved.
   useEffect(() => {
     const ask = (event: BeforeUnloadEvent): void => {
-      if (profiles.unsaved.value.size > 0) {
+      if (profiles.unsaved.value.size > 0 || apply.editor.value?.dirty.value === true) {
         event.preventDefault();
       }
     };
@@ -76,7 +78,7 @@ function SignedIn({
     return () => {
       window.removeEventListener('beforeunload', ask);
     };
-  }, [profiles]);
+  }, [profiles, apply]);
   const path = router.path.value;
   // A comparison is put away with its page, so one still being made shows nothing later.
   useEffect(() => {
@@ -115,7 +117,13 @@ function SignedIn({
           }}
           apply={apply}
           onApply={(repository, profile) => {
-            run(profile === undefined ? apply.pickUp(repository) : apply.start(repository, profile));
+            run(
+              profile === undefined
+                ? apply.pickUp(repository)
+                : profile === 'once'
+                  ? apply.startWithoutProfile(repository)
+                  : apply.start(repository, profile),
+            );
             router.go('/apply');
           }}
           onCompare={(repository, profile) => {

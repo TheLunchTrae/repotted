@@ -39,6 +39,7 @@ export {
   discardStagedApply,
   editStagedApply,
   planStagedApply,
+  previewStagedApply,
   resolveStagedApply,
   saveStagedEdits,
 } from './staged.js';

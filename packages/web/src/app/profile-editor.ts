@@ -19,12 +19,33 @@ import type { ActionSearch } from './action-search.js';
 import { EntryEdits, type EntryList, type EntryRow, type SaveMode } from './entry-edits.js';
 import type { Entry } from './entry-forms.js';
 import { type DiffFold, type DiffLine, diffLines, foldUnchanged } from './line-diff.js';
-import { ownDraft, ownUnsets, settingsSections as draftSections } from './own-drafts.js';
+import { ownDraft, ownUnsets, type ResolvedProfile, settingsSections as draftSections } from './own-drafts.js';
 import { sameValue } from './same-value.js';
 import { type SettingField, type SettingGroup, type SettingOption, settingSections } from './setting-fields.js';
 import { matchesSearch, parentOf, searchWords } from './setting-search.js';
 
-type ResolvedProfile = Awaited<ReturnType<typeof resolveProfile>>;
+/**
+ * How an editor reads, previews, and writes its file. A profile's editor
+ * uses the engine's profile functions; an apply's uses those of its staged
+ * apply, whose one-off edits can't be drafts.
+ */
+export interface EditorStore {
+  /** Whether the file can hold drafts, so the editor offers to save as one. */
+  readonly drafts: boolean;
+  readonly resolve: (file: string) => Promise<ResolvedProfile>;
+  readonly preview: (
+    file: string,
+    edits: readonly ProfileEdit[],
+  ) => Promise<{ readonly before: ResolvedProfile; readonly after: ResolvedProfile }>;
+  readonly edit: (file: string, edits: readonly ProfileEdit[]) => Promise<ResolvedProfile>;
+}
+
+const profileStore: EditorStore = {
+  drafts: true,
+  resolve: resolveProfile,
+  preview: previewProfile,
+  edit: editProfile,
+};
 
 /** One setting to write, or with an undefined value to stop naming, in the open profile's file. */
 interface SettingEdit {
@@ -246,8 +267,18 @@ export class ProfileEditor {
   /** The search for repositories to allow actions from, when the editor has a way to ask. */
   readonly actionSearch: ActionSearch | undefined;
 
-  constructor(file: string, github?: { readonly patterns: ActionPatternChecks; readonly search: ActionSearch }) {
+  /** Whether the file can hold drafts: a profile can, and an apply's one-off edits can't. */
+  readonly drafts: boolean;
+  readonly #store: EditorStore;
+
+  constructor(
+    file: string,
+    github?: { readonly patterns: ActionPatternChecks; readonly search: ActionSearch },
+    store: EditorStore = profileStore,
+  ) {
     this.file = file;
+    this.#store = store;
+    this.drafts = store.drafts;
     this.patterns = github?.patterns;
     this.actionSearch = github?.search;
   }
@@ -325,6 +356,9 @@ export class ProfileEditor {
    * value a draft can't hold stop it.
    */
   readonly draftProblem = computed(() => {
+    if (!this.drafts) {
+      return undefined;
+    }
     if (this.#entryEdits.draftHeld.value) {
       return 'Give each new or renamed ruleset, environment, and label a name no other has, to keep them as a draft.';
     }
@@ -340,6 +374,7 @@ export class ProfileEditor {
   /** Whether Save as draft can run: it keeps the unsaved changes without applying them. */
   readonly canSaveAsDraft = computed(
     () =>
+      this.drafts &&
       this.loaded.value &&
       this.#changed.value &&
       !this.#refused.value &&
@@ -438,7 +473,7 @@ export class ProfileEditor {
   /** Reads the profile as it is saved, and lays the unsaved changes over it again. */
   async load(): Promise<void> {
     try {
-      this.#saved.value = await resolveProfile(this.file);
+      this.#saved.value = await this.#store.resolve(this.file);
       this.#entryEdits.setSaved(this.#saved.value);
       await this.#readBaseOwner();
       this.loadError.value = undefined;
@@ -523,7 +558,7 @@ export class ProfileEditor {
     const drafted = this.draftCount.value;
     const turn = (this.#opens += 1);
     try {
-      const { before, after } = await previewProfile(this.file, [
+      const { before, after } = await this.#store.preview(this.file, [
         ...this.#settingWrites(this.#edits.value, 'applies', []),
         ...this.#entryEdits.writes(),
       ]);
@@ -688,13 +723,13 @@ export class ProfileEditor {
         throw new Error("A ruleset, environment, or label can't be saved as it stands. Open it to see why.");
       }
       const entries = this.#entryEdits.saving(mode);
-      return editProfile(this.file, [...this.#settingWrites(writing, mode, entries.unsets), ...entries.writes]);
+      return this.#store.edit(this.file, [...this.#settingWrites(writing, mode, entries.unsets), ...entries.writes]);
     });
   }
 
   /** What the profile's file would stop managing as a profile for `type`, as the editor names each. */
   ownerLeaving(type: OwnerChoice): string[] {
-    return type === 'any' ? [] : (this.#saved.value?.owner_changes[type] ?? []).map(describeOwnerChange);
+    return type === 'any' ? [] : (this.#saved.value?.owner_changes?.[type] ?? []).map(describeOwnerChange);
   }
 
   /**
@@ -755,7 +790,7 @@ export class ProfileEditor {
         ...this.#unsetWrite(this.#ownUnsets.value.filter((key) => key.startsWith('autolinks/'))),
         ...this.#entryEdits.discards(),
       ];
-      return editProfile(this.file, edits);
+      return this.#store.edit(this.file, edits);
     });
   }
 
@@ -776,7 +811,7 @@ export class ProfileEditor {
       await write(async () => {
         // The file may have changed since it was read, as by the sync before this turn. An entry is
         // written whole, so one that changed under its change is not written over.
-        const current = await resolveProfile(this.file);
+        const current = await this.#store.resolve(this.file);
         this.#saved.value = current;
         this.#entryEdits.setSaved(current);
         // Every save finishes, adds to, or discards the whole draft, so it acts only on the draft that was shown.
@@ -1008,7 +1043,7 @@ export class ProfileEditor {
       return;
     }
     try {
-      const { after } = await previewProfile(this.file, edits);
+      const { after } = await this.#store.preview(this.file, edits);
       if (turn === this.#previews) {
         this.#preview.value = after;
         this.problem.value = undefined;
