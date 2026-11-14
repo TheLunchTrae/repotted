@@ -264,6 +264,48 @@ editor shows what a save would give, base profiles included.
 | Saving  | The write ends                                       | Saved, then a sync when profiles are kept on GitHub. A change made while it ran stays unsaved.                                                                                                   |
 | Saving  | The write fails                                      | Unsaved, with why, and **Save** on to try again. A setting changed back meanwhile to what the save was writing keeps its change.                                                                 |
 
+### Each ruleset, environment, or label
+
+`EntryEdits` (`packages/web/src/app/entry-edits.ts`) holds the changes to
+entries. The engine writes an entry whole, so a change holds the whole entry,
+with the saved entry it was made on. An entry's key is its saved name, or a
+number for one that is new, so its row is found whatever its name becomes.
+
+| State         | Event                                                              | Next                                                                                                                                                                          |
+| ------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Saved         | A field changes                                                    | Unsaved, previewed with the settings. An entry changed back to what is saved, its name trimmed, is no change.                                                                 |
+| None          | New ruleset, environment, or label                                 | New: unsaved, with "Give it a name." until it has one.                                                                                                                        |
+| Unsaved       | Its name is empty, or another entry's                              | Held back with why. A ruleset is known by its name as written, an environment or a label by its name in any case.                                                             |
+| Unsaved       | Its name is the saved name of one renamed or taken out             | Held back until that change is saved, since the file still has the name.                                                                                                      |
+| Unsaved       | A ruleset requires status checks and names none                    | Held back with why.                                                                                                                                                           |
+| Unsaved       | A label's old names include its own, one twice, or another label's | Held back with why.                                                                                                                                                           |
+| Unsaved       | The engine refuses it, such as a color that isn't one              | Unsaved, with why above **Save**, which is off.                                                                                                                               |
+| Any held back | Another setting or entry changes                                   | The entries that can be saved as they stand are still previewed; **Save** stays off.                                                                                          |
+| Managed       | Remove it from the repository                                      | Unsaved: only its name and `absent: true` are written. What it had is kept with the change.                                                                                   |
+| Removing      | Manage it                                                          | What it had comes back, under its name as it is then; for one saved as removing, only its name.                                                                               |
+| Saved here    | Take out of profile                                                | Unsaved and struck through: the file stops naming it. **Put it back** undoes that before a save.                                                                              |
+| New           | Take out of profile                                                | Gone, with no change.                                                                                                                                                         |
+| From a base   | A field changes                                                    | Unsaved: the save writes the entry here, over the base's. Its name can't change.                                                                                              |
+| Unsaved       | Reset, on one saved before                                         | Saved.                                                                                                                                                                        |
+| Unsaved       | The saved entry changes, as a sync can do                          | Out of date: held back with why, and **Keep mine** or **Reset**. The change would write the whole entry over what it is now.                                                  |
+| Unsaved       | The saved entry goes                                               | Out of date, still listed. **Keep mine** makes it a new entry; **Reset** lets it go. A change that took it out is dropped, with nothing left to do.                           |
+| Out of date   | Keep mine                                                          | Unsaved, based on the entry as it is now.                                                                                                                                     |
+| Unsaved       | Save                                                               | The file is read again in the save's turn. Any entry out of date stops the save, with nothing written. Otherwise the changes as they stood when Save was pressed are written. |
+| Saving        | The write ends                                                     | Saved, under the name the save gave it. One changed again while the save ran, even back to what it was, stays unsaved, based on what was written.                             |
+| Saving        | The write fails                                                    | Unsaved, every change as it is.                                                                                                                                               |
+
+Only an entry with a change is checked, so a profile the engine takes can
+always be saved, whatever its other entries hold.
+
+A renamed ruleset or environment is renamed in the file; applying creates
+one of the new name and leaves the old on each repository, and the form says
+so. A renamed label offers to list its old name under `renamed_from`.
+
+`entry-forms.ts` holds what each form writes. A ruleset whose `rules` is
+unset leaves each repository's rules alone, while one that sets any removes
+every other on apply: turning the last rule off unsets `rules` again when the
+file set none, and **Leave its rules to GitHub** unsets it outright.
+
 A setting GitHub hides for the value of the one it follows is not drawn, and
 that one counts how many such settings a profile still names. A setting
 GitHub greys out stays in place, off.

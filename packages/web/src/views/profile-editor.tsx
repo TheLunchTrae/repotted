@@ -1,8 +1,11 @@
 import type { JSX } from 'preact';
 import { useRef, useState } from 'preact/hooks';
 
-import { type ProfileEditor, sameValue, type SettingRow } from '../app/profile-editor.js';
+import { entryLists } from '../app/entry-edits.js';
+import type { ProfileEditor, SettingRow } from '../app/profile-editor.js';
 import type { Profiles } from '../app/profiles.js';
+import { sameValue } from '../app/same-value.js';
+import { Entries } from './entries.js';
 import { run } from './run.js';
 
 function Control({ row, editor }: { readonly row: SettingRow; readonly editor: ProfileEditor }): JSX.Element {
@@ -137,60 +140,76 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
 }
 
 /** The open profile's settings, a tab for each section, with the footer that saves them. */
-export function ProfileSettings({
-  editor,
-  profiles,
-}: {
+const entryTitles = { rulesets: 'Rulesets', environments: 'Environments', labels: 'Labels' } as const;
+
+interface ProfileSettingsProps {
   readonly editor: ProfileEditor;
   readonly profiles: Profiles;
-}): JSX.Element {
+  /** Whether the profile's owner type has push rulesets, which personal accounts lack. */
+  readonly pushes: boolean;
+}
+
+export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsProps): JSX.Element {
   const sections = editor.sections.value;
   const [tab, setTab] = useState(sections[0]?.section.section ?? '');
-  const shown = sections.find((item) => item.section.section === tab) ?? sections[0];
+  const entries = editor.entries.value;
+  const list = entryLists.find((item) => item === tab);
+  const shown = list === undefined ? (sections.find((item) => item.section.section === tab) ?? sections[0]) : undefined;
+  // Every tab in order: the settings sections, then the lists of entries.
+  const tabNames = [
+    ...sections.map(({ section, groups }) => ({
+      id: section.section,
+      name: section.name,
+      unsaved: groups.some((group) => group.rows.some((row) => row.unsaved || row.invalid !== undefined)),
+    })),
+    ...entryLists.map((item) => ({
+      id: item,
+      name: entryTitles[item],
+      unsaved: entries[item].some((row) => row.unsaved),
+    })),
+  ];
+  const current = list ?? shown?.section.section ?? '';
   const problem = editor.problem.value ?? editor.saveError.value;
   const tabs = useRef<HTMLDivElement>(null);
   // The arrow keys move between tabs, as in a tab list, and only the shown tab is a Tab stop.
   const move = (event: KeyboardEvent, index: number): void => {
     const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-    const next = sections[(index + step + sections.length) % sections.length];
+    const next = tabNames[(index + step + tabNames.length) % tabNames.length];
     if (step !== 0 && next !== undefined) {
       event.preventDefault();
-      setTab(next.section.section);
-      tabs.current?.querySelector<HTMLElement>(`#tab-${next.section.section}`)?.focus();
+      setTab(next.id);
+      tabs.current?.querySelector<HTMLElement>(`#tab-${next.id}`)?.focus();
     }
   };
   return (
     <>
       <div class="tabs" role="tablist" aria-label="Settings" ref={tabs}>
-        {sections.map(({ section, groups }, index) => {
-          const unsaved = groups.some((group) => group.rows.some((row) => row.unsaved || row.invalid !== undefined));
-          return (
-            <button
-              key={section.section}
-              class="tab"
-              type="button"
-              role="tab"
-              id={`tab-${section.section}`}
-              aria-selected={shown?.section === section}
-              aria-controls="settings-panel"
-              tabIndex={shown?.section === section ? 0 : -1}
-              onClick={() => {
-                setTab(section.section);
-              }}
-              onKeyDown={(event) => {
-                move(event, index);
-              }}
-            >
-              {section.name}
-              {unsaved && (
-                <>
-                  <span class="dot" aria-hidden="true" />
-                  <span class="visually-hidden">, not saved yet</span>
-                </>
-              )}
-            </button>
-          );
-        })}
+        {tabNames.map(({ id, name, unsaved }, index) => (
+          <button
+            key={id}
+            class="tab"
+            type="button"
+            role="tab"
+            id={`tab-${id}`}
+            aria-selected={current === id}
+            aria-controls="settings-panel"
+            tabIndex={current === id ? 0 : -1}
+            onClick={() => {
+              setTab(id);
+            }}
+            onKeyDown={(event) => {
+              move(event, index);
+            }}
+          >
+            {name}
+            {unsaved && (
+              <>
+                <span class="dot" aria-hidden="true" />
+                <span class="visually-hidden">, not saved yet</span>
+              </>
+            )}
+          </button>
+        ))}
       </div>
       {shown !== undefined && (
         <div id="settings-panel" class="groups" role="tabpanel" aria-labelledby={`tab-${shown.section.section}`}>
@@ -207,6 +226,11 @@ export function ProfileSettings({
               </div>
             </section>
           ))}
+        </div>
+      )}
+      {list !== undefined && (
+        <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${list}`}>
+          <Entries key={list} editor={editor} list={list} pushes={pushes} />
         </div>
       )}
       <div class="save-bar">

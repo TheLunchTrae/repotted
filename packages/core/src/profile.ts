@@ -1301,6 +1301,10 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
   } else if (isMap(item)) {
     updateMap(document, item, edit.entry);
   } else {
+    // An empty list can only be written as `[]`. Its first entry is written as a block, as a list is by default.
+    if (list.items.length === 0) {
+      list.flow = false;
+    }
     list.items.push(document.createNode(edit.entry));
   }
 }

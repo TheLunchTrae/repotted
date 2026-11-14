@@ -4,9 +4,8 @@ The Repotted web app runs at <https://repotted.dev>. It needs nothing
 installed: it runs in your browser and talks to GitHub from there.
 
 The web app signs in, lists your repositories, and makes, captures, edits,
-and deletes profiles. To edit rulesets, environments, and labels, and to
-compare and apply, use the [desktop app](desktop.md) or the
-[command line](cli.md).
+and deletes profiles. To compare a repository with a profile and apply the
+changes, use the [desktop app](desktop.md) or the [command line](cli.md).
 
 Use Repotted in one tab at a time. A second tab says that Repotted is open
 in another one, so that two tabs can't save over each other's profiles;
@@ -85,7 +84,8 @@ its name.
 ### Edit a profile
 
 Open a profile to edit it. Its tabs follow the parts of a repository's
-setup: **Repository**, **Merge**, **Actions**, **Security**, and **Pages**. A
+setup: **Repository**, **Merge**, **Actions**, **Security**, **Pages**,
+**Rulesets**, **Environments**, and **Labels**. A
 setting's own options sit indented under it. Names and numbers are typed in a
 box; until what you type is valid, the page says what's wrong and won't save,
 and **Reset** beside the setting puts it back.
@@ -119,8 +119,47 @@ until you save or reset them, and the browser asks before a reload or a
 closed tab discards them. Deleting a profile discards its unsaved changes,
 and so does a sync that finds the profile deleted or renamed on GitHub.
 
-Topics, custom properties, autolinks, rulesets, environments, and labels are
-not edited here yet.
+**Rulesets**, **Environments**, and **Labels** each list what the profile
+names, with **New ruleset**, **New environment**, or **New label**. Click
+one to open it. Its form changes only what you edit, so anything it doesn't
+show, such as the merge methods a pull request rule allows or a rule the form
+has no box for, stays as the profile's file has it. Bypass actors and
+required reviewers can be kept as the file has them or cleared. **Leave it to GitHub** clears a choice, so each
+repository keeps its own. Choose **Manage it**, or **Remove it from the
+repository** to delete it from each repository that follows the profile.
+Removing keeps what the entry had, in case you choose **Manage it** again
+before saving. **Take out of profile** stops the profile from managing it at
+all; **Put it back** in the list undoes that before you save.
+
+A ruleset with no rule ticked leaves each repository's rules as they are.
+Once any rule is ticked, the ruleset has exactly the ticked rules, and
+applying removes every other rule it has on a repository; the form says
+which holds. **Leave its rules to GitHub** goes back to leaving them alone.
+
+An environment that deploys from **Chosen branches and tags** takes
+**Branch patterns** and **Tag patterns**, one a line.
+
+A ruleset, environment, or label is saved whole. If it changed elsewhere
+since you edited it, such as in a sync with GitHub, the page says so and
+doesn't save over that change: **Keep mine** saves your version over it, and
+**Reset** shows the new one.
+
+GitHub knows rulesets and environments by name. If you rename one, applying
+the profile creates a new one with the new name and leaves the old one on the
+repository, and the form says so. You can rename only an entry that this
+profile names on its own; one from a base profile keeps its name, and
+changing it here overrides the base profile's.
+
+In a label's form, pick one of GitHub's colors or type six hex digits; an
+empty color leaves each repository's own. An empty description clears each
+repository's description, and **Leave each repository's own description**
+leaves it alone. **Renamed from** lists old names, one per line: a repository
+that has one of them and not the label has it renamed, so issues and pull
+requests keep the label. When you rename a label, **Rename it on GitHub too**
+adds its old name there. See [Labels](profiles.md#labels) for what apply does
+with renames.
+
+Topics, custom properties, and autolinks are not edited here yet.
 
 ### Delete a profile
 

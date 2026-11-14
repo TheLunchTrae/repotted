@@ -2,6 +2,9 @@ import { computed, signal } from '@preact/signals';
 import { editProfile, previewProfile, resolveProfile } from '@repotted/core';
 
 import { basename } from '../engine/path.js';
+import { EntryEdits, type EntryList, type EntryRow } from './entry-edits.js';
+import type { Entry } from './entry-forms.js';
+import { sameValue } from './same-value.js';
 import { type SettingField, type SettingGroup, settingSections } from './setting-fields.js';
 
 type ResolvedProfile = Awaited<ReturnType<typeof resolveProfile>>;
@@ -41,11 +44,6 @@ function getIn(value: unknown, keys: readonly string[]): unknown {
     (current, key) => (typeof current === 'object' && current !== null ? Reflect.get(current, key) : undefined),
     value,
   );
-}
-
-/** Whether two setting values are the same, as plain data. */
-export function sameValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function messageOf(error: unknown): string {
@@ -128,6 +126,8 @@ export class ProfileEditor {
   readonly #typed = signal<ReadonlyMap<string, { readonly text: string; readonly problem: string | undefined }>>(
     new Map(),
   );
+  /** The rulesets, environments, and labels, with the changes to them that aren't saved. */
+  readonly #entryEdits = new EntryEdits();
   /** The changes a save under way is writing, which the file has as soon as it ends. */
   #writing: ReadonlyMap<string, SettingEdit> = new Map();
   /** Counts previews, so a slow one never replaces a later one's result. */
@@ -145,13 +145,16 @@ export class ProfileEditor {
    * read counts for nothing, since it offers no way to save or reset; its
    * changes come back if it reads again.
    */
-  readonly dirty = computed(() => this.loaded.value && (this.#edits.value.size > 0 || this.#refused.value));
+  readonly dirty = computed(
+    () => this.loaded.value && (this.#edits.value.size > 0 || this.#entryEdits.count.value > 0 || this.#refused.value),
+  );
 
   readonly canSave = computed(
     () =>
       this.loaded.value &&
-      this.#edits.value.size > 0 &&
+      (this.#edits.value.size > 0 || this.#entryEdits.count.value > 0) &&
       !this.#refused.value &&
+      !this.#entryEdits.held.value &&
       this.problem.value === undefined &&
       !this.saving.value,
   );
@@ -164,6 +167,9 @@ export class ProfileEditor {
     })),
   );
 
+  /** The rulesets, environments, and labels, by list, as they stand with the unsaved changes. */
+  readonly entries = this.#entryEdits.rows;
+
   /** Whether something typed can't be a value. */
   readonly #refused = computed(() => [...this.#typed.value.values()].some((typed) => typed.problem !== undefined));
 
@@ -171,9 +177,11 @@ export class ProfileEditor {
   async load(): Promise<void> {
     try {
       this.#saved.value = await resolveProfile(this.file);
+      this.#entryEdits.setSaved(this.#saved.value);
       this.loadError.value = undefined;
     } catch (error) {
       this.#saved.value = undefined;
+      this.#entryEdits.setSaved(undefined);
       this.#preview.value = undefined;
       this.loadError.value = reasonOf(error, this.file);
       return;
@@ -209,6 +217,43 @@ export class ProfileEditor {
     }
   }
 
+  /** Starts a ruleset, environment, or label, and answers the key the editor knows it by. */
+  async addEntry(list: EntryList, entry: Entry): Promise<string> {
+    const key = this.#entryEdits.add(list, entry);
+    await this.#entriesChanged();
+    return key;
+  }
+
+  /** Replaces an entry with what its form made of it. */
+  async changeEntry(row: EntryRow, entry: Entry): Promise<void> {
+    this.#entryEdits.change(row, entry);
+    await this.#entriesChanged();
+  }
+
+  /** Has the profile remove the entry from each repository, or manage it again with what it had. */
+  async setAbsent(row: EntryRow, absent: boolean): Promise<void> {
+    this.#entryEdits.setAbsent(row, absent);
+    await this.#entriesChanged();
+  }
+
+  /** Stops this profile from managing an entry it names itself, or lets go of one that is new. */
+  async takeOut(row: EntryRow): Promise<void> {
+    this.#entryEdits.takeOut(row);
+    await this.#entriesChanged();
+  }
+
+  /** Puts an entry back as it is saved. */
+  async resetEntry(row: EntryRow): Promise<void> {
+    this.#entryEdits.reset(row);
+    await this.#entriesChanged();
+  }
+
+  /** Keeps a change to an entry that changed elsewhere since, over that change. */
+  async keepEntry(row: EntryRow): Promise<void> {
+    this.#entryEdits.keepMine(row);
+    await this.#entriesChanged();
+  }
+
   /** Puts a setting back as it is saved. */
   async reset(field: SettingField): Promise<void> {
     const edits = new Map(this.#edits.value);
@@ -222,6 +267,7 @@ export class ProfileEditor {
   /** Puts the whole profile back as it is saved. */
   async resetAll(): Promise<void> {
     this.#edits.value = new Map();
+    this.#entryEdits.resetAll();
     this.#typed.value = new Map();
     this.saveError.value = undefined;
     await this.#previewEdits();
@@ -241,9 +287,23 @@ export class ProfileEditor {
     this.saveError.value = undefined;
     const writing = this.#edits.value;
     this.#writing = writing;
+    const entries = this.#entryEdits.begin();
+    let wrote = false;
     try {
       await write(async () => {
-        this.#saved.value = await editProfile(this.file, [...writing.values()]);
+        // The file may have changed since it was read, as by the sync before this turn. An entry is
+        // written whole, so one that changed under its change is not written over.
+        const current = await resolveProfile(this.file);
+        this.#saved.value = current;
+        this.#entryEdits.setSaved(current);
+        if (this.#entryEdits.writesOverChange() || this.#entryEdits.held.value) {
+          throw new Error(
+            'A ruleset, environment, or label changed elsewhere since you changed it. Open it to keep yours or reset it.',
+          );
+        }
+        this.#saved.value = await editProfile(this.file, [...writing.values(), ...entries]);
+        this.#entryEdits.setSaved(this.#saved.value);
+        wrote = true;
       });
       // Changes made while the save ran stay unsaved.
       const left = new Map(this.#edits.value);
@@ -263,6 +323,7 @@ export class ProfileEditor {
       this.#edits.value = edits;
       this.saveError.value = reasonOf(error, this.file);
     } finally {
+      this.#entryEdits.saved(wrote);
       this.#writing = new Map();
       this.saving.value = false;
     }
@@ -323,9 +384,15 @@ export class ProfileEditor {
       : edit.value;
   }
 
+  async #entriesChanged(): Promise<void> {
+    this.saveError.value = undefined;
+    await this.#previewEdits();
+  }
+
   async #previewEdits(): Promise<void> {
     const turn = (this.#previews += 1);
-    const edits = [...this.#edits.value.values()];
+    // An entry that can't be saved as it stands, such as one with no name, is held back before the engine sees it.
+    const edits = [...this.#edits.value.values(), ...this.#entryEdits.writes()];
     if (edits.length === 0 || this.#saved.value === undefined) {
       this.#preview.value = undefined;
       this.problem.value = undefined;

@@ -201,7 +201,9 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           {listing.problem}
         </p>
       )}
-      {editor?.loaded.value === true && <ProfileSettings key={editor.file} editor={editor} profiles={profiles} />}
+      {editor?.loaded.value === true && (
+        <ProfileSettings key={editor.file} editor={editor} profiles={profiles} pushes={listing.owner_type !== 'user'} />
+      )}
       {showYaml && opened?.file === listing.file && (
         <pre class="code" role="region" tabIndex={0} aria-label={`${listing.name} as YAML`}>
           {opened.text}

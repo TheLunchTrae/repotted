@@ -163,6 +163,11 @@ tab by tab, with what each depends on; a test sets every one through the
 engine, so a setting the engine doesn't take fails there. A change is
 previewed with the engine's `previewProfile` and saved with `editProfile`,
 which writes only the settings that changed and keeps the file's comments.
+Rulesets, environments, and labels are written whole. `entry-forms.ts` has
+the functions that change one thing in an entry and leave the rest of it as
+the file has it, and `entry-edits.ts` holds each change with the saved entry
+it was made on, so a save never writes an entry over one that has since
+changed elsewhere. `views/entries.tsx` only draws them.
 
 `keepFiles` (`src/app/kept-files.ts`) keeps the in-memory files across
 visits: it loads what IndexedDB holds into memory before the app draws, then
