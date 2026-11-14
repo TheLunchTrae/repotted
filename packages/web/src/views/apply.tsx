@@ -1,6 +1,7 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
+import { repositoryAddress } from '../app/address-selection.js';
 import type { Apply } from '../app/apply.js';
 import type { CompareRow } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
@@ -89,8 +90,9 @@ interface ApplyProps {
 export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
   const state = apply.state.value;
   const [confirming, setConfirming] = useState(false);
+  // Back to the repository this is about, open on the repositories page.
   const back = (
-    <Link router={router} to="/">
+    <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
       Back to repositories
     </Link>
   );

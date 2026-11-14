@@ -1,6 +1,7 @@
 import type { JSX, RefObject } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
+import type { AddressSelection } from '../app/address-selection.js';
 import type { Apply } from '../app/apply.js';
 import type { BatchApply } from '../app/batch-apply.js';
 import type { ComparedProfile } from '../app/comparison.js';
@@ -315,6 +316,7 @@ function RepositoryRow({ repository, repositories, withOwner }: RowProps): JSX.E
       <button
         class="row"
         type="button"
+        data-repository={repository.full_name}
         aria-pressed={selected?.full_name === repository.full_name}
         onClick={() => {
           repositories.select(selected?.full_name === repository.full_name ? undefined : repository);
@@ -396,6 +398,8 @@ interface PanelProps {
    * changes settings without a profile.
    */
   readonly onApply: (repository: string, profile: ComparedProfile | 'once' | undefined) => void;
+  /** Goes back to the list, given when the panel is a screen of its own, as on a phone. */
+  readonly onBack?: (() => void) | undefined;
 }
 
 function RepositoryPanel({
@@ -407,6 +411,7 @@ function RepositoryPanel({
   onCapture,
   onCompare,
   onApply,
+  onBack,
 }: PanelProps): JSX.Element {
   // Whether an apply here was left unfinished, which the browser keeps.
   const [unfinished, setUnfinished] = useState(false);
@@ -433,15 +438,23 @@ function RepositoryPanel({
   const nameOf = (listing: (typeof listings)[number]): string => profiles.pathOf(listing).replace(/\.ya?ml$/u, '');
   const [owner, name] = repository.full_name.split('/');
   const hidden = repositories.isHidden(repository);
-  const panel = useRef<HTMLElement>(null);
-  // On a narrow screen the panel sits under the list, out of view of the row that opened it.
-  useEffect(() => {
-    if (matchMedia('(max-width: 760px)').matches) {
-      panel.current?.scrollIntoView({ block: 'nearest' });
+  const back = useRef<HTMLButtonElement>(null);
+  const screen = onBack !== undefined;
+  // A screen of its own takes the focus to the way back, since the row that opened it is gone. One opened by a
+  // link as the page loads leaves the focus at the start of the page, before the navigation.
+  useLayoutEffect(() => {
+    // Safari before 16.4 has no record of activation; treat it as active.
+    if (screen && ((navigator as { userActivation?: UserActivation }).userActivation?.hasBeenActive ?? true)) {
+      back.current?.focus({ preventScroll: true });
     }
-  }, [repository.full_name]);
+  }, [screen, repository.full_name]);
   return (
-    <aside class="panel" ref={panel} aria-label={repository.full_name}>
+    <aside class="panel" aria-label={repository.full_name}>
+      {onBack !== undefined && (
+        <button ref={back} class="panel-back" type="button" aria-label="Back to repositories" onClick={onBack}>
+          Repositories
+        </button>
+      )}
       <p class="muted small">{owner}</p>
       <h2 class="mono">{name}</h2>
       <p class="pills">
@@ -590,9 +603,11 @@ function useSearchKey(): RefObject<HTMLInputElement | null> {
     const focus = (event: KeyboardEvent): void => {
       const typing = event.target instanceof HTMLElement && event.target.matches('input, textarea, select');
       // Without a search on the page, the key stays the browser's.
-      if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey && input.current !== null) {
+      // Nor while the search is out of view, as behind a repository's details on a phone.
+      const shown = input.current !== null && input.current.getClientRects().length > 0;
+      if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey && shown) {
         event.preventDefault();
-        input.current.focus();
+        input.current?.focus();
       }
     };
     document.addEventListener('keydown', focus);
@@ -603,8 +618,115 @@ function useSearchKey(): RefObject<HTMLInputElement | null> {
   return input;
 }
 
+const phoneQuery = '(max-width: 760px)';
+
+/** Whether the screen is a phone's, where the list and a repository's details are screens of their own. */
+function usePhone(): boolean {
+  const [phone, setPhone] = useState(() => matchMedia(phoneQuery).matches);
+  useEffect(() => {
+    const media = matchMedia(phoneQuery);
+    const change = (): void => {
+      setPhone(media.matches);
+    };
+    change();
+    media.addEventListener('change', change);
+    return () => {
+      media.removeEventListener('change', change);
+    };
+  }, []);
+  return phone;
+}
+
+/**
+ * Keeps the selection and the page's address together, as `AddressSelection`
+ * says. Returns whether a phone is arriving at the list, with no repository
+ * named, which drops the selection kept from before before the page paints.
+ */
+function useAddressedSelection(address: AddressSelection, repositories: Repositories, phone: boolean): boolean {
+  const named = address.named;
+  const name = repositories.selectedName;
+  const shown = repositories.selected.value?.full_name;
+  const listed = repositories.list.value !== undefined;
+  const arrived = useRef(false);
+  // Before the page paints, so a phone arriving at the list doesn't show a kept selection's screen first.
+  useLayoutEffect(() => {
+    if (arrived.current) {
+      address.follow(phone);
+    } else {
+      arrived.current = true;
+      address.arrive(phone);
+    }
+    // The screen's width is read as the address changes; a change of width alone moves no address.
+  }, [address, named]);
+  useLayoutEffect(() => {
+    address.update(phone);
+  }, [address, phone, name, shown, listed]);
+  return phone && !arrived.current && named === undefined;
+}
+
+/**
+ * On a phone, a repository's details open at their top, and the list comes
+ * back from them where it was left, with the focus on the row that opened them, or on the page's heading
+ * when that row is out of view.
+ */
+function useListReturn(
+  details: boolean,
+  phone: boolean,
+  name: string | undefined,
+): RefObject<HTMLHeadingElement | null> {
+  const heading = useRef<HTMLHeadingElement>(null);
+  const scrolled = useRef(0);
+  const closed = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (details) {
+      // The details open at their top.
+      closed.current = name;
+      scrollTo(0, 0);
+      return undefined;
+    }
+    if (closed.current !== undefined) {
+      const row = document.querySelector<HTMLElement>(`button.row[data-repository="${CSS.escape(closed.current)}"]`);
+      // Only focus that went with the details moves; one left elsewhere, as on the link that came here, stays.
+      const lost = document.activeElement === null || document.activeElement === document.body;
+      if (phone && row !== null) {
+        const y = scrolled.current;
+        scrollTo(0, y);
+        // Again once a back has run its course, since the browser puts back the scroll it kept for the entry,
+        // which it took after the details had opened.
+        requestAnimationFrame(() => {
+          scrollTo(0, y);
+        });
+        if (lost) {
+          row.focus({ preventScroll: true });
+        }
+      } else if (phone) {
+        // With the row out of the list, as after a hide or a move into a closed folder, the list stays at its
+        // top, and the heading, or Undo after it, takes the focus where it is.
+        if (lost) {
+          heading.current?.focus();
+        }
+      } else if (lost) {
+        // Details that close because the screen grew stay beside the list, which wasn't left.
+        row?.focus();
+      }
+    }
+    closed.current = undefined;
+    // Kept as it changes, since opening the details takes the list out of the page and the scroll with it.
+    const keep = (): void => {
+      scrolled.current = scrollY;
+    };
+    addEventListener('scroll', keep, { passive: true });
+    return () => {
+      removeEventListener('scroll', keep);
+    };
+  }, [details, phone, name]);
+  return heading;
+}
+
 interface RepositoriesProps {
   readonly repositories: Repositories;
+  /** The selection in the page's address. */
+  readonly address: AddressSelection;
   readonly profiles: Profiles;
   /** Starts a new profile that captures this repository, `owner/name`. */
   readonly onCapture: (repository: string) => void;
@@ -745,6 +867,7 @@ function TickedPanel({ repositories, onDialog, profiles, unfinished, onBatch }: 
 
 export function RepositoriesPage({
   repositories,
+  address,
   profiles,
   apply,
   batch,
@@ -811,9 +934,20 @@ export function RepositoriesPage({
   };
   const fromApp = list?.source === 'installations';
   const total = list?.repositories.length ?? 0;
+  // On a phone a repository's details take the place of the list, unless ticked ones take the panel, as they do
+  // beside the list.
+  const phone = usePhone();
+  // On a phone the details are a screen of their own, which leaves any ticked repositories with the list.
+  const toList = useAddressedSelection(address, repositories, phone);
+  const details = phone && selected !== undefined && !toList;
+  const heading = useListReturn(details, phone, selected?.full_name);
 
   return (
-    <div class={selected === undefined && ticked.length === 0 ? 'page' : 'page page-with-panel'}>
+    <div
+      class={
+        details ? 'page page-details' : selected === undefined && ticked.length === 0 ? 'page' : 'page page-with-panel'
+      }
+    >
       <section class="page-body" aria-labelledby="repositories-heading">
         {unfinished && (
           <div class="notice notice-drift">
@@ -833,7 +967,9 @@ export function RepositoriesPage({
         )}
         <div class="page-heading">
           <div>
-            <h1 id="repositories-heading">Repositories</h1>
+            <h1 id="repositories-heading" ref={heading} tabIndex={-1}>
+              Repositories
+            </h1>
             {list !== undefined && (
               <p class="muted">
                 {fromApp
@@ -1047,7 +1183,7 @@ export function RepositoriesPage({
           </>
         )}
       </section>
-      {ticked.length > 0 ? (
+      {ticked.length > 0 && !details ? (
         <TickedPanel
           repositories={repositories}
           onDialog={setDialog}
@@ -1066,6 +1202,13 @@ export function RepositoriesPage({
             onCapture={onCapture}
             onCompare={onCompare}
             onApply={onApply}
+            onBack={
+              details
+                ? () => {
+                    address.close();
+                  }
+                : undefined
+            }
           />
         )
       )}

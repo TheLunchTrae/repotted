@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 
+import { repositoryAddress } from '../app/address-selection.js';
 import type { CompareRow, Comparison } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
@@ -35,8 +36,9 @@ interface CompareProps {
 /** A repository compared with a profile: each difference by section, what GitHub has now, and what the profile wants. */
 export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
   const state = comparison.state.value;
+  // Back to the repository this is about, open on the repositories page.
   const back = (
-    <Link router={router} to="/">
+    <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
       Back to repositories
     </Link>
   );

@@ -136,6 +136,8 @@ export class Repositories {
   readonly justHidden = signal<readonly string[]>([]);
   /** Of those, the ones that were ticked, which Undo ticks again. */
   #justUnticked: readonly string[] = [];
+  /** The selection let go of when the last hide took it out of view, which Undo selects again. */
+  #justDeselected: string | undefined;
 
   readonly #github: GitHub;
   readonly #user: User;
@@ -307,11 +309,22 @@ export class Repositories {
    * The selected repository, while it shows; a search, a hide, or a closed
    * folder that takes it out of view clears it.
    */
-  readonly selected = computed<Repository | undefined>(() =>
-    [...this.folders.value.filter((folder) => folder.open), ...this.groups.value]
-      .flatMap((group) => group.repositories)
-      .find((repository) => repository.full_name === this.#selectedName.value),
+  readonly selected = computed<Repository | undefined>(() => {
+    const name = this.#selectedName.value;
+    return name === undefined ? undefined : this.inView(name);
+  });
+
+  /** The repositories in view: those in open folders, then those by owner. */
+  readonly #inView = computed<readonly Repository[]>(() =>
+    [...this.folders.value.filter((folder) => folder.open), ...this.groups.value].flatMap(
+      (group) => group.repositories,
+    ),
   );
+
+  /** The repository in view with this `owner/name`, in any case, since GitHub matches names in any case. */
+  inView(name: string): Repository | undefined {
+    return this.#inView.value.find((repository) => sameName(repository.full_name, name));
+  }
 
   /**
    * The ticked repositories the account still lists, in the list's order. One
@@ -373,9 +386,28 @@ export class Repositories {
     }
   }
 
-  select(repository: Repository | undefined): void {
+  /** The selected repository's `owner/name`, kept while it is out of view or before the list arrives. */
+  get selectedName(): string | undefined {
+    return this.#selectedName.value;
+  }
+
+  /** Selects a repository by its `owner/name`, which shows once the list has it in view. */
+  select(repository: Pick<Repository, 'full_name'> | undefined): void {
     this.#selectedName.value = repository?.full_name;
     this.#clearJustHidden();
+  }
+
+  /**
+   * Lets go of the selection, as when it has gone out of view, without
+   * moving on from the last hide: its Undo selects it again if the hide took
+   * it out of view.
+   */
+  dropSelection(): void {
+    const name = this.#selectedName.value;
+    if (name !== undefined && this.justHidden.value.includes(name)) {
+      this.#justDeselected = name;
+    }
+    this.#selectedName.value = undefined;
   }
 
   setShowHidden(shown: boolean): void {
@@ -404,6 +436,7 @@ export class Repositories {
     this.#justUnticked = repositories
       .map((repository) => repository.full_name)
       .filter((name) => this.#tickedNames.value.has(name));
+    this.#justDeselected = undefined;
     this.#tickedNames.value = ticked;
   }
 
@@ -419,8 +452,12 @@ export class Repositories {
   /** Shows the repositories the last hide took out of the list again, ticked as they were. */
   undoHide(): void {
     const unticked = this.#justUnticked;
+    const deselected = this.#justDeselected;
     this.unhide(this.justHidden.value.map((full_name) => ({ full_name })));
     this.#tickedNames.value = new Set([...this.#tickedNames.value, ...unticked]);
+    if (deselected !== undefined) {
+      this.#selectedName.value = deselected;
+    }
   }
 
   /** Ticks a repository for an apply to several, or unticks it. */
@@ -583,5 +620,6 @@ export class Repositories {
   #clearJustHidden(): void {
     this.justHidden.value = [];
     this.#justUnticked = [];
+    this.#justDeselected = undefined;
   }
 }

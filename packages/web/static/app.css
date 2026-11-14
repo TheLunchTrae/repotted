@@ -785,6 +785,45 @@ input[type='checkbox'] {
   overflow-wrap: anywhere;
 }
 
+/* On a phone a repository's details are a screen of their own, in place of the list. */
+@media (max-width: 760px) {
+  .page-details > .page-body {
+    display: none;
+  }
+
+  .page-details > .panel {
+    border-top: 0;
+  }
+
+  .panel-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    margin: -10px 0 0 -10px;
+    padding: 0 12px 0 10px;
+    border: 0;
+    border-radius: var(--control-radius);
+    background: none;
+    color: var(--link);
+    font: 500 15px/1 var(--sans);
+    cursor: pointer;
+  }
+
+  .panel-back::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border: solid currentColor;
+    border-width: 0 0 2px 2px;
+    rotate: 45deg;
+  }
+
+  .panel-back:hover {
+    background: var(--tint);
+  }
+}
+
 .page-narrow {
   max-width: 760px;
 }
