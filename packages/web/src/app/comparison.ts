@@ -56,16 +56,22 @@ export interface CompareSection {
   readonly rows: readonly CompareRow[];
 }
 
-/** Something the profile sets that GitHub already has as the profile wants it. */
+/**
+ * Something the profile sets that the plan changes nothing of. GitHub
+ * nearly always has it as the profile sets it; the exception is a setting
+ * the engine leaves out without a word because it can't apply with the
+ * options chosen, such as a runner for a code scanning setup that is not
+ * configured. So a row says there is no change, not what GitHub holds.
+ */
 export interface MatchRow {
   readonly label: string;
   /** Its place in the profile for a setting, or what kind of entry it is. */
   readonly key: string;
-  /** The value both have; nothing for an entry, which matches whole. */
+  /** The value the profile sets; nothing for an entry, which is unchanged whole. */
   readonly value: string | undefined;
 }
 
-/** What one section of the profile sets that GitHub already has. */
+/** What one section of the profile sets that needs no change. */
 export interface MatchSection {
   readonly section: Change['section'];
   readonly title: string;
@@ -84,7 +90,7 @@ export interface Compared {
   readonly file: string;
   readonly profile: string;
   readonly sections: readonly CompareSection[];
-  /** What the profile sets that the repository already has, by section. */
+  /** What the profile sets that needs no change, by section. */
   readonly matching: readonly MatchSection[];
   /**
    * Where the Repotted App's access to the repository is reviewed on GitHub:
@@ -363,10 +369,10 @@ function flat(path: string, values: Readonly<Record<string, unknown>>): [string,
 }
 
 /**
- * What the plan's profile sets that the plan changes nothing of: the
- * settings and entries the repository already has. It claims nothing the
- * plan didn't read or left out: a section or setting a warning skipped,
- * and the settings of a section that is made or deleted whole.
+ * What the plan's profile sets that the plan changes nothing of. It leaves
+ * out what the plan didn't read or said it skipped: a section or setting a
+ * warning left out, and the settings of a section that is made or deleted
+ * whole.
  */
 export function matchSections(plan: Plan): MatchSection[] {
   const desired: unknown = plan.desired;
@@ -385,10 +391,7 @@ export function matchSections(plan: Plan): MatchSection[] {
       const touched = new Set(changes.map((change) => change.entry?.name));
       rows = values.flatMap((entry: unknown): MatchRow[] => {
         const known = isRecord(entry) ? (entry['name'] ?? entry['key_prefix']) : undefined;
-        return typeof known !== 'string' ||
-          touched.has(known) ||
-          (isRecord(entry) && entry['absent'] === true) ||
-          skips.some((warning) => warning.section === section && warning.key === known)
+        return typeof known !== 'string' || touched.has(known) || (isRecord(entry) && entry['absent'] === true)
           ? []
           : [{ label: known, key: nouns[section] ?? 'entry', value: undefined }];
       });
@@ -402,8 +405,7 @@ export function matchSections(plan: Plan): MatchSection[] {
             warning.section === section &&
             (warning.field === undefined ? warning.key === top : `${warning.key ?? ''}.${warning.field}` === rest),
         );
-        const changed = differs.some((key) => key === path || key.startsWith(`${path}.`) || path.startsWith(`${key}.`));
-        if (skipped || changed) {
+        if (skipped || differs.includes(path)) {
           return [];
         }
         const { label, named } = settingNames(path);

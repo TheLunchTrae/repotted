@@ -332,18 +332,46 @@ labels:
   expect(rows(comparison)).toEqual([]);
 });
 
-test('nothing is said to match in what the comparison left out', async () => {
-  await saved(
-    'repository:\n  has_wiki: true\nactions:\n  allowed_actions: all\n  selected_actions:\n    verified_allowed: true\npages:\n  https_enforced: true\n',
-  );
+test('what the comparison left out, or makes whole, is not said to need no change', async () => {
+  await saved(`repository:
+  has_wiki: true
+actions:
+  allowed_actions: all
+  selected_actions:
+    verified_allowed: true
+  oidc_customization_sub:
+    use_default: true
+    include_claim_keys: [repo]
+pages:
+  build_type: workflow
+  https_enforced: true
+`);
   const github = new FakeGitHub();
+  github.state.settings['/actions/oidc/customization/sub'] = { use_default: true };
   const comparison = new Comparison(github, () => undefined);
   await comparison.compare('lunch/app', profile);
   comparison.onlyDifferences.value = false;
 
-  // The selected actions don't apply while all are allowed, and the Pages site couldn't be planned.
+  // The selected actions don't apply while all are allowed, GitHub ignores
+  // the claim keys with the default subject, and the Pages site is new, so
+  // none of its settings is there yet.
+  expect(rows(comparison)).toContain('Pages | GitHub Pages site | pages | Not on GitHub -> Created');
   expect(matches(comparison)).toEqual([
     'Repository | Wiki | repository.has_wiki | On',
     'Actions | Allowed actions | actions.allowed_actions | All',
+    'Actions | Use the default subject claim | actions.oidc_customization_sub.use_default | On',
   ]);
+});
+
+test("the choice to show what needs no change stays for the next comparison, and Can't change hides it", async () => {
+  await saved('repository:\n  has_wiki: true\n  has_issues: false\n');
+  const comparison = new Comparison(new FakeGitHub(), () => undefined);
+  await comparison.compare('lunch/app', profile);
+  comparison.onlyDifferences.value = false;
+
+  await comparison.again();
+  expect(matches(comparison)).toEqual(['Repository | Wiki | repository.has_wiki | On']);
+
+  comparison.onlyLocked.value = true;
+  expect(matches(comparison)).toEqual([]);
 });

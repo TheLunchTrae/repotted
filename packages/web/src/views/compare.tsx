@@ -76,8 +76,8 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                       }. Comparing only reads from GitHub.`}
               {state.kind === 'compared' &&
                 counts.matches > 0 &&
-                ` ${counts.matches === 1 ? '1 thing the profile sets matches' : `${counts.matches} things the profile sets match`}${
-                  comparison.onlyDifferences.value ? ', folded away' : ''
+                ` ${counts.matches === 1 ? '1 thing the profile sets needs' : `${counts.matches} things the profile set need`} no change${
+                  comparison.onlyDifferences.value || comparison.onlyLocked.value ? ', folded away' : ''
                 }.`}
             </p>
           </div>
@@ -148,32 +148,34 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                     comparison.search.value = event.currentTarget.value;
                   }}
                 />
-                <div class="segments" role="group" aria-label="Show only">
-                  {counts.matches > 0 && (
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={comparison.onlyDifferences.value}
-                        onChange={(event) => {
-                          comparison.onlyDifferences.value = event.currentTarget.checked;
-                        }}
-                      />
-                      <span>Differs from GitHub</span>
-                    </label>
-                  )}
-                  {counts.locked > 0 && (
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={comparison.onlyLocked.value}
-                        onChange={(event) => {
-                          comparison.onlyLocked.value = event.currentTarget.checked;
-                        }}
-                      />
-                      <span>Can't change</span>
-                    </label>
-                  )}
-                </div>
+                {counts.matches + counts.locked > 0 && (
+                  <div class="segments" role="group" aria-label="Show only">
+                    {counts.matches > 0 && (
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={comparison.onlyDifferences.value}
+                          onChange={(event) => {
+                            comparison.onlyDifferences.value = event.currentTarget.checked;
+                          }}
+                        />
+                        <span>Differs from GitHub</span>
+                      </label>
+                    )}
+                    {counts.locked > 0 && (
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={comparison.onlyLocked.value}
+                          onChange={(event) => {
+                            comparison.onlyLocked.value = event.currentTarget.checked;
+                          }}
+                        />
+                        <span>Can't change</span>
+                      </label>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {shown.length === 0 && comparison.search.value.trim() !== '' && (
@@ -192,15 +194,16 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                       <Row key={`${row.label} ${row.key}`} row={row} />
                     ))}
                     {section.matches.map((row) => (
-                      <li key={`matches ${row.label} ${row.key}`} class="compare-row compare-match">
+                      <li key={`matches ${row.label} ${row.key}`} class="compare-row">
                         <span class="compare-what">
                           <strong>{row.label}</strong>
                           <span class="mono small muted">{row.key}</span>
                         </span>
                         <span class="compare-values muted">
-                          {row.value === undefined ? 'Same as the profile' : `${row.value}, as on GitHub`}
+                          {row.value !== undefined && <span class="visually-hidden">The profile sets </span>}
+                          {row.value}
                         </span>
-                        <span class="pill">Matches</span>
+                        <span class="pill">No change</span>
                       </li>
                     ))}
                   </ul>
