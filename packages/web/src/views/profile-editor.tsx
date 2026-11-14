@@ -181,7 +181,7 @@ export interface EditorSaving {
   readonly saveLabel?: string;
   /** What the page adds to the bar after Save. */
   readonly more?: ComponentChildren;
-  /** The page's own main action, which takes Save's place as the one kept in sight, as an apply's way on to its review. */
+  /** The page's own main action, which takes Save's place as the primary one kept in sight, as an apply's way on to its review. Save is then a plain button among the rest. */
   readonly next?: ComponentChildren;
 }
 

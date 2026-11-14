@@ -1365,10 +1365,19 @@ select.field {
   margin-bottom: 0;
 }
 
+/* The menu's panel lines up with the whole group, not with More, so a wide main button can't push it off the screen. */
 .bar-actions {
+  position: relative;
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 8px 12px;
+  min-width: 0;
   margin-inline-start: auto;
+}
+
+.bar-actions .bar-more {
+  position: static;
 }
 
 /* The bar sits at the foot of the screen, so its menu opens upward. */
@@ -1521,6 +1530,7 @@ select.field {
   }
 }
 
+/* The phone layout. action-bar.tsx's usePhone matches this width; change both together. */
 @media (max-width: 760px) {
   .shell-bar {
     gap: 12px;
