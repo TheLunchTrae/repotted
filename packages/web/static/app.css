@@ -643,9 +643,12 @@ input[type='checkbox'] {
   gap: 12px 24px;
 }
 
+/* A heading names a repository or profile, which can be one long word; it
+   breaks inside the name rather than widening the page. */
 .page-heading > div:first-child {
   display: grid;
   gap: 4px;
+  overflow-wrap: anywhere;
 }
 
 .page-actions {
@@ -690,6 +693,12 @@ input[type='checkbox'] {
   gap: 8px;
   padding: 0 2px 8px;
   font-size: 15px;
+}
+
+/* The owner's login, which can be one long word. */
+.group-heading > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .rows {
@@ -1205,8 +1214,10 @@ input[type='checkbox'] {
   font-weight: 500;
 }
 
+/* A field's hint can hold a profile's file name, which breaks rather than widening the page. */
 .form-field .small {
   font-weight: 400;
+  overflow-wrap: anywhere;
 }
 
 .form-field .field {
@@ -1337,8 +1348,10 @@ select.field {
   filter: brightness(1.1);
 }
 
+/* A name in a dialog (a repository, a profile or its file) breaks rather than running past its edge. */
 .dialog {
   max-width: min(32rem, calc(100vw - 32px));
+  overflow-wrap: anywhere;
   padding: 24px;
   border: 1px solid var(--border);
   border-radius: var(--panel-radius);
@@ -1545,8 +1558,10 @@ select.field {
   accent-color: var(--rail);
 }
 
+/* A ticked repository's name breaks rather than widening the page. */
 .ticked-names {
   display: grid;
+  overflow-wrap: anywhere;
   gap: 2px;
   max-height: 12rem;
   margin: 0;
@@ -1818,6 +1833,12 @@ select.field {
 
 .entry-bar > .muted {
   flex: 1;
+}
+
+/* A batch member's heading names its repository, and breaks inside a long
+   name rather than widening the page. */
+.entry-bar h2 {
+  overflow-wrap: anywhere;
 }
 
 .entry-row {
