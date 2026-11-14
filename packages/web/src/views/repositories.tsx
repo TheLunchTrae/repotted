@@ -74,6 +74,8 @@ interface PanelProps {
 function RepositoryPanel({ repository, profiles, apply, onCapture, onCompare, onApply }: PanelProps): JSX.Element {
   // Whether an apply here was left unfinished, which the browser keeps.
   const [unfinished, setUnfinished] = useState(false);
+  // Looked up again whenever the apply moves on, since one that ends or is discarded is no longer there.
+  const moved = apply.state.value.kind;
   useEffect(() => {
     let current = true;
     setUnfinished(false);
@@ -87,7 +89,7 @@ function RepositoryPanel({ repository, profiles, apply, onCapture, onCompare, on
     return () => {
       current = false;
     };
-  }, [apply, repository.full_name]);
+  }, [apply, repository.full_name, moved]);
   // A profile that can't be read has nothing to compare with.
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const [picked, setPicked] = useState<string | undefined>(undefined);

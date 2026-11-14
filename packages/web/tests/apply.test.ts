@@ -55,6 +55,7 @@ test('an apply is reviewed first, writes nothing until asked, and then writes wh
   expect(writes(github)).toEqual([]);
   expect(await apply.unfinished('lunch/app')).toBe(true);
 
+  expect(apply.counts.value).toEqual({ changes: 2, locked: 0 });
   await apply.apply();
 
   expect(apply.state.value).toEqual({ kind: 'applied', repository: 'lunch/app', profile: 'web', changes: 2 });
@@ -194,4 +195,141 @@ test('an apply that cannot be reviewed says why and can be tried again, from the
   await saved();
   await apply.reviewAgain();
   expect(rows(apply)).toEqual(['repository.has_projects', 'repository.has_wiki', 'new label']);
+});
+
+/** A GitHub whose reads of one repository wait until they are let go, so work on it can be held open. */
+class Held extends FakeGitHub {
+  #gate: Promise<void> | undefined;
+  #open: () => void = () => undefined;
+
+  hold(): void {
+    this.#gate = new Promise((resolve) => {
+      this.#open = resolve;
+    });
+  }
+
+  async release(): Promise<void> {
+    this.#open();
+    this.#gate = undefined;
+    // What waited lands over a few turns of the engine's own awaits.
+    for (let turn = 0; turn < 50; turn += 1) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    }
+  }
+
+  override async request(...args: Parameters<FakeGitHub['request']>): Promise<unknown> {
+    await this.#gate;
+    return super.request(...args);
+  }
+}
+
+/** Two repositories behind one sign-in, each its own in-memory GitHub. */
+function fleet(app: FakeGitHub, other: FakeGitHub): FakeGitHub['request'] {
+  // What isn't about a repository, such as the account's installations, is never held.
+  return (method, path, body) => (path.startsWith('/repos/lunch/app') ? app : other).request(method, path, body);
+}
+
+test('a review that lands late changes nothing: apply writes the plan on the page, to its repository', async () => {
+  await saved('repository:\n  has_wiki: false\n');
+  await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
+  const app = new Held();
+  const other = new FakeGitHub({}, 'lunch/other');
+  const apply = new Apply({ request: fleet(app, other) }, () => undefined);
+
+  app.hold();
+  const late = apply.start('lunch/app', profile);
+  apply.close();
+  await apply.start('lunch/other', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
+  expect(apply.state.value).toMatchObject({ kind: 'reviewed', repository: 'lunch/other' });
+  await app.release();
+  await late;
+
+  expect(apply.state.value).toMatchObject({ kind: 'reviewed', repository: 'lunch/other' });
+  await apply.apply();
+
+  expect(writes(app)).toEqual([]);
+  expect(writes(other)).toEqual(['PATCH /repos/lunch/other']);
+  expect(other.state.repository).toMatchObject({ has_issues: false });
+  expect(app.state.repository).toMatchObject({ has_wiki: true });
+});
+
+test('a review held open while a change is left out never brings that change back into the apply', async () => {
+  await saved();
+  const github = new Held();
+  const apply = new Apply(github, () => undefined);
+  await apply.start('lunch/app', profile);
+
+  github.hold();
+  const late = apply.reviewAgain();
+  apply.close();
+  const picked = apply.pickUp('lunch/app');
+  await github.release();
+  await Promise.all([late, picked]);
+  await apply.leaveOut('repository.has_wiki', true);
+  expect(apply.state.value).toMatchObject({ leftOut: ['repository.has_wiki'] });
+
+  await apply.apply();
+
+  expect(github.state.repository).toMatchObject({ has_wiki: true, has_projects: false });
+});
+
+test('an apply that is writing is neither replaced nor joined, and its outcome shows when it ends', async () => {
+  await saved();
+  await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
+  const app = new Held();
+  const other = new FakeGitHub({}, 'lunch/other');
+  const apply = new Apply({ request: fleet(app, other) }, () => undefined);
+  await apply.start('lunch/app', profile);
+  app.fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 1);
+
+  app.hold();
+  const writing = apply.apply();
+  // The page is left, and another apply is asked for, while the first one writes.
+  apply.close();
+  await apply.start('lunch/other', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
+  await apply.pickUp('lunch/app');
+  await apply.discard();
+  expect(apply.state.value).toMatchObject({ kind: 'applying', repository: 'lunch/app' });
+  await app.release();
+  await writing;
+
+  const state = apply.state.value;
+  expect(state).toMatchObject({ kind: 'reviewed', repository: 'lunch/app' });
+  expect(state.kind === 'reviewed' ? state.notice : '').toContain('stays written');
+  expect(writes(other)).toEqual([]);
+  expect(await apply.unfinished('lunch/app')).toBe(true);
+});
+
+test('an apply that could not be reviewed even once is not left to pick up', async () => {
+  await saved('owner_type: user\nrepository:\n  has_wiki: false\n');
+  const apply = new Apply(new FakeGitHub({ ownerType: 'Organization' }), () => undefined);
+
+  await apply.start('lunch/app', profile);
+
+  const state = apply.state.value;
+  expect(state.kind === 'failed' ? state.message : '').toContain('make a copy of the profile');
+  expect(await apply.unfinished('lunch/app')).toBe(false);
+});
+
+test('an apply whose profile is gone says so by its name, and one whose file is gone says to start again', async () => {
+  await saved();
+  const signedOut = (): void => undefined;
+  const apply = new Apply(new FakeGitHub(), signedOut);
+  await apply.start('lunch/app', profile);
+  apply.close();
+
+  await rm(profile.file);
+  await apply.pickUp('lunch/app');
+  const missing = apply.state.value;
+  expect(missing.kind === 'failed' ? missing.message : '').toContain('web.yaml');
+  expect(missing.kind === 'failed' ? missing.message : '').not.toContain('/profiles');
+
+  await rm(staged);
+  await apply.reviewAgain();
+  expect(apply.state.value).toMatchObject({
+    kind: 'failed',
+    message: 'This apply is no longer in this browser. Start it again from its repository.',
+  });
 });

@@ -122,7 +122,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                   : state.kind === 'unfinished'
                     ? 'An apply here is not finished.'
                     : state.kind === 'failed'
-                      ? "The apply couldn't be reviewed."
+                      ? "The apply couldn't be reviewed. Review again once that is put right, or discard the apply."
                       : state.kind === 'applied'
                         ? `${state.changes === 1 ? '1 change was' : `${state.changes} changes were`} written to GitHub.`
                         : counts.changes === 0

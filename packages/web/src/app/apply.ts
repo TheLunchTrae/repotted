@@ -17,13 +17,20 @@ import {
   StalePlanError,
 } from '@repotted/core';
 
-import { mkdir, stat } from '../engine/files.js';
+import { mkdir, rm, stat } from '../engine/files.js';
 import { basename, dirname } from '../engine/path.js';
 import { isSignedOut } from './account.js';
 import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
 
 /** An apply as reviewed: the changes it would write, what was left out of it, and what stops it. */
 export interface Reviewed {
+  /**
+   * The plan this review shows, which is the one an apply from it writes.
+   * It travels with the review, so no other plan can be applied in its place.
+   */
+  readonly plan: Plan;
+  /** How many of the plan's changes GitHub would refuse. */
+  readonly locked: number;
   readonly sections: readonly CompareSection[];
   /** What this apply leaves out of the profile, by the keys that put each back. */
   readonly leftOut: readonly string[];
@@ -57,6 +64,11 @@ function stagedFile(repository: string): string {
   return `/staged/${repo.owner.toLowerCase()}/${repo.name.toLowerCase()}.yaml`;
 }
 
+/** Removes the apply the browser keeps for a repository, however the file reads. */
+async function forget(repository: string): Promise<void> {
+  await discardStagedApply(stagedFile(repository)).catch(() => rm(stagedFile(repository), { force: true }));
+}
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -73,8 +85,6 @@ export class Apply {
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
-  /** The plan last reviewed, which is the only one `apply` writes. */
-  #plan: Plan | undefined;
   #profile: ComparedProfile | undefined;
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
@@ -84,11 +94,12 @@ export class Apply {
     this.#onSignedOut = onSignedOut;
   }
 
-  /** How many changes the review holds, and how many of them GitHub would refuse. */
+  /** How many changes the reviewed plan writes, and how many of them GitHub would refuse. */
   readonly counts = computed(() => {
     const state = this.state.value;
-    const rows = state.kind === 'reviewed' ? state.sections.flatMap((section) => section.rows) : [];
-    return { changes: rows.length, locked: rows.filter((row) => row.lock !== undefined).length };
+    return state.kind === 'reviewed'
+      ? { changes: state.plan.changes.length, locked: state.locked }
+      : { changes: 0, locked: 0 };
   });
 
   /**
@@ -113,8 +124,11 @@ export class Apply {
    * apply to the repository is unfinished, it asks which to go on with.
    */
   async start(repository: string, profile: ComparedProfile): Promise<void> {
+    // An apply that is writing is neither replaced nor joined: its page shows it until it ends.
+    if (this.state.value.kind === 'applying') {
+      return;
+    }
     this.#profile = profile;
-    this.#plan = undefined;
     if (await this.unfinished(repository)) {
       this.#turn += 1;
       this.state.value = { kind: 'unfinished', repository, profile: profile.name };
@@ -123,12 +137,21 @@ export class Apply {
     await this.#work(repository, profile.name, 'reviewing', async () => {
       await mkdir(dirname(stagedFile(repository)), { recursive: true });
       await createStagedApply(stagedFile(repository), repository, profile.file);
-      return this.#review(repository, undefined);
+      try {
+        return await this.#review(repository, undefined);
+      } catch (error) {
+        // An apply that couldn't be reviewed even once holds nothing yet, so it is not left to pick up.
+        await forget(repository);
+        throw error;
+      }
     });
   }
 
   /** Picks up the unfinished apply to a repository from its panel, with no profile picked. */
   async pickUp(repository: string): Promise<void> {
+    if (this.state.value.kind === 'applying') {
+      return;
+    }
     this.#profile = undefined;
     await this.#work(repository, '', 'reviewing', () => this.#review(repository, undefined));
   }
@@ -146,7 +169,7 @@ export class Apply {
     const state = this.state.value;
     const profile = this.#profile;
     if (state.kind === 'unfinished' && profile !== undefined) {
-      await discardStagedApply(stagedFile(state.repository));
+      await forget(state.repository);
       await this.start(state.repository, profile);
     }
   }
@@ -183,14 +206,18 @@ export class Apply {
    */
   async apply(): Promise<void> {
     const state = this.state.value;
-    const plan = this.#plan;
-    if (state.kind !== 'reviewed' || plan === undefined || !this.canApply.value) {
+    if (state.kind !== 'reviewed' || !this.canApply.value) {
+      return;
+    }
+    const { plan } = state;
+    // The plan is the shown review's own. This only guards the invariant that a review is of its own repository.
+    if (plan.repository.toLowerCase() !== state.repository.toLowerCase()) {
       return;
     }
     await this.#work(state.repository, state.profile, 'applying', async () => {
       try {
         const written = await applyPlan(this.#github, plan);
-        await discardStagedApply(stagedFile(state.repository));
+        await forget(state.repository);
         return { kind: 'applied', repository: state.repository, profile: state.profile, changes: written.length };
       } catch (error) {
         if (error instanceof StalePlanError) {
@@ -217,8 +244,7 @@ export class Apply {
       return;
     }
     this.#turn += 1;
-    this.#plan = undefined;
-    await discardStagedApply(stagedFile(state.repository)).catch(() => undefined);
+    await forget(state.repository);
     this.state.value = { kind: 'idle' };
   }
 
@@ -226,7 +252,6 @@ export class Apply {
   close(): void {
     if (this.state.value.kind !== 'applying') {
       this.#turn += 1;
-      this.#plan = undefined;
       this.state.value = { kind: 'idle' };
     }
   }
@@ -236,7 +261,6 @@ export class Apply {
       planStagedApply(this.#github, stagedFile(repository)),
       readAccess(this.#github, parseRepo(repository)),
     ]);
-    this.#plan = staged.plan;
     // An apply picked up goes by the profile it started from, which may not be the one picked now.
     const base = staged.staged.base;
     const profile = base === null ? 'no profile' : basename(base).replace(/\.ya?ml$/u, '');
@@ -245,6 +269,8 @@ export class Apply {
       kind: 'reviewed',
       repository,
       profile,
+      plan: staged.plan,
+      locked: locks.size,
       sections: compareSections(staged.plan, locks, staged.exclusions),
       leftOut: staged.staged.exclude,
       skipped: staged.plan.skipped.map(describeSkipped),
@@ -267,7 +293,6 @@ export class Apply {
     work: () => Promise<ApplyState>,
   ): Promise<void> {
     const turn = (this.#turn += 1);
-    this.#plan = kind === 'applying' ? this.#plan : undefined;
     this.state.value = { kind, repository, profile };
     try {
       const next = await work();
@@ -279,12 +304,16 @@ export class Apply {
         this.#onSignedOut();
       }
       if (turn === this.#turn) {
-        this.#plan = undefined;
+        const gone = messageOf(error).includes(stagedFile(repository)) && !(await this.unfinished(repository));
         // The files go by their names, not by where the browser keeps them.
-        const message = messageOf(error)
-          .replaceAll(stagedFile(repository), 'the apply')
-          .replaceAll(`${this.#profile?.folder ?? '/profiles'}/`, '');
-        this.state.value = { kind: 'failed', repository, profile, message };
+        const message = gone
+          ? 'This apply is no longer in this browser. Start it again from its repository.'
+          : messageOf(error)
+              .replaceAll(stagedFile(repository), 'this apply')
+              .replaceAll(/\/profiles\/(?:browser\/|github\/[^/]+\/[^/]+\/@[^/]+\/)?/gu, '');
+        if (turn === this.#turn) {
+          this.state.value = { kind: 'failed', repository, profile, message };
+        }
       }
     }
   }
