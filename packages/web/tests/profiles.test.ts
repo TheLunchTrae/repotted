@@ -742,11 +742,23 @@ test('saving every profile leaves one with a draft unsaved, and says when the sy
   expect(github.files()['profiles/drafted.yaml']).toContain('drafts:');
   await profiles.discardAll();
 
+  // A profile in a folder goes by its path from the profiles folder.
+  await change('web');
+  expect(profiles.unsavedNames.value).toEqual(['teams/web']);
+  await profiles.discardAll();
+
   await change('base');
-  github.fail(answered(500, 'Server Error'));
+  github.fail(answered(500, 'Server Error'), 2);
   expect(await profiles.saveAll()).toBe('unsynced');
   expect(profiles.unsavedNames.value).toEqual([]);
   expect(github.files()['profiles/base.yaml']).toBe(base);
+
+  // A profile changed in both places since is as much a reason to ask again as a failed sync.
+  github.write({ 'profiles/base.yaml': 'repository:\n  has_issues: true\n' });
+  await change('web');
+  expect(await profiles.saveAll()).toBe('unsynced');
+  expect(profiles.sync.value.status).toBe('synced');
+  expect(profiles.conflicts.value).toEqual(['base.yaml']);
 });
 
 test('a deleted profile takes its unsaved changes with it', async () => {

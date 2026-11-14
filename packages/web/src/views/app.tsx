@@ -112,21 +112,22 @@ function SignedIn({
     document.title = title === undefined ? 'Repotted' : `${title} - Repotted`;
   }, [title]);
   const [leaving, setLeaving] = useState(false);
-  /** Why a press of Sign out did nothing. */
-  const [held, setHeld] = useState<string | undefined>(undefined);
+  /** Whether a press of Sign out did nothing because an apply was writing. */
+  const [held, setHeld] = useState(false);
   const leave = (): void => {
     // An apply's edits that can be saved are, as when its page is left.
     apply.close();
     run(account.signOut());
   };
+  const writing = apply.state.value.kind === 'applying' || batch.state.value.kind === 'applying';
   // Signing out drops what the profiles' editors hold, so unsaved changes are asked about first,
   // and it ends the sign-in an apply that is writing still needs.
   const signOut = (): void => {
-    if (apply.state.value.kind === 'applying' || batch.state.value.kind === 'applying') {
-      setHeld('Changes are being written to GitHub. Sign out once the apply has finished.');
+    if (writing) {
+      setHeld(true);
       return;
     }
-    setHeld(undefined);
+    setHeld(false);
     if (profiles.unsaved.value.size > 0) {
       setLeaving(true);
     } else {
@@ -134,7 +135,10 @@ function SignedIn({
     }
   };
   // The account menu, where this is also said, closes with the question, so it is said on the page too.
-  const signOutProblem = held ?? account.signOutError.value;
+  const signOutProblem =
+    held && writing
+      ? 'Changes are being written to GitHub. Sign out once the apply has finished.'
+      : account.signOutError.value;
   return (
     <Shell account={account} user={user} router={router} onSignOut={signOut}>
       {signOutProblem !== undefined && (

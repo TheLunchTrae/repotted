@@ -45,7 +45,10 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
       } else {
         await profiles.discardAll();
       }
-      signOut();
+      // A question put away while this ran, as a second Escape can, is an answer to stay.
+      if (dialog.current?.open === true) {
+        signOut();
+      }
     } finally {
       setWorking(false);
     }
@@ -93,7 +96,7 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
       )}
       <div class="form-actions">
         {unsynced ? (
-          <button class="button" type="button" onClick={signOut}>
+          <button class="button" type="button" autofocus onClick={signOut}>
             Sign out anyway
           </button>
         ) : (
