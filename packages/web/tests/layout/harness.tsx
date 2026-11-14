@@ -20,7 +20,7 @@ import { run } from '../../src/views/run.js';
 // A long name, as some repositories have, is what pushes a row past a phone's width.
 const names = [
   'lunch/app',
-  'lunch/website-with-a-rather-long-repository-name',
+  'lunch/a_repository_name_with_no_hyphens_in_it_at_all',
   'lunch/api',
   'lunch/docs',
   'trae/dotfiles',

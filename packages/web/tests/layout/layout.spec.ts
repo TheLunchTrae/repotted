@@ -32,7 +32,7 @@ const screens: Readonly<Record<string, Screen>> = {
   },
   repositories: {
     path: '/',
-    ready: (page) => page.getByRole('checkbox', { name: 'Tick lunch/website-with-a-rather-long-repository-name' }),
+    ready: (page) => page.getByRole('checkbox', { name: 'Tick lunch/a_repository_name_with_no_hyphens_in_it_at_all' }),
   },
   'owner menu': {
     path: '/',
@@ -40,8 +40,8 @@ const screens: Readonly<Record<string, Screen>> = {
     ready: (page) => page.getByRole('button', { name: 'Only personal' }),
   },
   'repository details': {
-    path: '/?repository=lunch/website-with-a-rather-long-repository-name',
-    ready: (page) => page.getByRole('heading', { name: 'website-with-a-rather-long-repository-name' }),
+    path: '/?repository=lunch/a_repository_name_with_no_hyphens_in_it_at_all',
+    ready: (page) => page.getByRole('heading', { name: 'a_repository_name_with_no_hyphens_in_it_at_all', exact: true }),
   },
   settings: { path: '/settings', ready: (page) => page.getByRole('heading', { name: 'Account' }) },
   profiles: { path: '/profiles', ready: (page) => page.getByText('website', { exact: true }) },
