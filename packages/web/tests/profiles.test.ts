@@ -701,20 +701,52 @@ test('every unsaved profile is saved or discarded at once, and one that cannot b
   await change(1, true);
   expect(profiles.unsavedNames.value).toEqual(['base', 'other']);
 
-  expect(await profiles.saveAll()).toBe(true);
+  expect(await profiles.saveAll()).toBe('saved');
   expect(await readFile('/profiles/browser/base.yaml', 'utf8')).toBe('repository:\n  has_wiki: true\n');
   expect(await readFile('/profiles/browser/other.yaml', 'utf8')).toBe('repository:\n  has_wiki: true\n');
 
   // A value that isn't valid can't be saved, so its profile stays unsaved while the other is saved.
   await change(0, 'sometimes');
   await change(1, false);
-  expect(await profiles.saveAll()).toBe(false);
+  expect(await profiles.saveAll()).toBe('unsaved');
   expect(profiles.unsavedNames.value).toEqual(['base']);
   expect(await readFile('/profiles/browser/other.yaml', 'utf8')).toBe('repository:\n  has_wiki: false\n');
 
   await profiles.discardAll();
   expect(profiles.unsavedNames.value).toEqual([]);
   expect(await readFile('/profiles/browser/base.yaml', 'utf8')).toBe('repository:\n  has_wiki: true\n');
+});
+
+test('saving every profile leaves one with a draft unsaved, and says when the sync did not take the rest', async () => {
+  const github = repository();
+  github.write({
+    'profiles/drafted.yaml': 'repository:\n  has_wiki: false\ndrafts:\n  repository:\n    has_issues: false\n',
+  });
+  const profiles = await connected(github);
+  const change = async (name: string): Promise<void> => {
+    await profiles.select(profiles.listings.value.find((listing) => listing.name === name));
+    const editor = profiles.editor.value;
+    const wiki = editor?.sections.value
+      .flatMap((section) => section.groups.flatMap((group) => group.rows))
+      .find((row) => row.field.key === 'has_wiki')?.field;
+    if (editor === undefined || wiki === undefined) {
+      throw new Error('The open profile should have an editor with a wiki setting.');
+    }
+    await editor.set(wiki, true);
+  };
+  await change('drafted');
+
+  // A save here would apply the draft unseen, so the profile keeps its changes and its draft.
+  expect(await profiles.saveAll()).toBe('unsaved');
+  expect(profiles.unsavedNames.value).toEqual(['drafted']);
+  expect(github.files()['profiles/drafted.yaml']).toContain('drafts:');
+  await profiles.discardAll();
+
+  await change('base');
+  github.fail(answered(500, 'Server Error'));
+  expect(await profiles.saveAll()).toBe('unsynced');
+  expect(profiles.unsavedNames.value).toEqual([]);
+  expect(github.files()['profiles/base.yaml']).toBe(base);
 });
 
 test('a deleted profile takes its unsaved changes with it', async () => {

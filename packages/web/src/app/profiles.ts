@@ -203,22 +203,29 @@ export class Profiles {
 
   readonly selected = computed(() => this.listings.value.find((listing) => listing.file === this.#selectedFile.value));
 
-  /** The names of the profiles with changes that aren't saved, as the list has them. */
+  /** The profiles with changes that aren't saved, each by its path from the profiles folder without its ending. */
   readonly unsavedNames = computed(() =>
-    this.listings.value.filter((listing) => this.unsaved.value.has(listing.file)).map((listing) => listing.name),
+    this.listings.value
+      .filter((listing) => this.unsaved.value.has(listing.file))
+      .map((listing) => this.pathOf(listing).replace(/\.ya?ml$/iu, '')),
   );
 
   /**
    * Saves every profile with unsaved changes, each in its own turn of the
-   * queue as a save of the open one has. It answers whether none is left
-   * unsaved; one whose changes can't be saved, as with a value that isn't
-   * valid, keeps them.
+   * queue as a save of the open one has. It answers `unsaved` when one
+   * keeps its changes: one that can't be saved, as with a value that isn't
+   * valid, and one with a draft, which a save here would apply unseen. It
+   * answers `unsynced` when all are saved in this browser but the last sync
+   * failed or left a conflict, so where the profiles are kept lacks them.
    */
-  async saveAll(): Promise<boolean> {
-    for (const editor of this.#editors.value.filter((item) => item.dirty.value)) {
+  async saveAll(): Promise<'saved' | 'unsaved' | 'unsynced'> {
+    for (const editor of this.#editors.value.filter((item) => item.dirty.value && item.draftCount.value === 0)) {
       await editor.save((write) => this.#write(write));
     }
-    return this.unsaved.value.size === 0;
+    if (this.unsaved.value.size > 0) {
+      return 'unsaved';
+    }
+    return this.sync.value.status === 'failed' || this.conflicts.value.length > 0 ? 'unsynced' : 'saved';
   }
 
   /** Drops every profile's unsaved changes. */
