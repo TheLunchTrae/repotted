@@ -1470,6 +1470,19 @@ export async function editProfile(file: string, edits: readonly ProfileEdit[]): 
 }
 
 /** What a profile resolves to before and after edits that are not saved. */
+/**
+ * What the first file of a chain resolves to now and with `edits`, as
+ * `editLayer` would leave it, for any kind of layer. Nothing is written.
+ */
+export async function previewLayer<Read extends LayerRead>(
+  file: string,
+  edits: (head: Read) => readonly ProfileEdit[],
+  layer: Layer<Read>,
+): Promise<{ before: ResolvedLayer<Read>; after: ResolvedLayer<Read> }> {
+  const { result } = await editChain(file, edits, layer);
+  return { before: await resolveLayer(file, layer), after: result };
+}
+
 export interface ProfilePreview {
   readonly before: ResolvedProfile;
   readonly after: ResolvedProfile;

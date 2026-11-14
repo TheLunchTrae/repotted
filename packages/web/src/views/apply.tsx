@@ -6,6 +6,7 @@ import type { CompareRow } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
 import { Link } from './link.js';
+import { ProfileSettings } from './profile-editor.js';
 import { run } from './run.js';
 
 const kinds: Readonly<Record<CompareRow['kind'], string>> = { changes: 'Changes', adds: 'Adds', removes: 'Removes' };
@@ -25,6 +26,7 @@ function Row({ row, apply }: { readonly row: CompareRow; readonly apply: Apply }
         <span class={row.kind === 'removes' ? 'compare-removed' : 'compare-wanted'}>{row.wanted}</span>
       </span>
       {row.lock !== undefined && <span class="pill pill-remove">{row.lock}</span>}
+      {row.oneOff === true && <span class="pill pill-drift">One-off edit</span>}
       {row.leaveOut !== undefined && (
         <button
           class="button button-quiet button-small"
@@ -105,6 +107,23 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
   }
   const counts = apply.counts.value;
   const working = state.kind === 'reviewing' || state.kind === 'applying';
+  const editor = apply.editor.value;
+  const discard = (
+    <button
+      class="button button-quiet"
+      type="button"
+      disabled={working}
+      onClick={() => {
+        run(
+          apply.discard().then(() => {
+            router.go('/');
+          }),
+        );
+      }}
+    >
+      Discard apply
+    </button>
+  );
   return (
     <div class="page">
       <article class="page-body" aria-labelledby="apply-title">
@@ -115,21 +134,25 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
               Apply {state.profile === '' ? '' : `${state.profile} `}to <span class="mono">{state.repository}</span>
             </h1>
             <p class="muted" role="status">
-              {state.kind === 'reviewing'
-                ? 'Reading from GitHub…'
-                : state.kind === 'applying'
-                  ? 'Writing to GitHub…'
-                  : state.kind === 'unfinished'
-                    ? 'An apply here is not finished.'
-                    : state.kind === 'failed'
-                      ? "The apply couldn't be reviewed. Review again once that is put right, or discard the apply."
-                      : state.kind === 'applied'
-                        ? `${state.changes === 1 ? '1 change was' : `${state.changes} changes were`} written to GitHub.`
-                        : counts.changes === 0
-                          ? 'Nothing to apply: the repository already has what this apply sets.'
-                          : `${counts.changes === 1 ? '1 change' : `${counts.changes} changes`}${
-                              counts.locked === 0 ? '' : `, ${counts.locked} that GitHub would refuse`
-                            }. Nothing is written until you apply.`}
+              {state.kind === 'editing'
+                ? state.fromProfile
+                  ? 'Step 1 of 2: one-off edits. They apply on top of the profile for this apply only.'
+                  : 'Step 1 of 2: the settings to change, this once. Nothing else on the repository is touched.'
+                : state.kind === 'reviewing'
+                  ? 'One moment…'
+                  : state.kind === 'applying'
+                    ? 'Writing to GitHub…'
+                    : state.kind === 'unfinished'
+                      ? 'An apply here is not finished.'
+                      : state.kind === 'failed'
+                        ? "The apply couldn't be reviewed. Review again once that is put right, or discard the apply."
+                        : state.kind === 'applied'
+                          ? `${state.changes === 1 ? '1 change was' : `${state.changes} changes were`} written to GitHub.`
+                          : counts.changes === 0
+                            ? 'Step 2 of 2: nothing to apply. The repository already has what this apply sets.'
+                            : `Step 2 of 2: ${counts.changes === 1 ? '1 change' : `${counts.changes} changes`}${
+                                counts.locked === 0 ? '' : `, ${counts.locked} that GitHub would refuse`
+                              }. Nothing is written until you apply.`}
             </p>
           </div>
         </div>
@@ -159,6 +182,54 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
           <p class="notice notice-problem" role="alert">
             {state.message}
           </p>
+        )}
+        {state.kind === 'editing' && editor !== undefined && (
+          <>
+            {apply.editError.value !== undefined && (
+              <p class="notice notice-problem" role="alert">
+                {apply.editError.value}
+              </p>
+            )}
+            <ProfileSettings
+              key={editor.file}
+              name={state.profile}
+              editor={editor}
+              pushes={editor.ownerType.value !== 'user'}
+              saving={{
+                save: () => editor.save((work) => work()),
+                discardDraft: () => Promise.resolve(),
+                onGitHub: false,
+                saveLabel: 'Save edits',
+                more: (
+                  <>
+                    {discard}
+                    {state.fromProfile && (
+                      <button
+                        class="button"
+                        type="button"
+                        disabled={editor.saving.value}
+                        onClick={() => {
+                          run(apply.saveToProfile());
+                        }}
+                      >
+                        Save edits to profile
+                      </button>
+                    )}
+                    <button
+                      class="button button-primary"
+                      type="button"
+                      disabled={editor.saving.value || (editor.dirty.value && !editor.canSave.value)}
+                      onClick={() => {
+                        run(apply.review());
+                      }}
+                    >
+                      Review changes
+                    </button>
+                  </>
+                ),
+              }}
+            />
+          </>
         )}
         {state.kind === 'reviewed' && (
           <>
@@ -248,21 +319,18 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
             </div>
           </>
         )}
-        {state.kind !== 'applied' && state.kind !== 'unfinished' && (
+        {state.kind !== 'applied' && state.kind !== 'unfinished' && state.kind !== 'editing' && (
           <div class="save-bar">
+            {discard}
             <button
-              class="button button-quiet"
+              class="button"
               type="button"
               disabled={working}
               onClick={() => {
-                run(
-                  apply.discard().then(() => {
-                    router.go('/');
-                  }),
-                );
+                run(apply.backToEdits());
               }}
             >
-              Discard apply
+              Back to edits
             </button>
             <button
               class="button"

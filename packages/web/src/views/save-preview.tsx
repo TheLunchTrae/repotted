@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { DiffFold, DiffLine } from '../app/line-diff.js';
 import type { ProfileEditor, SavePreview } from '../app/profile-editor.js';
-import type { Profiles } from '../app/profiles.js';
+import type { EditorSaving } from './profile-editor.js';
 import { run } from './run.js';
 
 function count(amount: number, noun: string): string {
@@ -83,12 +83,12 @@ function Diff({ lines }: { readonly lines: readonly (DiffLine | DiffFold)[] }): 
 interface SavePreviewProps {
   readonly name: string;
   readonly editor: ProfileEditor;
-  readonly profiles: Profiles;
+  readonly saving: EditorSaving;
   readonly preview: SavePreview;
 }
 
 /** The preview of a save: what the profile applies now against what it would, with the ways to save from there. */
-export function SavePreviewDialog({ name, editor, profiles, preview }: SavePreviewProps): JSX.Element {
+export function SavePreviewDialog({ name, editor, saving, preview }: SavePreviewProps): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     dialog.current?.showModal();
@@ -111,7 +111,7 @@ export function SavePreviewDialog({ name, editor, profiles, preview }: SavePrevi
         onSubmit={(event) => {
           const pressed = event.submitter instanceof HTMLButtonElement ? event.submitter.value : '';
           if (pressed === 'applies' || pressed === 'draft') {
-            run(profiles.save(pressed));
+            run(saving.save(pressed));
           }
         }}
       >

@@ -1,12 +1,9 @@
 import { computed, signal } from '@preact/signals';
-import type { resolveProfile } from '@repotted/core';
 
 import { basename } from '../engine/path.js';
 import { type Entry, isEntry, labelProblem, rulesetProblem } from './entry-forms.js';
-import { ownUnsets } from './own-drafts.js';
+import { ownUnsets, type ResolvedProfile } from './own-drafts.js';
 import { sameValue } from './same-value.js';
-
-type ResolvedProfile = Awaited<ReturnType<typeof resolveProfile>>;
 
 export const entryLists = ['rulesets', 'environments', 'labels'] as const;
 export type EntryList = (typeof entryLists)[number];

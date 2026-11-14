@@ -69,21 +69,39 @@ account owns, nor a personal profile with an organization's repository. The
 page says so, and to use the profile's settings there, copy the profile and
 change the copy's type.
 
-### Apply a profile to a repository
+### Apply changes to a repository
 
-An apply is its own step: it shows what it would change, lets you leave
-changes out, and writes nothing to GitHub until you confirm.
+An apply is its own step: it shows what it would change, lets you adjust
+that, and writes nothing to GitHub until you confirm.
 
-Select a repository, pick a profile, and click **Apply**. The page shows each
-change by section, with what GitHub has now and what it will have after the
-apply. From there you can:
+To start one, select a repository and either:
+
+- pick a profile and click **Apply**, to make the repository match the
+  profile
+- click **Change settings once**, to change settings without a profile
+
+An apply has two steps, and opens on the first.
+
+The first step shows the one-off edits, in the same editor as a profile.
+They apply on top of the profile for this apply only, and can't be drafts.
+From there you can:
+
+- Click **Review changes** to go on. Edits you haven't saved are saved to the
+  apply first, never to the profile, so the review shows what the edits say.
+  It waits while an edit isn't valid.
+- Click **Save edits to profile** to write the one-off edits into the
+  profile, which then sets them itself.
+- Click **Discard apply** to throw the apply away. The profile stays as it
+  is.
+
+The second step shows each change by section, with what GitHub has now and
+what it will have after the apply. From there you can:
 
 - **Leave out** a change, for this apply only. The profile keeps it, and it
   shows under **Left out of this apply** with **Put back**.
-- Click **Review again** to read the profile and GitHub again, such as after
-  you save the profile.
-- Click **Discard apply** to throw the apply away. The profile stays as it
-  is.
+- Click **Back to edits** to change the edits again. A change that comes from
+  a one-off edit is marked **One-off edit**; change or undo it there.
+- Click **Review again** to read the profile and GitHub again.
 
 A change GitHub would refuse says what it needs, as on a comparison.
 **Apply** waits until no such change is left: leave it out, or click
@@ -97,13 +115,12 @@ written, and the page shows what the apply needs now. If GitHub refuses a
 change partway, the changes before it stay written and nothing after it is,
 and the page shows what is left.
 
-An apply you leave before it finishes is kept in this browser. The
-repository's panel says **An apply here is not finished** with **Resume**.
-Starting another apply there offers to pick the unfinished one up or start
-over.
+An apply you leave before it finishes is kept in this browser, with the
+edits that could be saved. The repository's panel says **An apply here is
+not finished** with **Resume**. Starting another apply there offers to pick
+the unfinished one up or start over.
 
-One-off edits for a single apply, and applying to several repositories at
-once, are not in the web app yet.
+Applying to several repositories at once is not in the web app yet.
 
 ## Profiles
 

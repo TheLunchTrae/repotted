@@ -2,11 +2,16 @@ import { afterEach, expect, test } from 'vitest';
 
 import { answered, FakeGitHub } from '../../core/tests/fake-github.js';
 import { Apply } from '../src/app/apply.js';
+import { type SettingField, settingSections } from '../src/app/setting-fields.js';
 import { mkdir, readFile, rm, writeFile } from '../src/engine/files.js';
 
 afterEach(async () => {
   await rm('/', { recursive: true });
 });
+
+function neverField(): SettingField {
+  throw new Error('The editor has no such setting.');
+}
 
 const profile = { file: '/profiles/web.yaml', name: 'web', folder: '/profiles' };
 const staged = '/staged/lunch/app.yaml';
@@ -50,6 +55,8 @@ test('an apply is reviewed first, writes nothing until asked, and then writes wh
 
   await apply.start('lunch/app', profile);
 
+  await apply.review();
+
   expect(rows(apply)).toEqual(['repository.has_projects', 'repository.has_wiki', 'new label']);
   expect(apply.canApply.value).toBe(true);
   expect(writes(github)).toEqual([]);
@@ -70,6 +77,7 @@ test('a change left out stays out of this apply, and the profile keeps it', asyn
   const github = new FakeGitHub();
   const apply = new Apply(github, () => undefined);
   await apply.start('lunch/app', profile);
+  await apply.review();
   const state = apply.state.value;
   const wiki =
     state.kind === 'reviewed' ? state.sections[0]?.rows.find((row) => row.key === 'repository.has_wiki') : undefined;
@@ -103,6 +111,8 @@ test('an apply waits while GitHub would refuse a change, since it would stop the
   const apply = new Apply(github, () => undefined);
 
   await apply.start('lunch/app', profile);
+
+  await apply.review();
   expect(rows(apply)).toEqual(['repository.has_projects', 'repository.has_wiki', 'new label (locked)']);
   expect(apply.canApply.value).toBe(false);
   await apply.apply();
@@ -117,6 +127,7 @@ test('a repository that changed since the review gets nothing written, and a fre
   const github = new FakeGitHub();
   const apply = new Apply(github, () => undefined);
   await apply.start('lunch/app', profile);
+  await apply.review();
 
   github.state.repository['has_wiki'] = false;
   await apply.apply();
@@ -136,6 +147,7 @@ test('a change GitHub refuses partway leaves the ones before it written and the 
   const github = new FakeGitHub();
   const apply = new Apply(github, () => undefined);
   await apply.start('lunch/app', profile);
+  await apply.review();
 
   github.fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 1);
   await apply.apply();
@@ -152,6 +164,7 @@ test('an unfinished apply is picked up as it was left, or started over, and a di
   const github = new FakeGitHub();
   const apply = new Apply(github, () => undefined);
   await apply.start('lunch/app', profile);
+  await apply.review();
   await apply.leaveOut('labels/bug', true);
   apply.close();
   expect(apply.state.value).toEqual({ kind: 'idle' });
@@ -160,11 +173,14 @@ test('an unfinished apply is picked up as it was left, or started over, and a di
   await apply.start('lunch/app', profile);
   expect(apply.state.value).toEqual({ kind: 'unfinished', repository: 'lunch/app', profile: 'web' });
   await apply.resume();
+  await apply.review();
   expect(rows(apply)).toEqual(['repository.has_projects', 'repository.has_wiki']);
 
   apply.close();
   await apply.start('lunch/app', profile);
+  await apply.review();
   await apply.startOver();
+  await apply.review();
   expect(rows(apply)).toEqual(['repository.has_projects', 'repository.has_wiki', 'new label']);
 
   await apply.discard();
@@ -181,6 +197,8 @@ test('an apply that cannot be reviewed says why and can be tried again, from the
   const apply = new Apply(github, () => undefined);
 
   await apply.start('lunch/app', profile);
+
+  await apply.review();
   expect(apply.state.value).toMatchObject({ kind: 'failed', message: 'Server Error' });
   expect(apply.canApply.value).toBe(false);
   await apply.reviewAgain();
@@ -190,6 +208,7 @@ test('an apply that cannot be reviewed says why and can be tried again, from the
   // A profile that can't be read starts no apply, so there is none to pick up until it reads.
   await saved('repository:\n  has_wikis: 5\n');
   await apply.start('lunch/app', profile);
+  await apply.review();
   expect(apply.state.value).toMatchObject({ kind: 'failed' });
   expect(await apply.unfinished('lunch/app')).toBe(false);
   await saved();
@@ -238,10 +257,15 @@ test('a review that lands late changes nothing: apply writes the plan on the pag
   const other = new FakeGitHub({}, 'lunch/other');
   const apply = new Apply({ request: fleet(app, other) }, () => undefined);
 
+  await apply.start('lunch/app', profile);
   app.hold();
-  const late = apply.start('lunch/app', profile);
+  const late = apply.review();
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
   apply.close();
   await apply.start('lunch/other', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
+  await apply.review();
   expect(apply.state.value).toMatchObject({ kind: 'reviewed', repository: 'lunch/other' });
   await app.release();
   await late;
@@ -260,11 +284,13 @@ test('a review held open while a change is left out never brings that change bac
   const github = new Held();
   const apply = new Apply(github, () => undefined);
   await apply.start('lunch/app', profile);
+  await apply.review();
 
   github.hold();
   const late = apply.reviewAgain();
   apply.close();
-  const picked = apply.pickUp('lunch/app');
+  await apply.pickUp('lunch/app');
+  const picked = apply.review();
   await github.release();
   await Promise.all([late, picked]);
   await apply.leaveOut('repository.has_wiki', true);
@@ -282,6 +308,7 @@ test('an apply that is writing is neither replaced nor joined, and its outcome s
   const other = new FakeGitHub({}, 'lunch/other');
   const apply = new Apply({ request: fleet(app, other) }, () => undefined);
   await apply.start('lunch/app', profile);
+  await apply.review();
   app.fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 1);
 
   app.hold();
@@ -289,7 +316,9 @@ test('an apply that is writing is neither replaced nor joined, and its outcome s
   // The page is left, and another apply is asked for, while the first one writes.
   apply.close();
   await apply.start('lunch/other', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
+  await apply.review();
   await apply.pickUp('lunch/app');
+  await apply.review();
   await apply.discard();
   expect(apply.state.value).toMatchObject({ kind: 'applying', repository: 'lunch/app' });
   await app.release();
@@ -308,6 +337,8 @@ test('an apply that could not be reviewed even once is not left to pick up', asy
 
   await apply.start('lunch/app', profile);
 
+  await apply.review();
+
   const state = apply.state.value;
   expect(state.kind === 'failed' ? state.message : '').toContain('make a copy of the profile');
   expect(await apply.unfinished('lunch/app')).toBe(false);
@@ -318,10 +349,12 @@ test('an apply whose profile is gone says so by its name, and one whose file is 
   const signedOut = (): void => undefined;
   const apply = new Apply(new FakeGitHub(), signedOut);
   await apply.start('lunch/app', profile);
+  await apply.review();
   apply.close();
 
   await rm(profile.file);
   await apply.pickUp('lunch/app');
+  await apply.review();
   const missing = apply.state.value;
   expect(missing.kind === 'failed' ? missing.message : '').toContain('web.yaml');
   expect(missing.kind === 'failed' ? missing.message : '').not.toContain('/profiles');
@@ -334,23 +367,25 @@ test('an apply whose profile is gone says so by its name, and one whose file is 
   });
 });
 
-test('a first review that fails late leaves an apply that was picked up and changed meanwhile', async () => {
+test('a first review that fails late leaves an apply the page has since picked up again', async () => {
   await saved();
   const github = new Held();
   const apply = new Apply(github, () => undefined);
+  await apply.start('lunch/app', profile);
 
   github.hold();
-  const first = apply.start('lunch/app', profile);
-  // The apply's file is there as soon as it starts; the page moves on and picks it up.
+  github.fail('GET /repos/lunch/app/labels', answered(500, 'Server Error'), 1);
+  const first = apply.review();
+  // The review is under way, reading GitHub, when the page is left and the apply picked up again.
   await new Promise((resolve) => {
     setTimeout(resolve, 0);
   });
   apply.close();
-  github.fail('GET /repos/lunch/app/labels', answered(500, 'Server Error'), 1);
-  const picked = apply.pickUp('lunch/app');
+  await apply.pickUp('lunch/app');
   await github.release();
-  await Promise.all([first, picked]);
+  await first;
 
+  expect(apply.state.value).toMatchObject({ kind: 'editing' });
   expect(await apply.unfinished('lunch/app')).toBe(true);
 });
 
@@ -360,12 +395,80 @@ test('a failure names a profile kept on GitHub by its path there, not by where t
   await writeFile(`${kept}/web.yaml`, text);
   const apply = new Apply(new FakeGitHub(), () => undefined);
   await apply.start('lunch/app', { file: `${kept}/web.yaml`, name: 'web', folder: kept });
+  await apply.review();
   apply.close();
 
   await rm(`${kept}/web.yaml`);
   await apply.pickUp('lunch/app');
+  await apply.review();
 
   const state = apply.state.value;
   expect(state.kind === 'failed' ? state.message : '').toContain('web.yaml');
   expect(state.kind === 'failed' ? state.message : '').not.toContain('github/lunch');
+});
+
+test('an apply opens on its one-off edits, which change this apply only and show as such in the review', async () => {
+  await saved();
+  const github = new FakeGitHub();
+  const apply = new Apply(github, () => undefined);
+
+  await apply.start('lunch/app', profile);
+  expect(apply.state.value).toEqual({ kind: 'editing', repository: 'lunch/app', profile: 'web', fromProfile: true });
+  const editor = apply.editor.value;
+  expect(editor?.drafts).toBe(false);
+  expect(writes(github)).toEqual([]);
+
+  // An edit that isn't saved is saved to the apply on the way to the review, never to the profile.
+  const issues = settingSections
+    .flatMap((section) => section.groups.flatMap((group) => group.fields))
+    .find((field) => field.path.join('.') === 'repository.has_issues');
+  await editor?.set(issues ?? neverField(), false);
+  await apply.review();
+
+  expect(await readFile(profile.file, 'utf8')).toBe(text);
+  const state = apply.state.value;
+  const row =
+    state.kind === 'reviewed'
+      ? state.sections[0]?.rows.find((item) => item.key === 'repository.has_issues')
+      : undefined;
+  expect(row).toMatchObject({ now: 'On', wanted: 'Off', oneOff: true });
+  expect(row?.leaveOut).toBeUndefined();
+
+  await apply.backToEdits();
+  expect(apply.state.value).toMatchObject({ kind: 'editing' });
+  expect(apply.editor.value?.dirty.value).toBe(false);
+
+  await apply.saveToProfile();
+  expect(apply.editError.value).toBeUndefined();
+  expect(await readFile(profile.file, 'utf8')).toContain('has_issues: false');
+});
+
+test('an edit that is not valid keeps the apply on its edits', async () => {
+  await saved();
+  const apply = new Apply(new FakeGitHub(), () => undefined);
+  await apply.start('lunch/app', profile);
+
+  await apply.editor.value?.addEntry('labels', { name: '' });
+  await apply.review();
+
+  expect(apply.state.value).toMatchObject({ kind: 'editing' });
+});
+
+test('settings are changed once, with no profile, from the repository as it is', async () => {
+  const github = new FakeGitHub();
+  const apply = new Apply(github, () => undefined);
+
+  await apply.startWithoutProfile('lunch/app');
+  expect(apply.state.value).toEqual({ kind: 'editing', repository: 'lunch/app', profile: '', fromProfile: false });
+  const wiki = settingSections
+    .flatMap((section) => section.groups.flatMap((group) => group.fields))
+    .find((field) => field.path.join('.') === 'repository.has_wiki');
+  await apply.editor.value?.set(wiki ?? neverField(), false);
+  await apply.saveToProfile();
+  expect(await exists(staged)).toBe(true);
+  await apply.review();
+  await apply.apply();
+
+  expect(apply.state.value).toMatchObject({ kind: 'applied', changes: 1 });
+  expect(github.state.repository).toMatchObject({ has_wiki: false });
 });

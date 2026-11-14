@@ -14,6 +14,7 @@ import {
   discardStagedApply,
   editStagedApply,
   planStagedApply,
+  previewStagedApply,
   resolveStagedApply,
   saveStagedEdits,
 } from '../src/staged.js';
@@ -190,6 +191,22 @@ describe('staged apply', () => {
 
     await applyPlan(github, plan);
     expect(github.state.rulesets.map((ruleset) => `${ruleset.name} ${ruleset.enforcement}`)).toEqual(['Main disabled']);
+  });
+
+  test('previews one-off edits without writing them, and refuses what an edit would', async () => {
+    const { profile, staged } = await folder('repository:\n  has_wiki: true\n');
+    await createStagedApply(staged, 'lunch/app', profile);
+    const text = await readFile(staged, 'utf8');
+
+    const preview = await previewStagedApply(staged, [{ path: ['repository', 'has_wiki'], value: false }]);
+
+    expect(preview.before.profile.repository).toEqual({ has_wiki: true });
+    expect(preview.after.profile.repository).toEqual({ has_wiki: false });
+    expect(preview.after.sources.repository['has_wiki']).toBe(staged);
+    expect(await readFile(staged, 'utf8')).toBe(text);
+    await expect(previewStagedApply(staged, [{ path: ['repository', 'has_wiki'], value: 'maybe' }])).rejects.toThrow(
+      ProfileError,
+    );
   });
 
   test('leaves out what it excludes, and stops excluding it again', async () => {

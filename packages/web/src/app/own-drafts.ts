@@ -1,6 +1,11 @@
 import type { resolveProfile } from '@repotted/core';
 
-type ResolvedProfile = Awaited<ReturnType<typeof resolveProfile>>;
+/** A file as an editor reads it: a profile, or anything else that resolves over profiles as one does, as an apply's file. */
+export type ResolvedProfile = Pick<
+  Awaited<ReturnType<typeof resolveProfile>>,
+  'chain' | 'profile' | 'drafts' | 'warnings' | 'sources'
+> &
+  Partial<Pick<Awaited<ReturnType<typeof resolveProfile>>, 'owner_source' | 'owner_changes'>>;
 
 /**
  * The keys of `drafts.unset` that the open file itself lists, as written
