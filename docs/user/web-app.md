@@ -90,6 +90,17 @@ setting's own options sit indented under it. Names and numbers are typed in a
 box; until what you type is valid, the page says what's wrong and won't save,
 and **Reset** beside the setting puts it back.
 
+Under the profile's name, the page says who it is for: personal accounts,
+organizations, or any owner. A profile for personal accounts hides the
+settings and choices only organizations have, and says how many. A profile
+for any owner shows them all and marks each one that only organizations, or
+only organizations on GitHub Enterprise Cloud, have. **Change** beside it
+picks another [owner type](profiles.md#owner-type). Before anything is
+written, it lists what the profile sets that the new type doesn't have, since
+changing the type stops the profile managing those. It waits until you have
+saved or reset your changes. When the type comes from a base profile, change
+it in that profile.
+
 **Find a setting** above the tabs searches every settings tab at once. Type
 part of a setting's name, its key in a profile such as `allow_squash_merge`,
 or a word people know it by, such as "dco" for sign-off. **Managed** shows

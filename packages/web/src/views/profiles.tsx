@@ -6,6 +6,7 @@ import type { Repositories } from '../app/repositories.js';
 import type { Router } from '../app/router.js';
 import { Link } from './link.js';
 import { NewProfileForm } from './new-profile.js';
+import { OwnerTypeDialog } from './owner-type.js';
 import { ProfileSettings } from './profile-editor.js';
 import { run } from './run.js';
 import { SyncNote } from './settings.js';
@@ -128,6 +129,7 @@ function DeleteProfile({ listing, profiles, onClose }: ProfileProps & { readonly
 function Profile({ listing, profiles }: ProfileProps): JSX.Element {
   const [showYaml, setShowYaml] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [changingOwner, setChangingOwner] = useState(false);
   const warnings = profiles.captureWarnings.value;
   const editor = profiles.editor.value;
   const opened = profiles.opened.value;
@@ -139,6 +141,20 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           <h1 id="profile-heading">{listing.name}</h1>
           <p class="muted">
             {listing.owner_type === null ? 'For any owner' : ownerTypes[listing.owner_type]}
+            {editor?.loaded.value === true && (
+              <>
+                {' '}
+                <button
+                  class="link"
+                  type="button"
+                  onClick={() => {
+                    setChangingOwner(true);
+                  }}
+                >
+                  Change
+                </button>
+              </>
+            )}
             {base !== undefined && (
               <>
                 , extends{' '}
@@ -177,6 +193,15 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           </button>
         </div>
       </div>
+      {changingOwner && editor !== undefined && (
+        <OwnerTypeDialog
+          editor={editor}
+          profiles={profiles}
+          onClose={() => {
+            setChangingOwner(false);
+          }}
+        />
+      )}
       {deleting && (
         <DeleteProfile
           listing={listing}

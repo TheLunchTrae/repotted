@@ -615,6 +615,10 @@ input[type='checkbox'] {
   color: var(--remove);
 }
 
+.pill-owner {
+  margin-inline-start: 8px;
+}
+
 .pill-draft {
   margin-inline-start: 8px;
   background: var(--drift-bg);

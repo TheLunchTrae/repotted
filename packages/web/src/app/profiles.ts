@@ -16,7 +16,7 @@ import { basename, dirname, join, relative } from '../engine/path.js';
 import { isSignedOut } from './account.js';
 import type { SaveMode } from './entry-edits.js';
 import type { Preferences } from './preferences.js';
-import { ProfileEditor } from './profile-editor.js';
+import { type OwnerChoice, ProfileEditor } from './profile-editor.js';
 import { SerialQueue } from './serial-queue.js';
 
 export type ProfileListing = Awaited<ReturnType<typeof listProfiles>>[number];
@@ -477,6 +477,11 @@ export class Profiles {
    */
   async save(mode: SaveMode = 'applies'): Promise<void> {
     await this.editor.value?.save((write) => this.#write(write), mode);
+  }
+
+  /** Makes the open profile one for another kind of owner, in a turn of the queue as a save has. */
+  async changeOwnerType(type: OwnerChoice): Promise<void> {
+    await this.editor.value?.changeOwnerType((write) => this.#write(write), type);
   }
 
   /** Takes the open profile's draft out of its file, in a turn of the queue as a save has. */

@@ -27,8 +27,8 @@ export {
   settingPath,
   stringifyProfile,
 } from './profile.js';
-export { ownerTypes } from './owner.js';
-export type { OwnerType } from './owner.js';
+export { ownerHas, ownerTypes, settingRules } from './owner.js';
+export type { OwnerNeed, OwnerType } from './owner.js';
 export type { EntryEdit, ProfileEdit } from './profile.js';
 export { lockChanges } from './permissions.js';
 export { profileFileJsonSchema } from './schema.js';
