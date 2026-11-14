@@ -21,7 +21,8 @@ import {
   withRuleParameter,
   withStatusChecks,
 } from '../app/entry-forms.js';
-import { type ProfileEditor, sameValue } from '../app/profile-editor.js';
+import type { ProfileEditor } from '../app/profile-editor.js';
+import { sameValue } from '../app/same-value.js';
 import { run } from './run.js';
 
 const nouns: Readonly<Record<EntryList, { readonly one: string; readonly many: string; readonly title: string }>> = {
@@ -866,18 +867,25 @@ export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Eleme
   openName.current = typeof open?.entry?.['name'] === 'string' ? open.entry['name'].trim() : undefined;
   const add = useRef<HTMLButtonElement>(null);
   const shown = open?.entry === undefined ? undefined : open;
-  // Once the open entry is gone, as after a reset of a new one, the list shows, with the keyboard on it.
+  // Once the open entry is gone, as after a reset of a new one, the list shows.
   useEffect(() => {
     if (openKey !== undefined && shown === undefined) {
       setOpenKey(undefined);
-      add.current?.focus();
     }
   }, [openKey, shown]);
+  // The list takes the keyboard back whenever a form closes, since the button that closed it is gone.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (wasOpen.current && shown === undefined) {
+      add.current?.focus();
+    }
+    wasOpen.current = shown !== undefined;
+  }, [shown]);
 
   if (shown?.entry !== undefined) {
     return (
       <EntryForm
-        key={shown.savedName ?? shown.key}
+        key={openKey}
         editor={editor}
         row={shown}
         entry={shown.entry}

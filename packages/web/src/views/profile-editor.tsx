@@ -2,8 +2,9 @@ import type { JSX } from 'preact';
 import { useRef, useState } from 'preact/hooks';
 
 import { entryLists } from '../app/entry-edits.js';
-import { type ProfileEditor, sameValue, type SettingRow } from '../app/profile-editor.js';
+import type { ProfileEditor, SettingRow } from '../app/profile-editor.js';
 import type { Profiles } from '../app/profiles.js';
+import { sameValue } from '../app/same-value.js';
 import { Entries } from './entries.js';
 import { run } from './run.js';
 

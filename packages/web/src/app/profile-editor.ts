@@ -4,6 +4,7 @@ import { editProfile, previewProfile, resolveProfile } from '@repotted/core';
 import { basename } from '../engine/path.js';
 import { EntryEdits, type EntryList, type EntryRow } from './entry-edits.js';
 import type { Entry } from './entry-forms.js';
+import { sameValue } from './same-value.js';
 import { type SettingField, type SettingGroup, settingSections } from './setting-fields.js';
 
 type ResolvedProfile = Awaited<ReturnType<typeof resolveProfile>>;
@@ -43,11 +44,6 @@ function getIn(value: unknown, keys: readonly string[]): unknown {
     (current, key) => (typeof current === 'object' && current !== null ? Reflect.get(current, key) : undefined),
     value,
   );
-}
-
-/** Whether two setting values are the same, as plain data. */
-export function sameValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function messageOf(error: unknown): string {
@@ -300,7 +296,7 @@ export class ProfileEditor {
         const current = await resolveProfile(this.file);
         this.#saved.value = current;
         this.#entryEdits.setSaved(current);
-        if (this.#entryEdits.held.value) {
+        if (this.#entryEdits.writesOverChange() || this.#entryEdits.held.value) {
           throw new Error(
             'A ruleset, environment, or label changed elsewhere since you changed it. Open it to keep yours or reset it.',
           );

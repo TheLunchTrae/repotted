@@ -3,6 +3,7 @@ import type { resolveProfile } from '@repotted/core';
 
 import { basename } from '../engine/path.js';
 import { type Entry, isEntry, labelProblem, rulesetProblem } from './entry-forms.js';
+import { sameValue } from './same-value.js';
 
 type ResolvedProfile = Awaited<ReturnType<typeof resolveProfile>>;
 
@@ -56,10 +57,6 @@ const nouns: Readonly<Record<EntryList, string>> = {
   environments: 'an environment',
   labels: 'a label',
 };
-
-function sameValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
 
 function nameOf(entry: Entry | undefined): string {
   return typeof entry?.['name'] === 'string' ? entry['name'].trim() : '';
@@ -144,7 +141,7 @@ export class EntryEdits {
   /** Starts a ruleset, environment, or label, and answers the key the editor knows it by. */
   add(list: EntryList, entry: Entry): string {
     this.#added += 1;
-    const key = `${list}/+${this.#added}`;
+    const key = `${list}:new:${this.#added}`;
     this.#set(key, { list, name: undefined, entry, base: undefined });
     return key;
   }
@@ -182,9 +179,17 @@ export class EntryEdits {
     }
   }
 
-  /** Puts an entry back as it is saved. */
+  /**
+   * Puts an entry back as it is saved. While a save is writing a change to
+   * it, putting it back is itself a change, to what it was: the entry as it
+   * was saved, or for one that was new, none.
+   */
   reset(row: EntryRow): void {
-    this.#set(row.key, undefined);
+    if (this.#writing.has(row.key)) {
+      this.#set(row.key, { list: row.list, name: row.savedName, entry: row.saved, base: row.saved });
+    } else {
+      this.#set(row.key, undefined);
+    }
   }
 
   /**
@@ -199,7 +204,7 @@ export class EntryEdits {
     if (row.saved === undefined) {
       this.#set(row.key, undefined);
       this.#added += 1;
-      this.#set(`${row.list}/+${this.#added}`, { ...change, name: undefined, base: undefined });
+      this.#set(`${row.list}:new:${this.#added}`, { ...change, name: undefined, base: undefined });
     } else {
       this.#set(row.key, { ...change, base: row.saved });
     }
@@ -213,6 +218,17 @@ export class EntryEdits {
   begin(): EntryWrite[] {
     this.#writing = this.#changes.value;
     return [...this.#writing.values()].map(write);
+  }
+
+  /**
+   * Whether a change the save is about to write was made on an entry that
+   * has since changed or gone. The save checks this once it has read the
+   * file in its turn, whatever became of the change while it waited.
+   */
+  writesOverChange(): boolean {
+    return [...this.#writing.values()].some(
+      (change) => change.name !== undefined && !sameValue(change.base, this.#savedEntry(change.list, change.name)),
+    );
   }
 
   /**
@@ -238,7 +254,7 @@ export class EntryEdits {
         if (name === undefined && change.entry !== undefined) {
           this.#added += 1;
         }
-        left.set(name === undefined ? `${change.list}/+${this.#added}` : `${change.list}/${name}`, {
+        left.set(name === undefined ? `${change.list}:new:${this.#added}` : `${change.list}/${name}`, {
           ...change,
           name,
           base,

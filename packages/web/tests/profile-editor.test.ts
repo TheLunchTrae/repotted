@@ -641,3 +641,66 @@ test('an entry put back to what it was while a save writes it stays changed, and
   await editor.resetAll();
   expect(editor.dirty.value).toBe(false);
 });
+
+test('a save writes nothing over an entry that changed in its turn, even when its change was reset meanwhile', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const main = entry(editor, 'rulesets', 'Main');
+  await editor.changeEntry(main, { ...main.entry, enforcement: 'evaluate' });
+  const theirs = entries.replace('enforcement: active', 'enforcement: disabled');
+  const held = Promise.withResolvers<undefined>();
+
+  const saving = editor.save(async (work) => {
+    await held.promise;
+    await writeFile('/profiles/web.yaml', theirs);
+    await work();
+  });
+  await editor.resetEntry(entry(editor, 'rulesets', 'Main'));
+  held.resolve(undefined);
+  await saving;
+
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(theirs);
+  expect(editor.saveError.value).toContain('changed elsewhere');
+});
+
+test('an entry taken out and put back while the save runs is still there to put back afterwards', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  await editor.takeOut(entry(editor, 'labels', 'bug'));
+  const held = Promise.withResolvers<undefined>();
+
+  const saving = editor.save(async (work) => {
+    await held.promise;
+    await work();
+  });
+  await editor.resetEntry(entry(editor, 'labels', 'bug'));
+  held.resolve(undefined);
+  await saving;
+
+  expect(await readFile('/profiles/web.yaml', 'utf8')).not.toContain('bug');
+  expect(editor.dirty.value).toBe(true);
+  await editor.save(write);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toMatch(/- name: bug\n\s+color: d73a4a/u);
+});
+
+test("the order a form leaves an entry's keys in never reads as a change, here or elsewhere", async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const main = entry(editor, 'rulesets', 'Main');
+  const { enforcement, ...rest } = main.entry ?? {};
+
+  // A form writes a changed key last. Changed and changed back, the entry is as saved.
+  await editor.changeEntry(main, { ...rest, enforcement: 'evaluate' });
+  await editor.changeEntry(entry(editor, 'rulesets', 'Main'), { ...rest, enforcement });
+  expect(editor.dirty.value).toBe(false);
+
+  await editor.changeEntry(main, { ...rest, enforcement: 'evaluate' });
+  const held = Promise.withResolvers<undefined>();
+  const saving = editor.save(async (work) => {
+    await held.promise;
+    await work();
+  });
+  await editor.changeEntry(entry(editor, 'rulesets', 'Main'), { ...rest, enforcement: 'evaluate', target: 'tag' });
+  held.resolve(undefined);
+  await saving;
+
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ unsaved: true, outOfDate: false, problem: undefined });
+  expect(editor.canSave.value).toBe(true);
+});
