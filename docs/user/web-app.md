@@ -69,6 +69,42 @@ account owns, nor a personal profile with an organization's repository. The
 page says so, and to use the profile's settings there, copy the profile and
 change the copy's type.
 
+### Apply a profile to a repository
+
+An apply is its own step: it shows what it would change, lets you leave
+changes out, and writes nothing to GitHub until you confirm.
+
+Select a repository, pick a profile, and click **Apply**. The page shows each
+change by section, with what GitHub has now and what it will have after the
+apply. From there you can:
+
+- **Leave out** a change, for this apply only. The profile keeps it, and it
+  shows under **Left out of this apply** with **Put back**.
+- Click **Review again** to read the profile and GitHub again, such as after
+  you save the profile.
+- Click **Discard apply** to throw the apply away. The profile stays as it
+  is.
+
+A change GitHub would refuse says what it needs, as on a comparison.
+**Apply** waits until no such change is left: leave it out, or click
+**Review App access**, grant what it needs, and click **Review again**.
+Otherwise the apply would stop at that change and leave the ones after it
+unwritten.
+
+Click **Apply** and then **Apply now** to write the changes. Repotted checks
+GitHub first: if the repository changed since you reviewed it, nothing is
+written, and the page shows what the apply needs now. If GitHub refuses a
+change partway, the changes before it stay written and nothing after it is,
+and the page shows what is left.
+
+An apply you leave before it finishes is kept in this browser. The
+repository's panel says **An apply here is not finished** with **Resume**.
+Starting another apply there offers to pick the unfinished one up or start
+over.
+
+One-off edits for a single apply, and applying to several repositories at
+once, are not in the web app yet.
+
 ## Profiles
 
 A profile is a YAML file that describes how a repository should be set up.

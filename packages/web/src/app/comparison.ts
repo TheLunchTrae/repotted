@@ -32,6 +32,15 @@ export interface CompareRow {
   readonly wanted: string;
   /** Why Repotted can't make the change, such as "Needs Actions write"; undefined when it can. */
   readonly lock: string | undefined;
+  /** In an apply, what leaves the row's change out of it, such as `repository.has_wiki` or `rulesets/Main`. */
+  readonly leaveOut?: string | undefined;
+}
+
+/** What leaves one change of an apply's plan out, or one field of it, as the engine's staged plan lists it. */
+export interface RowExclusion {
+  readonly change: number;
+  readonly field: string | null;
+  readonly key: string;
 }
 
 export interface CompareSection {
@@ -246,8 +255,21 @@ function rowsOf(change: Change, lock: string | undefined): CompareRow[] {
 }
 
 /** A plan as the sections of a comparison, in the order the plan applies them. */
-export function compareSections(plan: Plan, locks: ReadonlyMap<number, string>): CompareSection[] {
+export function compareSections(
+  plan: Plan,
+  locks: ReadonlyMap<number, string>,
+  exclusions: readonly RowExclusion[] = [],
+): CompareSection[] {
   const sections: CompareSection[] = [];
+  /** A row with what leaves it out: its field's key for a setting, and its change's for anything made, removed, or listed. */
+  const leavable = (index: number, row: CompareRow): CompareRow => {
+    const of = exclusions.filter((exclusion) => exclusion.change === index);
+    const field = of.find(
+      (exclusion) => exclusion.field !== null && (row.key === exclusion.key || row.key.startsWith(`${exclusion.key}.`)),
+    );
+    const key = (field ?? of.find((exclusion) => exclusion.field === null))?.key;
+    return key === undefined ? row : { ...row, leaveOut: key };
+  };
   // GitHub can't edit an autolink, so a plan remakes one with a delete and a create, which is one change to it here.
   const autolinks = (action: Change['action']): Map<string, number> =>
     new Map(
@@ -262,9 +284,14 @@ export function compareSections(plan: Plan, locks: ReadonlyMap<number, string>):
     if (remade && change.action === 'delete') {
       continue;
     }
-    const rows = remade
-      ? rowsOf({ ...change, action: 'update' }, locks.get(index) ?? locks.get(deleted.get(change.entry.name) ?? index))
-      : rowsOf(change, locks.get(index));
+    const rows = (
+      remade
+        ? rowsOf(
+            { ...change, action: 'update' },
+            locks.get(index) ?? locks.get(deleted.get(change.entry.name) ?? index),
+          )
+        : rowsOf(change, locks.get(index))
+    ).map((row) => leavable(index, row));
     const last = sections.at(-1);
     if (last?.section === change.section) {
       sections[sections.length - 1] = { ...last, rows: [...last.rows, ...rows] };
