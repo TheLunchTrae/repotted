@@ -341,6 +341,15 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
             </div>
           </>
         )}
+        {/* Before the action bar, so the bar stays the page's last child. */}
+        {confirming && (
+          <Confirm
+            apply={apply}
+            onClose={() => {
+              setConfirming(false);
+            }}
+          />
+        )}
         {state.kind !== 'applied' && state.kind !== 'unfinished' && state.kind !== 'editing' && (
           <div class="save-bar">
             {discard}
@@ -375,14 +384,6 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
               Apply
             </button>
           </div>
-        )}
-        {confirming && (
-          <Confirm
-            apply={apply}
-            onClose={() => {
-              setConfirming(false);
-            }}
-          />
         )}
       </article>
     </div>

@@ -426,7 +426,8 @@ input[type='checkbox'] {
 }
 
 .page-body {
-  /* The page's side and bottom padding, which a .save-bar among its children reaches across. */
+  /* The page's side and bottom padding, which a .save-bar among its
+     children reaches across. */
   --page-inline: 24px;
   --page-end: 48px;
 
@@ -1358,7 +1359,8 @@ select.field {
   background: var(--surface);
 }
 
-/* Only the page's last child reaches into its bottom padding; one with more after it would overlap that. */
+/* Only the page's last child reaches into its bottom padding; a bar with more
+   after it would overlap that, so views render their dialogs before the bar. */
 .save-bar:not(:last-child) {
   margin-bottom: 0;
 }

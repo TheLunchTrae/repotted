@@ -328,6 +328,15 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
             </div>
           </>
         )}
+        {/* Before the action bar, so the bar stays the page's last child. */}
+        {confirming && (
+          <Confirm
+            batch={batch}
+            onClose={() => {
+              setConfirming(false);
+            }}
+          />
+        )}
         <div class="save-bar">
           <button
             class="button button-quiet"
@@ -367,14 +376,6 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
             {ready === 0 ? 'Apply' : `Apply to ${repositories(ready)}`}
           </button>
         </div>
-        {confirming && (
-          <Confirm
-            batch={batch}
-            onClose={() => {
-              setConfirming(false);
-            }}
-          />
-        )}
       </article>
     </div>
   );
