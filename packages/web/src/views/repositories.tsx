@@ -2,6 +2,7 @@ import type { JSX, RefObject } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { Apply } from '../app/apply.js';
+import type { BatchApply } from '../app/batch-apply.js';
 import type { ComparedProfile } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
 import type { Profiles } from '../app/profiles.js';
@@ -250,16 +251,115 @@ interface RepositoriesProps {
   readonly onCompare: PanelProps['onCompare'];
   readonly apply: Apply;
   readonly onApply: PanelProps['onApply'];
+  readonly batch: BatchApply;
+  /** Starts a batch of the profile over the repositories, or resumes the unfinished one when no profile is given. */
+  readonly onBatch: (repositories: readonly string[], profile: ComparedProfile | undefined) => void;
+}
+
+interface TickedProps {
+  readonly repositories: Repositories;
+  readonly profiles: Profiles;
+  readonly onBatch: RepositoriesProps['onBatch'];
+}
+
+/** The panel for the ticked repositories: the profile to apply to them all, each reviewed on its own first. */
+function TickedPanel({ repositories, profiles, onBatch }: TickedProps): JSX.Element {
+  const ticked = repositories.ticked.value;
+  const listings = profiles.listings.value.filter((listing) => listing.problem === null);
+  const [picked, setPicked] = useState<string | undefined>(undefined);
+  const profile = listings.find((listing) => listing.file === picked) ?? listings[0];
+  const nameOf = (listing: (typeof listings)[number]): string => profiles.pathOf(listing).replace(/\.ya?ml$/u, '');
+  return (
+    <aside class="panel" aria-label="Ticked repositories">
+      <h2>{ticked.length === 1 ? '1 repository ticked' : `${ticked.length} repositories ticked`}</h2>
+      <ul class="muted small ticked-names">
+        {ticked.map((repository) => (
+          <li key={repository.full_name} class="mono">
+            {repository.full_name}
+          </li>
+        ))}
+      </ul>
+      <form
+        class="panel-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (profile !== undefined) {
+            onBatch(
+              ticked.map((repository) => repository.full_name),
+              { file: profile.file, name: nameOf(profile), folder: profiles.folder.value },
+            );
+          }
+        }}
+      >
+        {listings.length === 0 ? (
+          <>
+            <strong>Apply a profile to them</strong>
+            <p class="muted small">Make a profile first, on the Profiles page.</p>
+          </>
+        ) : (
+          <>
+            <label for="batch-profile">Apply a profile to them</label>
+            <select
+              id="batch-profile"
+              class="field"
+              value={profile?.file}
+              onChange={(event) => {
+                setPicked(event.currentTarget.value);
+              }}
+            >
+              {listings.map((listing) => (
+                <option key={listing.file} value={listing.file}>
+                  {nameOf(listing)}
+                </option>
+              ))}
+            </select>
+            <button class="button button-primary" type="submit">
+              Review apply
+            </button>
+            <p class="muted small">Each repository is reviewed first. Nothing is written until you apply.</p>
+          </>
+        )}
+      </form>
+      <button
+        class="button button-quiet"
+        type="button"
+        onClick={() => {
+          repositories.clearTicks();
+        }}
+      >
+        Untick all
+      </button>
+    </aside>
+  );
 }
 
 export function RepositoriesPage({
   repositories,
   profiles,
   apply,
+  batch,
   onCapture,
   onCompare,
   onApply,
+  onBatch,
 }: RepositoriesProps): JSX.Element {
+  const ticked = repositories.ticked.value;
+  // Whether a batch was left unfinished, which the browser keeps.
+  const [unfinished, setUnfinished] = useState(false);
+  const moved = batch.state.value.kind;
+  useEffect(() => {
+    let current = true;
+    run(
+      batch.unfinished().then((found) => {
+        if (current) {
+          setUnfinished(found);
+        }
+      }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [batch, moved]);
   const search = useSearchKey();
   const list = repositories.list.value;
   const loading = repositories.loading.value;
@@ -270,8 +370,24 @@ export function RepositoriesPage({
   const total = list?.repositories.length ?? 0;
 
   return (
-    <div class={selected === undefined ? 'page' : 'page page-with-panel'}>
+    <div class={selected === undefined && ticked.length === 0 ? 'page' : 'page page-with-panel'}>
       <section class="page-body" aria-labelledby="repositories-heading">
+        {unfinished && (
+          <div class="notice notice-drift">
+            <p>A batch apply is not finished.</p>
+            <p class="notice-actions">
+              <button
+                class="button button-small"
+                type="button"
+                onClick={() => {
+                  onBatch([], undefined);
+                }}
+              >
+                Resume
+              </button>
+            </p>
+          </div>
+        )}
         <div class="page-heading">
           <div>
             <h1 id="repositories-heading">Repositories</h1>
@@ -382,7 +498,16 @@ export function RepositoriesPage({
                     </h2>
                     <ul class="rows">
                       {group.repositories.map((repository) => (
-                        <li key={repository.full_name}>
+                        <li key={repository.full_name} class="ticked-row">
+                          <input
+                            class="tick"
+                            type="checkbox"
+                            aria-label={`Tick ${repository.full_name}`}
+                            checked={ticked.some((item) => item.full_name === repository.full_name)}
+                            onChange={(event) => {
+                              repositories.tick(repository, event.currentTarget.checked);
+                            }}
+                          />
                           <button
                             class="row"
                             type="button"
@@ -407,15 +532,19 @@ export function RepositoriesPage({
           </>
         )}
       </section>
-      {selected !== undefined && (
-        <RepositoryPanel
-          repository={selected}
-          profiles={profiles}
-          apply={apply}
-          onCapture={onCapture}
-          onCompare={onCompare}
-          onApply={onApply}
-        />
+      {ticked.length > 0 ? (
+        <TickedPanel repositories={repositories} profiles={profiles} onBatch={onBatch} />
+      ) : (
+        selected !== undefined && (
+          <RepositoryPanel
+            repository={selected}
+            profiles={profiles}
+            apply={apply}
+            onCapture={onCapture}
+            onCompare={onCompare}
+            onApply={onApply}
+          />
+        )
       )}
     </div>
   );

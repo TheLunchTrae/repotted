@@ -182,3 +182,35 @@ test('a refresh keeps the list in use while it reads, and the selection when the
   expect(repositories.list.value?.repositories).toHaveLength(2);
   expect(repositories.selected.value?.full_name).toBe('Acme/api');
 });
+
+test('ticked repositories stay ticked through a search, and one the account no longer lists drops out', async () => {
+  const github = new FakeGitHub({ account: account(everyone) });
+  const repositories = new Repositories(github, user, memory(), () => undefined);
+  await repositories.refresh();
+  const all = repositories.list.value?.repositories ?? [];
+  const named = (name: string): (typeof all)[number] => {
+    const found = all.find((repository) => repository.full_name === name);
+    if (found === undefined) {
+      throw new Error(`The list has no ${name}.`);
+    }
+    return found;
+  };
+
+  repositories.tick(named('zeta/site'), true);
+  repositories.tick(named('Acme/api'), true);
+  repositories.search.value = 'dotfiles';
+  expect(repositories.ticked.value.map((repository) => repository.full_name).toSorted()).toEqual([
+    'Acme/api',
+    'zeta/site',
+  ]);
+
+  repositories.tick(named('zeta/site'), false);
+  expect(repositories.ticked.value.map((repository) => repository.full_name)).toEqual(['Acme/api']);
+
+  github.state.account = account(['trae/dotfiles']);
+  await repositories.refresh();
+  expect(repositories.ticked.value).toEqual([]);
+
+  repositories.clearTicks();
+  expect(repositories.ticked.value).toEqual([]);
+});

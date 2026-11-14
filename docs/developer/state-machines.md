@@ -515,6 +515,36 @@ the plan it shows, so no other plan can be applied in its place.
 | Applying                                | The apply page is left                                      | Applying still: the run goes on, and the page shows how it ended when it is opened again in the same visit.                                                                                                                                                                                                                                                  |
 | Applying                                | Apply or Resume on a repository's panel, or Discard apply   | Applying still: an apply that is writing is neither replaced, joined, nor discarded.                                                                                                                                                                                                                                                                         |
 
+## Web batch apply
+
+`BatchApply` (`packages/web/src/app/batch-apply.ts`) applies one profile to
+several repositories through the engine's [batch](#batch), a folder in the
+browser's files at `/batch`. Its members are staged applies under `/staged`,
+the same files as [applies made one at a time](#web-apply), so an apply in
+progress joins a batch as it is. It writes to GitHub only in Applying, with
+the engine's `applyBatch` over the plan of the review shown, which the
+reviewed state holds. One piece of work counts at a time.
+
+| State            | Event                                                              | Next                                                                                                                                                                     |
+| ---------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Idle             | **Review apply**, with repositories ticked and a profile picked    | Reviewing, with a batch started: a new apply for each repository, and each apply already in progress joined as it is.                                                    |
+| Idle             | **Resume** on the repositories page, with a batch unfinished       | Reviewing, the batch as it was left.                                                                                                                                     |
+| Reviewing        | Every repository is planned                                        | Reviewed: each repository with its changes, or that it is already in line, needs access, couldn't be compared, or is left out; and each change with how many it reaches. |
+| Reviewing        | The batch can't start or be read                                   | Failed, with why. A batch that couldn't start leaves nothing behind. A lost sign-in also goes to the sign-in page.                                                       |
+| Reviewing        | A review lands after the page moved on                             | Dropped.                                                                                                                                                                 |
+| Reviewed         | A repository is unticked, or ticked again                          | Reviewing, with it left out of the batch or put back. Its apply stays as it is.                                                                                          |
+| Reviewed         | Leave out, or Put back, on one repository's change                 | Reviewing, with that repository's apply changed.                                                                                                                         |
+| Reviewed         | Leave out everywhere, or Put back everywhere                       | Reviewing, with every repository's apply changed. One whose own edits set the value keeps it and is named.                                                               |
+| Reviewed         | Review again                                                       | Reviewing.                                                                                                                                                               |
+| Reviewed         | Apply, then Apply now, with a repository that has changes to write | Applying, one repository at a time, each result shown as it lands. Cancel in the question goes back with nothing written.                                                |
+| Applying         | A repository is written, or needed nothing                         | It finishes and leaves the batch.                                                                                                                                        |
+| Applying         | A repository changed since the review, is locked, or fails partway | It is not written, or keeps what was written before the failure, and stays in the batch. The next one is tried.                                                          |
+| Applying         | The last repository is tried                                       | Applied: those that didn't finish first, with why, then the rest. The batch ends when every one finished.                                                                |
+| Applying         | Review apply, Resume, or Discard batch                             | Applying still: a batch that is writing is neither replaced, resumed, nor discarded.                                                                                     |
+| Applied          | Review again                                                       | Reviewing, with what is left in the batch.                                                                                                                               |
+| Any but Applying | Discard batch                                                      | Idle, with the batch removed and the applies it started. An apply that joined it stays, to resume on its own.                                                            |
+| Any but Applying | The batch page is left                                             | Idle. The batch stays, and the repositories page says a batch apply is not finished.                                                                                     |
+
 ## Web new profile
 
 `Profiles.create` (`packages/web/src/app/profiles.ts`) makes a profile for

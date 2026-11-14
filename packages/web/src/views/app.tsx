@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
 import { Apply } from '../app/apply.js';
+import { BatchApply } from '../app/batch-apply.js';
 import { Comparison } from '../app/comparison.js';
 import type { Keeping } from '../app/kept-files.js';
 import type { Preferences } from '../app/preferences.js';
@@ -12,6 +13,7 @@ import { Profiles } from '../app/profiles.js';
 import { Repositories } from '../app/repositories.js';
 import type { Router } from '../app/router.js';
 import { ApplyPage } from './apply.js';
+import { BatchPage } from './batch.js';
 import { ComparePage } from './compare.js';
 import { Link } from './link.js';
 import { ProfilesPage } from './profiles.js';
@@ -28,6 +30,7 @@ const titles: Readonly<Record<string, string>> = {
   '/settings': 'Settings',
   '/compare': 'Compare',
   '/apply': 'Apply',
+  '/batch': 'Apply to several',
 };
 
 interface AppProps {
@@ -48,7 +51,7 @@ function SignedIn({
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
   // One of each per sign-in. The repository list is the account's; the profiles are the browser's, whoever signs in.
-  const { repositories, profiles, comparison, apply } = useMemo(() => {
+  const { repositories, profiles, comparison, apply, batch } = useMemo(() => {
     const refused = (): void => {
       account.refused();
     };
@@ -59,6 +62,7 @@ function SignedIn({
       comparison: new Comparison(github, refused),
       // An apply's edits saved to a profile take their turn among the profiles' syncs.
       apply: new Apply(github, refused, (work) => kept.write(work)),
+      batch: new BatchApply(github, refused),
     };
   }, [account, github, preferences, user]);
   useEffect(() => {
@@ -89,7 +93,10 @@ function SignedIn({
     if (path !== '/apply') {
       apply.close();
     }
-  }, [path, comparison, apply]);
+    if (path !== '/batch') {
+      batch.close();
+    }
+  }, [path, comparison, apply, batch]);
   useEffect(() => {
     if (path !== '/profiles/new') {
       setCaptureFrom(undefined);
@@ -115,6 +122,18 @@ function SignedIn({
             setCaptureFrom(repository);
             router.go('/profiles/new');
           }}
+          batch={batch}
+          onBatch={(names, profile) => {
+            run(
+              (profile === undefined ? batch.resume() : batch.start(names, profile)).then(() => {
+                // The ticks have done their work once the batch holds the repositories.
+                if (batch.state.value.kind === 'reviewed') {
+                  repositories.clearTicks();
+                }
+              }),
+            );
+            router.go('/batch');
+          }}
           apply={apply}
           onApply={(repository, profile) => {
             run(
@@ -131,6 +150,8 @@ function SignedIn({
             router.go('/compare');
           }}
         />
+      ) : path === '/batch' ? (
+        <BatchPage batch={batch} router={router} />
       ) : path === '/apply' ? (
         <ApplyPage apply={apply} router={router} />
       ) : path === '/compare' ? (
