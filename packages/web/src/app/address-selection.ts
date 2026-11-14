@@ -119,10 +119,16 @@ export class AddressSelection {
     this.#last = { name: repositories.selectedName, screen };
   }
 
-  /** Closes the selected repository's screen: back to the list's entry when it led there, else in place. */
+  /**
+   * Closes the selected repository's screen: back to the list's entry when
+   * it led there, which lets go of the selection once the back arrives, so
+   * the list comes back where the browser puts its scroll; else in place, at
+   * once.
+   */
   close(): void {
-    this.#repositories.dropSelection();
-    this.#return();
+    if (!this.#return()) {
+      this.#repositories.dropSelection();
+    }
   }
 
   #write(search: string, entry: 'push' | 'replace'): void {
@@ -130,10 +136,14 @@ export class AddressSelection {
     this.#written = this.#router.search.value;
   }
 
-  /** Back to the address without a query; a back the browser runs comes to `follow` once it arrives. */
-  #return(): void {
-    this.#router.returnTo(queryFor(undefined));
+  /**
+   * Back to the address without a query. Says whether the browser runs a
+   * back, which comes to `follow` once it arrives.
+   */
+  #return(): boolean {
+    const back = this.#router.returnTo(queryFor(undefined));
     this.#written = this.#router.search.value;
+    return back;
   }
 
   #select(name: string): void {

@@ -84,18 +84,23 @@ export class Router {
   /**
    * Returns to this query on the page shown: by the browser's back when the
    * entry before this one has it, so the history doesn't grow, else in place
-   * of the one shown.
+   * of the one shown. Says whether a back is under way, which sets the
+   * address once it arrives.
    */
-  returnTo(search: string): void {
+  returnTo(search: string): boolean {
     const state: unknown = this.#history.state;
-    if (this.#returning || search === this.search.value) {
-      return;
+    if (this.#returning) {
+      return true;
+    }
+    if (search === this.search.value) {
+      return false;
     }
     if (isQueryEntry(state) && state.from === search) {
       this.#returning = true;
       this.#history.back();
-    } else {
-      this.query(search, 'replace');
+      return true;
     }
+    this.query(search, 'replace');
+    return false;
   }
 }

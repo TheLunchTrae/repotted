@@ -233,3 +233,19 @@ test('on a wide screen back or forward to a repository a search took out of view
 
   expect(repositories.selected.value?.full_name).toBe('octo/app');
 });
+
+test('closing a screen opened from the list keeps the selection until the back arrives', async () => {
+  const { repositories, address, traverse, history, refreshing } = page('/');
+  await refreshing;
+  address.arrive(true);
+  repositories.select({ full_name: 'octo/app' });
+  address.update(true);
+
+  address.close();
+  address.close();
+  expect(history.back).toHaveBeenCalledTimes(1);
+  expect(repositories.selectedName).toBe('octo/app');
+
+  traverse(true);
+  expect(repositories.selectedName).toBeUndefined();
+});
