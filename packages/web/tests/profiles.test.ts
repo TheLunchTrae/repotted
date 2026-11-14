@@ -777,3 +777,21 @@ test("a sign-in refused while a profile's action patterns are checked is reporte
     message: 'Bad credentials',
   });
 });
+
+test('a sign-in refused while actions are searched for is reported as signed out', async () => {
+  await inBrowser({ 'ci.yaml': 'actions:\n  allowed_actions: selected\n' });
+  const signedOut = vi.fn();
+  const request = vi.fn(() => Promise.reject(answered(401, 'Bad credentials')));
+  const profiles = new Profiles({ request }, memory(), signedOut);
+  await profiles.refresh();
+  await profiles.select(profiles.listings.value[0]);
+  const search = profiles.editor.value?.actionSearch;
+
+  search?.type('checkout');
+  search?.enter();
+  await vi.waitFor(() => {
+    expect(signedOut).toHaveBeenCalledOnce();
+  });
+
+  expect(search?.state.value).toEqual({ kind: 'message', text: 'Bad credentials' });
+});

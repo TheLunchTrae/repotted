@@ -171,7 +171,9 @@ changed elsewhere. `views/entries.tsx` only draws them.
 
 `action-pattern-checks.ts` asks GitHub what each allowed action pattern
 matches, with the engine's `checkActionPatterns`, and keeps the answers by
-pattern text. `Profiles` gives each editor its own.
+pattern text. `action-search.ts` searches GitHub for repositories to add to
+the list, with the engine's `findActions`. `Profiles` gives each editor its
+own of both.
 
 `setting-search.ts` finds settings by the words typed: each must start a
 word of the setting's label, key, note, choices, group, tab, or the other

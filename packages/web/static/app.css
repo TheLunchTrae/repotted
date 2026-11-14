@@ -615,6 +615,29 @@ input[type='checkbox'] {
   color: var(--remove);
 }
 
+.action-search {
+  display: grid;
+  gap: 8px;
+  max-width: 44rem;
+}
+
+.found-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.found-action > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.found-description {
+  display: block;
+}
+
 .pattern-checks {
   display: grid;
   gap: 6px;

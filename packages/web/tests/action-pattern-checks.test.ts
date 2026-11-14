@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { type ActionPatternCheck, ActionPatternChecks, patternNote } from '../src/app/action-pattern-checks.js';
+import { ActionSearch } from '../src/app/action-search.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -238,7 +239,10 @@ test("an editor's list is followed as it is typed, and only while GitHub shows i
     'actions:\n  allowed_actions: selected\n  selected_actions:\n    patterns_allowed:\n      - actions/*\n',
   );
   const github = held();
-  const editor = new ProfileEditor('/profiles/web.yaml', new ActionPatternChecks(github.check));
+  const editor = new ProfileEditor('/profiles/web.yaml', {
+    patterns: new ActionPatternChecks(github.check),
+    search: new ActionSearch(() => Promise.resolve([])),
+  });
 
   await editor.load();
   expect(github.runs).toEqual([['actions/*']]);
@@ -251,6 +255,21 @@ test("an editor's list is followed as it is typed, and only while GitHub shows i
 
   await editor.set(field('actions.allowed_actions'), 'all');
   expect(editor.patterns?.lines.value).toEqual([]);
+
+  // A repository found by the search is allowed whole, on a line of its own, once.
+  await editor.resetAll();
+  await editor.type(field('actions.selected_actions.patterns_allowed'), 'actions/*\n');
+  await editor.allowRepository('Octo-Org/Deploy');
+  await editor.allowRepository('octo-org/deploy');
+  expect(editor.patterns?.lines.value.map((line) => line.text)).toEqual(['actions/*', 'Octo-Org/Deploy@*']);
+  expect(editor.allowsRepository('octo-org/DEPLOY')).toBe(true);
+  expect(editor.allowsRepository('octo-org/other')).toBe(false);
+
+  // A list that doesn't show is not added to.
+  await editor.set(field('actions.allowed_actions'), 'all');
+  await editor.allowRepository('other/one');
+  await editor.set(field('actions.allowed_actions'), 'selected');
+  expect(editor.allowsRepository('other/one')).toBe(false);
 
   // A profile that stops reading has no list to ask about.
   await editor.resetAll();
