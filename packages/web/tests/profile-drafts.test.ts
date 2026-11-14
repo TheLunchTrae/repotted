@@ -402,3 +402,87 @@ test("a change to a base profile's draft, in a group this profile drafts too, ho
   expect(editor.saveError.value).toBeUndefined();
   expect(editor.dirty.value).toBe(false);
 });
+
+test('a preview shows what a save would change in what applies, the draft with the unsaved, and writes nothing', async () => {
+  const text = 'repository:\n  has_wiki: false\n  has_issues: true\ndrafts:\n  repository:\n    has_wiki: true\n';
+  const editor = await opened({ 'web.yaml': text });
+  await editor.set(field('repository.has_issues'), false);
+
+  await editor.openPreview();
+
+  const lines = editor.preview.value?.lines.map((line) =>
+    line.kind === 'fold' ? 'fold' : `${line.kind} ${line.text}`,
+  );
+  expect(lines).toEqual([
+    'same repository:',
+    'removed   has_issues: true',
+    'removed   has_wiki: false',
+    'added   has_issues: false',
+    'added   has_wiki: true',
+  ]);
+  expect(editor.preview.value).toMatchObject({ changes: 4, drafted: 1, unsaved: 1 });
+  expect(await readFile(file, 'utf8')).toBe(text);
+
+  editor.closePreview();
+  expect(editor.preview.value).toBeUndefined();
+});
+
+test('a preview of a save that applies nothing new says so, and one Save could not make is not opened', async () => {
+  const editor = await opened({
+    'base.yaml': 'repository:\n  has_wiki: false\n',
+    'web.yaml': 'extends: base.yaml\nrepository:\n  has_wiki: false\n',
+  });
+  await editor.set(field('repository.has_wiki'), undefined);
+
+  await editor.openPreview();
+  expect(editor.preview.value).toMatchObject({ changes: 0, drafted: 0, unsaved: 1 });
+
+  editor.closePreview();
+  await editor.addEntry('labels', { name: '' });
+  await editor.openPreview();
+  expect(editor.preview.value).toBeUndefined();
+});
+
+test('a preview goes out of date with the profile: a fresh read closes it, and a slow one never opens late', async () => {
+  const editor = await opened({
+    'base.yaml': 'repository:\n  has_wiki: false\n',
+    'web.yaml': 'extends: base.yaml\nrepository:\n  has_issues: true\n',
+  });
+  await editor.set(field('repository.has_issues'), false);
+  await editor.openPreview();
+  expect(editor.preview.value).toBeDefined();
+
+  await writeFile('/profiles/base.yaml', 'repository:\n  has_wiki: true\n');
+  await editor.load();
+  expect(editor.preview.value).toBeUndefined();
+
+  // Pressed, then overtaken by a save, a reset, or a change before it is made.
+  const beforeSave = editor.openPreview();
+  await editor.save(write);
+  await beforeSave;
+  expect(editor.preview.value).toBeUndefined();
+
+  await editor.set(field('repository.has_issues'), true);
+  const beforeReset = editor.openPreview();
+  await editor.resetAll();
+  await beforeReset;
+  expect(editor.preview.value).toBeUndefined();
+
+  await editor.set(field('repository.has_issues'), true);
+  const beforeChange = editor.openPreview();
+  await editor.set(field('repository.has_projects'), true);
+  await beforeChange;
+  expect(editor.preview.value).toBeUndefined();
+});
+
+test('a preview the engine refuses says why and opens nothing', async () => {
+  const editor = await opened({ 'web.yaml': 'repository:\n  has_issues: true\n' });
+  await editor.set(field('repository.has_issues'), false);
+  // The file stops being a profile between the change and the preview.
+  await writeFile(file, 'repository: 5\n');
+
+  await editor.openPreview();
+
+  expect(editor.preview.value).toBeUndefined();
+  expect(editor.saveError.value).toContain('repository');
+});
