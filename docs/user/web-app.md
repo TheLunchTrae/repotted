@@ -113,6 +113,21 @@ a change made elsewhere to another setting stays. If the changes can't make a va
 merge method off, the bar says why and **Save** waits. **Reset** in the bar
 puts the whole profile back as it was saved.
 
+**Save as draft** keeps your changes in the profile without applying them:
+a [draft](profiles.md#drafts) is saved, and synced when profiles are kept on
+GitHub, but plans leave it out. A draft can be unfinished, so **Save as
+draft** needs only that each new ruleset, environment, or label has a name
+of its own. A profile with a draft says so above its tabs, with how many
+changes the draft holds and what stops any of them from applying. The
+profile opens on its draft: each setting, ruleset, environment, and label in
+it is marked **Draft**, and a setting says what applies now.
+
+**Save** applies the whole draft together with your unsaved changes, so it
+waits until the draft is valid. To take one change out of a draft, set it
+back to what applies and save either way. **Discard draft** takes the whole
+draft out and leaves what applies; it asks first, and waits until you have
+saved or reset any other changes.
+
 Changes you haven't saved stay while you look at another profile, which is
 marked **Not saved** in the list. Moving your profiles to another place waits
 until you save or reset them, and the browser asks before a reload or a

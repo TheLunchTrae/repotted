@@ -169,6 +169,13 @@ the file has it, and `entry-edits.ts` holds each change with the saved entry
 it was made on, so a save never writes an entry over one that has since
 changed elsewhere. `views/entries.tsx` only draws them.
 
+The editor opens on the file's own [draft](architecture.md#drafts) and saves
+two ways, as [the draft's table](state-machines.md#the-draft) lists. Each
+row has what applies, the draft, and the change over them, and one function
+for settings and one for entries turn how a row ends into the engine's
+edits for each kind of save, so a preview, a save, and a save as a draft
+agree on what a row means.
+
 `keepFiles` (`src/app/kept-files.ts`) keeps the in-memory files across
 visits: it loads what IndexedDB holds into memory before the app draws, then
 writes each change there in order, by the file's path. So a working copy,

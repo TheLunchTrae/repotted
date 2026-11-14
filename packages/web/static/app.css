@@ -613,6 +613,16 @@ input[type='checkbox'] {
   color: var(--remove);
 }
 
+.pill-draft {
+  margin-inline-start: 8px;
+  background: var(--drift-bg);
+  color: var(--drift);
+}
+
+.row .pill-draft {
+  margin-inline-start: 0;
+}
+
 .notice-drift {
   background: var(--drift-bg);
   color: var(--drift);
@@ -620,6 +630,7 @@ input[type='checkbox'] {
 
 .notice-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-top: 10px;
 }

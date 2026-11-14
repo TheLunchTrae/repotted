@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { entryLists } from '../app/entry-edits.js';
 import type { ProfileEditor, SettingRow } from '../app/profile-editor.js';
@@ -73,6 +73,21 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
   );
 }
 
+/** A value as a row's note names it: by its choice's label, or as written. */
+function describe(field: SettingRow['field'], value: unknown): string {
+  if (value === undefined) {
+    return 'not managed';
+  }
+  const option = field.options.find((item) => sameValue(item.value, value));
+  if (option !== undefined) {
+    return option.label;
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0 ? 'none' : value.join(', ');
+  }
+  return value === null || value === '' ? 'empty' : typeof value === 'string' ? value : JSON.stringify(value);
+}
+
 function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: ProfileEditor }): JSX.Element {
   const { field } = row;
   const id = `setting-${field.path.join('-')}`;
@@ -81,15 +96,20 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
     <div class={`setting${field.nested ? ' setting-nested' : ''}${row.unsaved ? ' setting-unsaved' : ''}`}>
       <div class="setting-head">
         <div class="setting-text">
-          <strong id={`${id}-label`}>{field.label}</strong>
+          <span>
+            <strong id={`${id}-label`}>{field.label}</strong>
+            {row.inDraft && <span class="pill pill-draft">Draft</span>}
+          </span>
           <span class="muted small">
-            {!managed
-              ? 'Not managed: each repository keeps its own.'
-              : row.source === 'here'
-                ? 'Set in this profile.'
-                : row.source === undefined
-                  ? 'Set in this profile, not saved yet.'
-                  : `From ${row.source}.`}
+            {row.inDraft
+              ? `In the draft${managed ? '' : ': not managed'}. Applies now: ${describe(field, row.applied)}.`
+              : !managed
+                ? 'Not managed: each repository keeps its own.'
+                : row.source === 'here'
+                  ? 'Set in this profile.'
+                  : row.source === undefined
+                    ? 'Set in this profile, not saved yet.'
+                    : `From ${row.source}.`}
             {row.unsaved && managed && row.source !== undefined && ' Not saved yet.'}
             {row.off && ' Off on GitHub for the setting above.'}
           </span>
@@ -139,6 +159,99 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
   );
 }
 
+interface DraftProps {
+  readonly editor: ProfileEditor;
+  readonly profiles: Profiles;
+}
+
+/** Asks before the draft is discarded, which writes at once and can't be undone. */
+function DiscardDraft({ profiles, onClose }: DraftProps & { readonly onClose: () => void }): JSX.Element {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  return (
+    <dialog class="dialog" ref={dialog} aria-labelledby="discard-heading" onClose={onClose}>
+      <form
+        method="dialog"
+        onSubmit={(event) => {
+          if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'discard') {
+            run(profiles.discardDraft());
+          }
+        }}
+      >
+        <h2 id="discard-heading">Discard the draft?</h2>
+        <p>
+          The profile goes back to what applies now. The changes in the draft can't be brought back
+          {profiles.source.value.kind === 'repository' ? ", except from the repository's history" : ''}.
+        </p>
+        <div class="form-actions">
+          <button class="button button-danger" type="submit" value="discard">
+            Discard draft
+          </button>
+          {/* The dialog opens with the keyboard on Keep it, so Enter never discards by itself. */}
+          <button class="button button-quiet" type="submit" value="keep" autofocus>
+            Keep it
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+/** Says that the profile has a draft, what it still needs before it can apply, and offers to discard it. */
+function DraftBanner({ editor, profiles }: DraftProps): JSX.Element | null {
+  const [discarding, setDiscarding] = useState(false);
+  const count = editor.draftCount.value;
+  const warnings = editor.warnings.value;
+  if (count === 0) {
+    return null;
+  }
+  return (
+    <div class="notice notice-drift">
+      <p role="status">
+        <strong>{count === 1 ? 'Draft: 1 change.' : `Draft: ${count} changes.`}</strong>{' '}
+        {count === 1 ? "It doesn't" : "They don't"} apply yet: a plan leaves {count === 1 ? 'it' : 'them'} out until you
+        save.
+      </p>
+      {warnings.length > 0 && (
+        <ul>
+          {warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      )}
+      <div class="notice-actions">
+        <button
+          class="button button-small"
+          type="button"
+          disabled={!editor.canDiscardDraft.value}
+          aria-describedby={editor.dirty.value ? 'discard-hint' : undefined}
+          onClick={() => {
+            setDiscarding(true);
+          }}
+        >
+          Discard draft
+        </button>
+        {editor.dirty.value && (
+          <span class="small" id="discard-hint">
+            Save or reset your changes to discard the draft.
+          </span>
+        )}
+      </div>
+      {discarding && (
+        <DiscardDraft
+          editor={editor}
+          profiles={profiles}
+          onClose={() => {
+            setDiscarding(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 /** The open profile's settings, a tab for each section, with the footer that saves them. */
 const entryTitles = { rulesets: 'Rulesets', environments: 'Environments', labels: 'Labels' } as const;
 
@@ -161,11 +274,13 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
       id: section.section,
       name: section.name,
       unsaved: groups.some((group) => group.rows.some((row) => row.unsaved || row.invalid !== undefined)),
+      drafted: groups.some((group) => group.rows.some((row) => row.inDraft)),
     })),
     ...entryLists.map((item) => ({
       id: item,
       name: entryTitles[item],
       unsaved: entries[item].some((row) => row.unsaved),
+      drafted: entries[item].some((row) => row.inDraft !== undefined),
     })),
   ];
   const current = list ?? shown?.section.section ?? '';
@@ -183,8 +298,9 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
   };
   return (
     <>
+      <DraftBanner editor={editor} profiles={profiles} />
       <div class="tabs" role="tablist" aria-label="Settings" ref={tabs}>
-        {tabNames.map(({ id, name, unsaved }, index) => (
+        {tabNames.map(({ id, name, unsaved, drafted }, index) => (
           <button
             key={id}
             class="tab"
@@ -202,6 +318,7 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
             }}
           >
             {name}
+            {drafted && <span class="pill pill-draft">Draft</span>}
             {unsaved && (
               <>
                 <span class="dot" aria-hidden="true" />
@@ -243,10 +360,14 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
           {editor.saving.value
             ? 'Saving…'
             : !editor.dirty.value
-              ? 'Everything is saved.'
+              ? editor.draftCount.value > 0
+                ? 'Everything is saved, some of it as a draft. Save applies the draft.'
+                : 'Everything is saved.'
               : editor.canSave.value || problem !== undefined
-                ? 'You have changes that are not saved.'
-                : 'Correct what is marked, or reset it, to save.'}
+                ? (editor.draftProblem.value ?? 'You have changes that are not saved.')
+                : editor.canSaveAsDraft.value
+                  ? 'Correct what is marked to save, or keep it as a draft.'
+                  : 'Correct what is marked, or reset it, to save.'}
         </span>
         <button
           class="button button-quiet"
@@ -257,6 +378,16 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
           }}
         >
           Reset
+        </button>
+        <button
+          class="button"
+          type="button"
+          disabled={!editor.canSaveAsDraft.value}
+          onClick={() => {
+            run(profiles.save('draft'));
+          }}
+        >
+          Save as draft
         </button>
         <button
           class="button button-primary"
