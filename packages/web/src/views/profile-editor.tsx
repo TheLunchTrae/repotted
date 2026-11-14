@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { entryLists, type SaveMode } from '../app/entry-edits.js';
 import type { ProfileEditor, SettingFilter, SettingRow } from '../app/profile-editor.js';
 import { sameValue } from '../app/same-value.js';
+import { BarActions } from './action-bar.js';
 import { ActionSearchBox } from './action-search.js';
 import { Entries } from './entries.js';
 import { PatternChecks } from './pattern-checks.js';
@@ -178,8 +179,10 @@ export interface EditorSaving {
   readonly onGitHub: boolean;
   /** What Save is called here, when it isn't a profile's Save. */
   readonly saveLabel?: string;
-  /** What the page adds at the end of the bar, as an apply's way on to its review. */
+  /** What the page adds to the bar after Save. */
   readonly more?: ComponentChildren;
+  /** The page's own main action, which takes Save's place as the one kept in sight, as an apply's way on to its review. */
+  readonly next?: ComponentChildren;
 }
 
 interface DraftProps {
@@ -330,6 +333,18 @@ export function ProfileSettings({ name, editor, saving, pushes }: ProfileSetting
       tabs.current?.querySelector<HTMLElement>(`#tab-${next.id}`)?.focus();
     }
   };
+  const save = (
+    <button
+      class={saving.next === undefined ? 'button button-primary' : 'button'}
+      type="button"
+      disabled={!editor.canSave.value}
+      onClick={() => {
+        run(saving.save());
+      }}
+    >
+      {saving.saveLabel ?? 'Save'}
+    </button>
+  );
   return (
     <>
       <DraftBanner editor={editor} saving={saving} />
@@ -488,51 +503,49 @@ export function ProfileSettings({ name, editor, saving, pushes }: ProfileSetting
                   ? 'Correct what is marked to save, or keep it as a draft.'
                   : 'Correct what is marked, or reset it, to save.'}
         </span>
-        <button
-          class="button button-quiet"
-          type="button"
-          disabled={!editor.dirty.value || editor.saving.value}
-          onClick={() => {
-            run(editor.resetAll());
-          }}
-        >
-          Reset
-        </button>
-        {editor.drafts && (
-          <>
-            <button
-              class="button button-quiet"
-              type="button"
-              disabled={!editor.canSave.value}
-              onClick={() => {
-                run(editor.openPreview());
-              }}
-            >
-              Preview
-            </button>
-            <button
-              class="button"
-              type="button"
-              disabled={!editor.canSaveAsDraft.value}
-              onClick={() => {
-                run(saving.save('draft'));
-              }}
-            >
-              Save as draft
-            </button>
-          </>
-        )}
-        <button
-          class={saving.more === undefined ? 'button button-primary' : 'button'}
-          type="button"
-          disabled={!editor.canSave.value}
-          onClick={() => {
-            run(saving.save());
-          }}
-        >
-          {saving.saveLabel ?? 'Save'}
-        </button>
-        {saving.more}
+        <BarActions
+          main={saving.next ?? save}
+          others={
+            <>
+              <button
+                class="button button-quiet"
+                type="button"
+                disabled={!editor.dirty.value || editor.saving.value}
+                onClick={() => {
+                  run(editor.resetAll());
+                }}
+              >
+                Reset
+              </button>
+              {editor.drafts && (
+                <>
+                  <button
+                    class="button button-quiet"
+                    type="button"
+                    disabled={!editor.canSave.value}
+                    onClick={() => {
+                      run(editor.openPreview());
+                    }}
+                  >
+                    Preview
+                  </button>
+                  <button
+                    class="button"
+                    type="button"
+                    disabled={!editor.canSaveAsDraft.value}
+                    onClick={() => {
+                      run(saving.save('draft'));
+                    }}
+                  >
+                    Save as draft
+                  </button>
+                </>
+              )}
+              {saving.next !== undefined && save}
+              {saving.more}
+            </>
+          }
+        />
       </div>
     </>
   );

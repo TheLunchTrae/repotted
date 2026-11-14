@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { BatchApply, BatchMemberView } from '../app/batch-apply.js';
 import type { CompareRow } from '../app/comparison.js';
 import type { Router } from '../app/router.js';
+import { BarActions } from './action-bar.js';
 import { Link } from './link.js';
 import { run } from './run.js';
 
@@ -338,43 +339,51 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
           />
         )}
         <div class="save-bar">
-          <button
-            class="button button-quiet"
-            type="button"
-            disabled={working}
-            onClick={() => {
-              run(
-                batch.discard().then(() => {
-                  // A batch that couldn't be discarded stays, with why.
-                  if (batch.state.value.kind === 'idle') {
-                    router.go('/');
-                  }
-                }),
-              );
-            }}
-          >
-            Discard batch
-          </button>
-          <button
-            class="button"
-            type="button"
-            disabled={working || !batch.canReviewAgain.value}
-            onClick={() => {
-              run(batch.reviewAgain());
-            }}
-          >
-            Review again
-          </button>
-          <button
-            class="button button-primary"
-            type="button"
-            disabled={state.kind !== 'reviewed' || ready === 0}
-            onClick={() => {
-              setConfirming(true);
-            }}
-          >
-            {ready === 0 ? 'Apply' : `Apply to ${repositories(ready)}`}
-          </button>
+          <BarActions
+            main={
+              <button
+                class="button button-primary"
+                type="button"
+                disabled={state.kind !== 'reviewed' || ready === 0}
+                onClick={() => {
+                  setConfirming(true);
+                }}
+              >
+                {ready === 0 ? 'Apply' : `Apply to ${repositories(ready)}`}
+              </button>
+            }
+            others={
+              <>
+                <button
+                  class="button button-quiet"
+                  type="button"
+                  disabled={working}
+                  onClick={() => {
+                    run(
+                      batch.discard().then(() => {
+                        // A batch that couldn't be discarded stays, with why.
+                        if (batch.state.value.kind === 'idle') {
+                          router.go('/');
+                        }
+                      }),
+                    );
+                  }}
+                >
+                  Discard batch
+                </button>
+                <button
+                  class="button"
+                  type="button"
+                  disabled={working || !batch.canReviewAgain.value}
+                  onClick={() => {
+                    run(batch.reviewAgain());
+                  }}
+                >
+                  Review again
+                </button>
+              </>
+            }
+          />
         </div>
       </article>
     </div>
