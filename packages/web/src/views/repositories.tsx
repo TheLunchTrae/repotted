@@ -258,12 +258,14 @@ interface RepositoriesProps {
 
 interface TickedProps {
   readonly repositories: Repositories;
+  /** Whether a batch is unfinished, which is resumed or discarded before another starts. */
+  readonly unfinished: boolean;
   readonly profiles: Profiles;
   readonly onBatch: RepositoriesProps['onBatch'];
 }
 
 /** The panel for the ticked repositories: the profile to apply to them all, each reviewed on its own first. */
-function TickedPanel({ repositories, profiles, onBatch }: TickedProps): JSX.Element {
+function TickedPanel({ repositories, profiles, unfinished, onBatch }: TickedProps): JSX.Element {
   const ticked = repositories.ticked.value;
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const [picked, setPicked] = useState<string | undefined>(undefined);
@@ -283,7 +285,7 @@ function TickedPanel({ repositories, profiles, onBatch }: TickedProps): JSX.Elem
         class="panel-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (profile !== undefined) {
+          if (profile !== undefined && !unfinished) {
             onBatch(
               ticked.map((repository) => repository.full_name),
               { file: profile.file, name: nameOf(profile), folder: profiles.folder.value },
@@ -313,10 +315,14 @@ function TickedPanel({ repositories, profiles, onBatch }: TickedProps): JSX.Elem
                 </option>
               ))}
             </select>
-            <button class="button button-primary" type="submit">
+            <button class="button button-primary" type="submit" disabled={unfinished}>
               Review apply
             </button>
-            <p class="muted small">Each repository is reviewed first. Nothing is written until you apply.</p>
+            <p class="muted small">
+              {unfinished
+                ? 'A batch apply is not finished. Resume it, then apply or discard it, before starting another.'
+                : 'Each repository is reviewed first, and one with an apply in progress joins as it is. Nothing is written until you apply.'}
+            </p>
           </>
         )}
       </form>
@@ -533,7 +539,7 @@ export function RepositoriesPage({
         )}
       </section>
       {ticked.length > 0 ? (
-        <TickedPanel repositories={repositories} profiles={profiles} onBatch={onBatch} />
+        <TickedPanel repositories={repositories} profiles={profiles} unfinished={unfinished} onBatch={onBatch} />
       ) : (
         selected !== undefined && (
           <RepositoryPanel

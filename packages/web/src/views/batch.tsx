@@ -28,7 +28,14 @@ function statusOf(member: BatchMemberView): { readonly text: string; readonly to
   }
 }
 
-function Member({ member, batch }: { readonly member: BatchMemberView; readonly batch: BatchApply }): JSX.Element {
+interface MemberProps {
+  readonly member: BatchMemberView;
+  readonly batch: BatchApply;
+  /** While the batch is reviewed again, the last review stays in view with nothing to press. */
+  readonly busy: boolean;
+}
+
+function Member({ member, batch, busy }: MemberProps): JSX.Element {
   const status = statusOf(member);
   const out = member.status === 'left-out';
   return (
@@ -37,10 +44,25 @@ function Member({ member, batch }: { readonly member: BatchMemberView; readonly 
         <h2>
           <span class="mono">{member.repository}</span> <span class={status.tone}>{status.text}</span>
         </h2>
+        {(out || member.status === 'failed') && (
+          <button
+            class="button button-quiet button-small"
+            type="button"
+            disabled={busy}
+            aria-label={`Remove ${member.repository} from the batch`}
+            onClick={() => {
+              run(batch.remove(member.repository));
+            }}
+          >
+            Remove from batch
+          </button>
+        )}
         <label class="check">
           <input
             type="checkbox"
             checked={!out}
+            disabled={busy}
+            aria-label={`Apply to ${member.repository} in this batch`}
             onChange={(event) => {
               run(batch.leaveOutRepository(member.repository, !event.currentTarget.checked));
             }}
@@ -53,10 +75,18 @@ function Member({ member, batch }: { readonly member: BatchMemberView; readonly 
           {member.message}
         </p>
       )}
-      {member.warnings.length > 0 && (
+      {member.startNote !== undefined && (
+        <p class="notice notice-drift" role="note">
+          {member.startNote}
+        </p>
+      )}
+      {(member.warnings.length > 0 || member.skipped.length > 0) && (
         <ul class="muted small">
           {member.warnings.map((warning) => (
             <li key={warning}>{warning}</li>
+          ))}
+          {member.skipped.map((skipped) => (
+            <li key={skipped}>{skipped}</li>
           ))}
         </ul>
       )}
@@ -82,6 +112,7 @@ function Member({ member, batch }: { readonly member: BatchMemberView; readonly 
                   <button
                     class="button button-quiet button-small"
                     type="button"
+                    disabled={busy}
                     aria-label={`Leave out ${row.label}, ${row.key}, for ${member.repository}`}
                     onClick={() => {
                       run(batch.leaveOut(member.repository, row.leaveOut ?? '', true));
@@ -104,6 +135,7 @@ function Member({ member, batch }: { readonly member: BatchMemberView; readonly 
               <button
                 class="link"
                 type="button"
+                disabled={busy}
                 aria-label={`Put back ${key} for ${member.repository}`}
                 onClick={() => {
                   run(batch.leaveOut(member.repository, key, false));
@@ -182,6 +214,8 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
   }
   const ready = batch.ready.value.length;
   const working = state.kind === 'reviewing' || state.kind === 'applying';
+  const members = batch.members.value;
+  const refused = state.kind === 'reviewed' ? state.refused : [];
   const repositories = (amount: number): string => (amount === 1 ? '1 repository' : `${amount} repositories`);
   return (
     <div class="page">
@@ -224,13 +258,13 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
             ))}
           </ul>
         )}
-        {state.kind === 'reviewed' && (
+        {(state.kind === 'reviewed' || members.length > 0) && (
           <>
-            {state.refused.length > 0 && (
+            {refused.length > 0 && (
               <div class="notice notice-drift" role="status">
-                <p>Some repositories kept the change, since their own edits set it:</p>
+                <p>Some repositories kept the change:</p>
                 <ul>
-                  {state.refused.map((item) => (
+                  {refused.map((item) => (
                     <li key={item}>{item}</li>
                   ))}
                 </ul>
@@ -240,8 +274,8 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
               <div>
                 <h2>All repositories</h2>
                 <p class="muted small">
-                  Each change the profile makes, and how many repositories it reaches. Leaving one out everywhere leaves
-                  it out of every repository's apply; the profile keeps it.
+                  Each change that can be left out, and how many repositories it reaches. Leaving one out everywhere
+                  leaves it out of every repository's apply; the profile keeps it.
                 </p>
               </div>
               {batch.changes.value.length > 0 && (
@@ -253,6 +287,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                       <button
                         class="button button-quiet button-small"
                         type="button"
+                        disabled={working}
                         aria-label={`Leave out ${change.key} everywhere`}
                         onClick={() => {
                           run(batch.everywhere(change.key, true));
@@ -273,6 +308,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                       <button
                         class="button button-quiet button-small"
                         type="button"
+                        disabled={working}
                         aria-label={`Put back ${key} everywhere`}
                         onClick={() => {
                           run(batch.everywhere(key, false));
@@ -286,8 +322,8 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
               )}
             </section>
             <div class="groups">
-              {state.members.map((member) => (
-                <Member key={member.repository} member={member} batch={batch} />
+              {members.map((member) => (
+                <Member key={member.repository} member={member} batch={batch} busy={working} />
               ))}
             </div>
           </>
@@ -300,7 +336,10 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
             onClick={() => {
               run(
                 batch.discard().then(() => {
-                  router.go('/');
+                  // A batch that couldn't be discarded stays, with why.
+                  if (batch.state.value.kind === 'idle') {
+                    router.go('/');
+                  }
                 }),
               );
             }}
@@ -310,7 +349,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
           <button
             class="button"
             type="button"
-            disabled={working}
+            disabled={working || !batch.canReviewAgain.value}
             onClick={() => {
               run(batch.reviewAgain());
             }}

@@ -171,6 +171,155 @@ test('a batch that cannot start says why and leaves nothing behind', async () =>
   expect(await batch.unfinished()).toBe(false);
 });
 
+test('a batch started while another is unfinished starts nothing, and names the one that is there', async () => {
+  await saved();
+  await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
+  const { github, of } = fleet('lunch/app', 'lunch/new');
+  const batch = new BatchApply(github, () => undefined);
+  await batch.start(['lunch/app'], profile);
+  batch.close();
+
+  await batch.start(['lunch/new'], { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
+
+  // What a review or a discard from here acts on is the batch of web, so that is the one named.
+  expect(batch.state.value).toMatchObject({ kind: 'failed', profile: 'web', batch: true });
+  expect(await new Apply(github, () => undefined).unfinished('lunch/new')).toBe(false);
+
+  await batch.reviewAgain();
+  expect(batch.state.value).toMatchObject({ kind: 'reviewed', profile: 'web' });
+  expect(statuses(batch)).toEqual(['lunch/app changes 1']);
+  await batch.apply();
+  expect(writes(of('lunch/new'))).toEqual([]);
+});
+
+test('an apply that joined from another profile is marked as starting from it', async () => {
+  await saved();
+  await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
+  const { github } = fleet('lunch/app', 'lunch/api');
+  const apply = new Apply(github, () => undefined);
+  await apply.start('lunch/app', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
+  apply.close();
+  const batch = new BatchApply(github, () => undefined);
+
+  await batch.start(['lunch/app', 'lunch/api'], profile);
+
+  const state = batch.state.value;
+  const notes = state.kind === 'reviewed' ? state.members.map((member) => member.startNote) : [];
+  expect(notes[0]).toContain('starts from other');
+  expect(notes[1]).toBeUndefined();
+});
+
+test('a repository GitHub would refuse a change in needs access, and is not written', async () => {
+  await saved('labels:\n  - name: new label\n    color: ffffff\n');
+  const app = new FakeGitHub(
+    {
+      account: {
+        login: 'lunch',
+        name: null,
+        repositories: [],
+        installations: [
+          {
+            id: 1,
+            permissions: { administration: 'write' },
+            repositories: [{ full_name: 'lunch/app', private: true }],
+          },
+        ],
+      },
+    },
+    'lunch/app',
+  );
+  const batch = new BatchApply(new FakeFleet([app]), () => undefined);
+
+  await batch.start(['lunch/app'], profile);
+
+  expect(statuses(batch)).toEqual(['lunch/app needs-access 1']);
+  await batch.apply();
+  expect(batch.state.value).toMatchObject({ kind: 'reviewed' });
+  expect(writes(app)).toEqual([]);
+
+  // The batch ends with its last repository, and the apply it started goes with it.
+  await batch.remove('lunch/app');
+  expect(batch.state.value).toEqual({ kind: 'idle' });
+  expect(await batch.unfinished()).toBe(false);
+  expect(await new Apply(new FakeFleet([app]), () => undefined).unfinished('lunch/app')).toBe(false);
+});
+
+test('a sign-in lost while writing signs out once, and a batch that ended has nothing to review again', async () => {
+  await saved();
+  const { github, of } = fleet('lunch/app', 'lunch/api');
+  let signedOut = 0;
+  const batch = new BatchApply(github, () => {
+    signedOut += 1;
+  });
+  await batch.start(['lunch/app', 'lunch/api'], profile);
+  of('lunch/app').fail('PATCH /repos/lunch/app', answered(401, 'Bad credentials'), 1);
+  of('lunch/api').fail('PATCH /repos/lunch/api', answered(401, 'Bad credentials'), 1);
+
+  await batch.apply();
+
+  expect(signedOut).toBe(1);
+  expect(batch.state.value).toMatchObject({ kind: 'applied', left: 2 });
+  await batch.reviewAgain();
+  await batch.apply();
+  expect(batch.state.value).toMatchObject({ kind: 'applied', left: 0 });
+  expect(batch.canReviewAgain.value).toBe(false);
+  await batch.reviewAgain();
+  expect(batch.state.value).toMatchObject({ kind: 'applied', left: 0 });
+});
+
+test('a repository whose apply is gone or unreadable is named, and one that is gone can be removed', async () => {
+  await saved();
+  const { github } = fleet('lunch/app', 'lunch/api', 'lunch/web');
+  const batch = new BatchApply(github, () => undefined);
+  await batch.start(['lunch/app', 'lunch/api', 'lunch/web'], profile);
+  await rm('/staged/lunch/app.yaml');
+  await writeFile('/staged/lunch/api.yaml', 'not: [a staged apply');
+
+  await batch.everywhere('repository.has_wiki', true);
+
+  const state = batch.state.value;
+  expect(state.kind === 'reviewed' ? state.refused.map((item) => item.split(':')[0]) : []).toEqual([
+    'lunch/app',
+    'lunch/api',
+  ]);
+  const gone =
+    state.kind === 'reviewed' ? state.members.find((member) => member.repository === 'lunch/app') : undefined;
+  expect(gone).toMatchObject({ status: 'failed', message: expect.stringContaining('Its apply is gone') as unknown });
+
+  await batch.remove('lunch/app');
+  expect(statuses(batch)).toEqual(['lunch/web changes 1', 'lunch/api failed 0']);
+});
+
+test('a batch that cannot be read fails on resume, and discarding it clears it', async () => {
+  await mkdir('/batch', { recursive: true });
+  await writeFile('/batch/batch.yaml', 'members: 5\n');
+  const { github } = fleet('lunch/app');
+  const batch = new BatchApply(github, () => undefined);
+
+  await batch.resume();
+  const state = batch.state.value;
+  expect(state).toMatchObject({ kind: 'failed', batch: true });
+  expect(state.kind === 'failed' ? state.message : '').toContain('the batch is not a valid batch');
+
+  await batch.discard();
+  expect(batch.state.value).toEqual({ kind: 'idle' });
+  expect(await batch.unfinished()).toBe(false);
+});
+
+test('nothing is applied from a batch that is being discarded', async () => {
+  await saved();
+  const { github, of } = fleet('lunch/app');
+  const batch = new BatchApply(github, () => undefined);
+  await batch.start(['lunch/app'], profile);
+
+  const discarding = batch.discard();
+  await batch.apply();
+  await discarding;
+
+  expect(batch.state.value).toEqual({ kind: 'idle' });
+  expect(writes(of('lunch/app'))).toEqual([]);
+});
+
 /** A GitHub whose requests wait until they are let go, so work on it can be held open. */
 class Held extends FakeGitHub {
   #gate: Promise<void> | undefined;

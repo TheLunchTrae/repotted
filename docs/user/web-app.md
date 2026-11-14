@@ -133,10 +133,13 @@ To start one, tick the repositories on the **Repositories** page, pick a
 profile in the panel, and click **Review apply**. Ticks stay while you
 search, so you can find repositories one search at a time. A repository that
 already has an apply in progress joins the batch as it is, one-off edits and
-all.
+all. When that apply starts from another profile, or from none, the batch
+page says so on that repository. One batch is in progress at a time: while a
+batch is unfinished, **Review apply** waits until you resume it and apply or
+discard it.
 
-The page starts with **All repositories**, which lists each change the
-profile makes with how many repositories it reaches. **Leave out
+The page starts with **All repositories**, which lists each change that can
+be left out with how many repositories it reaches. **Leave out
 everywhere** leaves a change out of every repository's apply; the profile
 keeps it, and **Put back everywhere** undoes it. A repository whose one-off
 edits set that change keeps them, and the page says which.
@@ -145,7 +148,9 @@ Under it, each repository shows its status: how many changes, **Already in
 line**, **Needs access** for a change GitHub would refuse, or **Couldn't
 compare** with why, and then its changes, each with **Leave out**. Untick
 **In this batch** to leave a repository out; its apply stays, and ticking it
-puts it back.
+puts it back. **Remove from batch**, on a repository that is left out or
+couldn't be compared, takes it out for good: an apply the batch started for
+it is discarded, and one that joined the batch stays.
 
 Click **Apply to N repositories** and then **Apply now** to write them, one
 repository at a time. Repotted checks each on GitHub first, and writes

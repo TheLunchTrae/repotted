@@ -126,8 +126,8 @@ function SignedIn({
           onBatch={(names, profile) => {
             run(
               (profile === undefined ? batch.resume() : batch.start(names, profile)).then(() => {
-                // The ticks have done their work once the batch holds the repositories.
-                if (batch.state.value.kind === 'reviewed') {
+                // The ticks have done their work once a batch started from them holds the repositories.
+                if (profile !== undefined && batch.state.value.kind === 'reviewed') {
                   repositories.clearTicks();
                 }
               }),
