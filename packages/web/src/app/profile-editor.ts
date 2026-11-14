@@ -4,7 +4,7 @@ import { editProfile, type ProfileEdit, previewProfile, resolveProfile, settingP
 import { basename } from '../engine/path.js';
 import { EntryEdits, type EntryList, type EntryRow, type SaveMode } from './entry-edits.js';
 import type { Entry } from './entry-forms.js';
-import { ownDraft, ownUnsets } from './own-drafts.js';
+import { ownDraft, ownUnsets, settingsSections as draftSections } from './own-drafts.js';
 import { sameValue } from './same-value.js';
 import { type SettingField, type SettingGroup, settingSections } from './setting-fields.js';
 
@@ -65,8 +65,6 @@ function reasonOf(error: unknown, file: string): string {
 
 /** This profile's own draft of a setting: a value, or that finishing the draft stops setting it here. */
 type SettingDraft = { readonly value: unknown } | 'unset';
-
-const draftSections = ['repository', 'merge', 'actions', 'security', 'custom_properties', 'pages'] as const;
 
 const entryKeys = /^(?:rulesets|environments|labels)\//u;
 
@@ -480,8 +478,7 @@ export class ProfileEditor {
     return draftSections.flatMap((section) =>
       Object.entries(saved.sources.drafts[section])
         .filter(([, file]) => file === saved.chain[0])
-        // A custom property's name may hold a dot, and is one key whatever it holds.
-        .map(([key]) => [section, ...(section === 'custom_properties' ? [key] : key.split('.'))])
+        .map(([key]) => [section, ...key.split('.')])
         .filter((path) => !rows.has(keyOf(path)) && settingPath(path) === 'setting')
         .map((path) => ({ path, value: getIn(saved.drafts, path) })),
     );

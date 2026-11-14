@@ -16,7 +16,8 @@ export function ownUnsets(saved: ResolvedProfile): string[] {
   });
 }
 
-const sections = ['repository', 'merge', 'actions', 'security', 'custom_properties', 'pages'] as const;
+/** The sections of a profile that hold settings. */
+export const settingsSections = ['repository', 'merge', 'actions', 'security', 'custom_properties', 'pages'] as const;
 const lists = ['autolinks', 'rulesets', 'environments', 'labels'] as const;
 
 /**
@@ -31,10 +32,18 @@ export function ownDraft(saved: ResolvedProfile): unknown {
       .filter(([, file]) => file === own)
       .map(([key]) => key);
   return {
-    settings: sections.map((section) => {
-      const keys = new Set(mine(saved.sources.drafts[section]).map((key) => key.split('.')[0]));
-      return Object.entries(saved.drafts[section] ?? {}).filter(([key]) => keys.has(key));
-    }),
+    // A setting in a group goes by `<group>.<key>`, so a base profile's draft of another key in the group stays out.
+    settings: settingsSections.map((section) =>
+      mine(saved.sources.drafts[section]).map((key) => [
+        key,
+        key
+          .split('.')
+          .reduce<unknown>(
+            (value, part) => (typeof value === 'object' && value !== null ? Reflect.get(value, part) : undefined),
+            saved.drafts[section],
+          ),
+      ]),
+    ),
     entries: lists.map((list) => {
       const names = new Set(mine(saved.sources.drafts[list]).map((name) => name.toLowerCase()));
       const key = list === 'autolinks' ? 'key_prefix' : 'name';

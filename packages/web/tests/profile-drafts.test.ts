@@ -386,3 +386,19 @@ test('a discard that fails leaves the draft, with why', async () => {
   expect(await readFile(file, 'utf8')).toBe(drafted);
   expect(editor.saving.value).toBe(false);
 });
+
+test("a change to a base profile's draft, in a group this profile drafts too, holds no save back", async () => {
+  const base = (allowed: boolean): string =>
+    `drafts:\n  actions:\n    selected_actions:\n      github_owned_allowed: ${String(allowed)}\n`;
+  const editor = await opened({
+    'base.yaml': base(true),
+    'web.yaml': 'extends: base.yaml\ndrafts:\n  actions:\n    selected_actions:\n      verified_allowed: true\n',
+  });
+  await editor.set(field('repository.has_wiki'), true);
+  await writeFile('/profiles/base.yaml', base(false));
+
+  await editor.save(write, 'draft');
+
+  expect(editor.saveError.value).toBeUndefined();
+  expect(editor.dirty.value).toBe(false);
+});
