@@ -46,6 +46,8 @@
   --drift-bg: light-dark(#fff3d6, #3a2e14);
   --remove: light-dark(#9e2416, #ffab9f);
   --remove-bg: light-dark(#fde9e5, #3d1f1b);
+  --add: light-dark(#1d5a30, #8af793);
+  --add-bg: light-dark(#dcf5e1, #1f3a27);
   --control-radius: 8px;
   --panel-radius: 12px;
   --sans: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
@@ -966,6 +968,46 @@ select.field {
   background: var(--surface);
   color: var(--fg);
   box-shadow: 0 16px 48px rgb(20 40 26 / 0.24);
+}
+
+.dialog-wide {
+  width: min(52rem, calc(100vw - 32px));
+  max-width: none;
+}
+
+.diff {
+  display: grid;
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre;
+}
+
+.diff-line {
+  display: block;
+  padding: 0 8px;
+  text-decoration: none;
+}
+
+.diff-added {
+  background: var(--add-bg);
+  color: var(--add);
+}
+
+.diff-removed {
+  background: var(--remove-bg);
+  color: var(--remove);
+}
+
+.diff-fold {
+  justify-self: start;
+  margin: 2px 8px;
+  padding: 0 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--control-radius);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
 }
 
 .dialog::backdrop {

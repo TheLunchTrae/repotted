@@ -1,9 +1,17 @@
 import { computed, signal } from '@preact/signals';
-import { editProfile, type ProfileEdit, previewProfile, resolveProfile, settingPath } from '@repotted/core';
+import {
+  editProfile,
+  type ProfileEdit,
+  previewProfile,
+  resolveProfile,
+  settingPath,
+  stringifyProfile,
+} from '@repotted/core';
 
 import { basename } from '../engine/path.js';
 import { EntryEdits, type EntryList, type EntryRow, type SaveMode } from './entry-edits.js';
 import type { Entry } from './entry-forms.js';
+import { type DiffFold, type DiffLine, diffLines, foldUnchanged } from './line-diff.js';
 import { ownDraft, ownUnsets, settingsSections as draftSections } from './own-drafts.js';
 import { sameValue } from './same-value.js';
 import { type SettingField, type SettingGroup, settingSections } from './setting-fields.js';
@@ -47,6 +55,16 @@ export interface GroupRows {
   readonly rows: readonly SettingRow[];
 }
 
+/** What a save that applies would change: the profile that applies now against the one that would, as a diff of YAML. */
+export interface SavePreview {
+  readonly lines: readonly (DiffLine | DiffFold)[];
+  /** How many lines the save adds or removes; none when it would apply nothing new. */
+  readonly changes: number;
+  /** How many changes the draft held, and how many weren't saved, when the preview was made. */
+  readonly drafted: number;
+  readonly unsaved: number;
+}
+
 /** The filters over the settings: each shows only the settings it names. */
 export type SettingFilter = 'managed' | 'unsaved' | 'drafts';
 
@@ -82,6 +100,12 @@ function reasonOf(error: unknown, file: string): string {
     .replaceAll(file, basename(file))
     .replaceAll('✖ ', '')
     .replaceAll(/\s*→ at /gu, ', at ');
+}
+
+/** What a profile applies, as the lines of its YAML; none for a profile that sets nothing. */
+function yamlLines(resolved: ResolvedProfile): string[] {
+  const text = stringifyProfile(resolved.profile).trimEnd();
+  return text === '' || text === '{}' ? [] : text.split('\n');
 }
 
 /** This profile's own draft of a setting: a value, or that finishing the draft stops setting it here. */
@@ -196,6 +220,9 @@ export class ProfileEditor {
     const others = this.#ownUnsets.value.filter((key) => !key.includes('/') && !settings.includes(key));
     return settings.length + this.#otherDrafts().length + others.length + this.#entryEdits.draftCount.value;
   });
+
+  /** The preview of a save, while it is open. */
+  readonly preview = signal<SavePreview | undefined>(undefined);
 
   /** What stops each draft from applying as it stands, as the profile was last read or saved. */
   readonly warnings = computed(() => this.#saved.value?.warnings ?? []);
@@ -367,6 +394,38 @@ export class ProfileEditor {
     if (this.#typed.value.get(keyOf(field.path))?.problem === undefined) {
       this.#forget(field);
     }
+  }
+
+  /**
+   * Opens the preview of a save: what applies now against what applies once
+   * Save runs, the draft and the unsaved changes together. It is offered
+   * when Save is, since it shows what Save would do.
+   */
+  async openPreview(): Promise<void> {
+    if (!this.canSave.value) {
+      return;
+    }
+    const unsaved = this.#edits.value.size + this.#entryEdits.count.value;
+    const drafted = this.draftCount.value;
+    try {
+      const { before, after } = await previewProfile(this.file, [
+        ...this.#settingWrites(this.#edits.value, 'applies', []),
+        ...this.#entryEdits.writes(),
+      ]);
+      const lines = diffLines(yamlLines(before), yamlLines(after));
+      this.preview.value = {
+        lines: foldUnchanged(lines),
+        changes: lines.filter((line) => line.kind !== 'same').length,
+        drafted,
+        unsaved,
+      };
+    } catch (error) {
+      this.saveError.value = reasonOf(error, this.file);
+    }
+  }
+
+  closePreview(): void {
+    this.preview.value = undefined;
   }
 
   /** Finds the settings the words typed fit, among those the filters leave. */

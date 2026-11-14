@@ -7,6 +7,7 @@ import type { Profiles } from '../app/profiles.js';
 import { sameValue } from '../app/same-value.js';
 import { Entries } from './entries.js';
 import { run } from './run.js';
+import { SavePreviewDialog } from './save-preview.js';
 
 function Control({ row, editor }: { readonly row: SettingRow; readonly editor: ProfileEditor }): JSX.Element {
   const { field, value, invalid, text } = row;
@@ -262,13 +263,15 @@ const filterNames: readonly { readonly id: SettingFilter; readonly name: string 
 const entryTitles = { rulesets: 'Rulesets', environments: 'Environments', labels: 'Labels' } as const;
 
 interface ProfileSettingsProps {
+  /** The profile's name, as the list has it. */
+  readonly name: string;
   readonly editor: ProfileEditor;
   readonly profiles: Profiles;
   /** Whether the profile's owner type has push rulesets, which personal accounts lack. */
   readonly pushes: boolean;
 }
 
-export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsProps): JSX.Element {
+export function ProfileSettings({ name, editor, profiles, pushes }: ProfileSettingsProps): JSX.Element {
   const sections = editor.sections.value;
   const [tab, setTab] = useState(sections[0]?.section.section ?? '');
   const entries = editor.entries.value;
@@ -291,6 +294,7 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
   ];
   const current = list ?? shown?.section.section ?? '';
   const filtering = editor.filtering.value;
+  const preview = editor.preview.value;
   const search = useRef<HTMLInputElement>(null);
   const problem = editor.problem.value ?? editor.saveError.value;
   const tabs = useRef<HTMLDivElement>(null);
@@ -435,6 +439,7 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
           )}
         </>
       )}
+      {preview !== undefined && <SavePreviewDialog name={name} editor={editor} profiles={profiles} preview={preview} />}
       <div class="save-bar">
         {problem !== undefined && (
           <p class="problem" role="alert">
@@ -463,6 +468,16 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
           }}
         >
           Reset
+        </button>
+        <button
+          class="button button-quiet"
+          type="button"
+          disabled={!editor.canSave.value}
+          onClick={() => {
+            run(editor.openPreview());
+          }}
+        >
+          Preview
         </button>
         <button
           class="button"
