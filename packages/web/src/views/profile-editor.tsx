@@ -15,7 +15,7 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
   if (field.kind === 'choice') {
     return (
       <div class="segments" role="radiogroup" aria-labelledby={`${id}-label`}>
-        {field.options.map((option) => (
+        {row.options.map((option) => (
           <label key={option.label}>
             <input
               type="radio"
@@ -100,6 +100,7 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
           <span>
             <strong id={`${id}-label`}>{field.label}</strong>
             {row.inDraft && <span class="pill pill-draft">Draft</span>}
+            {row.ownerTag !== undefined && <span class="pill pill-owner">{row.ownerTag} only</span>}
           </span>
           <span class="muted small">
             {row.inDraft
@@ -365,6 +366,13 @@ export function ProfileSettings({ name, editor, profiles, pushes }: ProfileSetti
           {filtering ? editor.foundSummary.value : ''}
         </p>
       </div>
+      {editor.ownerHidden.value > 0 && (
+        <p class="muted small">
+          {editor.ownerHidden.value === 1
+            ? '1 setting that only organizations have is hidden.'
+            : `${editor.ownerHidden.value} settings that only organizations have are hidden.`}
+        </p>
+      )}
       {filtering && (
         <div class="groups">
           {editor.found.value.map(({ tab: name, group, rows }) => (

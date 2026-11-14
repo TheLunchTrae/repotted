@@ -1,10 +1,15 @@
 import { computed, signal } from '@preact/signals';
 import {
+  changeOwnerType,
   editProfile,
+  type OwnerNeed,
+  ownerHas,
+  type OwnerType,
   type ProfileEdit,
   previewProfile,
   resolveProfile,
   settingPath,
+  settingRules,
   stringifyProfile,
 } from '@repotted/core';
 
@@ -14,7 +19,7 @@ import type { Entry } from './entry-forms.js';
 import { type DiffFold, type DiffLine, diffLines, foldUnchanged } from './line-diff.js';
 import { ownDraft, ownUnsets, settingsSections as draftSections } from './own-drafts.js';
 import { sameValue } from './same-value.js';
-import { type SettingField, type SettingGroup, settingSections } from './setting-fields.js';
+import { type SettingField, type SettingGroup, type SettingOption, settingSections } from './setting-fields.js';
 import { matchesSearch, parentOf, searchWords } from './setting-search.js';
 
 type ResolvedProfile = Awaited<ReturnType<typeof resolveProfile>>;
@@ -28,6 +33,10 @@ interface SettingEdit {
 /** One setting as the editor draws it. */
 export interface SettingRow {
   readonly field: SettingField;
+  /** The choices an owner of the profile's type has. */
+  readonly options: readonly SettingOption[];
+  /** Who alone has the setting, where the profile's type doesn't already say: organizations, or those on GitHub Enterprise Cloud. */
+  readonly ownerTag: 'Organizations' | 'Enterprise Cloud' | undefined;
   /** What applies with the unsaved changes: this profile's value, a base profile's, or undefined when none sets it. */
   readonly value: unknown;
   /** The profile that sets the value: 'here' for the open one, a base profile's file name, or undefined. */
@@ -159,6 +168,42 @@ function fieldsOf(section: string): readonly SettingField[] {
   return allFields.filter((item) => item.section === section);
 }
 
+/** Who alone has a setting, or one value of it; undefined when every owner does. A rule's path stands for all under it. */
+function needOf(path: readonly string[], value?: unknown): OwnerNeed | undefined {
+  return settingRules.find(
+    (rule) =>
+      rule.path.every((part, index) => path[index] === part) &&
+      (value === undefined ? rule.value === undefined : rule.value === value),
+  )?.needs;
+}
+
+function fits(type: OwnerType | undefined, need: OwnerNeed | undefined): boolean {
+  return need === undefined || ownerHas(type, need);
+}
+
+/** A type a profile can be for: one kind of owner, or any. */
+export type OwnerChoice = OwnerType | 'any';
+
+/** What a profile's file would stop managing under another owner type, as `owner_changes` names it, as the editor names it. */
+function describeOwnerChange(path: string): string {
+  const draft = path.startsWith('drafts.');
+  const target = draft ? path.slice('drafts.'.length) : path;
+  const drafted = (name: string): string => (draft ? `${name} (draft)` : name);
+  if (target.startsWith('rulesets/')) {
+    return drafted(`Ruleset ${target.slice('rulesets/'.length)}`);
+  }
+  if (target.startsWith('environments/')) {
+    return drafted(`Environment ${target.slice('environments/'.length)}`);
+  }
+  const field = allFields.find((item) => keyOf(item.path) === target || keyOf(item.path).startsWith(`${target}.`));
+  if (field !== undefined) {
+    return drafted(field.label);
+  }
+  return drafted(
+    target.startsWith('custom_properties.') ? `Custom property ${target.slice('custom_properties.'.length)}` : target,
+  );
+}
+
 /**
  * The open profile's settings and the changes to them that aren't saved.
  * Every change is previewed through the engine as it is made, so the editor
@@ -222,6 +267,29 @@ export class ProfileEditor {
     const others = this.#ownUnsets.value.filter((key) => !key.includes('/') && !settings.includes(key));
     return settings.length + this.#otherDrafts().length + others.length + this.#entryEdits.draftCount.value;
   });
+
+  /** The kind of owner the profile is for, from its own file or a base profile's; undefined for any owner. */
+  readonly ownerType = computed(() => this.#saved.value?.profile.owner_type);
+
+  /**
+   * The base profile that gives the profile its owner type, when its own
+   * file doesn't. A chain has one type, so only that profile can change it.
+   */
+  readonly ownerTypeFrom = computed(() => {
+    const saved = this.#saved.value;
+    // A base's type holds whether or not the open file repeats it, so the file's own line changes nothing.
+    const source = this.#baseOwnerSource.value ?? saved?.owner_source ?? undefined;
+    return source === undefined || source === saved?.chain[0] ? undefined : basename(source);
+  });
+
+  /** How many settings the editor leaves out because owners of the profile's type don't have them. */
+  readonly ownerHidden = computed(() => {
+    const type = this.ownerType.value;
+    return allFields.filter((field) => !fits(type, needOf(field.path))).length;
+  });
+
+  /** Whether the owner type can change now: the change writes at once, so it waits until nothing is unsaved. */
+  readonly canChangeOwnerType = computed(() => this.loaded.value && !this.dirty.value && !this.saving.value);
 
   /** The preview of a save, while it is open. */
   readonly preview = signal<SavePreview | undefined>(undefined);
@@ -350,6 +418,9 @@ export class ProfileEditor {
 
   readonly #finding = signal<Finding>(nothingFound);
 
+  /** The profile among those the open one extends that sets their owner type, when one does. */
+  readonly #baseOwnerSource = signal<string | undefined>(undefined);
+
   /** Whether something typed can't be a value. */
   readonly #refused = computed(() => [...this.#typed.value.values()].some((typed) => typed.problem !== undefined));
 
@@ -358,6 +429,7 @@ export class ProfileEditor {
     try {
       this.#saved.value = await resolveProfile(this.file);
       this.#entryEdits.setSaved(this.#saved.value);
+      await this.#readBaseOwner();
       this.loadError.value = undefined;
     } catch (error) {
       this.#saved.value = undefined;
@@ -567,7 +639,7 @@ export class ProfileEditor {
     if (!(mode === 'applies' ? this.canSave.value : this.canSaveAsDraft.value)) {
       return;
     }
-    await this.#write(write, this.#edits.value, (writing) => {
+    await this.#write(write, this.#edits.value, async (writing) => {
       if (this.#entryEdits.writesOverChange()) {
         throw new Error(
           'A ruleset, environment, or label changed elsewhere since you changed it. Open it to keep yours or reset it.',
@@ -577,8 +649,51 @@ export class ProfileEditor {
         throw new Error("A ruleset, environment, or label can't be saved as it stands. Open it to see why.");
       }
       const entries = this.#entryEdits.saving(mode);
-      return [...this.#settingWrites(writing, mode, entries.unsets), ...entries.writes];
+      return editProfile(this.file, [...this.#settingWrites(writing, mode, entries.unsets), ...entries.writes]);
     });
+  }
+
+  /** What the profile's file would stop managing as a profile for `type`, as the editor names each. */
+  ownerLeaving(type: OwnerChoice): string[] {
+    return type === 'any' ? [] : (this.#saved.value?.owner_changes[type] ?? []).map(describeOwnerChange);
+  }
+
+  /**
+   * Makes the profile one for another kind of owner, or for any. What the
+   * new type doesn't have is left not managed, as `ownerLeaving` lists, so
+   * the change stops when the file would now leave something else.
+   */
+  async changeOwnerType(write: (work: () => Promise<void>) => Promise<void>, type: OwnerChoice): Promise<void> {
+    if (
+      !this.canChangeOwnerType.value ||
+      this.ownerTypeFrom.value !== undefined ||
+      type === (this.ownerType.value ?? 'any')
+    ) {
+      return;
+    }
+    const shown = this.ownerLeaving(type);
+    await this.#write(write, new Map(), async () => {
+      if (!sameValue(shown, this.ownerLeaving(type))) {
+        throw new Error(
+          `${basename(this.file)} changed since it was shown. Check what the change leaves not managed, then change the type.`,
+        );
+      }
+      return changeOwnerType(this.file, type === 'any' ? undefined : type);
+    });
+    // A change made while this one waited, to a setting the new type doesn't have, has no row to show or reset it.
+    const owner = this.ownerType.value;
+    const kept = new Map([...this.#edits.value].filter(([, edit]) => fits(owner, needOf(edit.path))));
+    if (kept.size !== this.#edits.value.size) {
+      this.#edits.value = kept;
+      await this.#previewEdits();
+    }
+  }
+
+  async #readBaseOwner(): Promise<void> {
+    const base = this.#saved.value?.chain[1];
+    // A base that can't be read fails the open profile's own read, so this one only ever follows a read that worked.
+    this.#baseOwnerSource.value =
+      base === undefined ? undefined : ((await resolveProfile(base).catch(() => undefined))?.owner_source ?? undefined);
   }
 
   /**
@@ -589,22 +704,27 @@ export class ProfileEditor {
     if (!this.canDiscardDraft.value) {
       return;
     }
-    await this.#write(write, new Map(), () => [
-      ...allFields.flatMap((field) => {
-        const draft = this.#draft(field);
-        return draft === undefined || draft === 'unset' ? [] : [{ path: ['drafts', ...field.path], value: undefined }];
-      }),
-      ...this.#otherDrafts().map(({ path }) => ({ path: ['drafts', ...path], value: undefined })),
-      ...this.#unsetWrite(this.#ownUnsets.value.filter((key) => key.startsWith('autolinks/'))),
-      ...this.#entryEdits.discards(),
-    ]);
+    await this.#write(write, new Map(), async () => {
+      const edits: ProfileEdit[] = [
+        ...allFields.flatMap((field) => {
+          const draft = this.#draft(field);
+          return draft === undefined || draft === 'unset'
+            ? []
+            : [{ path: ['drafts', ...field.path], value: undefined }];
+        }),
+        ...this.#otherDrafts().map(({ path }) => ({ path: ['drafts', ...path], value: undefined })),
+        ...this.#unsetWrite(this.#ownUnsets.value.filter((key) => key.startsWith('autolinks/'))),
+        ...this.#entryEdits.discards(),
+      ];
+      return editProfile(this.file, edits);
+    });
   }
 
-  /** Writes what `edits` gives, once the file is read again in the write's turn, and settles the changes it wrote. */
+  /** Writes with `act`, once the file is read again in the write's turn, and settles the changes it wrote. */
   async #write(
     write: (work: () => Promise<void>) => Promise<void>,
     writing: ReadonlyMap<string, SettingEdit>,
-    edits: (writing: ReadonlyMap<string, SettingEdit>) => readonly ProfileEdit[],
+    act: (writing: ReadonlyMap<string, SettingEdit>) => Promise<ResolvedProfile>,
   ): Promise<void> {
     this.saving.value = true;
     this.saveError.value = undefined;
@@ -622,10 +742,11 @@ export class ProfileEditor {
         this.#entryEdits.setSaved(current);
         // Every save finishes, adds to, or discards the whole draft, so it acts only on the draft that was shown.
         if (!sameValue(shown, ownDraft(current))) {
-          throw new Error("The profile's draft changed elsewhere. Look at it as it is now, then save again.");
+          throw new Error("The profile's draft changed elsewhere. Look at it as it is now, then try again.");
         }
-        this.#saved.value = await editProfile(this.file, edits(writing));
+        this.#saved.value = await act(writing);
         this.#entryEdits.setSaved(this.#saved.value);
+        await this.#readBaseOwner();
         wrote = true;
       });
       // Changes made while the save ran stay unsaved.
@@ -866,31 +987,43 @@ export class ProfileEditor {
       const value = this.#valueOf(other, edits);
       return value !== undefined && condition.values.some((item) => sameValue(item, value));
     };
-    return group.fields
-      .filter((field) => !(field.dependsOn?.hides === true && holds(field)))
-      .map((field) => {
-        const key = keyOf(field.path);
-        const source = shown.sources[sectionOf(field)][field.key];
-        const typed = this.#typed.value.get(key);
-        return {
-          field,
-          value: this.#valueOf(field, edits),
-          source: source === undefined ? undefined : source === shown.chain[0] ? 'here' : basename(source),
-          unsaved: edits.has(key),
-          drafted: this.#draft(field) !== undefined,
-          inDraft: !edits.has(key) && this.#draft(field) !== undefined,
-          applied: getIn(this.#saved.value?.profile, field.path),
-          off: field.dependsOn?.hides === false && holds(field),
-          text: typed?.text,
-          invalid: typed?.problem,
-          hiddenNamed: section.filter(
-            (other) =>
-              other.dependsOn?.hides === true &&
-              other.dependsOn.key === field.key &&
-              holds(other) &&
-              this.#valueOf(other, edits) !== undefined,
-          ).length,
-        };
-      });
+    const owner = this.ownerType.value;
+    return (
+      group.fields
+        // What owners of the profile's type don't have is left out, settings and choices, so it is never part of a save.
+        .filter((field) => fits(owner, needOf(field.path)) && !(field.dependsOn?.hides === true && holds(field)))
+        .map((field) => {
+          const key = keyOf(field.path);
+          const source = shown.sources[sectionOf(field)][field.key];
+          const typed = this.#typed.value.get(key);
+          const need = needOf(field.path);
+          return {
+            field,
+            options: field.options.filter((option) => fits(owner, needOf(field.path, option.value))),
+            ownerTag:
+              need === 'enterprise'
+                ? ('Enterprise Cloud' as const)
+                : need === 'organization' && owner === undefined
+                  ? ('Organizations' as const)
+                  : undefined,
+            value: this.#valueOf(field, edits),
+            source: source === undefined ? undefined : source === shown.chain[0] ? 'here' : basename(source),
+            unsaved: edits.has(key),
+            drafted: this.#draft(field) !== undefined,
+            inDraft: !edits.has(key) && this.#draft(field) !== undefined,
+            applied: getIn(this.#saved.value?.profile, field.path),
+            off: field.dependsOn?.hides === false && holds(field),
+            text: typed?.text,
+            invalid: typed?.problem,
+            hiddenNamed: section.filter(
+              (other) =>
+                other.dependsOn?.hides === true &&
+                other.dependsOn.key === field.key &&
+                holds(other) &&
+                this.#valueOf(other, edits) !== undefined,
+            ).length,
+          };
+        })
+    );
   }
 }
