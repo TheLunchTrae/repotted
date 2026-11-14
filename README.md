@@ -1,19 +1,21 @@
 # Repotted
 
-Capture a GitHub repository's setup as a YAML profile, plan the changes a
-profile needs, and apply a reviewed plan. Repotted covers repository settings,
-merge methods, Actions policy, rulesets, deployment environments, and labels, from a
-desktop app for macOS and Windows, the command line, or an agent over MCP.
+Keep GitHub repositories set up the way you want. Repotted captures a
+repository's setup as a YAML profile: its settings, merge methods, Actions and
+security settings, Pages site, custom properties, autolinks, rulesets,
+deployment environments, and labels. A profile manages only what it names, so
+it can describe one repository or a standard that many share.
 
-```sh
-npx repotted login
-npx repotted capture octo-org/app --output app.yaml
-npx repotted plan octo-org/app --profile app.yaml --out plan.json
-npx repotted apply plan.json
-```
+Use it at [repotted.dev](https://repotted.dev). Sign in with GitHub, choose the
+repositories the Repotted App can reach, and make profiles from scratch or by
+capturing a repository, then edit them in your browser. Keep profiles in the
+browser, or in a GitHub repository so they follow you to any browser. Comparing
+a repository with a profile and applying the changes from the web app is still
+being built.
 
-- [User guide](docs/user/README.md): install and use the desktop app, the CLI,
-  and the MCP server, and write profiles.
+- [The web app](docs/user/web-app.md): sign in, find repositories, and make
+  and edit profiles.
+- [Profiles](docs/user/profiles.md): what a profile can hold.
 - [Developer guide](docs/developer/README.md): how Repotted works and why, and
   how to build, test, and release it.
 
