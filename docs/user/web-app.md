@@ -44,6 +44,31 @@ Click a repository to open its panel. **Open on GitHub** opens it there, and
 **Capture as a new profile** starts [a profile](#make-a-profile) that
 describes it. Click the repository again to close the panel.
 
+### Compare a repository with a profile
+
+Select a repository, pick a profile under **Compare with a profile**, and
+click **Compare**. The page shows each difference by section, with what
+GitHub has now and what the profile sets. What already matches is left out,
+and so is the profile's draft, which the page names. To find something in a
+long comparison, type in **Search this comparison**. Comparing only reads
+from GitHub. It compares the profile as saved, so save your changes to
+the profile first. **Compare again** reads both again, such as after you
+save the profile or change the repository.
+
+Each difference Repotted can't change says what it needs, such as **Needs
+Actions write**. The Repotted App's installation may not have been granted
+that permission, or you may not be an admin on the repository. **Review App
+access** opens the installation's settings on GitHub, where its owner can
+grant what's missing, or **Install the App** when it isn't installed on the
+repository. **Can't change**, beside the search, shows only those
+differences. Limits of the repository's GitHub plan or its owner's policies
+don't show here; GitHub reports them only when a change is made.
+
+A profile for organizations can't compare with a repository that a personal
+account owns, nor a personal profile with an organization's repository. The
+page says so, and to use the profile's settings there, copy the profile and
+change the copy's type.
+
 ## Profiles
 
 A profile is a YAML file that describes how a repository should be set up.
