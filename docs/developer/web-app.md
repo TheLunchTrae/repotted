@@ -133,17 +133,22 @@ Choices that belong to the browser, such as where profiles are kept, are in
 They are not kept per account.
 
 Choices that follow the user, such as the owners and repositories the list
-hides, go through `SharedPreferences` (`src/app/shared-preferences.ts`), which
-has the same `read` and `write`, and `update`, which saves a change to a
-value, such as adding a name to a list, rather than the value. While profiles are kept in a config
-repository, it keeps them in `.repotted-preferences.json` beside the profiles
-and commits each change there through the contents API; otherwise it passes
-them to the browser's `Preferences`. The file is a JSON object keyed by
-preference key, such as `hidden-repositories` and `hidden-repository-owners`,
-with keys in order so a commit changes only the values that did. It is a
-hidden file, so a profile sync and the profile list leave it alone. Another
-list setting that should follow the user takes its own key in the same file.
-Nothing moves between the browser and the file when the profiles move.
+hides and the user's folders, go through `SharedPreferences`
+(`src/app/shared-preferences.ts`), which has the same `read` and `write`, and
+`update`, which saves a change to a value, such as adding a name to a list,
+rather than the value. While profiles are kept in a config repository, it
+keeps them in `.repotted-preferences.json` beside the profiles and commits
+each change there through the contents API; otherwise it passes them to the
+browser's `Preferences`. The file is a JSON object keyed by preference key,
+such as `hidden-repositories`, `hidden-repository-owners` and
+`repository-folders`, with keys in order so a commit changes only the values
+that did. It is a hidden file, so a profile sync and the profile list leave
+it alone. Another list setting that should follow the user takes its own key
+in the same file, and changes it through `update`, as folders do. A choice
+that changes often and matters to one browser, such as which folders are
+closed (`closed-repository-folders`), goes straight to the browser's
+`Preferences` instead, so it never makes a commit. Nothing moves between the
+browser and the file when the profiles move.
 [State machines](state-machines.md#web-shared-preferences) lists the
 transitions.
 
