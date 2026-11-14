@@ -71,7 +71,8 @@ interface ObjectEndpoint {
 
 /**
  * Why a setting or a section cannot be read on the repository: `refused`
- * when GitHub hides it, as from a token without the permission, and
+ * when GitHub hides it, as from a token without the permission or an
+ * account without a payment method on file, and
  * `unavailable` when GitHub does not offer it on the repository.
  */
 export interface Unavailable {
@@ -121,12 +122,13 @@ export async function readResource(
       return { available: false, cause: 'refused', reason: refusal(error, 'GET', path, target) };
     }
     // 402 for a billed feature, such as the Actions cache retention limit,
-    // on an account with no payment method on file.
+    // on an account with no payment method on file. Adding one lifts it, so
+    // a capture says so, as it does for a missing permission.
     if (error.status === 402) {
       return {
         available: false,
-        cause: 'unavailable',
-        reason: `GitHub offers ${target} on this repository only with a payment method on file (${error.message})`,
+        cause: 'refused',
+        reason: `GitHub refused to read ${target} without a payment method on file (${error.message})`,
       };
     }
     // 404 for a feature the repository's plan or owner lacks; 405, 409 and

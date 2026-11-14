@@ -420,6 +420,28 @@ test('a capture makes a profile of the repository, holds its name while it reads
   expect(profiles.captureWarnings.value).toBeUndefined();
 });
 
+test('a capture goes on past a setting GitHub withholds without a payment method, and says so', async () => {
+  const github = new FakeGitHub({ ownerType: 'User' }, 'trae/site').fail(
+    'GET /repos/trae/site/actions/cache/retention-limit',
+    answered(402, 'Please ensure your account has a valid payment method on file to access this service.'),
+  );
+  const profiles = new Profiles(github, memory(), () => undefined);
+  await profiles.refresh();
+
+  expect(
+    await profiles.create({
+      name: 'site',
+      folder: '',
+      start: { kind: 'repository', repository: 'trae/site' },
+      ownerType: undefined,
+    }),
+  ).toBeUndefined();
+  expect(profiles.selected.value).toMatchObject({ name: 'site', problem: null });
+  expect(profiles.captureWarnings.value?.warnings).toContain(
+    'Skipped actions.max_cache_retention_days: GitHub refused to read cache retention without a payment method on file (Please ensure your account has a valid payment method on file to access this service.)',
+  );
+});
+
 test('a capture that fails, or whose form closed, leaves no profile behind', async () => {
   const github = new FakeGitHub({}, 'trae/site').fail(/GET \/repos\/trae\/site$/u, answered(404, 'Not Found'), 1);
   const profiles = new Profiles(github, memory(), () => undefined);
