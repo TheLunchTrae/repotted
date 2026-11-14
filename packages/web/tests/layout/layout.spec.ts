@@ -38,7 +38,6 @@ const screens: Readonly<Record<string, Screen>> = {
     path: '/',
     open: (page) => page.getByText('All owners').click(),
     ready: (page) => page.getByRole('button', { name: 'Only personal' }),
-    overflowsAt: ['phone-landscape'],
   },
   settings: { path: '/settings', ready: (page) => page.getByRole('heading', { name: 'Account' }) },
   profiles: { path: '/profiles', ready: (page) => page.getByText('website', { exact: true }) },
