@@ -64,7 +64,10 @@ export function ActionSearchBox({ editor, search }: ActionSearchProps): JSX.Elem
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             event.preventDefault();
-            search.enter();
+            // A key held down is one search, however fast its answers land.
+            if (!event.repeat) {
+              search.enter();
+            }
           }
         }}
       />
