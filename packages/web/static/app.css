@@ -695,6 +695,12 @@ input[type='checkbox'] {
   font-size: 15px;
 }
 
+/* The owner's login, which can be one long word. */
+.group-heading > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .rows {
   padding: 0;
   overflow: hidden;
@@ -1208,17 +1214,14 @@ input[type='checkbox'] {
   font-weight: 500;
 }
 
+/* A field's hint can hold a profile's file name, which breaks rather than widening the page. */
 .form-field .small {
   font-weight: 400;
+  overflow-wrap: anywhere;
 }
 
 .form-field .field {
   max-width: 28rem;
-}
-
-/* A profile's file name, shown under its name field, breaks like the name. */
-.form-field .mono {
-  overflow-wrap: anywhere;
 }
 
 .check {
@@ -1345,8 +1348,10 @@ select.field {
   filter: brightness(1.1);
 }
 
+/* A name in a dialog (a repository, a profile or its file) breaks rather than running past its edge. */
 .dialog {
   max-width: min(32rem, calc(100vw - 32px));
+  overflow-wrap: anywhere;
   padding: 24px;
   border: 1px solid var(--border);
   border-radius: var(--panel-radius);
@@ -1358,13 +1363,6 @@ select.field {
 .dialog-wide {
   width: min(52rem, calc(100vw - 32px));
   max-width: none;
-}
-
-/* A dialog's heading and file names name a repository, profile, or folder,
-   and break inside a long name rather than widening the dialog. */
-.dialog h2,
-.dialog .mono {
-  overflow-wrap: anywhere;
 }
 
 .diff {
@@ -1560,8 +1558,10 @@ select.field {
   accent-color: var(--rail);
 }
 
+/* A ticked repository's name breaks rather than widening the page. */
 .ticked-names {
   display: grid;
+  overflow-wrap: anywhere;
   gap: 2px;
   max-height: 12rem;
   margin: 0;
