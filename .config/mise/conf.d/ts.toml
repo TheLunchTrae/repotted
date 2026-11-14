@@ -91,6 +91,16 @@ depends = ["ts:install"]
 env = { WRANGLER_SEND_METRICS = "false" }
 run = "pnpm --filter @repotted/web run check"
 
+[tasks."ts:web:layout"]
+description = "Check that the web app's screens fit phone and tablet widths in Chromium"
+depends = ["ts:install"]
+# Not part of ts:standards:check, which runs without a browser. Install
+# Playwright's Chromium once with
+# `pnpm --filter @repotted/web exec playwright install chromium`, or set
+# CHROMIUM_PATH to a Chromium already on the machine. CI runs this when a
+# change touches the web app; see .github/workflows/quality.yml.
+run = "pnpm --filter @repotted/web run layout"
+
 [tasks."ts:standards"]
 description = "Run the TypeScript standards workflow with autofixes"
 depends = ["ts:install"]

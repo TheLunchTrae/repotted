@@ -18,5 +18,6 @@
     "tsBuildInfoFile": ".tsbuildinfo"
   },
   "include": ["src/**/*", "tests/**/*"],
-  "exclude": []
+  // The layout test runs under Node; tests/layout/tsconfig.json checks it.
+  "exclude": ["tests/layout/*.ts"]
 }
