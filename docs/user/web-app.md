@@ -48,9 +48,15 @@ describes it. Click the repository again to close the panel.
 
 Select a repository, pick a profile under **Compare with a profile**, and
 click **Compare**. The page shows each difference by section, with what
-GitHub has now and what the profile sets. What already matches is left out,
-and so is the profile's draft, which the page names. To find something in a
-long comparison, type in **Search this comparison**. Comparing only reads
+GitHub has now and what the profile sets. What needs no change is folded
+away, and the page says how much does: turn off **Differs from GitHub** to
+see each such setting and entry under the differences, marked **No change**.
+Nearly always that is a setting GitHub already has as the profile sets it.
+It can also be one that doesn't apply with the options chosen, such as a
+runner for a code scanning setup that is not configured. What the comparison
+couldn't read or left out is listed apart, and is in neither group. The
+profile's draft is left out too, and the page names it. To find something in
+a long comparison, type in **Search this comparison**. Comparing only reads
 from GitHub. It compares the profile as saved, so save your changes to
 the profile first. **Compare again** reads both again, such as after you
 save the profile or change the repository.

@@ -56,6 +56,33 @@ export interface CompareSection {
   readonly rows: readonly CompareRow[];
 }
 
+/**
+ * Something the profile sets that the plan changes nothing of. GitHub
+ * nearly always has it as the profile sets it; the exception is a setting
+ * the engine leaves out without a word because it can't apply with the
+ * options chosen, such as a runner for a code scanning setup that is not
+ * configured. So a row says there is no change, not what GitHub holds.
+ */
+export interface MatchRow {
+  readonly label: string;
+  /** Its place in the profile for a setting, or what kind of entry it is. */
+  readonly key: string;
+  /** The value the profile sets; nothing for an entry, which is unchanged whole. */
+  readonly value: string | undefined;
+}
+
+/** What one section of the profile sets that needs no change. */
+export interface MatchSection {
+  readonly section: Change['section'];
+  readonly title: string;
+  readonly rows: readonly MatchRow[];
+}
+
+/** One section of a comparison as shown: its differences, then what matches. */
+export interface ShownSection extends CompareSection {
+  readonly matches: readonly MatchRow[];
+}
+
 /** A comparison that was made: what the profile would change on the repository, and what it left out. */
 export interface Compared {
   readonly repository: string;
@@ -63,6 +90,8 @@ export interface Compared {
   readonly file: string;
   readonly profile: string;
   readonly sections: readonly CompareSection[];
+  /** What the profile sets that needs no change, by section. */
+  readonly matching: readonly MatchSection[];
   /**
    * Where the Repotted App's access to the repository is reviewed on GitHub:
    * its installation's settings, `install` when it isn't installed there,
@@ -111,6 +140,20 @@ const titles: Readonly<Record<Change['section'], string>> = {
   labels: 'Labels',
 };
 
+/** The sections in the order a comparison shows them. */
+const order: readonly Change['section'][] = [
+  'repository',
+  'merge',
+  'security',
+  'actions',
+  'custom_properties',
+  'pages',
+  'autolinks',
+  'rulesets',
+  'environments',
+  'labels',
+];
+
 const nouns: Readonly<Record<string, string>> = {
   autolinks: 'autolink',
   rulesets: 'ruleset',
@@ -147,20 +190,20 @@ function kindOf(from: unknown, to: unknown): CompareRow['kind'] {
   return from === undefined ? 'adds' : to === undefined ? 'removes' : 'changes';
 }
 
-/** A setting's label and choice labels, as the editor has them, when it has the setting. */
-function settingRow(path: string, from: unknown, to: unknown, lock: string | undefined): CompareRow {
+/** A setting's label and its values by their choice labels, as the editor has them, when it has the setting. */
+function settingNames(path: string): { label: string; named: (value: unknown) => string } {
   const field = fields.find((item) => item.path.join('.') === path);
-  const named = (value: unknown, missing: string): string =>
-    field?.options.find((option) => JSON.stringify(option.value) === JSON.stringify(value))?.label ??
-    say(value, missing);
   return {
-    kind: kindOf(from, to),
     label: field?.label ?? path.slice(path.indexOf('.') + 1),
-    key: path,
-    now: named(from, 'Not set'),
-    wanted: named(to, 'Not set'),
-    lock,
+    named: (value) =>
+      field?.options.find((option) => JSON.stringify(option.value) === JSON.stringify(value))?.label ??
+      say(value, 'Not set'),
   };
+}
+
+function settingRow(path: string, from: unknown, to: unknown, lock: string | undefined): CompareRow {
+  const { label, named } = settingNames(path);
+  return { kind: kindOf(from, to), label, key: path, now: named(from), wanted: named(to), lock };
 }
 
 /** What an item of a list is known by, so the same item is compared with itself wherever it sits. */
@@ -313,6 +356,66 @@ export function compareSections(
   return sections.filter((section) => section.rows.length > 0);
 }
 
+/** A settings section's values by path, with a group opened where the editor shows its parts as settings of their own. */
+function flat(path: string, values: Readonly<Record<string, unknown>>): [string, unknown][] {
+  return Object.entries(values).flatMap(([key, value]): [string, unknown][] => {
+    const at = `${path}.${key}`;
+    const opens =
+      isRecord(value) &&
+      !fields.some((field) => field.path.join('.') === at) &&
+      fields.some((field) => field.path.join('.').startsWith(`${at}.`));
+    return opens ? flat(at, value) : [[at, value]];
+  });
+}
+
+/**
+ * What the plan's profile sets that the plan changes nothing of. It leaves
+ * out what the plan didn't read or said it skipped: a section or setting a
+ * warning left out, and the settings of a section that is made or deleted
+ * whole.
+ */
+export function matchSections(plan: Plan): MatchSection[] {
+  const desired: unknown = plan.desired;
+  const wanted = isRecord(desired) ? desired : {};
+  const skips = plan.warnings.filter((warning) => warning.cause !== undefined);
+  const differing = compareSections(plan, new Map());
+  return order.flatMap((section): MatchSection[] => {
+    const title = titles[section];
+    const values = wanted[section];
+    const changes = plan.changes.filter((change) => change.section === section);
+    if (skips.some((warning) => warning.section === section && warning.key === undefined)) {
+      return [];
+    }
+    let rows: MatchRow[] = [];
+    if (Array.isArray(values)) {
+      const touched = new Set(changes.map((change) => change.entry?.name));
+      rows = values.flatMap((entry: unknown): MatchRow[] => {
+        const known = isRecord(entry) ? (entry['name'] ?? entry['key_prefix']) : undefined;
+        return typeof known !== 'string' || touched.has(known) || (isRecord(entry) && entry['absent'] === true)
+          ? []
+          : [{ label: known, key: nouns[section] ?? 'entry', value: undefined }];
+      });
+    } else if (isRecord(values) && !changes.some((change) => change.action !== 'update')) {
+      const differs = (differing.find((item) => item.section === section)?.rows ?? []).map((row) => row.key);
+      rows = flat(section, values).flatMap(([path, value]): MatchRow[] => {
+        const rest = path.slice(section.length + 1);
+        const [top = ''] = rest.split('.');
+        const skipped = skips.some(
+          (warning) =>
+            warning.section === section &&
+            (warning.field === undefined ? warning.key === top : `${warning.key ?? ''}.${warning.field}` === rest),
+        );
+        if (skipped || differs.includes(path)) {
+          return [];
+        }
+        const { label, named } = settingNames(path);
+        return [{ label, key: path, value: named(value) }];
+      });
+    }
+    return rows.length === 0 ? [] : [{ section, title, rows }];
+  });
+}
+
 function normalize(text: string): string {
   return ` ${text.toLowerCase().replaceAll(/[^\p{L}\p{N}]+/gu, ' ')} `;
 }
@@ -328,6 +431,8 @@ export class Comparison {
   readonly search = signal('');
   /** Whether only the differences Repotted can't make show. */
   readonly onlyLocked = signal(false);
+  /** Whether only what differs shows, with what matches folded away; on at first. */
+  readonly onlyDifferences = signal(true);
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
@@ -339,30 +444,47 @@ export class Comparison {
     this.#onSignedOut = onSignedOut;
   }
 
-  /** How many differences there are, and how many of them Repotted can't make. */
+  /** How many differences there are, how many of them Repotted can't make, and how much matches. */
   readonly counts = computed(() => {
     const state = this.state.value;
     const rows = state.kind === 'compared' ? state.sections.flatMap((section) => section.rows) : [];
-    return { differences: rows.length, locked: rows.filter((row) => row.lock !== undefined).length };
+    return {
+      differences: rows.length,
+      locked: rows.filter((row) => row.lock !== undefined).length,
+      matches: state.kind === 'compared' ? state.matching.reduce((sum, section) => sum + section.rows.length, 0) : 0,
+    };
   });
 
-  /** The sections with the rows the search and the filter leave. */
-  readonly shown = computed((): CompareSection[] => {
+  /**
+   * The sections with the rows the search and the filters leave: the
+   * differences, and what matches unless only differences, or only those
+   * Repotted can't make, show.
+   */
+  readonly shown = computed((): ShownSection[] => {
     const state = this.state.value;
     if (state.kind !== 'compared') {
       return [];
     }
     const words = searchWords(this.search.value);
     const locked = this.onlyLocked.value;
-    return state.sections
-      .map((section) => ({
-        ...section,
-        rows: section.rows.filter((row) => {
-          const text = normalize(`${section.title} ${row.label} ${row.key}`);
-          return (!locked || row.lock !== undefined) && words.every((word) => text.includes(word));
-        }),
-      }))
-      .filter((section) => section.rows.length > 0);
+    const matching = this.onlyDifferences.value || locked ? [] : state.matching;
+    const found = (title: string, row: { label: string; key: string }): boolean => {
+      const text = normalize(`${title} ${row.label} ${row.key}`);
+      return words.every((word) => text.includes(word));
+    };
+    return order
+      .map((section): ShownSection => {
+        const title = titles[section];
+        return {
+          section,
+          title,
+          rows: (state.sections.find((item) => item.section === section)?.rows ?? []).filter(
+            (row) => (!locked || row.lock !== undefined) && found(title, row),
+          ),
+          matches: (matching.find((item) => item.section === section)?.rows ?? []).filter((row) => found(title, row)),
+        };
+      })
+      .filter((section) => section.rows.length > 0 || section.matches.length > 0);
   });
 
   /** Compares a repository with a profile as it is saved, by the profile's file and its name in the list. */
@@ -389,6 +511,7 @@ export class Comparison {
         file: profile.file,
         profile: profile.name,
         sections: compareSections(plan, locks),
+        matching: matchSections(plan),
         appAccess:
           access.app.status === 'not_installed'
             ? 'install'
