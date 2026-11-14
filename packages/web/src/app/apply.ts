@@ -125,12 +125,12 @@ export class Apply {
    */
   async start(repository: string, profile: ComparedProfile): Promise<void> {
     // An apply that is writing is neither replaced nor joined: its page shows it until it ends.
-    if (this.state.value.kind === 'applying') {
+    if (this.#writing()) {
       return;
     }
     const unfinished = await this.unfinished(repository);
     // Looked at again, since an apply may have begun to write while the browser's files were read.
-    if (this.state.value.kind === 'applying') {
+    if (this.#writing()) {
       return;
     }
     this.#profile = profile;
@@ -265,6 +265,11 @@ export class Apply {
       this.#turn += 1;
       this.state.value = { kind: 'idle' };
     }
+  }
+
+  /** Whether an apply is writing to GitHub right now. */
+  #writing(): boolean {
+    return this.state.value.kind === 'applying';
   }
 
   async #review(repository: string, notice: string | undefined): Promise<ApplyState> {
