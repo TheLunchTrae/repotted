@@ -26,9 +26,6 @@ jobs:
     env:
       MISE_LOCKED: '1'
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
-    defaults:
-      run:
-        shell: bash
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -59,7 +56,10 @@ jobs:
             packages/core/src
             packages/core/package.json
             packages/core/tests/fake-github.ts
+            package.json
             pnpm-lock.yaml
+            pnpm-workspace.yaml
+            tsconfig.json
             .config/mise
             .github/actions/gate
             .github/workflows/quality.yml
@@ -85,8 +85,8 @@ jobs:
         if: steps.changes.outputs.web == 'true'
         run: |
           version="$(mise exec -- node -p "require('./packages/web/node_modules/@playwright/test/package.json').version")"
-          if [ -z "$version" ]; then
-            echo '::error::Found no version of @playwright/test in packages/web.'
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Found no version of @playwright/test in packages/web (got '$version')."
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -114,3 +114,4 @@ jobs:
           name: web-layout
           path: artifacts/web-layout
           if-no-files-found: ignore
+          overwrite: true
