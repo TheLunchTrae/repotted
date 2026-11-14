@@ -643,9 +643,12 @@ input[type='checkbox'] {
   gap: 12px 24px;
 }
 
+/* A heading names a repository or profile, which can be one long word; it
+   breaks inside the name rather than widening the page. */
 .page-heading > div:first-child {
   display: grid;
   gap: 4px;
+  overflow-wrap: anywhere;
 }
 
 .page-actions {
@@ -1213,6 +1216,11 @@ input[type='checkbox'] {
   max-width: 28rem;
 }
 
+/* A profile's file name, shown under its name field, breaks like the name. */
+.form-field .mono {
+  overflow-wrap: anywhere;
+}
+
 .check {
   display: flex;
   align-items: center;
@@ -1350,6 +1358,13 @@ select.field {
 .dialog-wide {
   width: min(52rem, calc(100vw - 32px));
   max-width: none;
+}
+
+/* A dialog's heading and file names name a repository, profile, or folder,
+   and break inside a long name rather than widening the dialog. */
+.dialog h2,
+.dialog .mono {
+  overflow-wrap: anywhere;
 }
 
 .diff {
@@ -1818,6 +1833,12 @@ select.field {
 
 .entry-bar > .muted {
   flex: 1;
+}
+
+/* A batch member's heading names its repository, and breaks inside a long
+   name rather than widening the page. */
+.entry-bar h2 {
+  overflow-wrap: anywhere;
 }
 
 .entry-row {
