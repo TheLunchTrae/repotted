@@ -426,7 +426,7 @@ input[type='checkbox'] {
 }
 
 .page-body {
-  /* The page's side and bottom padding, which the action bar reaches across. */
+  /* The page's side and bottom padding, which a .save-bar among its children reaches across. */
   --page-inline: 24px;
   --page-end: 48px;
 
@@ -1356,6 +1356,11 @@ select.field {
   padding: 12px var(--page-inline);
   border-top: 1px solid var(--border);
   background: var(--surface);
+}
+
+/* Only the page's last child reaches into its bottom padding; one with more after it would overlap that. */
+.save-bar:not(:last-child) {
+  margin-bottom: 0;
 }
 
 .save-bar .problem {
