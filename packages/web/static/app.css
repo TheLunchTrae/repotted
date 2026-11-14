@@ -1279,6 +1279,13 @@ select.field {
   content: ' · ';
 }
 
+/* A left-out key is one long word, which breaks rather than widening the page. */
+.left-out-key .mono,
+.left-out .mono,
+.notice li.mono {
+  overflow-wrap: anywhere;
+}
+
 /* A comparison */
 .left-out {
   display: grid;
