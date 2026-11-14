@@ -344,22 +344,22 @@ export function ProfileSettings({ editor, profiles, pushes }: ProfileSettingsPro
               </label>
             ))}
         </div>
-      </div>
-      {/* The message is there before it has anything to say, so a screen reader announces what it comes to say. */}
-      <div class="entry-bar" hidden={!filtering}>
-        <p class="muted small" role="status">
+        {filtering && (
+          <button
+            class="button button-quiet button-small"
+            type="button"
+            onClick={() => {
+              editor.clearFilters();
+              search.current?.focus();
+            }}
+          >
+            Show every setting
+          </button>
+        )}
+        {/* The message is there before it has anything to say, so a screen reader announces what it comes to say. */}
+        <p class={filtering ? 'muted small' : 'visually-hidden'} role="status">
           {filtering ? editor.foundSummary.value : ''}
         </p>
-        <button
-          class="button button-quiet button-small"
-          type="button"
-          onClick={() => {
-            editor.clearFilters();
-            search.current?.focus();
-          }}
-        >
-          Show every setting
-        </button>
       </div>
       {filtering && (
         <div class="groups">

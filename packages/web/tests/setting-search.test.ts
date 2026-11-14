@@ -158,3 +158,19 @@ test('with nothing found, the message says why and where else to look, and an em
   editor.search('');
   expect(editor.filtering.value).toBe(false);
 });
+
+test('a fresh read finds again, and keeps a shown setting whose change is not saved', async () => {
+  const editor = await opened('repository:\n  has_pull_requests: true\n  has_wiki: true\n');
+  editor.search('who can create');
+  await editor.set(field('repository.has_pull_requests'), false);
+
+  await writeFile('/profiles/web.yaml', 'repository:\n  has_pull_requests: true\n');
+  await editor.load();
+
+  expect(found(editor)).toEqual(['repository.has_pull_requests']);
+
+  await editor.reset(field('repository.has_pull_requests'));
+  editor.search('wiki');
+  editor.filter('managed', true);
+  expect(found(editor)).toEqual([]);
+});

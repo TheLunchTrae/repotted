@@ -299,12 +299,11 @@ export class ProfileEditor {
    * one above it, leaves that one in place to change back.
    */
   readonly found = computed((): FoundGroup[] => {
-    const { fits, shown } = this.#finding.value;
+    const { shown } = this.#finding.value;
     return this.sections.value.flatMap(({ section, groups }) =>
       groups
         .map(({ group, rows }) => ({ group, rows: rows.filter((row) => shown.has(keyOf(row.field.path))) }))
-        // A setting shown only for what sits under it goes when a new search leaves nothing under it, not before.
-        .filter(({ rows }) => rows.length > 0 && fits.size > 0)
+        .filter(({ rows }) => rows.length > 0)
         .map(({ group, rows }) => ({
           tab: section.name,
           group,
@@ -393,9 +392,13 @@ export class ProfileEditor {
 
   /** Finds again over the profile as it was just read or written, so what a save or a discard settled leaves the filters. */
   #findAgain(): void {
-    if (this.filtering.value) {
-      this.#find(this.#finding.value.query, this.#finding.value.filters);
+    if (!this.filtering.value) {
+      return;
     }
+    // A setting with a change that isn't saved stays where it shows, whatever the fresh read finds.
+    const kept = [...this.#finding.value.shown].filter((key) => this.#edits.value.has(key));
+    this.#find(this.#finding.value.query, this.#finding.value.filters);
+    this.#finding.value = { ...this.#finding.value, shown: new Set([...this.#finding.value.shown, ...kept]) };
   }
 
   #find(query: string, filters: ReadonlySet<SettingFilter>): void {
