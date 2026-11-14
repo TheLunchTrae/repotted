@@ -363,6 +363,7 @@ export class ProfileEditor {
       this.#saved.value = undefined;
       this.#entryEdits.setSaved(undefined);
       this.#preview.value = undefined;
+      this.closePreview();
       this.loadError.value = reasonOf(error, this.file);
       return;
     }
