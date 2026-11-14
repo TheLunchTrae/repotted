@@ -4,7 +4,7 @@ min_version = "2026.9.16"
 
 [settings]
 lockfile = true
-# The desktop workflow installs these tools on macOS and Windows runners.
+# The platforms the tools are locked for: CI's, and the ones contributors work on.
 lockfile_platforms = ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"]
 
 [tools]
@@ -19,24 +19,24 @@ run = "gitleaks dir . --redact --no-banner"
 
 [tasks.fmt]
 description = "Format the project"
-depends = ["ts:fmt", "csharp:fmt"]
+depends = ["ts:fmt"]
 
 [tasks."fmt:check"]
 description = "Check formatting"
-depends = ["ts:fmt:check", "csharp:fmt:check"]
+depends = ["ts:fmt:check"]
 
 [tasks.lint]
 description = "Lint and analyze"
-depends = ["ts:lint", "csharp:lint"]
+depends = ["ts:lint"]
 
 [tasks.test]
 description = "Run the tests"
-depends = ["ts:test", "csharp:test"]
+depends = ["ts:test"]
 
 [tasks.standards]
 description = "Run standards workflows and available autofixes"
-depends = ["ts:standards", "csharp:standards"]
+depends = ["ts:standards"]
 
 [tasks."standards:check"]
 description = "Run the standards CI gate"
-depends = ["secrets", "hygiene", "ts:standards:check", "csharp:standards:check"]
+depends = ["secrets", "hygiene", "ts:standards:check"]

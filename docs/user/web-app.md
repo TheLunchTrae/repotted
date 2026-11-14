@@ -4,8 +4,9 @@ The Repotted web app runs at <https://repotted.dev>. It needs nothing
 installed: it runs in your browser and talks to GitHub from there.
 
 The web app signs in, lists your repositories, and makes, captures, edits,
-and deletes profiles. To compare a repository with a profile and apply the
-changes, use the [desktop app](desktop.md) or the [command line](cli.md).
+and deletes profiles. It compares a repository with a profile and applies
+the changes you review, to one repository or several. The
+[command line](cli.md) does the same from a terminal or a script.
 
 Use Repotted in one tab at a time. A second tab says that Repotted is open
 in another one, so that two tabs can't save over each other's profiles;

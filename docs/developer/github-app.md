@@ -45,8 +45,8 @@ administers, though the token itself may not be allowed to change them.
 
 The Repotted App is owned by the project's owner. Its client ID and slug are
 `app.clientId` and `app.slug` in `packages/cli/src/auth.ts`. The client ID is
-public; the device flow needs no client secret or private key, so the CLI and
-the desktop app hold none. The gate fails if `app.clientId` is empty.
+public; the device flow needs no client secret or private key, so the CLI
+holds none. The gate fails if `app.clientId` is empty.
 
 The [web app](web-app.md) signs in with the App's web flow, whose code
 exchange needs a client secret. Only its Worker holds one, as a Worker secret

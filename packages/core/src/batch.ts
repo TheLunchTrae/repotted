@@ -756,7 +756,7 @@ export function isUnfinished(result: MemberResult): boolean {
 }
 
 export interface BatchApplyOptions {
-  /** Applies only these members, as the desktop applies one at a time; every member when undefined. */
+  /** Applies only these members; every member when undefined. */
   readonly only?: readonly string[];
   /** Stops at the first member that fails; the rest are `stopped`. */
   readonly stopOnFailure?: boolean;

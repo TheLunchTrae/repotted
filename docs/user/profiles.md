@@ -106,8 +106,8 @@ or a value GitHub doesn't take. Rules that tie settings together, such as
 keeping one merge method on, are checked only when you finish the draft.
 To finish a draft, move a setting out of `drafts` into its section, remove
 an entry's `draft: true`, or remove what `drafts.unset` names and its line
-there. From then on it's checked like the rest of the profile. The desktop
-app finishes the whole draft at once when you save.
+there. From then on it's checked like the rest of the profile. The web app
+finishes the whole draft at once when you click **Save**.
 
 Drafts never change what applies. A draft can share a name with an entry in
 the same profile or in a base profile, and a draft setting can sit beside the
@@ -325,7 +325,7 @@ Along a chain of profiles, the nearest file that names a type gives it to the
 whole chain, so a profile that extends a typed base has the base's type. A
 chain can't mix types: a personal profile can't extend an organization one.
 
-`plan`, `apply`, `batch` and the desktop app refuse a repository whose owner
+`plan`, `apply`, `batch` and the web app refuse a repository whose owner
 is the other kind, before they read anything else. To use a profile's
 settings for the other kind, copy the profile and change the copy's type with
 `profile <file> --owner-type user|organization|any`. The change leaves what

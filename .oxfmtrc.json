@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["desktop/tests/Repotted.Desktop.Tests/Fixtures/"],
+  "ignorePatterns": ["packages/cli/tests/fixtures/"],
   "arrowParens": "always",
   "bracketSameLine": false,
   "bracketSpacing": true,
