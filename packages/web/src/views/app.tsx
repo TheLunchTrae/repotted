@@ -4,11 +4,13 @@ import type { JSX } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
+import { Comparison } from '../app/comparison.js';
 import type { Keeping } from '../app/kept-files.js';
 import type { Preferences } from '../app/preferences.js';
 import { Profiles } from '../app/profiles.js';
 import { Repositories } from '../app/repositories.js';
 import type { Router } from '../app/router.js';
+import { ComparePage } from './compare.js';
 import { Link } from './link.js';
 import { ProfilesPage } from './profiles.js';
 import { RepositoriesPage } from './repositories.js';
@@ -22,6 +24,7 @@ const titles: Readonly<Record<string, string>> = {
   '/profiles': 'Profiles',
   '/profiles/new': 'New profile',
   '/settings': 'Settings',
+  '/compare': 'Compare',
 };
 
 interface AppProps {
@@ -42,13 +45,14 @@ function SignedIn({
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
   // One of each per sign-in. The repository list is the account's; the profiles are the browser's, whoever signs in.
-  const { repositories, profiles } = useMemo(() => {
+  const { repositories, profiles, comparison } = useMemo(() => {
     const refused = (): void => {
       account.refused();
     };
     return {
       repositories: new Repositories(github, user, preferences, refused),
       profiles: new Profiles(github, preferences, refused),
+      comparison: new Comparison(github, refused),
     };
   }, [account, github, preferences, user]);
   useEffect(() => {
@@ -90,11 +94,18 @@ function SignedIn({
       {path === '/' ? (
         <RepositoriesPage
           repositories={repositories}
+          profiles={profiles}
           onCapture={(repository) => {
             setCaptureFrom(repository);
             router.go('/profiles/new');
           }}
+          onCompare={(repository, profile) => {
+            run(comparison.compare(repository, profile));
+            router.go('/compare');
+          }}
         />
+      ) : path === '/compare' ? (
+        <ComparePage comparison={comparison} router={router} />
       ) : path === '/profiles' || path === '/profiles/new' ? (
         <ProfilesPage
           profiles={profiles}

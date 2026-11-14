@@ -1115,6 +1115,56 @@ select.field {
   padding-inline-start: 20px;
 }
 
+/* A comparison */
+.compare-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 10px 14px;
+}
+
+.compare-what {
+  display: grid;
+  flex: 1 1 14rem;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.compare-values {
+  display: flex;
+  flex: 2 1 16rem;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.compare-now {
+  color: var(--remove);
+  text-decoration: line-through;
+}
+
+.compare-wanted {
+  color: var(--add);
+  font-weight: 500;
+}
+
+.compare-removed {
+  color: var(--remove);
+  font-weight: 500;
+}
+
+.panel-form {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  width: 100%;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 /* The profile editor */
 .filters {
   display: flex;

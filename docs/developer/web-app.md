@@ -169,6 +169,10 @@ the file has it, and `entry-edits.ts` holds each change with the saved entry
 it was made on, so a save never writes an entry over one that has since
 changed elsewhere. `views/entries.tsx` only draws them.
 
+`comparison.ts` compares a repository with a profile: the engine's
+`createPlan` over the resolved profile, shown as rows by section, with
+`lockChanges` marking what the account's access can't change.
+
 `action-pattern-checks.ts` asks GitHub what each allowed action pattern
 matches, with the engine's `checkActionPatterns`, and keeps the answers by
 pattern text. `action-search.ts` searches GitHub for repositories to add to

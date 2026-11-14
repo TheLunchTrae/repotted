@@ -1,7 +1,8 @@
 import type { JSX, RefObject } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { installUrl } from '../app/github-app.js';
+import type { Profiles } from '../app/profiles.js';
 import type { Repositories, Repository } from '../app/repositories.js';
 import { run } from './run.js';
 import { useDismiss } from './shell.js';
@@ -60,10 +61,16 @@ function OwnerFilter({ repositories }: { readonly repositories: Repositories }):
 
 interface PanelProps {
   readonly repository: Repository;
+  readonly profiles: Profiles;
   readonly onCapture: (repository: string) => void;
+  readonly onCompare: (repository: string, profile: { readonly file: string; readonly name: string }) => void;
 }
 
-function RepositoryPanel({ repository, onCapture }: PanelProps): JSX.Element {
+function RepositoryPanel({ repository, profiles, onCapture, onCompare }: PanelProps): JSX.Element {
+  // A profile that can't be read has nothing to compare with.
+  const listings = profiles.listings.value.filter((listing) => listing.problem === null);
+  const [picked, setPicked] = useState<string | undefined>(undefined);
+  const profile = listings.find((listing) => listing.file === picked) ?? listings[0];
   const [owner, name] = repository.full_name.split('/');
   const panel = useRef<HTMLElement>(null);
   // On a narrow screen the panel sits under the list, out of view of the row that opened it.
@@ -92,6 +99,40 @@ function RepositoryPanel({ repository, onCapture }: PanelProps): JSX.Element {
       >
         Capture as a new profile
       </button>
+      <form
+        class="panel-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (profile !== undefined) {
+            onCompare(repository.full_name, profile);
+          }
+        }}
+      >
+        <label for="compare-profile">Compare with a profile</label>
+        {listings.length === 0 ? (
+          <p class="muted small">Make a profile first, on the Profiles page.</p>
+        ) : (
+          <>
+            <select
+              id="compare-profile"
+              class="field"
+              value={profile?.file}
+              onChange={(event) => {
+                setPicked(event.currentTarget.value);
+              }}
+            >
+              {listings.map((listing) => (
+                <option key={listing.file} value={listing.file}>
+                  {profiles.pathOf(listing).replace(/\.ya?ml$/u, '')}
+                </option>
+              ))}
+            </select>
+            <button class="button button-primary" type="submit">
+              Compare
+            </button>
+          </>
+        )}
+      </form>
     </aside>
   );
 }
@@ -118,11 +159,14 @@ function useSearchKey(): RefObject<HTMLInputElement | null> {
 
 interface RepositoriesProps {
   readonly repositories: Repositories;
+  readonly profiles: Profiles;
   /** Starts a new profile that captures this repository, `owner/name`. */
   readonly onCapture: (repository: string) => void;
+  /** Compares this repository, `owner/name`, with a profile. */
+  readonly onCompare: PanelProps['onCompare'];
 }
 
-export function RepositoriesPage({ repositories, onCapture }: RepositoriesProps): JSX.Element {
+export function RepositoriesPage({ repositories, profiles, onCapture, onCompare }: RepositoriesProps): JSX.Element {
   const search = useSearchKey();
   const list = repositories.list.value;
   const loading = repositories.loading.value;
@@ -270,7 +314,9 @@ export function RepositoriesPage({ repositories, onCapture }: RepositoriesProps)
           </>
         )}
       </section>
-      {selected !== undefined && <RepositoryPanel repository={selected} onCapture={onCapture} />}
+      {selected !== undefined && (
+        <RepositoryPanel repository={selected} profiles={profiles} onCapture={onCapture} onCompare={onCompare} />
+      )}
     </div>
   );
 }
