@@ -615,6 +615,70 @@ input[type='checkbox'] {
   color: var(--remove);
 }
 
+.pattern-checks {
+  display: grid;
+  gap: 6px;
+}
+
+.pattern-checks ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pattern-checks li {
+  display: grid;
+  grid-template-columns: minmax(8rem, 2fr) 3fr;
+  gap: 4px 16px;
+  overflow-wrap: anywhere;
+}
+
+.pattern-note::before {
+  display: inline-block;
+  width: 1.2em;
+  font-weight: 700;
+}
+
+.pattern-good {
+  color: var(--add);
+}
+
+.pattern-good::before {
+  content: '✓';
+}
+
+.pattern-warning {
+  color: var(--drift);
+}
+
+.pattern-warning::before {
+  content: '!';
+}
+
+.pattern-bad {
+  color: var(--remove);
+}
+
+.pattern-bad::before {
+  content: '✕';
+}
+
+.pattern-muted {
+  color: var(--muted);
+}
+
+.pattern-muted::before {
+  content: '·';
+}
+
+@media (width < 40rem) {
+  .pattern-checks li {
+    grid-template-columns: 1fr;
+  }
+}
+
 .pill-owner {
   margin-inline-start: 8px;
 }

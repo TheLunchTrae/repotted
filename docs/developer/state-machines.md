@@ -335,6 +335,34 @@ engine's `changeOwnerType`.
 | Changing | It fails, as when a base profile sets what the type lacks        | Open, with the engine's reason, which names the base. The file is as it was.                                     |
 | Open     | Cancel, or Escape                                                | Closed.                                                                                                          |
 
+### Allowed action pattern checks
+
+`ActionPatternChecks` (`packages/web/src/app/action-pattern-checks.ts`)
+says, for each line of **Allowed action patterns**, what its pattern matches
+on GitHub, read with the engine's `checkActionPatterns`. The states are those
+of one pattern's text, trimmed. A line shows the state of the text it holds
+now, so a check that lands after its line changed shows on no other line. A
+blank line shows nothing, and a line with a comma holds several patterns and
+is never checked. Each editor keeps its checks by pattern text, so they
+outlive a save and a fresh read of the profile.
+
+| State               | Event                                                                      | Next                                                                                                                                                     |
+| ------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Not checked         | The profile opens with the pattern in the list                             | Checking, at once.                                                                                                                                       |
+| Not checked         | The list changes to hold the pattern                                       | Waiting. Each further change starts the 600 ms pause again.                                                                                              |
+| Not checked         | GitHub hides the list, as with **Allowed actions** not set to **Selected** | Not checked, and nothing runs. Checking at once when the list first shows and nothing was asked before; Waiting otherwise.                               |
+| Waiting             | The pause ends                                                             | Checking, in one run for every pattern in the list that is Waiting, 100 patterns a run.                                                                  |
+| Waiting             | The pattern leaves the list, or the list is hidden                         | Not checked. The pause goes on only while another pattern waits.                                                                                         |
+| Checking            | The check lands                                                            | Checked, or Failed when GitHub's answer for this pattern was an error or its rate limit.                                                                 |
+| Checking            | The whole run fails, such as with no network                               | Failed, for every pattern of that run. A lost sign-in also takes the app to the sign-in page.                                                            |
+| Checking            | The pattern leaves the list                                                | Checking: the run goes on and its result is kept for the text, so typing it back shows it.                                                               |
+| Checked             | The pattern leaves the list and comes back                                 | Checked, with no new run.                                                                                                                                |
+| Failed              | The list changes                                                           | Failed: a failure isn't tried again by typing.                                                                                                           |
+| Checked or Failed   | **Check again**                                                            | Checking, at once: every pattern in the list is forgotten and asked about again. The link shows while the list has a line to check and none is Checking. |
+| Waiting or Checking | The editor goes, as when its profile is deleted                            | The pause may still end and a run may still land; what they find is kept by an editor nothing shows.                                                     |
+
+The checks only inform. Nothing here holds a save back.
+
 ### Search and filters
 
 The search and the **Managed**, **Not saved yet**, and **Drafts** filters

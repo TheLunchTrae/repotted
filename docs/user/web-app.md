@@ -125,6 +125,20 @@ setting above says how many hidden ones the profile still names. Where GitHub
 greys them out, they stay in place and are off. Either way the profile keeps
 their values.
 
+On the **Actions** tab, with **Allowed actions** set to **Selected**,
+**Allowed action patterns** takes one pattern a line, such as `octo-org/*`,
+and a pattern that starts with `!` blocks what it matches. Under the box,
+each pattern has what it matches on GitHub beside it, a moment after you stop
+typing: the repository, with the folder and the tag, branch, or commit the
+pattern names, or the owner for a pattern such as `octo-org/*`. A line is
+marked when the repository has no such tag or branch, has no such folder, or
+isn't one you can see, which is how a misspelled name shows. A pattern with a
+wildcard in the owner can't be checked. The line under them counts how they
+came out. The checks only inform: a profile saves and applies with any
+pattern GitHub accepts. When GitHub can't be reached, or its limit is
+reached, the line says so. **Check again** asks GitHub about every line
+again, such as after you make the repository or push the tag.
+
 On the **Pages** tab, **Take the site down** deletes the Pages site on each
 repository that follows the profile. Choosing it takes out the profile's
 other Pages settings, and setting any of them takes it out again.

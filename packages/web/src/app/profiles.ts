@@ -1,6 +1,7 @@
 import { computed, signal } from '@preact/signals';
 import {
   captureProfile,
+  checkActionPatterns,
   describeWarning,
   type GitHub,
   listProfiles,
@@ -14,6 +15,7 @@ import * as z from 'zod/mini';
 import { mkdir, readdir, readFile, rm, stat, writeFile } from '../engine/files.js';
 import { basename, dirname, join, relative } from '../engine/path.js';
 import { isSignedOut } from './account.js';
+import { ActionPatternChecks } from './action-pattern-checks.js';
 import type { SaveMode } from './entry-edits.js';
 import type { Preferences } from './preferences.js';
 import { type OwnerChoice, ProfileEditor } from './profile-editor.js';
@@ -459,7 +461,19 @@ export class Profiles {
     }
     let editor = this.#editors.value.find((item) => item.file === listing.file);
     if (editor === undefined) {
-      editor = new ProfileEditor(listing.file);
+      editor = new ProfileEditor(
+        listing.file,
+        new ActionPatternChecks(async (patterns) => {
+          try {
+            return await checkActionPatterns(this.#github, patterns);
+          } catch (error) {
+            if (isSignedOut(error)) {
+              this.#onSignedOut();
+            }
+            throw error;
+          }
+        }),
+      );
       this.#editors.value = [...this.#editors.value, editor];
       await editor.load();
     }
