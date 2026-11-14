@@ -64,6 +64,7 @@ function OwnerFilter({ repositories }: { readonly repositories: Repositories }):
 
 interface PanelProps {
   readonly repository: Repository;
+  readonly repositories: Repositories;
   readonly profiles: Profiles;
   readonly onCapture: (repository: string) => void;
   readonly onCompare: (repository: string, profile: ComparedProfile) => void;
@@ -76,7 +77,15 @@ interface PanelProps {
   readonly onApply: (repository: string, profile: ComparedProfile | 'once' | undefined) => void;
 }
 
-function RepositoryPanel({ repository, profiles, apply, onCapture, onCompare, onApply }: PanelProps): JSX.Element {
+function RepositoryPanel({
+  repository,
+  repositories,
+  profiles,
+  apply,
+  onCapture,
+  onCompare,
+  onApply,
+}: PanelProps): JSX.Element {
   // Whether an apply here was left unfinished, which the browser keeps.
   const [unfinished, setUnfinished] = useState(false);
   // Looked up again whenever the apply moves on, since one that ends or is discarded is no longer there.
@@ -101,6 +110,7 @@ function RepositoryPanel({ repository, profiles, apply, onCapture, onCompare, on
   const profile = listings.find((listing) => listing.file === picked) ?? listings[0];
   const nameOf = (listing: (typeof listings)[number]): string => profiles.pathOf(listing).replace(/\.ya?ml$/u, '');
   const [owner, name] = repository.full_name.split('/');
+  const hidden = repositories.isHidden(repository);
   const panel = useRef<HTMLElement>(null);
   // On a narrow screen the panel sits under the list, out of view of the row that opened it.
   useEffect(() => {
@@ -115,6 +125,7 @@ function RepositoryPanel({ repository, profiles, apply, onCapture, onCompare, on
       <p class="pills">
         <span class="pill">{repository.private ? 'Private' : 'Public'}</span>
         {repository.archived && <span class="pill pill-drift">Archived</span>}
+        {hidden && <span class="pill">Hidden</span>}
       </p>
       <a class="button" href={`https://github.com/${repository.full_name}`} target="_blank" rel="noreferrer">
         Open on GitHub
@@ -218,6 +229,19 @@ function RepositoryPanel({ repository, profiles, apply, onCapture, onCompare, on
           </>
         )}
       </form>
+      <button
+        class="button button-quiet"
+        type="button"
+        onClick={() => {
+          if (hidden) {
+            repositories.unhide([repository]);
+          } else {
+            repositories.hide([repository]);
+          }
+        }}
+      >
+        {hidden ? 'Show in list' : 'Hide from list'}
+      </button>
     </aside>
   );
 }
@@ -326,15 +350,26 @@ function TickedPanel({ repositories, profiles, unfinished, onBatch }: TickedProp
           </>
         )}
       </form>
-      <button
-        class="button button-quiet"
-        type="button"
-        onClick={() => {
-          repositories.clearTicks();
-        }}
-      >
-        Untick all
-      </button>
+      <div class="panel-actions">
+        <button
+          class="button button-quiet"
+          type="button"
+          onClick={() => {
+            repositories.clearTicks();
+          }}
+        >
+          Untick all
+        </button>
+        <button
+          class="button button-quiet"
+          type="button"
+          onClick={() => {
+            repositories.hide(ticked);
+          }}
+        >
+          Hide from list
+        </button>
+      </div>
     </aside>
   );
 }
@@ -372,6 +407,8 @@ export function RepositoriesPage({
   const error = repositories.error.value;
   const groups = repositories.groups.value;
   const selected = repositories.selected.value;
+  const justHidden = repositories.justHidden.value;
+  const hiddenMatches = repositories.hiddenMatches.value;
   const fromApp = list?.source === 'installations';
   const total = list?.repositories.length ?? 0;
 
@@ -476,7 +513,48 @@ export function RepositoriesPage({
               {(repositories.owners.value.length > 1 || repositories.ownersFiltered.value) && (
                 <OwnerFilter repositories={repositories} />
               )}
+              {(repositories.hiddenCount.value > 0 || repositories.showHidden.value) && (
+                <div class="segments">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={repositories.showHidden.value}
+                      onChange={(event) => {
+                        repositories.setShowHidden(event.currentTarget.checked);
+                      }}
+                    />
+                    <span>
+                      Show hidden <span class="muted count">{repositories.hiddenCount.value}</span>
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
+
+            {justHidden.length > 0 && (
+              <div class="notice" role="status">
+                <p>
+                  {justHidden.length === 1 ? (
+                    <>
+                      <span class="mono">{justHidden[0]}</span> is hidden from the list.
+                    </>
+                  ) : (
+                    `${justHidden.length} repositories are hidden from the list.`
+                  )}
+                </p>
+                <p class="notice-actions">
+                  <button
+                    class="button button-small"
+                    type="button"
+                    onClick={() => {
+                      repositories.undoHide();
+                    }}
+                  >
+                    Undo
+                  </button>
+                </p>
+              </div>
+            )}
 
             {repositories.everyOwnerHidden.value ? (
               <div class="empty">
@@ -491,8 +569,38 @@ export function RepositoriesPage({
                   Show all
                 </button>
               </div>
+            ) : repositories.everyRepositoryHidden.value ? (
+              <div class="empty">
+                <p>Every repository here is hidden.</p>
+                <button
+                  class="button"
+                  type="button"
+                  onClick={() => {
+                    repositories.setShowHidden(true);
+                  }}
+                >
+                  Show hidden
+                </button>
+              </div>
             ) : groups.length === 0 ? (
-              <p class="empty">No repository matches "{repositories.search.value.trim()}".</p>
+              <div class="empty">
+                <p>
+                  No repository matches "{repositories.search.value.trim()}".
+                  {hiddenMatches > 0 &&
+                    (hiddenMatches === 1 ? ' 1 hidden repository does.' : ` ${hiddenMatches} hidden repositories do.`)}
+                </p>
+                {hiddenMatches > 0 && (
+                  <button
+                    class="button"
+                    type="button"
+                    onClick={() => {
+                      repositories.setShowHidden(true);
+                    }}
+                  >
+                    Show hidden
+                  </button>
+                )}
+              </div>
             ) : (
               <div class={loading ? 'groups groups-stale' : 'groups'}>
                 {groups.map((group) => (
@@ -504,7 +612,10 @@ export function RepositoriesPage({
                     </h2>
                     <ul class="rows">
                       {group.repositories.map((repository) => (
-                        <li key={repository.full_name} class="ticked-row">
+                        <li
+                          key={repository.full_name}
+                          class={repositories.isHidden(repository) ? 'ticked-row ticked-row-hidden' : 'ticked-row'}
+                        >
                           <input
                             class="tick"
                             type="checkbox"
@@ -526,6 +637,7 @@ export function RepositoriesPage({
                           >
                             <span class="mono row-name">{repository.full_name.slice(group.owner.length + 1)}</span>
                             {repository.archived && <span class="pill pill-drift">Archived</span>}
+                            {repositories.isHidden(repository) && <span class="pill">Hidden</span>}
                             <span class="muted small">{repository.private ? 'Private' : 'Public'}</span>
                           </button>
                         </li>
@@ -544,6 +656,7 @@ export function RepositoriesPage({
         selected !== undefined && (
           <RepositoryPanel
             repository={selected}
+            repositories={repositories}
             profiles={profiles}
             apply={apply}
             onCapture={onCapture}

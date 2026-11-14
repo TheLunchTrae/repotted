@@ -41,6 +41,16 @@ click **Only personal** or **Show all**. If every owner is hidden, the list
 says so and offers **Show all**. The browser remembers which owners you hid,
 and an owner that's new to the list shows.
 
+To set aside a repository you no longer use, open its panel and click
+**Hide from list**, or tick several and click **Hide from list** in the
+panel for the ticked repositories. Hiding unticks them, and **Undo** in the
+note above the list brings them back. **Show hidden**, beside the count,
+shows the hidden repositories among the rest, marked **Hidden**; open one
+and click **Show in list** to bring it back for good. If a search matches
+only hidden repositories, or every repository is hidden, the list says so
+and offers **Show hidden**. The browser remembers which repositories you
+hid.
+
 Click a repository to open its panel. **Open on GitHub** opens it there, and
 **Capture as a new profile** starts [a profile](#make-a-profile) that
 describes it. Click the repository again to close the panel.

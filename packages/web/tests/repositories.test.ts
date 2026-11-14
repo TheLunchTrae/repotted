@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest';
 
 import { answered, type FakeAccount, FakeGitHub } from '../../core/tests/fake-github.js';
 import type { Preferences } from '../src/app/preferences.js';
-import { Repositories } from '../src/app/repositories.js';
+import { Repositories, type Repository } from '../src/app/repositories.js';
 
 const user = { login: 'Trae', name: null };
 
@@ -213,4 +213,73 @@ test('ticked repositories stay ticked through a search, and one the account no l
 
   repositories.clearTicks();
   expect(repositories.ticked.value).toEqual([]);
+});
+
+function listed(repositories: Repositories, name: string): Repository {
+  const found = repositories.list.value?.repositories.find((repository) => repository.full_name === name);
+  if (found === undefined) {
+    throw new Error(`The list has no ${name}.`);
+  }
+  return found;
+}
+
+test('a hidden repository leaves the list, unticked and out of the selection, until Undo or Show hidden', async () => {
+  const preferences = memory();
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
+  const web = listed(repositories, 'acme/web');
+  repositories.select(web);
+  repositories.tick(web, true);
+
+  repositories.hide([web]);
+
+  expect(names(repositories)).toEqual(['trae:', 'trae/dotfiles', 'Acme:', 'Acme/api', 'zeta:', 'zeta/site']);
+  expect(preferences.kept['hidden-repositories']).toEqual(['acme/web']);
+  expect(repositories.selected.value).toBeUndefined();
+  expect(repositories.ticked.value).toEqual([]);
+  expect(repositories.hiddenCount.value).toBe(1);
+  expect(repositories.countLabel.value).toBe('3 of 4');
+  expect(repositories.justHidden.value).toEqual(['acme/web']);
+
+  repositories.setShowHidden(true);
+  expect(names(repositories)).toContain('acme/web');
+  expect(repositories.isHidden(web)).toBe(true);
+  expect(repositories.countLabel.value).toBe('All 4');
+  expect(repositories.justHidden.value).toEqual([]);
+
+  repositories.setShowHidden(false);
+  repositories.hide([web]);
+  repositories.undoHide();
+  expect(names(repositories)).toContain('acme/web');
+  expect(preferences.kept['hidden-repositories']).toBeUndefined();
+});
+
+test('hidden repositories stay hidden across visits in any case, and one out of the list stays hidden', async () => {
+  const preferences = memory({ 'hidden-repositories': ['ACME/WEB', 'gone/app'] });
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
+
+  expect(names(repositories)).not.toContain('acme/web');
+
+  repositories.unhide([listed(repositories, 'acme/web')]);
+  expect(preferences.kept['hidden-repositories']).toEqual(['gone/app']);
+});
+
+test('says when every repository of the shown owners is hidden, and when only hidden ones match a search', async () => {
+  const preferences = memory({ 'hidden-repositories': ['acme/api', 'acme/web'], 'hidden-repository-owners': ['trae'] });
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
+
+  repositories.search.value = 'web';
+  expect(repositories.groups.value).toEqual([]);
+  expect(repositories.hiddenMatches.value).toBe(1);
+  expect(repositories.everyRepositoryHidden.value).toBe(false);
+
+  repositories.search.value = '';
+  repositories.setOwnerShown('zeta', false);
+  expect(repositories.hiddenCount.value).toBe(2);
+  expect(repositories.everyRepositoryHidden.value).toBe(true);
+  expect(repositories.everyOwnerHidden.value).toBe(false);
+  expect(repositories.countLabel.value).toBe('0 of 4');
+
+  repositories.setShowHidden(true);
+  expect(repositories.everyRepositoryHidden.value).toBe(false);
+  expect(repositories.hiddenMatches.value).toBe(0);
 });

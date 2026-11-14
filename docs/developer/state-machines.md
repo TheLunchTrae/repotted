@@ -126,15 +126,15 @@ asked about. A sign-in GitHub refuses mid-visit asks nothing either.
 `Repositories` (`packages/web/src/app/repositories.ts`) holds the repository
 list for one sign-in.
 
-| State                 | Event                                           | Next                                                                                             |
-| --------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| No list               | The page opens                                  | Reading, with "Reading your repositories…".                                                      |
-| Reading               | GitHub answers                                  | The list, grouped by owner. A selected repository stays selected when the new list still has it. |
-| Reading               | Refresh                                         | Nothing: the read under way finishes, and the button is off.                                     |
-| Reading               | The read fails                                  | The list it had, if any, with why above it.                                                      |
-| Reading               | GitHub answers 401                              | The account is signed out, as above.                                                             |
-| A list                | Refresh                                         | Reading, with the list dimmed and in use.                                                        |
-| A repository selected | A search or a hidden owner takes it out of view | Its panel closes. It is selected again when it comes back into view.                             |
+| State                 | Event                                                    | Next                                                                                             |
+| --------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| No list               | The page opens                                           | Reading, with "Reading your repositories…".                                                      |
+| Reading               | GitHub answers                                           | The list, grouped by owner. A selected repository stays selected when the new list still has it. |
+| Reading               | Refresh                                                  | Nothing: the read under way finishes, and the button is off.                                     |
+| Reading               | The read fails                                           | The list it had, if any, with why above it.                                                      |
+| Reading               | GitHub answers 401                                       | The account is signed out, as above.                                                             |
+| A list                | Refresh                                                  | Reading, with the list dimmed and in use.                                                        |
+| A repository selected | A search, a hidden owner, or a hide takes it out of view | Its panel closes. It is selected again when it comes back into view.                             |
 
 It keeps the owners the list hides, by login, under `hidden-repository-owners`
 in the browser's [preferences](web-app.md#the-app), or nothing when it hides
@@ -149,6 +149,21 @@ owners rather than the shown ones means an owner new to the list shows.
 | Some owners             | The list is read again                           | The hidden owners in the list stay hidden; an owner new to it shows.                           |
 | An owner not in list    | An owner is ticked or unticked, or Only personal | The owner not in the list stays hidden, with the new choice, saved.                            |
 | Every owner in the list | The list is read again or the page opens         | The list shows no repositories and says every owner is hidden; the filter shows **No owners**. |
+
+It keeps the hidden repositories, by `owner/name` in lowercase, under
+`hidden-repositories`, or nothing when it hides none. Show hidden is not
+kept: each visit starts with the hidden repositories out of the list.
+
+| Hidden repositories | Event                             | Next                                                                                  |
+| ------------------- | --------------------------------- | ------------------------------------------------------------------------------------- |
+| Any                 | Hide one or the ticked            | Those added, saved, and unticked; the note above the list offers Undo for them.       |
+| Just hidden         | Undo                              | Those taken out, saved, and the note gone.                                            |
+| Just hidden         | Select, Show hidden, or Refresh   | The note gone; the hidden stay hidden.                                                |
+| Some                | Show hidden                       | The list shows them, marked Hidden; the count and the search include them.            |
+| Some                | Show in list                      | That repository taken out, saved.                                                     |
+| One not in the list | The list is read again            | It stays hidden, so it is still hidden if it returns.                                 |
+| Every one shown     | Show hidden off, no search        | The list says every repository here is hidden and offers Show hidden.                 |
+| Some                | A search that matches only hidden | The list says no repository matches, how many hidden ones do, and offers Show hidden. |
 
 A browser that refuses storage keeps the choice for the visit only.
 
