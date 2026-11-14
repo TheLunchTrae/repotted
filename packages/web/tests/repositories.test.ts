@@ -294,7 +294,7 @@ test('says when every repository of the shown owners is hidden, and when only hi
   expect(repositories.hiddenMatches.value).toBe(0);
 });
 
-test('Undo shows only what the hide took out of the list, ticked as it was', async () => {
+test('Undo shows only what the hide took out of the list, and ticks again what it unticked', async () => {
   const preferences = memory({ 'hidden-repositories': ['acme/web'] });
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
   repositories.setShowHidden(true);
@@ -309,7 +309,7 @@ test('Undo shows only what the hide took out of the list, ticked as it was', asy
 
   repositories.undoHide();
   expect(preferences.kept['hidden-repositories']).toEqual(['acme/web']);
-  expect(repositories.ticked.value.map((repository) => repository.full_name)).toEqual(['zeta/site']);
+  expect(repositories.ticked.value.map((repository) => repository.full_name).sort()).toEqual(['acme/web', 'zeta/site']);
 });
 
 test('with profiles in a repository, the list hides what its file holds and a hide is committed there', async () => {

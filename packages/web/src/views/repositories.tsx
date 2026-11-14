@@ -410,13 +410,15 @@ export function RepositoriesPage({
   const justHidden = repositories.justHidden.value;
   const hiddenMatches = repositories.hiddenMatches.value;
   const preferencesError = repositories.preferences.error.value;
-  // A hide takes away the button that did it, so focus moves to Undo, which also brings it into view on a phone.
+  // A hide takes away the button that did it, unless hidden ones show, so focus moves to Undo, which also
+  // brings it into view on a phone.
   const undo = useRef<HTMLButtonElement>(null);
+  const showingHidden = repositories.showHidden.value;
   useEffect(() => {
-    if (justHidden.length > 0) {
+    if (justHidden.length > 0 && !showingHidden) {
       undo.current?.focus();
     }
-  }, [justHidden]);
+  }, [justHidden, showingHidden]);
   const fromApp = list?.source === 'installations';
   const total = list?.repositories.length ?? 0;
 

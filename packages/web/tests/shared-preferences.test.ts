@@ -179,10 +179,8 @@ test('a change made while the file is read, or after the read failed, keeps what
   const preferences = new SharedPreferences(repository, memory(), () => undefined);
 
   const reading = preferences.use(source);
-  expect(preferences.reading.value).toBe(true);
   preferences.update('hidden-repositories', adding('zeta/site'));
   await reading;
-  expect(preferences.reading.value).toBe(false);
   expect(preferences.read('hidden-repositories')).toEqual(['acme/web', 'acme/api', 'zeta/site']);
   await settled(preferences);
   expect(saved(repository)).toEqual({ 'hidden-repositories': ['acme/web', 'acme/api', 'zeta/site'] });
@@ -264,4 +262,25 @@ test('a read of a file no longer used is thrown away, and a change made for it i
   await settled(preferences);
   expect(saved(repository)).toEqual({ 'hidden-repositories': ['lunch/old', 'acme/web'] });
   expect(browser.kept['hidden-repositories']).toEqual(['lunch/mine']);
+});
+
+test('a read after a save failed tries the save again, and keeps saying why until it succeeds', async () => {
+  const repository = new FakeGitRepository();
+  repository.write({ [file]: '{}' });
+  const preferences = new SharedPreferences(repository, memory(), () => undefined);
+  await preferences.use(source);
+  repository.refuseWrites = new GitHubError(403, 'Resource not accessible by integration');
+  preferences.update('hidden-repositories', adding('acme/web'));
+  await vi.waitFor(() => {
+    expect(preferences.error.value).toBeDefined();
+  });
+
+  await preferences.reload();
+  expect(preferences.error.value).toBeDefined();
+  expect(preferences.read('hidden-repositories')).toEqual(['acme/web']);
+
+  repository.refuseWrites = undefined;
+  await preferences.reload();
+  await settled(preferences);
+  expect(saved(repository)).toEqual({ 'hidden-repositories': ['acme/web'] });
 });

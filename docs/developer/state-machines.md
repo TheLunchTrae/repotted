@@ -185,20 +185,20 @@ its result, until it is saved. What a preference reads is the file as last
 read or saved with the unsaved changes made onto it in order. A save makes
 the same changes onto the file as it is then.
 
-| State             | Event                                      | Next                                                                                                                                                 |
-| ----------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| In the browser    | Profiles kept in a config repository       | Reading `.repotted-preferences.json` beside the profiles; until it is read, the unsaved changes made onto nothing.                                   |
-| Reading           | GitHub answers                             | In the repository, with the file's values and the unsaved changes made onto them. A file that is missing, not JSON, or not an object reads as empty. |
-| Reading           | A change                                   | It shows at once, made onto what is known; it is made onto the file's values when the read finishes, then saved.                                     |
-| Reading           | The read fails                             | In the repository with the unsaved changes made onto nothing, and why above the list. A refresh reads again.                                         |
-| In the repository | A change                                   | It shows at once; saving.                                                                                                                            |
-| In the repository | Refresh on the repositories page           | Reading again, so changes saved elsewhere show. A read under way is the one waited for.                                                              |
-| Saving            | —                                          | Reads the file again, makes the unsaved changes onto it, and commits it only if that changes it. Changes made meanwhile go in the next commit.       |
-| Saving            | GitHub answers 409 or 422                  | The file changed or was made elsewhere since it was read: read again and try again, up to three tries in all.                                        |
-| Saving            | The commit fails otherwise                 | The changes stay unsaved and show here, why shows above the list, and the next change saves them too.                                                |
-| Reading or saving | GitHub answers 401                         | The account is signed out.                                                                                                                           |
-| In the repository | Profiles kept in the browser or a folder   | In the browser, with the browser's values. Changes made for the file are still saved there.                                                          |
-| In the repository | Profiles kept in another config repository | Reading that repository's file, as above. Changes made for the old one are still saved there, not here.                                              |
+| State             | Event                                      | Next                                                                                                                                                            |
+| ----------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| In the browser    | Profiles kept in a config repository       | Reading `.repotted-preferences.json` beside the profiles; until it is read, the unsaved changes made onto nothing.                                              |
+| Reading           | GitHub answers                             | In the repository, with the file's values and the unsaved changes made onto them. A file that is missing, not JSON, or not an object reads as empty.            |
+| Reading           | A change                                   | It shows at once, made onto what is known; it is made onto the file's values when the read finishes, then saved.                                                |
+| Reading           | The read fails                             | In the repository with the unsaved changes made onto nothing, and why above the list. A refresh reads again.                                                    |
+| In the repository | A change                                   | It shows at once; saving.                                                                                                                                       |
+| In the repository | Refresh on the repositories page           | Reading again, so changes saved elsewhere show. A read under way is the one waited for.                                                                         |
+| Saving            | —                                          | Reads the file again, makes the unsaved changes onto it, and commits it only if that changes it. Changes made meanwhile go in the next commit.                  |
+| Saving            | GitHub answers 409 or 422                  | The file changed or was made elsewhere since it was read: read again and try again, up to three tries in all.                                                   |
+| Saving            | The commit fails otherwise                 | The changes stay unsaved and show here, and why shows above the list until they are saved. The next change or the next read, such as Refresh, saves them again. |
+| Reading or saving | GitHub answers 401                         | The account is signed out.                                                                                                                                      |
+| In the repository | Profiles kept in the browser or a folder   | In the browser, with the browser's values. Changes made for the file are still saved there; any that fail are saved again when that file is read again.         |
+| In the repository | Profiles kept in another config repository | Reading that repository's file, as above. Changes made for the old one are still saved there, not here.                                                         |
 
 Two browsers that change different keys, or add different names to the same
 list, both keep theirs. A browser shows a change saved elsewhere at its next

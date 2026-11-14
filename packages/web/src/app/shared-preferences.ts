@@ -92,8 +92,6 @@ function messageOf(error: unknown): string {
 export class SharedPreferences implements Preferences {
   /** Why the file couldn't be read or saved, until a read or save succeeds. */
   readonly error = signal<string | undefined>(undefined);
-  /** Whether the file is being read, so what it holds is not known yet. */
-  readonly reading = signal(false);
 
   readonly #github: GitHub;
   readonly #browser: Preferences;
@@ -130,7 +128,6 @@ export class SharedPreferences implements Preferences {
     this.#place = place;
     this.#base = {};
     this.#read = undefined;
-    this.reading.value = false;
     this.error.value = undefined;
     this.#changed();
     return this.reload();
@@ -151,8 +148,13 @@ export class SharedPreferences implements Preferences {
           const remote = await this.#fetch(place);
           if (samePlace(this.#place, place)) {
             this.#base = remote.values;
-            this.error.value = undefined;
             this.#changed();
+            if (this.#pending.some((pending) => samePlace(pending.place, place))) {
+              // Changes a save failed to commit try again, and keep showing why until they are saved.
+              this.#queue.run(() => this.#save(place)).catch(() => undefined);
+            } else {
+              this.error.value = undefined;
+            }
           }
         } catch (error) {
           this.#failed(place, error, `Couldn't read your preferences from ${place.repository}`);
@@ -161,11 +163,9 @@ export class SharedPreferences implements Preferences {
       .finally(() => {
         if (this.#read === reading) {
           this.#read = undefined;
-          this.reading.value = false;
         }
       });
     this.#read = reading;
-    this.reading.value = true;
     return reading;
   }
 

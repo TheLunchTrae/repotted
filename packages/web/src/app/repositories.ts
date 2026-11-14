@@ -254,7 +254,7 @@ export class Repositories {
       ticked.delete(repository.full_name);
     }
     this.justHidden.value = hiding.map((repository) => repository.full_name);
-    this.#justUnticked = hiding
+    this.#justUnticked = repositories
       .map((repository) => repository.full_name)
       .filter((name) => this.#tickedNames.value.has(name));
     this.#tickedNames.value = ticked;
