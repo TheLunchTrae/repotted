@@ -277,7 +277,10 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
   /** The list's item for the profile left by the back button, to take the focus back to. */
   const returnTo = useRef<HTMLElement | null>(null);
   const first = useRef(true);
+  const previous = useRef(showing);
   useEffect(() => {
+    const left = previous.current;
+    previous.current = showing;
     if (first.current) {
       first.current = false;
       return;
@@ -290,15 +293,20 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
     window.scrollTo(0, 0);
     if (open) {
       document.querySelector<HTMLElement>('.profiles-back')?.focus();
-    } else if (returnTo.current?.isConnected === true) {
-      returnTo.current.focus();
+    } else {
+      // Back to the row that was open, or to New profile after its form, or else to the list itself,
+      // as when the open profile was deleted or synced away.
+      const row = returnTo.current?.isConnected === true ? returnTo.current : null;
+      const form =
+        left === '/profiles/new' ? sidebar.current?.querySelector<HTMLElement>('a[href="/profiles/new"]') : null;
+      (row ?? form ?? sidebar.current)?.focus();
     }
     returnTo.current = null;
   }, [showing]);
 
   return (
     <div class="page page-with-sidebar" data-screen={open ? 'profile' : 'list'}>
-      <aside class="sidebar" aria-label="Profiles" ref={sidebar}>
+      <aside class="sidebar" aria-label="Profiles" ref={sidebar} tabIndex={-1}>
         <div class="sidebar-heading">
           <div class="sidebar-source">
             <strong class={source.kind === 'browser' ? undefined : 'mono'}>
