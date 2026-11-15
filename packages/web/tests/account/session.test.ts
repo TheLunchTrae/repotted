@@ -53,7 +53,12 @@ test('reads as signed out when the Worker answers 401, and throws when it is una
   expect(await session.accessToken()).toBeUndefined();
 
   worker.mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status: 502 }));
-  await expect(session.accessToken()).rejects.toBeInstanceOf(SessionUnavailableError);
+  await expect(session.accessToken()).rejects.toMatchObject({
+    reason: { kind: 'github-token-endpoint-unavailable' },
+  });
+
+  worker.mockResolvedValueOnce(Response.json({ error: 'forbidden' }, { status: 403 }));
+  await expect(session.accessToken()).rejects.toMatchObject({ reason: { kind: 'worker-failed', status: 403 } });
 });
 
 test.each([

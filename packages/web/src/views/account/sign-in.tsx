@@ -1,7 +1,32 @@
 import type { JSX } from 'preact';
 
-import type { Account } from '../../app/account/account.js';
+import type { Account, SignInCheckFailure } from '../../app/account/account.js';
 import { run } from '../layout/run.js';
+
+function clockTime(time: Date): string {
+  return time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function checkFailureMessage(failure: SignInCheckFailure): string {
+  switch (failure.kind) {
+    case 'sign-in-service-unreachable':
+      return "Repotted's sign-in service didn't answer. Check your connection and try again.";
+    case 'sign-in-service-failed':
+      return `Repotted's sign-in service answered with an error (${failure.status}). Try again; if it keeps happening, the service needs a fix.`;
+    case 'github-sign-in-renewal-unavailable':
+      return "GitHub couldn't renew your sign-in just now. Try again in a minute.";
+    case 'github-rate-limited':
+      return failure.retryAt === undefined
+        ? "GitHub's rate limit for your account is used up. Try again in a few minutes."
+        : `GitHub's rate limit for your account is used up until ${clockTime(failure.retryAt)}. Try again then.`;
+    case 'github-unavailable':
+      return `GitHub is having trouble right now (it answered ${failure.status}). Try again in a few minutes.`;
+    case 'github-unreachable':
+      return "Repotted can't reach GitHub. Check your connection, and that nothing in this browser blocks api.github.com.";
+    case 'unexpected':
+      return `Checking your sign-in failed: ${failure.detail}`;
+  }
+}
 
 export function SignIn({ account }: { readonly account: Account }): JSX.Element {
   const state = account.state.value;
@@ -19,10 +44,10 @@ export function SignIn({ account }: { readonly account: Account }): JSX.Element 
             Checking your sign-in…
           </p>
         )}
-        {state.status === 'unreachable' && (
+        {state.status === 'check-failed' && (
           <>
             <p class="notice notice-problem" role="alert">
-              Repotted can't reach GitHub right now.
+              {checkFailureMessage(state.failure)}
             </p>
             <button
               class="button"

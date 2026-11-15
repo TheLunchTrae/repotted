@@ -32,7 +32,9 @@ test('a browser that is not signed in gets the 401 a refused token gets', async 
 });
 
 test('a session that cannot be refreshed right now is not a sign-out', async () => {
-  const github = sessionGitHub(session(() => Promise.reject(new SessionUnavailableError('offline'))));
+  const github = sessionGitHub(
+    session(() => Promise.reject(new SessionUnavailableError({ kind: 'worker-unreachable' }, 'offline'))),
+  );
 
   const error: unknown = await currentUser(github).catch((caught: unknown) => caught);
 

@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals';
 import { currentUser, type GitHub, GitHubError } from '@repotted/core';
 
-import type { Session } from './session.js';
+import { type Session, SessionUnavailableError } from './session.js';
 
 export interface User {
   readonly login: string;
@@ -11,8 +11,67 @@ export interface User {
 export type AccountState =
   | { readonly status: 'checking' }
   | { readonly status: 'signed-out'; readonly message: string | undefined }
-  | { readonly status: 'unreachable' }
+  | { readonly status: 'check-failed'; readonly failure: SignInCheckFailure }
   | { readonly status: 'signed-in'; readonly user: User };
+
+export type SignInCheckFailure =
+  | { readonly kind: 'sign-in-service-unreachable' }
+  | { readonly kind: 'sign-in-service-failed'; readonly status: number }
+  | { readonly kind: 'github-sign-in-renewal-unavailable' }
+  | { readonly kind: 'github-rate-limited'; readonly retryAt: Date | undefined }
+  | { readonly kind: 'github-unavailable'; readonly status: number }
+  | { readonly kind: 'github-unreachable' }
+  | { readonly kind: 'unexpected'; readonly detail: string };
+
+const maximumCauseDepth = 10;
+
+function findInCauseChain<Found>(
+  error: unknown,
+  matches: (candidate: unknown) => candidate is Found,
+): Found | undefined {
+  let candidate = error;
+  for (let depth = 0; depth < maximumCauseDepth && candidate !== undefined; depth += 1) {
+    if (matches(candidate)) {
+      return candidate;
+    }
+    candidate = candidate instanceof Error ? candidate.cause : undefined;
+  }
+  return undefined;
+}
+
+const isSessionUnavailableError = (candidate: unknown): candidate is SessionUnavailableError =>
+  candidate instanceof SessionUnavailableError;
+
+// fetch rejects with a TypeError when a request never gets an answer: no
+// connection, a blocked address, or a refused CORS check.
+const isNetworkFailure = (candidate: unknown): candidate is TypeError => candidate instanceof TypeError;
+
+export function signInCheckFailure(error: unknown): SignInCheckFailure {
+  const sessionUnavailable = findInCauseChain(error, isSessionUnavailableError);
+  if (sessionUnavailable !== undefined) {
+    switch (sessionUnavailable.reason.kind) {
+      case 'worker-unreachable':
+        return { kind: 'sign-in-service-unreachable' };
+      case 'github-token-endpoint-unavailable':
+        return { kind: 'github-sign-in-renewal-unavailable' };
+      case 'worker-failed':
+        return { kind: 'sign-in-service-failed', status: sessionUnavailable.reason.status };
+    }
+  }
+  if (error instanceof GitHubError) {
+    if (error.rateLimited) {
+      return { kind: 'github-rate-limited', retryAt: error.retryAt };
+    }
+    if (findInCauseChain(error, isNetworkFailure) !== undefined) {
+      return { kind: 'github-unreachable' };
+    }
+    if (error.status >= 500) {
+      return { kind: 'github-unavailable', status: error.status };
+    }
+    return { kind: 'unexpected', detail: `GitHub answered ${error.status}: ${error.message}` };
+  }
+  return { kind: 'unexpected', detail: error instanceof Error ? error.message : String(error) };
+}
 
 const signInFailureMessagesByRedirectReason: Readonly<Record<string, string>> = {
   denied: 'The sign-in was cancelled on GitHub.',
@@ -50,7 +109,7 @@ export class Account {
     } catch (error) {
       this.state.value = isSignedOut(error)
         ? { status: 'signed-out', message: signedOutMessage }
-        : { status: 'unreachable' };
+        : { status: 'check-failed', failure: signInCheckFailure(error) };
     }
   }
 

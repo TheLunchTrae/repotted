@@ -28,8 +28,30 @@ function isFresh(token: Token | undefined): token is Token {
   return token !== undefined && token.expiresAt - Date.now() > refreshMarginMs;
 }
 
+export type SessionUnavailableReason =
+  | { readonly kind: 'worker-unreachable' }
+  | { readonly kind: 'github-token-endpoint-unavailable' }
+  | { readonly kind: 'worker-failed'; readonly status: number };
+
 /** Thrown when the Worker or GitHub can't refresh the sign-in right now; the sign-in itself is kept. */
-export class SessionUnavailableError extends Error {}
+export class SessionUnavailableError extends Error {
+  readonly reason: SessionUnavailableReason;
+
+  constructor(reason: SessionUnavailableReason, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'SessionUnavailableError';
+    this.reason = reason;
+  }
+}
+
+const workerErrorAnswer = z.object({ error: z.string() });
+
+async function workerFailure(response: Response): Promise<SessionUnavailableReason> {
+  const answer = workerErrorAnswer.safeParse(await response.json().catch(() => undefined));
+  return response.status === 502 && answer.success && answer.data.error === 'unavailable'
+    ? { kind: 'github-token-endpoint-unavailable' }
+    : { kind: 'worker-failed', status: response.status };
+}
 
 export class Session {
   #current: Token | undefined;
@@ -73,7 +95,7 @@ export class Session {
     await navigator.locks.request(lockName, async () => {
       const response = await this.#postToWorker('/api/auth/sign-out', undefined);
       if (!response.ok) {
-        throw new SessionUnavailableError(`Signing out failed: ${response.status}.`);
+        throw new SessionUnavailableError(await workerFailure(response), `Signing out failed: ${response.status}.`);
       }
       this.#current = undefined;
     });
@@ -98,11 +120,17 @@ export class Session {
         return undefined;
       }
       if (!response.ok) {
-        throw new SessionUnavailableError(`The sign-in couldn't be refreshed: ${response.status}.`);
+        throw new SessionUnavailableError(
+          await workerFailure(response),
+          `The sign-in couldn't be refreshed: ${response.status}.`,
+        );
       }
       const answer = tokenAnswer.safeParse(await response.json().catch(() => undefined));
       if (!answer.success) {
-        throw new SessionUnavailableError("The Worker's answer had no access token.");
+        throw new SessionUnavailableError(
+          { kind: 'worker-failed', status: response.status },
+          "The Worker's answer had no access token.",
+        );
       }
       this.#current = {
         accessToken: answer.data.accessToken,
@@ -125,7 +153,7 @@ export class Session {
         signal: AbortSignal.timeout(workerTimeoutMs),
       });
     } catch (error) {
-      throw new SessionUnavailableError("Repotted's server can't be reached.", {
+      throw new SessionUnavailableError({ kind: 'worker-unreachable' }, "Repotted's server can't be reached.", {
         cause: error,
       });
     }
