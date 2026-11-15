@@ -675,6 +675,7 @@ several is writing to GitHub, **Sign out** does nothing but say so; press it
 again once the apply has finished. **Profiles** shows where your profiles are kept and how the
 last sync went, with **Sync now** (or **Refresh** for profiles in the
 browser), and the buttons that move them to a GitHub repository or back to
-the browser. While they are kept in a personal repository, it also says
+the browser. When they're kept in a GitHub repository, **Open on GitHub**
+opens that repository in a new tab. While they are kept in a personal repository, it also says
 whether that repository has the
 [built-in protection](#protect-the-config-repository).
