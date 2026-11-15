@@ -186,3 +186,28 @@ test('the header keeps to one row', async ({ page }) => {
     expect(Math.abs(middle - (middles[0] ?? 0)), "distance from the first part's line").toBeLessThanOrEqual(2);
   }
 });
+
+test("a repository's checkbox takes taps across a 44px target", async ({ page }) => {
+  await page.goto('/');
+  const checkbox = page.getByRole('checkbox', { name: 'Select lunch/api' });
+  await expect(checkbox).toBeVisible();
+  await checkbox.evaluate((element) => {
+    element.scrollIntoView({ block: 'center' });
+  });
+  const box = await checkbox.boundingBox();
+  expect(box, "the checkbox's box").not.toBeNull();
+  const centerX = (box?.x ?? 0) + (box?.width ?? 0) / 2;
+  const centerY = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+  for (const [offsetX, offsetY] of [
+    [-20, 0],
+    [20, 0],
+    [0, -20],
+    [0, 20],
+  ] as const) {
+    const tapped = await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x, y)?.getAttribute('aria-label') ?? null,
+      [centerX + offsetX, centerY + offsetY] as const,
+    );
+    expect(tapped, `what a tap ${offsetX},${offsetY} from the box's center reaches`).toBe('Select lunch/api');
+  }
+});
