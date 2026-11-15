@@ -5,6 +5,7 @@ import type { Account, User } from '../app/account.js';
 import { installUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
 import { Link } from './link.js';
+import { usePhone } from './phone.js';
 
 /** Closes an open `details` menu when the user clicks outside it or presses Escape, as a menu does. */
 export function useDismiss(): RefObject<HTMLDetailsElement | null> {
@@ -34,18 +35,29 @@ export function useDismiss(): RefObject<HTMLDetailsElement | null> {
   return menu;
 }
 
-function AccountMenu({ account, user, router, onSignOut }: Omit<ShellProps, 'children'>): JSX.Element {
+interface AccountMenuProps extends Omit<ShellProps, 'children'> {
+  /** Whether the menu also holds the pages, as it does on a phone, where the shell bar has no room for them. */
+  readonly pages: boolean;
+}
+
+function AccountMenu({ account, user, router, onSignOut, pages }: AccountMenuProps): JSX.Element {
   const menu = useDismiss();
   return (
     <details class="menu account-menu" ref={menu}>
-      <summary aria-label={`Account: ${user.login}`}>
+      <summary aria-label={pages ? `Menu: ${user.login}` : `Account: ${user.login}`}>
         <img
           src={`https://avatars.githubusercontent.com/${encodeURIComponent(user.login)}?size=64`}
           alt=""
           width="28"
           height="28"
         />
-        <span>{user.login}</span>
+        {pages ? (
+          <svg class="menu-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        ) : (
+          <span>{user.login}</span>
+        )}
       </summary>
       <div
         class="menu-panel menu-panel-end"
@@ -56,13 +68,28 @@ function AccountMenu({ account, user, router, onSignOut }: Omit<ShellProps, 'chi
           }
         }}
       >
+        {pages && (
+          <nav class="menu-pages" aria-label="Pages">
+            <Link class="menu-item" router={router} to="/" nav>
+              Repositories
+            </Link>
+            <Link class="menu-item" router={router} to="/profiles" nav>
+              Profiles
+            </Link>
+            <Link class="menu-item" router={router} to="/settings" nav>
+              Settings
+            </Link>
+          </nav>
+        )}
         <p class="menu-heading">
-          {user.name !== null && <strong>{user.name}</strong>}
+          <strong>{user.name ?? user.login}</strong>
           <span class="muted">Signed in with the Repotted App</span>
         </p>
-        <Link class="menu-item" router={router} to="/settings">
-          Settings
-        </Link>
+        {!pages && (
+          <Link class="menu-item" router={router} to="/settings">
+            Settings
+          </Link>
+        )}
         <a class="menu-item" href={installUrl} target="_blank" rel="noreferrer">
           Add repositories
         </a>
@@ -88,26 +115,30 @@ interface ShellProps {
   readonly children: ComponentChildren;
 }
 
-/** The frame every signed-in page sits in: the app's name, its pages, and the account. */
+/** The frame every signed-in page sits in: the app's name, its pages, and the account; on a phone, the pages are in the account menu. */
 export function Shell({ account, user, router, onSignOut, children }: ShellProps): JSX.Element {
+  // A phone's bar keeps to one row: the pages move into the account menu.
+  const phone = usePhone();
   return (
     <div class="shell">
       <header class="shell-bar">
         <Link class="wordmark" router={router} to="/">
           Repotted
         </Link>
-        <nav aria-label="Pages">
-          <Link class="nav-link" router={router} to="/" nav>
-            Repositories
-          </Link>
-          <Link class="nav-link" router={router} to="/profiles" nav>
-            Profiles
-          </Link>
-          <Link class="nav-link nav-link-end" router={router} to="/settings" nav>
-            Settings
-          </Link>
-        </nav>
-        <AccountMenu account={account} user={user} router={router} onSignOut={onSignOut} />
+        {!phone && (
+          <nav aria-label="Pages">
+            <Link class="nav-link" router={router} to="/" nav>
+              Repositories
+            </Link>
+            <Link class="nav-link" router={router} to="/profiles" nav>
+              Profiles
+            </Link>
+            <Link class="nav-link nav-link-end" router={router} to="/settings" nav>
+              Settings
+            </Link>
+          </nav>
+        )}
+        <AccountMenu account={account} user={user} router={router} onSignOut={onSignOut} pages={phone} />
       </header>
       <main class="shell-main">{children}</main>
     </div>

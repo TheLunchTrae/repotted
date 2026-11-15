@@ -8,6 +8,7 @@ import type { ComparedProfile } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
 import type { Profiles } from '../app/profiles.js';
 import type { FolderGroup, Repositories, Repository } from '../app/repositories.js';
+import { usePhone } from './phone.js';
 import { run } from './run.js';
 import { useDismiss } from './shell.js';
 
@@ -616,25 +617,6 @@ function useSearchKey(): RefObject<HTMLInputElement | null> {
     };
   }, []);
   return input;
-}
-
-const phoneQuery = '(max-width: 760px)';
-
-/** Whether the screen is a phone's, where the list and a repository's details are screens of their own. */
-function usePhone(): boolean {
-  const [phone, setPhone] = useState(() => matchMedia(phoneQuery).matches);
-  useEffect(() => {
-    const media = matchMedia(phoneQuery);
-    const change = (): void => {
-      setPhone(media.matches);
-    };
-    change();
-    media.addEventListener('change', change);
-    return () => {
-      media.removeEventListener('change', change);
-    };
-  }, []);
-  return phone;
 }
 
 /**

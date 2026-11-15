@@ -39,6 +39,11 @@ const screens: Readonly<Record<string, Screen>> = {
     open: (page) => page.getByText('All owners').click(),
     ready: (page) => page.getByRole('button', { name: 'Only personal' }),
   },
+  'account menu': {
+    path: '/',
+    open: (page) => page.locator('.account-menu > summary').click(),
+    ready: (page) => page.getByRole('button', { name: 'Sign out' }),
+  },
   'repository details': {
     path: '/?repository=lunch/a_repository_name_with_no_hyphens_in_it_at_all',
     ready: (page) => page.getByRole('heading', { name: 'a_repository_name_with_no_hyphens_in_it_at_all', exact: true }),
@@ -126,3 +131,20 @@ for (const [name, screen] of Object.entries(screens)) {
     expect(errors, 'page errors').toEqual([]);
   });
 }
+
+test('the header keeps to one row', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('link', { name: 'Repotted' })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  // Each of the bar's parts sits on the same line as the first: their middles line up.
+  const middles = await page.evaluate(() =>
+    [...document.querySelectorAll('.shell-bar > *')].map((part) => {
+      const box = part.getBoundingClientRect();
+      return Math.round(box.top + box.height / 2);
+    }),
+  );
+  expect(middles.length, 'parts of the bar').toBeGreaterThan(1);
+  for (const middle of middles) {
+    expect(Math.abs(middle - (middles[0] ?? 0)), "distance from the first part's line").toBeLessThanOrEqual(2);
+  }
+});
