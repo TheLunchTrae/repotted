@@ -10,7 +10,7 @@ import { parsePlan, profileFileJsonSchema } from '@repotted/core';
 import { type GitHub, GitHubError, responseError } from '../../core/src/github/client.js';
 import { FakeGitRepository } from '../../core/tests/support/fake-git.js';
 import { answered, FakeFleet, FakeGitHub } from '../../core/tests/support/fake-github.js';
-import { installUrl, NotSignedInError } from '../src/auth.js';
+import { installUrl, NotSignedInError } from '../src/auth/sign-in.js';
 import { type Io, run } from '../src/commands.js';
 
 const examples = path.join(import.meta.dirname, '../../../examples');

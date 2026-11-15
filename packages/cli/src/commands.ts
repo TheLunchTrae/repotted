@@ -78,7 +78,7 @@ import {
   type SignIn,
   tokenOrSignIn,
   usesRepottedApp,
-} from './auth.js';
+} from './auth/sign-in.js';
 
 export interface Io {
   readonly version: string;
@@ -1168,7 +1168,7 @@ async function mcp(io: Io, args: string[]): Promise<number> {
   // The server and its SDK load only for this command, so the others start
   // without evaluating them.
   const [{ createServer }, { StdioServerTransport }] = await Promise.all([
-    import('./mcp.js'),
+    import('./mcp/server.js'),
     import('@modelcontextprotocol/sdk/server/stdio.js'),
   ]);
   const server = await createServer({
