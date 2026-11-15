@@ -106,6 +106,16 @@ describe('readBranchChanges', () => {
     );
   });
 
+  test('refuses a name with a dot or empty part before asking GitHub, so it cannot reach another path', async () => {
+    const github = repository();
+    for (const name of ['../../user/repos', 'agent/./fix', 'agent//fix', '.hidden']) {
+      await expect(readBranchChanges(github, name, { repository: 'lunch/config' })).rejects.toThrow(
+        `${name} is not a branch name.`,
+      );
+    }
+    expect(github.calls).toEqual([]);
+  });
+
   test('refuses the default branch, which the profiles already come from', async () => {
     await expect(readBranchChanges(repository(), 'main', { repository: 'lunch/config' })).rejects.toThrow(
       'main is the default branch of lunch/config',

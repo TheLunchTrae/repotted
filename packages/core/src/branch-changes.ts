@@ -80,6 +80,14 @@ function encodeBranch(branch: string): string {
   return branch.split('/').map(encodeURIComponent).join('/');
 }
 
+/**
+ * Whether a name could be a branch. Git refuses a part that is empty or starts
+ * with a dot, and a `.` or `..` part would move the request to another path.
+ */
+function isBranchName(branch: string): boolean {
+  return branch.split('/').every((part) => part !== '' && !part.startsWith('.'));
+}
+
 /** Says what to do when GitHub refuses a read, and passes anything else on. */
 function explain(error: unknown, repository: string, branch: string | undefined): unknown {
   if (!(error instanceof GitHubError)) {
@@ -144,6 +152,9 @@ export async function readBranchChanges(
   branch: string,
   options: BranchOptions,
 ): Promise<BranchChanges> {
+  if (!isBranchName(branch)) {
+    throw new SyncError(`${branch} is not a branch name.`);
+  }
   const repo = parseRepo(options.repository);
   const folder = repositoryFolder(options.path);
   const base = await defaultBranch(github, repo, options.repository);
@@ -151,11 +162,15 @@ export async function readBranchChanges(
     throw new SyncError(`${branch} is the default branch of ${options.repository}, which the profiles come from.`);
   }
   let headCommit: string;
-  let compared: z.infer<typeof comparison>;
   try {
     // The singular endpoint matches the name exactly, where the plural one lists every branch it starts.
     headCommit = headInfo.parse(await github.request('GET', `${repoPath(repo)}/git/ref/heads/${encodeBranch(branch)}`))
       .object.sha;
+  } catch (error) {
+    throw explain(error, options.repository, branch);
+  }
+  let compared: z.infer<typeof comparison>;
+  try {
     // Files are listed on the first page whatever its size, so one commit a page keeps the answer small.
     compared = comparison.parse(
       await github.request(
@@ -164,7 +179,16 @@ export async function readBranchChanges(
       ),
     );
   } catch (error) {
-    throw explain(error, options.repository, branch);
+    // The branch exists, so a 404 here means it shares no history with the default branch.
+    if (error instanceof GitHubError && error.status === 404) {
+      throw new SyncError(
+        `${branch} shares no history with ${base} in ${options.repository}, so it can't be compared.`,
+        {
+          cause: error,
+        },
+      );
+    }
+    throw explain(error, options.repository, undefined);
   }
   const read = async (sha: string): Promise<Uint8Array> => {
     try {

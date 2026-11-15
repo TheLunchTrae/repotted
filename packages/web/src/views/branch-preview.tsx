@@ -191,7 +191,7 @@ function ChangedProfile({ profile, index, base, repositories, onCompare }: Chang
       )}
       {profile.problemBefore !== undefined && (
         <p class="muted small">
-          It doesn't load on {base} ({profile.problemBefore}), so everything it applies on the branch shows as added.
+          It doesn't load here ({profile.problemBefore}), so everything it applies on the branch shows as added.
         </p>
       )}
       {profile.status === 'removed' ? (
@@ -357,8 +357,8 @@ export function BranchPreviewPage({ preview, repositories, router, branch, onCom
                         <span class="mono">{state.local.join(', ')}</span>
                       </>
                     )}
-                    . The preview starts from the profiles here, so it shows those changes as undone by the branch.
-                    Sync, then refresh, to leave them out.
+                    . The preview starts from the profiles here, so where the branch changes the same profiles, it shows
+                    those changes as undone. Sync, then refresh, to leave them out.
                   </li>
                 )}
                 {state.stale && (
