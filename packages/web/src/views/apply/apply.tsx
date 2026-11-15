@@ -281,12 +281,18 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                   </span>
                 </label>
                 <p class="muted small">
-                  Deselect it for a one-time apply. The repository keeps no record of the profile.
+                  {state.assignment.recordsVersions
+                    ? 'Deselect it for a one-time apply. The repository keeps no record of the profile.'
+                    : 'Deselect it for a one-time apply. Since this apply leaves some of the profile out or edits it, the profile is added as not applied yet.'}
                 </p>
               </div>
             )}
             {state.assignment.kind === 'own' && (
-              <p class="muted small">Applying records this version of the repository's profiles as applied.</p>
+              <p class="muted small">
+                {state.assignment.recordsVersions
+                  ? "Applying records this version of the repository's profiles as applied."
+                  : "This apply leaves some of the repository's profiles out or edits them, so it doesn't record them as applied."}
+              </p>
             )}
             {state.warnings.length > 0 && (
               <div class="notice notice-drift">

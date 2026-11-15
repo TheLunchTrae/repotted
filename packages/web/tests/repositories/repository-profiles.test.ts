@@ -2,7 +2,7 @@ import { type Signal, signal } from '@preact/signals';
 import { listProfiles } from '@repotted/core';
 import { afterEach, expect, test } from 'vitest';
 
-import { FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
 import { Apply } from '../../src/app/apply/apply.js';
 import type { Change } from '../../src/app/preferences/shared-preferences.js';
 import type { ProfileListing } from '../../src/app/profiles/profiles.js';
@@ -122,6 +122,7 @@ test('tells a repository whose profiles changed since the last apply from one up
     kind: 'changed',
     changed: ['node.yaml'],
     notApplied: [],
+    removed: [],
     reordered: false,
   });
 
@@ -229,4 +230,178 @@ test('an apply of a profile kept outside the profiles folder offers nothing to a
   await apply.apply();
 
   expect(assignments.profilesOf('lunch/app')).toEqual([]);
+});
+
+const twoProfiles = {
+  'base.yaml': 'repository: { has_wiki: false }\n',
+  'node.yaml': 'repository: { has_projects: false }\nlabels:\n  - name: bug\n    color: d73a4a\n',
+};
+
+async function appliedTogether(
+  assignments: RepositoryProfiles,
+  github: FakeGitHub,
+  profilePaths: readonly string[],
+): Promise<Apply> {
+  const apply = new Apply(
+    github,
+    () => undefined,
+    (work) => work(),
+    assignments,
+  );
+  await apply.startFromProfiles(
+    'lunch/app',
+    profilePaths.map((profilePath) => ({ file: assignments.fileOf(profilePath), name: profilePath, folder })),
+  );
+  await apply.review();
+  return apply;
+}
+
+test('a profile taken out of the list since the last apply counts as a change', async () => {
+  const listings = await profiles(twoProfiles);
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['base.yaml', 'node.yaml']);
+  await (await appliedTogether(assignments, new FakeGitHub(), ['base.yaml', 'node.yaml'])).apply();
+  await assignments.check();
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'current' });
+
+  assignments.setProfiles('lunch/app', ['base.yaml']);
+
+  expect(assignments.status('lunch/app')).toEqual({
+    kind: 'changed',
+    changed: [],
+    notApplied: [],
+    removed: ['node.yaml'],
+    reordered: false,
+  });
+});
+
+test('a profile that stops resolving after it was listed shows as unreadable, not as still being checked', async () => {
+  const listings = await profiles(twoProfiles);
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['base.yaml', 'node.yaml']);
+  await writeFile(`${folder}/node.yaml`, 'extends: gone.yaml\n');
+
+  await assignments.check();
+
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'missing', missing: [], unreadable: ['node.yaml'] });
+});
+
+test('only the newest check of the versions counts', async () => {
+  const listings = await profiles(twoProfiles);
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['base.yaml']);
+
+  const older = assignments.check();
+  const newer = assignments.check();
+  await older;
+
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'checking' });
+  await newer;
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'not-applied' });
+});
+
+test('an apply that leaves a change out records no versions, and a profile added that way counts as not applied', async () => {
+  const listings = await profiles(twoProfiles);
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['base.yaml', 'node.yaml']);
+  const apply = await appliedTogether(assignments, new FakeGitHub(), ['base.yaml', 'node.yaml']);
+
+  await apply.leaveOut('labels/bug', true);
+  expect(apply.state.value).toMatchObject({ assignment: { kind: 'own', recordsVersions: false } });
+  await apply.apply();
+  await assignments.check();
+
+  expect(assignments.assignment('lunch/app')?.applied).toBeUndefined();
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'not-applied' });
+
+  assignments.setProfiles('lunch/app', []);
+  const single = new Apply(
+    new FakeGitHub(),
+    () => undefined,
+    (work) => work(),
+    assignments,
+  );
+  await single.start('lunch/app', { file: `${folder}/node.yaml`, name: 'node', folder });
+  await single.review();
+  await single.leaveOut('labels/bug', true);
+  await single.apply();
+  await assignments.check();
+
+  expect(assignments.profilesOf('lunch/app')).toEqual(['node.yaml']);
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'not-applied' });
+});
+
+test('an apply with a one-off edit records no versions', async () => {
+  const listings = await profiles(twoProfiles);
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['base.yaml']);
+  const apply = new Apply(
+    new FakeGitHub(),
+    () => undefined,
+    (work) => work(),
+    assignments,
+  );
+  await apply.startFromProfiles('lunch/app', [{ file: `${folder}/base.yaml`, name: 'base', folder }]);
+
+  await apply.editor.value?.addEntry('labels', { name: 'docs', color: '0075ca' });
+  await apply.review();
+
+  expect(apply.state.value).toMatchObject({ assignment: { kind: 'own', recordsVersions: false } });
+  expect(apply.canRecordWithoutChanges.value).toBe(false);
+  await apply.apply();
+  expect(assignments.assignment('lunch/app')?.applied).toBeUndefined();
+});
+
+test('an apply of the profiles in another order, or of some of them, records nothing', async () => {
+  const listings = await profiles(twoProfiles);
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['base.yaml', 'node.yaml']);
+
+  const reordered = await appliedTogether(assignments, new FakeGitHub(), ['node.yaml', 'base.yaml']);
+  expect(reordered.state.value).toMatchObject({ assignment: { kind: 'none' } });
+  await reordered.apply();
+  const some = new Apply(
+    new FakeGitHub(),
+    () => undefined,
+    (work) => work(),
+    assignments,
+  );
+  await some.start('lunch/app', { file: `${folder}/base.yaml`, name: 'base', folder });
+  await some.review();
+  expect(some.state.value).toMatchObject({ assignment: { kind: 'none' } });
+  await some.apply();
+
+  expect(assignments.assignment('lunch/app')).toEqual({ profiles: ['base.yaml', 'node.yaml'] });
+});
+
+test('an apply GitHub refuses partway, or one of a repository that changed since the review, records nothing', async () => {
+  const listings = await profiles(twoProfiles);
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['base.yaml', 'node.yaml']);
+
+  const refusing = new FakeGitHub().fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 1);
+  const refused = await appliedTogether(assignments, refusing, ['base.yaml', 'node.yaml']);
+  await refused.apply();
+  expect(refused.state.value).toMatchObject({ kind: 'reviewed' });
+  await refused.discard();
+
+  const changing = new FakeGitHub();
+  const stale = await appliedTogether(assignments, changing, ['base.yaml', 'node.yaml']);
+  changing.state.repository['has_projects'] = false;
+  await stale.apply();
+  expect(stale.state.value).toMatchObject({ kind: 'reviewed' });
+
+  expect(assignments.assignment('lunch/app')).toEqual({ profiles: ['base.yaml', 'node.yaml'] });
+});
+
+test('an apply recorded after its repository stopped using any profile adds nothing back', async () => {
+  const listings = await profiles(twoProfiles);
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['base.yaml']);
+  const apply = await appliedTogether(assignments, new FakeGitHub(), ['base.yaml']);
+
+  assignments.setProfiles('lunch/app', []);
+  await apply.apply();
+
+  expect(assignments.assignment('lunch/app')).toBeUndefined();
 });

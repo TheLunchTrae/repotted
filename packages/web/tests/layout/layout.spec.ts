@@ -108,6 +108,14 @@ const screens: Readonly<Record<string, Screen>> = {
     visibleOnceDrawn: (page) =>
       page.getByRole('heading', { name: 'a_repository_name_with_no_hyphens_in_it_at_all', exact: true }),
   },
+  "a repository's profiles": {
+    path: '/?repository=lunch/a_repository_name_with_no_hyphens_in_it_at_all',
+    reachFromPath: (page) =>
+      page
+        .getByRole('button', { name: 'Edit the profiles of lunch/a_repository_name_with_no_hyphens_in_it_at_all' })
+        .click(),
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Move teams/website down' }),
+  },
   'found config repositories': {
     path: '/?config-repositories',
     reachFromPath: (page) =>

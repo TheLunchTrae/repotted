@@ -37,6 +37,8 @@ export type AssignmentStatus =
       readonly kind: 'changed';
       readonly changed: readonly string[];
       readonly notApplied: readonly string[];
+      /** Applied last time and taken out of the list since, so an apply of the list now gives something else. */
+      readonly removed: readonly string[];
       readonly reordered: boolean;
     }
   | { readonly kind: 'current' };
@@ -74,7 +76,6 @@ function tagOverridesIn(value: unknown): Readonly<Record<string, string>> {
   return parsed.success ? parsed.data : {};
 }
 
-/** Its name without the folder or `.yaml`. */
 export function profileName(profilePath: string): string {
   return basename(profilePath).replace(/\.ya?ml$/iu, '');
 }
@@ -147,6 +148,8 @@ export class RepositoryProfiles {
   readonly #profiles: ProfilesInFolder;
   /** By profile path, the version of what it sets now, once read. */
   readonly #versions = signal<ReadonlyMap<string, string>>(new Map());
+  /** Listed as readable, but they stopped resolving when their versions were read. */
+  readonly #unresolvable = signal<ReadonlySet<string>>(new Set());
   #checkTurn = 0;
 
   constructor(preferences: PreferenceStore, profiles: ProfilesInFolder) {
@@ -183,7 +186,6 @@ export class RepositoryProfiles {
     return this.#assignments.value[keyOf(repository)];
   }
 
-  /** In the order they apply. */
   profilesOf(repository: string): readonly string[] {
     return this.assignment(repository)?.profiles ?? [];
   }
@@ -212,6 +214,7 @@ export class RepositoryProfiles {
     const turn = (this.#checkTurn += 1);
     const used = new Set(Object.values(this.#assignments.peek()).flatMap((item) => item.profiles));
     const versions = new Map<string, string>();
+    const unresolvable = new Set<string>();
     for (const profilePath of used) {
       if (!this.isListed(profilePath)) {
         continue;
@@ -219,11 +222,12 @@ export class RepositoryProfiles {
       try {
         versions.set(profilePath, await profileVersion(this.fileOf(profilePath)));
       } catch {
-        // A profile that stops resolving between the list and the read shows as unreadable.
+        unresolvable.add(profilePath);
       }
     }
     if (turn === this.#checkTurn) {
       this.#versions.value = versions;
+      this.#unresolvable.value = unresolvable;
     }
   }
 
@@ -234,7 +238,9 @@ export class RepositoryProfiles {
     }
     const missing = assignment.profiles.filter((profilePath) => !this.#listed.value.has(profilePath));
     const unreadable = assignment.profiles.filter(
-      (profilePath) => this.#listed.value.has(profilePath) && !this.isListed(profilePath),
+      (profilePath) =>
+        this.#listed.value.has(profilePath) &&
+        (!this.isListed(profilePath) || this.#unresolvable.value.has(profilePath)),
     );
     if (missing.length > 0 || unreadable.length > 0) {
       return { kind: 'missing', missing, unreadable };
@@ -252,13 +258,16 @@ export class RepositoryProfiles {
     const changed = assignment.profiles.filter(
       (profilePath) => appliedVersion.has(profilePath) && appliedVersion.get(profilePath) !== versions.get(profilePath),
     );
+    const removed = applied
+      .map((item) => item.profile)
+      .filter((profilePath) => !assignment.profiles.includes(profilePath));
     const reordered = !isSameList(
       applied.map((item) => item.profile).filter((profilePath) => assignment.profiles.includes(profilePath)),
       assignment.profiles.filter((profilePath) => appliedVersion.has(profilePath)),
     );
-    return changed.length === 0 && notApplied.length === 0 && !reordered
+    return changed.length === 0 && notApplied.length === 0 && removed.length === 0 && !reordered
       ? { kind: 'current' }
-      : { kind: 'changed', changed, notApplied, reordered };
+      : { kind: 'changed', changed, notApplied, removed, reordered };
   }
 
   /** Saving the same list again changes nothing; an empty one forgets the repository. */
@@ -276,12 +285,18 @@ export class RepositoryProfiles {
     );
   }
 
-  /** One profile applied by itself, and added to the end of the repository's list. */
-  recordAdded(repository: string, added: AppliedVersion): void {
-    this.#change(repository, (current) => ({
-      profiles: [...(current?.profiles ?? []).filter((profilePath) => profilePath !== added.profile), added.profile],
-      applied: [...(current?.applied ?? []).filter((item) => item.profile !== added.profile), added],
-    }));
+  /**
+   * One profile applied by itself, added to the end of the repository's list.
+   * Without a version, as after an apply that left some of it out, it counts as not applied yet.
+   */
+  recordAdded(repository: string, profilePath: string, version: string | undefined): void {
+    this.#change(repository, (current) => {
+      const applied = (current?.applied ?? []).filter((item) => item.profile !== profilePath);
+      return {
+        profiles: [...(current?.profiles ?? []).filter((other) => other !== profilePath), profilePath],
+        applied: version === undefined ? applied : [...applied, { profile: profilePath, version }],
+      };
+    });
   }
 
   #change(repository: string, change: (current: Assignment | undefined) => Assignment | undefined): void {
@@ -291,7 +306,7 @@ export class RepositoryProfiles {
       const next = change(all[key]);
       const kept = Object.fromEntries(Object.entries(all).filter(([other]) => other !== key));
       if (next !== undefined) {
-        kept[key] = next.applied === undefined ? { profiles: next.profiles } : next;
+        kept[key] = next.applied === undefined || next.applied.length === 0 ? { profiles: next.profiles } : next;
       }
       return Object.keys(kept).length > 0 ? kept : undefined;
     });

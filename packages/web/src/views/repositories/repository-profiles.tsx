@@ -18,7 +18,6 @@ function inProse(names: readonly string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
 }
 
-/** Undefined when nothing needs saying. */
 export function statusSentence(status: AssignmentStatus): string | undefined {
   switch (status.kind) {
     case 'missing': {
@@ -40,10 +39,14 @@ export function statusSentence(status: AssignmentStatus): string | undefined {
     case 'changed': {
       const changed = status.changed.map(shownName);
       const notApplied = status.notApplied.map(shownName);
+      const removed = status.removed.map(shownName);
       return [
         changed.length > 0 ? `${inProse(changed)} changed since the last apply.` : '',
         notApplied.length > 0
           ? `${inProse(notApplied)} ${notApplied.length === 1 ? "hasn't" : "haven't"} been applied here yet.`
+          : '',
+        removed.length > 0
+          ? `${inProse(removed)} ${removed.length === 1 ? 'was' : 'were'} removed since the last apply.`
           : '',
         status.reordered ? 'Their order changed since the last apply.' : '',
       ]

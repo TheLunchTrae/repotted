@@ -757,6 +757,21 @@ input[type='checkbox']:disabled {
   border-top: 1px solid var(--border);
 }
 
+/* Not clipped, so a row's list of profiles can show past the last row; its first and last rows take the corners instead. */
+.repository-rows {
+  overflow: visible;
+}
+
+.repository-rows > li:first-child {
+  border-start-start-radius: calc(var(--panel-radius) - 1px);
+  border-start-end-radius: calc(var(--panel-radius) - 1px);
+}
+
+.repository-rows > li:last-child {
+  border-end-start-radius: calc(var(--panel-radius) - 1px);
+  border-end-end-radius: calc(var(--panel-radius) - 1px);
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -2363,4 +2378,16 @@ select.field {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* On a phone a row with profiles puts its name on a line of its own, with the tags and pills under it. */
+@media (max-width: 760px) {
+  .repository-rows .row:has(.tags) {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .repository-rows .row:has(.tags) .row-name {
+    flex-basis: 100%;
+  }
 }

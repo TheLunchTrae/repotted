@@ -703,7 +703,7 @@ function FolderSection({
             <strong>Move to a folder</strong>.
           </p>
         ) : (
-          <ul class="rows">
+          <ul class="rows repository-rows">
             {folder.repositories.map((repository) => (
               <RepositoryRow
                 key={repository.full_name}
@@ -734,7 +734,6 @@ interface PanelProps {
    * changes settings without a profile.
    */
   readonly onApply: (repository: string, profile: ComparedProfile | 'once' | undefined) => void;
-  /** Starts an apply of the repository's own profiles, in their order. */
   readonly onApplyProfiles: (repository: string, profiles: readonly ComparedProfile[]) => void;
   readonly assignments: RepositoryProfiles;
   /** Goes back to the list, given when the panel is a screen of its own, as on a phone. */
@@ -1579,7 +1578,7 @@ export function RepositoriesPage({
                       {group.personal && <span class="pill">You</span>}
                       <span class="muted count">{group.repositories.length}</span>
                     </h2>
-                    <ul class="rows">
+                    <ul class="rows repository-rows">
                       {group.repositories.map((repository) => (
                         <RepositoryRow
                           key={repository.full_name}

@@ -244,6 +244,9 @@ phone, tap the repository to see them in its panel.
 When you apply a profile the repository doesn't use, the review has a
 selected box to add it to the repository's profiles when it applies.
 Deselect it for a one-time apply, which leaves no record on the repository.
+An apply that leaves a change out, or has one-off edits, doesn't count as
+applying the profiles, so the repository still shows them as not applied or
+changed.
 
 The repository's panel lists its profiles under **Profiles**. Click
 **Edit** to reorder them, remove one or add one, then **Save**. Saving
@@ -251,7 +254,7 @@ changes only the list: nothing is applied until you review an apply. Click
 **Review apply** to apply them all together, in their order.
 
 Repotted remembers which version of each profile was last applied. When a
-profile changes, or one is added or the order changes, the row says
+profile changes, or one is added, removed or moved, the row says
 **Profile changed** and the panel says what changed, with **Review apply**.
 When a review finds nothing to write, click **Record as applied** to mark the
 current versions as applied. A profile that was deleted or can't be read

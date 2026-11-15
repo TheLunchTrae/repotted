@@ -18,6 +18,7 @@ import {
   readAccess,
   resolveStagedApply,
   saveStagedEdits,
+  type StagedApply,
   StalePlanError,
 } from '@repotted/core';
 
@@ -32,17 +33,26 @@ import { type ComparedProfile, type CompareSection, compareSections } from './co
 /** What applying does to the profiles the repository uses. */
 export type AssignmentOffer =
   | { readonly kind: 'none' }
-  /** The apply is of the repository's own profiles, in its order, so the versions applied are recorded. */
-  | { readonly kind: 'own' }
+  /**
+   * The apply is of the repository's own profiles, in its order. It records the
+   * versions applied only when it gives what they set, with nothing left out
+   * and no one-off edit.
+   */
+  | { readonly kind: 'own'; readonly recordsVersions: boolean }
   /** The apply is of one profile the repository doesn't use, which it can add to the end of its list. */
-  | { readonly kind: 'add'; readonly profileName: string };
+  | { readonly kind: 'add'; readonly profileName: string; readonly recordsVersions: boolean };
 
 export interface ProfileAssignments {
   profilesOf(repository: string): readonly string[];
   /** Undefined for a profile kept outside the profiles folder. */
   pathOf(file: string): string | undefined;
   recordApplied(repository: string, applied: readonly AppliedVersion[]): void;
-  recordAdded(repository: string, added: AppliedVersion): void;
+  recordAdded(repository: string, profilePath: string, version: string | undefined): void;
+}
+
+function hasOneOffEdits(staged: StagedApply): boolean {
+  const { drafts: _drafts, ...settled } = staged.sources;
+  return Object.values(settled).some((setBy) => Object.values(setBy).includes(staged.file));
 }
 
 const noAssignments: ProfileAssignments = {
@@ -183,13 +193,13 @@ export class Apply {
     () => this.state.value.kind === 'reviewed' && this.counts.value.changes > 0 && this.counts.value.locked === 0,
   );
 
-  /** With nothing to write, the profiles can still be recorded as applied. */
   readonly canRecordWithoutChanges = computed(() => {
     const state = this.state.value;
     return (
       state.kind === 'reviewed' &&
       this.counts.value.changes === 0 &&
-      (state.assignment.kind === 'own' || (state.assignment.kind === 'add' && this.addToRepositoryProfiles.value))
+      ((state.assignment.kind === 'own' && state.assignment.recordsVersions) ||
+        (state.assignment.kind === 'add' && state.assignment.recordsVersions && this.addToRepositoryProfiles.value))
     );
   });
 
@@ -476,7 +486,6 @@ export class Apply {
     });
   }
 
-  /** Records the profiles as applied when the repository already has what they set. */
   async recordWithoutChanges(): Promise<void> {
     const state = this.state.value;
     if (state.kind !== 'reviewed' || !this.canRecordWithoutChanges.value) {
@@ -491,17 +500,23 @@ export class Apply {
 
   #recordAssignment(state: Reviewed & { readonly repository: string }): void {
     const [added] = state.appliedVersions;
-    if (state.assignment.kind === 'own') {
+    if (state.assignment.kind === 'own' && state.assignment.recordsVersions) {
       this.#assignments.recordApplied(state.repository, state.appliedVersions);
     } else if (state.assignment.kind === 'add' && this.addToRepositoryProfiles.peek() && added !== undefined) {
-      this.#assignments.recordAdded(state.repository, added);
+      this.#assignments.recordAdded(
+        state.repository,
+        added.profile,
+        state.assignment.recordsVersions ? added.version : undefined,
+      );
     }
   }
 
   async #assignmentOf(
     repository: string,
-    files: readonly string[],
+    staged: StagedApply,
   ): Promise<{ assignment: AssignmentOffer; appliedVersions: readonly AppliedVersion[] }> {
+    const files = staged.profiles;
+    const recordsVersions = staged.exclude.length === 0 && !hasOneOffEdits(staged);
     const paths = files.map((file) => this.#assignments.pathOf(file));
     const inFolder = paths.filter((path) => path !== undefined);
     if (inFolder.length === 0 || inFolder.length !== paths.length) {
@@ -510,9 +525,9 @@ export class Apply {
     const own = this.#assignments.profilesOf(repository);
     const [only] = inFolder;
     const assignment: AssignmentOffer = isSameList(inFolder, own)
-      ? { kind: 'own' }
+      ? { kind: 'own', recordsVersions }
       : inFolder.length === 1 && only !== undefined && !own.includes(only)
-        ? { kind: 'add', profileName: profileName(only) }
+        ? { kind: 'add', profileName: profileName(only), recordsVersions }
         : { kind: 'none' };
     if (assignment.kind === 'none') {
       return { assignment, appliedVersions: [] };
@@ -566,7 +581,7 @@ export class Apply {
     // An apply picked up goes by the profile it started from, which may not be the one picked now.
     const profile = profileNameOfApply(staged.staged.profiles);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));
-    const { assignment, appliedVersions } = await this.#assignmentOf(repository, staged.staged.profiles);
+    const { assignment, appliedVersions } = await this.#assignmentOf(repository, staged.staged);
     return {
       assignment,
       appliedVersions,
