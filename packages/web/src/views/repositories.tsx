@@ -65,7 +65,12 @@ function OwnerFilter({ repositories }: { readonly repositories: Repositories }):
 
 /** A dialog open over the list: naming a new folder or renaming one, or deleting one. */
 type FolderDialog =
-  | { readonly kind: 'new'; readonly repositories: readonly Repository[] }
+  | {
+      readonly kind: 'new';
+      readonly repositories: readonly Repository[];
+      /** Whether they are the ticked repositories, which putting them in the folder unticks. */
+      readonly ticked: boolean;
+    }
   | { readonly kind: 'rename'; readonly name: string }
   | { readonly kind: 'delete'; readonly name: string };
 
@@ -132,7 +137,7 @@ interface FolderNameProps {
   readonly dialog: Extract<FolderDialog, { kind: 'new' | 'rename' }>;
   /**
    * Called when it closes, with the folder that takes the focus: the one
-   * renamed, or the one made with repositories put in it, if any.
+   * renamed, or the one made with the ticked repositories put in it, if any.
    */
   readonly onClose: (focus: string | undefined) => void;
 }
@@ -145,8 +150,9 @@ function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNamePr
   const [putIn, setPutIn] = useState(true);
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const moving = asked.kind === 'new' ? asked.repositories : [];
+  const fromTicked = asked.kind === 'new' && asked.ticked && moving.length > 0;
   // The folder's name once renamed, since the menu that opened the dialog goes with its old name, or once
-  // made with repositories in it, since the panel that opened the dialog goes with their ticks.
+  // made with the ticked repositories in it, since the ticked panel goes when they are unticked.
   const landed = useRef<string | undefined>(undefined);
   return (
     <dialog
@@ -163,12 +169,12 @@ function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNamePr
           if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'save') {
             const refused =
               renaming === undefined
-                ? repositories.createFolder(name, putIn ? moving : [])
+                ? repositories.createFolder(name, putIn ? moving : [], { untick: fromTicked })
                 : repositories.renameFolder(renaming, name);
             if (refused !== undefined) {
               event.preventDefault();
               setProblem(refused);
-            } else if (renaming !== undefined || (putIn && moving.length > 0)) {
+            } else if (renaming !== undefined || (putIn && fromTicked)) {
               landed.current = name.trim();
             }
           }
@@ -518,7 +524,7 @@ function RepositoryPanel({
           value={repositories.folderOf(repository) ?? noFolderChoice}
           onChange={(value) => {
             if (value === newFolderChoice) {
-              onDialog({ kind: 'new', repositories: [repository] });
+              onDialog({ kind: 'new', repositories: [repository], ticked: false });
             } else {
               repositories.moveToFolder([repository], value === noFolderChoice ? undefined : value);
             }
@@ -821,10 +827,10 @@ function TickedPanel({ repositories, onDialog, profiles, unfinished, onBatch, on
         onSubmit={(event) => {
           event.preventDefault();
           if (target.kind === 'new') {
-            onDialog({ kind: 'new', repositories: ticked });
+            onDialog({ kind: 'new', repositories: ticked, ticked: true });
           } else {
             const folder = target.kind === 'folder' ? target.name : undefined;
-            repositories.moveToFolder(ticked, folder);
+            repositories.moveToFolder(ticked, folder, { untick: true });
             onMoved(folder);
           }
         }}
@@ -983,9 +989,9 @@ export function RepositoriesPage({
   /**
    * After a rename or delete the menu that opened the dialog is gone, so the
    * focus goes to the folder's menu under its name now, or to New folder
-   * once it is deleted. A new folder made with ticked repositories takes the
-   * focus, since unticking them closes the panel that may have opened it;
-   * after an empty one the browser puts the focus back itself.
+   * once it is deleted. A new folder made with the ticked repositories takes
+   * the focus, since unticking them closes the ticked panel; otherwise the
+   * browser puts the focus back itself.
    */
   const closeDialog = (focus: string | undefined): void => {
     const opened = dialog?.kind;
@@ -1132,7 +1138,7 @@ export function RepositoriesPage({
                 class="button button-quiet"
                 type="button"
                 onClick={() => {
-                  setDialog({ kind: 'new', repositories: ticked });
+                  setDialog({ kind: 'new', repositories: ticked, ticked: true });
                 }}
               >
                 New folder
