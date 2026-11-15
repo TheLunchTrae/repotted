@@ -80,13 +80,26 @@ export function signInCheckFailure(error: unknown): SignInCheckFailure {
 const signInFailureMessagesByRedirectReason: Readonly<Record<string, string>> = {
   denied: 'The sign-in was cancelled on GitHub.',
   expired: 'That sign-in expired. Sign in again.',
-  failed: "GitHub didn't complete the sign-in. Try again.",
 };
 
-export function signInFailure(redirectReason: string | null): string | undefined {
+function failedSignInMessage(query: URLSearchParams): string {
+  const status = query.get('github-status');
+  const oauthError = query.get('github-error');
+  // The address is anyone's to write, so only a status and an error code show.
+  const gitHubSent = [
+    status !== null && /^\d{3}$/u.test(status) ? `status ${status}` : undefined,
+    oauthError !== null && /^[a-z_]{1,64}$/u.test(oauthError) ? oauthError : undefined,
+  ].filter((part) => part !== undefined);
+  return gitHubSent.length === 0
+    ? "GitHub didn't complete the sign-in. Try again."
+    : `GitHub didn't complete the sign-in (GitHub sent ${gitHubSent.join(', ')}). Try again.`;
+}
+
+export function signInFailure(query: URLSearchParams): string | undefined {
+  const redirectReason = query.get('sign-in');
   return redirectReason === null
     ? undefined
-    : (signInFailureMessagesByRedirectReason[redirectReason] ?? signInFailureMessagesByRedirectReason['failed']);
+    : (signInFailureMessagesByRedirectReason[redirectReason] ?? failedSignInMessage(query));
 }
 
 export function isSignedOut(error: unknown): boolean {

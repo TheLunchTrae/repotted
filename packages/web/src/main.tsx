@@ -15,11 +15,11 @@ const github = sessionGitHub(session);
 const account = new Account(session, github);
 
 // Dropped so a reload doesn't report the failed sign-in again.
-const signInFailureReason = new URLSearchParams(location.search).get('sign-in');
-if (signInFailureReason !== null) {
+const signInFailureMessage = signInFailure(new URLSearchParams(location.search));
+if (signInFailureMessage !== undefined) {
   history.replaceState(null, '', location.pathname);
 }
-run(account.load(signInFailure(signInFailureReason)));
+run(account.load(signInFailureMessage));
 
 // The kept files are in memory before anything reads a profile.
 const keeping = await keepFiles(

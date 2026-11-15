@@ -94,12 +94,12 @@ in gets a 401, as a refused token does, so one check covers both.
 The web app signs in with the Repotted App's web flow, with PKCE. The
 [GitHub App](github-app.md) page covers the App itself.
 
-| Endpoint                  | What it does                                                                                                                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/auth/sign-in`   | Makes a state and a PKCE verifier, keeps both in a 10-minute cookie, and sends the browser to GitHub with the state and the verifier's S256 challenge.                                                          |
-| `GET /api/auth/callback`  | Checks the state against the cookie, trades the code for tokens with the verifier and the client secret, keeps both tokens in cookies, and sends the browser to `/`. A failure goes to `/?sign-in=…`.           |
-| `POST /api/auth/token`    | Returns the kept access token and its seconds left. When that token has 5 minutes or less left, or the request names it as one GitHub refused, it first trades the refresh token for new tokens and keeps both. |
-| `POST /api/auth/sign-out` | Clears both tokens' cookies.                                                                                                                                                                                    |
+| Endpoint                  | What it does                                                                                                                                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/auth/sign-in`   | Makes a state and a PKCE verifier, keeps both in a 10-minute cookie, and sends the browser to GitHub with the state and the verifier's S256 challenge.                                                                                     |
+| `GET /api/auth/callback`  | Checks the state against the cookie, trades the code for tokens with the verifier and the client secret, keeps both tokens in cookies, and sends the browser to `/`. A failure goes to `/?sign-in=…`, with GitHub's status and error code. |
+| `POST /api/auth/token`    | Returns the kept access token and its seconds left. When that token has 5 minutes or less left, or the request names it as one GitHub refused, it first trades the refresh token for new tokens and keeps both.                            |
+| `POST /api/auth/sign-out` | Clears both tokens' cookies.                                                                                                                                                                                                               |
 
 The page calls GitHub's API directly with the access token; GitHub's API
 allows cross-origin requests. Each tab holds the token in memory and asks the

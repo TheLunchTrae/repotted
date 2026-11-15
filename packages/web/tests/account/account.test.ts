@@ -24,17 +24,33 @@ test('a refused sign-in is signed out, with why the sign-in just failed when the
   const github = new FakeGitHub().fail('GET /user', answered(401, 'Not signed in'));
   const account = new Account(session(), github);
 
-  await account.load(signInFailure('denied'));
+  await account.load(signInFailure(new URLSearchParams('sign-in=denied')));
   expect(account.state.value).toEqual({ status: 'signed-out', message: 'The sign-in was cancelled on GitHub.' });
 
-  await account.load(signInFailure('something-new'));
+  await account.load(signInFailure(new URLSearchParams('sign-in=something-new')));
   expect(account.state.value).toEqual({
     status: 'signed-out',
     message: "GitHub didn't complete the sign-in. Try again.",
   });
 
-  await account.load(signInFailure(null));
+  await account.load(signInFailure(new URLSearchParams('')));
   expect(account.state.value).toEqual({ status: 'signed-out', message: undefined });
+});
+
+test.each([
+  ['github-status=400&github-error=redirect_uri_mismatch', 'GitHub sent status 400, redirect_uri_mismatch'],
+  ['github-error=redirect_uri_mismatch', 'GitHub sent redirect_uri_mismatch'],
+  ['github-status=525', 'GitHub sent status 525'],
+])('a failed sign-in says what GitHub sent: %s', (query, gitHubSent) => {
+  expect(signInFailure(new URLSearchParams(`sign-in=failed&${query}`))).toBe(
+    `GitHub didn't complete the sign-in (${gitHubSent}). Try again.`,
+  );
+});
+
+test('a failed sign-in shows no words of its own from the address', () => {
+  expect(
+    signInFailure(new URLSearchParams('sign-in=failed&github-status=call 555-0100&github-error=Visit evil.example')),
+  ).toBe("GitHub didn't complete the sign-in. Try again.");
 });
 
 test('GitHub out of reach is not a sign-out, and a later try can sign in', async () => {
@@ -237,7 +253,7 @@ describe('a sign-in check that fails says what failed', () => {
     answerRequests(worker, () => Promise.resolve(user()));
     const account = browserAccount();
 
-    await account.load(signInFailure('failed'));
+    await account.load(signInFailure(new URLSearchParams('sign-in=failed')));
     await account.checkAgain();
 
     expect(account.state.value).toEqual({
