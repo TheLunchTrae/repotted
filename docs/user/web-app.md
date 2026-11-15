@@ -233,6 +233,33 @@ edits that could be saved. The repository's panel says **An apply here is
 not finished** with **Resume**. Starting another apply there offers to pick
 the unfinished one up or start over.
 
+### Keep a repository's profiles
+
+A repository can keep a list of the profiles it uses, applied in order, with
+later profiles overriding earlier ones. Each one shows as a short tag on the
+repository's row. With more than three, or two on a phone, the row says how
+many, such as **5 profiles**, and lists them when you hover over it; on a
+phone, tap the repository to see them in its panel.
+
+When you apply a profile the repository doesn't use, the review has a
+selected box to add it to the repository's profiles when it applies.
+Deselect it for a one-time apply, which leaves no record on the repository.
+
+The repository's panel lists its profiles under **Profiles**. Click
+**Edit** to reorder them, remove one or add one, then **Save**. Saving
+changes only the list: nothing is applied until you review an apply. Click
+**Review apply** to apply them all together, in their order.
+
+Repotted remembers which version of each profile was last applied. When a
+profile changes, or one is added or the order changes, the row says
+**Profile changed** and the panel says what changed, with **Review apply**.
+When a review finds nothing to write, click **Record as applied** to mark the
+current versions as applied. A profile that was deleted or can't be read
+shows as **Missing profile**; remove it or put it back before applying.
+
+The list is kept with your hidden repositories and folders, so it follows
+your profiles to their GitHub repository.
+
 ### Apply a profile to several repositories
 
 A batch apply applies one profile to several repositories, with each

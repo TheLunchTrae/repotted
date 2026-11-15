@@ -204,8 +204,8 @@ rather than the value. While profiles are kept in a config repository, it
 keeps them in `.repotted-preferences.json` beside the profiles and commits
 each change there through the contents API; otherwise it passes them to the
 browser's `Preferences`. The file is a JSON object keyed by preference key,
-such as `hidden-repositories`, `hidden-repository-owners` and
-`repository-folders`, with keys in order so a commit changes only the values
+such as `hidden-repositories`, `hidden-repository-owners`,
+`repository-folders`, `repository-profiles` and `profile-tags`, with keys in order so a commit changes only the values
 that did. It is a hidden file, so a profile sync and the profile list leave
 it alone. Another list setting that should follow the user takes its own key
 in the same file, and changes it through `update`, as folders do. A choice
