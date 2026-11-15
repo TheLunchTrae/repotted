@@ -943,6 +943,17 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
             ? `The profile manages no ${noun.many}, so each repository keeps its own.`
             : `The profile manages only the ${noun.many} it names. Each repository keeps its others.`}
         </p>
+        <button
+          class="button"
+          type="button"
+          ref={add}
+          disabled={turnedOff}
+          onClick={() => {
+            run(editor.addEntry(kind, { name: '' }).then(setOpenKey));
+          }}
+        >
+          New {noun.one}
+        </button>
         <BatchActions
           editor={editor}
           scope={kind}
@@ -962,17 +973,6 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
             },
           ]}
         />
-        <button
-          class="button"
-          type="button"
-          ref={add}
-          disabled={turnedOff}
-          onClick={() => {
-            run(editor.addEntry(kind, { name: '' }).then(setOpenKey));
-          }}
-        >
-          New {noun.one}
-        </button>
       </div>
       {rows.length > 0 && (
         <ul class="rows" ref={list}>

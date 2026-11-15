@@ -400,7 +400,8 @@ settings it changes. **Remove all** also counts the settings GitHub hides
 for the value of one above them, which have no **Remove** of their own;
 settings a base profile sets aren't counted. Neither saves anything, and
 **Undo** under the heading brings back exactly what was there, until you
-change anything else, save, or reset. On a phone the actions sit under the
+change anything else, save, reset, or the profile is read again after a
+sync. On a phone the actions sit under the
 group's heading. They don't show among the settings **Find a setting**
 finds.
 

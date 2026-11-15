@@ -52,9 +52,7 @@ export function canBeTakenOut(row: EntryRow): boolean {
   return row.entry !== undefined && (row.source === 'here' || row.source === undefined);
 }
 
-export interface EntryChangesSnapshot {
-  readonly changes: ReadonlyMap<string, EntryChange>;
-}
+export type EntryChanges = ReadonlyMap<string, EntryChange>;
 
 export interface EntryWrite {
   readonly list: EntryList;
@@ -258,7 +256,8 @@ export class EntryEdits {
   }
 
   takeOut(row: EntryRow): void {
-    if (row.savedName === undefined && !this.#changesSaveIsWriting.has(row.key)) {
+    const newOrGoneElsewhere = row.savedName === undefined || this.#slot(row.list, row.key) === undefined;
+    if (newOrGoneElsewhere && !this.#changesSaveIsWriting.has(row.key)) {
       this.#set(row.key, undefined);
     } else {
       this.#put(row, { entry: undefined });
@@ -335,12 +334,12 @@ export class EntryEdits {
   }
 
   /** What `restore` puts back exactly, for an undo of a change to many entries at once. */
-  snapshot(): EntryChangesSnapshot {
-    return { changes: this.#changes.value };
+  snapshot(): EntryChanges {
+    return this.#changes.value;
   }
 
-  restore(snapshot: EntryChangesSnapshot): void {
-    this.#changes.value = snapshot.changes;
+  restore(changes: EntryChanges): void {
+    this.#changes.value = changes;
   }
 
   /** Marks the changes a save writes, which stay as they are until `saved` says how it went. */

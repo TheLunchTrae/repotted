@@ -193,3 +193,111 @@ test("a list's Reset all and Take out all leave a base's entries and other lists
   expect(entry(editor, 'labels', 'bug').unsaved).toBe(true);
   expect(editor.batchDone.value).toMatchObject({ scope: 'rulesets', action: 'reset', count: 2 });
 });
+
+test('a fresh read takes away the undo, so it cannot bring back changes made before a sync', async () => {
+  const editor = await opened({ 'base.yaml': base, 'web.yaml': codeScanning });
+  await editor.removeAllIn(group('Code scanning'));
+  expect(editor.batchDone.value).toBeDefined();
+
+  await editor.load();
+
+  expect(editor.batchDone.value).toBeUndefined();
+});
+
+test('every other kind of change takes away the undo', async () => {
+  const editor = await opened({
+    'base.yaml': base,
+    'web.yaml': `${codeScanning}${lists.replace('extends: base.yaml\n', '')}`,
+  });
+  const changes: readonly (readonly [string, () => Promise<void>])[] = [
+    ['a reset', () => editor.reset(field('security.vulnerability_alerts'))],
+    ['the profile-wide reset', () => editor.resetAll()],
+    ['typing', () => editor.type(field('security.code_scanning_default_setup.runner_label'), 'big')],
+    ['an entry change', () => editor.changeEntry(entry(editor, 'labels', 'bug'), { name: 'bug', color: '000000' })],
+    ['putting an entry back', () => editor.putBack(entry(editor, 'labels', 'bug'))],
+    ['a new entry', () => editor.addEntry('labels', { name: 'docs', color: '0075ca' }).then(() => undefined)],
+  ];
+  for (const [name, change] of changes) {
+    await editor.resetAll();
+    await editor.set(field('security.vulnerability_alerts'), false);
+    await editor.removeAllIn(group('Code scanning'));
+    expect(editor.batchDone.value, name).toBeDefined();
+    await change();
+    expect(editor.batchDone.value, name).toBeUndefined();
+  }
+});
+
+test('a change made while a list batch previews takes away its undo', async () => {
+  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+
+  const takingOut = editor.takeOutAllIn('rulesets');
+  const changing = editor.changeEntry(entry(editor, 'labels', 'bug'), { name: 'bug', color: '000000' });
+  await Promise.all([takingOut, changing]);
+
+  expect(editor.batchDone.value).toBeUndefined();
+});
+
+test('batch actions and Undo do nothing while a save is writing', async () => {
+  const editor = await opened({ 'base.yaml': base, 'web.yaml': codeScanning });
+  await editor.set(field('security.vulnerability_alerts'), false);
+  let finishWriting = (): void => undefined;
+  const writing = new Promise<void>((resolve) => {
+    finishWriting = resolve;
+  });
+  const saving = editor.save(async (work) => {
+    await writing;
+    await work();
+  });
+  expect(editor.saving.value).toBe(true);
+
+  await editor.removeAllIn(group('Code scanning'));
+  await editor.resetAllIn(group('Code scanning'));
+  await editor.takeOutAllIn('rulesets');
+
+  expect(editor.batchDone.value).toBeUndefined();
+  finishWriting();
+  await saving;
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toContain('query_suite: extended');
+});
+
+test('settings owners of the profile type lack are neither counted nor removed', async () => {
+  const forking = field('repository.allow_forking');
+  const forkingGroup = settingSections
+    .flatMap((section) => section.groups)
+    .find((item) => item.fields.includes(forking));
+  if (forkingGroup === undefined) {
+    throw new Error('Forking has no group.');
+  }
+  const editor = await opened({ 'web.yaml': 'owner_type: user\nrepository:\n  allow_forking: true\n' });
+  expect(row(editor, 'repository.allow_forking')).toBeUndefined();
+  expect(batchOf(editor, forkingGroup.title)?.namedHere).toBe(0);
+
+  await editor.removeAllIn(forkingGroup);
+  expect(editor.batchDone.value).toBeUndefined();
+});
+
+test("a base's entry changed here counts for Reset all but can't be taken out", async () => {
+  const editor = await opened({
+    'base.yaml': 'rulesets:\n  - name: Signed\n    target: branch\n    enforcement: active\n',
+    'web.yaml': 'extends: base.yaml\n',
+  });
+  await editor.changeEntry(entry(editor, 'rulesets', 'Signed'), {
+    ...entry(editor, 'rulesets', 'Signed').entry,
+    enforcement: 'disabled',
+  });
+
+  expect(editor.entryListBatches.value.rulesets).toEqual({ unsaved: 1, canBeTakenOut: 0 });
+});
+
+test('Take out all drops a change to an entry a sync took away, so the save can go on', async () => {
+  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  await editor.changeEntry(entry(editor, 'labels', 'bug'), { name: 'bug', color: '000000' });
+  await writeFile('/profiles/web.yaml', 'rulesets:\n  - name: Main\n    target: branch\n    enforcement: active\n');
+  await editor.load();
+  expect(entry(editor, 'labels', 'bug').outOfDate).toBe(true);
+
+  await editor.takeOutAllIn('labels');
+
+  expect(editor.entries.value.labels).toEqual([]);
+  expect(editor.dirty.value).toBe(false);
+});

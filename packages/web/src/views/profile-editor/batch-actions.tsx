@@ -30,7 +30,7 @@ export function describeSettingsDone(done: BatchDone): string {
     return `${plural(done.count, 'change is', 'changes are')} back to what is saved.`;
   }
   const hidden = done.hiddenByGitHub > 0 ? `, ${done.hiddenByGitHub} of them hidden by GitHub` : '';
-  return `${plural(done.count, 'setting is', 'settings are')} no longer managed${hidden}.`;
+  return `${plural(done.count, 'setting is', 'settings are')} no longer set in this profile${hidden}.`;
 }
 
 export function describeEntriesDone(one: string, many: string): (done: BatchDone) => string {
@@ -52,14 +52,16 @@ export function BatchActions({ editor, scope, name, actions, describeDone }: Bat
   const undo = useRef<HTMLButtonElement>(null);
   const doneId = useId();
   const actionsHolder = useRef<HTMLDivElement>(null);
+  const [focusUndoOnceDone, setFocusUndoOnceDone] = useState(false);
   const [focusActionsAfterUndo, setFocusActionsAfterUndo] = useState(false);
   // The pressed action goes once it has nothing left to change, so the keyboard moves to Undo, which reads out what
   // was done, and back to the actions after it.
   useEffect(() => {
-    if (doneHere !== undefined) {
+    if (focusUndoOnceDone && doneHere !== undefined) {
       undo.current?.focus();
+      setFocusUndoOnceDone(false);
     }
-  }, [doneHere]);
+  }, [focusUndoOnceDone, doneHere]);
   useEffect(() => {
     if (focusActionsAfterUndo && doneHere === undefined) {
       actionsHolder.current?.querySelector<HTMLButtonElement>('button')?.focus();
@@ -78,6 +80,7 @@ export function BatchActions({ editor, scope, name, actions, describeDone }: Bat
               disabled={editor.saving.value}
               aria-label={`${action.label}: ${action.count} ${action.counted}${name === undefined ? '' : ` in ${name}`}`}
               onClick={() => {
+                setFocusUndoOnceDone(true);
                 run(action.act());
               }}
             >

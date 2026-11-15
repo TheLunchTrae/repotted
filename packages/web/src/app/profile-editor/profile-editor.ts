@@ -20,7 +20,7 @@ import type { ActionPatternChecks } from './action-pattern-checks.js';
 import type { ActionSearch } from './action-search.js';
 import {
   canBeTakenOut,
-  type EntryChangesSnapshot,
+  type EntryChanges,
   EntryEdits,
   type EntryList,
   type EntryRow,
@@ -125,7 +125,6 @@ export interface EntryListBatch {
   readonly canBeTakenOut: number;
 }
 
-/** A group of settings, or a list of rulesets, environments, or labels. */
 export type BatchScope = SettingGroup | EntryList;
 
 /** What the last Remove all, Reset all, or Take out all did, which Undo takes back. */
@@ -140,7 +139,7 @@ interface BatchUndo {
   readonly done: BatchDone;
   readonly edits: ReadonlyMap<string, SettingEdit>;
   readonly typed: ReadonlyMap<string, TypedText>;
-  readonly entries: EntryChangesSnapshot;
+  readonly entries: EntryChanges;
 }
 
 interface TypedText {
@@ -569,6 +568,7 @@ export class ProfileEditor {
 
   /** Lays the unsaved changes over the profile as it is saved now. */
   async load(): Promise<void> {
+    this.#batchUndo.value = undefined;
     try {
       this.#saved.value = await this.#store.resolve(this.file);
       this.#entryEdits.setSaved(this.#saved.value);
@@ -807,7 +807,7 @@ export class ProfileEditor {
 
   /** Puts each setting in the group back as saved, as Reset does on each, those GitHub hides included. */
   async resetAllIn(group: SettingGroup): Promise<void> {
-    const keys = new Set(this.#fieldsShownFor(group).map((field) => keyOf(field.path)));
+    const keys = new Set(this.#fieldsOwnerTypeHas(group).map((field) => keyOf(field.path)));
     const count = [...keys].filter((key) => this.#edits.value.has(key) || this.#typed.value.has(key)).length;
     if (count === 0 || this.saving.value) {
       return;
@@ -824,9 +824,9 @@ export class ProfileEditor {
     if (count === 0 || this.saving.value) {
       return;
     }
-    const undo = this.#undoPoint({ scope: list, action: 'reset', count, hiddenByGitHub: 0 });
+    this.#holdUndo({ scope: list, action: 'reset', count, hiddenByGitHub: 0 });
     this.#entryEdits.resetAllIn(list);
-    await this.#entriesChanged(undo);
+    await this.#previewChanges();
   }
 
   async takeOutAllIn(list: EntryList): Promise<void> {
@@ -834,9 +834,9 @@ export class ProfileEditor {
     if (count === 0 || this.saving.value) {
       return;
     }
-    const undo = this.#undoPoint({ scope: list, action: 'taken-out', count, hiddenByGitHub: 0 });
+    this.#holdUndo({ scope: list, action: 'taken-out', count, hiddenByGitHub: 0 });
     this.#entryEdits.takeOutAllIn(list);
-    await this.#entriesChanged(undo);
+    await this.#previewChanges();
   }
 
   /** Brings back every unsaved change, typed text included, exactly as it was before the last Remove all, Reset all, or Take out all. */
@@ -850,18 +850,23 @@ export class ProfileEditor {
     await this.#replaceChanges(undo.edits, undo.typed);
   }
 
-  #undoPoint(done: BatchDone): BatchUndo {
-    return { done, edits: this.#edits.value, typed: this.#typed.value, entries: this.#entryEdits.snapshot() };
-  }
-
   /** Set before the change, so a change made while its preview runs clears it, as any other change does. */
   #holdUndo(done: BatchDone): void {
-    this.#batchUndo.value = this.#undoPoint(done);
+    this.#batchUndo.value = {
+      done,
+      edits: this.#edits.value,
+      typed: this.#typed.value,
+      entries: this.#entryEdits.snapshot(),
+    };
   }
 
   async #replaceChanges(edits: ReadonlyMap<string, SettingEdit>, typed: ReadonlyMap<string, TypedText>): Promise<void> {
     this.#edits.value = edits;
     this.#typed.value = typed;
+    await this.#previewChanges();
+  }
+
+  async #previewChanges(): Promise<void> {
     this.saveError.value = undefined;
     await this.#previewEdits();
   }
@@ -1157,14 +1162,14 @@ export class ProfileEditor {
   }
 
   /** The group's settings that owners of the profile's type have, those GitHub hides for a value above them included. */
-  #fieldsShownFor(group: SettingGroup): readonly SettingField[] {
+  #fieldsOwnerTypeHas(group: SettingGroup): readonly SettingField[] {
     const owner = this.ownerType.value;
     return group.fields.filter((field) => fits(owner, needOf(field.path)));
   }
 
   /** Those whose value comes from this profile's own file, its draft, or an unsaved change, and not from a base profile. */
   #namedHere(group: SettingGroup): readonly SettingField[] {
-    return this.#fieldsShownFor(group).filter((field) => {
+    return this.#fieldsOwnerTypeHas(group).filter((field) => {
       const edit = this.#edits.value.get(keyOf(field.path));
       const own = edit === undefined ? this.#valueRowStartsFrom(field) : edit.value;
       return own !== undefined;
@@ -1179,7 +1184,7 @@ export class ProfileEditor {
     return {
       namedHere: named.length,
       namedHereThatGitHubHides: named.filter((field) => this.#turnedOffOnGitHub(field)?.hidden === true).length,
-      unsaved: this.#fieldsShownFor(group).filter(
+      unsaved: this.#fieldsOwnerTypeHas(group).filter(
         (field) => this.#edits.value.has(keyOf(field.path)) || this.#typed.value.has(keyOf(field.path)),
       ).length,
     };
@@ -1233,11 +1238,9 @@ export class ProfileEditor {
       : final;
   }
 
-  /** Every change to entries clears what Undo would take back, except the batch change that `undo` takes back. */
-  async #entriesChanged(undo?: BatchUndo): Promise<void> {
-    this.#batchUndo.value = undo;
-    this.saveError.value = undefined;
-    await this.#previewEdits();
+  async #entriesChanged(): Promise<void> {
+    this.#batchUndo.value = undefined;
+    await this.#previewChanges();
   }
 
   /** Every change, save, and fresh read comes through here: each previews what a save would give, and what follows from it. */

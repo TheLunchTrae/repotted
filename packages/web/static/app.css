@@ -463,6 +463,10 @@ input[type='checkbox']:disabled {
     order: 1;
   }
 
+  .entry-bar > p.muted {
+    flex-basis: 100%;
+  }
+
   /* Options keep each label on one line and wrap as whole options, with a
      1px line between them in either direction. */
   div.segments {
