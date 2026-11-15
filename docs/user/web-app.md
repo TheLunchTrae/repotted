@@ -60,8 +60,10 @@ To keep repositories together, put them in folders. Click **New folder**
 beside the count, name it, and leave the box that puts the ticked
 repositories in it ticked to fill it at once. To move repositories later,
 tick them, pick a folder under **Move to a folder** in the panel and click
-**Move**, or open one repository and pick its **Folder**. A repository is in
-one folder at most, and **No folder** takes it out. Folders show above the owners, in name order;
+**Move**, or open one repository and pick its **Folder**. Ticked
+repositories are unticked once they are in the folder; a repository's own
+**Folder** leaves the ticks as they are. A repository is in one folder at most, and **No
+folder** takes it out. Folders show above the owners, in name order;
 click a folder's name to close or open it, and use its **Edit** menu to
 rename or delete it. Deleting a folder puts its repositories back under their
 owners, and nothing changes on GitHub. A search looks in folders too, and a

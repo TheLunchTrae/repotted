@@ -471,6 +471,61 @@ test('a repository is in one folder at most, and moving it to no folder returns 
   expect(names(repositories)).toContain('Acme/api');
 });
 
+test('ticked repositories put in a new folder or moved are unticked, and others stay ticked', async () => {
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
+  const ticked = (): string[] => repositories.ticked.value.map((repository) => repository.full_name);
+  for (const repository of several(repositories, 'acme/web', 'zeta/site', 'trae/dotfiles')) {
+    repositories.tick(repository, true);
+  }
+
+  repositories.createFolder('Sites', several(repositories, 'acme/web', 'zeta/site'), { untick: true });
+  expect(folders(repositories)).toEqual(['Sites:', 'acme/web', 'zeta/site']);
+  expect(ticked()).toEqual(['trae/dotfiles']);
+
+  // A name refused, or a folder made empty, as when its box is cleared, leaves the ticks alone.
+  expect(repositories.createFolder('sites', several(repositories, 'trae/dotfiles'), { untick: true })).toBeDefined();
+  repositories.createFolder('Tools', [], { untick: true });
+  expect(ticked()).toEqual(['trae/dotfiles']);
+
+  repositories.moveToFolder(several(repositories, 'trae/dotfiles'), 'Tools', { untick: true });
+  expect(ticked()).toEqual([]);
+
+  const web = several(repositories, 'acme/web');
+  for (const repository of web) {
+    repositories.tick(repository, true);
+  }
+  repositories.moveToFolder(web, undefined, { untick: true });
+  expect(ticked()).toEqual([]);
+  expect(folders(repositories)).toEqual(['Sites:', 'zeta/site', 'Tools:', 'trae/dotfiles']);
+});
+
+test("a repository's own folder choice leaves the ticks as they are", async () => {
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
+  const ticked = (): string[] => repositories.ticked.value.map((repository) => repository.full_name);
+  for (const repository of several(repositories, 'acme/web', 'zeta/site')) {
+    repositories.tick(repository, true);
+  }
+
+  repositories.moveToFolder(several(repositories, 'acme/web'), undefined);
+  repositories.createFolder('Sites', several(repositories, 'acme/web'));
+  repositories.moveToFolder(several(repositories, 'zeta/site'), 'Sites');
+  expect(folders(repositories)).toEqual(['Sites:', 'acme/web', 'zeta/site']);
+  expect(ticked().sort()).toEqual(['acme/web', 'zeta/site']);
+});
+
+test('Undo after a hide leaves unticked a repository since moved out of the ticks', async () => {
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
+  repositories.setShowHidden(true);
+  const web = listed(repositories, 'acme/web');
+  repositories.tick(web, true);
+  repositories.hide([web]);
+  repositories.tick(web, true);
+
+  repositories.moveToFolder([web], undefined, { untick: true });
+  repositories.undoHide();
+  expect(repositories.ticked.value).toEqual([]);
+});
+
 test('a folder name must be new, in any case, except the folder being renamed', async () => {
   const preferences = memory();
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);

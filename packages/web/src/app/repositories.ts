@@ -60,6 +60,12 @@ export const refreshPause = 15_000;
  */
 const rateLimitPause = 60_000;
 
+/** How a folder move treats the ticks. */
+export interface FolderMoveOptions {
+  /** Unticks the repositories moved, for ones that were ticked to be moved. */
+  readonly untick?: boolean;
+}
+
 const hiddenOwnersKey = 'hidden-repository-owners';
 const hiddenRepositoriesKey = 'hidden-repositories';
 const foldersKey = 'repository-folders';
@@ -611,11 +617,16 @@ export class Repositories {
   }
 
   /**
-   * Makes a folder and moves these repositories into it. Answers why not when
-   * the name can't be used. A folder of that name saved elsewhere meanwhile
-   * takes the repositories instead.
+   * Makes a folder and moves these repositories into it, unticking them when
+   * `untick` says they were ticked for it. Answers why not when the name can't
+   * be used. A folder of that name saved elsewhere meanwhile takes the
+   * repositories instead.
    */
-  createFolder(name: string, repositories: readonly Repository[] = []): string | undefined {
+  createFolder(
+    name: string,
+    repositories: readonly Repository[] = [],
+    { untick = false }: FolderMoveOptions = {},
+  ): string | undefined {
     const problem = this.folderNameProblem(name);
     if (problem !== undefined) {
       return problem;
@@ -623,6 +634,9 @@ export class Repositories {
     const trimmed = name.trim();
     const moving = repositories.map((repository) => repository.full_name);
     this.#updateFolders((folders) => withMoved(folders, moving, trimmed));
+    if (untick) {
+      this.#untick(moving);
+    }
     this.#moveTarget.value = { kind: 'folder', name: trimmed };
     return undefined;
   }
@@ -670,10 +684,34 @@ export class Repositories {
     this.#updateClosed((closed) => closed.filter((folder) => !sameName(folder, name)));
   }
 
-  /** Moves the repositories into the folder, out of any other, or out of every folder when none is named. */
-  moveToFolder(repositories: readonly Repository[], name: string | undefined): void {
+  /**
+   * Moves the repositories into the folder, out of any other, or out of every
+   * folder when none is named. With `untick`, for repositories ticked to be
+   * moved, it unticks them too, since they have gone where they were ticked for.
+   */
+  moveToFolder(
+    repositories: readonly Repository[],
+    name: string | undefined,
+    { untick = false }: FolderMoveOptions = {},
+  ): void {
     const moving = repositories.map((repository) => repository.full_name);
     this.#updateFolders((folders) => withMoved(folders, moving, name));
+    if (untick) {
+      this.#untick(moving);
+    }
+  }
+
+  /** Unticks these repositories, so that Undo after a hide doesn't tick them again either. */
+  #untick(names: readonly string[]): void {
+    const ticked = new Set(this.#tickedNames.value);
+    for (const name of names) {
+      ticked.delete(name);
+    }
+    if (ticked.size !== this.#tickedNames.value.size) {
+      this.#tickedNames.value = ticked;
+    }
+    const gone = new Set(names);
+    this.#justUnticked = this.#justUnticked.filter((name) => !gone.has(name));
   }
 
   /** Opens or closes a folder. */
