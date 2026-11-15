@@ -79,7 +79,6 @@ async function installationRepositories(
     for (const entry of repositories) {
       found.set(entry.full_name, describe(entry));
     }
-    // An installation GitHub answers without its permissions lacks none that anyone knows of.
     const permissions =
       installed.permissions === undefined ? [] : permissionsInstallationHasNotAccepted(installed.permissions);
     const owner = installed.account?.login;
@@ -169,10 +168,12 @@ async function readAppAccess(github: GitHub, fullNameOnGitHubNow: string): Promi
   if (owned === undefined || !covers) {
     return { status: 'not_installed' };
   }
-  return { status: 'installed', permissions: owned.permissions ?? {}, settings_url: owned.html_url ?? null };
+  if (owned.permissions === undefined) {
+    return { status: 'unknown' };
+  }
+  return { status: 'installed', permissions: owned.permissions, settings_url: owned.html_url ?? null };
 }
 
-/** The page where an owner of the account accepts the Repotted App's permissions, when the App is installed there. */
 export async function readInstallationSettingsUrl(github: GitHub, owner: string): Promise<string | null> {
   const installations = await listInstallations(github);
   return installations?.find((item) => sameName(item.account?.login, owner))?.html_url ?? null;

@@ -445,6 +445,44 @@ test('a capture the installation lacks a permission for links to where an owner 
   });
 });
 
+test('a capture keeps what it could not read when the installation link cannot be found, but not a lost sign-in', async () => {
+  const withPagesRefused = (): FakeGitHub =>
+    new FakeGitHub({ ownerType: 'User' }, 'trae/site').fail(
+      'GET /repos/trae/site/pages',
+      answered(403, 'Resource not accessible by integration'),
+    );
+  const failing = withPagesRefused().fail('GET /user/installations', answered(500, 'Server Error'));
+  const profiles = new Profiles(failing, memory(), () => undefined);
+  await profiles.refresh();
+
+  await profiles.create({
+    name: 'site',
+    folder: '',
+    start: { kind: 'repository', repository: 'trae/site' },
+    ownerType: undefined,
+  });
+  expect(profiles.settingsCaptureCouldNotRead.value?.uncaptured).toMatchObject({
+    count: 1,
+    needsAppPermission: true,
+    installationSettingsUrl: null,
+  });
+
+  const signedOut = vi.fn();
+  const lost = withPagesRefused().fail('GET /user/installations', answered(401, 'Bad credentials'));
+  const lostProfiles = new Profiles(lost, memory(), signedOut);
+  await lostProfiles.refresh();
+  expect(
+    await lostProfiles.create({
+      name: 'other',
+      folder: '',
+      start: { kind: 'repository', repository: 'trae/site' },
+      ownerType: undefined,
+    }),
+  ).toContain('Bad credentials');
+  expect(signedOut).toHaveBeenCalledOnce();
+  expect(lostProfiles.listings.value.some((listing) => listing.name === 'other')).toBe(false);
+});
+
 test('a capture goes on past a setting GitHub withholds without a payment method, and says so', async () => {
   const github = new FakeGitHub({ ownerType: 'User' }, 'trae/site').fail(
     'GET /repos/trae/site/actions/cache/retention-limit',

@@ -86,28 +86,30 @@ export interface SettingRow {
   readonly hiddenNamed: number;
   /** What the repository's installation of the Repotted App lacks to change the setting, which turns it off. */
   readonly missingPermissions: readonly string[];
-  /** False when its group or section already says what it lacks. */
-  readonly saysWhatPermissionsItLacks: boolean;
+  readonly missingPermissionsItsGroupAndSectionDoNotName: readonly string[];
 }
 
 export interface GroupRows {
   readonly group: SettingGroup;
   readonly rows: readonly SettingRow[];
-  /** What every setting in the group lacks, unless its section says so for all of them. */
+  /** What every setting in the group lacks, less what its section names. */
   readonly missingPermissions: readonly string[];
 }
 
 export interface SectionRows {
   readonly section: SettingSection;
   readonly groups: readonly GroupRows[];
-  /** What every setting in the section lacks. */
-  readonly missingPermissions: readonly string[];
+  readonly missingPermissionsEverySettingShares: readonly string[];
 }
 
-/** The one list of permissions every row lacks, or none when any differs or lacks nothing. */
 function permissionsEveryRowLacks(rows: readonly SettingRow[]): readonly string[] {
-  const first = rows[0]?.missingPermissions ?? [];
-  return first.length > 0 && rows.every((row) => sameValue(row.missingPermissions, first)) ? first : [];
+  return (rows[0]?.missingPermissions ?? []).filter((permission) =>
+    rows.every((row) => row.missingPermissions.includes(permission)),
+  );
+}
+
+function without(permissions: readonly string[], named: readonly string[]): readonly string[] {
+  return permissions.filter((permission) => !named.includes(permission));
 }
 
 /** What a save that applies would change: the profile that applies now against the one that would, as a diff of YAML. */
@@ -390,7 +392,6 @@ export class ProfileEditor {
    */
   readonly #installation = signal<AppAccess | undefined>(undefined);
 
-  /** Where an owner accepts the permissions the installation lacks. */
   readonly installationSettingsUrl = computed(() => {
     const installation = this.#installation.value;
     return installation?.status === 'installed' ? installation.settings_url : null;
@@ -402,16 +403,18 @@ export class ProfileEditor {
       const sectionLacks = permissionsEveryRowLacks(groups.flatMap(({ rows }) => rows));
       return {
         section,
-        missingPermissions: sectionLacks,
+        missingPermissionsEverySettingShares: sectionLacks,
         groups: groups.map(({ group, rows }): GroupRows => {
-          const groupLacks = sectionLacks.length > 0 ? [] : permissionsEveryRowLacks(rows);
+          const groupLacks = without(permissionsEveryRowLacks(rows), sectionLacks);
           return {
             group,
             missingPermissions: groupLacks,
             rows: rows.map((row) => ({
               ...row,
-              saysWhatPermissionsItLacks:
-                row.missingPermissions.length > 0 && sectionLacks.length === 0 && groupLacks.length === 0,
+              missingPermissionsItsGroupAndSectionDoNotName: without(row.missingPermissions, [
+                ...sectionLacks,
+                ...groupLacks,
+              ]),
             })),
           };
         }),
@@ -476,12 +479,12 @@ export class ProfileEditor {
   readonly found = computed((): FoundGroup[] => {
     const { shown } = this.#finding.value;
     // Found settings are shown without their section's heading, so a group says what the section lacks.
-    return this.sections.value.flatMap(({ section, groups, missingPermissions: sectionLacks }) =>
+    return this.sections.value.flatMap(({ section, groups, missingPermissionsEverySettingShares }) =>
       groups
         .map(({ group, rows, missingPermissions: groupLacks }) => ({
           group,
           rows: rows.filter((row) => shown.has(keyOf(row.field.path))),
-          missingPermissions: sectionLacks.length > 0 ? sectionLacks : groupLacks,
+          missingPermissions: [...missingPermissionsEverySettingShares, ...groupLacks],
         }))
         .filter(({ rows }) => rows.length > 0)
         .map((found) => ({ tab: section.name, ...found })),
@@ -1136,7 +1139,7 @@ export class ProfileEditor {
               installation === undefined
                 ? []
                 : permissionsMissingForProfilePart(installation, field.section, field.key.split('.')[0]),
-            saysWhatPermissionsItLacks: false,
+            missingPermissionsItsGroupAndSectionDoNotName: [],
           };
         })
     );

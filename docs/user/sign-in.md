@@ -40,8 +40,8 @@ The App asks for these repository permissions:
 
 - **Administration**, read and write: to read repository settings and
   rulesets, and to change them when you apply a plan.
-- **Actions**, read and write: to manage deployment environments, read the
-  cache size limit, and set the OpenID Connect subject claim.
+- **Actions**, read and write: to read deployment environments and the cache
+  size limit, and to read and set the OpenID Connect subject claim.
 - **Contents**, read and write: to keep profiles in a GitHub repository and
   commit your changes to them. Repotted reads and writes only YAML profiles
   there.

@@ -1,8 +1,5 @@
+import { permissionsInProse } from '@repotted/core';
 import type { JSX } from 'preact';
-
-export function permissionsInProse(permissions: readonly string[]): string {
-  return `${new Intl.ListFormat('en').format(permissions)} ${permissions.length === 1 ? 'permission' : 'permissions'}`;
-}
 
 export function MissingPermissionsNote({
   permissions,

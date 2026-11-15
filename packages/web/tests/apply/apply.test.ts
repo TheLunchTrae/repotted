@@ -586,51 +586,119 @@ test('changing settings once starts nothing over an apply that is unfinished', a
   expect(await readFile(staged, 'utf8')).toBe(before);
 });
 
+const installedWithoutPages = {
+  login: 'lunch',
+  name: null,
+  installations: [
+    {
+      id: 1,
+      selection: 'all' as const,
+      permissions: { administration: 'write', contents: 'write', metadata: 'read', actions: 'write', issues: 'write' },
+      repositories: [{ full_name: 'lunch/app', private: true, permissions: { admin: true } }],
+    },
+  ],
+  repositories: [],
+};
+
+function pagesTurnedOff(apply: Apply): boolean {
+  const pages = apply.editor.value?.sections.value.find((section) => section.section.section === 'pages');
+  return pages?.missingPermissionsEverySettingShares.includes('Pages') === true;
+}
+
 test("one-off edits turn off what the repository's installation was not given, once its access is read", async () => {
   await saved();
-  const github = new FakeGitHub({
-    account: {
-      login: 'lunch',
-      name: null,
-      installations: [
-        {
-          id: 1,
-          selection: 'all',
-          permissions: {
-            administration: 'write',
-            contents: 'write',
-            metadata: 'read',
-            actions: 'write',
-            issues: 'write',
-          },
-          repositories: [{ full_name: 'lunch/app', private: true, permissions: { admin: true } }],
-        },
-      ],
-      repositories: [],
-    },
-  });
+  const github = new FakeGitHub({ account: installedWithoutPages });
   const apply = new Apply(github, () => undefined);
 
   await apply.start('lunch/app', profile);
-  const editor = apply.editor.value;
   await vi.waitFor(() => {
-    expect(editor?.sections.value.find((section) => section.section.section === 'pages')?.missingPermissions).toEqual([
-      'Pages',
-    ]);
+    expect(pagesTurnedOff(apply)).toBe(true);
   });
-  expect(editor?.entryListMissingPermissions.value.labels).toEqual([]);
-  expect(editor?.installationSettingsUrl.value).toBe('https://github.com/settings/installations/1');
+  expect(apply.editor.value?.entryListMissingPermissions.value.labels).toEqual([]);
+  expect(apply.editor.value?.installationSettingsUrl.value).toBe('https://github.com/settings/installations/1');
 });
 
 test('one-off edits open without waiting for what the installation was given', async () => {
   await saved();
-  const github = new GitHubWithHeldReads();
+  const github = new GitHubWithHeldReads({ account: installedWithoutPages });
   const apply = new Apply(github, () => undefined);
   github.hold();
 
   await apply.start('lunch/app', profile);
 
   expect(apply.state.value).toMatchObject({ kind: 'editing' });
-  expect(apply.editor.value?.installationSettingsUrl.value).toBeNull();
+  expect(pagesTurnedOff(apply)).toBe(false);
   await github.release();
+  expect(pagesTurnedOff(apply)).toBe(true);
+});
+
+test('an access read that lands after its editor was left changes only that editor, never the one open now', async () => {
+  await saved();
+  const github = new GitHubWithHeldReads({ account: installedWithoutPages });
+  const apply = new Apply(github, () => undefined);
+  github.hold();
+  await apply.start('lunch/app', profile);
+  const left = apply.editor.value;
+
+  apply.close();
+  github.state.account = {
+    ...installedWithoutPages,
+    installations: installedWithoutPages.installations.map((installation) => ({
+      ...installation,
+      permissions: { ...installation.permissions, pages: 'write' },
+    })),
+  };
+  await apply.pickUp('lunch/app');
+  await github.release();
+
+  expect(left?.installationSettingsUrl.value).toBeNull();
+  expect(apply.editor.value).not.toBe(left);
+  expect(apply.editor.value?.installationSettingsUrl.value).toBe('https://github.com/settings/installations/1');
+  expect(pagesTurnedOff(apply)).toBe(false);
+});
+
+test('an access read that fails turns nothing off, and one refused for a lost sign-in signs out', async () => {
+  await saved();
+  const failing = new FakeGitHub({ account: installedWithoutPages }).fail(
+    'GET /user/installations',
+    answered(500, 'Server Error'),
+  );
+  const signedOut = vi.fn();
+  const apply = new Apply(failing, signedOut);
+  await apply.start('lunch/app', profile);
+  await vi.waitFor(() => {
+    expect(failing.calls.some((call) => call.path.startsWith('/user/installations'))).toBe(true);
+  });
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+  expect(apply.state.value).toMatchObject({ kind: 'editing' });
+  expect(pagesTurnedOff(apply)).toBe(false);
+  expect(signedOut).not.toHaveBeenCalled();
+  apply.close();
+
+  const lost = new FakeGitHub({ account: installedWithoutPages }).fail(
+    'GET /repos/lunch/app',
+    answered(401, 'Bad credentials'),
+  );
+  const lostApply = new Apply(lost, signedOut);
+  // The first apply was left unfinished, so this one picks it up.
+  await lostApply.pickUp('lunch/app');
+  await vi.waitFor(() => {
+    expect(signedOut).toHaveBeenCalledOnce();
+  });
+});
+
+test('going back to edits after a review turns off what that review read, without reading it again', async () => {
+  await saved();
+  const github = new FakeGitHub({ account: installedWithoutPages });
+  const apply = new Apply(github, () => undefined);
+  await apply.start('lunch/app', profile);
+  await apply.review();
+  const readsBefore = github.calls.filter((call) => call.path.startsWith('/user/installations')).length;
+
+  await apply.backToEdits();
+
+  expect(pagesTurnedOff(apply)).toBe(true);
+  expect(github.calls.filter((call) => call.path.startsWith('/user/installations')).length).toBe(readsBefore);
 });

@@ -14,7 +14,6 @@ export interface UncapturedSettingsGroup {
 export interface UncapturedSettings {
   readonly count: number;
   readonly groups: readonly UncapturedSettingsGroup[];
-  /** Set when a group needs a permission the Repotted App's installation hasn't been given. */
   readonly needsAppPermission: boolean;
   /** Where an owner accepts those permissions, once it's been looked up. */
   readonly installationSettingsUrl: string | null;

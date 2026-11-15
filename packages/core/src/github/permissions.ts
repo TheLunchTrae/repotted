@@ -131,6 +131,11 @@ function namesOfPermissionsNotGranted(
  * GitHub keeps an installation on the permissions its owner accepted, so
  * those the App asks for later stay missing until an owner accepts them.
  */
+/** As in "the Pages and Issues permissions". */
+export function permissionsInProse(permissions: readonly string[]): string {
+  return `${new Intl.ListFormat('en').format(permissions)} ${permissions.length === 1 ? 'permission' : 'permissions'}`;
+}
+
 export function permissionsInstallationHasNotAccepted(granted: Readonly<Record<string, string>>): readonly string[] {
   return namesOfPermissionsNotGranted(granted, permissionsTheRepottedAppAsksFor);
 }

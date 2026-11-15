@@ -727,6 +727,7 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
   const change = (next: Entry): void => {
     run(editor.changeEntry(row, next));
   };
+  const missingPermissions = editor.entryListMissingPermissions.value[row.list];
   const absent = entry['absent'] === true;
   const renamable = row.source === 'here' || row.source === undefined;
   const name = typeof entry['name'] === 'string' ? entry['name'] : '';
@@ -805,64 +806,69 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
           </div>
         </div>
       )}
-      <Group title={noun.title}>
-        <TextBox
-          label="Name"
-          value={name}
-          disabled={!renamable}
-          problem={row.outOfDate ? undefined : row.applyProblem}
-          note={
-            !renamable
-              ? `It comes from ${row.source}, so it keeps its name.`
-              : renamed && row.list !== 'labels'
-                ? `GitHub knows each ${noun.one} by its name, so applying this profile creates ${name.trim()} and leaves ${appliedName} on each repository as it is.`
-                : undefined
-          }
-          onText={(typed) => {
-            change({ ...entry, name: typed });
-            return undefined;
-          }}
-        />
-        <div class="setting">
-          <div class="segments" role="radiogroup" aria-label={`What the profile does with the ${noun.one}`}>
-            <label>
-              <input
-                type="radio"
-                name="entry-state"
-                checked={!absent}
-                onChange={() => {
-                  run(editor.setAbsent(row, false));
-                }}
-              />
-              <span>Manage it</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="entry-state"
-                checked={absent}
-                onChange={() => {
-                  run(editor.setAbsent(row, true));
-                }}
-              />
-              <span>Remove it from the repository</span>
-            </label>
+      {missingPermissions.length > 0 && (
+        <MissingPermissionsNote permissions={missingPermissions} settingsUrl={editor.installationSettingsUrl.value} />
+      )}
+      <fieldset class="entry-fields" disabled={missingPermissions.length > 0}>
+        <Group title={noun.title}>
+          <TextBox
+            label="Name"
+            value={name}
+            disabled={!renamable}
+            problem={row.outOfDate ? undefined : row.applyProblem}
+            note={
+              !renamable
+                ? `It comes from ${row.source}, so it keeps its name.`
+                : renamed && row.list !== 'labels'
+                  ? `GitHub knows each ${noun.one} by its name, so applying this profile creates ${name.trim()} and leaves ${appliedName} on each repository as it is.`
+                  : undefined
+            }
+            onText={(typed) => {
+              change({ ...entry, name: typed });
+              return undefined;
+            }}
+          />
+          <div class="setting">
+            <div class="segments" role="radiogroup" aria-label={`What the profile does with the ${noun.one}`}>
+              <label>
+                <input
+                  type="radio"
+                  name="entry-state"
+                  checked={!absent}
+                  onChange={() => {
+                    run(editor.setAbsent(row, false));
+                  }}
+                />
+                <span>Manage it</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="entry-state"
+                  checked={absent}
+                  onChange={() => {
+                    run(editor.setAbsent(row, true));
+                  }}
+                />
+                <span>Remove it from the repository</span>
+              </label>
+            </div>
+            {absent && <p class="muted small">Applying deletes it from each repository that follows the profile.</p>}
           </div>
-          {absent && <p class="muted small">Applying deletes it from each repository that follows the profile.</p>}
-        </div>
-      </Group>
-      {!absent && row.list === 'rulesets' && (
-        <RulesetForm
-          entry={entry}
-          saved={row.saved}
-          change={change}
-          ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
-        />
-      )}
-      {!absent && row.list === 'environments' && <EnvironmentForm entry={entry} saved={row.saved} change={change} />}
-      {!absent && row.list === 'labels' && (
-        <LabelForm entry={entry} saved={row.saved} change={change} savedName={appliedName} />
-      )}
+        </Group>
+        {!absent && row.list === 'rulesets' && (
+          <RulesetForm
+            entry={entry}
+            saved={row.saved}
+            change={change}
+            ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
+          />
+        )}
+        {!absent && row.list === 'environments' && <EnvironmentForm entry={entry} saved={row.saved} change={change} />}
+        {!absent && row.list === 'labels' && (
+          <LabelForm entry={entry} saved={row.saved} change={change} savedName={appliedName} />
+        )}
+      </fieldset>
     </div>
   );
 }
@@ -953,7 +959,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
                 <button
                   class="row"
                   type="button"
-                  disabled={entry === undefined || turnedOff}
+                  disabled={entry === undefined}
                   onClick={() => {
                     setOpenKey(row.key);
                   }}
@@ -990,7 +996,6 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
                   <button
                     class="button button-quiet button-small"
                     type="button"
-                    disabled={turnedOff}
                     onClick={() => {
                       run(editor.putBack(row));
                     }}

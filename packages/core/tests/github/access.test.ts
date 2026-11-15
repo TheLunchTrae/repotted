@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { GitHubError, responseError } from '../../src/github/client.js';
+import { type GitHub, GitHubError, responseError } from '../../src/github/client.js';
 import { lockChanges } from '../../src/github/permissions.js';
 import { readAccess } from '../../src/github/repositories.js';
 import type { Change } from '../../src/plan/change.js';
@@ -57,6 +57,21 @@ describe('readAccess', () => {
     github.state.repository = { ...github.state.repository, full_name: 'acme/renamed' };
 
     expect((await readAccess(github, app)).app.status).toBe('installed');
+  });
+
+  test('leaves the App unknown when GitHub answers its installation without permissions', async () => {
+    const fake = withInstallations([{ id: 5, selection: 'all', repositories: [lunchApp] }]);
+    const github: GitHub = {
+      request: (method, path, body) =>
+        path.startsWith('/user/installations?')
+          ? Promise.resolve({
+              total_count: 1,
+              installations: [{ id: 5, account: { login: 'lunch' }, repository_selection: 'all' }],
+            })
+          : fake.request(method, path, body),
+    };
+
+    expect((await readAccess(github, app)).app).toEqual({ status: 'unknown' });
   });
 
   test('reads as not installed when no installation covers the repository', async () => {

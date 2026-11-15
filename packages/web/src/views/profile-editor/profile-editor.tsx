@@ -1,3 +1,4 @@
+import { permissionsInProse } from '@repotted/core';
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
@@ -8,7 +9,7 @@ import { BarActions } from '../layout/action-bar.js';
 import { run } from '../layout/run.js';
 import { ActionSearchBox } from './action-search.js';
 import { Entries } from './entries.js';
-import { MissingPermissionsNote, permissionsInProse } from './missing-permissions-note.js';
+import { MissingPermissionsNote } from './missing-permissions-note.js';
 import { PatternChecks } from './pattern-checks.js';
 import { SavePreviewDialog } from './save-preview.js';
 
@@ -120,7 +121,8 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
                     : `From ${row.source}.`}
             {row.unsaved && managed && row.source !== undefined && ' Not saved yet.'}
             {row.greyedOutOnGitHub && ' Off on GitHub for the setting above.'}
-            {row.saysWhatPermissionsItLacks && ` Needs the ${permissionsInProse(row.missingPermissions)}.`}
+            {row.missingPermissionsItsGroupAndSectionDoNotName.length > 0 &&
+              ` Needs the ${permissionsInProse(row.missingPermissionsItsGroupAndSectionDoNotName)}.`}
           </span>
         </div>
         <Control row={row} editor={editor} />
@@ -167,9 +169,9 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
       {field.kind === 'list' && field.key === 'selected_actions.patterns_allowed' && editor.patterns !== undefined && (
         <PatternChecks checks={editor.patterns} />
       )}
-      {field.key === 'selected_actions.patterns_allowed' && editor.actionSearch !== undefined && (
-        <ActionSearchBox editor={editor} search={editor.actionSearch} />
-      )}
+      {field.key === 'selected_actions.patterns_allowed' &&
+        editor.actionSearch !== undefined &&
+        row.missingPermissions.length === 0 && <ActionSearchBox editor={editor} search={editor.actionSearch} />}
     </div>
   );
 }
@@ -457,8 +459,11 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
           </div>
           {shown !== undefined && (
             <div id="settings-panel" class="groups" role="tabpanel" aria-labelledby={`tab-${shown.section.section}`}>
-              {shown.missingPermissions.length > 0 && (
-                <MissingPermissionsNote permissions={shown.missingPermissions} settingsUrl={settingsUrl} />
+              {shown.missingPermissionsEverySettingShares.length > 0 && (
+                <MissingPermissionsNote
+                  permissions={shown.missingPermissionsEverySettingShares}
+                  settingsUrl={settingsUrl}
+                />
               )}
               {shown.groups.map(({ group, rows, missingPermissions }) => (
                 <section key={group.title} class="settings-group" aria-label={group.title}>

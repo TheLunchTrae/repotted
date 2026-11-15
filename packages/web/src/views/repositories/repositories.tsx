@@ -1,4 +1,4 @@
-import type { InstallationMissingPermissions } from '@repotted/core';
+import { type InstallationMissingPermissions, permissionsInProse } from '@repotted/core';
 import type { JSX, RefObject } from 'preact';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
@@ -135,10 +135,10 @@ function MissingPermissionsNotice({
     <div class="notice notice-drift" role="status">
       <p>
         <strong>
-          The Repotted App on {owner} doesn't have the {new Intl.ListFormat('en').format(permissions)}{' '}
-          {permissions.length === 1 ? 'permission' : 'permissions'} yet.
+          The Repotted App on {owner} doesn't have the {permissionsInProse(permissions)} yet.
         </strong>{' '}
-        Settings that need {them} are turned off on its repositories until an owner of {owner} accepts {them}.
+        Until an owner of {owner} accepts {them}, Repotted can't read or change what needs {them} on its repositories,
+        and turns those settings off while you edit an apply.
       </p>
       {settingsUrl !== null && (
         <p class="notice-actions">

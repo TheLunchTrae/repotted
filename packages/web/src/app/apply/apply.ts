@@ -1,5 +1,6 @@
 import { computed, signal } from '@preact/signals';
 import {
+  type AppAccess,
   ApplyError,
   applyPlan,
   createStagedApply,
@@ -110,6 +111,7 @@ export class Apply {
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
+  #lastAppAccessRead: { readonly repository: string; readonly app: AppAccess } | undefined;
   #profile: ComparedProfile | undefined;
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
@@ -268,7 +270,12 @@ export class Apply {
     const editor = new ProfileEditor(stagedFile(repository), undefined, stagedStore);
     await editor.load();
     this.editor.value = editor;
-    this.#turnOffWhatTheInstallationLacks(editor, repository);
+    const known = this.#lastAppAccessRead;
+    if (known?.repository === repository) {
+      editor.useInstallation(known.app);
+    } else {
+      this.#turnOffWhatTheInstallationLacks(editor, repository);
+    }
     this.editError.value = undefined;
     return {
       kind: 'editing',
@@ -288,6 +295,7 @@ export class Apply {
     readAccess(this.#github, parseRepo(repository)).then(
       (access) => {
         if (this.editor.value === editor) {
+          this.#lastAppAccessRead = { repository, app: access.app };
           editor.useInstallation(access.app);
         }
       },
@@ -427,6 +435,7 @@ export class Apply {
         editor.save((work) => work()).catch(() => undefined);
       }
       this.editor.value = undefined;
+      this.#lastAppAccessRead = undefined;
       this.state.value = { kind: 'idle' };
     }
   }
@@ -440,6 +449,7 @@ export class Apply {
       planStagedApply(this.#github, stagedFile(repository)),
       readAccess(this.#github, parseRepo(repository)),
     ]);
+    this.#lastAppAccessRead = { repository, app: access.app };
     // An apply picked up goes by the profile it started from, which may not be the one picked now.
     const profile = profileNameOfApply(staged.staged.base);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));

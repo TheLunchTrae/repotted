@@ -38,6 +38,14 @@ function row(editor: ProfileEditor, path: string): SettingRow | undefined {
     .find((item) => item.field.path.join('.') === path);
 }
 
+function section(editor: ProfileEditor, name: string) {
+  return editor.sections.value.find((item) => item.section.section === name);
+}
+
+function group(editor: ProfileEditor, sectionName: string, title: string) {
+  return section(editor, sectionName)?.groups.find((item) => item.group.title === title);
+}
+
 /** Runs a save straight away, as the profiles' queue does when nothing is ahead of it. */
 const write = (work: () => Promise<void>): Promise<void> => work();
 
@@ -790,27 +798,27 @@ test('what the installation was not given is turned off, and said once where it 
     permissions: { administration: 'write', contents: 'write', metadata: 'read', security_events: 'read' },
     settings_url: 'https://github.com/settings/installations/1',
   });
-  const section = (name: string) => editor.sections.value.find((item) => item.section.section === name);
-  const group = (name: string, title: string) => section(name)?.groups.find((item) => item.group.title === title);
 
   // All of a section needs it, so the section says it and its rows don't.
-  expect(section('pages')?.missingPermissions).toEqual(['Pages']);
-  expect(section('pages')?.groups.every((item) => item.missingPermissions.length === 0)).toBe(true);
+  expect(section(editor, 'pages')?.missingPermissionsEverySettingShares).toEqual(['Pages']);
+  expect(section(editor, 'pages')?.groups.every((item) => item.missingPermissions.length === 0)).toBe(true);
   expect(row(editor, 'pages.build_type')).toMatchObject({
     missingPermissions: ['Pages'],
-    saysWhatPermissionsItLacks: false,
+    missingPermissionsItsGroupAndSectionDoNotName: [],
   });
 
   // A group's every row needs it, so the group says it.
-  expect(section('actions')?.missingPermissions).toEqual([]);
-  expect(group('actions', 'OpenID Connect')?.missingPermissions).toEqual(['Actions']);
-  expect(row(editor, 'actions.oidc_customization_sub.use_default')?.saysWhatPermissionsItLacks).toBe(false);
+  expect(section(editor, 'actions')?.missingPermissionsEverySettingShares).toEqual([]);
+  expect(group(editor, 'actions', 'OpenID Connect')?.missingPermissions).toEqual(['Actions']);
+  expect(
+    row(editor, 'actions.oidc_customization_sub.use_default')?.missingPermissionsItsGroupAndSectionDoNotName,
+  ).toEqual([]);
 
   // One row among others that need nothing more says it itself.
-  expect(group('actions', 'Artifacts and caches')?.missingPermissions).toEqual([]);
+  expect(group(editor, 'actions', 'Artifacts and caches')?.missingPermissions).toEqual([]);
   expect(row(editor, 'actions.max_cache_size_gb')).toMatchObject({
     missingPermissions: ['Actions'],
-    saysWhatPermissionsItLacks: true,
+    missingPermissionsItsGroupAndSectionDoNotName: ['Actions'],
   });
   expect(row(editor, 'actions.artifact_and_log_retention.days')?.missingPermissions).toEqual([]);
   expect(row(editor, 'repository.has_wiki')?.missingPermissions).toEqual([]);
@@ -828,10 +836,33 @@ test('what the installation was not given is turned off, and said once where it 
   ]);
 });
 
+test('what every setting lacks is said above them, and only the rest on a setting', async () => {
+  const editor = await opened({ 'web.yaml': base });
+  editor.useInstallation({ status: 'installed', permissions: { metadata: 'read' }, settings_url: null });
+
+  expect(section(editor, 'pages')?.missingPermissionsEverySettingShares).toEqual(['Pages', 'Administration']);
+  // OIDC needs only Actions, so Administration is named by each group that needs it.
+  expect(section(editor, 'actions')?.missingPermissionsEverySettingShares).toEqual([]);
+  expect(group(editor, 'actions', 'OpenID Connect')?.missingPermissions).toEqual(['Actions']);
+  expect(group(editor, 'actions', 'Artifacts and caches')?.missingPermissions).toEqual(['Administration']);
+  expect(row(editor, 'actions.max_cache_size_gb')).toMatchObject({
+    missingPermissions: ['Actions', 'Administration'],
+    missingPermissionsItsGroupAndSectionDoNotName: ['Actions'],
+  });
+  expect(row(editor, 'actions.artifact_and_log_retention.days')?.missingPermissionsItsGroupAndSectionDoNotName).toEqual(
+    [],
+  );
+
+  editor.search('Build from');
+  expect(
+    editor.found.value.find((item) => item.tab === section(editor, 'pages')?.section.name)?.missingPermissions,
+  ).toEqual(['Pages', 'Administration']);
+});
+
 test('an editor with no installation to go by turns nothing off', async () => {
   const editor = await opened({ 'web.yaml': base });
 
-  expect(editor.sections.value.every((section) => section.missingPermissions.length === 0)).toBe(true);
+  expect(editor.sections.value.every((item) => item.missingPermissionsEverySettingShares.length === 0)).toBe(true);
   expect(row(editor, 'pages.build_type')?.missingPermissions).toEqual([]);
   expect(editor.installationSettingsUrl.value).toBeNull();
 });
