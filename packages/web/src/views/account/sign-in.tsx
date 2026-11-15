@@ -17,8 +17,8 @@ export function checkFailureMessage(failure: SignInCheckFailure): string {
       return `Repotted's sign-in service sent an answer Repotted couldn't read (${failure.status}). Try again; if it keeps happening, the service needs a fix.`;
     case 'github-sign-in-renewal-unavailable':
       return failure.gitHubAnswer === undefined
-        ? "GitHub couldn't renew your sign-in just now. Try again in a minute."
-        : `GitHub couldn't renew your sign-in just now (GitHub sent ${failure.gitHubAnswer}). Try again in a minute.`;
+        ? "Your sign-in couldn't be renewed just now. Try again in a minute."
+        : `Your sign-in couldn't be renewed just now (${failure.gitHubAnswer}). Try again in a minute.`;
     case 'github-rate-limited':
       return failure.retryAt === undefined
         ? "GitHub's rate limit for your account is used up. Try again in a few minutes."

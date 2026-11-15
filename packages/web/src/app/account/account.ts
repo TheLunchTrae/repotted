@@ -77,29 +77,44 @@ export function signInCheckFailure(error: unknown): SignInCheckFailure {
   return { kind: 'unexpected', detail: error instanceof Error ? error.message : String(error) };
 }
 
-const signInFailureMessagesByRedirectReason: Readonly<Record<string, string>> = {
-  denied: 'The sign-in was cancelled on GitHub.',
-  expired: 'That sign-in expired. Sign in again.',
-};
+// A Map, since the reason comes from the address and an object would also
+// answer names such as "constructor".
+const signInFailureMessagesByRedirectReason: ReadonlyMap<string, string> = new Map([
+  ['denied', 'The sign-in was cancelled on GitHub.'],
+  ['expired', 'That sign-in expired. Sign in again.'],
+]);
+
+// The address is anyone's to write, so the page shows only error codes GitHub
+// documents for a sign-in and a status, never other words from the address.
+const signInErrorCodesGitHubDocuments = new Set([
+  'redirect_uri_mismatch',
+  'application_suspended',
+  'incorrect_client_credentials',
+  'bad_verification_code',
+  'unverified_user_email',
+]);
+
+const cloudflareConnectionFailureStatuses = new Set(['520', '521', '522', '523', '524', '525', '526', '530']);
 
 function failedSignInMessage(query: URLSearchParams): string {
-  const status = query.get('github-status');
   const oauthError = query.get('github-error');
-  // The address is anyone's to write, so only a status and an error code show.
-  const gitHubSent = [
-    status !== null && /^\d{3}$/u.test(status) ? `status ${status}` : undefined,
-    oauthError !== null && /^[a-z_]{1,64}$/u.test(oauthError) ? oauthError : undefined,
-  ].filter((part) => part !== undefined);
-  return gitHubSent.length === 0
-    ? "GitHub didn't complete the sign-in. Try again."
-    : `GitHub didn't complete the sign-in (GitHub sent ${gitHubSent.join(', ')}). Try again.`;
+  if (oauthError !== null && signInErrorCodesGitHubDocuments.has(oauthError)) {
+    return `GitHub didn't complete the sign-in (GitHub sent ${oauthError}). Try again.`;
+  }
+  const status = query.get('github-status');
+  if (status === null || !/^\d{3}$/u.test(status)) {
+    return "GitHub didn't complete the sign-in. Try again.";
+  }
+  return cloudflareConnectionFailureStatuses.has(status)
+    ? `Cloudflare couldn't connect to GitHub to finish the sign-in (status ${status}). Try again.`
+    : `GitHub didn't complete the sign-in (GitHub sent status ${status}). Try again.`;
 }
 
 export function signInFailure(query: URLSearchParams): string | undefined {
   const redirectReason = query.get('sign-in');
   return redirectReason === null
     ? undefined
-    : (signInFailureMessagesByRedirectReason[redirectReason] ?? failedSignInMessage(query));
+    : (signInFailureMessagesByRedirectReason.get(redirectReason) ?? failedSignInMessage(query));
 }
 
 export function isSignedOut(error: unknown): boolean {

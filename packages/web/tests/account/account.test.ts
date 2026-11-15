@@ -38,20 +38,34 @@ test('a refused sign-in is signed out, with why the sign-in just failed when the
 });
 
 test.each([
-  ['github-status=400&github-error=redirect_uri_mismatch', 'GitHub sent status 400, redirect_uri_mismatch'],
-  ['github-error=redirect_uri_mismatch', 'GitHub sent redirect_uri_mismatch'],
-  ['github-status=525', 'GitHub sent status 525'],
-])('a failed sign-in says what GitHub sent: %s', (query, gitHubSent) => {
+  [
+    'github-error=redirect_uri_mismatch',
+    "GitHub didn't complete the sign-in (GitHub sent redirect_uri_mismatch). Try again.",
+  ],
+  ['github-status=502', "GitHub didn't complete the sign-in (GitHub sent status 502). Try again."],
+  ['github-status=525', "Cloudflare couldn't connect to GitHub to finish the sign-in (status 525). Try again."],
+])('a failed sign-in says what came back: %s', (query, message) => {
+  expect(signInFailure(new URLSearchParams(`sign-in=failed&${query}`))).toBe(message);
+});
+
+test.each([
+  'github-status=call 555-0100',
+  'github-error=Visit evil.example',
+  'github-error=your_account_is_locked_contact_support',
+])('a failed sign-in shows no words of its own from the address: %s', (query) => {
   expect(signInFailure(new URLSearchParams(`sign-in=failed&${query}`))).toBe(
-    `GitHub didn't complete the sign-in (${gitHubSent}). Try again.`,
+    "GitHub didn't complete the sign-in. Try again.",
   );
 });
 
-test('a failed sign-in shows no words of its own from the address', () => {
-  expect(
-    signInFailure(new URLSearchParams('sign-in=failed&github-status=call 555-0100&github-error=Visit evil.example')),
-  ).toBe("GitHub didn't complete the sign-in. Try again.");
-});
+test.each(['constructor', 'toString', '__proto__'])(
+  'a sign-in reason from the address that names a built-in reads as a failed sign-in: %s',
+  (reason) => {
+    expect(signInFailure(new URLSearchParams(`sign-in=${reason}`))).toBe(
+      "GitHub didn't complete the sign-in. Try again.",
+    );
+  },
+);
 
 test('GitHub out of reach is not a sign-out, and a later try can sign in', async () => {
   const github = new FakeGitHub().fail('GET /user', answered(500, 'fetch failed'), 1);
