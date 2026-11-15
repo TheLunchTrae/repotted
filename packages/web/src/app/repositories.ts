@@ -54,7 +54,10 @@ export interface RefreshWait {
 
 /** How long Refresh waits after the read it started, so repeated presses don't spend the account's GitHub requests. */
 export const refreshPause = 15_000;
-/** How long Refresh waits after a rate limit GitHub gives no time for, as GitHub advises for a secondary limit. */
+/**
+ * How long Refresh waits after a rate limit GitHub gives no time for, or a
+ * time already past, as GitHub advises for a secondary limit.
+ */
 const rateLimitPause = 60_000;
 
 const hiddenOwnersKey = 'hidden-repository-owners';
@@ -423,7 +426,9 @@ export class Repositories {
         this.#onSignedOut();
       } else {
         if (error instanceof GitHubError && error.rateLimited) {
-          this.#waitUntil(error.retryAt?.getTime() ?? Date.now() + rateLimitPause, true);
+          // GitHub's reset time is by its clock; one that has already passed by this device's waits the minute.
+          const retryAt = error.retryAt?.getTime() ?? 0;
+          this.#waitUntil(retryAt > Date.now() ? retryAt : Date.now() + rateLimitPause, true);
         }
         this.error.value = error instanceof Error ? error.message : String(error);
       }

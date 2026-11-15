@@ -85,6 +85,16 @@ describe('createGitHub', () => {
 
     answer(403, { message: 'Forbidden' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1900000000' });
     expect(await failure()).toMatchObject({ rateLimited: true, retryAt: new Date(1_900_000_000_000) });
+    answer(
+      403,
+      { message: 'Forbidden' },
+      {
+        'retry-after': 'Sun, 15 Nov 2026 02:00:00 GMT',
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-reset': '1900000000',
+      },
+    );
+    expect(await failure()).toMatchObject({ rateLimited: true, retryAt: new Date(1_900_000_000_000) });
     answer(403, { message: 'You have exceeded a secondary rate limit' });
     expect(await failure()).toMatchObject({ rateLimited: true, retryAt: undefined });
     answer(403, { message: 'Forbidden' }, { 'x-ratelimit-remaining': '4999', 'x-ratelimit-reset': '1900000000' });

@@ -202,6 +202,13 @@ test("a rate limit holds Refresh until GitHub's time, or a minute when GitHub gi
   expect(repositories.refreshWait.value?.rateLimited).toBe(true);
   expect(repositories.refreshIn.value).toBe(60);
 
+  // A reset time already past by this device's clock, as when it runs ahead of GitHub's, waits the minute too.
+  vi.advanceTimersByTime(60_000);
+  github.fail('GET /user/installations', limited(new Date(Date.now() - 30_000)), 1);
+  await repositories.refresh();
+  expect(repositories.refreshWait.value?.rateLimited).toBe(true);
+  expect(repositories.refreshIn.value).toBe(60);
+
   vi.advanceTimersByTime(60_000);
   await repositories.refresh();
   expect(repositories.list.value?.repositories).toHaveLength(4);
@@ -214,7 +221,7 @@ test('a refused sign-in is reported as signed out, not as an error on the page',
   const signedOut = vi.fn();
   const repositories = new Repositories(github, user, inBrowser(github), memory(), signedOut);
 
-  await repositories.refresh();
+  await repositories.load();
 
   expect(signedOut).toHaveBeenCalledOnce();
   expect(repositories.error.value).toBeUndefined();
@@ -562,7 +569,7 @@ test('folders are kept in the preferences file beside the profiles when they are
   const preferences = new SharedPreferences(config, browser, () => undefined);
   const github = new FakeGitHub({ account: account(everyone) });
   const repositories = new Repositories(github, user, preferences, browser, () => undefined);
-  await repositories.refresh();
+  await repositories.load();
   expect(folders(repositories)).toEqual([]);
 
   await preferences.use(source);
@@ -610,7 +617,7 @@ test('a folder change made before the preferences file is read keeps the folders
     browser,
     () => undefined,
   );
-  await repositories.refresh();
+  await repositories.load();
   const reading = preferences.use(source);
 
   repositories.createFolder('Tools', several(repositories, 'trae/dotfiles'));
@@ -654,7 +661,7 @@ test('a folder renamed to, or moved into, a name changed elsewhere meanwhile kee
     browser,
     () => undefined,
   );
-  await repositories.refresh();
+  await repositories.load();
   const reading = preferences.use(source);
 
   repositories.createFolder('Web', several(repositories, 'acme/web'));

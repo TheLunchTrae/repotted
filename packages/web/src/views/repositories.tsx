@@ -74,7 +74,6 @@ const newFolderChoice = '\u0000new';
 /** The value of the folder pickers' choice that takes repositories out of every folder. */
 const noFolderChoice = '';
 
-/** Opens the dialog when it mounts, and calls `onClose` when it closes, by its buttons or Escape. */
 /** Seconds as the countdown on Refresh shows them: by the second under a minute, else by the minute. */
 function countdown(seconds: number): string {
   return seconds < 60 ? `${seconds}s` : `${Math.ceil(seconds / 60)} min`;
@@ -102,7 +101,11 @@ function RefreshButton({ repositories }: { readonly repositories: Repositories }
         }}
       >
         Refresh
-        {wait !== undefined && <span aria-hidden="true">&nbsp;in {countdown(repositories.refreshIn.value)}</span>}
+        {wait !== undefined && (
+          <span class="refresh-countdown" aria-hidden="true">
+            &nbsp;in {countdown(repositories.refreshIn.value)}
+          </span>
+        )}
       </button>
       {wait !== undefined && (
         <span id={why} class="visually-hidden">
@@ -115,6 +118,7 @@ function RefreshButton({ repositories }: { readonly repositories: Repositories }
   );
 }
 
+/** Opens the dialog when it mounts, and calls `onClose` when it closes, by its buttons or Escape. */
 function useModal(): RefObject<HTMLDialogElement | null> {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {

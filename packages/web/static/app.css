@@ -658,9 +658,16 @@ input[type='checkbox'] {
   gap: 8px;
 }
 
-/* The countdown on Refresh keeps its digits one width as it counts. */
+/* The countdown on Refresh keeps one width as it counts, so the actions
+   beside it don't move. */
 .refresh {
   font-variant-numeric: tabular-nums;
+}
+
+.refresh-countdown {
+  display: inline-block;
+  min-width: 7ch;
+  text-align: start;
 }
 
 .toolbar {
