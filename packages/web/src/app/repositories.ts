@@ -1,5 +1,5 @@
 import { computed, signal } from '@preact/signals';
-import { type GitHub, listRepositories } from '@repotted/core';
+import { type GitHub, GitHubError, listRepositories } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { isSignedOut, type User } from './account.js';
@@ -44,6 +44,21 @@ export type MoveTarget =
   | { readonly kind: 'folder'; readonly name: string }
   | { readonly kind: 'none' }
   | { readonly kind: 'new' };
+
+/** Why Refresh waits before it reads again, and until when. */
+export interface RefreshWait {
+  /** Whether GitHub's rate limit holds it, rather than the pause after a refresh. */
+  readonly rateLimited: boolean;
+  readonly until: Date;
+}
+
+/** How long Refresh waits after the read it started, so repeated presses don't spend the account's GitHub requests. */
+export const refreshPause = 15_000;
+/**
+ * How long Refresh waits after a rate limit GitHub gives no time for, or a
+ * time already past, as GitHub advises for a secondary limit.
+ */
+const rateLimitPause = 60_000;
 
 const hiddenOwnersKey = 'hidden-repository-owners';
 const hiddenRepositoriesKey = 'hidden-repositories';
@@ -156,6 +171,10 @@ export class Repositories {
   readonly #moveTarget = signal<MoveTarget | undefined>(undefined);
   readonly #selectedName = signal<string | undefined>(undefined);
   readonly #tickedNames = signal<ReadonlySet<string>>(new Set());
+  readonly #refreshWait = signal<RefreshWait | undefined>(undefined);
+  /** The time the countdown last read, which a timer moves on each second while Refresh waits. */
+  readonly #now = signal(Date.now());
+  #clock: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     github: GitHub,
@@ -360,12 +379,39 @@ export class Repositories {
     return shown === total ? `All ${total}` : `${shown} of ${total}`;
   });
 
+  /** Whole seconds until Refresh reads again, or 0 when it can. */
+  readonly refreshIn = computed(() => {
+    const until = this.#refreshWait.value?.until.getTime() ?? 0;
+    return Math.max(0, Math.ceil((until - this.#now.value) / 1000));
+  });
+
+  /** Why Refresh waits, while it does. */
+  readonly refreshWait = computed(() => (this.refreshIn.value > 0 ? this.#refreshWait.value : undefined));
+
+  /** Reads the list for the page as it opens, with no pause after it. */
+  async load(): Promise<void> {
+    await this.#read();
+  }
+
   /**
-   * Reads the list from GitHub, and the hidden owners and repositories again,
-   * so the list shows once both are known. A refresh under way is left to
-   * finish; a failure keeps the list already shown.
+   * Reads the list again, unless a read is under way or Refresh waits, and
+   * then waits `refreshPause` before it can read again.
    */
   async refresh(): Promise<void> {
+    if (this.loading.value || this.refreshWait.value !== undefined) {
+      return;
+    }
+    await this.#read();
+    this.#waitUntil(Date.now() + refreshPause, false);
+  }
+
+  /**
+   * Reads the list from GitHub, and the hidden owners and repositories again,
+   * so the list shows once both are known. A read under way is left to
+   * finish; a failure keeps the list already shown. A rate limit holds
+   * Refresh until GitHub says a request may go through.
+   */
+  async #read(): Promise<void> {
     if (this.loading.value) {
       return;
     }
@@ -379,11 +425,43 @@ export class Repositories {
       if (isSignedOut(error)) {
         this.#onSignedOut();
       } else {
+        if (error instanceof GitHubError && error.rateLimited) {
+          // GitHub's reset time is by its clock; one that has already passed by this device's waits the minute.
+          const retryAt = error.retryAt?.getTime() ?? 0;
+          this.#waitUntil(retryAt > Date.now() ? retryAt : Date.now() + rateLimitPause, true);
+        }
         this.error.value = error instanceof Error ? error.message : String(error);
       }
     } finally {
       this.loading.value = false;
     }
+  }
+
+  /** Holds Refresh until this time, unless it already waits longer. */
+  #waitUntil(until: number, rateLimited: boolean): void {
+    if (until <= Date.now() || until <= (this.refreshWait.value?.until.getTime() ?? 0)) {
+      return;
+    }
+    this.#refreshWait.value = { rateLimited, until: new Date(until) };
+    this.#tick();
+  }
+
+  /** Moves the countdown on, and again at the next whole second left, until Refresh can read. */
+  #tick(): void {
+    clearTimeout(this.#clock);
+    this.#now.value = Date.now();
+    const left = (this.#refreshWait.value?.until.getTime() ?? 0) - this.#now.value;
+    if (left <= 0) {
+      this.#clock = undefined;
+      return;
+    }
+    const toNextSecond = left % 1000;
+    this.#clock = setTimeout(
+      () => {
+        this.#tick();
+      },
+      toNextSecond === 0 ? 1000 : toNextSecond,
+    );
   }
 
   /** The selected repository's `owner/name`, kept while it is out of view or before the list arrives. */

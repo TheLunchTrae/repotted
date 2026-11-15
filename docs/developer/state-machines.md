@@ -136,6 +136,18 @@ list for one sign-in.
 | A list                | Refresh                                                  | Reading, with the list dimmed and in use.                                                                                                                                   |
 | A repository selected | A search, a hidden owner, or a hide takes it out of view | Its panel closes. It is selected again when it comes back into view.                                                                                                        |
 
+Refresh waits after the read it started, so repeated presses don't spend the
+account's GitHub requests. The opening read starts no wait. The wait counts
+down in this tab alone and is never saved.
+
+| Refresh | Event                                   | Next                                                                                                                                                                                          |
+| ------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ready   | Refresh                                 | Reading, as in the table above.                                                                                                                                                               |
+| Reading | The read that Refresh started ends      | Waiting for `refreshPause`, 15 seconds, counting down on the button, unless a longer wait holds.                                                                                              |
+| Reading | The read fails with GitHub's rate limit | Waiting until GitHub's `retry-after` or `x-ratelimit-reset` time, or for a minute when it gives neither or gives a time already past by this device's clock, which may run ahead of GitHub's. |
+| Waiting | Refresh                                 | Nothing: the button is off, and stays focusable.                                                                                                                                              |
+| Waiting | The wait runs out                       | Ready.                                                                                                                                                                                        |
+
 It keeps the owners the list hides, by login, under `hidden-repository-owners`
 in its [shared preferences](#web-shared-preferences), or nothing when it hides
 no owner. A hidden owner matches its login in any case. Keeping the hidden
