@@ -1,14 +1,14 @@
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { entryLists, type SaveMode } from '../app/entry-edits.js';
-import type { ProfileEditor, SettingFilter, SettingRow } from '../app/profile-editor.js';
-import { sameValue } from '../app/same-value.js';
-import { BarActions } from './action-bar.js';
+import { entryLists, type SaveMode } from '../../app/profile-editor/entry-edits.js';
+import type { ProfileEditor, SettingFilter, SettingRow } from '../../app/profile-editor/profile-editor.js';
+import { sameValue } from '../../app/profile-editor/same-value.js';
+import { BarActions } from '../layout/action-bar.js';
+import { run } from '../layout/run.js';
 import { ActionSearchBox } from './action-search.js';
 import { Entries } from './entries.js';
 import { PatternChecks } from './pattern-checks.js';
-import { run } from './run.js';
 import { SavePreviewDialog } from './save-preview.js';
 
 function Control({ row, editor }: { readonly row: SettingRow; readonly editor: ProfileEditor }): JSX.Element {

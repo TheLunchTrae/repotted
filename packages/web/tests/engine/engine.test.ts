@@ -16,8 +16,8 @@ import {
 } from '@repotted/core';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { FakeFleet, FakeGitHub } from '../../core/tests/support/fake-github.js';
-import { mkdir, readdir, readFile, rm, rmdir, watchFiles, writeFile } from '../src/engine/files.js';
+import { FakeFleet, FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import { mkdir, readdir, readFile, rm, rmdir, watchFiles, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
   await rm('/', { recursive: true });

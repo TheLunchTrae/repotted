@@ -13,12 +13,15 @@ import {
 } from '@repotted/core';
 import * as z from 'zod/mini';
 
-import { mkdir, readdir, readFile, rm, stat, writeFile } from '../engine/files.js';
-import { basename, dirname, join, relative } from '../engine/path.js';
-import { isSignedOut } from './account.js';
-import { ActionPatternChecks } from './action-pattern-checks.js';
-import { ActionSearch } from './action-search.js';
-import type { SaveMode } from './entry-edits.js';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from '../../engine/files.js';
+import { basename, dirname, join, relative } from '../../engine/path.js';
+import { isSignedOut } from '../account/account.js';
+import type { Preferences } from '../preferences/preferences.js';
+import { ActionPatternChecks } from '../profile-editor/action-pattern-checks.js';
+import { ActionSearch } from '../profile-editor/action-search.js';
+import type { SaveMode } from '../profile-editor/entry-edits.js';
+import { type OwnerChoice, ProfileEditor } from '../profile-editor/profile-editor.js';
+import { SerialQueue } from '../storage/serial-queue.js';
 import {
   type LocalFolder,
   type LocalFolders,
@@ -26,9 +29,6 @@ import {
   syncLocalFolder,
   unsyncedFiles,
 } from './local-folder.js';
-import type { Preferences } from './preferences.js';
-import { type OwnerChoice, ProfileEditor } from './profile-editor.js';
-import { SerialQueue } from './serial-queue.js';
 
 export type ProfileListing = Awaited<ReturnType<typeof listProfiles>>[number];
 

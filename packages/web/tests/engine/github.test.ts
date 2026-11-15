@@ -1,8 +1,8 @@
 import { currentUser, GitHubError } from '@repotted/core';
 import { expect, test, vi } from 'vitest';
 
-import { sessionGitHub } from '../src/engine/github.js';
-import { type Session, SessionUnavailableError } from '../src/session.js';
+import { type Session, SessionUnavailableError } from '../../src/app/account/session.js';
+import { sessionGitHub } from '../../src/engine/github.js';
 
 function session(fetchGitHub: Session['fetchGitHub']): Session {
   // eslint-disable-next-line typescript/no-unsafe-type-assertion -- a Session can't be built without a browser's locks, and the client calls only fetchGitHub

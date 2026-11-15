@@ -1,10 +1,10 @@
 import { afterEach, expect, test } from 'vitest';
 
-import { FakeGitRepository } from '../../core/tests/support/fake-git.js';
-import { BranchPreview, type PreviewState } from '../src/app/branch-preview.js';
-import type { Preferences } from '../src/app/preferences.js';
-import { Profiles } from '../src/app/profiles.js';
-import { mkdir, readdir, rm, writeFile } from '../src/engine/files.js';
+import { FakeGitRepository } from '../../../core/tests/support/fake-git.js';
+import type { Preferences } from '../../src/app/preferences/preferences.js';
+import { BranchPreview, type PreviewState } from '../../src/app/profiles/branch-preview.js';
+import { Profiles } from '../../src/app/profiles/profiles.js';
+import { mkdir, readdir, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
   await rm('/', { recursive: true });

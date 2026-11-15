@@ -1,16 +1,21 @@
 import type { JSX, RefObject } from 'preact';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
-import type { AddressedRepository } from '../app/addressed-repository.js';
-import type { Apply } from '../app/apply.js';
-import type { BatchApply } from '../app/batch-apply.js';
-import type { ComparedProfile } from '../app/comparison.js';
-import { repottedAppInstallUrl } from '../app/github-app.js';
-import type { Profiles } from '../app/profiles.js';
-import { type FolderGroup, refreshPause, type Repositories, type Repository } from '../app/repositories.js';
-import { usePhone } from './phone.js';
-import { run } from './run.js';
-import { useDismissibleMenu } from './shell.js';
+import { repottedAppInstallUrl } from '../../app/account/github-app.js';
+import type { Apply } from '../../app/apply/apply.js';
+import type { BatchApply } from '../../app/apply/batch-apply.js';
+import type { ComparedProfile } from '../../app/apply/comparison.js';
+import type { AddressedRepository } from '../../app/navigation/addressed-repository.js';
+import type { Profiles } from '../../app/profiles/profiles.js';
+import {
+  type FolderGroup,
+  refreshPause,
+  type Repositories,
+  type Repository,
+} from '../../app/repositories/repositories.js';
+import { usePhone } from '../layout/phone.js';
+import { run } from '../layout/run.js';
+import { useDismissibleMenu } from '../layout/shell.js';
 
 function OwnerFilter({ repositories }: { readonly repositories: Repositories }): JSX.Element {
   const menu = useDismissibleMenu();

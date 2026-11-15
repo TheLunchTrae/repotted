@@ -1,7 +1,7 @@
 import * as z from 'zod/mini';
 
-import { mkdir, readdir, readFile, rm, writeFile } from '../engine/files.js';
-import { dirname, join } from '../engine/path.js';
+import { mkdir, readdir, readFile, rm, writeFile } from '../../engine/files.js';
+import { dirname, join } from '../../engine/path.js';
 
 export interface LocalFolder {
   readonly name: string;

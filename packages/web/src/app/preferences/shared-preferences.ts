@@ -2,11 +2,11 @@ import { signal } from '@preact/signals';
 import { type GitHub, GitHubError, parseRepo } from '@repotted/core';
 import * as z from 'zod/mini';
 
-import { join } from '../engine/path.js';
-import { isSignedOut } from './account.js';
+import { join } from '../../engine/path.js';
+import { isSignedOut } from '../account/account.js';
+import type { ProfilesSource } from '../profiles/profiles.js';
+import { SerialQueue } from '../storage/serial-queue.js';
 import type { Preferences } from './preferences.js';
-import type { ProfilesSource } from './profiles.js';
-import { SerialQueue } from './serial-queue.js';
 
 /** Hidden, so a profile sync and the profile list leave it out. */
 export const preferencesFile = '.repotted-preferences.json';

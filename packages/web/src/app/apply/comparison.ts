@@ -13,10 +13,10 @@ import {
   skippedDrafts,
 } from '@repotted/core';
 
-import { dirname } from '../engine/path.js';
-import { isSignedOut } from './account.js';
-import { settingSections } from './setting-fields.js';
-import { searchWords } from './setting-search.js';
+import { dirname } from '../../engine/path.js';
+import { isSignedOut } from '../account/account.js';
+import { settingSections } from '../profile-editor/setting-fields.js';
+import { searchWords } from '../profile-editor/setting-search.js';
 
 type Change = Plan['changes'][number];
 

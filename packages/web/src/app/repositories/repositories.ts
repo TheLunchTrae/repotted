@@ -2,9 +2,9 @@ import { computed, signal } from '@preact/signals';
 import { type GitHub, GitHubError, listRepositories } from '@repotted/core';
 import * as z from 'zod/mini';
 
-import { isSignedOut, type User } from './account.js';
-import type { Preferences } from './preferences.js';
-import type { SharedPreferences } from './shared-preferences.js';
+import { isSignedOut, type User } from '../account/account.js';
+import type { Preferences } from '../preferences/preferences.js';
+import type { SharedPreferences } from '../preferences/shared-preferences.js';
 
 type RepositoryList = Awaited<ReturnType<typeof listRepositories>>;
 export type Repository = RepositoryList['repositories'][number];

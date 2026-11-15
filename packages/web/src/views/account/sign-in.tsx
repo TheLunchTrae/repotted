@@ -1,7 +1,7 @@
 import type { JSX } from 'preact';
 
-import type { Account } from '../app/account.js';
-import { run } from './run.js';
+import type { Account } from '../../app/account/account.js';
+import { run } from '../layout/run.js';
 
 export function SignIn({ account }: { readonly account: Account }): JSX.Element {
   const state = account.state.value;

@@ -1,12 +1,12 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import type { BatchApply, BatchMemberView } from '../app/batch-apply.js';
-import type { CompareRow } from '../app/comparison.js';
-import type { Router } from '../app/router.js';
-import { BarActions } from './action-bar.js';
-import { Link } from './link.js';
-import { run } from './run.js';
+import type { BatchApply, BatchMemberView } from '../../app/apply/batch-apply.js';
+import type { CompareRow } from '../../app/apply/comparison.js';
+import type { Router } from '../../app/navigation/router.js';
+import { BarActions } from '../layout/action-bar.js';
+import { Link } from '../layout/link.js';
+import { run } from '../layout/run.js';
 
 const kinds: Readonly<Record<CompareRow['kind'], string>> = { changes: 'Changes', adds: 'Adds', removes: 'Removes' };
 

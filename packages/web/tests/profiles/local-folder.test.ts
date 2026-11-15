@@ -1,10 +1,15 @@
 import { afterEach, expect, test } from 'vitest';
 
-import { FakeGitRepository } from '../../core/tests/support/fake-git.js';
-import { type LocalFolder, type LocalFolders, replaceWorkingCopy, syncLocalFolder } from '../src/app/local-folder.js';
-import type { Preferences } from '../src/app/preferences.js';
-import { Profiles } from '../src/app/profiles.js';
-import { mkdir, readFile, rm, watchFiles, writeFile } from '../src/engine/files.js';
+import { FakeGitRepository } from '../../../core/tests/support/fake-git.js';
+import type { Preferences } from '../../src/app/preferences/preferences.js';
+import {
+  type LocalFolder,
+  type LocalFolders,
+  replaceWorkingCopy,
+  syncLocalFolder,
+} from '../../src/app/profiles/local-folder.js';
+import { Profiles } from '../../src/app/profiles/profiles.js';
+import { mkdir, readFile, rm, watchFiles, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
   await rm('/', { recursive: true });

@@ -1,6 +1,6 @@
 import type { ComponentChildren, JSX } from 'preact';
 
-import type { Router } from '../app/router.js';
+import type { Router } from '../../app/navigation/router.js';
 
 interface LinkProps {
   readonly router: Router;

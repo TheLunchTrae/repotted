@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import { ActionSearch, type FoundAction, foundNotes } from '../src/app/action-search.js';
+import { ActionSearch, type FoundAction, foundNotes } from '../../src/app/profile-editor/action-search.js';
 
 beforeEach(() => {
   vi.useFakeTimers();

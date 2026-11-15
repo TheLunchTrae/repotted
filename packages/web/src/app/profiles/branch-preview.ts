@@ -8,9 +8,9 @@ import {
   resolveProfile,
 } from '@repotted/core';
 
-import { mkdir, readdir, readFile, rm, writeFile } from '../engine/files.js';
-import { dirname, join, relative } from '../engine/path.js';
-import { isSignedOut } from './account.js';
+import { mkdir, readdir, readFile, rm, writeFile } from '../../engine/files.js';
+import { dirname, join, relative } from '../../engine/path.js';
+import { isSignedOut } from '../account/account.js';
 import {
   isRecord,
   kindOf,
@@ -20,8 +20,8 @@ import {
   valueInFewWords,
   settingNames,
   sectionTitles,
-} from './comparison.js';
-import { branchPreviewFolder } from './kept-files.js';
+} from '../apply/comparison.js';
+import { branchPreviewFolder } from '../storage/kept-files.js';
 import type { ProfilesSource } from './profiles.js';
 
 type ResolvedProfile = Awaited<ReturnType<typeof resolveProfile>>;

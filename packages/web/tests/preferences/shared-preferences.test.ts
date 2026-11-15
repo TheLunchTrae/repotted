@@ -2,9 +2,9 @@ import { computed } from '@preact/signals';
 import { GitHubError } from '@repotted/core';
 import { expect, test, vi } from 'vitest';
 
-import { FakeGitRepository } from '../../core/tests/support/fake-git.js';
-import type { Preferences } from '../src/app/preferences.js';
-import { preferencesFile, SharedPreferences } from '../src/app/shared-preferences.js';
+import { FakeGitRepository } from '../../../core/tests/support/fake-git.js';
+import type { Preferences } from '../../src/app/preferences/preferences.js';
+import { preferencesFile, SharedPreferences } from '../../src/app/preferences/shared-preferences.js';
 
 const source = { kind: 'repository', repository: 'lunch/config', path: 'profiles' } as const;
 const file = `profiles/${preferencesFile}`;

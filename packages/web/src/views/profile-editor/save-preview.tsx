@@ -1,10 +1,10 @@
 import { Fragment, type JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import type { DiffFold, DiffLine } from '../app/line-diff.js';
-import type { ProfileEditor, SavePreview } from '../app/profile-editor.js';
+import type { DiffFold, DiffLine } from '../../app/profile-editor/line-diff.js';
+import type { ProfileEditor, SavePreview } from '../../app/profile-editor/profile-editor.js';
+import { run } from '../layout/run.js';
 import type { EditorSaving } from './profile-editor.js';
-import { run } from './run.js';
 
 function count(amount: number, noun: string): string {
   return amount === 1 ? `1 ${noun}` : `${amount} ${noun}s`;

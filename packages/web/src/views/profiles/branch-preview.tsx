@@ -1,13 +1,13 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import type { BranchPreview, PreviewedProfile, PreviewRow, PreviewStatus } from '../app/branch-preview.js';
-import type { ComparedProfile } from '../app/comparison.js';
-import { diffLines, foldUnchanged } from '../app/line-diff.js';
-import type { Repositories } from '../app/repositories.js';
-import type { Router } from '../app/router.js';
-import { run } from './run.js';
-import { Diff } from './save-preview.js';
+import type { ComparedProfile } from '../../app/apply/comparison.js';
+import type { Router } from '../../app/navigation/router.js';
+import { diffLines, foldUnchanged } from '../../app/profile-editor/line-diff.js';
+import type { BranchPreview, PreviewedProfile, PreviewRow, PreviewStatus } from '../../app/profiles/branch-preview.js';
+import type { Repositories } from '../../app/repositories/repositories.js';
+import { run } from '../layout/run.js';
+import { Diff } from '../profile-editor/save-preview.js';
 
 export function previewAddress(branch: string): string {
   return `/profiles?preview=${encodeURIComponent(branch)}`;

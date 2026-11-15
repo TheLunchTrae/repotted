@@ -13,7 +13,7 @@ import {
   stringifyProfile,
 } from '@repotted/core';
 
-import { basename } from '../engine/path.js';
+import { basename } from '../../engine/path.js';
 import type { ActionPatternChecks } from './action-pattern-checks.js';
 import type { ActionSearch } from './action-search.js';
 import { EntryEdits, type EntryList, type EntryRow, type SaveMode } from './entry-edits.js';

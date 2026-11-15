@@ -1,10 +1,10 @@
 import { profileFileJsonSchema } from '@repotted/core';
 import { afterEach, expect, test } from 'vitest';
 
-import type { EntryList, EntryRow } from '../src/app/entry-edits.js';
-import { ProfileEditor, type SettingRow } from '../src/app/profile-editor.js';
-import { type SettingField, settingSections } from '../src/app/setting-fields.js';
-import { mkdir, readFile, rm, writeFile } from '../src/engine/files.js';
+import type { EntryList, EntryRow } from '../../src/app/profile-editor/entry-edits.js';
+import { ProfileEditor, type SettingRow } from '../../src/app/profile-editor/profile-editor.js';
+import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
+import { mkdir, readFile, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
   await rm('/', { recursive: true });

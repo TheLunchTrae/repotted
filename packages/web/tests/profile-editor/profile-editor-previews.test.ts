@@ -2,9 +2,9 @@ import type * as Core from '@repotted/core';
 import { previewProfile } from '@repotted/core';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { ProfileEditor } from '../src/app/profile-editor.js';
-import { settingSections } from '../src/app/setting-fields.js';
-import { mkdir, rm, writeFile } from '../src/engine/files.js';
+import { ProfileEditor } from '../../src/app/profile-editor/profile-editor.js';
+import { settingSections } from '../../src/app/profile-editor/setting-fields.js';
+import { mkdir, rm, writeFile } from '../../src/engine/files.js';
 
 // The engine's preview is wrapped, so a test can hold one open while a later one ends.
 vi.mock('@repotted/core', async (original) => {

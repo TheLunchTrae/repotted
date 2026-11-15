@@ -18,9 +18,9 @@ import {
   readBatch,
 } from '@repotted/core';
 
-import { rm, stat } from '../engine/files.js';
-import { basename } from '../engine/path.js';
-import { isSignedOut } from './account.js';
+import { rm, stat } from '../../engine/files.js';
+import { basename } from '../../engine/path.js';
+import { isSignedOut } from '../account/account.js';
 import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
 
 /** A batch's members are the same applies as those made one at a time, so they share `/staged`. */

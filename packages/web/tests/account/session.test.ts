@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { Session, SessionUnavailableError } from '../src/session.js';
+import { Session, SessionUnavailableError } from '../../src/app/account/session.js';
 
 function setup(): ReturnType<typeof vi.fn<typeof fetch>> {
   const worker = vi.fn<typeof fetch>();

@@ -1,15 +1,15 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { repositoryAddress } from '../app/addressed-repository.js';
-import type { Apply } from '../app/apply.js';
-import type { CompareRow } from '../app/comparison.js';
-import { repottedAppInstallUrl } from '../app/github-app.js';
-import type { Router } from '../app/router.js';
-import { BarActions } from './action-bar.js';
-import { Link } from './link.js';
-import { ProfileSettings } from './profile-editor.js';
-import { run } from './run.js';
+import { repottedAppInstallUrl } from '../../app/account/github-app.js';
+import type { Apply } from '../../app/apply/apply.js';
+import type { CompareRow } from '../../app/apply/comparison.js';
+import { repositoryAddress } from '../../app/navigation/addressed-repository.js';
+import type { Router } from '../../app/navigation/router.js';
+import { BarActions } from '../layout/action-bar.js';
+import { Link } from '../layout/link.js';
+import { run } from '../layout/run.js';
+import { ProfileSettings } from '../profile-editor/profile-editor.js';
 
 const kinds: Readonly<Record<CompareRow['kind'], string>> = { changes: 'Changes', adds: 'Adds', removes: 'Removes' };
 

@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 
-import { type ActionPatternChecks, patternNote } from '../app/action-pattern-checks.js';
+import { type ActionPatternChecks, patternNote } from '../../app/profile-editor/action-pattern-checks.js';
 
 export function PatternChecks({ checks }: { readonly checks: ActionPatternChecks }): JSX.Element {
   const lines = checks.lines.value.filter((line) => line.state !== undefined);

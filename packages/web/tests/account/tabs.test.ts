@@ -4,8 +4,8 @@
 
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import { Session } from '../src/session.js';
-import worker from '../src/worker.js';
+import { Session } from '../../src/app/account/session.js';
+import worker from '../../src/worker.js';
 
 const origin = 'https://repotted.dev';
 const env = {

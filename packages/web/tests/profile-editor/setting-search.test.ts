@@ -1,9 +1,13 @@
 import { afterEach, expect, test } from 'vitest';
 
-import { ProfileEditor } from '../src/app/profile-editor.js';
-import { type SettingField, settingSections } from '../src/app/setting-fields.js';
-import { matchesSearch, searchSynonymsBySettingPath, searchWords } from '../src/app/setting-search.js';
-import { mkdir, rm, writeFile } from '../src/engine/files.js';
+import { ProfileEditor } from '../../src/app/profile-editor/profile-editor.js';
+import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
+import {
+  matchesSearch,
+  searchSynonymsBySettingPath,
+  searchWords,
+} from '../../src/app/profile-editor/setting-search.js';
+import { mkdir, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
   await rm('/', { recursive: true });

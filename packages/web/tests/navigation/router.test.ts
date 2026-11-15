@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { browser } from './fake-browser.js';
+import { browser } from '../support/fake-browser.js';
 
 test("follows links and the browser's back button, and reads a trailing slash as the same page", () => {
   const { router, history, listeners, show } = browser('/profiles/');

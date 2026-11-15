@@ -1,8 +1,8 @@
 import { expect, test, vi } from 'vitest';
 
-import { answered, FakeGitHub } from '../../core/tests/support/fake-github.js';
-import { Account, signInFailure } from '../src/app/account.js';
-import { type Session, SessionUnavailableError } from '../src/session.js';
+import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import { Account, signInFailure } from '../../src/app/account/account.js';
+import { type Session, SessionUnavailableError } from '../../src/app/account/session.js';
 
 function session(signOut: () => Promise<void> = () => Promise.resolve()): Session {
   // eslint-disable-next-line typescript/no-unsafe-type-assertion -- a Session can't be built without a browser's locks and fetch, and Account calls nothing else on it

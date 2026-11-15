@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals';
 import { currentUser, type GitHub, GitHubError } from '@repotted/core';
 
-import type { Session } from '../session.js';
+import type { Session } from './session.js';
 
 export interface User {
   readonly login: string;

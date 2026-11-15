@@ -1,8 +1,8 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import type { Profiles } from '../app/profiles.js';
-import { run } from './run.js';
+import type { Profiles } from '../../app/profiles/profiles.js';
+import { run } from '../layout/run.js';
 
 interface LeaveProps {
   readonly profiles: Profiles;

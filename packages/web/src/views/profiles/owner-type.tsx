@@ -1,9 +1,9 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import type { OwnerChoice, ProfileEditor } from '../app/profile-editor.js';
-import type { Profiles } from '../app/profiles.js';
-import { run } from './run.js';
+import type { OwnerChoice, ProfileEditor } from '../../app/profile-editor/profile-editor.js';
+import type { Profiles } from '../../app/profiles/profiles.js';
+import { run } from '../layout/run.js';
 
 const choices: readonly { readonly type: OwnerChoice; readonly label: string; readonly help: string }[] = [
   { type: 'user', label: 'Personal accounts', help: 'Settings only organizations have stay hidden.' },

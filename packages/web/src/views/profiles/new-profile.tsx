@@ -2,10 +2,10 @@ import type { ownerTypes } from '@repotted/core';
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import type { NewProfileStart, Profiles } from '../app/profiles.js';
-import type { Repositories } from '../app/repositories.js';
-import type { Router } from '../app/router.js';
-import { run } from './run.js';
+import type { Router } from '../../app/navigation/router.js';
+import type { NewProfileStart, Profiles } from '../../app/profiles/profiles.js';
+import type { Repositories } from '../../app/repositories/repositories.js';
+import { run } from '../layout/run.js';
 
 type OwnerChoice = (typeof ownerTypes)[number] | 'any';
 

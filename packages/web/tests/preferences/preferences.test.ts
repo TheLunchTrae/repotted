@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { browserPreferences } from '../src/app/preferences.js';
+import { browserPreferences } from '../../src/app/preferences/preferences.js';
 
 function storage(start: Record<string, string> = {}): Storage & { readonly kept: Map<string, string> } {
   const kept = new Map(Object.entries(start));

@@ -1,8 +1,8 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { browserFiles, type FileKeeper, keepFiles, type SiteLocks } from '../src/app/kept-files.js';
-import { mkdir, readFile, rm, writeFile } from '../src/engine/files.js';
+import { browserFiles, type FileKeeper, keepFiles, type SiteLocks } from '../../src/app/storage/kept-files.js';
+import { mkdir, readFile, rm, writeFile } from '../../src/engine/files.js';
 
 function siteLocks(): SiteLocks {
   const held = new Set<string>();
@@ -52,8 +52,8 @@ test('a later visit finds the files as the last one left them', async () => {
 
   // The next visit loads the page's modules afresh, with nothing in memory.
   vi.resetModules();
-  const next = await import('../src/app/kept-files.js');
-  const files = await import('../src/engine/files.js');
+  const next = await import('../../src/app/storage/kept-files.js');
+  const files = await import('../../src/engine/files.js');
   expect(
     (
       await next.keepFiles(

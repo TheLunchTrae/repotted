@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import { type ActionPatternCheck, ActionPatternChecks, patternNote } from '../src/app/action-pattern-checks.js';
-import { ActionSearch } from '../src/app/action-search.js';
+import {
+  type ActionPatternCheck,
+  ActionPatternChecks,
+  patternNote,
+} from '../../src/app/profile-editor/action-pattern-checks.js';
+import { ActionSearch } from '../../src/app/profile-editor/action-search.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -220,9 +224,9 @@ test('a note starts with a capital, but for a repository, which keeps its name',
 });
 
 test("an editor's list is followed as it is typed, and only while GitHub shows it", async () => {
-  const { ProfileEditor } = await import('../src/app/profile-editor.js');
-  const { settingSections } = await import('../src/app/setting-fields.js');
-  const { mkdir, rm, writeFile } = await import('../src/engine/files.js');
+  const { ProfileEditor } = await import('../../src/app/profile-editor/profile-editor.js');
+  const { settingSections } = await import('../../src/app/profile-editor/setting-fields.js');
+  const { mkdir, rm, writeFile } = await import('../../src/engine/files.js');
   const field = (path: string): (typeof settingSections)[number]['groups'][number]['fields'][number] => {
     const found = settingSections
       .flatMap((section) => section.groups.flatMap((group) => group.fields))

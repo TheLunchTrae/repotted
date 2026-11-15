@@ -1,6 +1,6 @@
 import { createGitHub, type GitHub } from '@repotted/core';
 
-import type { Session } from '../session.js';
+import type { Session } from '../app/account/session.js';
 
 /**
  * When the browser isn't signed in, the request gets the 401 that GitHub

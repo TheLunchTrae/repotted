@@ -1,6 +1,6 @@
 import { computed, signal } from '@preact/signals';
 
-import { basename } from '../engine/path.js';
+import { basename } from '../../engine/path.js';
 import { type Entry, isEntry, labelProblem, rulesetProblem } from './entry-forms.js';
 import { ownUnsets, type ResolvedProfile } from './own-drafts.js';
 import { sameValue } from './same-value.js';

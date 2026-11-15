@@ -1,11 +1,11 @@
 import { type GitHub, GitHubError } from '@repotted/core';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { FakeGitRepository } from '../../core/tests/support/fake-git.js';
-import { answered, type FakeAccount, FakeGitHub } from '../../core/tests/support/fake-github.js';
-import type { Preferences } from '../src/app/preferences.js';
-import { refreshPause, Repositories, type Repository } from '../src/app/repositories.js';
-import { preferencesFile, SharedPreferences } from '../src/app/shared-preferences.js';
+import { FakeGitRepository } from '../../../core/tests/support/fake-git.js';
+import { answered, type FakeAccount, FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import type { Preferences } from '../../src/app/preferences/preferences.js';
+import { preferencesFile, SharedPreferences } from '../../src/app/preferences/shared-preferences.js';
+import { refreshPause, Repositories, type Repository } from '../../src/app/repositories/repositories.js';
 
 const user = { login: 'Trae', name: null };
 

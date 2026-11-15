@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 
-import { FakeGitHub } from '../../core/tests/support/fake-github.js';
-import { AddressedRepository } from '../src/app/addressed-repository.js';
-import type { Preferences } from '../src/app/preferences.js';
-import { Repositories } from '../src/app/repositories.js';
-import { SharedPreferences } from '../src/app/shared-preferences.js';
-import { browser } from './fake-browser.js';
+import { FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import { AddressedRepository } from '../../src/app/navigation/addressed-repository.js';
+import type { Preferences } from '../../src/app/preferences/preferences.js';
+import { SharedPreferences } from '../../src/app/preferences/shared-preferences.js';
+import { Repositories } from '../../src/app/repositories/repositories.js';
+import { browser } from '../support/fake-browser.js';
 
 const names = ['octo/app', 'octo/web'];
 

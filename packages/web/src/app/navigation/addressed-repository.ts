@@ -1,4 +1,4 @@
-import type { Repositories } from './repositories.js';
+import type { Repositories } from '../repositories/repositories.js';
 import type { Router } from './router.js';
 
 const key = 'repository';

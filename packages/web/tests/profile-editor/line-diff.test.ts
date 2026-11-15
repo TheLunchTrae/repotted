@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { diffLines, foldUnchanged } from '../src/app/line-diff.js';
+import { diffLines, foldUnchanged } from '../../src/app/profile-editor/line-diff.js';
 
 function marked(before: string, after: string): string[] {
   const marks = { same: ' ', added: '+', removed: '-' };

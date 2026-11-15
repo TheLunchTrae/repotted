@@ -1,9 +1,9 @@
 import type { ComponentChildren, JSX, RefObject } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 
-import type { Account, User } from '../app/account.js';
-import { repottedAppInstallUrl } from '../app/github-app.js';
-import type { Router } from '../app/router.js';
+import type { Account, User } from '../../app/account/account.js';
+import { repottedAppInstallUrl } from '../../app/account/github-app.js';
+import type { Router } from '../../app/navigation/router.js';
 import { Link } from './link.js';
 import { usePhone } from './phone.js';
 

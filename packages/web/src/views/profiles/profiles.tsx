@@ -1,17 +1,17 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import type { BranchPreview } from '../app/branch-preview.js';
-import type { ProfileFolderNode, ProfileListing, Profiles } from '../app/profiles.js';
-import type { Repositories } from '../app/repositories.js';
-import type { Router } from '../app/router.js';
+import type { Router } from '../../app/navigation/router.js';
+import type { BranchPreview } from '../../app/profiles/branch-preview.js';
+import type { ProfileFolderNode, ProfileListing, Profiles } from '../../app/profiles/profiles.js';
+import type { Repositories } from '../../app/repositories/repositories.js';
+import { Link } from '../layout/link.js';
+import { run } from '../layout/run.js';
+import { ProfileSettings } from '../profile-editor/profile-editor.js';
+import { SyncNote } from '../settings/settings.js';
 import { previewAddress, PreviewPicker } from './branch-preview.js';
-import { Link } from './link.js';
 import { NewProfileForm } from './new-profile.js';
 import { OwnerTypeDialog } from './owner-type.js';
-import { ProfileSettings } from './profile-editor.js';
-import { run } from './run.js';
-import { SyncNote } from './settings.js';
 
 // The phone breakpoint in app.css.
 const phoneMediaQuery = '(max-width: 760px)';

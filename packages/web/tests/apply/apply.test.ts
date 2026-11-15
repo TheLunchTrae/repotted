@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from 'vitest';
 
-import { answered, FakeGitHub } from '../../core/tests/support/fake-github.js';
-import { Apply } from '../src/app/apply.js';
-import { type SettingField, settingSections } from '../src/app/setting-fields.js';
-import { mkdir, readFile, rm, writeFile } from '../src/engine/files.js';
+import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import { Apply } from '../../src/app/apply/apply.js';
+import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
+import { mkdir, readFile, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
   await rm('/', { recursive: true });

@@ -1,7 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
 
-import type { EntryList, EntryRow } from '../app/entry-edits.js';
+import type { EntryList, EntryRow } from '../../app/profile-editor/entry-edits.js';
 import {
   branchPolicies,
   deploymentBranches,
@@ -20,10 +20,10 @@ import {
   withRule,
   withRuleParameter,
   withStatusChecks,
-} from '../app/entry-forms.js';
-import type { ProfileEditor } from '../app/profile-editor.js';
-import { sameValue } from '../app/same-value.js';
-import { run } from './run.js';
+} from '../../app/profile-editor/entry-forms.js';
+import type { ProfileEditor } from '../../app/profile-editor/profile-editor.js';
+import { sameValue } from '../../app/profile-editor/same-value.js';
+import { run } from '../layout/run.js';
 
 const nouns: Readonly<Record<EntryList, { readonly one: string; readonly many: string; readonly title: string }>> = {
   rulesets: { one: 'ruleset', many: 'rulesets', title: 'Ruleset' },

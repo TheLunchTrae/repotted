@@ -11,8 +11,8 @@
 
 import { type Signal, signal } from '@preact/signals';
 
-import { mkdir, watchFiles, writeFile } from '../engine/files.js';
-import { dirname } from '../engine/path.js';
+import { mkdir, watchFiles, writeFile } from '../../engine/files.js';
+import { dirname } from '../../engine/path.js';
 
 export interface FileKeeper {
   load(): Promise<ReadonlyMap<string, Uint8Array>>;

@@ -1,13 +1,13 @@
 import type { JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
-import type { Account, User } from '../app/account.js';
-import type { ConfigProtection } from '../app/config-protection.js';
-import { repottedAppInstallUrl } from '../app/github-app.js';
-import type { Keeping } from '../app/kept-files.js';
-import type { Profiles } from '../app/profiles.js';
-import type { Repositories } from '../app/repositories.js';
-import { run } from './run.js';
+import type { Account, User } from '../../app/account/account.js';
+import { repottedAppInstallUrl } from '../../app/account/github-app.js';
+import type { ConfigProtection } from '../../app/profiles/config-protection.js';
+import type { Profiles } from '../../app/profiles/profiles.js';
+import type { Repositories } from '../../app/repositories/repositories.js';
+import type { Keeping } from '../../app/storage/kept-files.js';
+import { run } from '../layout/run.js';
 
 export function SyncNote({ profiles }: { readonly profiles: Profiles }): JSX.Element | null {
   const sync = profiles.sync.value;

@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 
-import { Router } from '../src/app/router.js';
+import { Router } from '../../src/app/navigation/router.js';
 
 /**
  * A browser's history of addresses, with a back that tells the router as the

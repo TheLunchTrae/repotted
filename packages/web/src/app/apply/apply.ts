@@ -20,12 +20,12 @@ import {
   StalePlanError,
 } from '@repotted/core';
 
-import { mkdir, rm, stat } from '../engine/files.js';
-import { basename, dirname } from '../engine/path.js';
-import { isSignedOut } from './account.js';
+import { mkdir, rm, stat } from '../../engine/files.js';
+import { basename, dirname } from '../../engine/path.js';
+import { isSignedOut } from '../account/account.js';
+import { type EditorStore, ProfileEditor } from '../profile-editor/profile-editor.js';
+import { builtInFolder } from '../profiles/config-protection.js';
 import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
-import { builtInFolder } from './config-protection.js';
-import { type EditorStore, ProfileEditor } from './profile-editor.js';
 
 export interface Reviewed {
   /** Travels with the review, so no other plan can be applied in its place. */

@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from 'vitest';
 
-import { answered, FakeFleet, FakeGitHub } from '../../core/tests/support/fake-github.js';
-import { Apply } from '../src/app/apply.js';
-import { BatchApply } from '../src/app/batch-apply.js';
-import { mkdir, readFile, rm, writeFile } from '../src/engine/files.js';
+import { answered, FakeFleet, FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import { Apply } from '../../src/app/apply/apply.js';
+import { BatchApply } from '../../src/app/apply/batch-apply.js';
+import { mkdir, readFile, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
   await rm('/', { recursive: true });

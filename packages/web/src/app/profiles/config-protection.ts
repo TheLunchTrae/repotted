@@ -1,9 +1,9 @@
 import { signal } from '@preact/signals';
 import { createPlan, type GitHub, type OwnerType, parseProfile, parseRepo } from '@repotted/core';
 
-import { mkdir, writeFile } from '../engine/files.js';
-import { isSignedOut } from './account.js';
-import type { ComparedProfile } from './comparison.js';
+import { mkdir, writeFile } from '../../engine/files.js';
+import { isSignedOut } from '../account/account.js';
+import type { ComparedProfile } from '../apply/comparison.js';
 
 /** Where the browser keeps the built-in protection an apply starts from, apart from the profiles. */
 export const builtInFolder = '/built-in';

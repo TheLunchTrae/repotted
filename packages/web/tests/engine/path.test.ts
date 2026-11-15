@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { basename, dirname, join, relative, resolve } from '../src/engine/path.js';
+import { basename, dirname, join, relative, resolve } from '../../src/engine/path.js';
 
 test('answers as the POSIX path module does', () => {
   expect(resolve('profiles/a.yaml')).toBe('/profiles/a.yaml');

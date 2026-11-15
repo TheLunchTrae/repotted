@@ -3,7 +3,7 @@
 // database of its own, so the page finds it on the next visit; the browser
 // asks the user again before the page may use it then.
 
-import type { LocalFolder, LocalFolders } from '../app/local-folder.js';
+import type { LocalFolder, LocalFolders } from '../app/profiles/local-folder.js';
 
 // The parts of the API the DOM library leaves out.
 interface Permissions {

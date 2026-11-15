@@ -1,9 +1,9 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 
-import { type ActionSearch, foundNotes } from '../app/action-search.js';
-import type { ProfileEditor } from '../app/profile-editor.js';
-import { run } from './run.js';
+import { type ActionSearch, foundNotes } from '../../app/profile-editor/action-search.js';
+import type { ProfileEditor } from '../../app/profile-editor/profile-editor.js';
+import { run } from '../layout/run.js';
 
 interface ActionSearchProps {
   readonly editor: ProfileEditor;

@@ -11,7 +11,7 @@ import {
   withRule,
   withRuleParameter,
   withStatusChecks,
-} from '../src/app/entry-forms.js';
+} from '../../src/app/profile-editor/entry-forms.js';
 
 const saved = {
   name: 'Main',
