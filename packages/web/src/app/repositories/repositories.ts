@@ -5,6 +5,20 @@ import * as z from 'zod/mini';
 import { isSignedOut, type User } from '../account/account.js';
 import type { Preferences } from '../preferences/preferences.js';
 import type { SharedPreferences } from '../preferences/shared-preferences.js';
+import {
+  type ArchivedFilter,
+  filterChips,
+  filterCount,
+  filtersIn,
+  filtersToSave,
+  type ListFilters,
+  noFilters,
+  passesFilters,
+  sorted,
+  type SortOrder,
+  sortOrderIn,
+  type VisibilityFilter,
+} from './sort-and-filters.js';
 
 type RepositoryList = Awaited<ReturnType<typeof listRepositories>>;
 export type Repository = RepositoryList['repositories'][number];
@@ -52,6 +66,13 @@ export const refreshPause = 15_000;
 /** For a rate limit GitHub gives no time for, or a time already past, as GitHub advises for a secondary limit. */
 const rateLimitPause = 60_000;
 
+export interface TopicChoice {
+  readonly topic: string;
+  /** Of the repositories the other filters leave, those with the topic. */
+  readonly count: number;
+  readonly chosen: boolean;
+}
+
 export interface FolderMoveOptions {
   readonly deselect?: boolean;
 }
@@ -60,6 +81,8 @@ const hiddenOwnersKey = 'hidden-repository-owners';
 const hiddenRepositoriesKey = 'hidden-repositories';
 const foldersKey = 'repository-folders';
 const closedFoldersKey = 'closed-repository-folders';
+const sortOrderKey = 'repository-sort-order';
+const filtersKey = 'repository-filters';
 const names = z.array(z.string());
 const savedFolders = z.array(z.object({ name: z.string(), repositories: z.array(z.string()) }));
 
@@ -156,6 +179,9 @@ export class Repositories {
   readonly #folders = computed<readonly Folder[]>(() => foldersIn(this.preferences.read(foldersKey)));
   /** Kept in this browser alone, so opening or closing a folder commits nothing. */
   readonly #closedFolders = signal<readonly string[]>([]);
+  /** Kept in this browser alone, as how the list is viewed rather than how it is organized. */
+  readonly sortOrder = signal<SortOrder>('name-ascending');
+  readonly filters = signal<ListFilters>(noFilters);
   /** The folder last picked to move the selected repositories to, or made from the selected panel. */
   readonly #moveTarget = signal<MoveTarget | undefined>(undefined);
   readonly #openedName = signal<string | undefined>(undefined);
@@ -176,6 +202,8 @@ export class Repositories {
     this.preferences = preferences;
     this.#browser = browser;
     this.#closedFolders.value = namesIn(browser.read(closedFoldersKey));
+    this.sortOrder.value = sortOrderIn(browser.read(sortOrderKey));
+    this.filters.value = filtersIn(browser.read(filtersKey));
     this.#onSignedOut = onSignedOut;
   }
 
@@ -230,6 +258,32 @@ export class Repositories {
     this.#ownersRepositories.value.filter((repository) => this.showHidden.value || !this.isHidden(repository)),
   );
 
+  readonly filterCount = computed(() => filterCount(this.filters.value));
+  readonly filtering = computed(() => this.filterCount.value > 0);
+  readonly filterChips = computed(() => filterChips(this.filters.value));
+
+  readonly #filteredRepositories = computed<readonly Repository[]>(() =>
+    this.#listedRepositories.value.filter((repository) => passesFilters(repository, this.filters.value)),
+  );
+
+  /**
+   * Every topic of the repositories in view, with any chosen topic no
+   * repository has now, so it can still be unchosen.
+   */
+  readonly topicChoices = computed<readonly TopicChoice[]>(() => {
+    const filters = this.filters.value;
+    const listed = this.#listedRepositories.value;
+    const topics = new Set([...listed.flatMap((repository) => repository.topics), ...filters.topics]);
+    const others = listed.filter((repository) => passesFilters(repository, filters, 'topics'));
+    return [...topics]
+      .toSorted((left, right) => left.localeCompare(right))
+      .map((topic) => ({
+        topic,
+        count: others.filter((repository) => repository.topics.includes(topic)).length,
+        chosen: filters.topics.includes(topic),
+      }));
+  });
+
   readonly folderNames = computed<readonly string[]>(() => this.#folders.value.map((folder) => folder.name));
 
   /**
@@ -237,12 +291,15 @@ export class Repositories {
    * one with a repository that matches shows those, open while the search
    * lasts. A folder whose repositories are all out of view, of hidden owners
    * or hidden themselves, doesn't show, as they wouldn't in their owners'
-   * groups; an empty one does, so it can be filled.
+   * groups; an empty one does, so it can be filled, unless a search that
+   * doesn't name it or a filter is on. Filters narrow a folder as they do the
+   * owners' groups, and its repositories follow the sort order.
    */
   readonly folders = computed<readonly FolderGroup[]>(() => {
     const words = this.search.value.trim().toLowerCase();
     const listed = this.list.value?.repositories ?? [];
-    const visible = this.#listedRepositories.value;
+    const visible = this.#filteredRepositories.value;
+    const filtering = this.filtering.value;
     return this.#folders.value.flatMap((folder) => {
       const filed = (repository: Repository): boolean =>
         folder.repositories.some((name) => sameName(name, repository.full_name));
@@ -252,14 +309,14 @@ export class Repositories {
       const matching = named
         ? inView
         : inView.filter((repository) => repository.full_name.toLowerCase().includes(words));
-      if (matching.length === 0 && !(empty && named)) {
+      if (matching.length === 0 && !(empty && named && !filtering)) {
         return [];
       }
       return [
         {
           name: folder.name,
           open: words !== '' || !this.#closedFolders.value.some((name) => sameName(name, folder.name)),
-          repositories: matching,
+          repositories: sorted(matching, this.sortOrder.value),
           holdsNoListedRepository: empty,
         },
       ];
@@ -274,8 +331,11 @@ export class Repositories {
 
   readonly groups = computed<readonly OwnerGroup[]>(() => {
     const words = this.search.value.trim().toLowerCase();
-    const repositories = this.#listedRepositories.value.filter(
-      (repository) => this.folderOf(repository) === undefined && repository.full_name.toLowerCase().includes(words),
+    const repositories = sorted(
+      this.#filteredRepositories.value.filter(
+        (repository) => this.folderOf(repository) === undefined && repository.full_name.toLowerCase().includes(words),
+      ),
+      this.sortOrder.value,
     );
     return this.owners.value
       .filter((owner) => owner.shown)
@@ -287,7 +347,7 @@ export class Repositories {
       .filter((group) => group.repositories.length > 0);
   });
 
-  /** A search with no match names how many hidden repositories hold it. */
+  /** A search or filters with no match name how many hidden repositories match. */
   readonly hiddenMatches = computed(() => {
     if (this.showHidden.value) {
       return 0;
@@ -296,6 +356,7 @@ export class Repositories {
     return this.#ownersRepositories.value.filter(
       (repository) =>
         this.isHidden(repository) &&
+        passesFilters(repository, this.filters.value) &&
         (repository.full_name.toLowerCase().includes(words) ||
           (this.folderOf(repository)?.toLowerCase().includes(words) ?? false)),
     ).length;
@@ -350,7 +411,10 @@ export class Repositories {
 
   readonly countLabel = computed(() => {
     const total = this.list.value?.repositories.length ?? 0;
-    const shown = this.#ownersRepositories.value.length - (this.#hidingRepositories.value ? this.hiddenCount.value : 0);
+    const shown = this.#ownersRepositories.value.filter(
+      (repository) =>
+        (this.showHidden.value || !this.isHidden(repository)) && passesFilters(repository, this.filters.value),
+    ).length;
     return shown === total ? `All ${total}` : `${shown} of ${total}`;
   });
 
@@ -362,6 +426,33 @@ export class Repositories {
   readonly refreshWait = computed(() =>
     this.secondsUntilRefreshCanRun.value > 0 ? this.#refreshWait.value : undefined,
   );
+
+  setSortOrder(order: SortOrder): void {
+    this.sortOrder.value = order;
+    this.#browser.write(sortOrderKey, order === 'name-ascending' ? undefined : order);
+  }
+
+  setVisibilityFilter(visibility: VisibilityFilter): void {
+    this.#setFilters({ ...this.filters.value, visibility });
+  }
+
+  setArchivedFilter(archived: ArchivedFilter): void {
+    this.#setFilters({ ...this.filters.value, archived });
+  }
+
+  setTopicChosen(topic: string, chosen: boolean): void {
+    const others = this.filters.value.topics.filter((kept) => kept !== topic);
+    this.#setFilters({ ...this.filters.value, topics: chosen ? [...others, topic] : others });
+  }
+
+  clearFilters(): void {
+    this.#setFilters(noFilters);
+  }
+
+  #setFilters(filters: ListFilters): void {
+    this.filters.value = filters;
+    this.#browser.write(filtersKey, filtersToSave(filters));
+  }
 
   /** Unlike `refresh`, with no pause after it. */
   async load(): Promise<void> {

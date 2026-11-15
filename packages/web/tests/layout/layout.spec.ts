@@ -52,6 +52,52 @@ const screens: Readonly<Record<string, Screen>> = {
     reachFromPath: (page) => page.getByText('All owners').click(),
     visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Only personal' }),
   },
+  'filter menu': {
+    path: '/',
+    reachFromPath: (page) => page.locator('summary', { hasText: 'Filter' }).click(),
+    visibleOnceDrawn: (page) => page.getByRole('checkbox', { name: /^an-unusually-long-github-topic/u }),
+  },
+  'filters on': {
+    path: '/',
+    reachFromPath: async (page) => {
+      await page.locator('summary', { hasText: 'Filter' }).click();
+      await page.getByRole('checkbox', { name: /^an-unusually-long-github-topic/u }).check();
+      await page.getByRole('radio', { name: 'Private' }).check();
+    },
+    visibleOnceDrawn: (page) =>
+      page.getByRole('button', {
+        name: 'Remove the topic filter an-unusually-long-github-topic-of-fifty-characters',
+      }),
+  },
+  'filter menu beside the selected panel': {
+    path: '/',
+    reachFromPath: async (page) => {
+      await page.getByRole('checkbox', { name: 'Select lunch/api' }).check();
+      await page.locator('summary', { hasText: 'Filter' }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('checkbox', { name: /^an-unusually-long-github-topic/u }),
+  },
+  'sort menu beside the selected panel': {
+    path: '/',
+    reachFromPath: async (page) => {
+      await page.getByRole('checkbox', { name: 'Select lunch/api' }).check();
+      await page.locator('summary', { hasText: 'Sort:' }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('radio', { name: 'Last pushed, oldest first' }),
+  },
+  'sort menu': {
+    path: '/',
+    reachFromPath: (page) => page.locator('summary', { hasText: 'Sort:' }).click(),
+    visibleOnceDrawn: (page) => page.getByRole('radio', { name: 'Last pushed, oldest first' }),
+  },
+  'sorted by last push': {
+    path: '/',
+    reachFromPath: async (page) => {
+      await page.locator('summary', { hasText: 'Sort:' }).click();
+      await page.getByRole('radio', { name: 'Last pushed, newest first' }).check();
+    },
+    visibleOnceDrawn: (page) => page.getByText('Pushed 11 months ago'),
+  },
   'account menu': {
     path: '/',
     reachFromPath: (page) => page.locator('.account-menu > summary').click(),

@@ -14,12 +14,24 @@ import {
   type Repositories,
   type Repository,
 } from '../../app/repositories/repositories.js';
+import {
+  archivedFilters,
+  archivedLabels,
+  type FilterChip,
+  pushedLabel,
+  sortOrderLabels,
+  sortOrders,
+  visibilityFilters,
+  visibilityLabels,
+} from '../../app/repositories/sort-and-filters.js';
+import { useMenuPanelKeptOnPage } from '../layout/menu-placement.js';
 import { usePhone } from '../layout/phone.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu } from '../layout/shell.js';
 
 function OwnerFilter({ repositories }: { readonly repositories: Repositories }): JSX.Element {
   const menu = useDismissibleMenu();
+  useMenuPanelKeptOnPage(menu);
   const owners = repositories.owners.value;
   return (
     <details class="menu" ref={menu}>
@@ -67,6 +79,219 @@ function OwnerFilter({ repositories }: { readonly repositories: Repositories }):
         </div>
       </div>
     </details>
+  );
+}
+
+function FilterChoices<Choice extends string>({
+  legend,
+  name,
+  choices,
+  labels,
+  value,
+  onChange,
+}: {
+  readonly legend: string;
+  readonly name: string;
+  readonly choices: readonly Choice[];
+  readonly labels: Readonly<Record<Choice, string>>;
+  readonly value: Choice;
+  readonly onChange: (choice: Choice) => void;
+}): JSX.Element {
+  return (
+    <fieldset class="filter-choices">
+      <legend>{legend}</legend>
+      <div class="segments">
+        {choices.map((choice) => (
+          <label key={choice}>
+            <input
+              type="radio"
+              name={name}
+              checked={value === choice}
+              onChange={() => {
+                onChange(choice);
+              }}
+            />
+            <span>{labels[choice]}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+function FilterMenu({ repositories }: { readonly repositories: Repositories }): JSX.Element {
+  const menu = useDismissibleMenu();
+  useMenuPanelKeptOnPage(menu);
+  const filters = repositories.filters.value;
+  const topics = repositories.topicChoices.value;
+  const count = repositories.filterCount.value;
+  return (
+    <details class="menu" ref={menu}>
+      <summary class="button button-quiet" aria-label={count > 0 ? `Filter, ${count} on` : 'Filter'}>
+        Filter
+        {count > 0 && (
+          <span class="pill filter-count" aria-hidden="true">
+            {count}
+          </span>
+        )}
+      </summary>
+      <div class="menu-panel filter-panel">
+        <FilterChoices
+          legend="Visibility"
+          name="filter-visibility"
+          choices={visibilityFilters}
+          labels={visibilityLabels}
+          value={filters.visibility}
+          onChange={(visibility) => {
+            repositories.setVisibilityFilter(visibility);
+          }}
+        />
+        <FilterChoices
+          legend="Archived"
+          name="filter-archived"
+          choices={archivedFilters}
+          labels={archivedLabels}
+          value={filters.archived}
+          onChange={(archived) => {
+            repositories.setArchivedFilter(archived);
+          }}
+        />
+        <fieldset class="owner-choices filter-topics">
+          <legend>Has any of these topics</legend>
+          {topics.length === 0 && <p class="muted small filter-none">No repository here has topics.</p>}
+          {topics.map((choice) => (
+            <label key={choice.topic}>
+              <input
+                type="checkbox"
+                checked={choice.chosen}
+                onChange={(event) => {
+                  repositories.setTopicChosen(choice.topic, event.currentTarget.checked);
+                }}
+              />
+              <span class="owner-name mono">{choice.topic}</span>
+              <span class="muted count">{choice.count}</span>
+            </label>
+          ))}
+        </fieldset>
+        <div class="menu-actions">
+          <button
+            class="button button-quiet"
+            type="button"
+            disabled={count === 0}
+            onClick={() => {
+              repositories.clearFilters();
+              requestAnimationFrame(() => {
+                menu.current?.querySelector<HTMLElement>('.menu-panel input:checked')?.focus();
+              });
+            }}
+          >
+            Clear filters
+          </button>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function SortMenu({ repositories }: { readonly repositories: Repositories }): JSX.Element {
+  const menu = useDismissibleMenu();
+  useMenuPanelKeptOnPage(menu);
+  const order = repositories.sortOrder.value;
+  return (
+    <details class="menu" ref={menu}>
+      <summary class="button button-quiet">
+        Sort: <span class="sort-order">{sortOrderLabels[order]}</span>
+      </summary>
+      <div class="menu-panel">
+        <fieldset class="owner-choices">
+          <legend>Sort repositories by</legend>
+          {sortOrders.map((choice) => (
+            <label key={choice}>
+              <input
+                type="radio"
+                name="sort-order"
+                checked={order === choice}
+                onChange={() => {
+                  repositories.setSortOrder(choice);
+                }}
+              />
+              <span class="owner-name">{sortOrderLabels[choice]}</span>
+            </label>
+          ))}
+        </fieldset>
+      </div>
+    </details>
+  );
+}
+
+function removeChip(repositories: Repositories, chip: FilterChip): void {
+  switch (chip.kind) {
+    case 'visibility':
+      repositories.setVisibilityFilter('any');
+      return;
+    case 'archived':
+      repositories.setArchivedFilter('any');
+      return;
+    case 'topic':
+      repositories.setTopicChosen(chip.topic, false);
+  }
+}
+
+function chipRemovalLabel(chip: FilterChip): string {
+  return chip.kind === 'topic'
+    ? `Remove the topic filter ${chip.topic}`
+    : `Remove the ${chip.label.toLowerCase()} filter`;
+}
+
+/** Removing a chip takes it away, so the focus moves to the chip now in its place, the one before it, or the search. */
+function FilterChips({
+  repositories,
+  search,
+}: {
+  readonly repositories: Repositories;
+  readonly search: RefObject<HTMLInputElement | null>;
+}): JSX.Element | null {
+  const chips = repositories.filterChips.value;
+  const list = useRef<HTMLDivElement>(null);
+  if (chips.length === 0) {
+    return null;
+  }
+  const focusAfterRemoving = (index: number): void => {
+    requestAnimationFrame(() => {
+      const left = list.current?.querySelectorAll<HTMLElement>('.filter-chip');
+      (left?.[Math.min(index, left.length - 1)] ?? search.current)?.focus();
+    });
+  };
+  return (
+    <div class="filter-chips" ref={list} role="group" aria-label="Filters on">
+      {chips.map((chip, index) => (
+        <button
+          key={chip.kind === 'topic' ? `topic:${chip.topic}` : chip.kind}
+          class="pill filter-chip"
+          type="button"
+          aria-label={chipRemovalLabel(chip)}
+          onClick={() => {
+            removeChip(repositories, chip);
+            focusAfterRemoving(index);
+          }}
+        >
+          {chip.label}
+          <span aria-hidden="true">×</span>
+        </button>
+      ))}
+      <button
+        class="button button-quiet button-small"
+        type="button"
+        onClick={() => {
+          repositories.clearFilters();
+          requestAnimationFrame(() => {
+            search.current?.focus();
+          });
+        }}
+      >
+        Clear filters
+      </button>
+    </div>
   );
 }
 
@@ -381,6 +606,8 @@ function RepositoryRow({ repository, repositories, withOwner }: RowProps): JSX.E
   const opened = repositories.opened.value;
   const [owner = '', name = repository.full_name] = repository.full_name.split('/');
   const hidden = repositories.isHidden(repository);
+  const order = repositories.sortOrder.value;
+  const byPush = order === 'pushed-newest' || order === 'pushed-oldest';
   return (
     <li class={hidden ? 'selectable-row selectable-row-hidden' : 'selectable-row'}>
       <input
@@ -404,6 +631,14 @@ function RepositoryRow({ repository, repositories, withOwner }: RowProps): JSX.E
         <span class="row-name">
           <span class="mono">{name}</span>
           {withOwner && <span class="row-owner muted small">{owner}</span>}
+          {byPush && (
+            <span
+              class="row-pushed muted small"
+              title={repository.pushed_at === null ? undefined : new Date(repository.pushed_at).toLocaleString()}
+            >
+              {pushedLabel(repository.pushed_at, Date.now())}
+            </span>
+          )}
         </span>
         {repository.archived && <span class="pill pill-drift">Archived</span>}
         {hidden && <span class="pill">Hidden</span>}
@@ -949,6 +1184,15 @@ function SelectedPanel({
   );
 }
 
+function noMatch(search: string, filtering: boolean): string {
+  if (!filtering) {
+    return `No repository matches "${search}".`;
+  }
+  return search === ''
+    ? 'No repository matches these filters.'
+    : `No repository matches "${search}" and these filters.`;
+}
+
 export function RepositoriesPage({
   repositories,
   address,
@@ -1152,6 +1396,8 @@ export function RepositoriesPage({
               {(repositories.owners.value.length > 1 || repositories.ownersFiltered.value) && (
                 <OwnerFilter repositories={repositories} />
               )}
+              <FilterMenu repositories={repositories} />
+              <SortMenu repositories={repositories} />
               {(repositories.hiddenCount.value > 0 || repositories.showHidden.value) && (
                 <div class="segments">
                   <label>
@@ -1184,6 +1430,8 @@ export function RepositoriesPage({
                 </button>
               )}
             </div>
+
+            <FilterChips repositories={repositories} search={search} />
 
             {justHidden.length > 0 && (
               <div class="notice" role="status">
@@ -1240,10 +1488,24 @@ export function RepositoriesPage({
             ) : groups.length === 0 && folders.length === 0 ? (
               <div class="empty">
                 <p>
-                  No repository matches "{repositories.search.value.trim()}".
+                  {noMatch(repositories.search.value.trim(), repositories.filtering.value)}
                   {hiddenMatches > 0 &&
                     (hiddenMatches === 1 ? ' 1 hidden repository does.' : ` ${hiddenMatches} hidden repositories do.`)}
                 </p>
+                {repositories.filtering.value && (
+                  <button
+                    class="button"
+                    type="button"
+                    onClick={() => {
+                      repositories.clearFilters();
+                      requestAnimationFrame(() => {
+                        search.current?.focus();
+                      });
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                )}
                 {hiddenMatches > 0 && (
                   <button
                     class="button"

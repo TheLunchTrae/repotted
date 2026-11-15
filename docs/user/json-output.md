@@ -152,8 +152,9 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   and `commit` is the branch's commit after the sync, or null for an empty
   repository. It exits 1 when `conflicts` is not empty.
 - `repos` prints `{ source, repositories, missing_permissions }`, each
-  repository as `{ full_name, private, archived, topics }`, sorted by name: the
-  repositories your account administers. With a Repotted App sign-in,
+  repository as `{ full_name, private, archived, topics, pushed_at }`, sorted
+  by name: the repositories your account administers. `pushed_at` is the time
+  of the last push, or null when GitHub gives none. With a Repotted App sign-in,
   `source` is `installations` and the list holds those the App is installed
   on. GitHub refuses the installation list to any other token, which gets
   `admin` and every repository the account administers; the token itself may

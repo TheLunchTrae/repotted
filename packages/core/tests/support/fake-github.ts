@@ -54,6 +54,7 @@ export interface FakeRepository {
   private: boolean;
   archived?: boolean;
   topics?: string[];
+  pushed_at?: string | null;
   permissions?: { admin: boolean };
 }
 

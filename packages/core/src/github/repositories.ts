@@ -8,6 +8,8 @@ export interface Repository {
   readonly private: boolean;
   readonly archived: boolean;
   readonly topics: readonly string[];
+  /** Null when GitHub gives no push time. */
+  readonly pushed_at: string | null;
 }
 
 /** `settings_url` is where an owner accepts them. */
@@ -29,6 +31,7 @@ const repository = z.object({
   private: z.boolean(),
   archived: z.boolean().optional(),
   topics: z.array(z.string()).optional(),
+  pushed_at: z.string().nullish(),
   permissions: z.object({ admin: z.boolean() }).partial().optional(),
 });
 
@@ -56,6 +59,7 @@ function describe(entry: z.infer<typeof repository>): Repository {
     private: entry.private,
     archived: entry.archived ?? false,
     topics: entry.topics ?? [],
+    pushed_at: entry.pushed_at ?? null,
   };
 }
 

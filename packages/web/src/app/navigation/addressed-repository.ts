@@ -22,8 +22,8 @@ export function repositoryAddress(name: string): string {
  * follows the address.
  *
  * On a phone the opened repository is a screen of its own, so it is let go of once
- * its repository is out of view, as one hidden, moved into a closed folder,
- * or gone from the list, and the address names only what shows.
+ * its repository is out of view, as one hidden, filtered out, moved into a
+ * closed folder, or gone from the list, and the address names only what shows.
  */
 export class AddressedRepository {
   readonly #repositories: Repositories;
