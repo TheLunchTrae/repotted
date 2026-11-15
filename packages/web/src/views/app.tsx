@@ -4,7 +4,7 @@ import type { JSX } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
-import { AddressSelection } from '../app/address-selection.js';
+import { AddressedRepository } from '../app/addressed-repository.js';
 import { Apply } from '../app/apply.js';
 import { BatchApply } from '../app/batch-apply.js';
 import { Comparison } from '../app/comparison.js';
@@ -77,7 +77,7 @@ function SignedIn({
       batch: new BatchApply(github, refused),
     };
   }, [account, github, preferences, folders, user]);
-  const address = useMemo(() => new AddressSelection(repositories, router), [repositories, router]);
+  const address = useMemo(() => new AddressedRepository(repositories, router), [repositories, router]);
   useEffect(() => {
     run(repositories.load());
     run(profiles.refresh());
@@ -186,9 +186,9 @@ function SignedIn({
           onBatch={(names, profile) => {
             run(
               (profile === undefined ? batch.resume() : batch.start(names, profile)).then(() => {
-                // The ticks have done their work once a batch started from them holds the repositories.
+                // The selection has done its work once a batch started from it holds the repositories.
                 if (profile !== undefined && batch.state.value.kind === 'reviewed') {
-                  repositories.clearTicks();
+                  repositories.deselectAll();
                 }
               }),
             );

@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 
-import { repositoryAddress } from '../app/address-selection.js';
+import { repositoryAddress } from '../app/addressed-repository.js';
 import type { CompareRow, Comparison } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
@@ -47,7 +47,7 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
       <div class="page">
         <div class="page-body">
           <h1>Compare a repository with a profile</h1>
-          <p>Select a repository on the Repositories page, pick a profile, and choose Compare.</p>
+          <p>Open a repository on the Repositories page, pick a profile, and choose Compare.</p>
           <p>{back}</p>
         </div>
       </div>

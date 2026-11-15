@@ -39,7 +39,7 @@ export interface FolderGroup {
   readonly empty: boolean;
 }
 
-/** Where the ticked panel moves the ticked repositories: a folder, out of every folder, or a new folder. */
+/** Where the selected panel moves the selected repositories: a folder, out of every folder, or a new folder. */
 export type MoveTarget =
   | { readonly kind: 'folder'; readonly name: string }
   | { readonly kind: 'none' }
@@ -60,10 +60,10 @@ export const refreshPause = 15_000;
  */
 const rateLimitPause = 60_000;
 
-/** How a folder move treats the ticks. */
+/** How a folder move treats the selection. */
 export interface FolderMoveOptions {
-  /** Unticks the repositories moved, for ones that were ticked to be moved. */
-  readonly untick?: boolean;
+  /** Deselects the repositories moved, for ones that were selected to be moved. */
+  readonly deselect?: boolean;
 }
 
 const hiddenOwnersKey = 'hidden-repository-owners';
@@ -142,7 +142,7 @@ function kept(list: readonly string[]): readonly string[] | undefined {
   return list.length > 0 ? list : undefined;
 }
 
-/** The repositories page: the list, whose repositories show, the search, and the selection. */
+/** The repositories page: the list, whose repositories show, the search, and the repository opened. */
 export class Repositories {
   readonly loading = signal(false);
   readonly error = signal<string | undefined>(undefined);
@@ -155,10 +155,10 @@ export class Repositories {
   readonly showHidden = signal(false);
   /** The repositories the last hide took out of the list, which Undo brings back. */
   readonly justHidden = signal<readonly string[]>([]);
-  /** Of those, the ones that were ticked, which Undo ticks again. */
-  #justUnticked: readonly string[] = [];
-  /** The selection let go of when the last hide took it out of view, which Undo selects again. */
-  #justDeselected: string | undefined;
+  /** Of those, the ones that were selected, which Undo selects again. */
+  #justDeselected: readonly string[] = [];
+  /** The repository let go of when the last hide took it out of view, which Undo opens again. */
+  #justClosed: string | undefined;
 
   readonly #github: GitHub;
   readonly #user: User;
@@ -173,10 +173,10 @@ export class Repositories {
   readonly #folders = computed<readonly Folder[]>(() => foldersIn(this.preferences.read(foldersKey)));
   /** The closed folders, by name. Kept in this browser alone, so opening or closing a folder commits nothing. */
   readonly #closedFolders = signal<readonly string[]>([]);
-  /** The folder last picked to move the ticked repositories to, or made from the ticked panel. */
+  /** The folder last picked to move the selected repositories to, or made from the selected panel. */
   readonly #moveTarget = signal<MoveTarget | undefined>(undefined);
-  readonly #selectedName = signal<string | undefined>(undefined);
-  readonly #tickedNames = signal<ReadonlySet<string>>(new Set());
+  readonly #openedName = signal<string | undefined>(undefined);
+  readonly #selectedNames = signal<ReadonlySet<string>>(new Set());
   readonly #refreshWait = signal<RefreshWait | undefined>(undefined);
   /** The time the countdown last read, which a timer moves on each second while Refresh waits. */
   readonly #now = signal(Date.now());
@@ -331,11 +331,11 @@ export class Repositories {
   );
 
   /**
-   * The selected repository, while it shows; a search, a hide, or a closed
+   * The opened repository, while it shows; a search, a hide, or a closed
    * folder that takes it out of view clears it.
    */
-  readonly selected = computed<Repository | undefined>(() => {
-    const name = this.#selectedName.value;
+  readonly opened = computed<Repository | undefined>(() => {
+    const name = this.#openedName.value;
     return name === undefined ? undefined : this.inView(name);
   });
 
@@ -352,12 +352,12 @@ export class Repositories {
   }
 
   /**
-   * The ticked repositories the account still lists, in the list's order. One
-   * a search or a hidden owner takes out of view stays ticked, since ticking
-   * across searches is how several are found; hiding a repository unticks it.
+   * The selected repositories the account still lists, in the list's order. One
+   * a search or a hidden owner takes out of view stays selected, since selecting
+   * across searches is how several are found; hiding a repository deselects it.
    */
-  readonly ticked = computed<readonly Repository[]>(() =>
-    (this.list.value?.repositories ?? []).filter((repository) => this.#tickedNames.value.has(repository.full_name)),
+  readonly selected = computed<readonly Repository[]>(() =>
+    (this.list.value?.repositories ?? []).filter((repository) => this.#selectedNames.value.has(repository.full_name)),
   );
 
   readonly ownersFiltered = computed(() => this.owners.value.some((owner) => !owner.shown));
@@ -427,6 +427,12 @@ export class Repositories {
     try {
       const [list] = await Promise.all([listRepositories(this.#github), this.preferences.reload()]);
       this.list.value = list;
+      // A selected repository the account no longer lists drops out, so it isn't selected again if it returns.
+      const listed = new Set(list.repositories.map((repository) => repository.full_name));
+      const kept = [...this.#selectedNames.value].filter((name) => listed.has(name));
+      if (kept.length !== this.#selectedNames.value.size) {
+        this.#setSelected(new Set(kept));
+      }
     } catch (error) {
       if (isSignedOut(error)) {
         this.#onSignedOut();
@@ -470,28 +476,28 @@ export class Repositories {
     );
   }
 
-  /** The selected repository's `owner/name`, kept while it is out of view or before the list arrives. */
-  get selectedName(): string | undefined {
-    return this.#selectedName.value;
+  /** The opened repository's `owner/name`, kept while it is out of view or before the list arrives. */
+  get openedName(): string | undefined {
+    return this.#openedName.value;
   }
 
-  /** Selects a repository by its `owner/name`, which shows once the list has it in view. */
-  select(repository: Pick<Repository, 'full_name'> | undefined): void {
-    this.#selectedName.value = repository?.full_name;
+  /** Opens a repository by its `owner/name`, which shows once the list has it in view. */
+  open(repository: Pick<Repository, 'full_name'> | undefined): void {
+    this.#openedName.value = repository?.full_name;
     this.#clearJustHidden();
   }
 
   /**
-   * Lets go of the selection, as when it has gone out of view, without
-   * moving on from the last hide: its Undo selects it again if the hide took
+   * Lets go of the opened repository, as when it has gone out of view, without
+   * moving on from the last hide: its Undo opens it again if the hide took
    * it out of view.
    */
-  dropSelection(): void {
-    const name = this.#selectedName.value;
+  dropOpened(): void {
+    const name = this.#openedName.value;
     if (name !== undefined && this.justHidden.value.includes(name)) {
-      this.#justDeselected = name;
+      this.#justClosed = name;
     }
-    this.#selectedName.value = undefined;
+    this.#openedName.value = undefined;
   }
 
   setShowHidden(shown: boolean): void {
@@ -500,7 +506,7 @@ export class Repositories {
   }
 
   /**
-   * Hides these repositories from the list, unticks them, and keeps them for
+   * Hides these repositories from the list, deselects them, and keeps them for
    * Undo. A hidden repository stays hidden when the list no longer has it,
    * so it is still hidden if it returns.
    */
@@ -512,16 +518,16 @@ export class Repositories {
       const have = new Set(hidden.map((name) => name.toLowerCase()));
       return kept([...hidden, ...adding.filter((name) => !have.has(name))]);
     });
-    const ticked = new Set(this.#tickedNames.value);
+    const selected = new Set(this.#selectedNames.value);
     for (const repository of repositories) {
-      ticked.delete(repository.full_name);
+      selected.delete(repository.full_name);
     }
     this.justHidden.value = hiding.map((repository) => repository.full_name);
-    this.#justUnticked = repositories
+    this.#justDeselected = repositories
       .map((repository) => repository.full_name)
-      .filter((name) => this.#tickedNames.value.has(name));
-    this.#justDeselected = undefined;
-    this.#tickedNames.value = ticked;
+      .filter((name) => this.#selectedNames.value.has(name));
+    this.#justClosed = undefined;
+    this.#setSelected(selected);
   }
 
   /** Shows these repositories in the list again. */
@@ -533,30 +539,50 @@ export class Repositories {
     this.#clearJustHidden();
   }
 
-  /** Shows the repositories the last hide took out of the list again, ticked as they were. */
+  /** Shows the repositories the last hide took out of the list again, selected as they were. */
   undoHide(): void {
-    const unticked = this.#justUnticked;
     const deselected = this.#justDeselected;
+    const closed = this.#justClosed;
     this.unhide(this.justHidden.value.map((full_name) => ({ full_name })));
-    this.#tickedNames.value = new Set([...this.#tickedNames.value, ...unticked]);
-    if (deselected !== undefined) {
-      this.#selectedName.value = deselected;
+    this.#setSelected(new Set([...this.#selectedNames.value, ...deselected]));
+    if (closed !== undefined) {
+      this.#openedName.value = closed;
     }
   }
 
-  /** Ticks a repository for an apply to several, or unticks it. */
-  tick(repository: Repository, ticked: boolean): void {
-    const names = new Set(this.#tickedNames.value);
-    if (ticked) {
-      names.add(repository.full_name);
-    } else {
-      names.delete(repository.full_name);
-    }
-    this.#tickedNames.value = names;
+  /** Selects a repository for an apply to several, or deselects it. */
+  select(repository: Repository, selected: boolean): void {
+    this.selectEach([repository], selected);
   }
 
-  clearTicks(): void {
-    this.#tickedNames.value = new Set();
+  /** Selects these repositories, as a folder's Select all does, or deselects them; others stay as they are. */
+  selectEach(repositories: readonly Repository[], selected: boolean): void {
+    const names = new Set(this.#selectedNames.value);
+    for (const repository of repositories) {
+      if (selected) {
+        names.add(repository.full_name);
+      } else {
+        names.delete(repository.full_name);
+      }
+    }
+    this.#setSelected(names);
+  }
+
+  /** Whether the repository is selected. */
+  isSelected(repository: Repository): boolean {
+    return this.#selectedNames.value.has(repository.full_name);
+  }
+
+  deselectAll(): void {
+    this.#setSelected(new Set());
+  }
+
+  /** Keeps the selection, and forgets where the panel was moving it once nothing is selected. */
+  #setSelected(names: ReadonlySet<string>): void {
+    this.#selectedNames.value = names;
+    if (names.size === 0) {
+      this.#moveTarget.value = undefined;
+    }
   }
 
   setOwnerShown(owner: string, shown: boolean): void {
@@ -597,19 +623,18 @@ export class Repositories {
   }
 
   /**
-   * Where the ticked panel moves the ticked repositories: what was last
-   * picked there, or the folder last made, while it is still there under any
-   * name it was given since; else the first folder, or a new one when there
-   * is none.
+   * Where the selected panel moves the selected repositories: what was picked
+   * there, or the folder made from there, while it is still there under any
+   * name it was given since. Nothing is picked until one is chosen, and the
+   * choice goes once nothing is selected.
    */
-  readonly moveTarget = computed<MoveTarget>(() => {
+  readonly moveTarget = computed<MoveTarget | undefined>(() => {
     const picked = this.#moveTarget.value;
-    const names = this.folderNames.value;
-    if (picked !== undefined && picked.kind !== 'folder') {
+    if (picked?.kind !== 'folder') {
       return picked;
     }
-    const name = names.find((folder) => picked !== undefined && sameName(folder, picked.name)) ?? names[0];
-    return name === undefined ? { kind: 'new' } : { kind: 'folder', name };
+    const name = this.folderNames.value.find((folder) => sameName(folder, picked.name));
+    return name === undefined ? undefined : { kind: 'folder', name };
   });
 
   pickMoveTarget(target: MoveTarget): void {
@@ -617,15 +642,15 @@ export class Repositories {
   }
 
   /**
-   * Makes a folder and moves these repositories into it, unticking them when
-   * `untick` says they were ticked for it. Answers why not when the name can't
+   * Makes a folder and moves these repositories into it, deselecting them
+   * when `deselect` says they were selected for it. Answers why not when the name can't
    * be used. A folder of that name saved elsewhere meanwhile takes the
    * repositories instead.
    */
   createFolder(
     name: string,
     repositories: readonly Repository[] = [],
-    { untick = false }: FolderMoveOptions = {},
+    { deselect = false }: FolderMoveOptions = {},
   ): string | undefined {
     const problem = this.folderNameProblem(name);
     if (problem !== undefined) {
@@ -634,10 +659,13 @@ export class Repositories {
     const trimmed = name.trim();
     const moving = repositories.map((repository) => repository.full_name);
     this.#updateFolders((folders) => withMoved(folders, moving, trimmed));
-    if (untick) {
-      this.#untick(moving);
+    if (deselect) {
+      this.#deselect(moving);
     }
-    this.#moveTarget.value = { kind: 'folder', name: trimmed };
+    // Made from the selected panel and left empty, it is where the panel moves them.
+    if (deselect && this.#selectedNames.value.size > 0) {
+      this.#moveTarget.value = { kind: 'folder', name: trimmed };
+    }
     return undefined;
   }
 
@@ -682,36 +710,40 @@ export class Repositories {
   deleteFolder(name: string): void {
     this.#updateFolders((folders) => folders.filter((folder) => !sameName(folder.name, name)));
     this.#updateClosed((closed) => closed.filter((folder) => !sameName(folder, name)));
+    const picked = this.#moveTarget.value;
+    if (picked?.kind === 'folder' && sameName(picked.name, name)) {
+      this.#moveTarget.value = undefined;
+    }
   }
 
   /**
    * Moves the repositories into the folder, out of any other, or out of every
-   * folder when none is named. With `untick`, for repositories ticked to be
-   * moved, it unticks them too, since they have gone where they were ticked for.
+   * folder when none is named. With `deselect`, for repositories selected to
+   * be moved, it deselects them too, since they have gone where they were selected for.
    */
   moveToFolder(
     repositories: readonly Repository[],
     name: string | undefined,
-    { untick = false }: FolderMoveOptions = {},
+    { deselect = false }: FolderMoveOptions = {},
   ): void {
     const moving = repositories.map((repository) => repository.full_name);
     this.#updateFolders((folders) => withMoved(folders, moving, name));
-    if (untick) {
-      this.#untick(moving);
+    if (deselect) {
+      this.#deselect(moving);
     }
   }
 
-  /** Unticks these repositories, so that Undo after a hide doesn't tick them again either. */
-  #untick(names: readonly string[]): void {
-    const ticked = new Set(this.#tickedNames.value);
+  /** Deselects these repositories, so that Undo after a hide doesn't select them again either. */
+  #deselect(names: readonly string[]): void {
+    const selected = new Set(this.#selectedNames.value);
     for (const name of names) {
-      ticked.delete(name);
+      selected.delete(name);
     }
-    if (ticked.size !== this.#tickedNames.value.size) {
-      this.#tickedNames.value = ticked;
+    if (selected.size !== this.#selectedNames.value.size) {
+      this.#setSelected(selected);
     }
     const gone = new Set(names);
-    this.#justUnticked = this.#justUnticked.filter((name) => !gone.has(name));
+    this.#justDeselected = this.#justDeselected.filter((name) => !gone.has(name));
   }
 
   /** Opens or closes a folder. */
@@ -735,7 +767,7 @@ export class Repositories {
 
   #clearJustHidden(): void {
     this.justHidden.value = [];
-    this.#justUnticked = [];
-    this.#justDeselected = undefined;
+    this.#justDeselected = [];
+    this.#justClosed = undefined;
   }
 }

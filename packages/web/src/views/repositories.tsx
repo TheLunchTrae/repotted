@@ -1,7 +1,7 @@
 import type { JSX, RefObject } from 'preact';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
-import type { AddressSelection } from '../app/address-selection.js';
+import type { AddressedRepository } from '../app/addressed-repository.js';
 import type { Apply } from '../app/apply.js';
 import type { BatchApply } from '../app/batch-apply.js';
 import type { ComparedProfile } from '../app/comparison.js';
@@ -68,8 +68,8 @@ type FolderDialog =
   | {
       readonly kind: 'new';
       readonly repositories: readonly Repository[];
-      /** Whether they are the ticked repositories, which putting them in the folder unticks. */
-      readonly ticked: boolean;
+      /** Whether they are the selected repositories, which putting them in the folder deselects. */
+      readonly selected: boolean;
     }
   | { readonly kind: 'rename'; readonly name: string }
   | { readonly kind: 'delete'; readonly name: string };
@@ -137,7 +137,7 @@ interface FolderNameProps {
   readonly dialog: Extract<FolderDialog, { kind: 'new' | 'rename' }>;
   /**
    * Called when it closes, with the folder that takes the focus: the one
-   * renamed, or the one made with the ticked repositories put in it, if any.
+   * renamed, or the one made with the selected repositories put in it, if any.
    */
   readonly onClose: (focus: string | undefined) => void;
 }
@@ -150,9 +150,9 @@ function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNamePr
   const [putIn, setPutIn] = useState(true);
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const moving = asked.kind === 'new' ? asked.repositories : [];
-  const fromTicked = asked.kind === 'new' && asked.ticked && moving.length > 0;
+  const fromSelected = asked.kind === 'new' && asked.selected && moving.length > 0;
   // The folder's name once renamed, since the menu that opened the dialog goes with its old name, or once
-  // made with the ticked repositories in it, since the ticked panel goes when they are unticked.
+  // made with the selected repositories in it, since the selection's panel goes when they are deselected.
   const landed = useRef<string | undefined>(undefined);
   return (
     <dialog
@@ -169,12 +169,12 @@ function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNamePr
           if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'save') {
             const refused =
               renaming === undefined
-                ? repositories.createFolder(name, putIn ? moving : [], { untick: fromTicked })
+                ? repositories.createFolder(name, putIn ? moving : [], { deselect: fromSelected })
                 : repositories.renameFolder(renaming, name);
             if (refused !== undefined) {
               event.preventDefault();
               setProblem(refused);
-            } else if (renaming !== undefined || (putIn && fromTicked)) {
+            } else if (renaming !== undefined || (putIn && fromSelected)) {
               landed.current = name.trim();
             }
           }
@@ -212,7 +212,7 @@ function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNamePr
             />
             {moving.length === 1
               ? `Put ${moving[0]?.full_name} in it`
-              : `Put the ${moving.length} ticked repositories in it`}
+              : `Put the ${moving.length} selected repositories in it`}
           </label>
         )}
         <div class="form-actions">
@@ -276,9 +276,13 @@ function DeleteFolderDialog({
 interface FolderPickerProps {
   readonly repositories: Repositories;
   readonly id: string;
-  readonly value: string;
+  /** The choice shown, or none yet, which shows a prompt to choose. */
+  readonly value: string | undefined;
   readonly onChange: (value: string) => void;
 }
+
+/** The value of the prompt a folder picker shows before anything is chosen. */
+const unchosen = '\u0000unchosen';
 
 /** The folders to pick from, with no folder and a new folder. */
 function FolderPicker({ repositories, id, value, onChange }: FolderPickerProps): JSX.Element {
@@ -286,11 +290,16 @@ function FolderPicker({ repositories, id, value, onChange }: FolderPickerProps):
     <select
       id={id}
       class="field"
-      value={value}
+      value={value ?? unchosen}
       onChange={(event) => {
         onChange(event.currentTarget.value);
       }}
     >
+      {value === undefined && (
+        <option value={unchosen} disabled>
+          Choose a folder
+        </option>
+      )}
       <option value={noFolderChoice}>No folder</option>
       {repositories.folderNames.value.map((name) => (
         <option key={name} value={name}>
@@ -353,27 +362,27 @@ interface RowProps {
 }
 
 function RepositoryRow({ repository, repositories, withOwner }: RowProps): JSX.Element {
-  const selected = repositories.selected.value;
+  const opened = repositories.opened.value;
   const [owner = '', name = repository.full_name] = repository.full_name.split('/');
   const hidden = repositories.isHidden(repository);
   return (
-    <li class={hidden ? 'ticked-row ticked-row-hidden' : 'ticked-row'}>
+    <li class={hidden ? 'selectable-row selectable-row-hidden' : 'selectable-row'}>
       <input
-        class="tick"
+        class="select-box"
         type="checkbox"
-        aria-label={`Tick ${repository.full_name}`}
-        checked={repositories.ticked.value.some((item) => item.full_name === repository.full_name)}
+        aria-label={`Select ${repository.full_name}`}
+        checked={repositories.isSelected(repository)}
         onChange={(event) => {
-          repositories.tick(repository, event.currentTarget.checked);
+          repositories.select(repository, event.currentTarget.checked);
         }}
       />
       <button
         class="row"
         type="button"
         data-repository={repository.full_name}
-        aria-pressed={selected?.full_name === repository.full_name}
+        aria-pressed={opened?.full_name === repository.full_name}
         onClick={() => {
-          repositories.select(selected?.full_name === repository.full_name ? undefined : repository);
+          repositories.open(opened?.full_name === repository.full_name ? undefined : repository);
         }}
       >
         <span class="row-name">
@@ -399,6 +408,8 @@ function FolderSection({
 }): JSX.Element {
   const searching = repositories.search.value.trim() !== '';
   const count = folder.repositories.length;
+  // What the folder shows, which a search narrows; all of it selected turns Select all into Deselect all.
+  const every = count > 0 && folder.repositories.every((repository) => repositories.isSelected(repository));
   return (
     <section class="folder" aria-label={folder.name}>
       <div class="folder-heading">
@@ -419,13 +430,25 @@ function FolderSection({
             <span class="muted count">{count}</span>
           </button>
         </h2>
+        {folder.open && count > 0 && (
+          <button
+            class="button button-quiet button-small folder-select"
+            type="button"
+            aria-label={`${every ? 'Deselect all in' : 'Select all in'} ${folder.name}`}
+            onClick={() => {
+              repositories.selectEach(folder.repositories, !every);
+            }}
+          >
+            {every ? 'Deselect all' : 'Select all'}
+          </button>
+        )}
         <FolderMenu name={folder.name} onDialog={onDialog} />
       </div>
       {folder.open &&
         (folder.empty ? (
           <p class="empty-folder">
-            Nothing in this folder yet. Tick repositories, then pick this folder under <strong>Move to a folder</strong>
-            .
+            Nothing in this folder yet. Select repositories, then pick this folder under{' '}
+            <strong>Move to a folder</strong>.
           </p>
         ) : (
           <ul class="rows">
@@ -524,7 +547,7 @@ function RepositoryPanel({
           value={repositories.folderOf(repository) ?? noFolderChoice}
           onChange={(value) => {
             if (value === newFolderChoice) {
-              onDialog({ kind: 'new', repositories: [repository], ticked: false });
+              onDialog({ kind: 'new', repositories: [repository], selected: false });
             } else {
               repositories.moveToFolder([repository], value === noFolderChoice ? undefined : value);
             }
@@ -692,17 +715,17 @@ function usePhone(): boolean {
 }
 
 /**
- * Keeps the selection and the page's address together, as `AddressSelection`
+ * Keeps the opened repository and the page's address together, as `AddressedRepository`
  * says. Returns whether a phone is arriving at the list, with no repository
- * named, which drops the selection kept from before before the page paints.
+ * named, which drops the repository kept open from before before the page paints.
  */
-function useAddressedSelection(address: AddressSelection, repositories: Repositories, phone: boolean): boolean {
+function useAddressedRepository(address: AddressedRepository, repositories: Repositories, phone: boolean): boolean {
   const named = address.named;
-  const name = repositories.selectedName;
-  const shown = repositories.selected.value?.full_name;
+  const name = repositories.openedName;
+  const shown = repositories.opened.value?.full_name;
   const listed = repositories.list.value !== undefined;
   const arrived = useRef(false);
-  // Before the page paints, so a phone arriving at the list doesn't show a kept selection's screen first.
+  // Before the page paints, so a phone arriving at the list doesn't show a kept repository's screen first.
   useLayoutEffect(() => {
     if (arrived.current) {
       address.follow(phone);
@@ -779,8 +802,8 @@ function useListReturn(
 
 interface RepositoriesProps {
   readonly repositories: Repositories;
-  /** The selection in the page's address. */
-  readonly address: AddressSelection;
+  /** The opened repository in the page's address. */
+  readonly address: AddressedRepository;
   readonly profiles: Profiles;
   /** Starts a new profile that captures this repository, `owner/name`. */
   readonly onCapture: (repository: string) => void;
@@ -793,30 +816,40 @@ interface RepositoriesProps {
   readonly onBatch: (repositories: readonly string[], profile: ComparedProfile | undefined) => void;
 }
 
-interface TickedProps {
+interface SelectedProps {
   readonly repositories: Repositories;
   readonly onDialog: (dialog: FolderDialog) => void;
   /** Whether a batch is unfinished, which is resumed or discarded before another starts. */
   readonly unfinished: boolean;
   readonly profiles: Profiles;
   readonly onBatch: RepositoriesProps['onBatch'];
-  /** Called after a move, which unticks the repositories and so closes this panel, with the folder they went to. */
+  /** Called after a move, which deselects the repositories and so closes this panel, with the folder they went to. */
   readonly onMoved: (folder: string | undefined) => void;
+  /** Deselects every repository, which closes this panel. */
+  readonly onDeselectAll: () => void;
 }
 
-/** The panel for the ticked repositories: the profile to apply to them all, each reviewed on its own first. */
-function TickedPanel({ repositories, onDialog, profiles, unfinished, onBatch, onMoved }: TickedProps): JSX.Element {
-  const ticked = repositories.ticked.value;
+/** The panel for the selected repositories: the profile to apply to them all, each reviewed on its own first. */
+function SelectedPanel({
+  repositories,
+  onDialog,
+  profiles,
+  unfinished,
+  onBatch,
+  onMoved,
+  onDeselectAll,
+}: SelectedProps): JSX.Element {
+  const selected = repositories.selected.value;
   const target = repositories.moveTarget.value;
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const profile = listings.find((listing) => listing.file === picked) ?? listings[0];
   const nameOf = (listing: (typeof listings)[number]): string => profiles.pathOf(listing).replace(/\.ya?ml$/u, '');
   return (
-    <aside class="panel" aria-label="Ticked repositories">
-      <h2>{ticked.length === 1 ? '1 repository ticked' : `${ticked.length} repositories ticked`}</h2>
-      <ul class="muted small ticked-names">
-        {ticked.map((repository) => (
+    <aside class="panel" aria-label="Selected repositories">
+      <h2>{selected.length === 1 ? '1 repository selected' : `${selected.length} repositories selected`}</h2>
+      <ul class="muted small selected-names">
+        {selected.map((repository) => (
           <li key={repository.full_name} class="mono">
             {repository.full_name}
           </li>
@@ -826,33 +859,46 @@ function TickedPanel({ repositories, onDialog, profiles, unfinished, onBatch, on
         class="panel-form"
         onSubmit={(event) => {
           event.preventDefault();
+          if (target === undefined) {
+            return;
+          }
           if (target.kind === 'new') {
-            onDialog({ kind: 'new', repositories: ticked, ticked: true });
+            onDialog({ kind: 'new', repositories: selected, selected: true });
           } else {
             const folder = target.kind === 'folder' ? target.name : undefined;
-            repositories.moveToFolder(ticked, folder, { untick: true });
+            repositories.moveToFolder(selected, folder, { deselect: true });
             onMoved(folder);
           }
         }}
       >
         <label for="move-folder">Move to a folder</label>
-        <FolderPicker
-          repositories={repositories}
-          id="move-folder"
-          value={target.kind === 'folder' ? target.name : target.kind === 'new' ? newFolderChoice : noFolderChoice}
-          onChange={(value) => {
-            repositories.pickMoveTarget(
-              value === newFolderChoice
-                ? { kind: 'new' }
-                : value === noFolderChoice
-                  ? { kind: 'none' }
-                  : { kind: 'folder', name: value },
-            );
-          }}
-        />
-        <button class="button" type="submit">
-          {target.kind === 'new' ? 'New folder' : 'Move'}
-        </button>
+        <div class="move-row">
+          <FolderPicker
+            repositories={repositories}
+            id="move-folder"
+            value={
+              target === undefined
+                ? undefined
+                : target.kind === 'folder'
+                  ? target.name
+                  : target.kind === 'new'
+                    ? newFolderChoice
+                    : noFolderChoice
+            }
+            onChange={(value) => {
+              repositories.pickMoveTarget(
+                value === newFolderChoice
+                  ? { kind: 'new' }
+                  : value === noFolderChoice
+                    ? { kind: 'none' }
+                    : { kind: 'folder', name: value },
+              );
+            }}
+          />
+          <button class="button" type="submit" disabled={target === undefined}>
+            {target?.kind === 'new' ? 'New folder' : 'Move'}
+          </button>
+        </div>
       </form>
       <form
         class="panel-form"
@@ -860,7 +906,7 @@ function TickedPanel({ repositories, onDialog, profiles, unfinished, onBatch, on
           event.preventDefault();
           if (profile !== undefined && !unfinished) {
             onBatch(
-              ticked.map((repository) => repository.full_name),
+              selected.map((repository) => repository.full_name),
               { file: profile.file, name: nameOf(profile), folder: profiles.folder.value },
             );
           }
@@ -900,20 +946,14 @@ function TickedPanel({ repositories, onDialog, profiles, unfinished, onBatch, on
         )}
       </form>
       <div class="panel-actions">
-        <button
-          class="button button-quiet"
-          type="button"
-          onClick={() => {
-            repositories.clearTicks();
-          }}
-        >
-          Untick all
+        <button class="button button-quiet" type="button" onClick={onDeselectAll}>
+          Deselect all
         </button>
         <button
           class="button button-quiet"
           type="button"
           onClick={() => {
-            repositories.hide(ticked);
+            repositories.hide(selected);
           }}
         >
           Hide from list
@@ -934,7 +974,7 @@ export function RepositoriesPage({
   onApply,
   onBatch,
 }: RepositoriesProps): JSX.Element {
-  const ticked = repositories.ticked.value;
+  const selected = repositories.selected.value;
   // Whether a batch was left unfinished, which the browser keeps.
   const [unfinished, setUnfinished] = useState(false);
   const moved = batch.state.value.kind;
@@ -957,7 +997,7 @@ export function RepositoriesPage({
   const error = repositories.error.value;
   const groups = repositories.groups.value;
   const folders = repositories.folders.value;
-  const selected = repositories.selected.value;
+  const opened = repositories.opened.value;
   const justHidden = repositories.justHidden.value;
   const hiddenMatches = repositories.hiddenMatches.value;
   const preferencesError = repositories.preferences.error.value;
@@ -986,11 +1026,18 @@ export function RepositoriesPage({
       (toggle ?? section?.querySelector<HTMLElement>('.folder-menu > summary') ?? newFolderButton.current)?.focus();
     });
   };
+  /** Deselects every repository; the buttons that do it go with the selection, so the focus moves to New folder. */
+  const deselectAll = (): void => {
+    repositories.deselectAll();
+    requestAnimationFrame(() => {
+      newFolderButton.current?.focus();
+    });
+  };
   /**
    * After a rename or delete the menu that opened the dialog is gone, so the
    * focus goes to the folder's menu under its name now, or to New folder
-   * once it is deleted. A new folder made with the ticked repositories takes
-   * the focus, since unticking them closes the ticked panel; otherwise the
+   * once it is deleted. A new folder made with the selected repositories takes
+   * the focus, since deselecting them closes the selection's panel; otherwise the
    * browser puts the focus back itself.
    */
   const closeDialog = (focus: string | undefined): void => {
@@ -1006,18 +1053,18 @@ export function RepositoriesPage({
   };
   const fromApp = list?.source === 'installations';
   const total = list?.repositories.length ?? 0;
-  // On a phone a repository's details take the place of the list, unless ticked ones take the panel, as they do
+  // On a phone a repository's details take the place of the list, unless selected ones take the panel, as they do
   // beside the list.
   const phone = usePhone();
-  // On a phone the details are a screen of their own, which leaves any ticked repositories with the list.
-  const toList = useAddressedSelection(address, repositories, phone);
-  const details = phone && selected !== undefined && !toList;
-  const heading = useListReturn(details, phone, selected?.full_name);
+  // On a phone the details are a screen of their own, which leaves any selected repositories with the list.
+  const toList = useAddressedRepository(address, repositories, phone);
+  const details = phone && opened !== undefined && !toList;
+  const heading = useListReturn(details, phone, opened?.full_name);
 
   return (
     <div
       class={
-        details ? 'page page-details' : selected === undefined && ticked.length === 0 ? 'page' : 'page page-with-panel'
+        details ? 'page page-details' : opened === undefined && selected.length === 0 ? 'page' : 'page page-with-panel'
       }
     >
       <section class="page-body" aria-labelledby="repositories-heading">
@@ -1138,11 +1185,16 @@ export function RepositoriesPage({
                 class="button button-quiet"
                 type="button"
                 onClick={() => {
-                  setDialog({ kind: 'new', repositories: ticked, ticked: true });
+                  setDialog({ kind: 'new', repositories: selected, selected: true });
                 }}
               >
                 New folder
               </button>
+              {selected.length > 0 && (
+                <button class="button button-quiet" type="button" onClick={deselectAll}>
+                  Deselect all
+                </button>
+              )}
             </div>
 
             {justHidden.length > 0 && (
@@ -1246,8 +1298,8 @@ export function RepositoriesPage({
           </>
         )}
       </section>
-      {ticked.length > 0 && !details ? (
-        <TickedPanel
+      {selected.length > 0 && !details ? (
+        <SelectedPanel
           repositories={repositories}
           onDialog={setDialog}
           profiles={profiles}
@@ -1256,11 +1308,12 @@ export function RepositoriesPage({
           onMoved={(folder) => {
             focusFolder(folder, 'toggle');
           }}
+          onDeselectAll={deselectAll}
         />
       ) : (
-        selected !== undefined && (
+        opened !== undefined && (
           <RepositoryPanel
-            repository={selected}
+            repository={opened}
             repositories={repositories}
             onDialog={setDialog}
             profiles={profiles}

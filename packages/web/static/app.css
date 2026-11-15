@@ -275,7 +275,7 @@ input[type='checkbox'] {
 
   /* A native checkbox fills its whole box, so this one draws a box of the usual
      size inside a 44px target. */
-  .ticked-row > input.tick {
+  .selectable-row > input.select-box {
     display: grid;
     flex: none;
     place-items: center;
@@ -286,17 +286,17 @@ input[type='checkbox'] {
     cursor: pointer;
   }
 
-  .ticked-row > input.tick + .row {
+  .selectable-row > input.select-box + .row {
     padding-inline-start: 4px;
   }
 
-  .ticked-row > input.tick::before,
-  .ticked-row > input.tick::after {
+  .selectable-row > input.select-box::before,
+  .selectable-row > input.select-box::after {
     content: '';
     grid-area: 1 / 1;
   }
 
-  .ticked-row > input.tick::before {
+  .selectable-row > input.select-box::before {
     width: 20px;
     height: 20px;
     border: 2px solid var(--muted);
@@ -304,12 +304,12 @@ input[type='checkbox'] {
     background: var(--surface);
   }
 
-  .ticked-row > input.tick:checked::before {
+  .selectable-row > input.select-box:checked::before {
     border-color: var(--rail);
     background: var(--rail);
   }
 
-  .ticked-row > input.tick:checked::after {
+  .selectable-row > input.select-box:checked::after {
     width: 6px;
     height: 11px;
     margin-top: -3px;
@@ -318,11 +318,11 @@ input[type='checkbox'] {
     rotate: 45deg;
   }
 
-  .ticked-row > input.tick:focus-visible {
+  .selectable-row > input.select-box:focus-visible {
     outline: none;
   }
 
-  .ticked-row > input.tick:focus-visible::before {
+  .selectable-row > input.select-box:focus-visible::before {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
@@ -1502,7 +1502,8 @@ select.field {
   overflow-wrap: anywhere;
 }
 
-.folder-menu {
+.folder-menu,
+.folder-select {
   flex: none;
 }
 
@@ -1537,19 +1538,19 @@ select.field {
   accent-color: var(--rail);
 }
 
-/* Ticking several repositories */
-.ticked-row {
+/* Selecting several repositories */
+.selectable-row {
   display: flex;
   align-items: center;
 }
 
-.ticked-row .row {
+.selectable-row .row {
   flex: 1;
   min-width: 0;
 }
 
 /* A hidden repository, shown while Show hidden is on. */
-.ticked-row-hidden .row-name {
+.selectable-row-hidden .row-name {
   color: var(--muted);
 }
 
@@ -1565,15 +1566,15 @@ select.field {
   gap: 8px;
 }
 
-.tick {
+.select-box {
   width: 18px;
   height: 18px;
   margin: 0 4px 0 14px;
   accent-color: var(--rail);
 }
 
-/* A ticked repository's name breaks rather than widening the page. */
-.ticked-names {
+/* A selected repository's name breaks rather than widening the page. */
+.selected-names {
   display: grid;
   overflow-wrap: anywhere;
   gap: 2px;
@@ -1657,8 +1658,23 @@ select.field {
 
 .panel-form .field {
   max-width: 100%;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+}
+
+/* A picker and the button that acts on its choice, side by side at any width. */
+.move-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.move-row .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.move-row .button {
+  flex: none;
 }
 
 /* The profile editor */
@@ -1998,6 +2014,7 @@ select.field {
 
   .folder-toggle,
   .folder-menu > summary,
+  .folder-select,
   .row {
     min-height: 44px;
   }
