@@ -339,6 +339,11 @@ export function SettingsPage({
                     Couldn't change where profiles are kept: {profiles.connectError.value}
                   </p>
                 )}
+                {profiles.markProblem.value !== undefined && (
+                  <p class="setting-row problem" role="alert">
+                    {profiles.markProblem.value}
+                  </p>
+                )}
                 <div class="setting-row">
                   <div class="setting-text">
                     <strong>

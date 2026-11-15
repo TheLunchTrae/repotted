@@ -91,6 +91,7 @@ export class FakeGitRepository implements GitHub {
   beforeBlobRead: (() => void) | undefined;
   beforeContentsWrite: (() => void) | undefined;
   refuseWrites: GitHubError | undefined;
+  topics: string[] = [];
 
   readonly fullName: string;
   readonly id: number;
@@ -240,7 +241,17 @@ export class FakeGitRepository implements GitHub {
     const base = `/repos/${this.fullName}`;
     const [route = '', query = ''] = path.split('?');
     if (method === 'GET' && route === base) {
-      return { id: this.id, full_name: this.fullName, default_branch: this.defaultBranch };
+      return { id: this.id, full_name: this.fullName, default_branch: this.defaultBranch, topics: this.topics };
+    }
+    if (route === `${base}/topics` && (method === 'GET' || method === 'PUT')) {
+      if (method === 'PUT') {
+        const { names } = object(body);
+        if (!Array.isArray(names) || names.length > 20) {
+          throw new GitHubError(422, 'Invalid topics');
+        }
+        this.topics = names.map(String);
+      }
+      return { names: this.topics };
     }
     const ref = route.startsWith(`${base}/git/refs/heads/`)
       ? decodeURIComponent(route.slice(`${base}/git/refs/heads/`.length))

@@ -253,6 +253,23 @@ parse go unmentioned there.
 [State machines](state-machines.md#web-profiles-source) lists the
 transitions.
 
+A config repository is marked so a new browser can find it
+(`src/app/profiles/config-marker.ts`): the `repotted-config` topic, set
+through the topics API alongside the repository's other topics, and a
+hidden `.repotted.json` at the repository's root, `{ "folder": "<path>" }`,
+committed through the contents API like `.repotted-preferences.json`.
+`Profiles` moves the mark after each change of where profiles are kept that
+succeeds, taking the topic off the repository it left, and says in
+`markProblem` why when GitHub refuses. The marker's commit moves the default
+branch on, so the working copy syncs once more after it. `ConfigDiscovery`
+(`src/app/profiles/config-discovery.ts`) runs once a visit, when the
+repository list first loads, since each listed repository carries its
+`topics`: it marks a repository chosen before marks existed, and in a
+browser that has never chosen (`Profiles.chosen`), offers the marked
+repositories through `views/profiles/found-config.tsx`, above every page.
+[State machines](state-machines.md#web-config-repository-discovery) lists
+the transitions.
+
 `ProfileEditor` (`src/app/profile-editor/profile-editor.ts`) is the open profile's settings
 and its unsaved changes. `setting-fields.ts` lists the settings it offers,
 tab by tab, with what each depends on; a test sets every one through the

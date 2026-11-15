@@ -15,6 +15,8 @@
   repository whose owner is the other kind.
 - **Config repository**: a GitHub repository that holds a folder of profiles.
   **Sync** brings a local folder and the config repository in line.
+  It is marked with the `repotted-config` topic and a root `.repotted.json`
+  naming its profiles folder, so a new browser can find it.
 - **Branch preview**: what a branch of the config repository changes since it
   left the default branch, laid over the profiles in the browser and read
   without syncing.

@@ -4,7 +4,8 @@
     {
       "full_name": "lunch/app",
       "private": true,
-      "archived": false
+      "archived": false,
+      "topics": []
     }
   ],
   "missing_permissions": [

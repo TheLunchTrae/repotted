@@ -53,6 +53,7 @@ export interface FakeRepository {
   full_name: string;
   private: boolean;
   archived?: boolean;
+  topics?: string[];
   permissions?: { admin: boolean };
 }
 

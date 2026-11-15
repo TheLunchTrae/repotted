@@ -12,6 +12,7 @@ import type { Router } from '../app/navigation/router.js';
 import type { Preferences } from '../app/preferences/preferences.js';
 import { SharedPreferences } from '../app/preferences/shared-preferences.js';
 import { BranchPreview } from '../app/profiles/branch-preview.js';
+import { ConfigDiscovery } from '../app/profiles/config-discovery.js';
 import { ConfigProtection } from '../app/profiles/config-protection.js';
 import type { LocalFolders } from '../app/profiles/local-folder.js';
 import { Profiles } from '../app/profiles/profiles.js';
@@ -25,6 +26,7 @@ import { Link } from './layout/link.js';
 import { run } from './layout/run.js';
 import { Shell } from './layout/shell.js';
 import { BranchPreviewPage } from './profiles/branch-preview.js';
+import { FoundConfig } from './profiles/found-config.js';
 import { SignOutQuestion } from './profiles/leave.js';
 import { ProfilesPage } from './profiles/profiles.js';
 import { RepositoriesPage } from './repositories/repositories.js';
@@ -58,7 +60,7 @@ function SignedIn({
   folders,
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
-  const { repositories, profiles, comparison, apply, batch, protection, preview } = useMemo(() => {
+  const { repositories, profiles, discovery, comparison, apply, batch, protection, preview } = useMemo(() => {
     const refused = (): void => {
       account.gitHubRefusedSignIn();
     };
@@ -71,6 +73,7 @@ function SignedIn({
     return {
       repositories: new Repositories(github, user, shared, preferences, refused),
       profiles: kept,
+      discovery: new ConfigDiscovery(github, kept, refused),
       comparison: new Comparison(github, refused),
       // An apply's edits saved to a profile take their turn among the profiles' syncs.
       apply: new Apply(github, refused, (work) => kept.write(work)),
@@ -84,6 +87,13 @@ function SignedIn({
     run(repositories.load());
     run(profiles.refresh());
   }, [repositories, profiles]);
+  // Looked for once the first list arrives, since it carries each repository's topics.
+  const listed = repositories.list.value;
+  useEffect(() => {
+    if (listed !== undefined) {
+      run(discovery.look(listed.repositories));
+    }
+  }, [discovery, listed]);
   const source = profiles.source.value;
   useEffect(() => {
     run(repositories.preferences.use(source));
@@ -172,6 +182,7 @@ function SignedIn({
           {signOutProblem}
         </p>
       )}
+      <FoundConfig discovery={discovery} profiles={profiles} />
       {leaving && (
         <SignOutQuestion
           profiles={profiles}
