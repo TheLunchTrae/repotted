@@ -16,6 +16,7 @@ interface EndpointBase {
  * off. A 404 means off for a `presence` toggle, and for an `enabled` one marked
  * `missingIsOff`; for any other it means the repository does not have the
  * feature.
+ * - A `field` that GitHub leaves out of its answer is unset.
  */
 export type Endpoint =
   | (EndpointBase & {
@@ -52,6 +53,11 @@ interface ObjectEndpoint {
   readonly adjustWriteBody?: (body: Record<string, unknown>) => Record<string, unknown>;
 }
 
+/**
+ * `refused`: GitHub hides it, as from a token without the permission or an
+ * account without a payment method on file. `unavailable`: GitHub does not
+ * offer it on the repository.
+ */
 export interface Unavailable {
   readonly available: false;
   readonly cause: Extract<SkipCause, 'refused' | 'unavailable'>;
@@ -92,7 +98,7 @@ export async function readResource(
     }
     // 402 for a billed feature, such as the Actions cache retention limit,
     // on an account with no payment method on file. Adding one lifts it, so
-    // a capture says so, as it does for a valueWhen404MeansOffOrAbsent permission.
+    // a capture says so, as it does for a missing permission.
     if (error.status === 402) {
       return {
         available: false,

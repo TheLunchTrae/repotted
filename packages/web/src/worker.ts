@@ -23,6 +23,7 @@ const signInStateLifetimeSeconds = 10 * 60;
 // An access token this close to expiry is replaced rather than handed out, the
 // same margin the page refreshes at.
 const refreshMarginMs = 5 * 60 * 1000;
+// Shorter than the page's wait on the Worker in session.ts.
 const gitHubTokenEndpointTimeoutMs = 10_000;
 
 type SignInFailure = 'denied' | 'expired' | 'failed';
@@ -46,6 +47,8 @@ interface AccessToken {
   expiresAt: number;
 }
 
+// The page names the access token GitHub just refused, so the Worker replaces
+// it instead of handing it back.
 const tokenRequest = z.object({ replace: z.optional(z.string()) });
 
 function apiHeaders(extra: Record<string, string> = {}): Headers {
@@ -201,6 +204,7 @@ async function signIn(request: Request, env: Env): Promise<Response> {
 
 async function callback(request: Request, env: Env): Promise<Response> {
   const params = new URL(request.url).searchParams;
+  // The started sign-in is spent whatever happens next, so its state is single-use.
   const clearedSignInCookie = cookie(signInCookie, '', 0, 'Lax');
   const failed = (reason: SignInFailure): Response => redirect(`/?sign-in=${reason}`, [clearedSignInCookie]);
 

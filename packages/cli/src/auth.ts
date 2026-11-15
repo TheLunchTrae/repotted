@@ -113,6 +113,7 @@ export interface TokenSources {
   readonly readGitHubCliToken?: () => Promise<string>;
 }
 
+// For github.com only, since requests go to api.github.com.
 async function ghCliToken(): Promise<string> {
   const { stdout } = await promisify(execFile)('gh', ['auth', 'token', '--hostname', 'github.com'], {
     timeout: 10_000,
@@ -193,6 +194,7 @@ async function signedInToken(
   }
 }
 
+// Apart from the keychain entry, a token is only ever held in memory.
 export async function resolveToken(sources: TokenSources = {}): Promise<string> {
   const env = sources.env ?? process.env;
   // The token variables come first, so CI and scripts can override a stored sign-in.

@@ -30,6 +30,7 @@ export interface SyncOptions {
   readonly prefer?: 'local' | 'remote';
   /** The files `prefer` settles, by path in the folder; every file in conflict when left out. */
   readonly only?: readonly string[];
+  /** Repotted writes a commit message from the files when left out. */
   readonly message?: string;
 }
 
