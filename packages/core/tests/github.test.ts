@@ -75,6 +75,32 @@ describe('createGitHub', () => {
     expect(await failure()).toMatchObject({ status: 403, rateLimited: false });
   });
 
+  test('reads when GitHub allows a rate-limited request again', async () => {
+    const asked = Date.now();
+    answer(403, { message: 'Forbidden' }, { 'retry-after': '60', 'x-ratelimit-reset': '1900000000' });
+    const waited = await failure();
+    const at = waited instanceof GitHubError ? (waited.retryAt?.getTime() ?? 0) : 0;
+    expect(at).toBeGreaterThanOrEqual(asked + 60_000);
+    expect(at).toBeLessThanOrEqual(Date.now() + 60_000);
+
+    answer(403, { message: 'Forbidden' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1900000000' });
+    expect(await failure()).toMatchObject({ rateLimited: true, retryAt: new Date(1_900_000_000_000) });
+    answer(
+      403,
+      { message: 'Forbidden' },
+      {
+        'retry-after': 'Sun, 15 Nov 2026 02:00:00 GMT',
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-reset': '1900000000',
+      },
+    );
+    expect(await failure()).toMatchObject({ rateLimited: true, retryAt: new Date(1_900_000_000_000) });
+    answer(403, { message: 'You have exceeded a secondary rate limit' });
+    expect(await failure()).toMatchObject({ rateLimited: true, retryAt: undefined });
+    answer(403, { message: 'Forbidden' }, { 'x-ratelimit-remaining': '4999', 'x-ratelimit-reset': '1900000000' });
+    expect(await failure()).toMatchObject({ rateLimited: false, retryAt: undefined });
+  });
+
   test("keeps Octokit's status and message for a request that never reached GitHub", async () => {
     vi.stubGlobal('fetch', () =>
       Promise.reject(new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND') })),

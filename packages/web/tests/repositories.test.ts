@@ -1,13 +1,17 @@
-import type { GitHub } from '@repotted/core';
-import { expect, test, vi } from 'vitest';
+import { type GitHub, GitHubError } from '@repotted/core';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import { FakeGitRepository } from '../../core/tests/fake-git.js';
 import { answered, type FakeAccount, FakeGitHub } from '../../core/tests/fake-github.js';
 import type { Preferences } from '../src/app/preferences.js';
-import { Repositories, type Repository } from '../src/app/repositories.js';
+import { refreshPause, Repositories, type Repository } from '../src/app/repositories.js';
 import { preferencesFile, SharedPreferences } from '../src/app/shared-preferences.js';
 
 const user = { login: 'Trae', name: null };
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function account(names: readonly string[]): FakeAccount {
   return {
@@ -50,7 +54,7 @@ function inBrowser(github: GitHub, preferences: Preferences = memory()): SharedP
 
 async function opened(github: FakeGitHub, preferences: Preferences = memory()): Promise<Repositories> {
   const repositories = new Repositories(github, user, inBrowser(github, preferences), preferences, () => undefined);
-  await repositories.refresh();
+  await repositories.load();
   return repositories;
 }
 
@@ -144,8 +148,71 @@ test('a refresh that fails keeps the list it had and says why', async () => {
   expect(repositories.list.value?.repositories).toHaveLength(4);
   expect(repositories.loading.value).toBe(false);
 
-  await repositories.refresh();
+  await repositories.load();
   expect(repositories.error.value).toBeUndefined();
+});
+
+test('Refresh waits a while after the read it started, counting down, while the opening read starts no wait', async () => {
+  vi.useFakeTimers();
+  const github = new FakeGitHub({ account: account(everyone) });
+  const repositories = await opened(github);
+  expect(repositories.refreshWait.value).toBeUndefined();
+
+  github.state.account = account(['Acme/api']);
+  await repositories.refresh();
+  expect(repositories.list.value?.repositories).toHaveLength(1);
+  expect(repositories.refreshWait.value?.rateLimited).toBe(false);
+  expect(repositories.refreshIn.value).toBe(refreshPause / 1000);
+
+  github.state.account = account(everyone);
+  await repositories.refresh();
+  expect(repositories.list.value?.repositories).toHaveLength(1);
+
+  vi.advanceTimersByTime(refreshPause - 1000);
+  expect(repositories.refreshIn.value).toBe(1);
+  vi.advanceTimersByTime(1000);
+  expect(repositories.refreshIn.value).toBe(0);
+  expect(repositories.refreshWait.value).toBeUndefined();
+
+  await repositories.refresh();
+  expect(repositories.list.value?.repositories).toHaveLength(4);
+});
+
+test("a rate limit holds Refresh until GitHub's time, or a minute when GitHub gives none", async () => {
+  vi.useFakeTimers();
+  const github = new FakeGitHub({ account: account(everyone) });
+  const limited = (retryAt?: Date): GitHubError =>
+    new GitHubError(403, 'API rate limit exceeded', {
+      rateLimited: true,
+      ...(retryAt === undefined ? {} : { retryAt }),
+    });
+  github.fail('GET /user/installations', limited(new Date(Date.now() + 120_000)), 1);
+  const repositories = await opened(github);
+
+  expect(repositories.error.value).toBe('API rate limit exceeded');
+  expect(repositories.refreshWait.value?.rateLimited).toBe(true);
+  expect(repositories.refreshIn.value).toBe(120);
+  vi.advanceTimersByTime(refreshPause);
+  await repositories.refresh();
+  expect(repositories.list.value).toBeUndefined();
+
+  vi.advanceTimersByTime(120_000 - refreshPause);
+  github.fail('GET /user/installations', limited(), 1);
+  await repositories.refresh();
+  expect(repositories.refreshWait.value?.rateLimited).toBe(true);
+  expect(repositories.refreshIn.value).toBe(60);
+
+  // A reset time already past by this device's clock, as when it runs ahead of GitHub's, waits the minute too.
+  vi.advanceTimersByTime(60_000);
+  github.fail('GET /user/installations', limited(new Date(Date.now() - 30_000)), 1);
+  await repositories.refresh();
+  expect(repositories.refreshWait.value?.rateLimited).toBe(true);
+  expect(repositories.refreshIn.value).toBe(60);
+
+  vi.advanceTimersByTime(60_000);
+  await repositories.refresh();
+  expect(repositories.list.value?.repositories).toHaveLength(4);
+  expect(repositories.refreshWait.value?.rateLimited).toBe(false);
 });
 
 test('a refused sign-in is reported as signed out, not as an error on the page', async () => {
@@ -154,7 +221,7 @@ test('a refused sign-in is reported as signed out, not as an error on the page',
   const signedOut = vi.fn();
   const repositories = new Repositories(github, user, inBrowser(github), memory(), signedOut);
 
-  await repositories.refresh();
+  await repositories.load();
 
   expect(signedOut).toHaveBeenCalledOnce();
   expect(repositories.error.value).toBeUndefined();
@@ -194,7 +261,7 @@ test('a refresh keeps the list in use while it reads, and the selection when the
 test('ticked repositories stay ticked through a search, and one the account no longer lists drops out', async () => {
   const github = new FakeGitHub({ account: account(everyone) });
   const repositories = new Repositories(github, user, inBrowser(github), memory(), () => undefined);
-  await repositories.refresh();
+  await repositories.load();
   const all = repositories.list.value?.repositories ?? [];
   const named = (name: string): (typeof all)[number] => {
     const found = all.find((repository) => repository.full_name === name);
@@ -326,7 +393,7 @@ test('with profiles in a repository, the list hides what its file holds and a hi
   const reading = preferences.use({ kind: 'repository', repository: 'lunch/config', path: 'profiles' });
   const repositories = new Repositories(github, user, preferences, browser, () => undefined);
 
-  await repositories.refresh();
+  await repositories.load();
   await reading;
   expect(names(repositories)).toEqual(['trae:', 'trae/dotfiles', 'Acme:', 'Acme/api']);
 
@@ -402,6 +469,61 @@ test('a repository is in one folder at most, and moving it to no folder returns 
   repositories.moveToFolder([api], undefined);
   expect(repositories.folderOf(api)).toBeUndefined();
   expect(names(repositories)).toContain('Acme/api');
+});
+
+test('ticked repositories put in a new folder or moved are unticked, and others stay ticked', async () => {
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
+  const ticked = (): string[] => repositories.ticked.value.map((repository) => repository.full_name);
+  for (const repository of several(repositories, 'acme/web', 'zeta/site', 'trae/dotfiles')) {
+    repositories.tick(repository, true);
+  }
+
+  repositories.createFolder('Sites', several(repositories, 'acme/web', 'zeta/site'), { untick: true });
+  expect(folders(repositories)).toEqual(['Sites:', 'acme/web', 'zeta/site']);
+  expect(ticked()).toEqual(['trae/dotfiles']);
+
+  // A name refused, or a folder made empty, as when its box is cleared, leaves the ticks alone.
+  expect(repositories.createFolder('sites', several(repositories, 'trae/dotfiles'), { untick: true })).toBeDefined();
+  repositories.createFolder('Tools', [], { untick: true });
+  expect(ticked()).toEqual(['trae/dotfiles']);
+
+  repositories.moveToFolder(several(repositories, 'trae/dotfiles'), 'Tools', { untick: true });
+  expect(ticked()).toEqual([]);
+
+  const web = several(repositories, 'acme/web');
+  for (const repository of web) {
+    repositories.tick(repository, true);
+  }
+  repositories.moveToFolder(web, undefined, { untick: true });
+  expect(ticked()).toEqual([]);
+  expect(folders(repositories)).toEqual(['Sites:', 'zeta/site', 'Tools:', 'trae/dotfiles']);
+});
+
+test("a repository's own folder choice leaves the ticks as they are", async () => {
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
+  const ticked = (): string[] => repositories.ticked.value.map((repository) => repository.full_name);
+  for (const repository of several(repositories, 'acme/web', 'zeta/site')) {
+    repositories.tick(repository, true);
+  }
+
+  repositories.moveToFolder(several(repositories, 'acme/web'), undefined);
+  repositories.createFolder('Sites', several(repositories, 'acme/web'));
+  repositories.moveToFolder(several(repositories, 'zeta/site'), 'Sites');
+  expect(folders(repositories)).toEqual(['Sites:', 'acme/web', 'zeta/site']);
+  expect(ticked().sort()).toEqual(['acme/web', 'zeta/site']);
+});
+
+test('Undo after a hide leaves unticked a repository since moved out of the ticks', async () => {
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
+  repositories.setShowHidden(true);
+  const web = listed(repositories, 'acme/web');
+  repositories.tick(web, true);
+  repositories.hide([web]);
+  repositories.tick(web, true);
+
+  repositories.moveToFolder([web], undefined, { untick: true });
+  repositories.undoHide();
+  expect(repositories.ticked.value).toEqual([]);
 });
 
 test('a folder name must be new, in any case, except the folder being renamed', async () => {
@@ -502,7 +624,7 @@ test('folders are kept in the preferences file beside the profiles when they are
   const preferences = new SharedPreferences(config, browser, () => undefined);
   const github = new FakeGitHub({ account: account(everyone) });
   const repositories = new Repositories(github, user, preferences, browser, () => undefined);
-  await repositories.refresh();
+  await repositories.load();
   expect(folders(repositories)).toEqual([]);
 
   await preferences.use(source);
@@ -550,7 +672,7 @@ test('a folder change made before the preferences file is read keeps the folders
     browser,
     () => undefined,
   );
-  await repositories.refresh();
+  await repositories.load();
   const reading = preferences.use(source);
 
   repositories.createFolder('Tools', several(repositories, 'trae/dotfiles'));
@@ -594,7 +716,7 @@ test('a folder renamed to, or moved into, a name changed elsewhere meanwhile kee
     browser,
     () => undefined,
   );
-  await repositories.refresh();
+  await repositories.load();
   const reading = preferences.use(source);
 
   repositories.createFolder('Web', several(repositories, 'acme/web'));

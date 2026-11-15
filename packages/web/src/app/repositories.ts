@@ -1,5 +1,5 @@
 import { computed, signal } from '@preact/signals';
-import { type GitHub, listRepositories } from '@repotted/core';
+import { type GitHub, GitHubError, listRepositories } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { isSignedOut, type User } from './account.js';
@@ -44,6 +44,27 @@ export type MoveTarget =
   | { readonly kind: 'folder'; readonly name: string }
   | { readonly kind: 'none' }
   | { readonly kind: 'new' };
+
+/** Why Refresh waits before it reads again, and until when. */
+export interface RefreshWait {
+  /** Whether GitHub's rate limit holds it, rather than the pause after a refresh. */
+  readonly rateLimited: boolean;
+  readonly until: Date;
+}
+
+/** How long Refresh waits after the read it started, so repeated presses don't spend the account's GitHub requests. */
+export const refreshPause = 15_000;
+/**
+ * How long Refresh waits after a rate limit GitHub gives no time for, or a
+ * time already past, as GitHub advises for a secondary limit.
+ */
+const rateLimitPause = 60_000;
+
+/** How a folder move treats the ticks. */
+export interface FolderMoveOptions {
+  /** Unticks the repositories moved, for ones that were ticked to be moved. */
+  readonly untick?: boolean;
+}
 
 const hiddenOwnersKey = 'hidden-repository-owners';
 const hiddenRepositoriesKey = 'hidden-repositories';
@@ -156,6 +177,10 @@ export class Repositories {
   readonly #moveTarget = signal<MoveTarget | undefined>(undefined);
   readonly #selectedName = signal<string | undefined>(undefined);
   readonly #tickedNames = signal<ReadonlySet<string>>(new Set());
+  readonly #refreshWait = signal<RefreshWait | undefined>(undefined);
+  /** The time the countdown last read, which a timer moves on each second while Refresh waits. */
+  readonly #now = signal(Date.now());
+  #clock: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     github: GitHub,
@@ -360,12 +385,39 @@ export class Repositories {
     return shown === total ? `All ${total}` : `${shown} of ${total}`;
   });
 
+  /** Whole seconds until Refresh reads again, or 0 when it can. */
+  readonly refreshIn = computed(() => {
+    const until = this.#refreshWait.value?.until.getTime() ?? 0;
+    return Math.max(0, Math.ceil((until - this.#now.value) / 1000));
+  });
+
+  /** Why Refresh waits, while it does. */
+  readonly refreshWait = computed(() => (this.refreshIn.value > 0 ? this.#refreshWait.value : undefined));
+
+  /** Reads the list for the page as it opens, with no pause after it. */
+  async load(): Promise<void> {
+    await this.#read();
+  }
+
   /**
-   * Reads the list from GitHub, and the hidden owners and repositories again,
-   * so the list shows once both are known. A refresh under way is left to
-   * finish; a failure keeps the list already shown.
+   * Reads the list again, unless a read is under way or Refresh waits, and
+   * then waits `refreshPause` before it can read again.
    */
   async refresh(): Promise<void> {
+    if (this.loading.value || this.refreshWait.value !== undefined) {
+      return;
+    }
+    await this.#read();
+    this.#waitUntil(Date.now() + refreshPause, false);
+  }
+
+  /**
+   * Reads the list from GitHub, and the hidden owners and repositories again,
+   * so the list shows once both are known. A read under way is left to
+   * finish; a failure keeps the list already shown. A rate limit holds
+   * Refresh until GitHub says a request may go through.
+   */
+  async #read(): Promise<void> {
     if (this.loading.value) {
       return;
     }
@@ -379,11 +431,43 @@ export class Repositories {
       if (isSignedOut(error)) {
         this.#onSignedOut();
       } else {
+        if (error instanceof GitHubError && error.rateLimited) {
+          // GitHub's reset time is by its clock; one that has already passed by this device's waits the minute.
+          const retryAt = error.retryAt?.getTime() ?? 0;
+          this.#waitUntil(retryAt > Date.now() ? retryAt : Date.now() + rateLimitPause, true);
+        }
         this.error.value = error instanceof Error ? error.message : String(error);
       }
     } finally {
       this.loading.value = false;
     }
+  }
+
+  /** Holds Refresh until this time, unless it already waits longer. */
+  #waitUntil(until: number, rateLimited: boolean): void {
+    if (until <= Date.now() || until <= (this.refreshWait.value?.until.getTime() ?? 0)) {
+      return;
+    }
+    this.#refreshWait.value = { rateLimited, until: new Date(until) };
+    this.#tick();
+  }
+
+  /** Moves the countdown on, and again at the next whole second left, until Refresh can read. */
+  #tick(): void {
+    clearTimeout(this.#clock);
+    this.#now.value = Date.now();
+    const left = (this.#refreshWait.value?.until.getTime() ?? 0) - this.#now.value;
+    if (left <= 0) {
+      this.#clock = undefined;
+      return;
+    }
+    const toNextSecond = left % 1000;
+    this.#clock = setTimeout(
+      () => {
+        this.#tick();
+      },
+      toNextSecond === 0 ? 1000 : toNextSecond,
+    );
   }
 
   /** The selected repository's `owner/name`, kept while it is out of view or before the list arrives. */
@@ -533,11 +617,16 @@ export class Repositories {
   }
 
   /**
-   * Makes a folder and moves these repositories into it. Answers why not when
-   * the name can't be used. A folder of that name saved elsewhere meanwhile
-   * takes the repositories instead.
+   * Makes a folder and moves these repositories into it, unticking them when
+   * `untick` says they were ticked for it. Answers why not when the name can't
+   * be used. A folder of that name saved elsewhere meanwhile takes the
+   * repositories instead.
    */
-  createFolder(name: string, repositories: readonly Repository[] = []): string | undefined {
+  createFolder(
+    name: string,
+    repositories: readonly Repository[] = [],
+    { untick = false }: FolderMoveOptions = {},
+  ): string | undefined {
     const problem = this.folderNameProblem(name);
     if (problem !== undefined) {
       return problem;
@@ -545,6 +634,9 @@ export class Repositories {
     const trimmed = name.trim();
     const moving = repositories.map((repository) => repository.full_name);
     this.#updateFolders((folders) => withMoved(folders, moving, trimmed));
+    if (untick) {
+      this.#untick(moving);
+    }
     this.#moveTarget.value = { kind: 'folder', name: trimmed };
     return undefined;
   }
@@ -592,10 +684,34 @@ export class Repositories {
     this.#updateClosed((closed) => closed.filter((folder) => !sameName(folder, name)));
   }
 
-  /** Moves the repositories into the folder, out of any other, or out of every folder when none is named. */
-  moveToFolder(repositories: readonly Repository[], name: string | undefined): void {
+  /**
+   * Moves the repositories into the folder, out of any other, or out of every
+   * folder when none is named. With `untick`, for repositories ticked to be
+   * moved, it unticks them too, since they have gone where they were ticked for.
+   */
+  moveToFolder(
+    repositories: readonly Repository[],
+    name: string | undefined,
+    { untick = false }: FolderMoveOptions = {},
+  ): void {
     const moving = repositories.map((repository) => repository.full_name);
     this.#updateFolders((folders) => withMoved(folders, moving, name));
+    if (untick) {
+      this.#untick(moving);
+    }
+  }
+
+  /** Unticks these repositories, so that Undo after a hide doesn't tick them again either. */
+  #untick(names: readonly string[]): void {
+    const ticked = new Set(this.#tickedNames.value);
+    for (const name of names) {
+      ticked.delete(name);
+    }
+    if (ticked.size !== this.#tickedNames.value.size) {
+      this.#tickedNames.value = ticked;
+    }
+    const gone = new Set(names);
+    this.#justUnticked = this.#justUnticked.filter((name) => !gone.has(name));
   }
 
   /** Opens or closes a folder. */

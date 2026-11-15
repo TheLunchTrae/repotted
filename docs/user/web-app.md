@@ -30,6 +30,12 @@ installed on and that you administer. To add repositories to the list, click
 **Add repositories**, which opens the Repotted App's install page on GitHub,
 then **Refresh**.
 
+After a refresh, **Refresh** waits 15 seconds before it can read the list
+again, and counts down on the button while it waits, so that pressing it
+repeatedly doesn't use up your GitHub requests. When GitHub answers with its
+rate limit, the button waits until GitHub says the next request can go
+through, or a minute when GitHub doesn't say.
+
 To find a repository, type in **Find a repository**, or press <kbd>/</kbd> to
 go to it. Escape clears it.
 
@@ -54,8 +60,10 @@ To keep repositories together, put them in folders. Click **New folder**
 beside the count, name it, and leave the box that puts the ticked
 repositories in it ticked to fill it at once. To move repositories later,
 tick them, pick a folder under **Move to a folder** in the panel and click
-**Move**, or open one repository and pick its **Folder**. A repository is in
-one folder at most, and **No folder** takes it out. Folders show above the owners, in name order;
+**Move**, or open one repository and pick its **Folder**. Ticked
+repositories are unticked once they are in the folder; a repository's own
+**Folder** leaves the ticks as they are. A repository is in one folder at most, and **No
+folder** takes it out. Folders show above the owners, in name order;
 click a folder's name to close or open it, and use its **Edit** menu to
 rename or delete it. Deleting a folder puts its repositories back under their
 owners, and nothing changes on GitHub. A search looks in folders too, and a

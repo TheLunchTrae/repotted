@@ -36,7 +36,7 @@ function page(start: string) {
     });
     address.follow(phone);
   };
-  return { repositories, address, traverse, ...fake, refreshing: repositories.refresh() };
+  return { repositories, address, traverse, ...fake, refreshing: repositories.load() };
 }
 
 test('a link to a repository opens it once the list has it, with no entry of its own', async () => {

@@ -150,13 +150,15 @@ a {
   background: var(--tint);
 }
 
-.button:disabled {
+.button:disabled,
+.button[aria-disabled='true'] {
   color: var(--muted);
   cursor: default;
   opacity: 0.6;
 }
 
-.button:disabled:hover {
+.button:disabled:hover,
+.button[aria-disabled='true']:hover {
   background: var(--surface);
 }
 
@@ -665,6 +667,18 @@ input[type='checkbox'] {
 .page-actions {
   display: flex;
   gap: 8px;
+}
+
+/* The countdown on Refresh keeps one width as it counts, so the actions
+   beside it don't move. */
+.refresh {
+  font-variant-numeric: tabular-nums;
+}
+
+.refresh-countdown {
+  display: inline-block;
+  min-width: 7ch;
+  text-align: start;
 }
 
 .toolbar {

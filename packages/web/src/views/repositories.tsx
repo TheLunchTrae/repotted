@@ -1,5 +1,5 @@
 import type { JSX, RefObject } from 'preact';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import type { AddressSelection } from '../app/address-selection.js';
 import type { Apply } from '../app/apply.js';
@@ -7,7 +7,7 @@ import type { BatchApply } from '../app/batch-apply.js';
 import type { ComparedProfile } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
 import type { Profiles } from '../app/profiles.js';
-import type { FolderGroup, Repositories, Repository } from '../app/repositories.js';
+import { type FolderGroup, refreshPause, type Repositories, type Repository } from '../app/repositories.js';
 import { usePhone } from './phone.js';
 import { run } from './run.js';
 import { useDismiss } from './shell.js';
@@ -66,7 +66,12 @@ function OwnerFilter({ repositories }: { readonly repositories: Repositories }):
 
 /** A dialog open over the list: naming a new folder or renaming one, or deleting one. */
 type FolderDialog =
-  | { readonly kind: 'new'; readonly repositories: readonly Repository[] }
+  | {
+      readonly kind: 'new';
+      readonly repositories: readonly Repository[];
+      /** Whether they are the ticked repositories, which putting them in the folder unticks. */
+      readonly ticked: boolean;
+    }
   | { readonly kind: 'rename'; readonly name: string }
   | { readonly kind: 'delete'; readonly name: string };
 
@@ -74,6 +79,50 @@ type FolderDialog =
 const newFolderChoice = '\u0000new';
 /** The value of the folder pickers' choice that takes repositories out of every folder. */
 const noFolderChoice = '';
+
+/** Seconds as the countdown on Refresh shows them: by the second under a minute, else by the minute. */
+function countdown(seconds: number): string {
+  return seconds < 60 ? `${seconds}s` : `${Math.ceil(seconds / 60)} min`;
+}
+
+/**
+ * Refresh, off while a read runs and while it waits after one, with the wait
+ * counting down on it. It stays focusable while off, so the focus a press
+ * gave it isn't lost. The countdown isn't part of its name, so a screen
+ * reader isn't told each second; its description says why it waits, once.
+ */
+function RefreshButton({ repositories }: { readonly repositories: Repositories }): JSX.Element {
+  const wait = repositories.refreshWait.value;
+  const off = repositories.loading.value || wait !== undefined;
+  const why = useId();
+  return (
+    <>
+      <button
+        class="button refresh"
+        type="button"
+        aria-disabled={off ? 'true' : undefined}
+        aria-describedby={wait === undefined ? undefined : why}
+        onClick={() => {
+          run(repositories.refresh());
+        }}
+      >
+        Refresh
+        {wait !== undefined && (
+          <span class="refresh-countdown" aria-hidden="true">
+            &nbsp;in {countdown(repositories.refreshIn.value)}
+          </span>
+        )}
+      </button>
+      {wait !== undefined && (
+        <span id={why} class="visually-hidden">
+          {wait.rateLimited
+            ? `GitHub's rate limit holds the next refresh until ${wait.until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
+            : `Refresh waits ${refreshPause / 1000} seconds between reads.`}
+        </span>
+      )}
+    </>
+  );
+}
 
 /** Opens the dialog when it mounts, and calls `onClose` when it closes, by its buttons or Escape. */
 function useModal(): RefObject<HTMLDialogElement | null> {
@@ -87,7 +136,10 @@ function useModal(): RefObject<HTMLDialogElement | null> {
 interface FolderNameProps {
   readonly repositories: Repositories;
   readonly dialog: Extract<FolderDialog, { kind: 'new' | 'rename' }>;
-  /** Called when it closes, with the folder whose menu takes the focus after a rename, if any. */
+  /**
+   * Called when it closes, with the folder that takes the focus: the one
+   * renamed, or the one made with the ticked repositories put in it, if any.
+   */
   readonly onClose: (focus: string | undefined) => void;
 }
 
@@ -99,15 +151,17 @@ function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNamePr
   const [putIn, setPutIn] = useState(true);
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const moving = asked.kind === 'new' ? asked.repositories : [];
-  // The folder's name once renamed, since the menu that opened the dialog goes with its old name.
-  const renamed = useRef<string | undefined>(undefined);
+  const fromTicked = asked.kind === 'new' && asked.ticked && moving.length > 0;
+  // The folder's name once renamed, since the menu that opened the dialog goes with its old name, or once
+  // made with the ticked repositories in it, since the ticked panel goes when they are unticked.
+  const landed = useRef<string | undefined>(undefined);
   return (
     <dialog
       class="dialog"
       ref={dialog}
       aria-labelledby="folder-name-heading"
       onClose={() => {
-        onClose(renamed.current ?? renaming);
+        onClose(landed.current ?? renaming);
       }}
     >
       <form
@@ -116,13 +170,13 @@ function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNamePr
           if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'save') {
             const refused =
               renaming === undefined
-                ? repositories.createFolder(name, putIn ? moving : [])
+                ? repositories.createFolder(name, putIn ? moving : [], { untick: fromTicked })
                 : repositories.renameFolder(renaming, name);
             if (refused !== undefined) {
               event.preventDefault();
               setProblem(refused);
-            } else if (renaming !== undefined) {
-              renamed.current = name.trim();
+            } else if (renaming !== undefined || (putIn && fromTicked)) {
+              landed.current = name.trim();
             }
           }
         }}
@@ -471,7 +525,7 @@ function RepositoryPanel({
           value={repositories.folderOf(repository) ?? noFolderChoice}
           onChange={(value) => {
             if (value === newFolderChoice) {
-              onDialog({ kind: 'new', repositories: [repository] });
+              onDialog({ kind: 'new', repositories: [repository], ticked: false });
             } else {
               repositories.moveToFolder([repository], value === noFolderChoice ? undefined : value);
             }
@@ -728,10 +782,12 @@ interface TickedProps {
   readonly unfinished: boolean;
   readonly profiles: Profiles;
   readonly onBatch: RepositoriesProps['onBatch'];
+  /** Called after a move, which unticks the repositories and so closes this panel, with the folder they went to. */
+  readonly onMoved: (folder: string | undefined) => void;
 }
 
 /** The panel for the ticked repositories: the profile to apply to them all, each reviewed on its own first. */
-function TickedPanel({ repositories, onDialog, profiles, unfinished, onBatch }: TickedProps): JSX.Element {
+function TickedPanel({ repositories, onDialog, profiles, unfinished, onBatch, onMoved }: TickedProps): JSX.Element {
   const ticked = repositories.ticked.value;
   const target = repositories.moveTarget.value;
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
@@ -753,9 +809,11 @@ function TickedPanel({ repositories, onDialog, profiles, unfinished, onBatch }: 
         onSubmit={(event) => {
           event.preventDefault();
           if (target.kind === 'new') {
-            onDialog({ kind: 'new', repositories: ticked });
+            onDialog({ kind: 'new', repositories: ticked, ticked: true });
           } else {
-            repositories.moveToFolder(ticked, target.kind === 'folder' ? target.name : undefined);
+            const folder = target.kind === 'folder' ? target.name : undefined;
+            repositories.moveToFolder(ticked, folder, { untick: true });
+            onMoved(folder);
           }
         }}
       >
@@ -897,22 +955,36 @@ export function RepositoriesPage({
   const [dialog, setDialog] = useState<FolderDialog | undefined>(undefined);
   const newFolderButton = useRef<HTMLButtonElement>(null);
   /**
+   * Puts the focus in a folder once the page has drawn it: on its heading
+   * when `on` is the toggle and it can be pressed, otherwise on its menu, or
+   * on New folder when there is no such folder.
+   */
+  const focusFolder = (name: string | undefined, on: 'toggle' | 'menu'): void => {
+    requestAnimationFrame(() => {
+      const section = [...document.querySelectorAll<HTMLElement>('section.folder')].find(
+        (found) => name !== undefined && found.getAttribute('aria-label')?.toLowerCase() === name.toLowerCase(),
+      );
+      const toggle = on === 'toggle' ? section?.querySelector<HTMLElement>('.folder-toggle:not(:disabled)') : null;
+      (toggle ?? section?.querySelector<HTMLElement>('.folder-menu > summary') ?? newFolderButton.current)?.focus();
+    });
+  };
+  /**
    * After a rename or delete the menu that opened the dialog is gone, so the
    * focus goes to the folder's menu under its name now, or to New folder
-   * once it is deleted. After a new folder the browser puts it back itself.
+   * once it is deleted. A new folder made with the ticked repositories takes
+   * the focus, since unticking them closes the ticked panel; otherwise the
+   * browser puts the focus back itself.
    */
   const closeDialog = (focus: string | undefined): void => {
     const opened = dialog?.kind;
     setDialog(undefined);
     if (opened === 'new') {
+      if (focus !== undefined) {
+        focusFolder(focus, 'toggle');
+      }
       return;
     }
-    requestAnimationFrame(() => {
-      const menu = [...document.querySelectorAll<HTMLElement>('section.folder')]
-        .find((section) => focus !== undefined && section.getAttribute('aria-label') === focus)
-        ?.querySelector<HTMLElement>('.folder-menu > summary');
-      (menu ?? newFolderButton.current)?.focus();
-    });
+    focusFolder(focus, 'menu');
   };
   const fromApp = list?.source === 'installations';
   const total = list?.repositories.length ?? 0;
@@ -966,16 +1038,7 @@ export function RepositoriesPage({
                 Add repositories
               </a>
             )}
-            <button
-              class="button"
-              type="button"
-              disabled={loading}
-              onClick={() => {
-                run(repositories.refresh());
-              }}
-            >
-              Refresh
-            </button>
+            <RefreshButton repositories={repositories} />
           </div>
         </div>
 
@@ -1057,7 +1120,7 @@ export function RepositoriesPage({
                 class="button button-quiet"
                 type="button"
                 onClick={() => {
-                  setDialog({ kind: 'new', repositories: ticked });
+                  setDialog({ kind: 'new', repositories: ticked, ticked: true });
                 }}
               >
                 New folder
@@ -1172,6 +1235,9 @@ export function RepositoriesPage({
           profiles={profiles}
           unfinished={unfinished}
           onBatch={onBatch}
+          onMoved={(folder) => {
+            focusFolder(folder, 'toggle');
+          }}
         />
       ) : (
         selected !== undefined && (
