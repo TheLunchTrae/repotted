@@ -178,7 +178,7 @@ describe('callback', () => {
     [
       'issues a token that never expires',
       () => Promise.resolve(Response.json({ access_token: 'ghu_x' })),
-      '/?sign-in=failed&github-status=200',
+      '/?sign-in=failed',
     ],
     [
       'fails on its side',

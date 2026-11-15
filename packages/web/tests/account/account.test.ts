@@ -38,13 +38,14 @@ test('a refused sign-in is signed out, with why the sign-in just failed when the
 });
 
 test.each([
-  ['github-error=redirect_uri_mismatch', 'GitHub sent redirect_uri_mismatch'],
-  ['github-status=502', 'GitHub sent status 502'],
-  ['github-status=525', "Cloudflare couldn't connect to GitHub, status 525"],
-])('a failed sign-in says what GitHub sent: %s', (query, gitHubSent) => {
-  expect(signInFailure(new URLSearchParams(`sign-in=failed&${query}`))).toBe(
-    `GitHub didn't complete the sign-in (${gitHubSent}). Try again.`,
-  );
+  [
+    'github-error=redirect_uri_mismatch',
+    "GitHub didn't complete the sign-in (GitHub sent redirect_uri_mismatch). Try again.",
+  ],
+  ['github-status=502', "GitHub didn't complete the sign-in (GitHub sent status 502). Try again."],
+  ['github-status=525', "Cloudflare couldn't connect to GitHub to finish the sign-in (status 525). Try again."],
+])('a failed sign-in says what came back: %s', (query, message) => {
+  expect(signInFailure(new URLSearchParams(`sign-in=failed&${query}`))).toBe(message);
 });
 
 test.each([
@@ -56,6 +57,15 @@ test.each([
     "GitHub didn't complete the sign-in. Try again.",
   );
 });
+
+test.each(['constructor', 'toString', '__proto__'])(
+  'a sign-in reason from the address that names a built-in reads as a failed sign-in: %s',
+  (reason) => {
+    expect(signInFailure(new URLSearchParams(`sign-in=${reason}`))).toBe(
+      "GitHub didn't complete the sign-in. Try again.",
+    );
+  },
+);
 
 test('GitHub out of reach is not a sign-out, and a later try can sign in', async () => {
   const github = new FakeGitHub().fail('GET /user', answered(500, 'fetch failed'), 1);

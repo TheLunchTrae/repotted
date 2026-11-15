@@ -320,7 +320,8 @@ async function signIn(request: Request, env: Env): Promise<Response> {
 }
 
 // The address is the page's to show, so it carries GitHub's checked error
-// code, or else its status, and never a description or any part of the sign-in.
+// code, or else a status that isn't a success, and never a description or any
+// part of the sign-in.
 function signInFailureQuery(reason: SignInFailure, gitHubAnswer: GitHubAnswer | undefined): string {
   const query = new URLSearchParams({ 'sign-in': reason });
   if (reason !== 'failed') {
@@ -328,7 +329,7 @@ function signInFailureQuery(reason: SignInFailure, gitHubAnswer: GitHubAnswer | 
   }
   if (gitHubAnswer?.oauthError !== undefined) {
     query.set('github-error', gitHubAnswer.oauthError);
-  } else if (gitHubAnswer?.status !== undefined) {
+  } else if (gitHubAnswer?.status !== undefined && !(gitHubAnswer.status >= 200 && gitHubAnswer.status < 300)) {
     query.set('github-status', String(gitHubAnswer.status));
   }
   return query.toString();
