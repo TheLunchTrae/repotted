@@ -433,6 +433,7 @@ test('an apply opens on its one-off edits, which change this apply only and show
     repository: 'lunch/app',
     profile: 'web',
     fromProfile: true,
+    builtIn: false,
     leftOut: [],
   });
   const editor = apply.editor.value;
@@ -485,6 +486,7 @@ test('settings are changed once, with no profile, from the repository as it is',
     repository: 'lunch/app',
     profile: '',
     fromProfile: false,
+    builtIn: false,
     leftOut: [],
   });
   const wiki = settingSections

@@ -1,11 +1,13 @@
 // The web app as src/main.tsx starts it, against an in-memory GitHub with a
-// signed-in account, eight repositories, and two kept profiles, so the layout
+// signed-in account, eight repositories, an empty repository to keep profiles
+// in, and two kept profiles, so the layout
 // test sees full pages with no sign-in and no network. `?signed-out` starts it
 // with GitHub refusing the sign-in, which shows the sign-in page.
 
 import type { GitHub } from '@repotted/core';
 import { render } from 'preact';
 
+import { FakeGitRepository } from '../../../core/tests/fake-git.js';
 import { answered, type FakeAccount, FakeFleet, FakeGitHub } from '../../../core/tests/fake-github.js';
 import { Account } from '../../src/app/account.js';
 import { browserFiles, keepFiles } from '../../src/app/kept-files.js';
@@ -78,10 +80,35 @@ const others = names
   .slice(1)
   .map((name) => new FakeGitHub({ account, ownerType: name.startsWith('trae/') ? 'User' : 'Organization' }, name));
 
+// An empty personal repository to keep profiles in: its files from one fake, its settings from another.
+const configName = 'trae/repotted-config';
+const configFiles = new FakeGitRepository(configName);
+const configSettings = new FakeGitHub({ account, ownerType: 'User' }, configName);
+const config: GitHub = {
+  request: async (method, path, body) => {
+    const route = path.split('?')[0] ?? '';
+    if (method === 'GET' && route === `/repos/${configName}`) {
+      const answers = [await configSettings.request(method, path), await configFiles.request(method, path)];
+      const merged: Record<string, unknown> = {};
+      for (const answer of answers) {
+        Object.assign(merged, answer);
+      }
+      return merged;
+    }
+    return /^\/repos\/[^/]+\/[^/]+\/(?:git|contents|compare)\//u.test(route)
+      ? configFiles.request(method, path, body)
+      : configSettings.request(method, path, body);
+  },
+};
+const fleet = new FakeFleet([app, ...others]);
+
 const signedOut = new URLSearchParams(location.search).has('signed-out');
 const github: GitHub = signedOut
   ? { request: () => Promise.reject(answered(401, 'Bad credentials')) }
-  : new FakeFleet([app, ...others]);
+  : {
+      request: (method, path, body) =>
+        (path.startsWith(`/repos/${configName}`) ? config : fleet).request(method, path, body),
+    };
 // eslint-disable-next-line typescript/no-unsafe-type-assertion -- a Session can't be built without the Worker, and Account only calls signOut on it
 const session = { signOut: () => Promise.resolve() } as unknown as Session;
 const signIn = new Account(session, github);

@@ -1,13 +1,14 @@
 import type { Signal } from '@preact/signals';
 import type { GitHub } from '@repotted/core';
 import type { JSX } from 'preact';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
 import { AddressedRepository } from '../app/addressed-repository.js';
 import { Apply } from '../app/apply.js';
 import { BatchApply } from '../app/batch-apply.js';
 import { Comparison } from '../app/comparison.js';
+import { ConfigProtection } from '../app/config-protection.js';
 import type { Keeping } from '../app/kept-files.js';
 import type { LocalFolders } from '../app/local-folder.js';
 import type { Preferences } from '../app/preferences.js';
@@ -58,7 +59,7 @@ function SignedIn({
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
   // One of each per sign-in. The repository list is the account's; the profiles are the browser's, whoever signs in.
-  const { repositories, profiles, comparison, apply, batch } = useMemo(() => {
+  const { repositories, profiles, comparison, apply, batch, protection } = useMemo(() => {
     const refused = (): void => {
       account.refused();
     };
@@ -75,6 +76,7 @@ function SignedIn({
       // An apply's edits saved to a profile take their turn among the profiles' syncs.
       apply: new Apply(github, refused, (work) => kept.write(work)),
       batch: new BatchApply(github, refused),
+      protection: new ConfigProtection(github, refused),
     };
   }, [account, github, preferences, folders, user]);
   const address = useMemo(() => new AddressedRepository(repositories, router), [repositories, router]);
@@ -88,6 +90,8 @@ function SignedIn({
   }, [repositories, source]);
   // The repository a new profile was asked to capture, from the repositories page.
   const [captureFrom, setCaptureFrom] = useState<string | undefined>(undefined);
+  /** Whether a press of Review protection… is still starting its apply. */
+  const openingProtection = useRef(false);
   // The browser asks before a reload or a closed tab discards changes that aren't saved.
   useEffect(() => {
     const ask = (event: BeforeUnloadEvent): void => {
@@ -230,6 +234,28 @@ function SignedIn({
           profiles={profiles}
           repositories={repositories}
           keeping={keeping.value}
+          protection={protection}
+          onReviewProtection={() => {
+            const state = protection.state.value;
+            // A second press while the first is starting would start a second apply over the first.
+            if (state.kind === 'checked' && !openingProtection.current) {
+              openingProtection.current = true;
+              run(
+                protection
+                  .profile()
+                  .then((profile) => {
+                    if (profile !== undefined) {
+                      router.go('/apply');
+                      return apply.start(state.repository, profile);
+                    }
+                    return undefined;
+                  })
+                  .finally(() => {
+                    openingProtection.current = false;
+                  }),
+              );
+            }
+          }}
           onSignOut={signOut}
         />
       ) : (

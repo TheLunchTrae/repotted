@@ -208,6 +208,15 @@ Its first step is the profile editor over the staged apply's file: an
 write its file, the engine's profile functions for a profile and its staged
 apply functions for an apply.
 
+`config-protection.ts` holds the built-in protection for a config
+repository, as profile YAML by what owns the repository, and checks the
+repository the profiles are kept in against it. Its apply is an ordinary
+apply whose staged file extends `/built-in/<name>.yaml`, which `Apply` marks
+`builtIn` so the edits can't be saved back to it. A new built-in, such as one
+for organizations, is another entry there.
+[State machines](state-machines.md#web-config-repository-protection) lists
+the states.
+
 `batch-apply.ts` does the same for several repositories through the engine's
 batch, whose members are the staged applies of single applies, so one can
 join the other.

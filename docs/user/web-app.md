@@ -157,7 +157,9 @@ From there you can:
   apply first, never to the profile, so the review shows what the edits say.
   It waits while an edit isn't valid.
 - Click **Save edits to profile** to write the one-off edits into the
-  profile, which then sets them itself.
+  profile, which then sets them itself. An apply of the
+  [built-in protection](#protect-the-config-repository) has no profile to
+  save to, so it doesn't offer this.
 - Click **Discard apply** to throw the apply away. The profile stays as it
   is.
 
@@ -446,6 +448,34 @@ Repotted on it sees them; on a shared computer, use a private window or keep
 none there. **Use this browser** in Settings goes back to profiles kept in
 the browser alone; the repository keeps every profile it has.
 
+### Protect the config repository
+
+Repotted has a built-in protection for a personal repository that keeps
+your profiles. It stops the default branch from being deleted or force
+pushed, keeps the token that workflows get read-only, and stops workflows
+from approving pull requests. It never requires pull requests, so syncs
+still commit straight to the branch. Nothing is applied until you review it.
+
+Right after you pick a personal repository in **Use a GitHub repository…**,
+Settings offers it above the list, when the repository doesn't already have
+it all. Click **Review protection…** to see each change and apply it as you
+would a profile, or **Not now** to hide the offer.
+
+While profiles are kept in a personal repository, the **Protect this
+repository** row in Settings says whether it has the protection: **Protected**,
+or how many changes are left to review, with **Review protection…**. If the
+check fails, it says why, with **Check again**. A newer Repotted can add to
+the protection, and the row then shows what is left to review.
+
+A private repository on GitHub's free plan can't have rulesets, so there the
+protection keeps only the workflow settings, and the row says so. A
+repository owned by an organization is offered no protection yet, and
+neither is one you aren't an admin of, since only an admin can change these
+settings.
+
+The built-in protection isn't one of your profiles. One-off edits to its
+apply stay with that apply, so its apply has no **Save edits to profile**.
+
 ### Keep profiles in a folder on this computer
 
 In Chrome, Edge, and other Chromium browsers, profiles can be files in a
@@ -496,4 +526,6 @@ several is writing to GitHub, **Sign out** does nothing but say so; press it
 again once the apply has finished. **Profiles** shows where your profiles are kept and how the
 last sync went, with **Sync now** (or **Refresh** for profiles in the
 browser), and the buttons that move them to a GitHub repository or back to
-the browser.
+the browser. While they are kept in a personal repository, it also says
+whether that repository has the
+[built-in protection](#protect-the-config-repository).
