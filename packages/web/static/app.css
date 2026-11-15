@@ -469,6 +469,7 @@ input[type='checkbox'] {
 
 .menu-heading strong {
   font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
 .menu-item {
@@ -1969,6 +1970,15 @@ select.field {
 
   .shell-bar .wordmark {
     margin-inline-end: auto;
+  }
+
+  /* The account menu hangs from a button at the bar's end, so it keeps inside
+     the page's start edge however long a name in it is, and a short window
+     scrolls the menu rather than the page. */
+  .account-menu > .menu-panel {
+    max-width: calc(100vw - 32px);
+    max-height: calc(100dvh - 72px);
+    overflow-y: auto;
   }
 
   .account-menu > summary {

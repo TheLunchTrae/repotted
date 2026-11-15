@@ -36,7 +36,8 @@ const repositories = names.map((name, index) => ({
 }));
 const account: FakeAccount = {
   login: 'trae',
-  name: 'Trae Stevens',
+  // One long word, as a name or login can be, which the account menu has to wrap.
+  name: 'TraeStevensWithAVeryLongNameAndNoSpaces',
   repositories,
   installations: [
     {

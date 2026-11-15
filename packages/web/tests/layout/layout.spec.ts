@@ -1,5 +1,5 @@
 // Every screen of the web app fits a touch screen's width: the page doesn't
-// scroll sideways, and nothing sticks out past the right edge except inside
+// scroll sideways, and nothing sticks out past either edge except inside
 // something that scrolls or clips on its own, such as a code block.
 
 import { extname } from 'node:path';
@@ -87,13 +87,17 @@ const test = base.extend<object, { bundle: string }>({
   },
 });
 
-/** Elements whose box ends past the viewport's right edge with nothing between them and the page that scrolls or clips. */
+/** Elements whose box ends past the viewport's right edge, or starts before its left edge, with nothing between them and the page that scrolls or clips. */
 function outside(): string[] {
   const width = document.documentElement.clientWidth;
   const found: string[] = [];
   for (const element of document.body.querySelectorAll('*')) {
     const box = element.getBoundingClientRect();
-    if (box.width === 0 || box.right <= width + 1 || !element.checkVisibility({ visibilityProperty: true })) {
+    if (
+      box.width === 0 ||
+      (box.right <= width + 1 && box.left >= -1) ||
+      !element.checkVisibility({ visibilityProperty: true })
+    ) {
       continue;
     }
     // The page itself doesn't count: clipping it hides what sticks out rather than fitting it.
@@ -108,7 +112,7 @@ function outside(): string[] {
     if (!held) {
       const name = (element.getAttribute('aria-label') ?? element.textContent).trim().slice(0, 40);
       found.push(
-        `<${element.localName} class="${element.getAttribute('class') ?? ''}"> ${name} ends at ${Math.round(box.right)}`,
+        `<${element.localName} class="${element.getAttribute('class') ?? ''}"> ${name} spans ${Math.round(box.left)} to ${Math.round(box.right)}`,
       );
     }
   }
@@ -127,7 +131,7 @@ for (const [name, screen] of Object.entries(screens)) {
 
     const width = await page.evaluate(() => document.documentElement.clientWidth);
     expect(await page.evaluate(() => document.documentElement.scrollWidth), 'page width').toBeLessThanOrEqual(width);
-    expect(await page.evaluate(outside), 'elements past the right edge').toEqual([]);
+    expect(await page.evaluate(outside), 'elements past the edges').toEqual([]);
     expect(errors, 'page errors').toEqual([]);
   });
 }

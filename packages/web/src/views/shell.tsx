@@ -42,6 +42,25 @@ interface AccountMenuProps extends Omit<ShellProps, 'children'> {
 
 function AccountMenu({ account, user, router, onSignOut, pages }: AccountMenuProps): JSX.Element {
   const menu = useDismiss();
+  // A phone's button shows only the avatar, so its menu names who's signed in even without a display name.
+  const signedIn = user.name ?? (pages ? user.login : null);
+  const pagesBefore = useRef(pages);
+  // Crossing the phone width adds or removes the menu's pages, which can take
+  // the focused link with them, so an open menu closes and gives focus back to its button.
+  useEffect(() => {
+    const element = menu.current;
+    if (pagesBefore.current === pages || element === null) {
+      return;
+    }
+    pagesBefore.current = pages;
+    if (element.open) {
+      const focusLost = document.activeElement === document.body || element.contains(document.activeElement);
+      element.open = false;
+      if (focusLost) {
+        element.querySelector('summary')?.focus();
+      }
+    }
+  }, [pages, menu]);
   return (
     <details class="menu account-menu" ref={menu}>
       <summary aria-label={pages ? `Menu: ${user.login}` : `Account: ${user.login}`}>
@@ -82,7 +101,7 @@ function AccountMenu({ account, user, router, onSignOut, pages }: AccountMenuPro
           </nav>
         )}
         <p class="menu-heading">
-          <strong>{user.name ?? user.login}</strong>
+          {signedIn !== null && <strong>{signedIn}</strong>}
           <span class="muted">Signed in with the Repotted App</span>
         </p>
         {!pages && (
