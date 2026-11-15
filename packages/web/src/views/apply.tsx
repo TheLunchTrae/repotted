@@ -228,7 +228,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 more: (
                   <>
                     {discard}
-                    {state.fromProfile && (
+                    {state.fromProfile && !state.builtIn && (
                       <button
                         class="button"
                         type="button"
