@@ -12,6 +12,21 @@ Use Repotted in one tab at a time. A second tab says that Repotted is open
 in another one, so that two tabs can't save over each other's profiles;
 close the first and click **Reload**.
 
+## On a phone
+
+In a window 760 pixels wide or less, such as a phone's, the app lays itself
+out for the narrow screen:
+
+- The header is one row: **Repotted**, then your avatar with a menu icon.
+  That menu holds **Repositories**, **Profiles** and **Settings**, then your
+  account, **Add repositories** and **Sign out**.
+- A repository's details open as a screen of their own; the back button
+  returns to the list.
+- The profiles list and an open profile are two screens; **All profiles**
+  returns to the list.
+- A page's bar of actions, as when applying changes or editing a profile,
+  keeps its main action in view and puts the rest under **More**.
+
 ## Sign in
 
 Click **Sign in with GitHub** and approve the Repotted App on GitHub. The
@@ -19,7 +34,8 @@ sign-in lasts in that browser until you sign out, and each browser signs in
 on its own. If GitHub stops accepting the sign-in while the app is open, the
 app returns to this page and says so.
 
-To sign out, click your account at the top right and choose **Sign out**.
+To sign out, click your account at the top right, or the menu on a phone,
+and choose **Sign out**.
 [Sign in](sign-in.md#give-the-app-your-repositories) says how to choose the
 repositories the Repotted App reaches.
 
@@ -464,8 +480,8 @@ GitHub repository, while the folder lacks changes made here.
 
 ## Settings
 
-**Settings**, at the top right and in the account menu, holds what applies to
-the whole app in this browser.
+**Settings**, at the top right and in the account menu, or in the menu on a
+phone, holds what applies to the whole app in this browser.
 
 **Account** shows who you're signed in as, with **Add repositories** and
 **Sign out**. When a profile has unsaved changes, **Sign out** asks first: **Save and
