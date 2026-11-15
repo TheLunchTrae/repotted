@@ -11,8 +11,9 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"],
   },
-  // The Repotted App's client ID and secret are set on the Worker and on its
-  // Previews in the dashboard, and every deploy keeps them.
+  // The Repotted App's client ID and secret are set in the dashboard. keep_vars
+  // keeps a plain-text ID on production; Previews keep only secrets, so there
+  // both are secrets.
   "keep_vars": true,
   // The custom domains are attached once in the dashboard, repotted.dev for
   // production and preview.repotted.dev for Previews, so deploys need no zone

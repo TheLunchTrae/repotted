@@ -57,8 +57,8 @@ jobs:
         with:
           cache: false
           task: ts:web:check
-      # Every deploy keeps the client ID and secret already set on the Worker
-      # or its Preview.
+      # The client ID and secret are set on the Worker and its Preview in the
+      # dashboard; docs/developer/web-app.md says how each deploy keeps them.
       - name: Upload the Worker and its assets
         id: deploy
         working-directory: packages/web

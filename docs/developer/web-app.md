@@ -376,18 +376,19 @@ while to issue. The preview is public, as repotted.dev is, unless Cloudflare
 Access is put in front of it.
 
 The client ID, `REPOTTED_APP_CLIENT_ID`, is the same ID as `app.clientId` in
-`packages/cli/src/auth/sign-in.ts`. It is set in the dashboard, on the Worker
-and for Previews, as is the client secret `REPOTTED_APP_CLIENT_SECRET`, which
-can also be set with `wrangler secret put`. `keep_vars` in `wrangler.jsonc`
-makes `wrangler deploy` keep the dashboard's variables rather than replace
-them with the config's. Wrangler never deletes a Worker's secrets:
-every deploy keeps the ones the version before it had, and every preview
-deployment the ones the Preview had, so the workflow never handles the secret.
+`packages/cli/src/auth/sign-in.ts`, though nothing checks that they match. It
+and the client secret `REPOTTED_APP_CLIENT_SECRET` are set in the dashboard,
+for production and for Previews, so the workflow never handles either.
+Wrangler never deletes a Worker's secrets: every deploy keeps the ones the
+version before it had, and every preview deployment the ones the Preview had.
+Plain-text variables are kept less often. `keep_vars` in `wrangler.jsonc` makes
+`wrangler deploy` keep production's, but `wrangler preview` ignores it and
+drops any the Preview had. So on Previews the client ID is a secret too; on
+production it can be either.
 
 A change to the Previews Base reaches only Previews created after it, so
-rotating the secret sets it in three places: production, the Previews Base, and
-the `main` Preview, with
-`wrangler preview secret put REPOTTED_APP_CLIENT_SECRET --name main`.
+changing either value sets it in three places: production, the Previews Base,
+and the `main` Preview, with `wrangler preview secret put <name> --name main`.
 
 The sign-in's cookies are named with `__Host-`, so the browser keeps them for
 the one host that set them: a sign-in on the preview never reaches
@@ -445,10 +446,11 @@ Before the first deploy:
    `https://repotted.dev/api/auth/callback` and
    `https://main.preview.repotted.dev/api/auth/callback`, keep **Expire user
    authorization tokens** on, and generate a client secret.
-5. In the Worker's **Settings**, add the client secret as the secret
-   `REPOTTED_APP_CLIENT_SECRET` under both **Production** and **Previews
-   Base**. A new Preview copies the base secrets when it is created, so set it
-   before the first preview; for a Preview that already exists, run
-   `wrangler preview secret put REPOTTED_APP_CLIENT_SECRET --name main`.
+5. In the Worker's **Settings**, under both **Production** and **Previews
+   Base**, add the client secret as the secret `REPOTTED_APP_CLIENT_SECRET`
+   and the App's client ID as the secret `REPOTTED_APP_CLIENT_ID`. A new
+   Preview copies the base secrets when it is created, so set them before the
+   first preview; for a Preview that already exists, run
+   `wrangler preview secret put <name> --name main` for each.
 6. Create the `deploy-web` environment with the values above, limited to
    `main`.

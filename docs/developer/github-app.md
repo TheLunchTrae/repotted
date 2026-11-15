@@ -76,7 +76,10 @@ settings, GitHub Apps, New GitHub App, uses too:
   says what needs each one.
 - Where it can be installed: any account.
 
-Then copy the client ID, not the App ID, into `app.clientId`.
+Then copy the client ID, not the App ID, into `app.clientId`, and set it as
+the `repotted` Worker's `REPOTTED_APP_CLIENT_ID` for production, for its
+Previews Base and for its `main` Preview, as
+[the web app's deploy](web-app.md#deploy) describes.
 
 The App's permissions can change later in its settings. GitHub asks each
 installation's owner to accept added permissions, and until they do, the App
