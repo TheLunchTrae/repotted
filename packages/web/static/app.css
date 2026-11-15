@@ -428,6 +428,15 @@ input[type='checkbox']:disabled {
   left: auto;
 }
 
+/* Wider than a phone, a menu late in a toolbar opens toward the start so it
+   stays on the page; on a phone it spans the page like any other. */
+@media (min-width: 761px) {
+  .menu-panel-end-on-wide-screens {
+    right: 0;
+    left: auto;
+  }
+}
+
 /* On a phone. These rules come before the rules they change, so a selector
    adds an element where a later rule sets the same property. */
 @media (max-width: 760px) {

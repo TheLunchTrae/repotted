@@ -132,7 +132,7 @@ function FilterMenu({ repositories }: { readonly repositories: Repositories }): 
           </span>
         )}
       </summary>
-      <div class="menu-panel filter-panel">
+      <div class="menu-panel menu-panel-end-on-wide-screens filter-panel">
         <FilterChoices
           legend="Visibility"
           name="filter-visibility"
@@ -198,7 +198,7 @@ function SortMenu({ repositories }: { readonly repositories: Repositories }): JS
       <summary class="button button-quiet">
         Sort: <span class="sort-order">{sortOrderLabels[order]}</span>
       </summary>
-      <div class="menu-panel">
+      <div class="menu-panel menu-panel-end-on-wide-screens">
         <fieldset class="owner-choices">
           <legend>Sort repositories by</legend>
           {sortOrders.map((choice) => (
