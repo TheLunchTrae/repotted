@@ -22,11 +22,12 @@ you can:
 
 ### Preview
 
-[main.preview.repotted.dev](https://main.preview.repotted.dev) runs builds of
-`main` before they're published to repotted.dev. It's there to preview changes
-while they're tested, so some features may be broken or not work as expected.
-It's a separate site, so profiles kept in the browser on repotted.dev don't
-show up there.
+[main.preview.repotted.dev](https://main.preview.repotted.dev) runs a build of
+the `main` branch that may not be on repotted.dev yet. It's there to preview
+changes while they're tested, so some features may be broken or not work as
+expected. It still works on your real repositories, so review changes there as
+carefully as on repotted.dev. It's a separate site: you sign in there on its
+own, and profiles kept in the browser on repotted.dev don't show up there.
 
 ## Documentation
 
