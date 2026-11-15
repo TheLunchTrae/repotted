@@ -611,9 +611,9 @@ export class Repositories {
   }
 
   /**
-   * Makes a folder and moves these repositories into it. Answers why not when
-   * the name can't be used. A folder of that name saved elsewhere meanwhile
-   * takes the repositories instead.
+   * Makes a folder and moves these repositories into it, unticking them.
+   * Answers why not when the name can't be used. A folder of that name saved
+   * elsewhere meanwhile takes the repositories instead.
    */
   createFolder(name: string, repositories: readonly Repository[] = []): string | undefined {
     const problem = this.folderNameProblem(name);
@@ -623,6 +623,7 @@ export class Repositories {
     const trimmed = name.trim();
     const moving = repositories.map((repository) => repository.full_name);
     this.#updateFolders((folders) => withMoved(folders, moving, trimmed));
+    this.#untick(moving);
     this.#moveTarget.value = { kind: 'folder', name: trimmed };
     return undefined;
   }
@@ -670,10 +671,25 @@ export class Repositories {
     this.#updateClosed((closed) => closed.filter((folder) => !sameName(folder, name)));
   }
 
-  /** Moves the repositories into the folder, out of any other, or out of every folder when none is named. */
+  /**
+   * Moves the repositories into the folder, out of any other, or out of every
+   * folder when none is named, and unticks them, since they have gone where
+   * they were ticked for.
+   */
   moveToFolder(repositories: readonly Repository[], name: string | undefined): void {
     const moving = repositories.map((repository) => repository.full_name);
     this.#updateFolders((folders) => withMoved(folders, moving, name));
+    this.#untick(moving);
+  }
+
+  #untick(names: readonly string[]): void {
+    const ticked = new Set(this.#tickedNames.value);
+    for (const name of names) {
+      ticked.delete(name);
+    }
+    if (ticked.size !== this.#tickedNames.value.size) {
+      this.#tickedNames.value = ticked;
+    }
   }
 
   /** Opens or closes a folder. */
