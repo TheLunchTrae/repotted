@@ -37,11 +37,17 @@ interface CompareProps {
 export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
   const state = comparison.state.value;
   // Back to the repository this is about, open on the repositories page.
-  const back = (
-    <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
-      Back to repositories
-    </Link>
-  );
+  const elsewhere = comparison.back.value;
+  const back =
+    elsewhere !== undefined && state.kind !== 'idle' ? (
+      <Link router={router} to={elsewhere.to}>
+        {elsewhere.label}
+      </Link>
+    ) : (
+      <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
+        Back to repositories
+      </Link>
+    );
   if (state.kind === 'idle') {
     return (
       <div class="page">

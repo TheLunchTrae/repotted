@@ -111,6 +111,14 @@ export interface ComparedProfile {
   readonly name: string;
   /** The folder the profiles are kept in, which paths in a message are given from; the profile's own when left out. */
   readonly folder?: string;
+  /** Where the comparison's back link goes, and what it says; to the repository when left out. */
+  readonly back?: ComparisonBack;
+}
+
+export interface ComparisonBack {
+  /** The app's address to go back to. */
+  readonly to: string;
+  readonly label: string;
 }
 
 export type ComparisonState =
@@ -127,7 +135,8 @@ export type ComparisonState =
     }
   | ({ readonly kind: 'compared' } & Compared);
 
-const titles: Readonly<Record<Change['section'], string>> = {
+/** Each section's title, as a comparison shows it. */
+export const titles: Readonly<Record<Change['section'], string>> = {
   repository: 'Repository',
   merge: 'Merge',
   security: 'Security',
@@ -141,7 +150,7 @@ const titles: Readonly<Record<Change['section'], string>> = {
 };
 
 /** The sections in the order a comparison shows them. */
-const order: readonly Change['section'][] = [
+export const order: readonly Change['section'][] = [
   'repository',
   'merge',
   'security',
@@ -154,7 +163,8 @@ const order: readonly Change['section'][] = [
   'labels',
 ];
 
-const nouns: Readonly<Record<string, string>> = {
+/** What one entry of each list is called. */
+export const nouns: Readonly<Record<string, string>> = {
   autolinks: 'autolink',
   rulesets: 'ruleset',
   environments: 'environment',
@@ -163,12 +173,12 @@ const nouns: Readonly<Record<string, string>> = {
 
 const fields = settingSections.flatMap((section) => section.groups.flatMap((group) => group.fields));
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+export function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** A value in a few words, as a row shows it. */
-function say(value: unknown, missing: string): string {
+export function say(value: unknown, missing: string): string {
   if (value === undefined) {
     return missing;
   }
@@ -186,12 +196,12 @@ function say(value: unknown, missing: string): string {
   return typeof value === 'string' ? value : typeof value === 'number' ? String(value) : JSON.stringify(value);
 }
 
-function kindOf(from: unknown, to: unknown): CompareRow['kind'] {
+export function kindOf(from: unknown, to: unknown): CompareRow['kind'] {
   return from === undefined ? 'adds' : to === undefined ? 'removes' : 'changes';
 }
 
 /** A setting's label and its values by their choice labels, as the editor has them, when it has the setting. */
-function settingNames(path: string): { label: string; named: (value: unknown) => string } {
+export function settingNames(path: string): { label: string; named: (value: unknown) => string } {
   const field = fields.find((item) => item.path.join('.') === path);
   return {
     label: field?.label ?? path.slice(path.indexOf('.') + 1),
@@ -227,7 +237,7 @@ function identityOf(item: unknown): string | undefined {
  * by, so a rule with one changed number is that number and not two whole
  * lists of rules.
  */
-function narrowed(path: string, from: unknown, to: unknown): { path: string; from: unknown; to: unknown }[] {
+export function narrowed(path: string, from: unknown, to: unknown): { path: string; from: unknown; to: unknown }[] {
   if (JSON.stringify(from) === JSON.stringify(to)) {
     return [];
   }
@@ -433,6 +443,8 @@ export class Comparison {
   readonly onlyLocked = signal(false);
   /** Whether only what differs shows, with what matches folded away; on at first. */
   readonly onlyDifferences = signal(true);
+  /** Where the back link goes, when the comparison was started from somewhere other than the repository. */
+  readonly back = signal<ComparisonBack | undefined>(undefined);
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
@@ -491,6 +503,7 @@ export class Comparison {
   async compare(repository: string, profile: ComparedProfile): Promise<void> {
     const turn = (this.#turn += 1);
     this.#last = { repository, profile };
+    this.back.value = profile.back;
     this.search.value = '';
     this.onlyLocked.value = false;
     this.state.value = { kind: 'comparing', repository, file: profile.file, profile: profile.name };
@@ -552,5 +565,6 @@ export class Comparison {
   close(): void {
     this.#turn += 1;
     this.state.value = { kind: 'idle' };
+    this.back.value = undefined;
   }
 }

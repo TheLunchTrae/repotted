@@ -428,6 +428,32 @@ Repotted on it sees them; on a shared computer, use a private window or keep
 none there. **Use this browser** in Settings goes back to profiles kept in
 the browser alone; the repository keeps every profile it has.
 
+### Preview a branch
+
+When your profiles are kept on GitHub, you can see what a branch of the
+repository would change before it is merged, such as a branch an agent pushed
+for a pull request. Click **Preview** above the profile list and pick a
+branch, or type its name. The address of a preview is
+`/profiles?preview=<branch>`, so a link to it opens the same preview.
+
+The preview lays the branch's changes over your profiles and lists each
+profile that would apply something different: one the branch adds, deletes,
+moves, or changes, and one whose own file is the same but whose base
+profile changes. Each row shows the value on the default branch and on the
+branch, and names the base profile it comes from. **Show YAML** shows the
+file's own lines that change, and **Compare with a repository** compares
+the branch's version of a profile with a repository, as
+[Compare a repository with a profile](#compare-a-repository-with-a-profile)
+does.
+
+Previewing only reads from GitHub: nothing is saved, synced, or kept in the
+browser. **Refresh** reads the branch again, and **Exit preview** goes back
+to your profiles. Only what the branch itself changes counts, as in a pull
+request. A banner says when the branch is behind the default branch, where a
+profile both changed shows as the branch has it, and when the profiles in the
+browser are older than the default branch, which a sync fixes. Changes the
+branch makes to hidden repositories and folders aren't shown.
+
 ### Keep profiles in a folder on this computer
 
 In Chrome, Edge, and other Chromium browsers, profiles can be files in a

@@ -103,12 +103,12 @@ function badSegment(segment: string): boolean {
   );
 }
 
-function isProfilePath(file: string): boolean {
+export function isProfilePath(file: string): boolean {
   return /\.ya?ml$/iu.test(file) && !file.split('/').some(badSegment);
 }
 
 /** A folder in the repository as `a/b`, or '' for the root. */
-function repositoryFolder(value: string | undefined): string {
+export function repositoryFolder(value: string | undefined): string {
   const trimmed = (value ?? '').replace(/^\/+|\/+$/gu, '');
   if (trimmed === '') {
     return '';

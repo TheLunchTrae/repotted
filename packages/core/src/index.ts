@@ -33,6 +33,8 @@ export type { EntryEdit, ProfileEdit } from './profile.js';
 export { lockChanges } from './permissions.js';
 export { profileFileJsonSchema } from './schema.js';
 export { currentUser, listRepositories, readAccess } from './repositories.js';
+export { listBranches, readBranchChanges } from './branch-changes.js';
+export type { BranchChanges, BranchFileChange } from './branch-changes.js';
 export { syncFolder } from './sync.js';
 export {
   createStagedApply,

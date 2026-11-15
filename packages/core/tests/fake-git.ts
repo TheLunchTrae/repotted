@@ -139,9 +139,20 @@ export class FakeGitRepository implements GitHub {
     );
   }
 
-  /** Commits files to the branch, a string to write and null to delete, as a push from elsewhere would. */
-  write(changes: Record<string, string | null>, options: { mode?: string; message?: string } = {}): string {
-    const head = this.refs.get(this.defaultBranch);
+  /** The most files a comparison lists, as GitHub lists 300. */
+  compareFileLimit = 300;
+
+  /**
+   * Commits files to a branch, a string to write and null to delete, as a
+   * push from elsewhere would. The default branch when none is named; a
+   * branch that doesn't exist yet starts from the default branch.
+   */
+  write(
+    changes: Record<string, string | null>,
+    options: { mode?: string; message?: string; branch?: string } = {},
+  ): string {
+    const branch = options.branch ?? this.defaultBranch;
+    const head = this.refs.get(branch) ?? this.refs.get(this.defaultBranch);
     const tree: Tree = new Map(head === undefined ? [] : this.trees.get(this.commits.get(head)?.tree ?? ''));
     for (const [file, text] of Object.entries(changes)) {
       if (text === null) {
@@ -158,8 +169,58 @@ export class FakeGitRepository implements GitHub {
       parents: head === undefined ? [] : [head],
       message: options.message ?? 'edit',
     });
-    this.refs.set(this.defaultBranch, commit);
+    this.refs.set(branch, commit);
     return commit;
+  }
+
+  /** The commit a branch name or a commit id names. */
+  private commitOf(name: string): string | undefined {
+    return this.refs.get(name) ?? (this.commits.has(name) ? name : undefined);
+  }
+
+  /** The newest commit both reach, or undefined when they share none. */
+  private mergeBase(from: string, to: string): string | undefined {
+    const reached = new Set([from, ...this.ancestors(from)]);
+    const queue = [to];
+    const seen = new Set<string>();
+    for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+      if (reached.has(next)) {
+        return next;
+      }
+      if (!seen.has(next)) {
+        seen.add(next);
+        queue.push(...(this.commits.get(next)?.parents ?? []));
+      }
+    }
+    return undefined;
+  }
+
+  private treeOf(commit: string): Tree {
+    return this.trees.get(this.commits.get(commit)?.tree ?? '') ?? new Map();
+  }
+
+  /** The files that differ from one commit's tree to another's, as a comparison lists them, a moved file as renamed. */
+  private changedFiles(from: string, to: string): Record<string, unknown>[] {
+    const before = this.treeOf(from);
+    const after = this.treeOf(to);
+    const removed = [...before].filter(([file]) => !after.has(file));
+    const files: Record<string, unknown>[] = [];
+    for (const [file, entry] of after) {
+      const was = before.get(file);
+      if (was === undefined) {
+        const moved = removed.findIndex(([, old]) => old.id === entry.id);
+        const [previous] = moved === -1 ? [] : removed.splice(moved, 1);
+        files.push(
+          previous === undefined
+            ? { filename: file, status: 'added', sha: entry.id }
+            : { filename: file, status: 'renamed', previous_filename: previous[0], sha: entry.id },
+        );
+      } else if (was.id !== entry.id || was.mode !== entry.mode) {
+        files.push({ filename: file, status: was.id === entry.id ? 'changed' : 'modified', sha: entry.id });
+      }
+    }
+    files.push(...removed.map(([file, entry]) => ({ filename: file, status: 'removed', sha: entry.id })));
+    return files.sort((a, b) => String(a['filename']).localeCompare(String(b['filename'])));
   }
 
   /** Every commit before this one. */
@@ -236,19 +297,36 @@ export class FakeGitRepository implements GitHub {
       ? route.slice(`${base}/compare/`.length).split('...')
       : undefined;
     if (method === 'GET' && compare !== undefined) {
-      const [from = '', to = ''] = compare;
-      if (!this.commits.has(from) || !this.commits.has(to)) {
+      const [fromName = '', toName = ''] = compare.map(decodeURIComponent);
+      const from = this.commitOf(fromName);
+      const to = this.commitOf(toName);
+      if (from === undefined || to === undefined) {
+        throw new GitHubError(404, 'Not Found');
+      }
+      const mergeBase = this.mergeBase(from, to);
+      if (mergeBase === undefined) {
         throw new GitHubError(404, 'No common ancestor between these commits.');
       }
       const status =
-        from === to
-          ? 'identical'
-          : this.ancestors(to).has(from)
-            ? 'ahead'
-            : this.ancestors(from).has(to)
-              ? 'behind'
-              : 'diverged';
-      return { status };
+        from === to ? 'identical' : mergeBase === from ? 'ahead' : mergeBase === to ? 'behind' : 'diverged';
+      const count = (tip: string): number => new Set([tip, ...this.ancestors(tip)]).size;
+      return {
+        status,
+        ahead_by: count(to) - count(mergeBase),
+        behind_by: count(from) - count(mergeBase),
+        base_commit: { sha: from },
+        merge_base_commit: { sha: mergeBase },
+        files: this.changedFiles(mergeBase, to).slice(0, this.compareFileLimit),
+      };
+    }
+    if (method === 'GET' && route === `${base}/branches`) {
+      const params = new URLSearchParams(query);
+      const size = Number(params.get('per_page') ?? '30');
+      const page = Number(params.get('page') ?? '1');
+      return [...this.refs]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice((page - 1) * size, page * size)
+        .map(([name, sha]) => ({ name, commit: { sha }, protected: false }));
     }
     const id = route.split('/').at(-1) ?? '';
     if (method === 'GET' && route === `${base}/git/commits/${id}`) {
