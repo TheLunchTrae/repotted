@@ -40,6 +40,9 @@ test('a later visit finds the files as the last one left them', async () => {
   await writeFile('/profiles/browser/.base.yaml.0a1b2c.tmp', 'half');
   await writeFile('/profiles/browser/old.yaml', 'gone');
   await rm('/profiles/browser/old.yaml');
+  // A branch's preview reads its profiles into files that last only as long as the preview.
+  await mkdir('/preview/1/after', { recursive: true });
+  await writeFile('/preview/1/after/base.yaml', 'branch');
   await vi.waitFor(async () => {
     expect(await text(keeper.load())).toEqual({
       '/profiles/browser/base.yaml': 'three',

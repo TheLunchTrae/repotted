@@ -112,6 +112,8 @@ export type Keeping = 'keeping' | 'visit-only' | 'stopped' | 'elsewhere';
 
 // The file the engine writes beside a file it is replacing, which is gone again at once.
 const temporary = /\/\.[^/]+\.tmp$/u;
+/** Where a preview of a branch puts the profiles it reads, which last only as long as the preview. */
+export const previewFolder = '/preview';
 const lockName = 'repotted-files';
 
 export interface SiteLocks {
@@ -159,7 +161,7 @@ export async function keepFiles(keeper: FileKeeper, locks: SiteLocks | undefined
   }
   let last = Promise.resolve();
   watchFiles((file, content) => {
-    if (temporary.test(file)) {
+    if (temporary.test(file) || file.startsWith(`${previewFolder}/`)) {
       return;
     }
     last = last.then(async () => {

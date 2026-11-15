@@ -2014,3 +2014,90 @@ select.field {
     border-top: 1px solid var(--border);
   }
 }
+
+/* A preview of a branch of the profiles' repository */
+.pill-add {
+  background: var(--add-bg);
+  color: var(--add);
+}
+
+.preview-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.preview-banner p {
+  flex: 1 1 18rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.preview-banner .notice-actions {
+  margin-top: 0;
+}
+
+.preview-profiles {
+  display: grid;
+  gap: 16px;
+}
+
+.preview-profile {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--panel-radius);
+  background: var(--surface);
+}
+
+.preview-profile-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.preview-profile-heading h2 {
+  min-width: 0;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
+.preview-section {
+  display: grid;
+  gap: 6px;
+}
+
+.preview-section h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.preview-profile-actions:empty {
+  display: none;
+}
+
+.preview-compare {
+  display: grid;
+  gap: 6px;
+}
+
+.preview-typed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-typed .field {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.preview-branches {
+  max-height: 40vh;
+  overflow-y: auto;
+}

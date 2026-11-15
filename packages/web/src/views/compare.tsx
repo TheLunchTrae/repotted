@@ -35,11 +35,17 @@ interface CompareProps {
 
 export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
   const state = comparison.state.value;
-  const back = (
-    <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
-      Back to repositories
-    </Link>
-  );
+  const startedFrom = comparison.back.value;
+  const back =
+    startedFrom !== undefined && state.kind !== 'idle' ? (
+      <Link router={router} to={startedFrom.to}>
+        {startedFrom.label}
+      </Link>
+    ) : (
+      <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
+        Back to repositories
+      </Link>
+    );
   if (state.kind === 'idle') {
     return (
       <div class="page">

@@ -93,11 +93,11 @@ function badSegment(segment: string): boolean {
   );
 }
 
-function isProfilePath(file: string): boolean {
+export function isProfilePath(file: string): boolean {
   return /\.ya?ml$/iu.test(file) && !file.split('/').some(badSegment);
 }
 
-function repositoryFolder(value: string | undefined): string {
+export function repositoryFolder(value: string | undefined): string {
   const trimmed = (value ?? '').replace(/^\/+|\/+$/gu, '');
   if (trimmed === '') {
     return '';

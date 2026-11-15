@@ -645,6 +645,14 @@ export class Profiles {
     await this.#write(work);
   }
 
+  /**
+   * Reads the folder in a turn of the queue, so no sync or save changes it
+   * while it is read. Nothing is synced first: the folder is read as it is.
+   */
+  async read<Result>(work: (folder: string, source: ProfilesSource) => Promise<Result>): Promise<Result> {
+    return this.#work(() => work(this.folder.value, this.source.value));
+  }
+
   async changeOwnerType(type: OwnerChoice): Promise<void> {
     await this.editor.value?.changeOwnerType((write) => this.#write(write), type);
   }

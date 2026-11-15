@@ -582,6 +582,31 @@ the editor's unsaved changes. One comparison counts at a time.
 | Any                | The compare page is left                                        | Idle. One still being made shows nothing when it lands.                                                                                                                                                                                                        |
 | Idle               | The compare page is opened by its address                       | Idle, with how to start a comparison.                                                                                                                                                                                                                          |
 
+## Web branch preview
+
+`BranchPreview` (`packages/web/src/app/branch-preview.ts`) previews a branch
+of the repository the profiles are kept in, against the profiles as the
+browser has them. It only reads from GitHub. Its address is
+`/profiles?preview=<branch>`, and which branch is previewed stays in the
+browser. It starts from the profiles in the browser, not the default branch,
+so Ready names the profiles changed there since the last sync. One preview
+counts at a time.
+
+| State                     | Event                                                                                                                  | Next                                                                                                                                                                                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idle                      | The address names a branch                                                                                             | Loading: the working copy is copied in a turn of the profiles' queue, then the branch's changes are read.                                                                                                                     |
+| Loading                   | The branch's changes land                                                                                              | Ready: each profile that applies differently, with its rows by section, its file's text on each side, and banners for unsynced changes, a stale working copy, a branch behind, too many files, or changed shared preferences. |
+| Loading                   | The profiles aren't kept in a repository                                                                               | Failed, saying to choose one in Settings.                                                                                                                                                                                     |
+| Loading                   | The name isn't a branch name, or GitHub has no such branch, refuses, names the default one, or finds no shared history | Failed, with why. A lost sign-in also goes to the sign-in page. The copy is deleted.                                                                                                                                          |
+| Loading                   | Another branch is asked for                                                                                            | Loading, for the new one. The first one's result is dropped and its files deleted when it lands.                                                                                                                              |
+| Failed                    | The address names the same branch again                                                                                | Loading, as **Refresh** does.                                                                                                                                                                                                 |
+| Loading                   | The same branch is asked for again                                                                                     | Loading, with nothing more read.                                                                                                                                                                                              |
+| Ready or Failed           | **Refresh**                                                                                                            | Loading, with the branch and the working copy read again.                                                                                                                                                                     |
+| Ready                     | The address names the same branch again                                                                                | Ready, with nothing read, as on the way back from a comparison.                                                                                                                                                               |
+| Ready                     | **Compare with a repository**                                                                                          | Ready, kept while the compare page is open; its back link returns to the preview.                                                                                                                                             |
+| Loading, Ready, or Failed | **Exit preview**, or the address names no branch on any page but the compare page                                      | Idle, with its files deleted. One still loading shows nothing when it lands.                                                                                                                                                  |
+| Loading, Ready, or Failed | The profiles are kept somewhere else                                                                                   | Idle, with its files deleted; the address's branch then loads for the new place, which needs a repository.                                                                                                                    |
+
 ## Web apply
 
 `Apply` (`packages/web/src/app/apply.ts`) is one apply of a profile to one
@@ -718,6 +743,7 @@ deleted here, and the next sync would delete it on GitHub.
 | Opening | The browser has no Web Locks, or refuses the lock | Visit only, with nothing loaded: no tab can tell that it alone keeps the files.                                                                     |
 | Keeping | A file is written or removed                      | The same is done in IndexedDB, after the changes before it.                                                                                         |
 | Keeping | The engine writes a temporary file                | Nothing is kept of it.                                                                                                                              |
+| Keeping | A branch preview writes a file under `/preview`   | Nothing is kept of it.                                                                                                                              |
 | Keeping | A write to IndexedDB fails                        | Stopped: no later change is written, so what is kept stays as it was before the failure. A notice on every page says so until the page is reloaded. |
 | Keeping | The tab closes                                    | The lock is free for the next tab.                                                                                                                  |
 

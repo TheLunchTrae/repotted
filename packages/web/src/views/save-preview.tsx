@@ -45,11 +45,17 @@ function Line({ line }: { readonly line: DiffLine }): JSX.Element {
   );
 }
 
-function Diff({ lines }: { readonly lines: readonly (DiffLine | DiffFold)[] }): JSX.Element {
+export function Diff({
+  lines,
+  label = 'Changes to what applies',
+}: {
+  readonly lines: readonly (DiffLine | DiffFold)[];
+  readonly label?: string;
+}): JSX.Element {
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
   const region = useRef<HTMLDivElement>(null);
   return (
-    <div class="code diff" role="region" tabIndex={0} aria-label="Changes to what applies" ref={region}>
+    <div class="code diff" role="region" tabIndex={0} aria-label={label} ref={region}>
       {lines.map((line, index) =>
         line.kind !== 'fold' ? (
           // A diff's lines are made once for a preview and never move, so each is known by its place.
