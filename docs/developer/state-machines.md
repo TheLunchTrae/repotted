@@ -584,7 +584,7 @@ changes.
 | ----- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Tabs  | A word is typed, or a filter is turned on                                                           | Found: the settings that fit every word and every filter show group by group in place of the tabs, each sub-option under the setting it belongs to.                                       |
 | Found | A found setting is changed or reset                                                                 | Found, with the same settings, so a row doesn't vanish as it is edited. Its value and marks follow the change.                                                                            |
-| Found | A change hides a found setting, as turning off the one above it does                                | Found: the hidden one goes, as on its tab, and the one above it stays to change back. The count follows what shows.                                                                       |
+| Found | A change hides a found setting, as turning off the one above it does                                | Found: the hidden one goes, as on its tab, and the setting that was changed stays to change it back. The count follows what shows.                                                        |
 | Found | A save or a discard ends, whether it wrote or failed, or the profile is read again, as after a sync | Found, worked out again, so a setting a save settled leaves **Not saved yet**, and a finished or discarded draft leaves **Drafts**. A setting that shows and has an unsaved change stays. |
 | Found | The search or a filter changes                                                                      | Found, worked out again from the rows as they are then.                                                                                                                                   |
 | Found | Nothing fits                                                                                        | Found, with why: the words typed, or the filters, and that rulesets, environments, and labels are on their own tabs when one of them would fit.                                           |
@@ -635,9 +635,12 @@ unset leaves each repository's rules alone, while one that sets any removes
 every other on apply: turning the last rule off unsets `rules` again when the
 file set none, and **Leave its rules to GitHub** unsets it outright.
 
-A setting GitHub hides for the value of the one it follows is not drawn, and
-that one counts how many such settings a profile still names. A setting
-GitHub greys out stays in place, off.
+A setting GitHub hides, for the value of the one it follows or because that
+one is hidden, is not drawn, and the highest shown setting that hides it
+counts how many such settings a profile still names. A setting GitHub greys
+out stays in place, off, and names the setting and value that turn it off.
+[Settings that depend on another](settings-coverage.md#settings-that-depend-on-another)
+lists them.
 
 ## Web compare
 

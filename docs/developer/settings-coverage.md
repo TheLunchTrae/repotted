@@ -162,9 +162,9 @@ does the same, so a profile reads like the page it sets. In
 section and group, with `hiddenWhile` or `offWhile`:
 
 - **Hidden**: GitHub leaves the option off the page. The tab leaves the row
-  out; search and the filters still find it, shown off, with the reason.
+  out, and search and the filters don't find it.
 - **Off**: GitHub shows the option greyed out. The row stays in place and
-  can't be changed, with the reason under it.
+  can't be changed, and it names the setting and the value that turn it off.
 
 Either way the value stays in the profile, and a setting that hides others
 says how many of them the profile still names. The editor only shows what
@@ -188,9 +188,14 @@ while the setting above them is off.
 | Secret scanning's push protection, validity checks, non-provider patterns, AI detection and delegated bypass and alert dismissal | `security_and_analysis.secret_scanning` | `disabled`          | Off    |
 | `pages.source.branch`, `pages.source.path`                                                                                       | `pages.build_type`                      | `workflow`          | Hidden |
 
-A dependency carries down: a row under a hidden row is hidden too, and a row
-whose parent is off is off. Each row names only the one setting just above
-it, so the reason it gives is the highest setting that turns it off.
+A dependency carries down: a row under a hidden row is hidden too, whatever
+its own setting's value, and a row under an off row is off, unless its own
+setting hides it. Each field names only the one setting just above it, and
+`ProfileEditor` follows the chain up, so an off row names the highest
+setting that turns it off, and the highest visible setting that hides a row
+counts it among the hidden ones the profile still names. With **Actions**
+off, for example, **Actions by GitHub** is hidden even while **Allowed actions**
+holds **Selected**.
 
 GitHub's docs describe what each setting needs but rarely whether the page
 hides or greys an option, so the hide or off choice follows GitHub's settings

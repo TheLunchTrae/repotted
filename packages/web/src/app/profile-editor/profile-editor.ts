@@ -65,6 +65,15 @@ interface SettingEdit {
   readonly value: unknown;
 }
 
+export interface SettingWithValue {
+  readonly field: SettingField;
+  readonly value: unknown;
+}
+
+interface TurnedOffOnGitHub extends SettingWithValue {
+  readonly hidden: boolean;
+}
+
 export interface SettingRow {
   readonly field: SettingField;
   readonly optionsForProfileOwnerType: readonly SettingOption[];
@@ -79,7 +88,8 @@ export interface SettingRow {
   readonly valueShownIsFromDraft: boolean;
   /** What applies now, from this profile or a base profile, whatever the draft and the unsaved changes say. */
   readonly applied: unknown;
-  readonly greyedOutOnGitHub: boolean;
+  /** The highest setting whose value greys this one out on GitHub, and that value. */
+  readonly greyedOutOnGitHubWhile: SettingWithValue | undefined;
   readonly textBeingTyped: string | undefined;
   readonly typedTextProblem: string | undefined;
   /** How many settings under it GitHub hides for its value while a profile still names them. */
@@ -1087,25 +1097,31 @@ export class ProfileEditor {
     }
     const edits = this.#edits.value;
     const section = fieldsOf(group.fields[0]?.section ?? '');
-    const holds = (field: SettingField): boolean => {
+    const turnedOffOnGitHub = (field: SettingField): TurnedOffOnGitHub | undefined => {
       const condition = field.dependsOn;
-      const other = section.find((item) => item.key === condition?.otherSettingKeyInSameSection);
-      if (condition === undefined || other === undefined) {
-        return false;
+      const above = section.find((item) => item.key === condition?.otherSettingKeyInSameSection);
+      if (condition === undefined || above === undefined) {
+        return undefined;
       }
-      const value = this.#valueOf(other, edits);
-      return value !== undefined && condition.values.some((item) => sameValue(item, value));
+      const aboveTurnedOff = turnedOffOnGitHub(above);
+      if (aboveTurnedOff?.hidden === true) {
+        return aboveTurnedOff;
+      }
+      const aboveValue = this.#valueOf(above, edits);
+      const own =
+        aboveValue !== undefined && condition.values.some((item) => sameValue(item, aboveValue))
+          ? { field: above, value: aboveValue, hidden: condition.hiddenRatherThanGreyedOut }
+          : undefined;
+      return own?.hidden === true ? own : (aboveTurnedOff ?? own);
     };
     const owner = this.ownerType.value;
     const installation = this.#installation.value;
     return (
       group.fields
         // What owners of the profile's type don't have is left out, settings and choices, so it is never part of a save.
-        .filter(
-          (field) =>
-            fits(owner, needOf(field.path)) && !(field.dependsOn?.hiddenRatherThanGreyedOut === true && holds(field)),
-        )
+        .filter((field) => fits(owner, needOf(field.path)) && turnedOffOnGitHub(field)?.hidden !== true)
         .map((field) => {
+          const turnedOff = turnedOffOnGitHub(field);
           const key = keyOf(field.path);
           const source = shown.sources[sectionOf(field)][field.key];
           const typed = this.#typed.value.get(key);
@@ -1125,16 +1141,18 @@ export class ProfileEditor {
             savedDraftHasSetting: this.#draft(field) !== undefined,
             valueShownIsFromDraft: !edits.has(key) && this.#draft(field) !== undefined,
             applied: getIn(this.#saved.value?.profile, field.path),
-            greyedOutOnGitHub: field.dependsOn?.hiddenRatherThanGreyedOut === false && holds(field),
+            greyedOutOnGitHubWhile:
+              turnedOff === undefined ? undefined : { field: turnedOff.field, value: turnedOff.value },
             textBeingTyped: typed?.text,
             typedTextProblem: typed?.problem,
-            hiddenNamed: section.filter(
-              (other) =>
-                other.dependsOn?.hiddenRatherThanGreyedOut === true &&
-                other.dependsOn.otherSettingKeyInSameSection === field.key &&
-                holds(other) &&
-                this.#valueOf(other, edits) !== undefined,
-            ).length,
+            hiddenNamed: section.filter((other) => {
+              const otherTurnedOff = turnedOffOnGitHub(other);
+              return (
+                otherTurnedOff?.hidden === true &&
+                otherTurnedOff.field === field &&
+                this.#valueOf(other, edits) !== undefined
+              );
+            }).length,
             missingPermissions:
               installation === undefined
                 ? []

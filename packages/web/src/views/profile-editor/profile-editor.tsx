@@ -25,7 +25,7 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
               type="radio"
               name={id}
               checked={sameValue(option.value, value)}
-              disabled={row.greyedOutOnGitHub || row.missingPermissions.length > 0}
+              disabled={row.greyedOutOnGitHubWhile !== undefined || row.missingPermissions.length > 0}
               onChange={() => {
                 run(editor.set(field, option.value));
               }}
@@ -47,7 +47,7 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
         rows={Math.max(3, Array.isArray(value) ? value.length + 1 : 3)}
         aria-labelledby={`${id}-label`}
         aria-invalid={invalid !== undefined}
-        disabled={row.greyedOutOnGitHub || row.missingPermissions.length > 0}
+        disabled={row.greyedOutOnGitHubWhile !== undefined || row.missingPermissions.length > 0}
         value={text ?? (Array.isArray(value) ? value.join('\n') : '')}
         onInput={(event) => {
           typed(event.currentTarget.value);
@@ -65,7 +65,7 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
       inputMode={field.kind === 'number' ? 'numeric' : undefined}
       aria-labelledby={`${id}-label`}
       aria-invalid={invalid !== undefined}
-      disabled={row.greyedOutOnGitHub || row.missingPermissions.length > 0}
+      disabled={row.greyedOutOnGitHubWhile !== undefined || row.missingPermissions.length > 0}
       placeholder={value === undefined ? 'Not managed' : undefined}
       value={text ?? (typeof value === 'string' || typeof value === 'number' ? String(value) : '')}
       onInput={(event) => {
@@ -120,7 +120,8 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
                     ? `Set in this ${here}, not saved yet.`
                     : `From ${row.source}.`}
             {row.unsaved && managed && row.source !== undefined && ' Not saved yet.'}
-            {row.greyedOutOnGitHub && ' Off on GitHub for the setting above.'}
+            {row.greyedOutOnGitHubWhile !== undefined &&
+              ` Off on GitHub with ${row.greyedOutOnGitHubWhile.field.label} set to ${describe(row.greyedOutOnGitHubWhile.field, row.greyedOutOnGitHubWhile.value)}.`}
             {row.missingPermissionsItsGroupAndSectionDoNotName.length > 0 &&
               ` Needs the ${permissionsInProse(row.missingPermissionsItsGroupAndSectionDoNotName)}.`}
           </span>
