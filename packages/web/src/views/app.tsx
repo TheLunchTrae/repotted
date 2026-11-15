@@ -7,6 +7,7 @@ import type { Account, User } from '../app/account.js';
 import { AddressedRepository } from '../app/addressed-repository.js';
 import { Apply } from '../app/apply.js';
 import { BatchApply } from '../app/batch-apply.js';
+import { BranchPreview } from '../app/branch-preview.js';
 import { Comparison } from '../app/comparison.js';
 import { ConfigProtection } from '../app/config-protection.js';
 import type { Keeping } from '../app/kept-files.js';
@@ -18,6 +19,7 @@ import type { Router } from '../app/router.js';
 import { SharedPreferences } from '../app/shared-preferences.js';
 import { ApplyPage } from './apply.js';
 import { BatchPage } from './batch.js';
+import { BranchPreviewPage } from './branch-preview.js';
 import { ComparePage } from './compare.js';
 import { SignOutQuestion } from './leave.js';
 import { Link } from './link.js';
@@ -59,7 +61,7 @@ function SignedIn({
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
   // One of each per sign-in. The repository list is the account's; the profiles are the browser's, whoever signs in.
-  const { repositories, profiles, comparison, apply, batch, protection } = useMemo(() => {
+  const { repositories, profiles, comparison, apply, batch, protection, preview } = useMemo(() => {
     const refused = (): void => {
       account.refused();
     };
@@ -77,6 +79,8 @@ function SignedIn({
       apply: new Apply(github, refused, (work) => kept.write(work)),
       batch: new BatchApply(github, refused),
       protection: new ConfigProtection(github, refused),
+      // A branch's preview reads the profiles in a turn among their syncs.
+      preview: new BranchPreview(github, kept, refused),
     };
   }, [account, github, preferences, folders, user]);
   const address = useMemo(() => new AddressedRepository(repositories, router), [repositories, router]);
@@ -105,6 +109,21 @@ function SignedIn({
     };
   }, [profiles, apply]);
   const path = router.path.value;
+  // The branch the address previews, as `/profiles?preview=agent%2Ffix`; a link to it opens it.
+  const previewing = path === '/profiles' ? (new URLSearchParams(router.search.value).get('preview') ?? '') : '';
+  // A preview is of the profiles' repository, so it goes when they are kept somewhere else, before
+  // the one the address asks for opens of the new one.
+  useEffect(() => {
+    run(preview.close());
+  }, [source, preview]);
+  useEffect(() => {
+    if (previewing !== '') {
+      run(preview.open(previewing));
+    } else if (path !== '/compare') {
+      // A comparison made from the preview comes back to it, so the preview waits while one is open.
+      run(preview.close());
+    }
+  }, [previewing, path, preview, source]);
   // A comparison is put away with its page, so one still being made shows nothing later.
   useEffect(() => {
     if (path !== '/compare') {
@@ -220,11 +239,23 @@ function SignedIn({
         <ApplyPage apply={apply} router={router} />
       ) : path === '/compare' ? (
         <ComparePage comparison={comparison} router={router} />
+      ) : previewing !== '' ? (
+        <BranchPreviewPage
+          preview={preview}
+          repositories={repositories}
+          router={router}
+          branch={previewing}
+          onCompare={(repository, profile) => {
+            run(comparison.compare(repository, profile));
+            router.go('/compare');
+          }}
+        />
       ) : path === '/profiles' || path === '/profiles/new' ? (
         <ProfilesPage
           profiles={profiles}
           repositories={repositories}
           router={router}
+          preview={preview}
           creating={path === '/profiles/new' ? { repository: captureFrom } : undefined}
         />
       ) : path === '/settings' ? (

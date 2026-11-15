@@ -1,9 +1,11 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
+import type { BranchPreview } from '../app/branch-preview.js';
 import type { ProfileFolderNode, ProfileListing, Profiles } from '../app/profiles.js';
 import type { Repositories } from '../app/repositories.js';
 import type { Router } from '../app/router.js';
+import { previewAddress, PreviewPicker } from './branch-preview.js';
 import { Link } from './link.js';
 import { NewProfileForm } from './new-profile.js';
 import { OwnerTypeDialog } from './owner-type.js';
@@ -258,11 +260,12 @@ interface ProfilesProps {
   readonly profiles: Profiles;
   readonly repositories: Repositories;
   readonly router: Router;
+  readonly preview: BranchPreview;
   /** Set while the new profile form is open, with the repository it was asked to capture. */
   readonly creating: { readonly repository: string | undefined } | undefined;
 }
 
-export function ProfilesPage({ profiles, repositories, router, creating }: ProfilesProps): JSX.Element {
+export function ProfilesPage({ profiles, repositories, router, preview, creating }: ProfilesProps): JSX.Element {
   const source = profiles.source.value;
   const tree = profiles.tree.value;
   const selected = profiles.selected.value;
@@ -274,6 +277,7 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
   const showing = creating !== undefined ? '/profiles/new' : selected?.file;
   const open = showing !== undefined;
   const sidebar = useRef<HTMLElement>(null);
+  const [picking, setPicking] = useState(false);
   /** The list's item for the profile left by the back button, to take the focus back to. */
   const returnTo = useRef<HTMLElement | null>(null);
   const first = useRef(true);
@@ -328,7 +332,30 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
           >
             {source.kind === 'browser' ? 'Refresh' : 'Sync'}
           </button>
+          {source.kind === 'repository' && (
+            <button
+              class="button button-quiet button-small"
+              type="button"
+              onClick={() => {
+                setPicking(true);
+              }}
+            >
+              Preview
+            </button>
+          )}
         </div>
+        {picking && source.kind === 'repository' && (
+          <PreviewPicker
+            preview={preview}
+            repository={source.repository}
+            onPick={(branch) => {
+              router.go(previewAddress(branch));
+            }}
+            onClose={() => {
+              setPicking(false);
+            }}
+          />
+        )}
         <Link class="button button-primary" router={router} to="/profiles/new">
           New profile
         </Link>
