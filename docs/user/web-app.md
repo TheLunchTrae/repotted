@@ -42,14 +42,14 @@ go to it. Escape clears it.
 The list is grouped by owner: your own repositories first, then each
 organization, or other account, in name order. When there's more than one
 owner, the button beside the count, **All owners** until you change it,
-chooses whose repositories show. Untick an owner to hide its repositories, or
+chooses whose repositories show. Deselect an owner to hide its repositories, or
 click **Only personal** or **Show all**. If every owner is hidden, the list
 says so and offers **Show all**. Repotted remembers which owners you hid,
 and an owner that's new to the list shows.
 
 To set aside a repository you no longer use, open its panel and click
-**Hide from list**, or tick several and click **Hide from list** in the
-panel for the ticked repositories. Hiding unticks them, and **Undo** in the
+**Hide from list**, or select several and click **Hide from list** in the
+panel for the selected repositories. Hiding deselects them, and **Undo** in the
 note above the list brings them back. **Show hidden**, beside the count,
 shows the hidden repositories among the rest, marked **Hidden**; open one
 and click **Show in list** to bring it back for good. If a search matches
@@ -57,12 +57,15 @@ only hidden repositories, or every repository is hidden, the list says so
 and offers **Show hidden**.
 
 To keep repositories together, put them in folders. Click **New folder**
-beside the count, name it, and leave the box that puts the ticked
-repositories in it ticked to fill it at once. To move repositories later,
-tick them, pick a folder under **Move to a folder** in the panel and click
-**Move**, or open one repository and pick its **Folder**. Ticked
-repositories are unticked once they are in the folder; a repository's own
-**Folder** leaves the ticks as they are. A repository is in one folder at most, and **No
+beside the count, name it, and leave the box that puts the selected
+repositories in it selected to fill it at once. To move repositories later,
+select them, choose a folder under **Move to a folder** in the panel and click
+**Move**, or open one repository and pick its **Folder**. Selected
+repositories are deselected once they are in the folder; a repository's own
+**Folder** leaves the selection as it is. Each open folder has **Select all**
+beside its name, which turns into **Deselect all** once everything in it is
+selected, and **Deselect all** beside **New folder** clears the whole
+selection. A repository is in one folder at most, and **No
 folder** takes it out. Folders show above the owners, in name order;
 click a folder's name to close or open it, and use its **Edit** menu to
 rename or delete it. Deleting a folder puts its repositories back under their
@@ -85,7 +88,7 @@ describes it. Click the repository again to close the panel.
 
 ### Compare a repository with a profile
 
-Select a repository, pick a profile under **Compare with a profile**, and
+Open a repository, pick a profile under **Compare with a profile**, and
 click **Compare**. The page shows each difference by section, with what
 GitHub has now and what the profile sets. What needs no change is folded
 away, and the page says how much does: turn off **Differs from GitHub** to
@@ -119,7 +122,7 @@ change the copy's type.
 An apply is its own step: it shows what it would change, lets you adjust
 that, and writes nothing to GitHub until you confirm.
 
-To start one, select a repository and either:
+To start one, open a repository and either:
 
 - pick a profile and click **Apply**, to make the repository match the
   profile
@@ -174,8 +177,8 @@ A batch apply applies one profile to several repositories, with each
 repository's changes reviewed on its own first. Nothing is written to GitHub
 until you confirm.
 
-To start one, tick the repositories on the **Repositories** page, pick a
-profile in the panel, and click **Review apply**. Ticks stay while you
+To start one, select the repositories on the **Repositories** page, pick a
+profile in the panel, and click **Review apply**. The selection stays while you
 search, so you can find repositories one search at a time. A repository that
 already has an apply in progress joins the batch as it is, one-off edits and
 all. When that apply starts from another profile, or from none, the batch
@@ -191,8 +194,8 @@ edits set that change keeps them, and the page says which.
 
 Under it, each repository shows its status: how many changes, **Already in
 line**, **Needs access** for a change GitHub would refuse, or **Couldn't
-compare** with why, and then its changes, each with **Leave out**. Untick
-**In this batch** to leave a repository out; its apply stays, and ticking it
+compare** with why, and then its changes, each with **Leave out**. Deselect
+**In this batch** to leave a repository out; its apply stays, and selecting it
 puts it back. **Remove from batch**, on a repository that is left out or
 couldn't be compared, takes it out for good: an apply the batch started for
 it is discarded, and one that joined the batch stays.
@@ -360,8 +363,8 @@ Removing keeps what the entry had, in case you choose **Manage it** again
 before saving. **Take out of profile** stops the profile from managing it at
 all; **Put it back** in the list undoes that before you save.
 
-A ruleset with no rule ticked leaves each repository's rules as they are.
-Once any rule is ticked, the ruleset has exactly the ticked rules, and
+A ruleset with no rule selected leaves each repository's rules as they are.
+Once any rule is selected, the ruleset has exactly the selected rules, and
 applying removes every other rule it has on a repository; the form says
 which holds. **Leave its rules to GitHub** goes back to leaving them alone.
 
@@ -405,7 +408,7 @@ Profiles are kept in your browser at first, where only that browser has
 them, and clearing the site's data deletes them. To have them follow you to
 any browser, keep them in a GitHub repository instead. In
 [Settings](#settings), click **Use a GitHub repository…**, name the
-repository, and optionally a folder in it. An empty repository works: tick
+repository, and optionally a folder in it. An empty repository works: select
 the box that adds the profiles from this browser to start it with them. The Repotted
 App must be installed on the repository with the Contents permission.
 
@@ -429,7 +432,7 @@ the browser alone; the repository keeps every profile it has.
 In Chrome, Edge, and other Chromium browsers, profiles can be files in a
 folder on your computer, where other tools, such as the `repotted` command
 or Git, can read and change them. In [Settings](#settings), click **Choose a
-folder…** and pick the folder; tick the box first to add the profiles kept
+folder…** and pick the folder; select the box first to add the profiles kept
 now beside the folder's own. Pick a folder that holds only profiles: Repotted
 reads every `.yaml` and `.yml` file in it and its subfolders as a profile.
 Other browsers can't give a site a folder, and Settings says so in place of

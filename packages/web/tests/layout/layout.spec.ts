@@ -32,7 +32,8 @@ const screens: Readonly<Record<string, Screen>> = {
   },
   repositories: {
     path: '/',
-    ready: (page) => page.getByRole('checkbox', { name: 'Tick lunch/a_repository_name_with_no_hyphens_in_it_at_all' }),
+    ready: (page) =>
+      page.getByRole('checkbox', { name: 'Select lunch/a_repository_name_with_no_hyphens_in_it_at_all' }),
   },
   'repositories after a refresh': {
     path: '/',

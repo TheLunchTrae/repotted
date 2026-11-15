@@ -79,20 +79,20 @@ test('groups the list by owner, the signed-in account first, whatever the case o
   expect(repositories.ownersLabel.value).toBe('All owners');
 });
 
-test('a search or a hidden owner that takes the selected repository out of view clears the selection', async () => {
+test('a search or a hidden owner that takes the opened repository out of view closes it', async () => {
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
   const web = repositories.groups.value[1]?.repositories[1];
-  repositories.select(web);
-  expect(repositories.selected.value?.full_name).toBe('acme/web');
+  repositories.open(web);
+  expect(repositories.opened.value?.full_name).toBe('acme/web');
 
   repositories.search.value = ' API ';
   expect(names(repositories)).toEqual(['Acme:', 'Acme/api']);
-  expect(repositories.selected.value).toBeUndefined();
+  expect(repositories.opened.value).toBeUndefined();
 
   repositories.search.value = '';
-  expect(repositories.selected.value?.full_name).toBe('acme/web');
+  expect(repositories.opened.value?.full_name).toBe('acme/web');
   repositories.setOwnerShown('acme', false);
-  expect(repositories.selected.value).toBeUndefined();
+  expect(repositories.opened.value).toBeUndefined();
 });
 
 test('keeps the hidden owners, and an owner new to the list shows', async () => {
@@ -243,10 +243,10 @@ test('a refresh asked for while one runs starts no second read', async () => {
   expect(repositories.list.value).toEqual({ source: 'installations', repositories: [] });
 });
 
-test('a refresh keeps the list in use while it reads, and the selection when the new list has it', async () => {
+test('a refresh keeps the list in use while it reads, and the opened repository when the new list has it', async () => {
   const github = new FakeGitHub({ account: account(everyone) });
   const repositories = await opened(github);
-  repositories.select(repositories.groups.value[1]?.repositories[0]);
+  repositories.open(repositories.groups.value[1]?.repositories[0]);
   github.state.account = account(['Acme/api', 'trae/dotfiles']);
 
   const refreshing = repositories.refresh();
@@ -255,10 +255,10 @@ test('a refresh keeps the list in use while it reads, and the selection when the
   await refreshing;
 
   expect(repositories.list.value?.repositories).toHaveLength(2);
-  expect(repositories.selected.value?.full_name).toBe('Acme/api');
+  expect(repositories.opened.value?.full_name).toBe('Acme/api');
 });
 
-test('ticked repositories stay ticked through a search, and one the account no longer lists drops out', async () => {
+test('selected repositories stay selected through a search, and one the account no longer lists drops out', async () => {
   const github = new FakeGitHub({ account: account(everyone) });
   const repositories = new Repositories(github, user, inBrowser(github), memory(), () => undefined);
   await repositories.load();
@@ -271,23 +271,23 @@ test('ticked repositories stay ticked through a search, and one the account no l
     return found;
   };
 
-  repositories.tick(named('zeta/site'), true);
-  repositories.tick(named('Acme/api'), true);
+  repositories.select(named('zeta/site'), true);
+  repositories.select(named('Acme/api'), true);
   repositories.search.value = 'dotfiles';
-  expect(repositories.ticked.value.map((repository) => repository.full_name).toSorted()).toEqual([
+  expect(repositories.selected.value.map((repository) => repository.full_name).toSorted()).toEqual([
     'Acme/api',
     'zeta/site',
   ]);
 
-  repositories.tick(named('zeta/site'), false);
-  expect(repositories.ticked.value.map((repository) => repository.full_name)).toEqual(['Acme/api']);
+  repositories.select(named('zeta/site'), false);
+  expect(repositories.selected.value.map((repository) => repository.full_name)).toEqual(['Acme/api']);
 
   github.state.account = account(['trae/dotfiles']);
   await repositories.refresh();
-  expect(repositories.ticked.value).toEqual([]);
+  expect(repositories.selected.value).toEqual([]);
 
-  repositories.clearTicks();
-  expect(repositories.ticked.value).toEqual([]);
+  repositories.deselectAll();
+  expect(repositories.selected.value).toEqual([]);
 });
 
 function listed(repositories: Repositories, name: string): Repository {
@@ -298,19 +298,19 @@ function listed(repositories: Repositories, name: string): Repository {
   return found;
 }
 
-test('a hidden repository leaves the list, unticked and out of the selection, until Undo or Show hidden', async () => {
+test('a hidden repository leaves the list, deselected and closed, until Undo or Show hidden', async () => {
   const preferences = memory();
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
   const web = listed(repositories, 'acme/web');
-  repositories.select(web);
-  repositories.tick(web, true);
+  repositories.open(web);
+  repositories.select(web, true);
 
   repositories.hide([web]);
 
   expect(names(repositories)).toEqual(['trae:', 'trae/dotfiles', 'Acme:', 'Acme/api', 'zeta:', 'zeta/site']);
   expect(preferences.kept['hidden-repositories']).toEqual(['acme/web']);
-  expect(repositories.selected.value).toBeUndefined();
-  expect(repositories.ticked.value).toEqual([]);
+  expect(repositories.opened.value).toBeUndefined();
+  expect(repositories.selected.value).toEqual([]);
   expect(repositories.hiddenCount.value).toBe(1);
   expect(repositories.countLabel.value).toBe('3 of 4');
   expect(repositories.justHidden.value).toEqual(['acme/web']);
@@ -361,22 +361,25 @@ test('says when every repository of the shown owners is hidden, and when only hi
   expect(repositories.hiddenMatches.value).toBe(0);
 });
 
-test('Undo shows only what the hide took out of the list, and ticks again what it unticked', async () => {
+test('Undo shows only what the hide took out of the list, and selects again what it deselected', async () => {
   const preferences = memory({ 'hidden-repositories': ['acme/web'] });
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
   repositories.setShowHidden(true);
   const web = listed(repositories, 'acme/web');
   const site = listed(repositories, 'zeta/site');
-  repositories.tick(web, true);
-  repositories.tick(site, true);
+  repositories.select(web, true);
+  repositories.select(site, true);
 
   repositories.hide([web, site]);
   expect(repositories.justHidden.value).toEqual(['zeta/site']);
-  expect(repositories.ticked.value).toEqual([]);
+  expect(repositories.selected.value).toEqual([]);
 
   repositories.undoHide();
   expect(preferences.kept['hidden-repositories']).toEqual(['acme/web']);
-  expect(repositories.ticked.value.map((repository) => repository.full_name).sort()).toEqual(['acme/web', 'zeta/site']);
+  expect(repositories.selected.value.map((repository) => repository.full_name).sort()).toEqual([
+    'acme/web',
+    'zeta/site',
+  ]);
 });
 
 test('with profiles in a repository, the list hides what its file holds and a hide is committed there', async () => {
@@ -420,7 +423,10 @@ function folders(repositories: Repositories): string[] {
   ]);
 }
 
-function several(repositories: Repositories, ...wanted: readonly string[]): ReturnType<Repositories['ticked']['peek']> {
+function several(
+  repositories: Repositories,
+  ...wanted: readonly string[]
+): ReturnType<Repositories['selected']['peek']> {
   return wanted.map((name) => {
     const found = repositories.list.value?.repositories.find((repository) => repository.full_name === name);
     if (found === undefined) {
@@ -471,59 +477,83 @@ test('a repository is in one folder at most, and moving it to no folder returns 
   expect(names(repositories)).toContain('Acme/api');
 });
 
-test('ticked repositories put in a new folder or moved are unticked, and others stay ticked', async () => {
+test('selected repositories put in a new folder or moved are deselected, and others stay selected', async () => {
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
-  const ticked = (): string[] => repositories.ticked.value.map((repository) => repository.full_name);
+  const selected = (): string[] => repositories.selected.value.map((repository) => repository.full_name);
   for (const repository of several(repositories, 'acme/web', 'zeta/site', 'trae/dotfiles')) {
-    repositories.tick(repository, true);
+    repositories.select(repository, true);
   }
 
-  repositories.createFolder('Sites', several(repositories, 'acme/web', 'zeta/site'), { untick: true });
+  repositories.createFolder('Sites', several(repositories, 'acme/web', 'zeta/site'), { deselect: true });
   expect(folders(repositories)).toEqual(['Sites:', 'acme/web', 'zeta/site']);
-  expect(ticked()).toEqual(['trae/dotfiles']);
+  expect(selected()).toEqual(['trae/dotfiles']);
 
-  // A name refused, or a folder made empty, as when its box is cleared, leaves the ticks alone.
-  expect(repositories.createFolder('sites', several(repositories, 'trae/dotfiles'), { untick: true })).toBeDefined();
-  repositories.createFolder('Tools', [], { untick: true });
-  expect(ticked()).toEqual(['trae/dotfiles']);
+  // A name refused, or a folder made empty, as when its box is cleared, leaves the selection alone.
+  expect(repositories.createFolder('sites', several(repositories, 'trae/dotfiles'), { deselect: true })).toBeDefined();
+  repositories.createFolder('Tools', [], { deselect: true });
+  expect(selected()).toEqual(['trae/dotfiles']);
 
-  repositories.moveToFolder(several(repositories, 'trae/dotfiles'), 'Tools', { untick: true });
-  expect(ticked()).toEqual([]);
+  repositories.moveToFolder(several(repositories, 'trae/dotfiles'), 'Tools', { deselect: true });
+  expect(selected()).toEqual([]);
 
   const web = several(repositories, 'acme/web');
   for (const repository of web) {
-    repositories.tick(repository, true);
+    repositories.select(repository, true);
   }
-  repositories.moveToFolder(web, undefined, { untick: true });
-  expect(ticked()).toEqual([]);
+  repositories.moveToFolder(web, undefined, { deselect: true });
+  expect(selected()).toEqual([]);
   expect(folders(repositories)).toEqual(['Sites:', 'zeta/site', 'Tools:', 'trae/dotfiles']);
 });
 
-test("a repository's own folder choice leaves the ticks as they are", async () => {
+test("a repository's own folder choice leaves the selection as it is", async () => {
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
-  const ticked = (): string[] => repositories.ticked.value.map((repository) => repository.full_name);
+  const selected = (): string[] => repositories.selected.value.map((repository) => repository.full_name);
   for (const repository of several(repositories, 'acme/web', 'zeta/site')) {
-    repositories.tick(repository, true);
+    repositories.select(repository, true);
   }
 
   repositories.moveToFolder(several(repositories, 'acme/web'), undefined);
   repositories.createFolder('Sites', several(repositories, 'acme/web'));
   repositories.moveToFolder(several(repositories, 'zeta/site'), 'Sites');
   expect(folders(repositories)).toEqual(['Sites:', 'acme/web', 'zeta/site']);
-  expect(ticked().sort()).toEqual(['acme/web', 'zeta/site']);
+  expect(selected().sort()).toEqual(['acme/web', 'zeta/site']);
 });
 
-test('Undo after a hide leaves unticked a repository since moved out of the ticks', async () => {
+test('Undo after a hide leaves deselected a repository since moved out of the selection', async () => {
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
   repositories.setShowHidden(true);
   const web = listed(repositories, 'acme/web');
-  repositories.tick(web, true);
+  repositories.select(web, true);
   repositories.hide([web]);
-  repositories.tick(web, true);
+  repositories.select(web, true);
 
-  repositories.moveToFolder([web], undefined, { untick: true });
+  repositories.moveToFolder([web], undefined, { deselect: true });
   repositories.undoHide();
-  expect(repositories.ticked.value).toEqual([]);
+  expect(repositories.selected.value).toEqual([]);
+});
+
+test("a folder's Select all selects only its repositories, keeps the rest, and Deselect all clears every one", async () => {
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
+  const selected = (): string[] => repositories.selected.value.map((repository) => repository.full_name).sort();
+  repositories.createFolder('Sites', several(repositories, 'zeta/site', 'acme/web'));
+  const [dotfiles] = several(repositories, 'trae/dotfiles');
+  if (dotfiles === undefined) {
+    throw new Error('No trae/dotfiles.');
+  }
+  repositories.select(dotfiles, true);
+
+  const sites = several(repositories, 'zeta/site', 'acme/web');
+  repositories.selectEach(sites, true);
+  expect(selected()).toEqual(['acme/web', 'trae/dotfiles', 'zeta/site']);
+  expect(sites.every((repository) => repositories.isSelected(repository))).toBe(true);
+
+  repositories.selectEach(sites, false);
+  expect(selected()).toEqual(['trae/dotfiles']);
+  expect(repositories.isSelected(dotfiles)).toBe(true);
+
+  repositories.selectEach(sites, true);
+  repositories.deselectAll();
+  expect(selected()).toEqual([]);
 });
 
 test('a folder name must be new, in any case, except the folder being renamed', async () => {
@@ -571,17 +601,17 @@ test('a closed folder stays closed when renamed, opens while a search finds some
   expect(names(repositories)).toEqual(['Acme:', 'Acme/api', 'acme/web', 'zeta:', 'zeta/site']);
 });
 
-test('a hidden owner hides its repositories in folders too, and a repository selected in a folder stays selected', async () => {
+test('a hidden owner hides its repositories in folders too, and a repository opened in a folder stays open', async () => {
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
   repositories.createFolder('Acme', several(repositories, 'Acme/api', 'acme/web'));
   repositories.createFolder('Mixed', several(repositories, 'zeta/site', 'trae/dotfiles'));
-  repositories.select(several(repositories, 'zeta/site')[0]);
-  expect(repositories.selected.value?.full_name).toBe('zeta/site');
+  repositories.open(several(repositories, 'zeta/site')[0]);
+  expect(repositories.opened.value?.full_name).toBe('zeta/site');
 
   repositories.setOwnerShown('acme', false);
   repositories.setOwnerShown('zeta', false);
   expect(folders(repositories)).toEqual(['Mixed:', 'trae/dotfiles']);
-  expect(repositories.selected.value).toBeUndefined();
+  expect(repositories.opened.value).toBeUndefined();
 });
 
 test('a repository the list no longer has stays in its folder for when it comes back', async () => {
@@ -736,13 +766,19 @@ test('a folder renamed to, or moved into, a name changed elsewhere meanwhile kee
   });
 });
 
-test('the ticked panel moves to the folder last picked or made, under its new name, else the first or a new one', async () => {
+test('the selected panel moves nowhere until a folder is chosen, then to it under any new name, until nothing is selected', async () => {
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
-  expect(repositories.moveTarget.value).toEqual({ kind: 'new' });
-
   repositories.createFolder('Web');
   repositories.createFolder('Apps');
-  expect(repositories.moveTarget.value).toEqual({ kind: 'folder', name: 'Apps' });
+  // A folder made with nothing selected isn't chosen for a later selection.
+  expect(repositories.moveTarget.value).toBeUndefined();
+
+  const [site] = several(repositories, 'zeta/site');
+  if (site === undefined) {
+    throw new Error('No zeta/site.');
+  }
+  repositories.select(site, true);
+  expect(repositories.moveTarget.value).toBeUndefined();
 
   repositories.pickMoveTarget({ kind: 'folder', name: 'Web' });
   repositories.renameFolder('Web', 'WEB');
@@ -751,20 +787,28 @@ test('the ticked panel moves to the folder last picked or made, under its new na
   repositories.pickMoveTarget({ kind: 'none' });
   expect(repositories.moveTarget.value).toEqual({ kind: 'none' });
 
-  repositories.pickMoveTarget({ kind: 'folder', name: 'WEB' });
-  repositories.deleteFolder('web');
-  expect(repositories.moveTarget.value).toEqual({ kind: 'folder', name: 'Apps' });
+  // A folder made from the panel, left empty, is chosen.
+  repositories.createFolder('Later');
+  expect(repositories.moveTarget.value).toEqual({ kind: 'folder', name: 'Later' });
+
+  repositories.deleteFolder('later');
+  expect(repositories.moveTarget.value).toBeUndefined();
+
+  repositories.pickMoveTarget({ kind: 'folder', name: 'Apps' });
+  repositories.deselectAll();
+  repositories.select(site, true);
+  expect(repositories.moveTarget.value).toBeUndefined();
 });
 
-test('closing the folder of the selected repository clears the selection until it opens again', async () => {
+test('closing the folder of the opened repository closes it until the folder opens again', async () => {
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }));
   repositories.createFolder('Sites', several(repositories, 'zeta/site'));
-  repositories.select(several(repositories, 'zeta/site')[0]);
+  repositories.open(several(repositories, 'zeta/site')[0]);
 
   repositories.setFolderOpen('Sites', false);
-  expect(repositories.selected.value).toBeUndefined();
+  expect(repositories.opened.value).toBeUndefined();
   repositories.setFolderOpen('Sites', true);
-  expect(repositories.selected.value?.full_name).toBe('zeta/site');
+  expect(repositories.opened.value?.full_name).toBe('zeta/site');
 });
 
 test("a search for a folder's name finds it empty or with only hidden repositories, which it counts", async () => {

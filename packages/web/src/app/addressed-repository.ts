@@ -19,20 +19,20 @@ export function repositoryAddress(name: string): string {
 }
 
 /**
- * The repositories page's selection in the page's address, so a link or a
+ * The repositories page's opened repository in the page's address, so a link or a
  * reload opens a repository, and the browser's back closes one that opened a
- * screen of its own, as on a phone. The selection stays where it is kept; the
+ * screen of its own, as on a phone. The opened repository stays where it is kept; the
  * address follows it, except on arrival and after a back or forward, when the
- * selection follows the address.
+ * opened repository follows the address.
  *
- * On a phone the selection is a screen of its own, so it is let go of once
+ * On a phone the opened repository is a screen of its own, so it is let go of once
  * its repository is out of view, as one hidden, moved into a closed folder,
  * or gone from the list, and the address names only what shows.
  */
-export class AddressSelection {
+export class AddressedRepository {
   readonly #repositories: Repositories;
   readonly #router: Router;
-  /** The selection and whether it had a screen of its own, as the address last took them. */
+  /** The opened repository and whether it had a screen of its own, as the address last took them. */
   #last: { readonly name: string | undefined; readonly screen: boolean } = { name: undefined, screen: false };
   /** The query this last put on the address, which `follow` leaves alone, since it is no back or forward. */
   #written: string | undefined;
@@ -48,28 +48,28 @@ export class AddressSelection {
   }
 
   /**
-   * On arrival at the page, a repository the address names is selected. An
+   * On arrival at the page, a repository the address names is opened. An
    * address that names none shows the list on a phone, and elsewhere takes
-   * the selection kept from before, which shows beside the list.
+   * the repository kept open from before, which shows beside the list.
    */
   arrive(phone: boolean): void {
     this.#written = undefined;
     const named = this.named;
     if (named !== undefined) {
-      this.#select(named);
+      this.#open(named);
     } else if (phone) {
-      this.#repositories.dropSelection();
+      this.#repositories.dropOpened();
     } else {
-      this.#write(queryFor(this.#repositories.selectedName), 'replace');
+      this.#write(queryFor(this.#repositories.openedName), 'replace');
     }
-    this.#last = { name: this.#repositories.selectedName, screen: false };
+    this.#last = { name: this.#repositories.openedName, screen: false };
   }
 
   /**
-   * After a back or forward, the address's repository is selected, or none.
+   * After a back or forward, the address's repository is opened, or none.
    * On a phone, one the list doesn't show, as one hidden or moved into a
    * closed folder since, is taken off the address instead; elsewhere it is
-   * kept out of view, as a selection is. Neither ends a hide's Undo. An
+   * kept out of view, as an opened repository is. Neither ends a hide's Undo. An
    * address this wrote itself is no back or forward, and is left alone.
    */
   follow(phone: boolean): void {
@@ -79,55 +79,55 @@ export class AddressSelection {
     this.#written = undefined;
     const named = this.named;
     if (named === undefined) {
-      this.#repositories.dropSelection();
+      this.#repositories.dropOpened();
     } else if (phone && this.#repositories.list.value !== undefined && this.#repositories.inView(named) === undefined) {
-      this.#repositories.dropSelection();
+      this.#repositories.dropOpened();
       this.#write(queryFor(undefined), 'replace');
     } else {
-      this.#select(named);
+      this.#open(named);
     }
-    this.#last = { name: this.#repositories.selectedName, screen: this.#last.screen };
+    this.#last = { name: this.#repositories.openedName, screen: this.#last.screen };
   }
 
   /**
-   * Brings the address up to date with the selection and what shows: a
-   * selection that opens a screen of its own (`phone`) adds a history entry,
+   * Brings the address up to date with the opened repository and what shows:
+   * one that opens a screen of its own (`phone`) adds a history entry,
    * so back returns to the list, and any other change takes the place of the
    * entry shown.
    */
   update(phone: boolean): void {
     const repositories = this.#repositories;
-    const shown = repositories.selected.value;
-    const name = repositories.selectedName;
+    const shown = repositories.opened.value;
+    const name = repositories.openedName;
     if (phone && name !== undefined && shown === undefined && repositories.list.value !== undefined) {
       // Out of view: its screen closes, back to the list's entry when it led there.
-      repositories.dropSelection();
+      repositories.dropOpened();
       this.#return();
       this.#last = { name: undefined, screen: false };
       return;
     }
     if (shown !== undefined && shown.full_name !== name) {
       // A link in another case takes the name as GitHub has it.
-      repositories.select(shown);
+      repositories.open(shown);
     }
     const screen = phone && shown !== undefined;
-    if (repositories.selectedName !== this.#last.name) {
+    if (repositories.openedName !== this.#last.name) {
       // Only another repository opens a screen; the same one in GitHub's case takes the entry shown.
-      const opened = screen && !this.#last.screen && !same(repositories.selectedName, this.#last.name);
-      this.#write(queryFor(repositories.selectedName), opened ? 'push' : 'replace');
+      const opened = screen && !this.#last.screen && !same(repositories.openedName, this.#last.name);
+      this.#write(queryFor(repositories.openedName), opened ? 'push' : 'replace');
     }
-    this.#last = { name: repositories.selectedName, screen };
+    this.#last = { name: repositories.openedName, screen };
   }
 
   /**
-   * Closes the selected repository's screen: back to the list's entry when
-   * it led there, which lets go of the selection once the back arrives, so
+   * Closes the opened repository's screen: back to the list's entry when
+   * it led there, which lets go of it once the back arrives, so
    * the list comes back where the browser puts its scroll; else in place, at
    * once.
    */
   close(): void {
     if (!this.#return()) {
-      this.#repositories.dropSelection();
+      this.#repositories.dropOpened();
     }
   }
 
@@ -146,10 +146,10 @@ export class AddressSelection {
     return back;
   }
 
-  #select(name: string): void {
-    // Selecting again what is selected would end the Undo of a hide.
-    if (name !== this.#repositories.selectedName) {
-      this.#repositories.select({ full_name: name });
+  #open(name: string): void {
+    // Opening again what is open would end the Undo of a hide.
+    if (name !== this.#repositories.openedName) {
+      this.#repositories.open({ full_name: name });
     }
   }
 }

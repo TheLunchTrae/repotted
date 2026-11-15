@@ -207,7 +207,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
       <div class="page">
         <div class="page-body">
           <h1>Apply a profile to several repositories</h1>
-          <p>Tick repositories on the Repositories page, pick a profile, and choose Review apply.</p>
+          <p>Select repositories on the Repositories page, pick a profile, and choose Review apply.</p>
           <p>{back}</p>
         </div>
       </div>

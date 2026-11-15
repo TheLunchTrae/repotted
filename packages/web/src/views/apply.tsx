@@ -1,7 +1,7 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { repositoryAddress } from '../app/address-selection.js';
+import { repositoryAddress } from '../app/addressed-repository.js';
 import type { Apply } from '../app/apply.js';
 import type { CompareRow } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
@@ -102,7 +102,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
       <div class="page">
         <div class="page-body">
           <h1>Apply a profile to a repository</h1>
-          <p>Select a repository on the Repositories page, pick a profile, and choose Apply.</p>
+          <p>Open a repository on the Repositories page, pick a profile, and choose Apply.</p>
           <p>{back}</p>
         </div>
       </div>
