@@ -282,9 +282,14 @@ test('selected repositories stay selected through a search, and one the account 
   repositories.select(named('zeta/site'), false);
   expect(repositories.selected.value.map((repository) => repository.full_name)).toEqual(['Acme/api']);
 
+  repositories.pickMoveTarget({ kind: 'none' });
   github.state.account = account(['trae/dotfiles']);
   await repositories.refresh();
   expect(repositories.selected.value).toEqual([]);
+  // Nothing is selected any more, so the panel's Move choice goes too.
+  expect(repositories.moveTarget.value).toBeUndefined();
+  repositories.select(named('trae/dotfiles'), true);
+  expect(repositories.moveTarget.value).toBeUndefined();
 
   repositories.deselectAll();
   expect(repositories.selected.value).toEqual([]);
@@ -787,11 +792,16 @@ test('the selected panel moves nowhere until a folder is chosen, then to it unde
   repositories.pickMoveTarget({ kind: 'none' });
   expect(repositories.moveTarget.value).toEqual({ kind: 'none' });
 
-  // A folder made from the panel, left empty, is chosen.
-  repositories.createFolder('Later');
+  // A folder made for one opened repository isn't chosen; one made from the panel, left empty, is.
+  repositories.createFolder('Solo', several(repositories, 'trae/dotfiles'));
+  expect(repositories.moveTarget.value).toEqual({ kind: 'none' });
+  repositories.createFolder('Later', [], { deselect: true });
   expect(repositories.moveTarget.value).toEqual({ kind: 'folder', name: 'Later' });
 
+  // A deleted folder's choice goes, and doesn't come back with a new folder of that name.
   repositories.deleteFolder('later');
+  expect(repositories.moveTarget.value).toBeUndefined();
+  repositories.moveToFolder(several(repositories, 'trae/dotfiles'), 'Later');
   expect(repositories.moveTarget.value).toBeUndefined();
 
   repositories.pickMoveTarget({ kind: 'folder', name: 'Apps' });

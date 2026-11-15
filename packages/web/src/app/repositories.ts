@@ -427,6 +427,12 @@ export class Repositories {
     try {
       const [list] = await Promise.all([listRepositories(this.#github), this.preferences.reload()]);
       this.list.value = list;
+      // A selected repository the account no longer lists drops out, so it isn't selected again if it returns.
+      const listed = new Set(list.repositories.map((repository) => repository.full_name));
+      const kept = [...this.#selectedNames.value].filter((name) => listed.has(name));
+      if (kept.length !== this.#selectedNames.value.size) {
+        this.#setSelected(new Set(kept));
+      }
     } catch (error) {
       if (isSignedOut(error)) {
         this.#onSignedOut();
@@ -656,7 +662,8 @@ export class Repositories {
     if (deselect) {
       this.#deselect(moving);
     }
-    if (this.#selectedNames.value.size > 0) {
+    // Made from the selected panel and left empty, it is where the panel moves them.
+    if (deselect && this.#selectedNames.value.size > 0) {
       this.#moveTarget.value = { kind: 'folder', name: trimmed };
     }
     return undefined;
@@ -703,6 +710,10 @@ export class Repositories {
   deleteFolder(name: string): void {
     this.#updateFolders((folders) => folders.filter((folder) => !sameName(folder.name, name)));
     this.#updateClosed((closed) => closed.filter((folder) => !sameName(folder, name)));
+    const picked = this.#moveTarget.value;
+    if (picked?.kind === 'folder' && sameName(picked.name, name)) {
+      this.#moveTarget.value = undefined;
+    }
   }
 
   /**

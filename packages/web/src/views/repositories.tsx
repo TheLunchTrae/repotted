@@ -825,10 +825,20 @@ interface SelectedProps {
   readonly onBatch: RepositoriesProps['onBatch'];
   /** Called after a move, which deselects the repositories and so closes this panel, with the folder they went to. */
   readonly onMoved: (folder: string | undefined) => void;
+  /** Deselects every repository, which closes this panel. */
+  readonly onDeselectAll: () => void;
 }
 
 /** The panel for the selected repositories: the profile to apply to them all, each reviewed on its own first. */
-function SelectedPanel({ repositories, onDialog, profiles, unfinished, onBatch, onMoved }: SelectedProps): JSX.Element {
+function SelectedPanel({
+  repositories,
+  onDialog,
+  profiles,
+  unfinished,
+  onBatch,
+  onMoved,
+  onDeselectAll,
+}: SelectedProps): JSX.Element {
   const selected = repositories.selected.value;
   const target = repositories.moveTarget.value;
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
@@ -936,6 +946,9 @@ function SelectedPanel({ repositories, onDialog, profiles, unfinished, onBatch, 
         )}
       </form>
       <div class="panel-actions">
+        <button class="button button-quiet" type="button" onClick={onDeselectAll}>
+          Deselect all
+        </button>
         <button
           class="button button-quiet"
           type="button"
@@ -1020,6 +1033,13 @@ export function RepositoriesPage({
    * the focus, since deselecting them closes the selection's panel; otherwise the
    * browser puts the focus back itself.
    */
+  /** Deselects every repository; the buttons that do it go with the selection, so the focus moves to New folder. */
+  const deselectAll = (): void => {
+    repositories.deselectAll();
+    requestAnimationFrame(() => {
+      newFolderButton.current?.focus();
+    });
+  };
   const closeDialog = (focus: string | undefined): void => {
     const opened = dialog?.kind;
     setDialog(undefined);
@@ -1171,17 +1191,7 @@ export function RepositoriesPage({
                 New folder
               </button>
               {selected.length > 0 && (
-                <button
-                  class="button button-quiet"
-                  type="button"
-                  onClick={() => {
-                    repositories.deselectAll();
-                    // The button goes with the selection, so the focus moves to the button beside it.
-                    requestAnimationFrame(() => {
-                      newFolderButton.current?.focus();
-                    });
-                  }}
-                >
+                <button class="button button-quiet" type="button" onClick={deselectAll}>
                   Deselect all
                 </button>
               )}
@@ -1298,6 +1308,7 @@ export function RepositoriesPage({
           onMoved={(folder) => {
             focusFolder(folder, 'toggle');
           }}
+          onDeselectAll={deselectAll}
         />
       ) : (
         opened !== undefined && (
