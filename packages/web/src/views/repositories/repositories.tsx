@@ -14,6 +14,7 @@ import {
   type Repositories,
   type Repository,
 } from '../../app/repositories/repositories.js';
+import type { RepositoryProfiles } from '../../app/repositories/repository-profiles.js';
 import {
   archivedFilters,
   archivedLabels,
@@ -24,7 +25,6 @@ import {
   visibilityFilters,
   visibilityLabels,
 } from '../../app/repositories/sort-and-filters.js';
-import type { RepositoryProfiles } from '../../app/repositories/repository-profiles.js';
 import { useMenuPanelKeptOnPage } from '../layout/menu-placement.js';
 import { usePhone } from '../layout/phone.js';
 import { run } from '../layout/run.js';
