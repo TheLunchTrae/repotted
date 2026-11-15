@@ -1451,6 +1451,32 @@ export async function changeOwnerType(file: string, type: OwnerType | undefined)
   }
 }
 
+/** As written, whether or not the file it names reads; undefined for none, or for text that isn't YAML. */
+export function declaredExtends(text: string): string | undefined {
+  const document = parseDocument(text);
+  const base: unknown = document.errors.length > 0 ? undefined : document.get('extends');
+  return typeof base === 'string' ? base : undefined;
+}
+
+/**
+ * Points `extends` at `base`, as a move of the profile or of its base needs.
+ * Only the value's own text changes, so the rest of the file stays as written.
+ */
+export function withExtends(text: string, base: string): string {
+  const document = parseDocument(text);
+  const value = document.get('extends', true);
+  const written = /^[\w./-]+$/u.test(base) ? base : JSON.stringify(base);
+  const inline =
+    isScalar(value) && (value.type === 'PLAIN' || value.type === 'QUOTE_SINGLE' || value.type === 'QUOTE_DOUBLE');
+  if (document.errors.length === 0 && inline && value.range !== undefined && value.range !== null) {
+    const [start, end] = value.range;
+    return text.slice(0, start) + written + text.slice(end);
+  }
+  document.set('extends', base);
+  const edited = document.toString({ lineWidth: 0 });
+  return text.includes('\r\n') ? edited.replaceAll('\n', '\r\n') : edited;
+}
+
 export function stringifyProfile(value: Profile): string {
   return stringify(value, { lineWidth: 0 });
 }
