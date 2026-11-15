@@ -130,6 +130,26 @@ response is `Cache-Control: no-store`. The Worker waits 10 seconds for GitHub's
 token endpoint and the page 20 seconds for the Worker, and either reads a
 timeout as GitHub being out of reach.
 
+The Worker names itself to GitHub with a `User-Agent` header. A Worker's
+`fetch` sends none of its own, and GitHub may turn away a request without one.
+
+Every auth request logs one structured line, with its `route`, its `outcome`,
+and, when GitHub's token endpoint was asked and failed, `gitHubStatus`,
+`gitHubOAuthError` and `gitHubAnswer`: what GitHub sent, in a few words such as
+`status 200, bad_refresh_token` or `status 403, text/html, not JSON`. Failures
+log as warnings. No line holds a token, code, verifier, cookie or the client
+secret; GitHub's error code is kept only when it is a plain code, and its
+media type only when it is a plain type. A failed renewal's 502 and a refused
+renewal's 401 carry `gitHubAnswer` too, and the sign-in page shows the 502's;
+a refused renewal reads as signed out. A failed code exchange only logs it,
+since its redirect carries no detail.
+
+`observability` in `wrangler.jsonc` keeps Workers Logs and traces on, for
+production and Previews alike: `wrangler deploy` turns observability off when
+its config leaves it out, even when the dashboard turned it on. The lines
+show in the Worker's logs in the dashboard. `redact_query_string` leaves query
+strings out of logs and traces, since the callback's holds the sign-in code.
+
 A refused refresh leaves the cookies alone, since clearing them could replace
 newer tokens that another tab stored meanwhile. Sign-out ends the sign-in in
 this browser; other open tabs keep the access token they hold until it

@@ -7,7 +7,7 @@ function clockTime(time: Date): string {
   return time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function checkFailureMessage(failure: SignInCheckFailure): string {
+export function checkFailureMessage(failure: SignInCheckFailure): string {
   switch (failure.kind) {
     case 'sign-in-service-unreachable':
       return "Repotted's sign-in service didn't answer. Check your connection and try again.";
@@ -16,7 +16,9 @@ function checkFailureMessage(failure: SignInCheckFailure): string {
     case 'sign-in-service-answer-unreadable':
       return `Repotted's sign-in service sent an answer Repotted couldn't read (${failure.status}). Try again; if it keeps happening, the service needs a fix.`;
     case 'github-sign-in-renewal-unavailable':
-      return "GitHub couldn't renew your sign-in just now. Try again in a minute.";
+      return failure.gitHubAnswer === undefined
+        ? "GitHub couldn't renew your sign-in just now. Try again in a minute."
+        : `GitHub couldn't renew your sign-in just now (GitHub sent ${failure.gitHubAnswer}). Try again in a minute.`;
     case 'github-rate-limited':
       return failure.retryAt === undefined
         ? "GitHub's rate limit for your account is used up. Try again in a few minutes."

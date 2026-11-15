@@ -142,9 +142,12 @@ describe('a sign-in check that fails says what failed', () => {
     ],
     [
       "the Worker can't reach GitHub's token endpoint",
-      () => Promise.resolve(Response.json({ error: 'unavailable' }, { status: 502 })),
+      () =>
+        Promise.resolve(
+          Response.json({ error: 'unavailable', gitHubAnswer: 'status 403, text/html, not JSON' }, { status: 502 }),
+        ),
       () => Promise.resolve(user()),
-      { kind: 'github-sign-in-renewal-unavailable' },
+      { kind: 'github-sign-in-renewal-unavailable', gitHubAnswer: 'status 403, text/html, not JSON' },
     ],
     [
       'the Worker answers an error',

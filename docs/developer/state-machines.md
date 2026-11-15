@@ -123,7 +123,7 @@ reads from the error and its causes:
 | Cause                                                                        | The page says                                                      |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | The Worker gives no answer, or none in 20 seconds                            | Repotted's sign-in service didn't answer.                          |
-| The Worker answers 502 `unavailable`: GitHub's token endpoint failed         | GitHub couldn't renew the sign-in just now.                        |
+| The Worker answers 502 `unavailable`: GitHub's token endpoint failed         | GitHub couldn't renew the sign-in just now, and what GitHub sent.  |
 | The Worker answers any other error                                           | Repotted's sign-in service answered with an error, and its code.   |
 | The Worker answers with no access token, such as with a page                 | Repotted couldn't read the sign-in service's answer, and its code. |
 | A request to GitHub's API gets no answer, such as a blocked `api.github.com` | Repotted can't reach GitHub.                                       |

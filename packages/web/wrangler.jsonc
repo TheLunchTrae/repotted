@@ -30,4 +30,11 @@
   // URLs stay off; Wrangler leaves preview_urls as it was when it's unset.
   "workers_dev": false,
   "preview_urls": false,
+  // A deploy turns off any observability its config leaves out. The callback's
+  // query string holds the sign-in code, so logs and traces leave it out.
+  "observability": {
+    "redact_query_string": true,
+    "logs": { "enabled": true },
+    "traces": { "enabled": true },
+  },
 }

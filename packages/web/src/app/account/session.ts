@@ -32,7 +32,7 @@ export type SessionUnavailableReason =
   | { readonly kind: 'sign-in-service-unreachable' }
   | { readonly kind: 'sign-in-service-failed'; readonly status: number }
   | { readonly kind: 'sign-in-service-answer-unreadable'; readonly status: number }
-  | { readonly kind: 'github-sign-in-renewal-unavailable' };
+  | { readonly kind: 'github-sign-in-renewal-unavailable'; readonly gitHubAnswer: string | undefined };
 
 /** Thrown when the Worker or GitHub can't refresh the sign-in right now; the sign-in itself is kept. */
 export class SessionUnavailableError extends Error {
@@ -53,12 +53,15 @@ export class GitHubApiUnreachableError extends Error {
   }
 }
 
-const workerErrorAnswer = z.object({ error: z.string() });
+const workerErrorAnswer = z.object({
+  error: z.string(),
+  gitHubAnswer: z.catch(z.optional(z.string().check(z.maxLength(200))), undefined),
+});
 
 async function tokenRefreshFailure(response: Response): Promise<SessionUnavailableReason> {
   const answer = workerErrorAnswer.safeParse(await response.json().catch(() => undefined));
   return response.status === 502 && answer.success && answer.data.error === 'unavailable'
-    ? { kind: 'github-sign-in-renewal-unavailable' }
+    ? { kind: 'github-sign-in-renewal-unavailable', gitHubAnswer: answer.data.gitHubAnswer }
     : { kind: 'sign-in-service-failed', status: response.status };
 }
 

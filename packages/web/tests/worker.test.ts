@@ -19,9 +19,13 @@ const tokens = {
 };
 
 const github = vi.fn<typeof fetch>();
+const logged = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
 beforeEach(() => {
   github.mockReset();
+  logged.mockClear();
+  warned.mockClear();
   vi.stubGlobal('fetch', github);
 });
 
@@ -35,6 +39,18 @@ function call(path: string, init: RequestInit = {}): Promise<Response> {
 
 function cookies(response: Response): string[] {
   return response.headers.getSetCookie();
+}
+
+function bodyThatFailsAfterHeaders(error: unknown): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    pull(controller) {
+      controller.error(error);
+    },
+  });
+}
+
+function everythingLogged(): string {
+  return JSON.stringify([...logged.mock.calls, ...warned.mock.calls]);
 }
 
 function sentGrant(): URLSearchParams {
@@ -96,7 +112,7 @@ describe('sign-in', () => {
 describe('callback', () => {
   test('trades the code with the verifier and secret, keeps both tokens, and spends the sign-in', async () => {
     const { state, verifier, cookie } = await startedSignIn();
-    github.mockResolvedValue(Response.json(tokens));
+    github.mockImplementation(() => Promise.resolve(Response.json(tokens)));
     vi.useFakeTimers({ toFake: ['Date'], now: 1_000_000 });
 
     const response = await call(`/api/auth/callback?code=the-code&state=${state}`, {
@@ -167,6 +183,60 @@ describe('callback', () => {
 
     expect(response.headers.get('Location')).toBe('/?sign-in=failed');
     expect(cookies(response)).toEqual(['__Host-repotted-sign-in=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax']);
+  });
+});
+
+describe('logs', () => {
+  test('logs what a sign-in, a refresh and a sign-out did, with no token, code, verifier, cookie or secret', async () => {
+    const { state, verifier, cookie } = await startedSignIn();
+    github.mockImplementation(() => Promise.resolve(Response.json(tokens)));
+    await call(`/api/auth/callback?code=the-code&state=${state}`, { headers: { Cookie: cookie.split(';')[0] ?? '' } });
+    await call('/api/auth/token', {
+      method: 'POST',
+      headers: { Origin: origin, Cookie: '__Host-repotted-refresh=ghr_refresh' },
+    });
+    await call('/api/auth/sign-out', { method: 'POST', headers: { Origin: origin } });
+
+    expect(logged.mock.calls.map((loggedArguments): unknown => loggedArguments[0])).toEqual([
+      expect.objectContaining({ route: 'sign-in', outcome: 'sent to GitHub' }),
+      expect.objectContaining({ route: 'callback', outcome: 'signed in' }),
+      expect.objectContaining({ route: 'token', outcome: 'refreshed' }),
+      expect.objectContaining({ route: 'sign-out', outcome: 'signed out' }),
+    ]);
+    const everything = everythingLogged();
+    for (const secret of ['ghu_access', 'ghr_refresh', 'the-code', state, verifier, env.REPOTTED_APP_CLIENT_SECRET]) {
+      expect(everything).not.toContain(secret);
+    }
+  });
+
+  test('logs a failed code exchange with what GitHub sent', async () => {
+    const { state, cookie } = await startedSignIn();
+    github.mockResolvedValue(Response.json({ error: 'incorrect_client_credentials' }));
+
+    await call(`/api/auth/callback?code=the-code&state=${state}`, { headers: { Cookie: cookie.split(';')[0] ?? '' } });
+
+    expect(warned).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: 'callback',
+        outcome: 'failed',
+        gitHubOAuthError: 'incorrect_client_credentials',
+        gitHubAnswer: 'status 200, incorrect_client_credentials',
+      }),
+    );
+  });
+
+  test('logs only a well-formed error code GitHub sent back with the browser', async () => {
+    await call('/api/auth/callback?error=%3Cscript%3Eghr_leak&state=x');
+
+    expect(warned).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: 'callback',
+        outcome: 'failed',
+        gitHubOAuthError: undefined,
+        gitHubAnswer: 'sent back an error',
+      }),
+    );
+    expect(everythingLogged()).not.toContain('ghr_leak');
   });
 });
 
@@ -273,25 +343,115 @@ describe('token', () => {
     expect(github).not.toHaveBeenCalled();
   });
 
-  test('answers signed out, and leaves the cookies, when GitHub refuses the refresh token', async () => {
+  test("answers signed out with GitHub's error, and leaves the cookies, when GitHub refuses the refresh token", async () => {
     github.mockResolvedValue(Response.json({ error: 'bad_refresh_token' }));
 
     const response = await askFor(fromSite);
 
     expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'signed_out', gitHubAnswer: 'status 200, bad_refresh_token' });
     expect(cookies(response)).toEqual([]);
   });
 
   test.each([
-    ['fails on its side', () => Promise.resolve(new Response('oops', { status: 503 }))],
-    ['is too slow', () => Promise.reject(new DOMException('timed out', 'TimeoutError'))],
-  ])('answers unavailable, and leaves the cookies, when GitHub %s', async (_name, answer) => {
-    github.mockImplementation(answer);
+    ['fails on its side', () => Promise.resolve(new Response('oops', { status: 503 })), 'status 503'],
+    [
+      'sends a page instead of JSON',
+      () =>
+        Promise.resolve(
+          new Response('<html>Forbidden</html>', {
+            status: 403,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+          }),
+        ),
+      'status 403, text/html, not JSON',
+    ],
+    ['is too slow', () => Promise.reject(new DOMException('timed out', 'TimeoutError')), 'no answer within 10 seconds'],
+    ['gives no answer', () => Promise.reject(new TypeError('network connection lost')), 'no answer'],
+    [
+      'breaks off its answer',
+      () => Promise.resolve(new Response(bodyThatFailsAfterHeaders(new Error('Network connection lost.')))),
+      'status 200, the answer broke off',
+    ],
+    [
+      'is too slow to finish its answer',
+      () => Promise.resolve(new Response(bodyThatFailsAfterHeaders(new DOMException('timed out', 'TimeoutError')))),
+      'status 200, the rest of the answer took over 10 seconds',
+    ],
+    [
+      'sends no content type',
+      () => Promise.resolve(new Response(new TextEncoder().encode('nope'), { status: 403 })),
+      'status 403, no content type, not JSON',
+    ],
+    [
+      'sends an unusual content type',
+      () =>
+        Promise.resolve(
+          new Response('nope', { status: 403, headers: { 'Content-Type': 'text/html<img src=x>ghr_leak' } }),
+        ),
+      'status 403, an unusual content type, not JSON',
+    ],
+  ])(
+    'answers unavailable with what GitHub sent, and leaves the cookies, when GitHub %s',
+    async (_name, answer, gitHubAnswer) => {
+      github.mockImplementation(answer);
+
+      const response = await askFor(fromSite);
+
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({ error: 'unavailable', gitHubAnswer });
+      expect(cookies(response)).toEqual([]);
+    },
+  );
+
+  test.each([
+    ["an error code it doesn't expect", { error: 'Bad Refresh Token' }],
+    ['an error description with a token in it', { error: 'ghr_leak ghr_leak', error_description: 'ghr_leak' }],
+  ])('passes on no free text when GitHub refuses with %s', async (_name, body) => {
+    github.mockResolvedValue(Response.json(body));
 
     const response = await askFor(fromSite);
 
-    expect(response.status).toBe(502);
-    expect(cookies(response)).toEqual([]);
+    expect(await response.json()).toEqual({
+      error: 'signed_out',
+      gitHubAnswer: 'status 200, an answer without the expected tokens',
+    });
+    expect(everythingLogged()).not.toContain('ghr_leak');
+  });
+
+  test('logs a failed refresh with what GitHub sent', async () => {
+    github.mockResolvedValue(
+      new Response('<html>Forbidden</html>', { status: 403, headers: { 'Content-Type': 'text/html' } }),
+    );
+
+    await askFor(fromSite);
+
+    expect(warned).toHaveBeenCalledWith({
+      message: 'auth token: refresh failed',
+      route: 'token',
+      outcome: 'refresh failed',
+      gitHubStatus: 403,
+      gitHubOAuthError: undefined,
+      gitHubAnswer: 'status 403, text/html, not JSON',
+    });
+  });
+
+  test("logs a refused refresh with GitHub's error code", async () => {
+    github.mockResolvedValue(Response.json({ error: 'bad_refresh_token' }));
+
+    await askFor(fromSite);
+
+    expect(warned).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'refresh refused', gitHubStatus: 200, gitHubOAuthError: 'bad_refresh_token' }),
+    );
+  });
+
+  test('names itself to GitHub', async () => {
+    github.mockResolvedValue(Response.json(tokens));
+
+    await askFor(fromSite);
+
+    expect(new Headers(github.mock.calls[0]?.[1]?.headers).get('User-Agent')).toBe('repotted');
   });
 
   test('gives up on GitHub after ten seconds', async () => {
