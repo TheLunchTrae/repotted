@@ -365,6 +365,24 @@ test('every setting the editor offers, with every choice it gives, is one the en
   }
 });
 
+test('every setting another depends on comes before it in its section, with the values it depends on among its choices', () => {
+  for (const section of settingSections) {
+    const fields = section.groups.flatMap((group) => group.fields);
+    fields.forEach((item, index) => {
+      const condition = item.dependsOn;
+      if (condition === undefined) {
+        return;
+      }
+      const above = fields.slice(0, index).find((other) => other.key === condition.otherSettingKeyInSameSection);
+      expect(above, item.path.join('.')).toBeDefined();
+      const choices = above?.options.map((option) => JSON.stringify(option.value));
+      for (const value of condition.values) {
+        expect(choices, item.path.join('.')).toContain(JSON.stringify(value));
+      }
+    });
+  }
+});
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

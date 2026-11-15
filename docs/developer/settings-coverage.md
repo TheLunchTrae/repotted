@@ -193,8 +193,8 @@ its own setting's value, and a row under an off row is off, unless its own
 setting hides it. Each field names only the one setting just above it, and
 `ProfileEditor` follows the chain up, so an off row names the highest
 setting that turns it off, and the highest visible setting that hides a row
-counts it among the hidden ones the profile still names. With Actions off,
-for example, **Actions by GitHub** is hidden even while **Allowed actions**
+counts it among the hidden ones the profile still names. With **Actions**
+off, for example, **Actions by GitHub** is hidden even while **Allowed actions**
 holds **Selected**.
 
 GitHub's docs describe what each setting needs but rarely whether the page
