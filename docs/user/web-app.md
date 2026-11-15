@@ -93,17 +93,17 @@ first**. The owners keep their order. Sorting by last push shows when each
 repository was last pushed to, under its name, and a repository GitHub gives
 no push time for goes last either way.
 
-**Filter**, beside the count, narrows the list to **Public** or **Private**
-repositories, to those that are **Archived** or **Not archived**, and to
-those with any of the topics you select. Each choice adds a chip under the
-search box; click a chip to remove that filter, or click **Clear filters**, in the
-menu or beside the chips.
-The button counts how many filters are on. Filters and a search work
-together, and a repository has to pass both to show. While a filter is on,
-the count counts only the repositories that pass, folders
-with nothing in them don't show, and if nothing passes the list says so and
-offers **Clear filters**. A panel you had open closes while its repository
-is filtered out, and the selection stays as it was.
+**Filter**, after the count and the owners button, narrows the list to
+**Public** or **Private** repositories, to those that are **Archived** or
+**Not archived**, and to those with any of the topics you select. Each
+choice adds a chip under the search box; click a chip to remove that filter,
+or click **Clear filters**, in the menu or beside the chips. The button
+counts how many filters are on. Filters and a search work together, and a
+repository has to pass both to show. While a filter is on, the count counts
+only the repositories that pass, folders with nothing in them don't show,
+and if nothing passes the list says so and offers **Clear filters**. A panel
+you had open closes while its repository is filtered out, and the selection
+stays as it was.
 
 To keep repositories together, put them in folders. Click **New folder**
 beside the count, name it, and leave the box that puts the selected

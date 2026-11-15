@@ -177,7 +177,9 @@ function FilterMenu({ repositories }: { readonly repositories: Repositories }): 
             disabled={count === 0}
             onClick={() => {
               repositories.clearFilters();
-              menu.current?.querySelector<HTMLElement>('.menu-panel input:checked')?.focus();
+              requestAnimationFrame(() => {
+                menu.current?.querySelector<HTMLElement>('.menu-panel input:checked')?.focus();
+              });
             }}
           >
             Clear filters
