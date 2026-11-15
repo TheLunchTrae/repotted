@@ -44,6 +44,7 @@ use Repotted, see the [user guide](../user/README.md).
   MCP server. `tests/` mirrors `src/`.
 - `packages/web`: the web app at repotted.dev: a Cloudflare Worker that serves
   the site and its GitHub sign-in, and the page. Private to the workspace.
+  [The web app](web-app.md#layout) lists its folders.
 - `examples/`: example profiles that the tests also load.
 - `.config/mise/`: the pinned tools, the tasks, and the lockfile.
 - `.github/workflows/`: Quality, the gate on every pull request; Release

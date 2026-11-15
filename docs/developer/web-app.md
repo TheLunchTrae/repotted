@@ -11,18 +11,41 @@ browser. It signs in and lists the user's repositories.
 ## Layout
 
 - `src/worker.ts`: the Worker. It answers only `/api/*`.
-- `src/session.ts`: the page's access token, refreshed through the Worker, and its calls to GitHub, which skip the browser's cache so a read shows changes made elsewhere.
 - `src/main.tsx`: the page's entry. It makes the session, the engine's GitHub
   client, and the account, and renders the app.
-- `src/app/`: the app's state. Each part, such as `Account` and
+- `src/app/`: the app's state, with no DOM in it, so the tests drive it
+  against the in-memory GitHub. Each part, such as `Account` and
   `Repositories`, is a class that keeps its state in
-  [signals](https://github.com/preactjs/signals) and has no DOM in it, so the
-  tests drive it against the in-memory GitHub.
+  [signals](https://github.com/preactjs/signals). Its folders group it by
+  feature:
+  - `account/`: who is signed in, the GitHub App, and `session.ts`, the page's
+    access token, refreshed through the Worker, and its calls to GitHub, which
+    skip the browser's cache so a read shows changes made elsewhere.
+  - `navigation/`: the page's address and the repository it names.
+  - `repositories/`: the repository list, its folders, and what is hidden.
+  - `preferences/`: the choices kept in this browser, and those kept beside
+    the profiles in the config repository.
+  - `profiles/`: where the profiles are, the local folder they sync with, the
+    built-in protection for the config repository, and the preview of one of
+    its branches.
+  - `profile-editor/`: one open profile, its entries and settings, and the
+    searches and checks it runs.
+  - `apply/`: comparing a repository with a profile, and applying to one
+    repository or a batch.
+  - `storage/`: keeping the engine's files across visits, and running writes
+    one at a time.
 - `src/views/`: [Preact](https://preactjs.com/) components that draw that
   state and call its methods. They hold no state of their own beyond what a
-  control needs, such as an open menu.
-- `src/engine/`: what the engine needs to run in the page: its files, and its
-  GitHub client for the session.
+  control needs, such as an open menu. `app.tsx` puts the pages together,
+  `layout/` holds the header, the action bar, links, and the phone layout,
+  `settings/` is the Settings page, and each other folder is named for the
+  `src/app/` folder it draws.
+- `src/engine/`: what the engine needs to run in the page: its in-memory files
+  and POSIX paths, the user's local folder through the File System Access API,
+  and its GitHub client for the session.
+- `tests/`: the same folders as `src/app/`, with `engine/` for the engine's
+  stand-ins, `support/` for the fake browser, and `layout/` for the layout
+  check. `worker.test.ts` tests the Worker.
 - `aliases.ts`: the engine's Node modules and what stands in for each in the
   page. `build.ts` and the root `vitest.config.ts` both read it.
 - `static/`: the HTML, the CSS, the fonts, and `_headers`, the headers
@@ -57,7 +80,7 @@ such as hashing and base64, is on the web platform, which Node has too.
 So a profile, a staged apply, and a batch are files at absolute paths in the
 page too, and the engine's functions take the same arguments there as under
 Node. The engine's own tests run on Node's file system;
-`tests/engine.test.ts` runs its profile, staged apply, and batch flows on the
+`tests/engine/engine.test.ts` runs its profile, staged apply, and batch flows on the
 in-memory one, through the same aliases, in Vitest's `web` project. A Node module that the engine
 imports and `aliases.ts` doesn't map fails the build, which `ts:web:check`
 runs.
@@ -134,7 +157,7 @@ They are not kept per account.
 
 Choices that follow the user, such as the owners and repositories the list
 hides and the user's folders, go through `SharedPreferences`
-(`src/app/shared-preferences.ts`), which has the same `read` and `write`, and
+(`src/app/preferences/shared-preferences.ts`), which has the same `read` and `write`, and
 `update`, which saves a change to a value, such as adding a name to a list,
 rather than the value. While profiles are kept in a config repository, it
 keeps them in `.repotted-preferences.json` beside the profiles and commits
@@ -158,7 +181,7 @@ so an address works when opened directly.
 
 ## Profiles
 
-`Profiles` (`src/app/profiles.ts`) holds where the profiles are kept, how the
+`Profiles` (`src/app/profiles/profiles.ts`) holds where the profiles are kept, how the
 last sync went, and the list the sidebar draws. Profiles are files in the
 engine's in-memory files, in one of three folders:
 
@@ -182,7 +205,7 @@ turn, so a slow read holds nothing up.
 [State machines](state-machines.md#web-profiles-source) lists the
 transitions.
 
-`ProfileEditor` (`src/app/profile-editor.ts`) is the open profile's settings
+`ProfileEditor` (`src/app/profile-editor/profile-editor.ts`) is the open profile's settings
 and its unsaved changes. `setting-fields.ts` lists the settings it offers,
 tab by tab, with what each depends on; a test sets every one through the
 engine, so a setting the engine doesn't take fails there. A change is
@@ -192,7 +215,7 @@ Rulesets, environments, and labels are written whole. `entry-forms.ts` has
 the functions that change one thing in an entry and leave the rest of it as
 the file has it, and `entry-edits.ts` holds each change with the saved entry
 it was made on, so a save never writes an entry over one that has since
-changed elsewhere. `views/entries.tsx` only draws them.
+changed elsewhere. `views/profile-editor/entries.tsx` only draws them.
 
 `comparison.ts` compares a repository with a profile: the engine's
 `createPlan` over the resolved profile, shown as rows by section, with
@@ -255,7 +278,7 @@ for settings and one for entries turn how a row ends into the engine's
 edits for each kind of save, so a preview, a save, and a save as a draft
 agree on what a row means.
 
-`keepFiles` (`src/app/kept-files.ts`) keeps the in-memory files across
+`keepFiles` (`src/app/storage/kept-files.ts`) keeps the in-memory files across
 visits: it loads what IndexedDB holds into memory before the app draws, then
 writes each change there in order, by the file's path. So a working copy,
 with saves that haven't reached GitHub, is there on the next visit. The
