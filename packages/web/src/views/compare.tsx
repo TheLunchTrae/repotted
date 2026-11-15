@@ -33,10 +33,8 @@ interface CompareProps {
   readonly router: Router;
 }
 
-/** A repository compared with a profile: each difference by section, what GitHub has now, and what the profile wants. */
 export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
   const state = comparison.state.value;
-  // Back to the repository this is about, open on the repositories page.
   const back = (
     <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
       Back to repositories

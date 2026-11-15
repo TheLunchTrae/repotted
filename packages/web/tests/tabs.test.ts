@@ -15,7 +15,6 @@ const env = {
 
 interface Browser {
   refreshes: () => number;
-  /** GitHub refuses the current access token once, as if it had revoked it. */
   revokeAccess: () => void;
 }
 

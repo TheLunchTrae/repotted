@@ -76,7 +76,6 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
   );
 }
 
-/** A value as a row's note names it: by its choice's label, or as written. */
 function describe(field: SettingRow['field'], value: unknown): string {
   if (value === undefined) {
     return 'not managed';
@@ -171,18 +170,13 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
   );
 }
 
-/** How an editor's page saves its file: a profile's through its profiles, an apply's edits into the apply. */
 export interface EditorSaving {
   readonly save: (mode?: SaveMode) => Promise<void>;
   readonly discardDraft: () => Promise<void>;
-  /** Whether the file is kept on GitHub, whose history can bring back what is discarded. */
   readonly onGitHub: boolean;
-  /** What Save is called here, when it isn't a profile's Save. */
   readonly saveLabel?: string;
-  /** What the page adds to the bar after Save. */
-  readonly more?: ComponentChildren;
-  /** The page's own main action, which takes Save's place as the primary one kept in sight, as an apply's way on to its review. Save is then a plain button among the rest. */
-  readonly next?: ComponentChildren;
+  readonly extraBarActions?: ComponentChildren;
+  readonly primaryActionInsteadOfSave?: ComponentChildren;
 }
 
 interface DraftProps {
@@ -190,7 +184,6 @@ interface DraftProps {
   readonly saving: EditorSaving;
 }
 
-/** Asks before the draft is discarded, which writes at once and can't be undone. */
 function DiscardDraft({ saving, onClose }: DraftProps & { readonly onClose: () => void }): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -225,7 +218,6 @@ function DiscardDraft({ saving, onClose }: DraftProps & { readonly onClose: () =
   );
 }
 
-/** Says that the profile has a draft, what it still needs before it can apply, and offers to discard it. */
 function DraftBanner({ editor, saving }: DraftProps): JSX.Element | null {
   const [discarding, setDiscarding] = useState(false);
   const count = editor.draftCount.value;
@@ -284,25 +276,21 @@ const filterNames: readonly { readonly id: SettingFilter; readonly name: string 
   { id: 'drafts', name: 'Drafts' },
 ];
 
-/** The open profile's settings, a tab for each section, with the footer that saves them. */
 const entryTitles = { rulesets: 'Rulesets', environments: 'Environments', labels: 'Labels' } as const;
 
 interface ProfileSettingsProps {
-  /** The profile's name, as the list has it. */
   readonly name: string;
   readonly editor: ProfileEditor;
   readonly saving: EditorSaving;
-  /** Whether the profile's owner type has push rulesets, which personal accounts lack. */
-  readonly pushes: boolean;
+  readonly ownerTypeHasPushRulesets: boolean;
 }
 
-export function ProfileSettings({ name, editor, saving, pushes }: ProfileSettingsProps): JSX.Element {
+export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets }: ProfileSettingsProps): JSX.Element {
   const sections = editor.sections.value;
   const [tab, setTab] = useState(sections[0]?.section.section ?? '');
   const entries = editor.entries.value;
   const list = entryLists.find((item) => item === tab);
   const shown = list === undefined ? (sections.find((item) => item.section.section === tab) ?? sections[0]) : undefined;
-  // Every tab in order: the settings sections, then the lists of entries.
   const tabNames = [
     ...sections.map(({ section, groups }) => ({
       id: section.section,
@@ -335,7 +323,7 @@ export function ProfileSettings({ name, editor, saving, pushes }: ProfileSetting
   };
   const save = (
     <button
-      class={saving.next === undefined ? 'button button-primary' : 'button'}
+      class={saving.primaryActionInsteadOfSave === undefined ? 'button button-primary' : 'button'}
       type="button"
       disabled={!editor.canSave.value}
       onClick={() => {
@@ -478,7 +466,7 @@ export function ProfileSettings({ name, editor, saving, pushes }: ProfileSetting
           )}
           {list !== undefined && (
             <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${list}`}>
-              <Entries key={list} editor={editor} list={list} pushes={pushes} />
+              <Entries key={list} editor={editor} list={list} ownerTypeHasPushRulesets={ownerTypeHasPushRulesets} />
             </div>
           )}
         </>
@@ -504,8 +492,8 @@ export function ProfileSettings({ name, editor, saving, pushes }: ProfileSetting
                   : 'Correct what is marked, or reset it, to save.'}
         </span>
         <BarActions
-          main={saving.next ?? save}
-          others={
+          mainAction={saving.primaryActionInsteadOfSave ?? save}
+          otherActions={
             <>
               <button
                 class="button button-quiet"
@@ -541,8 +529,8 @@ export function ProfileSettings({ name, editor, saving, pushes }: ProfileSetting
                   </button>
                 </>
               )}
-              {saving.next !== undefined && save}
-              {saving.more}
+              {saving.primaryActionInsteadOfSave !== undefined && save}
+              {saving.extraBarActions}
             </>
           }
         />

@@ -11,15 +11,14 @@ import { ProfileSettings } from './profile-editor.js';
 import { run } from './run.js';
 import { SyncNote } from './settings.js';
 
-/** The widths at which app.css shows the profile list and the open profile one at a time. */
-const phone = '(max-width: 760px)';
+// The phone breakpoint in app.css.
+const phoneMediaQuery = '(max-width: 760px)';
 
 const ownerTypes = { user: 'For personal accounts', organization: 'For organizations' } as const;
 
 interface FolderProps {
   readonly node: ProfileFolderNode;
   readonly profiles: Profiles;
-  /** Called when a profile is chosen, which closes the new profile form. */
   readonly onOpen: () => void;
 }
 
@@ -70,7 +69,6 @@ interface ProfileProps {
   readonly profiles: Profiles;
 }
 
-/** Asks before a profile is deleted, naming its file and the profiles that stop loading without it. */
 function DeleteProfile({ listing, profiles, onClose }: ProfileProps & { readonly onClose: () => void }): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -242,7 +240,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
             discardDraft: () => profiles.discardDraft(),
             onGitHub: profiles.source.value.kind === 'repository',
           }}
-          pushes={listing.owner_type !== 'user'}
+          ownerTypeHasPushRulesets={listing.owner_type !== 'user'}
         />
       )}
       {showYaml && opened?.file === listing.file && (
@@ -258,11 +256,10 @@ interface ProfilesProps {
   readonly profiles: Profiles;
   readonly repositories: Repositories;
   readonly router: Router;
-  /** Set while the new profile form is open, with the repository it was asked to capture. */
-  readonly creating: { readonly repository: string | undefined } | undefined;
+  readonly newProfileForm: { readonly repository: string | undefined } | undefined;
 }
 
-export function ProfilesPage({ profiles, repositories, router, creating }: ProfilesProps): JSX.Element {
+export function ProfilesPage({ profiles, repositories, router, newProfileForm }: ProfilesProps): JSX.Element {
   const source = profiles.source.value;
   const tree = profiles.tree.value;
   const selected = profiles.selected.value;
@@ -271,11 +268,10 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
   const total = profiles.listings.value.length;
   const elsewhere = source.kind === 'folder' ? 'in the folder' : 'on GitHub';
   // On a phone the list and the open profile are two screens; app.css shows the one this names.
-  const showing = creating !== undefined ? '/profiles/new' : selected?.file;
+  const showing = newProfileForm !== undefined ? '/profiles/new' : selected?.file;
   const open = showing !== undefined;
   const sidebar = useRef<HTMLElement>(null);
-  /** The list's item for the profile left by the back button, to take the focus back to. */
-  const returnTo = useRef<HTMLElement | null>(null);
+  const listItemToRefocus = useRef<HTMLElement | null>(null);
   const first = useRef(true);
   const previous = useRef(showing);
   useEffect(() => {
@@ -287,7 +283,7 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
     }
     // A new screen on a phone starts at its top, with the focus on it: the button that was pressed
     // is gone with the screen it was on. Side by side, nothing moves.
-    if (!window.matchMedia(phone).matches) {
+    if (!window.matchMedia(phoneMediaQuery).matches) {
       return;
     }
     window.scrollTo(0, 0);
@@ -296,12 +292,12 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
     } else {
       // Back to the row that was open, or to New profile after its form, or else to the list itself,
       // as when the open profile was deleted or synced away.
-      const row = returnTo.current?.isConnected === true ? returnTo.current : null;
+      const row = listItemToRefocus.current?.isConnected === true ? listItemToRefocus.current : null;
       const form =
         left === '/profiles/new' ? sidebar.current?.querySelector<HTMLElement>('a[href="/profiles/new"]') : null;
       (row ?? form ?? sidebar.current)?.focus();
     }
-    returnTo.current = null;
+    listItemToRefocus.current = null;
   }, [showing]);
 
   return (
@@ -367,10 +363,11 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
             class="link profiles-back"
             type="button"
             onClick={() => {
-              returnTo.current = sidebar.current?.querySelector<HTMLElement>('.tree-item[aria-current="true"]') ?? null;
+              listItemToRefocus.current =
+                sidebar.current?.querySelector<HTMLElement>('.tree-item[aria-current="true"]') ?? null;
               // An editor keeps its unsaved changes when its profile is closed, and the list marks it Not saved.
               run(profiles.select(undefined));
-              if (creating !== undefined) {
+              if (newProfileForm !== undefined) {
                 router.go('/profiles');
               }
             }}
@@ -424,12 +421,12 @@ export function ProfilesPage({ profiles, repositories, router, creating }: Profi
             )}
           </div>
         )}
-        {creating !== undefined ? (
+        {newProfileForm !== undefined ? (
           <NewProfileForm
             profiles={profiles}
             repositories={repositories}
             router={router}
-            repository={creating.repository}
+            repositoryToCapture={newProfileForm.repository}
           />
         ) : selected !== undefined ? (
           <Profile key={selected.file} listing={selected} profiles={profiles} />

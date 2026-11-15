@@ -17,7 +17,6 @@ const checkout: FoundAction = {
   action_file: 'action.yml',
 };
 
-/** A search that answers when told to, and remembers what was asked. */
 function held(): {
   readonly asked: string[];
   readonly find: (words: string) => Promise<FoundAction[]>;

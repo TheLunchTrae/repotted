@@ -47,7 +47,6 @@ function names(repositories: Repositories): string[] {
   ]);
 }
 
-/** Preferences kept in this browser, as when profiles are not kept in a repository. */
 function inBrowser(github: GitHub, preferences: Preferences = memory()): SharedPreferences {
   return new SharedPreferences(github, preferences, () => undefined);
 }

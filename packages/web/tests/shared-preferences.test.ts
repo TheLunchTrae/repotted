@@ -20,7 +20,6 @@ function memory(start: Record<string, unknown> = {}): Preferences & { readonly k
   };
 }
 
-/** Adds a name to a list, as the repositories page does. */
 function adding(name: string): (current: unknown) => unknown {
   return (current) => [...(Array.isArray(current) ? (current as unknown[]) : []), name];
 }
@@ -30,7 +29,6 @@ function saved(repository: FakeGitRepository): unknown {
   return text === undefined ? undefined : JSON.parse(text);
 }
 
-/** Waits until every read and save queued so far has run. */
 async function settled(preferences: SharedPreferences): Promise<void> {
   await preferences.use(source);
   await vi.waitFor(() => {

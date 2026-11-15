@@ -66,7 +66,6 @@ test('a batch reviews each repository, writes nothing until asked, and then writ
   expect(writes(of('lunch/app'))).toEqual(['PATCH /repos/lunch/app']);
   expect(writes(of('lunch/api'))).toEqual([]);
   expect(of('lunch/app').state.repository).toMatchObject({ has_wiki: false, has_projects: false });
-  // Every repository finished, so the batch has ended.
   expect(await batch.unfinished()).toBe(false);
 });
 
@@ -320,8 +319,7 @@ test('nothing is applied from a batch that is being discarded', async () => {
   expect(writes(of('lunch/app'))).toEqual([]);
 });
 
-/** A GitHub whose requests wait until they are let go, so work on it can be held open. */
-class Held extends FakeGitHub {
+class GitHubWithHeldRequests extends FakeGitHub {
   #gate: Promise<void> | undefined;
   #open: () => void = () => undefined;
 
@@ -349,7 +347,7 @@ class Held extends FakeGitHub {
 
 test('a batch that is writing is neither replaced, resumed, nor discarded, and a late review changes nothing', async () => {
   await saved();
-  const app = new Held({}, 'lunch/app');
+  const app = new GitHubWithHeldRequests({}, 'lunch/app');
   const api = new FakeGitHub({}, 'lunch/api');
   const batch = new BatchApply(new FakeFleet([api, app]), () => undefined);
   await batch.start(['lunch/app', 'lunch/api'], profile);

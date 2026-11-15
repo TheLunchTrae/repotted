@@ -64,7 +64,6 @@ test('a comparison says what the profile would change, by section, and leaves ou
   expect(comparison.counts.value).toEqual({ differences: 5, locked: 0, matches: 1 });
   // GitHub didn't say which installations the account has, so nothing is locked and there is nowhere to send them.
   expect(comparison.state.value).toMatchObject({ appAccess: undefined });
-  // Comparing only reads.
   expect(github.calls.every((call) => call.method === 'GET')).toBe(true);
 });
 
@@ -153,7 +152,6 @@ test('a slower comparison never replaces a later one, and one put away shows not
 
 type Changes = Parameters<typeof compareSections>[0]['changes'];
 
-/** The rows a plan of these changes compares as, each in a line. */
 function compared(changes: Changes, locks: ReadonlyMap<number, string> = new Map()): string[] {
   const plan = { repository: 'lunch/app', desired: {}, changes, skipped: [], warnings: [] };
   return compareSections(plan, locks).flatMap((section) =>

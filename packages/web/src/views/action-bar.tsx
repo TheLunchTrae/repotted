@@ -1,23 +1,20 @@
 import type { ComponentChildren, JSX } from 'preact';
 import { usePhone } from './phone.js';
-import { useDismiss } from './shell.js';
+import { useDismissibleMenu } from './shell.js';
 
 interface BarActionsProps {
-  /** The page's main action, which stays in sight. */
-  readonly main: ComponentChildren;
-  /** Everything else, which a phone keeps under More. */
-  readonly others: ComponentChildren;
+  readonly mainAction: ComponentChildren;
+  readonly otherActions: ComponentChildren;
 }
 
-/** An action bar's buttons: in a row, or on a phone the main one beside a More menu holding the rest, kept together. */
-export function BarActions({ main, others }: BarActionsProps): JSX.Element {
+export function BarActions({ mainAction, otherActions }: BarActionsProps): JSX.Element {
   const onPhone = usePhone();
-  const menu = useDismiss();
+  const menu = useDismissibleMenu();
   if (!onPhone) {
     return (
       <>
-        {others}
-        {main}
+        {otherActions}
+        {mainAction}
       </>
     );
   }
@@ -41,10 +38,10 @@ export function BarActions({ main, others }: BarActionsProps): JSX.Element {
             }
           }}
         >
-          {others}
+          {otherActions}
         </div>
       </details>
-      {main}
+      {mainAction}
     </div>
   );
 }

@@ -45,7 +45,6 @@ function Line({ line }: { readonly line: DiffLine }): JSX.Element {
   );
 }
 
-/** A profile's YAML as a diff, with each run of unchanged lines folded until it is asked for. */
 function Diff({ lines }: { readonly lines: readonly (DiffLine | DiffFold)[] }): JSX.Element {
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
   const region = useRef<HTMLDivElement>(null);
@@ -87,7 +86,6 @@ interface SavePreviewProps {
   readonly preview: SavePreview;
 }
 
-/** The preview of a save: what the profile applies now against what it would, with the ways to save from there. */
 export function SavePreviewDialog({ name, editor, saving, preview }: SavePreviewProps): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {

@@ -5,7 +5,6 @@ import { Account, signInFailure } from '../src/app/account.js';
 import { type Session, SessionUnavailableError } from '../src/session.js';
 
 function session(signOut: () => Promise<void> = () => Promise.resolve()): Session {
-  // The account uses only the session's sign-out; requests go through the GitHub client.
   // eslint-disable-next-line typescript/no-unsafe-type-assertion -- a Session can't be built without a browser's locks and fetch, and Account calls nothing else on it
   return { signOut } as unknown as Session;
 }

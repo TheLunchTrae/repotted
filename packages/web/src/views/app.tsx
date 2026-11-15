@@ -43,9 +43,7 @@ interface AppProps {
   readonly github: GitHub;
   readonly preferences: Preferences;
   readonly router: Router;
-  /** Whether the browser keeps the engine's files between visits. */
   readonly keeping: Signal<Keeping>;
-  /** The browser's way to a folder on this computer. */
   readonly folders: LocalFolders;
 }
 
@@ -58,7 +56,6 @@ function SignedIn({
   folders,
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
-  // One of each per sign-in. The repository list is the account's; the profiles are the browser's, whoever signs in.
   const { repositories, profiles, comparison, apply, batch, protection } = useMemo(() => {
     const refused = (): void => {
       account.gitHubRefusedSignIn();
@@ -88,11 +85,8 @@ function SignedIn({
   useEffect(() => {
     run(repositories.preferences.use(source));
   }, [repositories, source]);
-  // The repository a new profile was asked to capture, from the repositories page.
-  const [captureFrom, setCaptureFrom] = useState<string | undefined>(undefined);
-  /** Whether a press of Review protection… is still starting its apply. */
+  const [repositoryToCapture, setRepositoryToCapture] = useState<string | undefined>(undefined);
   const openingProtection = useRef(false);
-  // The browser asks before a reload or a closed tab discards changes that aren't saved.
   useEffect(() => {
     const ask = (event: BeforeUnloadEvent): void => {
       if (profiles.unsaved.value.size > 0 || apply.editor.value?.dirty.value === true) {
@@ -105,7 +99,6 @@ function SignedIn({
     };
   }, [profiles, apply]);
   const path = router.path.value;
-  // A comparison is put away with its page, so one still being made shows nothing later.
   useEffect(() => {
     if (path !== '/compare') {
       comparison.close();
@@ -120,7 +113,7 @@ function SignedIn({
   }, [path, comparison, apply, batch]);
   useEffect(() => {
     if (path !== '/profiles/new') {
-      setCaptureFrom(undefined);
+      setRepositoryToCapture(undefined);
     }
   }, [path]);
   const title = titles[path];
@@ -128,8 +121,7 @@ function SignedIn({
     document.title = title === undefined ? 'Repotted' : `${title} - Repotted`;
   }, [title]);
   const [leaving, setLeaving] = useState(false);
-  /** Whether a press of Sign out did nothing because an apply was writing. */
-  const [held, setHeld] = useState(false);
+  const [signOutHeldByWritingApply, setSignOutHeldByWritingApply] = useState(false);
   const leave = (): void => {
     // An apply's edits that can be saved are, as when its page is left.
     apply.close();
@@ -140,10 +132,10 @@ function SignedIn({
   // and it ends the sign-in an apply that is writing still needs.
   const signOut = (): void => {
     if (writing) {
-      setHeld(true);
+      setSignOutHeldByWritingApply(true);
       return;
     }
-    setHeld(false);
+    setSignOutHeldByWritingApply(false);
     if (profiles.unsaved.value.size > 0) {
       setLeaving(true);
     } else {
@@ -152,7 +144,7 @@ function SignedIn({
   };
   // The account menu, where this is also said, closes with the question, so it is said on the page too.
   const signOutProblem =
-    held && writing
+    signOutHeldByWritingApply && writing
       ? 'Changes are being written to GitHub. Sign out once the apply has finished.'
       : account.signOutError.value;
   return (
@@ -183,7 +175,7 @@ function SignedIn({
           address={address}
           profiles={profiles}
           onCapture={(repository) => {
-            setCaptureFrom(repository);
+            setRepositoryToCapture(repository);
             router.go('/profiles/new');
           }}
           batch={batch}
@@ -225,7 +217,7 @@ function SignedIn({
           profiles={profiles}
           repositories={repositories}
           router={router}
-          creating={path === '/profiles/new' ? { repository: captureFrom } : undefined}
+          newProfileForm={path === '/profiles/new' ? { repository: repositoryToCapture } : undefined}
         />
       ) : path === '/settings' ? (
         <SettingsPage

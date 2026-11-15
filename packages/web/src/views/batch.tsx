@@ -32,11 +32,10 @@ function statusOf(member: BatchMemberView): { readonly text: string; readonly to
 interface MemberProps {
   readonly member: BatchMemberView;
   readonly batch: BatchApply;
-  /** While the batch is reviewed again, the last review stays in view with nothing to press. */
-  readonly busy: boolean;
+  readonly working: boolean;
 }
 
-function Member({ member, batch, busy }: MemberProps): JSX.Element {
+function Member({ member, batch, working }: MemberProps): JSX.Element {
   const status = statusOf(member);
   const out = member.status === 'left-out';
   return (
@@ -49,7 +48,7 @@ function Member({ member, batch, busy }: MemberProps): JSX.Element {
           <button
             class="button button-quiet button-small"
             type="button"
-            disabled={busy}
+            disabled={working}
             aria-label={`Remove ${member.repository} from the batch`}
             onClick={() => {
               run(batch.remove(member.repository));
@@ -62,7 +61,7 @@ function Member({ member, batch, busy }: MemberProps): JSX.Element {
           <input
             type="checkbox"
             checked={!out}
-            disabled={busy}
+            disabled={working}
             aria-label={`Apply to ${member.repository} in this batch`}
             onChange={(event) => {
               run(batch.leaveOutRepository(member.repository, !event.currentTarget.checked));
@@ -113,7 +112,7 @@ function Member({ member, batch, busy }: MemberProps): JSX.Element {
                   <button
                     class="button button-quiet button-small"
                     type="button"
-                    disabled={busy}
+                    disabled={working}
                     aria-label={`Leave out ${row.label}, ${row.key}, for ${member.repository}`}
                     onClick={() => {
                       run(batch.leaveOut(member.repository, row.leaveOut ?? '', true));
@@ -136,7 +135,7 @@ function Member({ member, batch, busy }: MemberProps): JSX.Element {
               <button
                 class="link"
                 type="button"
-                disabled={busy}
+                disabled={working}
                 aria-label={`Put back ${key} for ${member.repository}`}
                 onClick={() => {
                   run(batch.leaveOut(member.repository, key, false));
@@ -152,7 +151,6 @@ function Member({ member, batch, busy }: MemberProps): JSX.Element {
   );
 }
 
-/** Asks once more before anything is written, with how many repositories will be. */
 function Confirm({ batch, onClose }: { readonly batch: BatchApply; readonly onClose: () => void }): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   const ready = batch.ready.value.length;
@@ -193,7 +191,6 @@ interface BatchProps {
   readonly router: Router;
 }
 
-/** One profile applied to several repositories: each one's changes, what is left out, and the step that writes them. */
 export function BatchPage({ batch, router }: BatchProps): JSX.Element {
   const state = batch.state.value;
   const [confirming, setConfirming] = useState(false);
@@ -324,7 +321,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
             </section>
             <div class="groups">
               {members.map((member) => (
-                <Member key={member.repository} member={member} batch={batch} busy={working} />
+                <Member key={member.repository} member={member} batch={batch} working={working} />
               ))}
             </div>
           </>
@@ -340,7 +337,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
         )}
         <div class="save-bar">
           <BarActions
-            main={
+            mainAction={
               <button
                 class="button button-primary"
                 type="button"
@@ -352,7 +349,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                 {ready === 0 ? 'Apply' : `Apply to ${repositories(ready)}`}
               </button>
             }
-            others={
+            otherActions={
               <>
                 <button
                   class="button button-quiet"
@@ -361,7 +358,6 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                   onClick={() => {
                     run(
                       batch.discard().then(() => {
-                        // A batch that couldn't be discarded stays, with why.
                         if (batch.state.value.kind === 'idle') {
                           router.go('/');
                         }

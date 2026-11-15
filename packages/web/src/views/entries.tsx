@@ -83,7 +83,6 @@ function luminance(hex: string): number {
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 }
 
-/** A string or a number as text, and anything else as none. */
 function text(value: unknown): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
 }
@@ -94,7 +93,6 @@ function items(value: unknown): readonly unknown[] {
 
 interface FormProps {
   readonly entry: Entry;
-  /** The entry as the profile has it saved, when it does. */
   readonly saved: Entry | undefined;
   readonly change: (entry: Entry) => void;
 }
@@ -104,7 +102,6 @@ interface ChoiceProps {
   readonly options: readonly (readonly [string, unknown])[];
   /** The value chosen, or undefined when each repository keeps its own. */
   readonly value: unknown;
-  /** Takes the choice, or undefined to leave it to GitHub. */
   readonly onChoose: (value: unknown) => void;
 }
 
@@ -318,7 +315,12 @@ function count(typed: string, most: number, what: string): { readonly value: num
     : `${what} is a whole number, from 0 to ${most}.`;
 }
 
-function RulesetForm({ entry, saved, change, pushes }: FormProps & { readonly pushes: boolean }): JSX.Element {
+function RulesetForm({
+  entry,
+  saved,
+  change,
+  ownerTypeHasPushRulesets,
+}: FormProps & { readonly ownerTypeHasPushRulesets: boolean }): JSX.Element {
   const known = new Set(ruleKinds.map(([type]) => type));
   const others = items(entry['rules'])
     .filter(isEntry)
@@ -346,7 +348,11 @@ function RulesetForm({ entry, saved, change, pushes }: FormProps & { readonly pu
       <Group title="Target">
         <Choice
           label="Applies to"
-          options={[['Branches', 'branch'], ['Tags', 'tag'], ...(pushes ? [['Pushes', 'push'] as const] : [])]}
+          options={[
+            ['Branches', 'branch'],
+            ['Tags', 'tag'],
+            ...(ownerTypeHasPushRulesets ? [['Pushes', 'push'] as const] : []),
+          ]}
           value={entry['target']}
           onChoose={(value) => {
             change(withKey(entry, 'target', value));
@@ -702,11 +708,11 @@ interface EntryFormProps {
   readonly editor: ProfileEditor;
   readonly row: EntryRow;
   readonly entry: Entry;
-  readonly pushes: boolean;
+  readonly ownerTypeHasPushRulesets: boolean;
   readonly onBack: () => void;
 }
 
-function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.Element {
+function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: EntryFormProps): JSX.Element {
   const noun = nouns[row.list];
   const back = useRef<HTMLButtonElement>(null);
   // The form takes the keyboard when it opens, since the row that opened it is gone.
@@ -841,7 +847,12 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
         </div>
       </Group>
       {!absent && row.list === 'rulesets' && (
-        <RulesetForm entry={entry} saved={row.saved} change={change} pushes={pushes} />
+        <RulesetForm
+          entry={entry}
+          saved={row.saved}
+          change={change}
+          ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
+        />
       )}
       {!absent && row.list === 'environments' && <EnvironmentForm entry={entry} saved={row.saved} change={change} />}
       {!absent && row.list === 'labels' && (
@@ -854,12 +865,10 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
 interface EntriesProps {
   readonly editor: ProfileEditor;
   readonly list: EntryList;
-  /** Whether the profile's owner type has push rulesets. */
-  readonly pushes: boolean;
+  readonly ownerTypeHasPushRulesets: boolean;
 }
 
-/** One tab of rulesets, environments, or labels: the list, or the one that is open. */
-export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Element {
+export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: EntriesProps): JSX.Element {
   const [openKey, setOpenKey] = useState<string | undefined>(undefined);
   const rows = editor.entries.value[kind];
   const noun = nouns[kind];
@@ -895,7 +904,7 @@ export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Eleme
         editor={editor}
         row={shown}
         entry={shown.entry}
-        pushes={pushes}
+        ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
         onBack={() => {
           setOpenKey(undefined);
         }}

@@ -45,7 +45,6 @@ function Row({ row, apply }: { readonly row: CompareRow; readonly apply: Apply }
   );
 }
 
-/** Asks once more before anything is written, with what will be. */
 function Confirm({ apply, onClose }: { readonly apply: Apply; readonly onClose: () => void }): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   const state = apply.state.value;
@@ -87,11 +86,9 @@ interface ApplyProps {
   readonly router: Router;
 }
 
-/** One apply of a profile to a repository: what it would change, what is left out of it, and the step that writes it. */
 export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
   const state = apply.state.value;
   const [confirming, setConfirming] = useState(false);
-  // Back to the repository this is about, open on the repositories page.
   const back = (
     <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
       Back to repositories
@@ -219,13 +216,13 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
               key={editor.file}
               name={state.profile}
               editor={editor}
-              pushes={editor.ownerType.value !== 'user'}
+              ownerTypeHasPushRulesets={editor.ownerType.value !== 'user'}
               saving={{
                 save: () => editor.save((work) => work()),
                 discardDraft: () => Promise.resolve(),
                 onGitHub: false,
                 saveLabel: 'Save edits',
-                more: (
+                extraBarActions: (
                   <>
                     {discard}
                     {state.fromProfile && !state.builtIn && (
@@ -242,7 +239,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                     )}
                   </>
                 ),
-                next: (
+                primaryActionInsteadOfSave: (
                   <button
                     class="button button-primary"
                     type="button"
@@ -358,7 +355,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
         {state.kind !== 'applied' && state.kind !== 'unfinished' && state.kind !== 'editing' && (
           <div class="save-bar">
             <BarActions
-              main={
+              mainAction={
                 <button
                   class="button button-primary"
                   type="button"
@@ -370,7 +367,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                   Apply
                 </button>
               }
-              others={
+              otherActions={
                 <>
                   {discard}
                   <button

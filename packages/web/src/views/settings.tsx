@@ -9,11 +9,9 @@ import type { Profiles } from '../app/profiles.js';
 import type { Repositories } from '../app/repositories.js';
 import { run } from './run.js';
 
-/** What the last sync did, or why it failed, as a line under where the profiles are kept. */
 export function SyncNote({ profiles }: { readonly profiles: Profiles }): JSX.Element | null {
   const sync = profiles.sync.value;
-  // What the profiles sync with: GitHub, or the folder on this computer.
-  const other = profiles.source.value.kind === 'folder' ? 'the folder' : 'GitHub';
+  const syncDestination = profiles.source.value.kind === 'folder' ? 'the folder' : 'GitHub';
   if (sync.status === 'failed') {
     return (
       <p class="problem small" role="alert">
@@ -36,15 +34,15 @@ export function SyncNote({ profiles }: { readonly profiles: Profiles }): JSX.Ele
   if (sync.status === 'syncing') {
     return (
       <p class="muted small" role="status">
-        Syncing with {other}…
+        Syncing with {syncDestination}…
       </p>
     );
   }
   if (sync.status === 'synced') {
     const conflicts = profiles.conflicts.value.length;
     const moved = [
-      sync.pulled > 0 ? `${sync.pulled} from ${other}` : undefined,
-      sync.pushed > 0 ? `${sync.pushed} to ${other}` : undefined,
+      sync.pulled > 0 ? `${sync.pulled} from ${syncDestination}` : undefined,
+      sync.pushed > 0 ? `${sync.pushed} to ${syncDestination}` : undefined,
     ].filter((part) => part !== undefined);
     return (
       <p class="muted small" role="status">
@@ -52,7 +50,7 @@ export function SyncNote({ profiles }: { readonly profiles: Profiles }): JSX.Ele
           ? `Synced, with ${conflicts} ${conflicts === 1 ? 'profile' : 'profiles'} changed in both places.`
           : moved.length > 0
             ? `Synced: ${moved.join(', ')}.`
-            : `In sync with ${other}.`}
+            : `In sync with ${syncDestination}.`}
       </p>
     );
   }
@@ -75,15 +73,14 @@ function ConnectForm({ profiles, repositories, onClose, onConnected }: ConnectFo
   const [working, setWorking] = useState(false);
   const error = profiles.connectError.value;
   const count = profiles.listings.value.length;
-  // Adding is offered only for another place than the profiles are in now.
-  const same =
+  const alreadyKeptThere =
     source.kind === 'repository' &&
     source.repository.toLowerCase() === repository.trim().toLowerCase() &&
     source.path === path.trim().replace(/^\/+|\/+$/gu, '');
 
   const connect = async (): Promise<void> => {
     setWorking(true);
-    const problem = await profiles.connect(repository, path, addLocal && !same);
+    const problem = await profiles.connect(repository, path, addLocal && !alreadyKeptThere);
     setWorking(false);
     if (problem === undefined) {
       onConnected();
@@ -139,7 +136,7 @@ function ConnectForm({ profiles, repositories, onClose, onConnected }: ConnectFo
           Only YAML files sync, from this folder and the folders in it. Hidden folders such as .github stay out.
         </span>
       </label>
-      {count > 0 && !same && (
+      {count > 0 && !alreadyKeptThere && (
         <label class="check">
           <input
             type="checkbox"
@@ -279,9 +276,7 @@ interface SettingsProps {
   readonly repositories: Repositories;
   readonly keeping: Keeping;
   readonly protection: ConfigProtection;
-  /** Opens the apply of the built-in protection to the repository the profiles are kept in. */
   readonly onReviewProtection: () => void;
-  /** Signs out, after asking about unsaved changes when there are any. */
   readonly onSignOut: () => void;
 }
 

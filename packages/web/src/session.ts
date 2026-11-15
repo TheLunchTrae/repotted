@@ -31,11 +31,9 @@ function isFresh(token: Token | undefined): token is Token {
 /** Thrown when the Worker or GitHub can't refresh the sign-in right now; the sign-in itself is kept. */
 export class SessionUnavailableError extends Error {}
 
-/** This tab's sign-in. The page keeps one for its lifetime. */
 export class Session {
   #current: Token | undefined;
 
-  /** The current access token, refreshed when needed, or undefined when the browser isn't signed in. */
   accessToken(): Promise<string | undefined> {
     return this.#token(undefined);
   }
@@ -73,7 +71,7 @@ export class Session {
    */
   async signOut(): Promise<void> {
     await navigator.locks.request(lockName, async () => {
-      const response = await this.#post('/api/auth/sign-out', undefined);
+      const response = await this.#postToWorker('/api/auth/sign-out', undefined);
       if (!response.ok) {
         throw new SessionUnavailableError(`Signing out failed: ${response.status}.`);
       }
@@ -81,9 +79,8 @@ export class Session {
     });
   }
 
-  /** The access token, asking the Worker for one when this tab's is near expiry or is the one to replace. */
-  async #token(replace: string | undefined): Promise<string | undefined> {
-    const usable = (): boolean => isFresh(this.#current) && this.#current.accessToken !== replace;
+  async #token(accessTokenToReplace: string | undefined): Promise<string | undefined> {
+    const usable = (): boolean => isFresh(this.#current) && this.#current.accessToken !== accessTokenToReplace;
     if (usable()) {
       return this.#current?.accessToken;
     }
@@ -92,7 +89,10 @@ export class Session {
       if (usable()) {
         return this.#current?.accessToken;
       }
-      const response = await this.#post('/api/auth/token', replace === undefined ? undefined : { replace });
+      const response = await this.#postToWorker(
+        '/api/auth/token',
+        accessTokenToReplace === undefined ? undefined : { replace: accessTokenToReplace },
+      );
       if (response.status === 401) {
         this.#current = undefined;
         return undefined;
@@ -112,8 +112,7 @@ export class Session {
     });
   }
 
-  /** Posts to the Worker, reading a network failure or a timeout as the Worker being out of reach. */
-  async #post(path: string, body: unknown): Promise<Response> {
+  async #postToWorker(path: string, body: unknown): Promise<Response> {
     try {
       return await fetch(path, {
         method: 'POST',

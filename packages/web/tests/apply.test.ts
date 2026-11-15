@@ -68,7 +68,6 @@ test('an apply is reviewed first, writes nothing until asked, and then writes wh
   expect(apply.state.value).toEqual({ kind: 'applied', repository: 'lunch/app', profile: 'web', changes: 2 });
   expect(writes(github)).toEqual(['PATCH /repos/lunch/app', 'POST /repos/lunch/app/labels']);
   expect(github.state.repository).toMatchObject({ has_wiki: false, has_projects: false });
-  // A finished apply is no longer there to pick up.
   expect(await apply.unfinished('lunch/app')).toBe(false);
 });
 
@@ -218,8 +217,7 @@ test('an apply that cannot be reviewed says why and can be tried again, from the
   expect(rows(apply)).toEqual(['repository.has_projects', 'repository.has_wiki', 'new label']);
 });
 
-/** A GitHub whose reads of one repository wait until they are let go, so work on it can be held open. */
-class Held extends FakeGitHub {
+class GitHubWithHeldReads extends FakeGitHub {
   #gate: Promise<void> | undefined;
   #open: () => void = () => undefined;
 
@@ -246,7 +244,6 @@ class Held extends FakeGitHub {
   }
 }
 
-/** Two repositories behind one sign-in, each its own in-memory GitHub. */
 function fleet(app: FakeGitHub, other: FakeGitHub): FakeGitHub['request'] {
   // What isn't about a repository, such as the account's installations, is never held.
   return (method, path, body) => (path.startsWith('/repos/lunch/app') ? app : other).request(method, path, body);
@@ -255,7 +252,7 @@ function fleet(app: FakeGitHub, other: FakeGitHub): FakeGitHub['request'] {
 test('a review that lands late changes nothing: apply writes the plan on the page, to its repository', async () => {
   await saved('repository:\n  has_wiki: false\n');
   await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
-  const app = new Held();
+  const app = new GitHubWithHeldReads();
   const other = new FakeGitHub({}, 'lunch/other');
   const apply = new Apply({ request: fleet(app, other) }, () => undefined);
 
@@ -283,7 +280,7 @@ test('a review that lands late changes nothing: apply writes the plan on the pag
 
 test('a review held open while a change is left out never brings that change back into the apply', async () => {
   await saved();
-  const github = new Held();
+  const github = new GitHubWithHeldReads();
   const apply = new Apply(github, () => undefined);
   await apply.start('lunch/app', profile);
   await apply.review();
@@ -306,7 +303,7 @@ test('a review held open while a change is left out never brings that change bac
 test('an apply that is writing is neither replaced nor joined, and its outcome shows when it ends', async () => {
   await saved();
   await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
-  const app = new Held();
+  const app = new GitHubWithHeldReads();
   const other = new FakeGitHub({}, 'lunch/other');
   const apply = new Apply({ request: fleet(app, other) }, () => undefined);
   await apply.start('lunch/app', profile);
@@ -384,7 +381,7 @@ test('an apply whose profile is gone says so by its name, and one whose file is 
 
 test('a first review that fails late leaves an apply the page has since picked up again', async () => {
   await saved();
-  const github = new Held();
+  const github = new GitHubWithHeldReads();
   const apply = new Apply(github, () => undefined);
   await apply.start('lunch/app', profile);
 

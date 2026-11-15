@@ -8,15 +8,12 @@ import { fileURLToPath } from 'node:url';
 import { expect, type Locator, type Page, test as base } from '@playwright/test';
 import { build } from 'esbuild';
 
-import { pageBundle } from '../../aliases.ts';
+import { pageEsbuildOptions } from '../../aliases.ts';
 
 interface Screen {
-  /** The address that opens it, or the page to start from. */
   readonly path: string;
-  /** What reaches it from that page, when no address opens it. */
-  readonly open?: (page: Page) => Promise<void>;
-  /** What shows once it has drawn everything it loads. */
-  readonly ready: (page: Page) => Locator;
+  readonly reachFromPath?: (page: Page) => Promise<void>;
+  readonly visibleOnceDrawn: (page: Page) => Locator;
   /**
    * Projects in playwright.config.ts where it is known to overflow. The test
    * is expected to fail there, so the change that fixes it removes the entry.
@@ -24,74 +21,73 @@ interface Screen {
   readonly overflowsAt?: readonly string[];
 }
 
-// To check another screen, add it here.
 const screens: Readonly<Record<string, Screen>> = {
   'sign-in': {
     path: '/?signed-out',
-    ready: (page) => page.getByRole('heading', { name: 'Set up every repository the same way' }),
+    visibleOnceDrawn: (page) => page.getByRole('heading', { name: 'Set up every repository the same way' }),
   },
   repositories: {
     path: '/',
-    ready: (page) =>
+    visibleOnceDrawn: (page) =>
       page.getByRole('checkbox', { name: 'Select lunch/a_repository_name_with_no_hyphens_in_it_at_all' }),
   },
   'repositories after a refresh': {
     path: '/',
-    open: async (page) => {
+    reachFromPath: async (page) => {
       await page
         .getByRole('checkbox', { name: 'Select lunch/a_repository_name_with_no_hyphens_in_it_at_all' })
         .waitFor();
       await page.getByRole('button', { name: 'Refresh' }).click();
     },
-    ready: (page) => page.getByText(/^\s*in \d+s$/u),
+    visibleOnceDrawn: (page) => page.getByText(/^\s*in \d+s$/u),
   },
   'selected panel': {
     path: '/',
-    open: (page) =>
+    reachFromPath: (page) =>
       page.getByRole('checkbox', { name: 'Select lunch/a_repository_name_with_no_hyphens_in_it_at_all' }).check(),
-    ready: (page) => page.getByRole('heading', { name: '1 repository selected' }),
+    visibleOnceDrawn: (page) => page.getByRole('heading', { name: '1 repository selected' }),
   },
   'owner menu': {
     path: '/',
-    open: (page) => page.getByText('All owners').click(),
-    ready: (page) => page.getByRole('button', { name: 'Only personal' }),
+    reachFromPath: (page) => page.getByText('All owners').click(),
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Only personal' }),
   },
   'account menu': {
     path: '/',
-    open: (page) => page.locator('.account-menu > summary').click(),
-    ready: (page) => page.getByRole('button', { name: 'Sign out' }),
+    reachFromPath: (page) => page.locator('.account-menu > summary').click(),
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Sign out' }),
   },
   'repository details': {
     path: '/?repository=lunch/a_repository_name_with_no_hyphens_in_it_at_all',
-    ready: (page) => page.getByRole('heading', { name: 'a_repository_name_with_no_hyphens_in_it_at_all', exact: true }),
+    visibleOnceDrawn: (page) =>
+      page.getByRole('heading', { name: 'a_repository_name_with_no_hyphens_in_it_at_all', exact: true }),
   },
-  settings: { path: '/settings', ready: (page) => page.getByRole('heading', { name: 'Account' }) },
+  settings: { path: '/settings', visibleOnceDrawn: (page) => page.getByRole('heading', { name: 'Account' }) },
   'settings with the protection offer': {
     path: '/settings',
-    open: async (page) => {
+    reachFromPath: async (page) => {
       await page.getByRole('button', { name: 'Use a GitHub repository…' }).click();
       await page.getByRole('combobox', { name: 'Repository' }).fill('trae/repotted-config');
       await page.getByRole('button', { name: 'Use this repository' }).click();
     },
-    ready: (page) =>
+    visibleOnceDrawn: (page) =>
       page
         .getByRole('region', { name: 'Protect trae/repotted-config?' })
         .getByRole('button', { name: 'Review protection…' }),
   },
-  profiles: { path: '/profiles', ready: (page) => page.getByText('website', { exact: true }) },
+  profiles: { path: '/profiles', visibleOnceDrawn: (page) => page.getByText('website', { exact: true }) },
 };
 
 const origin = 'https://repotted.test';
 const site = new URL('../../static/', import.meta.url);
 
 const test = base.extend<object, { bundle: string }>({
-  // The app as harness.tsx starts it, bundled once for each worker.
   bundle: [
     // eslint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from its first parameter, and this one has none
     async ({}, use) => {
       const result = await build({
         entryPoints: [fileURLToPath(new URL('harness.tsx', import.meta.url))],
-        ...pageBundle,
+        ...pageEsbuildOptions,
         write: false,
       });
       await use(result.outputFiles.map((file) => file.text).join(''));
@@ -116,8 +112,7 @@ const test = base.extend<object, { bundle: string }>({
   },
 });
 
-/** Elements whose box ends past the viewport's right edge, or starts before its left edge, with nothing between them and the page that scrolls or clips. */
-function outside(): string[] {
+function elementsPastViewportEdges(): string[] {
   const width = document.documentElement.clientWidth;
   const found: string[] = [];
   for (const element of document.body.querySelectorAll('*')) {
@@ -154,13 +149,13 @@ for (const [name, screen] of Object.entries(screens)) {
     const errors: Error[] = [];
     page.on('pageerror', (error) => errors.push(error));
     await page.goto(screen.path);
-    await screen.open?.(page);
-    await expect(screen.ready(page)).toBeVisible();
+    await screen.reachFromPath?.(page);
+    await expect(screen.visibleOnceDrawn(page)).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
 
     const width = await page.evaluate(() => document.documentElement.clientWidth);
     expect(await page.evaluate(() => document.documentElement.scrollWidth), 'page width').toBeLessThanOrEqual(width);
-    expect(await page.evaluate(outside), 'elements past the edges').toEqual([]);
+    expect(await page.evaluate(elementsPastViewportEdges), 'elements past the edges').toEqual([]);
     expect(errors, 'page errors').toEqual([]);
   });
 }
@@ -169,7 +164,6 @@ test('the header keeps to one row', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('link', { name: 'Repotted' })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
-  // Each of the bar's parts sits on the same line as the first: their middles line up.
   const middles = await page.evaluate(() =>
     [...document.querySelectorAll('.shell-bar > *')].map((part) => {
       const box = part.getBoundingClientRect();
