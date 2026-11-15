@@ -409,6 +409,42 @@ test('a capture makes a profile of the repository, holds its name while it reads
   expect(profiles.settingsCaptureCouldNotRead.value).toBeUndefined();
 });
 
+test('a capture the installation lacks a permission for links to where an owner accepts it', async () => {
+  const github = new FakeGitHub(
+    {
+      ownerType: 'User',
+      account: {
+        login: 'trae',
+        name: null,
+        repositories: [],
+        installations: [
+          { id: 4, permissions: { metadata: 'read' }, repositories: [{ full_name: 'trae/site', private: false }] },
+        ],
+      },
+    },
+    'trae/site',
+  ).fail('GET /repos/trae/site/pages', answered(403, 'Resource not accessible by integration'));
+  const profiles = new Profiles(github, memory(), () => undefined);
+  await profiles.refresh();
+
+  await profiles.create({
+    name: 'site',
+    folder: '',
+    start: { kind: 'repository', repository: 'trae/site' },
+    ownerType: undefined,
+  });
+
+  const uncaptured = profiles.settingsCaptureCouldNotRead.value?.uncaptured;
+  expect(uncaptured?.groups).toContainEqual({
+    settings: ['Pages'],
+    reason: "Needs the Repotted App's Pages read permission.",
+  });
+  expect(uncaptured).toMatchObject({
+    needsAppPermission: true,
+    installationSettingsUrl: 'https://github.com/settings/installations/4',
+  });
+});
+
 test('a capture goes on past a setting GitHub withholds without a payment method, and says so', async () => {
   const github = new FakeGitHub({ ownerType: 'User' }, 'trae/site').fail(
     'GET /repos/trae/site/actions/cache/retention-limit',
@@ -433,6 +469,8 @@ test('a capture goes on past a setting GitHub withholds without a payment method
       groups: [
         { settings: ['Cache retention, in days'], reason: 'GitHub shows it only with a payment method on file.' },
       ],
+      needsAppPermission: false,
+      installationSettingsUrl: null,
     },
   });
 

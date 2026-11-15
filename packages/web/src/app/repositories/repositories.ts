@@ -183,6 +183,13 @@ export class Repositories {
     return this.#hiddenNames.value.has(repository.full_name.toLowerCase());
   }
 
+  /** Of the owners shown, those whose installation of the Repotted App lacks permissions it asks for. */
+  readonly installationsMissingPermissions = computed(() =>
+    (this.list.value?.missing_permissions ?? []).filter(
+      (installation) => !this.#hiddenOwners.value.some((name) => sameOwner(name, installation.owner)),
+    ),
+  );
+
   readonly owners = computed<readonly OwnerChoice[]>(() => {
     const counts = new Map<string, number>();
     for (const repository of this.list.value?.repositories ?? []) {

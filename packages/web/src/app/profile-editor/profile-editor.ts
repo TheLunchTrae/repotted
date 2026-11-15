@@ -1,10 +1,12 @@
 import { computed, signal } from '@preact/signals';
 import {
+  type AppAccess,
   changeOwnerType,
   editProfile,
   type OwnerNeed,
   ownerHas,
   type OwnerType,
+  permissionsMissingForProfilePart,
   type ProfileEdit,
   previewProfile,
   resolveProfile,
@@ -26,7 +28,13 @@ import {
   settingsSections as draftSections,
 } from './own-drafts.js';
 import { sameValue } from './same-value.js';
-import { type SettingField, type SettingGroup, type SettingOption, settingSections } from './setting-fields.js';
+import {
+  type SettingField,
+  type SettingGroup,
+  type SettingOption,
+  type SettingSection,
+  settingSections,
+} from './setting-fields.js';
 import { matchesSearch, parentOf, searchWords } from './setting-search.js';
 
 /**
@@ -76,11 +84,30 @@ export interface SettingRow {
   readonly typedTextProblem: string | undefined;
   /** How many settings under it GitHub hides for its value while a profile still names them. */
   readonly hiddenNamed: number;
+  /** What the repository's installation of the Repotted App lacks to change the setting, which turns it off. */
+  readonly missingPermissions: readonly string[];
+  /** False when its group or section already says what it lacks. */
+  readonly saysWhatPermissionsItLacks: boolean;
 }
 
 export interface GroupRows {
   readonly group: SettingGroup;
   readonly rows: readonly SettingRow[];
+  /** What every setting in the group lacks, unless its section says so for all of them. */
+  readonly missingPermissions: readonly string[];
+}
+
+export interface SectionRows {
+  readonly section: SettingSection;
+  readonly groups: readonly GroupRows[];
+  /** What every setting in the section lacks. */
+  readonly missingPermissions: readonly string[];
+}
+
+/** The one list of permissions every row lacks, or none when any differs or lacks nothing. */
+function permissionsEveryRowLacks(rows: readonly SettingRow[]): readonly string[] {
+  const first = rows[0]?.missingPermissions ?? [];
+  return first.length > 0 && rows.every((row) => sameValue(row.missingPermissions, first)) ? first : [];
 }
 
 /** What a save that applies would change: the profile that applies now against the one that would, as a diff of YAML. */
@@ -357,12 +384,52 @@ export class ProfileEditor {
   /** Discarding writes at once, so it waits until nothing unsaved would go with it. */
   readonly canDiscardDraft = computed(() => this.draftCount.value > 0 && !this.dirty.value && !this.saving.value);
 
-  readonly sections = computed(() =>
-    settingSections.map((section) => ({
-      section,
-      groups: section.groups.map((group): GroupRows => ({ group, rows: this.#rows(group) })),
-    })),
+  /**
+   * Set for an apply's editor from the repository's installation, so what it
+   * lacks is turned off. A profile's editor is for any repository, so it has none.
+   */
+  readonly #installation = signal<AppAccess | undefined>(undefined);
+
+  /** Where an owner accepts the permissions the installation lacks. */
+  readonly installationSettingsUrl = computed(() => {
+    const installation = this.#installation.value;
+    return installation?.status === 'installed' ? installation.settings_url : null;
+  });
+
+  readonly sections = computed((): SectionRows[] =>
+    settingSections.map((section) => {
+      const groups = section.groups.map((group) => ({ group, rows: this.#rows(group) }));
+      const sectionLacks = permissionsEveryRowLacks(groups.flatMap(({ rows }) => rows));
+      return {
+        section,
+        missingPermissions: sectionLacks,
+        groups: groups.map(({ group, rows }): GroupRows => {
+          const groupLacks = sectionLacks.length > 0 ? [] : permissionsEveryRowLacks(rows);
+          return {
+            group,
+            missingPermissions: groupLacks,
+            rows: rows.map((row) => ({
+              ...row,
+              saysWhatPermissionsItLacks:
+                row.missingPermissions.length > 0 && sectionLacks.length === 0 && groupLacks.length === 0,
+            })),
+          };
+        }),
+      };
+    }),
   );
+
+  /** What the installation lacks to change a list's entries, which turns the list off. */
+  readonly entryListMissingPermissions = computed((): Readonly<Record<EntryList, readonly string[]>> => {
+    const installation = this.#installation.value;
+    const lacks = (list: EntryList): readonly string[] =>
+      installation === undefined ? [] : permissionsMissingForProfilePart(installation, list);
+    return { rulesets: lacks('rulesets'), environments: lacks('environments'), labels: lacks('labels') };
+  });
+
+  useInstallation(installation: AppAccess): void {
+    this.#installation.value = installation;
+  }
 
   readonly query = computed(() => this.#finding.value.query);
 
@@ -408,15 +475,16 @@ export class ProfileEditor {
    */
   readonly found = computed((): FoundGroup[] => {
     const { shown } = this.#finding.value;
-    return this.sections.value.flatMap(({ section, groups }) =>
+    // Found settings are shown without their section's heading, so a group says what the section lacks.
+    return this.sections.value.flatMap(({ section, groups, missingPermissions: sectionLacks }) =>
       groups
-        .map(({ group, rows }) => ({ group, rows: rows.filter((row) => shown.has(keyOf(row.field.path))) }))
-        .filter(({ rows }) => rows.length > 0)
-        .map(({ group, rows }) => ({
-          tab: section.name,
+        .map(({ group, rows, missingPermissions: groupLacks }) => ({
           group,
-          rows,
-        })),
+          rows: rows.filter((row) => shown.has(keyOf(row.field.path))),
+          missingPermissions: sectionLacks.length > 0 ? sectionLacks : groupLacks,
+        }))
+        .filter(({ rows }) => rows.length > 0)
+        .map((found) => ({ tab: section.name, ...found })),
     );
   });
 
@@ -1026,6 +1094,7 @@ export class ProfileEditor {
       return value !== undefined && condition.values.some((item) => sameValue(item, value));
     };
     const owner = this.ownerType.value;
+    const installation = this.#installation.value;
     return (
       group.fields
         // What owners of the profile's type don't have is left out, settings and choices, so it is never part of a save.
@@ -1063,6 +1132,11 @@ export class ProfileEditor {
                 holds(other) &&
                 this.#valueOf(other, edits) !== undefined,
             ).length,
+            missingPermissions:
+              installation === undefined
+                ? []
+                : permissionsMissingForProfilePart(installation, field.section, field.key.split('.')[0]),
+            saysWhatPermissionsItLacks: false,
           };
         })
     );

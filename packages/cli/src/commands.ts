@@ -1002,6 +1002,14 @@ async function repos(io: Io, args: string[]): Promise<number> {
     const notes = [repository.private ? 'private' : '', repository.archived ? 'archived' : ''].filter(Boolean);
     io.out(`${repository.full_name}${notes.length > 0 ? ` (${notes.join(', ')})` : ''}\n`);
   }
+  for (const installation of list.missing_permissions) {
+    const where = installation.settings_url === null ? '.' : `: ${installation.settings_url}`;
+    const permissions = `${new Intl.ListFormat('en').format(installation.permissions)} ${installation.permissions.length === 1 ? 'permission' : 'permissions'}`;
+    const them = installation.permissions.length === 1 ? 'it' : 'them';
+    io.err(
+      `The Repotted App on ${installation.owner} doesn't have the ${permissions} yet. Repotted can't read or change what needs ${them} until an owner of ${installation.owner} accepts ${them}${where}\n`,
+    );
+  }
   if (list.repositories.length === 0) {
     io.err(
       list.source === 'installations'

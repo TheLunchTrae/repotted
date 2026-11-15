@@ -268,6 +268,7 @@ export class Apply {
     const editor = new ProfileEditor(stagedFile(repository), undefined, stagedStore);
     await editor.load();
     this.editor.value = editor;
+    this.#turnOffWhatTheInstallationLacks(editor, repository);
     this.editError.value = undefined;
     return {
       kind: 'editing',
@@ -277,6 +278,25 @@ export class Apply {
       builtIn: staged.base?.startsWith(`${builtInFolder}/`) === true,
       leftOut: staged.exclude,
     };
+  }
+
+  /**
+   * The editor opens without waiting for this. Until it ends, or if it fails,
+   * the edits are only checked at review, as they are for any repository.
+   */
+  #turnOffWhatTheInstallationLacks(editor: ProfileEditor, repository: string): void {
+    readAccess(this.#github, parseRepo(repository)).then(
+      (access) => {
+        if (this.editor.value === editor) {
+          editor.useInstallation(access.app);
+        }
+      },
+      (error: unknown) => {
+        if (isSignedOut(error)) {
+          this.#onSignedOut();
+        }
+      },
+    );
   }
 
   /** Picks up the unfinished apply to a repository from its panel, with no profile picked. */

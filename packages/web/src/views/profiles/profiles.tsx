@@ -244,6 +244,16 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
                 </li>
               ))}
             </ul>
+            {couldNotRead.uncaptured.installationSettingsUrl !== null && (
+              <a
+                class="button button-small"
+                href={couldNotRead.uncaptured.installationSettingsUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Review on GitHub
+              </a>
+            )}
           </details>
         </div>
       )}

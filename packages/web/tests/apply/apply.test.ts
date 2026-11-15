@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
 import { Apply } from '../../src/app/apply/apply.js';
@@ -584,4 +584,53 @@ test('changing settings once starts nothing over an apply that is unfinished', a
 
   expect(apply.state.value).toEqual({ kind: 'idle' });
   expect(await readFile(staged, 'utf8')).toBe(before);
+});
+
+test("one-off edits turn off what the repository's installation was not given, once its access is read", async () => {
+  await saved();
+  const github = new FakeGitHub({
+    account: {
+      login: 'lunch',
+      name: null,
+      installations: [
+        {
+          id: 1,
+          selection: 'all',
+          permissions: {
+            administration: 'write',
+            contents: 'write',
+            metadata: 'read',
+            actions: 'write',
+            issues: 'write',
+          },
+          repositories: [{ full_name: 'lunch/app', private: true, permissions: { admin: true } }],
+        },
+      ],
+      repositories: [],
+    },
+  });
+  const apply = new Apply(github, () => undefined);
+
+  await apply.start('lunch/app', profile);
+  const editor = apply.editor.value;
+  await vi.waitFor(() => {
+    expect(editor?.sections.value.find((section) => section.section.section === 'pages')?.missingPermissions).toEqual([
+      'Pages',
+    ]);
+  });
+  expect(editor?.entryListMissingPermissions.value.labels).toEqual([]);
+  expect(editor?.installationSettingsUrl.value).toBe('https://github.com/settings/installations/1');
+});
+
+test('one-off edits open without waiting for what the installation was given', async () => {
+  await saved();
+  const github = new GitHubWithHeldReads();
+  const apply = new Apply(github, () => undefined);
+  github.hold();
+
+  await apply.start('lunch/app', profile);
+
+  expect(apply.state.value).toMatchObject({ kind: 'editing' });
+  expect(apply.editor.value?.installationSettingsUrl.value).toBeNull();
+  await github.release();
 });

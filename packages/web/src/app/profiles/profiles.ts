@@ -7,6 +7,7 @@ import {
   listProfiles,
   type OwnerType,
   parseRepo,
+  readInstallationSettingsUrl,
   stringifyProfile,
   syncFolder,
 } from '@repotted/core';
@@ -172,6 +173,18 @@ export class Profiles {
   }
 
   readonly folder = computed(() => folderOf(this.source.value));
+
+  /** A link the capture notice can do without: a failure to find it leaves the notice as it is. */
+  async #installationSettingsUrl(owner: string): Promise<string | null> {
+    try {
+      return await readInstallationSettingsUrl(this.#github, owner);
+    } catch (error) {
+      if (isSignedOut(error)) {
+        throw error;
+      }
+      return null;
+    }
+  }
 
   readonly editor = computed(() => this.#editors.value.find((editor) => editor.file === this.#selectedFile.value));
 
@@ -507,13 +520,25 @@ export class Profiles {
     const file = this.#fileOf(profile.name.trim(), profile.folder);
     const folder = this.folder.value;
     let text: string;
-    let uncaptured: UncapturedSettings = { count: 0, groups: [] };
+    let uncaptured: UncapturedSettings = {
+      count: 0,
+      groups: [],
+      needsAppPermission: false,
+      installationSettingsUrl: null,
+    };
     if (profile.start.kind === 'repository') {
       this.#capturing.add(file.toLowerCase());
       try {
-        const captured = await captureProfile(this.#github, parseRepo(profile.start.repository));
+        const repository = parseRepo(profile.start.repository);
+        const captured = await captureProfile(this.#github, repository);
         text = stringifyProfile(captured.profile);
         uncaptured = uncapturedSettings(captured.warnings, captured.profile.owner_type);
+        if (uncaptured.needsAppPermission) {
+          uncaptured = {
+            ...uncaptured,
+            installationSettingsUrl: await this.#installationSettingsUrl(repository.owner),
+          };
+        }
       } catch (error) {
         if (isSignedOut(error)) {
           this.#onSignedOut();

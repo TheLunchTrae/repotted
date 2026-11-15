@@ -1,3 +1,4 @@
+import type { InstallationMissingPermissions } from '@repotted/core';
 import type { JSX, RefObject } from 'preact';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
@@ -120,6 +121,33 @@ function RefreshButton({ repositories }: { readonly repositories: Repositories }
         </span>
       )}
     </>
+  );
+}
+
+function MissingPermissionsNotice({
+  installation,
+}: {
+  readonly installation: InstallationMissingPermissions;
+}): JSX.Element {
+  const { owner, permissions, settings_url: settingsUrl } = installation;
+  const them = permissions.length === 1 ? 'it' : 'them';
+  return (
+    <div class="notice notice-drift" role="status">
+      <p>
+        <strong>
+          The Repotted App on {owner} doesn't have the {new Intl.ListFormat('en').format(permissions)}{' '}
+          {permissions.length === 1 ? 'permission' : 'permissions'} yet.
+        </strong>{' '}
+        Settings that need {them} are turned off on its repositories until an owner of {owner} accepts {them}.
+      </p>
+      {settingsUrl !== null && (
+        <p class="notice-actions">
+          <a class="button button-small" href={settingsUrl} target="_blank" rel="noreferrer">
+            Review on GitHub
+          </a>
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -1064,6 +1092,9 @@ export function RepositoriesPage({
           </div>
         </div>
 
+        {repositories.installationsMissingPermissions.value.map((installation) => (
+          <MissingPermissionsNotice key={installation.owner} installation={installation} />
+        ))}
         {error !== undefined && (
           <p class="notice notice-problem" role="alert">
             Couldn't read your repositories: {error}

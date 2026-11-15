@@ -279,7 +279,10 @@ permission the App doesn't have yet needs it added to the App and to
   labels endpoints, but Issues is the one `permissions.ts` names.
 
 Without one, Repotted still plans everything else, and says which permission
-the skipped setting needs.
+the skipped setting needs. `listRepositories` names each installation that
+hasn't accepted all of them, from `permissionsTheRepottedAppAsksFor`, and the
+web app's one-off editor turns off each setting whose endpoint needs one,
+through `permissionsMissingForProfilePart` in `plan/part-permissions.ts`.
 
 ## Left out on purpose
 

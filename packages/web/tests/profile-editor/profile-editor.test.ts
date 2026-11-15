@@ -782,3 +782,56 @@ test('a new entry is not written over one of its name that arrived while the sav
   expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(theirs);
   expect(editor.saveError.value).toContain('changed elsewhere');
 });
+
+test('what the installation was not given is turned off, and said once where it covers the most', async () => {
+  const editor = await opened({ 'web.yaml': base });
+  editor.useInstallation({
+    status: 'installed',
+    permissions: { administration: 'write', contents: 'write', metadata: 'read', security_events: 'read' },
+    settings_url: 'https://github.com/settings/installations/1',
+  });
+  const section = (name: string) => editor.sections.value.find((item) => item.section.section === name);
+  const group = (name: string, title: string) => section(name)?.groups.find((item) => item.group.title === title);
+
+  // All of a section needs it, so the section says it and its rows don't.
+  expect(section('pages')?.missingPermissions).toEqual(['Pages']);
+  expect(section('pages')?.groups.every((item) => item.missingPermissions.length === 0)).toBe(true);
+  expect(row(editor, 'pages.build_type')).toMatchObject({
+    missingPermissions: ['Pages'],
+    saysWhatPermissionsItLacks: false,
+  });
+
+  // A group's every row needs it, so the group says it.
+  expect(section('actions')?.missingPermissions).toEqual([]);
+  expect(group('actions', 'OpenID Connect')?.missingPermissions).toEqual(['Actions']);
+  expect(row(editor, 'actions.oidc_customization_sub.use_default')?.saysWhatPermissionsItLacks).toBe(false);
+
+  // One row among others that need nothing more says it itself.
+  expect(group('actions', 'Artifacts and caches')?.missingPermissions).toEqual([]);
+  expect(row(editor, 'actions.max_cache_size_gb')).toMatchObject({
+    missingPermissions: ['Actions'],
+    saysWhatPermissionsItLacks: true,
+  });
+  expect(row(editor, 'actions.artifact_and_log_retention.days')?.missingPermissions).toEqual([]);
+  expect(row(editor, 'repository.has_wiki')?.missingPermissions).toEqual([]);
+
+  expect(editor.entryListMissingPermissions.value).toEqual({
+    rulesets: [],
+    environments: ['Actions'],
+    labels: ['Issues'],
+  });
+  expect(editor.installationSettingsUrl.value).toBe('https://github.com/settings/installations/1');
+
+  editor.search('OIDC');
+  expect(editor.found.value.find((item) => item.group.title === 'OpenID Connect')?.missingPermissions).toEqual([
+    'Actions',
+  ]);
+});
+
+test('an editor with no installation to go by turns nothing off', async () => {
+  const editor = await opened({ 'web.yaml': base });
+
+  expect(editor.sections.value.every((section) => section.missingPermissions.length === 0)).toBe(true);
+  expect(row(editor, 'pages.build_type')?.missingPermissions).toEqual([]);
+  expect(editor.installationSettingsUrl.value).toBeNull();
+});

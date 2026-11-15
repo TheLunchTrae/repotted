@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from './client.js';
-import type { Access, AppAccess, Role } from './permissions.js';
+import { type Access, type AppAccess, permissionsInstallationHasNotAccepted, type Role } from './permissions.js';
 
 export interface Repository {
   readonly full_name: string;
@@ -9,9 +9,18 @@ export interface Repository {
   readonly archived: boolean;
 }
 
+/** `settings_url` is where an owner accepts them. */
+export interface InstallationMissingPermissions {
+  readonly owner: string;
+  readonly permissions: readonly string[];
+  readonly settings_url: string | null;
+}
+
+/** `missing_permissions` names only installations that hold a listed repository. */
 export interface RepositoryList {
   readonly source: 'installations' | 'admin';
   readonly repositories: readonly Repository[];
+  readonly missing_permissions: readonly InstallationMissingPermissions[];
 }
 
 const repository = z.object({
@@ -60,17 +69,28 @@ async function installationRepositoryList(github: GitHub, id: number): Promise<z
 
 async function installationRepositories(
   github: GitHub,
-  installations: readonly { id: number }[],
-): Promise<Repository[]> {
+  installations: readonly z.infer<typeof installation>[],
+): Promise<Omit<RepositoryList, 'source'>> {
   const found = new Map<string, Repository>();
-  for (const installation of installations) {
-    const repositories = await installationRepositoryList(github, installation.id);
+  const missing: InstallationMissingPermissions[] = [];
+  for (const installed of installations) {
     // An installation lists every repository the user can read.
-    for (const entry of repositories.filter(administered)) {
+    const repositories = (await installationRepositoryList(github, installed.id)).filter(administered);
+    for (const entry of repositories) {
       found.set(entry.full_name, describe(entry));
     }
+    // An installation GitHub answers without its permissions lacks none that anyone knows of.
+    const permissions =
+      installed.permissions === undefined ? [] : permissionsInstallationHasNotAccepted(installed.permissions);
+    const owner = installed.account?.login;
+    if (repositories.length > 0 && permissions.length > 0 && owner !== undefined) {
+      missing.push({ owner, permissions, settings_url: installed.html_url ?? null });
+    }
   }
-  return [...found.values()];
+  return {
+    repositories: [...found.values()].sort(byName),
+    missing_permissions: missing.sort((left, right) => left.owner.localeCompare(right.owner)),
+  };
 }
 
 async function adminRepositories(github: GitHub): Promise<Repository[]> {
@@ -104,12 +124,9 @@ async function listInstallations(github: GitHub): Promise<z.infer<typeof install
 export async function listRepositories(github: GitHub): Promise<RepositoryList> {
   const installations = await listInstallations(github);
   if (installations === undefined) {
-    return { source: 'admin', repositories: (await adminRepositories(github)).sort(byName) };
+    return { source: 'admin', repositories: (await adminRepositories(github)).sort(byName), missing_permissions: [] };
   }
-  return {
-    source: 'installations',
-    repositories: (await installationRepositories(github, installations)).sort(byName),
-  };
+  return { source: 'installations', ...(await installationRepositories(github, installations)) };
 }
 
 const viewer = z.object({
@@ -153,6 +170,12 @@ async function readAppAccess(github: GitHub, fullNameOnGitHubNow: string): Promi
     return { status: 'not_installed' };
   }
   return { status: 'installed', permissions: owned.permissions ?? {}, settings_url: owned.html_url ?? null };
+}
+
+/** The page where an owner of the account accepts the Repotted App's permissions, when the App is installed there. */
+export async function readInstallationSettingsUrl(github: GitHub, owner: string): Promise<string | null> {
+  const installations = await listInstallations(github);
+  return installations?.find((item) => sameName(item.account?.login, owner))?.html_url ?? null;
 }
 
 export async function readAccess(github: GitHub, repo: RepoRef): Promise<Access> {

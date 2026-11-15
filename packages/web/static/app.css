@@ -1029,6 +1029,10 @@ input[type='checkbox'] {
   opacity: 0.85;
 }
 
+.uncaptured > .button {
+  margin-top: 10px;
+}
+
 .notice-actions {
   display: flex;
   align-items: center;

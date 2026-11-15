@@ -8,6 +8,7 @@ import { BarActions } from '../layout/action-bar.js';
 import { run } from '../layout/run.js';
 import { ActionSearchBox } from './action-search.js';
 import { Entries } from './entries.js';
+import { MissingPermissionsNote, permissionsInProse } from './missing-permissions-note.js';
 import { PatternChecks } from './pattern-checks.js';
 import { SavePreviewDialog } from './save-preview.js';
 
@@ -23,7 +24,7 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
               type="radio"
               name={id}
               checked={sameValue(option.value, value)}
-              disabled={row.greyedOutOnGitHub}
+              disabled={row.greyedOutOnGitHub || row.missingPermissions.length > 0}
               onChange={() => {
                 run(editor.set(field, option.value));
               }}
@@ -45,7 +46,7 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
         rows={Math.max(3, Array.isArray(value) ? value.length + 1 : 3)}
         aria-labelledby={`${id}-label`}
         aria-invalid={invalid !== undefined}
-        disabled={row.greyedOutOnGitHub}
+        disabled={row.greyedOutOnGitHub || row.missingPermissions.length > 0}
         value={text ?? (Array.isArray(value) ? value.join('\n') : '')}
         onInput={(event) => {
           typed(event.currentTarget.value);
@@ -63,7 +64,7 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
       inputMode={field.kind === 'number' ? 'numeric' : undefined}
       aria-labelledby={`${id}-label`}
       aria-invalid={invalid !== undefined}
-      disabled={row.greyedOutOnGitHub}
+      disabled={row.greyedOutOnGitHub || row.missingPermissions.length > 0}
       placeholder={value === undefined ? 'Not managed' : undefined}
       value={text ?? (typeof value === 'string' || typeof value === 'number' ? String(value) : '')}
       onInput={(event) => {
@@ -119,6 +120,7 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
                     : `From ${row.source}.`}
             {row.unsaved && managed && row.source !== undefined && ' Not saved yet.'}
             {row.greyedOutOnGitHub && ' Off on GitHub for the setting above.'}
+            {row.saysWhatPermissionsItLacks && ` Needs the ${permissionsInProse(row.missingPermissions)}.`}
           </span>
         </div>
         <Control row={row} editor={editor} />
@@ -308,6 +310,7 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
     })),
   ];
   const current = list ?? shown?.section.section ?? '';
+  const settingsUrl = editor.installationSettingsUrl.value;
   const filtering = editor.filtering.value;
   const preview = editor.preview.value;
   const search = useRef<HTMLInputElement>(null);
@@ -401,7 +404,7 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
       )}
       {filtering && (
         <div class="groups">
-          {editor.found.value.map(({ tab: name, group, rows }) => (
+          {editor.found.value.map(({ tab: name, group, rows, missingPermissions }) => (
             <section key={`${name} ${group.title}`} class="settings-group" aria-label={`${name}: ${group.title}`}>
               <div>
                 <h2>
@@ -409,6 +412,9 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
                 </h2>
                 <p class="muted small">{group.description}</p>
               </div>
+              {missingPermissions.length > 0 && (
+                <MissingPermissionsNote permissions={missingPermissions} settingsUrl={settingsUrl} />
+              )}
               <div class="settings">
                 {rows.map((row) => (
                   <Setting key={row.field.key} row={row} editor={editor} />
@@ -451,12 +457,18 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
           </div>
           {shown !== undefined && (
             <div id="settings-panel" class="groups" role="tabpanel" aria-labelledby={`tab-${shown.section.section}`}>
-              {shown.groups.map(({ group, rows }) => (
+              {shown.missingPermissions.length > 0 && (
+                <MissingPermissionsNote permissions={shown.missingPermissions} settingsUrl={settingsUrl} />
+              )}
+              {shown.groups.map(({ group, rows, missingPermissions }) => (
                 <section key={group.title} class="settings-group" aria-label={group.title}>
                   <div>
                     <h2>{group.title}</h2>
                     <p class="muted small">{group.description}</p>
                   </div>
+                  {missingPermissions.length > 0 && (
+                    <MissingPermissionsNote permissions={missingPermissions} settingsUrl={settingsUrl} />
+                  )}
                   <div class="settings">
                     {rows.map((row) => (
                       <Setting key={row.field.key} row={row} editor={editor} />

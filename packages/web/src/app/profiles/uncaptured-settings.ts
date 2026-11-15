@@ -14,6 +14,10 @@ export interface UncapturedSettingsGroup {
 export interface UncapturedSettings {
   readonly count: number;
   readonly groups: readonly UncapturedSettingsGroup[];
+  /** Set when a group needs a permission the Repotted App's installation hasn't been given. */
+  readonly needsAppPermission: boolean;
+  /** Where an owner accepts those permissions, once it's been looked up. */
+  readonly installationSettingsUrl: string | null;
 }
 
 const editorFields = settingSections.flatMap((section) => section.groups.flatMap((group) => group.fields));
@@ -88,5 +92,13 @@ export function uncapturedSettings(warnings: readonly Warning[], ownerType: Owne
   const groups = [...byRemedy.values()]
     .filter(({ settings }) => settings.length > 0)
     .map(({ first, settings }) => ({ settings, reason: reasonOf(first, settings.length) }));
-  return { count: groups.reduce((total, group) => total + group.settings.length, 0), groups };
+  const needsAppPermission = [...byRemedy.values()].some(
+    ({ first, settings }) => settings.length > 0 && first.remedy?.kind === 'permission',
+  );
+  return {
+    count: groups.reduce((total, group) => total + group.settings.length, 0),
+    groups,
+    needsAppPermission,
+    installationSettingsUrl: null,
+  };
 }

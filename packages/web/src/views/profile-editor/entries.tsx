@@ -24,6 +24,7 @@ import {
 import type { ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import { sameValue } from '../../app/profile-editor/same-value.js';
 import { run } from '../layout/run.js';
+import { MissingPermissionsNote } from './missing-permissions-note.js';
 
 const nouns: Readonly<Record<EntryList, { readonly one: string; readonly many: string; readonly title: string }>> = {
   rulesets: { one: 'ruleset', many: 'rulesets', title: 'Ruleset' },
@@ -876,6 +877,8 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
   const [openKey, setOpenKey] = useState<string | undefined>(undefined);
   const rows = editor.entries.value[kind];
   const noun = nouns[kind];
+  const missingPermissions = editor.entryListMissingPermissions.value[kind];
+  const turnedOff = missingPermissions.length > 0;
   // A save gives a new or renamed entry the key of its saved name, so the open one is found by that name then.
   const openName = useRef<string | undefined>(undefined);
   const open =
@@ -918,6 +921,9 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
 
   return (
     <div class="groups">
+      {turnedOff && (
+        <MissingPermissionsNote permissions={missingPermissions} settingsUrl={editor.installationSettingsUrl.value} />
+      )}
       <div class="entry-bar">
         <p class="muted small">
           {rows.length === 0
@@ -928,6 +934,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
           class="button"
           type="button"
           ref={add}
+          disabled={turnedOff}
           onClick={() => {
             run(editor.addEntry(kind, { name: '' }).then(setOpenKey));
           }}
@@ -946,7 +953,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
                 <button
                   class="row"
                   type="button"
-                  disabled={entry === undefined}
+                  disabled={entry === undefined || turnedOff}
                   onClick={() => {
                     setOpenKey(row.key);
                   }}
@@ -983,6 +990,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
                   <button
                     class="button button-quiet button-small"
                     type="button"
+                    disabled={turnedOff}
                     onClick={() => {
                       run(editor.putBack(row));
                     }}
