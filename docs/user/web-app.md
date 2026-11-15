@@ -34,7 +34,9 @@ out for the narrow screen:
 Click **Sign in with GitHub** and approve the Repotted App on GitHub. The
 sign-in lasts in that browser until you sign out, and each browser signs in
 on its own. If GitHub stops accepting the sign-in while the app is open, the
-app returns to this page and says so.
+app returns to this page and says so. If the sign-in can't be checked, the
+page says what failed, such as Repotted's sign-in service, GitHub's rate
+limit, or GitHub itself, and **Try again** checks again.
 
 To sign out, click your account at the top right, or the menu on a phone,
 and choose **Sign out**.

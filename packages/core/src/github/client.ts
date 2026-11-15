@@ -18,11 +18,18 @@ export class GitHubError extends Error {
   readonly documentationUrl: string | undefined;
   readonly rateLimited: boolean;
   readonly retryAt: Date | undefined;
+  /** False when the request never reached GitHub, and the status is Octokit's stand-in. */
+  readonly receivedResponse: boolean;
 
   constructor(
     status: number,
     message: string,
-    details: { readonly documentationUrl?: string; readonly rateLimited?: boolean; readonly retryAt?: Date } = {},
+    details: {
+      readonly documentationUrl?: string;
+      readonly rateLimited?: boolean;
+      readonly retryAt?: Date;
+      readonly receivedResponse?: boolean;
+    } = {},
     options?: ErrorOptions,
   ) {
     super(message, options);
@@ -31,6 +38,7 @@ export class GitHubError extends Error {
     this.documentationUrl = details.documentationUrl;
     this.rateLimited = details.rateLimited ?? false;
     this.retryAt = details.retryAt;
+    this.receivedResponse = details.receivedResponse ?? true;
   }
 }
 
@@ -161,7 +169,7 @@ export function createGitHub(auth: string | typeof fetch): GitHub {
         const { status, response } = failure.data;
         // Octokit gives a request that never reached GitHub the status 500 and no response.
         throw response === undefined
-          ? new GitHubError(status, error.message, {}, { cause: error })
+          ? new GitHubError(status, error.message, { receivedResponse: false }, { cause: error })
           : responseError(status, response.data, response.headers, { cause: error });
       }
     },
