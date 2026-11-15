@@ -303,7 +303,8 @@ doesn't load, since what it extends is unknown; when a profile that would
 move or be pointed elsewhere has changes that aren't saved; when a profile of
 the same name, in any case, is already where one would go; when a folder's
 name matches a profile's file in any case, or another folder's in another
-case; or when a rename would land on a folder that's already there. A rename that only changes a folder's case is refused too, since some
+case; or when a rename would land on a folder that's already there. A
+rename that only changes a folder's case is refused too, since some
 computers take the two for one folder. If a write fails partway, what was
 written is taken back.
 
