@@ -432,18 +432,6 @@ input[type='checkbox'] {
     margin-top: 6px;
   }
 
-  /* The account menu's button can wrap alone to the start of the shell bar,
-     so its panel keeps to the page's end edge instead of the button's. */
-  .account-menu {
-    position: static;
-  }
-
-  .account-menu > .menu-panel {
-    top: auto;
-    right: 16px;
-    margin-top: 6px;
-  }
-
   /* An entry's status takes its own line under the entry's buttons. */
   .entry-bar > span.muted {
     flex: 1 1 100%;
@@ -483,6 +471,7 @@ input[type='checkbox'] {
 
 .menu-heading strong {
   font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
 .menu-item {
@@ -566,7 +555,7 @@ input[type='checkbox'] {
   background: var(--surface);
 }
 
-.shell-bar nav {
+.shell-bar > nav {
   display: flex;
   flex: 1;
   gap: 4px;
@@ -606,6 +595,28 @@ input[type='checkbox'] {
 .account-menu img {
   border-radius: 50%;
   background: var(--sunken);
+}
+
+.account-menu .menu-icon {
+  margin-inline: 2px 4px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+/* On a phone the account menu also holds the pages, above the account. */
+.menu-pages {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+
+.menu-item[aria-current='page'] {
+  background: var(--tint);
+  font-weight: 600;
 }
 
 .shell-main {
@@ -1979,15 +1990,29 @@ select.field {
   }
 }
 
-/* The phone layout. action-bar.tsx's usePhone matches this width; change both together. */
+/* The phone layout. phone.ts's usePhone matches this width; change both together. */
 @media (max-width: 760px) {
+  /* The bar keeps to one row: the wordmark at the start, the account menu, which holds the pages, at the end. */
   .shell-bar {
     gap: 12px;
     padding: 10px 16px;
   }
 
-  .account-menu > summary span {
-    display: none;
+  .shell-bar .wordmark {
+    margin-inline-end: auto;
+  }
+
+  /* The account menu hangs from a button at the bar's end, so it keeps inside
+     the page's start edge however long a name in it is, and a short window
+     scrolls the menu rather than the page. */
+  .account-menu > .menu-panel {
+    max-width: calc(100vw - 32px);
+    max-height: calc(100dvh - 72px);
+    overflow-y: auto;
+  }
+
+  .account-menu > summary {
+    padding-inline-end: 4px;
   }
 
   .page-with-panel,
@@ -1999,10 +2024,6 @@ select.field {
     min-height: 0;
     border-inline-end: 0;
     border-bottom: 1px solid var(--border);
-  }
-
-  .shell-bar {
-    flex-wrap: wrap;
   }
 
   .page-body {

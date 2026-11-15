@@ -4,6 +4,7 @@ import { defineConfig } from '@playwright/test';
 // `playwright install chromium`, or from the path in CHROMIUM_PATH, for a
 // machine that has its own.
 const screens = {
+  'small-phone': { width: 320, height: 568 },
   phone: { width: 375, height: 667 },
   'large-phone': { width: 390, height: 844 },
   'phone-landscape': { width: 667, height: 375 },
