@@ -131,6 +131,18 @@ describe('the answer', () => {
     expect((await post()).status).toBe(502);
   });
 
+  test('keeps only well-formed header lines and reads their values as bytes', async () => {
+    gitHubAnswers([
+      'HTTP/1.1 200 OK\r\nX-Name: caf\u00e9\r\n  folded: line\r\nGarbage\r\nBad Name: x\r\nContent-Length: 2\r\n\r\n{}',
+    ]);
+
+    const response = await post();
+
+    // The fake sends é as UTF-8's two bytes, which a byte string keeps as two characters, as fetch() does.
+    expect([...response.headers]).toEqual([['x-name', 'caf\u00c3\u00a9']]);
+    expect(await response.text()).toBe('{}');
+  });
+
   test('skips an interim 1xx answer', async () => {
     gitHubAnswers(['HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}']);
 

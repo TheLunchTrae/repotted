@@ -1,8 +1,9 @@
 // A Worker on a custom domain gets a Cloudflare 525 from fetch() to
 // github.com, while connect() to the same host works:
 // https://github.com/cloudflare/workerd/issues/7042. This sends one HTTP/1.1
-// POST over connect() and answers with a Response, as fetch() would, so the
-// Worker can go back to fetch() by changing one call once Cloudflare fixes it.
+// POST over connect() and answers with a Response, as fetch() would, so
+// reverting the change that added it takes the Worker back to fetch() once
+// Cloudflare fixes it.
 
 import { connect } from 'cloudflare:sockets';
 
@@ -70,7 +71,7 @@ function readHead(bytes: Uint8Array): AnswerHead | undefined {
     for (const line of headerLines) {
       const colon = line.indexOf(':');
       const name = line.slice(0, colon);
-      if (headerName.test(name)) {
+      if (colon > 0 && headerName.test(name)) {
         headers.append(name, line.slice(colon + 1).trim());
       }
     }
@@ -181,12 +182,10 @@ export async function postOverTls(url: string, init: PostOverTlsInit): Promise<R
 
   init.signal.throwIfAborted();
   const socket = connect({ hostname: target.hostname, port: 443 }, { secureTransport: 'on' });
-  let rejectOnAbort = (): void => undefined;
-  const aborted = new Promise<never>((_resolve, reject) => {
-    rejectOnAbort = () => {
-      reject(abortReason(init.signal));
-    };
-  });
+  const { promise: aborted, reject } = Promise.withResolvers<never>();
+  const rejectOnAbort = (): void => {
+    reject(abortReason(init.signal));
+  };
   init.signal.addEventListener('abort', rejectOnAbort, { once: true });
   const untilAborted = <T>(work: Promise<T>): Promise<T> => Promise.race([work, aborted]);
 
