@@ -23,7 +23,7 @@ function Row({ row }: { readonly row: CompareRow }): JSX.Element {
         <span class="visually-hidden">; the profile wants </span>
         <span class={row.kind === 'removes' ? 'compare-removed' : 'compare-wanted'}>{row.wanted}</span>
       </span>
-      {row.lock !== undefined && <span class="pill pill-remove">{row.lock}</span>}
+      {row.lockReason !== undefined && <span class="pill pill-remove">{row.lockReason}</span>}
     </li>
   );
 }
@@ -60,7 +60,7 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
         <div class="page-heading">
           <div>
             <h1 id="compare-heading">
-              <span class="mono">{state.repository}</span> with {state.profile}
+              <span class="mono">{state.repository}</span> with {state.profileName}
             </h1>
             <p class="muted" role="status">
               {state.kind === 'comparing'
@@ -77,7 +77,9 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
               {state.kind === 'compared' &&
                 counts.matches > 0 &&
                 ` ${counts.matches === 1 ? '1 thing the profile sets needs' : `${counts.matches} things the profile sets need`} no change${
-                  comparison.onlyDifferences.value || comparison.onlyLocked.value ? ', folded away' : ''
+                  comparison.showOnlyDifferences.value || comparison.showOnlyLockedDifferences.value
+                    ? ', folded away'
+                    : ''
                 }.`}
             </p>
           </div>
@@ -112,11 +114,11 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                 </ul>
               </div>
             )}
-            {state.skipped.length > 0 && (
+            {state.skippedDrafts.length > 0 && (
               <div class="notice">
                 <p>The profile's draft is left out. It holds:</p>
                 <ul>
-                  {state.skipped.map((skipped) => (
+                  {state.skippedDrafts.map((skipped) => (
                     <li key={skipped} class="mono small">
                       {skipped}
                     </li>
@@ -154,9 +156,9 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                       <label>
                         <input
                           type="checkbox"
-                          checked={comparison.onlyDifferences.value}
+                          checked={comparison.showOnlyDifferences.value}
                           onChange={(event) => {
-                            comparison.onlyDifferences.value = event.currentTarget.checked;
+                            comparison.showOnlyDifferences.value = event.currentTarget.checked;
                           }}
                         />
                         <span>Differs from GitHub</span>
@@ -166,9 +168,9 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                       <label>
                         <input
                           type="checkbox"
-                          checked={comparison.onlyLocked.value}
+                          checked={comparison.showOnlyLockedDifferences.value}
                           onChange={(event) => {
-                            comparison.onlyLocked.value = event.currentTarget.checked;
+                            comparison.showOnlyLockedDifferences.value = event.currentTarget.checked;
                           }}
                         />
                         <span>Can't change</span>
@@ -180,7 +182,7 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
             )}
             {shown.length === 0 && comparison.search.value.trim() !== '' && (
               <p class="empty">
-                {comparison.onlyDifferences.value || comparison.onlyLocked.value
+                {comparison.showOnlyDifferences.value || comparison.showOnlyLockedDifferences.value
                   ? `No difference matches "${comparison.search.value.trim()}".`
                   : `Nothing in this comparison matches "${comparison.search.value.trim()}".`}
               </p>

@@ -27,7 +27,7 @@ function Row({ row, apply }: { readonly row: CompareRow; readonly apply: Apply }
         <span class="visually-hidden">; after the apply, </span>
         <span class={row.kind === 'removes' ? 'compare-removed' : 'compare-wanted'}>{row.wanted}</span>
       </span>
-      {row.lock !== undefined && <span class="pill pill-remove">{row.lock}</span>}
+      {row.lockReason !== undefined && <span class="pill pill-remove">{row.lockReason}</span>}
       {row.oneOff === true && <span class="pill pill-drift">One-off edit</span>}
       {row.leaveOut !== undefined && (
         <button
@@ -131,7 +131,8 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
         <div class="page-heading">
           <div>
             <h1 id="apply-title">
-              Apply {state.profile === '' ? '' : `${state.profile} `}to <span class="mono">{state.repository}</span>
+              Apply {state.profileName === '' ? '' : `${state.profileName} `}to{' '}
+              <span class="mono">{state.repository}</span>
             </h1>
             <p class="muted" role="status">
               {state.kind === 'editing'
@@ -174,7 +175,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 run(apply.startOver());
               }}
             >
-              Start over with {state.profile}
+              Start over with {state.profileName}
             </button>
           </div>
         )}
@@ -214,7 +215,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
             )}
             <ProfileSettings
               key={editor.file}
-              name={state.profile}
+              name={state.profileName}
               editor={editor}
               ownerTypeHasPushRulesets={editor.ownerType.value !== 'user'}
               saving={{
@@ -272,11 +273,11 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 </ul>
               </div>
             )}
-            {state.skipped.length > 0 && (
+            {state.skippedDrafts.length > 0 && (
               <div class="notice">
                 <p>The profile's draft is left out. It holds:</p>
                 <ul>
-                  {state.skipped.map((skipped) => (
+                  {state.skippedDrafts.map((skipped) => (
                     <li key={skipped} class="mono small">
                       {skipped}
                     </li>

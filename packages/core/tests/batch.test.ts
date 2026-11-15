@@ -50,7 +50,7 @@ async function exists(file: string): Promise<boolean> {
   );
 }
 
-function savedBatchPlanReadBackAsApplyReadsIt(document: unknown): ReturnType<typeof parseBatchPlan> {
+function batchPlanParsedFromItsJson(document: unknown): ReturnType<typeof parseBatchPlan> {
   const data: unknown = JSON.parse(JSON.stringify(document));
   expect(isBatchPlan(data)).toBe(true);
   return parseBatchPlan(data);
@@ -354,7 +354,7 @@ describe('applying a batch', () => {
     const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web');
-    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
+    const reviewed = batchPlanParsedFromItsJson(await planBatch(github, folder));
     const seen: string[] = [];
 
     const results = await applyBatch(github, reviewed, { onResult: (result) => seen.push(result.repository) });
@@ -375,7 +375,7 @@ describe('applying a batch', () => {
     const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web', 'lunch/api'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web', 'lunch/api');
-    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
+    const reviewed = batchPlanParsedFromItsJson(await planBatch(github, folder));
     const [app, web] = fakes;
     if (app === undefined || web === undefined) {
       throw new Error('No fakes');
@@ -406,7 +406,7 @@ describe('applying a batch', () => {
     const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web', 'lunch/api'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web', 'lunch/api');
-    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
+    const reviewed = batchPlanParsedFromItsJson(await planBatch(github, folder));
     fakes[0]?.fail('PATCH /repos/lunch/app', new GitHubError(500, 'Server error'));
 
     const stopped = await applyBatch(github, reviewed, { stopOnFailure: true });
@@ -430,7 +430,7 @@ describe('applying a batch', () => {
     app.state.viewer = { admin: false, maintain: false, push: true, triage: true, pull: true };
     api.state.repository['has_wiki'] = false;
     api.state.repository['has_issues'] = false;
-    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
+    const reviewed = batchPlanParsedFromItsJson(await planBatch(github, folder));
     await leaveOut(folder, ['lunch/web'], true);
 
     const results = await applyBatch(github, reviewed);
@@ -447,7 +447,7 @@ describe('applying a batch', () => {
     const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app'], profile });
     const { github, fakes } = fleet('lunch/app');
-    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
+    const reviewed = batchPlanParsedFromItsJson(await planBatch(github, folder));
     const file = await batchMemberFile(folder, 'lunch/app');
     await editStagedApply(file, [{ exclude: 'repository.has_wiki', excluded: true }]);
 
@@ -468,7 +468,7 @@ describe('applying a batch', () => {
     }
     app.state.repository['has_wiki'] = false;
     app.state.repository['has_issues'] = false;
-    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
+    const reviewed = batchPlanParsedFromItsJson(await planBatch(github, folder));
     expect(reviewed.plans[0]?.plan.changes).toEqual([]);
     app.state.repository['has_wiki'] = true;
 
@@ -481,7 +481,7 @@ describe('applying a batch', () => {
     const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web');
-    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
+    const reviewed = batchPlanParsedFromItsJson(await planBatch(github, folder));
     await discardBatchMember(folder, 'lunch/web');
     expect(await applyBatch(github, reviewed, { only: ['lunch/web'] })).toMatchObject([{ status: 'left_out' }]);
 
@@ -498,7 +498,7 @@ describe('applying a batch', () => {
     const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web');
-    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
+    const reviewed = batchPlanParsedFromItsJson(await planBatch(github, folder));
     const manifest = path.join(folder, batchManifest);
 
     // Written at once, so the next member reads the broken manifest.

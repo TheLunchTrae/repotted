@@ -76,9 +76,17 @@ autolinks:
 test('a profile with a draft opens on it, and shows what applies beside it', async () => {
   const editor = await opened({ 'web.yaml': drafted });
 
-  expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: true, inDraft: true, applied: false });
-  expect(row(editor, 'repository.has_issues')).toMatchObject({ value: undefined, inDraft: true, applied: true });
-  expect(row(editor, 'merge.allow_squash_merge')).toMatchObject({ value: true, inDraft: false });
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({
+    value: true,
+    valueShownIsFromDraft: true,
+    applied: false,
+  });
+  expect(row(editor, 'repository.has_issues')).toMatchObject({
+    value: undefined,
+    valueShownIsFromDraft: true,
+    applied: true,
+  });
+  expect(row(editor, 'merge.allow_squash_merge')).toMatchObject({ value: true, valueShownIsFromDraft: false });
   expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ inDraft: 'changed', unsaved: false, source: 'here' });
   expect(entry(editor, 'rulesets', 'Main').entry?.['rules']).toHaveLength(2);
   expect(entry(editor, 'rulesets', 'Main').applied?.['rules']).toHaveLength(1);
@@ -141,10 +149,14 @@ test('save as draft keeps the changes out of what applies, and a later save appl
   expect(saved.drafts.rulesets).toMatchObject([{ name: 'Main', enforcement: 'disabled', draft: true }]);
   expect(saved.drafts.labels).toEqual([{ name: 'later', renamed_from: ['later'], draft: true }]);
   expect(editor.draftCount.value).toBe(6);
-  expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: true, inDraft: true, unsaved: false });
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({
+    value: true,
+    valueShownIsFromDraft: true,
+    unsaved: false,
+  });
   expect(entry(editor, 'labels', 'bug').inDraft).toBe('taken-out');
   // The unfinished label holds Save back, and says so on its row.
-  expect(entry(editor, 'labels', 'later').problem).toBeDefined();
+  expect(entry(editor, 'labels', 'later').applyProblem).toBeDefined();
   expect(editor.canSave.value).toBe(false);
 
   await editor.changeEntry(entry(editor, 'labels', 'later'), { name: 'later', color: '00ff00' });
@@ -212,7 +224,7 @@ test('discarding the draft leaves only what applies, and waits while a change is
   expect(saved.profile).toEqual(applied);
   expect(saved.drafts).toEqual({ unset: ['autolinks/JIRA-'] });
   expect(editor.draftCount.value).toBe(0);
-  expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: false, inDraft: false });
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: false, valueShownIsFromDraft: false });
 });
 
 test("a base profile's draft is left to that profile", async () => {
@@ -221,7 +233,11 @@ test("a base profile's draft is left to that profile", async () => {
     'web.yaml': 'extends: base.yaml\nrepository:\n  has_issues: true\n',
   });
 
-  expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: false, inDraft: false, source: 'base.yaml' });
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({
+    value: false,
+    valueShownIsFromDraft: false,
+    source: 'base.yaml',
+  });
   expect(editor.entries.value.rulesets).toEqual([]);
   expect(editor.draftCount.value).toBe(0);
   expect(editor.canSave.value).toBe(false);
@@ -233,7 +249,7 @@ test('a draft the profile cannot apply yet holds Save back with the reason, and 
       'merge:\n  allow_squash_merge: true\n  allow_merge_commit: false\n  allow_rebase_merge: false\ndrafts:\n  merge:\n    allow_squash_merge: false\n',
   });
 
-  expect(editor.problem.value).toContain('Every merge method is off');
+  expect(editor.unsavedChangesProblem.value).toContain('Every merge method is off');
   expect(editor.canSave.value).toBe(false);
 
   await editor.set(field('repository.has_wiki'), true);
@@ -251,7 +267,7 @@ test('a value a draft cannot hold, and an entry with no name, wait for a save th
   const editor = await opened({ 'web.yaml': 'repository:\n  has_wiki: true\n' });
 
   await editor.set(field('security.code_scanning_default_setup.runner_label'), null);
-  expect(editor.problem.value).toBeUndefined();
+  expect(editor.unsavedChangesProblem.value).toBeUndefined();
   expect(editor.draftProblem.value).toContain('empty value');
   expect(editor.canSaveAsDraft.value).toBe(false);
   expect(editor.canSave.value).toBe(true);
@@ -286,7 +302,7 @@ test('the name of an entry the draft takes out waits until that one is put back'
   });
 
   const renamed = editor.entries.value.rulesets.find((item) => item.unsaved);
-  expect(renamed?.problem).toContain('Put that one back');
+  expect(renamed?.applyProblem).toContain('Put that one back');
   expect(renamed?.draftProblem).toContain('Put that one back');
   expect(editor.canSave.value).toBe(false);
   expect(editor.canSaveAsDraft.value).toBe(false);
@@ -303,7 +319,7 @@ test('a draft that changed elsewhere is shown before any save acts on it', async
 
   expect(editor.saveError.value).toContain('draft changed elsewhere');
   expect(await readFile(file, 'utf8')).toBe(elsewhere);
-  expect(row(editor, 'repository.has_issues')).toMatchObject({ value: false, inDraft: true });
+  expect(row(editor, 'repository.has_issues')).toMatchObject({ value: false, valueShownIsFromDraft: true });
   expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: true, unsaved: true });
 
   await editor.save(write);
@@ -318,7 +334,7 @@ test('a draft setting the tabs leave to the file is counted, finished, and disca
   const editor = await opened({ 'web.yaml': topics });
   // The key no section has is not the editor's: it stays, with the profile's warning.
   expect(editor.draftCount.value).toBe(1);
-  expect(editor.warnings.value.join('\n')).toContain('made_up');
+  expect(editor.savedDraftWarnings.value.join('\n')).toContain('made_up');
 
   await editor.save(write);
 
@@ -369,7 +385,7 @@ test('a change made while a draft is being saved stays unsaved, on the draft as 
   const saved = await resolveProfile(file);
   expect(saved.drafts.repository).toEqual({ has_wiki: true });
   expect(saved.drafts.rulesets).toMatchObject([{ name: 'Main', enforcement: 'disabled' }]);
-  expect(row(editor, 'repository.has_wiki')).toMatchObject({ inDraft: true, unsaved: false });
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({ valueShownIsFromDraft: true, unsaved: false });
   expect(row(editor, 'repository.has_issues')).toMatchObject({ value: false, unsaved: true });
   expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ unsaved: true, outOfDate: false });
   expect(entry(editor, 'rulesets', 'Main').entry?.['enforcement']).toBe('evaluate');
@@ -420,7 +436,7 @@ test('a preview shows what a save would change in what applies, the draft with t
     'added   has_issues: false',
     'added   has_wiki: true',
   ]);
-  expect(editor.preview.value).toMatchObject({ changes: 4, drafted: 1, unsaved: 1 });
+  expect(editor.preview.value).toMatchObject({ changedLineCount: 4, draftChangeCount: 1, unsavedChangeCount: 1 });
   expect(await readFile(file, 'utf8')).toBe(text);
 
   editor.closePreview();
@@ -435,7 +451,7 @@ test('a preview of a save that applies nothing new says so, and one Save could n
   await editor.set(field('repository.has_wiki'), undefined);
 
   await editor.openPreview();
-  expect(editor.preview.value).toMatchObject({ changes: 0, drafted: 0, unsaved: 1 });
+  expect(editor.preview.value).toMatchObject({ changedLineCount: 0, draftChangeCount: 0, unsavedChangeCount: 1 });
 
   editor.closePreview();
   await editor.addEntry('labels', { name: '' });

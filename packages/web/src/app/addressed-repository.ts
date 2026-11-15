@@ -28,7 +28,7 @@ export function repositoryAddress(name: string): string {
 export class AddressedRepository {
   readonly #repositories: Repositories;
   readonly #router: Router;
-  #openedAsAddressLastTookIt: { readonly name: string | undefined; readonly hadOwnScreen: boolean } = {
+  #openedRepositoryAsAddressLastShowed: { readonly name: string | undefined; readonly hadOwnScreen: boolean } = {
     name: undefined,
     hadOwnScreen: false,
   };
@@ -59,7 +59,7 @@ export class AddressedRepository {
     } else {
       this.#write(queryFor(this.#repositories.openedName), 'replace');
     }
-    this.#openedAsAddressLastTookIt = { name: this.#repositories.openedName, hadOwnScreen: false };
+    this.#openedRepositoryAsAddressLastShowed = { name: this.#repositories.openedName, hadOwnScreen: false };
   }
 
   /**
@@ -82,9 +82,9 @@ export class AddressedRepository {
     } else {
       this.#open(named);
     }
-    this.#openedAsAddressLastTookIt = {
+    this.#openedRepositoryAsAddressLastShowed = {
       name: this.#repositories.openedName,
-      hadOwnScreen: this.#openedAsAddressLastTookIt.hadOwnScreen,
+      hadOwnScreen: this.#openedRepositoryAsAddressLastShowed.hadOwnScreen,
     };
   }
 
@@ -101,7 +101,7 @@ export class AddressedRepository {
       // Out of view: its screen closes, back to the list's entry when it led there.
       repositories.dropOpened();
       this.#returnToAddressWithoutQuery();
-      this.#openedAsAddressLastTookIt = { name: undefined, hadOwnScreen: false };
+      this.#openedRepositoryAsAddressLastShowed = { name: undefined, hadOwnScreen: false };
       return;
     }
     if (shown !== undefined && shown.full_name !== name) {
@@ -109,15 +109,15 @@ export class AddressedRepository {
       repositories.open(shown);
     }
     const screen = phone && shown !== undefined;
-    if (repositories.openedName !== this.#openedAsAddressLastTookIt.name) {
+    if (repositories.openedName !== this.#openedRepositoryAsAddressLastShowed.name) {
       // Only another repository opens a screen; the same one in GitHub's case takes the entry shown.
       const opened =
         screen &&
-        !this.#openedAsAddressLastTookIt.hadOwnScreen &&
-        !isSameRepositoryIgnoringCase(repositories.openedName, this.#openedAsAddressLastTookIt.name);
+        !this.#openedRepositoryAsAddressLastShowed.hadOwnScreen &&
+        !isSameRepositoryIgnoringCase(repositories.openedName, this.#openedRepositoryAsAddressLastShowed.name);
       this.#write(queryFor(repositories.openedName), opened ? 'push' : 'replace');
     }
-    this.#openedAsAddressLastTookIt = { name: repositories.openedName, hadOwnScreen: screen };
+    this.#openedRepositoryAsAddressLastShowed = { name: repositories.openedName, hadOwnScreen: screen };
   }
 
   /**

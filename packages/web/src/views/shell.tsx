@@ -42,15 +42,15 @@ function AccountMenu({ account, user, router, onSignOut, holdsPageLinks }: Accou
   const menu = useDismissibleMenu();
   // A phone's button shows only the avatar, so its menu names who's signed in even without a display name.
   const signedIn = user.name ?? (holdsPageLinks ? user.login : null);
-  const pagesBefore = useRef(holdsPageLinks);
+  const heldPageLinksBefore = useRef(holdsPageLinks);
   // Crossing the phone width adds or removes the menu's pages, which can take
   // the focused link with them, so an open menu closes and gives focus back to its button.
   useEffect(() => {
     const element = menu.current;
-    if (pagesBefore.current === holdsPageLinks || element === null) {
+    if (heldPageLinksBefore.current === holdsPageLinks || element === null) {
       return;
     }
-    pagesBefore.current = holdsPageLinks;
+    heldPageLinksBefore.current = holdsPageLinks;
     if (element.open) {
       const focusLost = document.activeElement === document.body || element.contains(document.activeElement);
       element.open = false;

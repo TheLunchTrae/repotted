@@ -27,8 +27,7 @@ export interface CompareRow {
   readonly key: string;
   readonly now: string;
   readonly wanted: string;
-  /** Why Repotted can't make the change, such as "Needs Actions write". */
-  readonly lock: string | undefined;
+  readonly lockReason: string | undefined;
   /** In an apply, what leaves the row's change out of it, such as `repository.has_wiki` or `rulesets/Main`. */
   readonly leaveOut?: string | undefined;
   /**
@@ -80,9 +79,8 @@ export interface ShownSection extends CompareSection {
 
 export interface Compared {
   readonly repository: string;
-  /** `file` is the profile's file, and `profile` its name as the list has it. */
   readonly file: string;
-  readonly profile: string;
+  readonly profileName: string;
   readonly sections: readonly CompareSection[];
   readonly matching: readonly MatchSection[];
   /**
@@ -91,8 +89,7 @@ export interface Compared {
    * or undefined when GitHub wouldn't say.
    */
   readonly appAccess: { readonly settings: string } | 'install' | undefined;
-  /** The profile's drafts, which a comparison leaves out. */
-  readonly skipped: readonly string[];
+  readonly skippedDrafts: readonly string[];
   readonly warnings: readonly string[];
 }
 
@@ -105,15 +102,14 @@ export interface ComparedProfile {
 
 export type ComparisonState =
   | { readonly kind: 'idle' }
-  | { readonly kind: 'comparing'; readonly repository: string; readonly file: string; readonly profile: string }
+  | { readonly kind: 'comparing'; readonly repository: string; readonly file: string; readonly profileName: string }
   | {
       readonly kind: 'failed';
       readonly repository: string;
       readonly file: string;
-      readonly profile: string;
+      readonly profileName: string;
       readonly message: string;
-      /** Whether the profile is for the other kind of owner, which a copy of another type gets past. */
-      readonly mismatch: boolean;
+      readonly profileIsForOtherOwnerType: boolean;
     }
   | ({ readonly kind: 'compared' } & Compared);
 
@@ -190,7 +186,7 @@ function settingNames(path: string): { label: string; named: (value: unknown) =>
 
 function settingRow(path: string, from: unknown, to: unknown, lock: string | undefined): CompareRow {
   const { label, named } = settingNames(path);
-  return { kind: kindOf(from, to), label, key: path, now: named(from), wanted: named(to), lock };
+  return { kind: kindOf(from, to), label, key: path, now: named(from), wanted: named(to), lockReason: lock };
 }
 
 /** What an item of a list is known by, so the same item is compared with itself wherever it sits. */
@@ -242,10 +238,14 @@ function rowsOf(change: Change, lock: string | undefined): CompareRow[] {
     const noun = policy === undefined ? (nouns[change.section] ?? 'entry') : `${policy.type} policy`;
     const name = policy === undefined ? change.entry.name : `${change.entry.name}: ${policy.name}`;
     if (change.action === 'create') {
-      return [{ kind: 'adds', label: name, key: `new ${noun}`, now: 'Not on GitHub', wanted: 'Created', lock }];
+      return [
+        { kind: 'adds', label: name, key: `new ${noun}`, now: 'Not on GitHub', wanted: 'Created', lockReason: lock },
+      ];
     }
     if (change.action === 'delete') {
-      return [{ kind: 'removes', label: name, key: `${noun} removed`, now: 'On GitHub', wanted: 'Removed', lock }];
+      return [
+        { kind: 'removes', label: name, key: `${noun} removed`, now: 'On GitHub', wanted: 'Removed', lockReason: lock },
+      ];
     }
     return change.fields
       .flatMap((field) => narrowed(field.field, field.from, field.to))
@@ -255,7 +255,7 @@ function rowsOf(change: Change, lock: string | undefined): CompareRow[] {
         key: field.path,
         now: valueInFewWords(field.from, 'Not set'),
         wanted: valueInFewWords(field.to, 'Not set'),
-        lock,
+        lockReason: lock,
       }));
   }
   // A settings section GitHub makes or deletes whole, as it does a Pages site, says so before its settings.
@@ -269,7 +269,7 @@ function rowsOf(change: Change, lock: string | undefined): CompareRow[] {
             key: change.section,
             now: change.action === 'create' ? 'Not on GitHub' : 'On GitHub',
             wanted: change.action === 'create' ? 'Created' : 'Deleted',
-            lock,
+            lockReason: lock,
           },
         ];
   return [
@@ -411,9 +411,8 @@ function normalize(text: string): string {
 export class Comparison {
   readonly state = signal<ComparisonState>({ kind: 'idle' });
   readonly search = signal('');
-  /** Whether only the differences Repotted can't make show. */
-  readonly onlyLocked = signal(false);
-  readonly onlyDifferences = signal(true);
+  readonly showOnlyLockedDifferences = signal(false);
+  readonly showOnlyDifferences = signal(true);
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
@@ -430,7 +429,7 @@ export class Comparison {
     const rows = state.kind === 'compared' ? state.sections.flatMap((section) => section.rows) : [];
     return {
       differences: rows.length,
-      locked: rows.filter((row) => row.lock !== undefined).length,
+      locked: rows.filter((row) => row.lockReason !== undefined).length,
       matches: state.kind === 'compared' ? state.matching.reduce((sum, section) => sum + section.rows.length, 0) : 0,
     };
   });
@@ -441,8 +440,8 @@ export class Comparison {
       return [];
     }
     const words = searchWords(this.search.value);
-    const locked = this.onlyLocked.value;
-    const matching = this.onlyDifferences.value || locked ? [] : state.matching;
+    const locked = this.showOnlyLockedDifferences.value;
+    const matching = this.showOnlyDifferences.value || locked ? [] : state.matching;
     const found = (title: string, row: { label: string; key: string }): boolean => {
       const text = normalize(`${title} ${row.label} ${row.key}`);
       return words.every((word) => text.includes(word));
@@ -454,7 +453,7 @@ export class Comparison {
           section,
           title,
           rows: (state.sections.find((item) => item.section === section)?.rows ?? []).filter(
-            (row) => (!locked || row.lock !== undefined) && found(title, row),
+            (row) => (!locked || row.lockReason !== undefined) && found(title, row),
           ),
           matches: (matching.find((item) => item.section === section)?.rows ?? []).filter((row) => found(title, row)),
         };
@@ -466,8 +465,8 @@ export class Comparison {
     const turn = (this.#latestComparisonTurn += 1);
     this.#lastCompared = { repository, profile };
     this.search.value = '';
-    this.onlyLocked.value = false;
-    this.state.value = { kind: 'comparing', repository, file: profile.file, profile: profile.name };
+    this.showOnlyLockedDifferences.value = false;
+    this.state.value = { kind: 'comparing', repository, file: profile.file, profileName: profile.name };
     try {
       const repo = parseRepo(repository);
       const resolved = await resolveProfile(profile.file);
@@ -483,7 +482,7 @@ export class Comparison {
         kind: 'compared',
         repository,
         file: profile.file,
-        profile: profile.name,
+        profileName: profile.name,
         sections: compareSections(plan, locks),
         matching: matchSections(plan),
         appAccess:
@@ -492,7 +491,7 @@ export class Comparison {
             : access.app.status === 'installed' && access.app.settings_url !== null
               ? { settings: access.app.settings_url }
               : undefined,
-        skipped: plan.skipped.map(describeSkipped),
+        skippedDrafts: plan.skipped.map(describeSkipped),
         warnings: plan.warnings.map(describeWarning),
       };
     } catch (error) {
@@ -504,12 +503,12 @@ export class Comparison {
           kind: 'failed',
           repository,
           file: profile.file,
-          profile: profile.name,
+          profileName: profile.name,
           // The profile goes by its name, and a base profile by its path among the profiles, not by where the browser keeps them.
           message: (error instanceof Error ? error.message : String(error))
             .replaceAll(profile.file, profile.name)
             .replaceAll(`${profile.folder ?? dirname(profile.file)}/`, ''),
-          mismatch: error instanceof OwnerMismatchError,
+          profileIsForOtherOwnerType: error instanceof OwnerMismatchError,
         };
       }
     }

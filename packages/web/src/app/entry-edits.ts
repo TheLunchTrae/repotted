@@ -40,13 +40,12 @@ export interface EntryRow {
    * so it waits until the user keeps theirs or resets it.
    */
   readonly outOfDate: boolean;
-  /** Why it can't be saved so it applies. */
-  readonly problem: string | undefined;
+  readonly applyProblem: string | undefined;
   /** A draft may be unfinished, so this is only what is wrong with its name. */
   readonly draftProblem: string | undefined;
 }
 
-type Row = Omit<EntryRow, 'problem' | 'draftProblem'>;
+type Row = Omit<EntryRow, 'applyProblem' | 'draftProblem'>;
 
 export interface EntryWrite {
   readonly list: EntryList;
@@ -61,8 +60,7 @@ interface EntryChange {
   /** Undefined for one that is new. */
   readonly name: string | undefined;
   readonly entry: Entry | undefined;
-  /** The saved entry the change was made on. */
-  readonly base: Entry | undefined;
+  readonly savedEntryChangeWasMadeOn: Entry | undefined;
   /** The entry as it was managed, while the change removes it from repositories, so managing it again brings it back. */
   readonly kept?: Entry;
 }
@@ -168,7 +166,7 @@ export class EntryEdits {
   readonly #saved = signal<ResolvedProfile | undefined>(undefined);
   readonly #changes = signal<ReadonlyMap<string, EntryChange>>(new Map());
   #changesSaveIsWriting: ReadonlyMap<string, EntryChange> = new Map();
-  #newEntryCount = 0;
+  #lastNewEntryNumber = 0;
 
   readonly #slots = computed<Readonly<Record<EntryList, readonly Slot[]>>>(() => ({
     rulesets: this.#slotsOf('rulesets'),
@@ -193,11 +191,9 @@ export class EntryEdits {
     ),
   );
 
-  /** Whether any entry can't be saved so it applies, as it stands. */
-  readonly held = computed(() => this.#some((row) => row.problem !== undefined));
+  readonly someEntryCannotSaveToApply = computed(() => this.#some((row) => row.applyProblem !== undefined));
 
-  /** Whether any changed entry can't be kept as a draft, as it stands. */
-  readonly draftHeld = computed(() => this.#some((row) => row.draftProblem !== undefined));
+  readonly someChangedEntryCannotBeDraft = computed(() => this.#some((row) => row.draftProblem !== undefined));
 
   setSaved(saved: ResolvedProfile | undefined): void {
     this.#saved.value = saved;
@@ -217,16 +213,16 @@ export class EntryEdits {
   writes(): EntryWrite[] {
     const fine = new Set(
       entryLists.flatMap((list) =>
-        this.rows.value[list].filter((row) => row.problem === undefined).map((row) => row.key),
+        this.rows.value[list].filter((row) => row.applyProblem === undefined).map((row) => row.key),
       ),
     );
     return this.#plan(this.#changes.value, 'applies', (key) => fine.has(key)).writes;
   }
 
   add(list: EntryList, entry: Entry): string {
-    this.#newEntryCount += 1;
-    const key = `${list}:new:${this.#newEntryCount}`;
-    this.#set(key, { list, name: undefined, entry, base: undefined });
+    this.#lastNewEntryNumber += 1;
+    const key = `${list}:new:${this.#lastNewEntryNumber}`;
+    this.#set(key, { list, name: undefined, entry, savedEntryChangeWasMadeOn: undefined });
     return key;
   }
 
@@ -280,7 +276,12 @@ export class EntryEdits {
    */
   reset(row: EntryRow): void {
     if (this.#changesSaveIsWriting.has(row.key)) {
-      this.#set(row.key, { list: row.list, name: row.savedName, entry: row.saved, base: row.saved });
+      this.#set(row.key, {
+        list: row.list,
+        name: row.savedName,
+        entry: row.saved,
+        savedEntryChangeWasMadeOn: row.saved,
+      });
     } else {
       this.#set(row.key, undefined);
     }
@@ -297,10 +298,14 @@ export class EntryEdits {
     }
     if (this.#slot(row.list, row.key) === undefined) {
       this.#set(row.key, undefined);
-      this.#newEntryCount += 1;
-      this.#set(`${row.list}:new:${this.#newEntryCount}`, { ...change, name: undefined, base: undefined });
+      this.#lastNewEntryNumber += 1;
+      this.#set(`${row.list}:new:${this.#lastNewEntryNumber}`, {
+        ...change,
+        name: undefined,
+        savedEntryChangeWasMadeOn: undefined,
+      });
     } else {
-      this.#set(row.key, { ...change, base: row.saved });
+      this.#set(row.key, { ...change, savedEntryChangeWasMadeOn: row.saved });
     }
   }
 
@@ -339,7 +344,7 @@ export class EntryEdits {
         return this.#slotNamed(change.list, nameOf(change.entry)) !== undefined;
       }
       const slot = this.#slot(change.list, key);
-      return slot === undefined || !sameValue(change.base, entryRowStartsFrom(slot));
+      return slot === undefined || !sameValue(change.savedEntryChangeWasMadeOn, entryRowStartsFrom(slot));
     });
   }
 
@@ -367,12 +372,16 @@ export class EntryEdits {
           left.set(slot.key, {
             ...change,
             name: nameOf(entryRowStartsFrom(slot) ?? slot.applied),
-            base: entryRowStartsFrom(slot),
+            savedEntryChangeWasMadeOn: entryRowStartsFrom(slot),
           });
         } else if (change.entry !== undefined) {
           // An entry the save took out and that has one again is a new one.
-          this.#newEntryCount += 1;
-          left.set(`${change.list}:new:${this.#newEntryCount}`, { ...change, name: undefined, base: undefined });
+          this.#lastNewEntryNumber += 1;
+          left.set(`${change.list}:new:${this.#lastNewEntryNumber}`, {
+            ...change,
+            name: undefined,
+            savedEntryChangeWasMadeOn: undefined,
+          });
         }
       }
     }
@@ -402,7 +411,7 @@ export class EntryEdits {
             list: row.list,
             name: row.savedName,
             entry: next.entry,
-            base: current === undefined ? saved : current.base,
+            savedEntryChangeWasMadeOn: current === undefined ? saved : current.savedEntryChangeWasMadeOn,
             ...(next.kept === undefined
               ? current?.kept === undefined
                 ? {}
@@ -548,7 +557,7 @@ export class EntryEdits {
                 : slot.applied === undefined
                   ? ('new' as const)
                   : ('changed' as const),
-        outOfDate: change !== undefined && !sameValue(change.base, start),
+        outOfDate: change !== undefined && !sameValue(change.savedEntryChangeWasMadeOn, start),
       };
     });
     const known = new Set(listed.map((row) => row.key));
@@ -571,7 +580,7 @@ export class EntryEdits {
     return all.map((row) => ({
       ...row,
       // A draft is checked as its change is, since a save that applies finishes it.
-      problem: row.unsaved || row.inDraft !== undefined ? this.#problem(row, all, true) : undefined,
+      applyProblem: row.unsaved || row.inDraft !== undefined ? this.#problem(row, all, true) : undefined,
       draftProblem: row.unsaved ? this.#problem(row, all, false) : undefined,
     }));
   }

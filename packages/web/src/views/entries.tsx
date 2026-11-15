@@ -304,8 +304,12 @@ function Kept({ entry, saved, change, name, label, none, noun }: KeptProps): JSX
   );
 }
 
-/** A whole number from 0 up to a limit, as typed, or why the text isn't one. */
-function count(typed: string, most: number, what: string): { readonly value: number | undefined } | string {
+/** A string answer is why the text isn't a whole number from 0 up to `most`. */
+function parseWholeNumberUpTo(
+  typed: string,
+  most: number,
+  what: string,
+): { readonly value: number | undefined } | string {
   const digits = typed.trim();
   if (digits === '') {
     return { value: undefined };
@@ -420,7 +424,7 @@ function RulesetForm({
                   value={text(pullParameters['required_approving_review_count'])}
                   placeholder="Each repository's own"
                   onText={(typed) => {
-                    const approvals = count(typed, 10, 'Required approvals');
+                    const approvals = parseWholeNumberUpTo(typed, 10, 'Required approvals');
                     if (typeof approvals === 'string') {
                       return approvals;
                     }
@@ -505,7 +509,7 @@ function EnvironmentForm({ entry, saved, change }: FormProps): JSX.Element {
           value={text(entry['wait_timer'])}
           placeholder="Each repository's own"
           onText={(typed) => {
-            const minutes = count(typed, 43_200, 'The wait timer');
+            const minutes = parseWholeNumberUpTo(typed, 43_200, 'The wait timer');
             if (typeof minutes === 'string') {
               return minutes;
             }
@@ -746,7 +750,7 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
               : row.inDraft === 'changed'
                 ? 'Changed in the draft. It applies once you save.'
                 : row.source === 'here'
-                  ? editor.drafts
+                  ? editor.canHoldDrafts
                     ? 'Set in this profile.'
                     : 'Set in this apply.'
                   : `From ${row.source}. Changing it here overrides it.`}
@@ -777,7 +781,7 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
       </div>
       {row.outOfDate && (
         <div class="notice notice-drift" role="alert">
-          <p>{row.problem}</p>
+          <p>{row.applyProblem}</p>
           <div class="notice-actions">
             <button
               class="button"
@@ -805,7 +809,7 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
           label="Name"
           value={name}
           disabled={!renamable}
-          problem={row.outOfDate ? undefined : row.problem}
+          problem={row.outOfDate ? undefined : row.applyProblem}
           note={
             !renamable
               ? `It comes from ${row.source}, so it keeps its name.`
@@ -963,7 +967,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
                   {row.outOfDate ? (
                     <span class="pill pill-remove">Changed elsewhere</span>
                   ) : (
-                    row.problem !== undefined && <span class="pill pill-remove">Not finished</span>
+                    row.applyProblem !== undefined && <span class="pill pill-remove">Not finished</span>
                   )}
                   {row.unsaved && <span class="pill pill-drift">Not saved</span>}
                   {row.inDraft !== undefined && (

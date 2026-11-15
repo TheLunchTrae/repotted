@@ -104,7 +104,7 @@ export function watchFiles(watcher: FileChange): () => void {
   };
 }
 
-function asPromiseRejectingWhatWorkThrows<Result>(work: () => Result): Promise<Result> {
+function runAsNodeFsPromise<Result>(work: () => Result): Promise<Result> {
   return new Promise((resolve) => {
     resolve(work());
   });
@@ -113,7 +113,7 @@ function asPromiseRejectingWhatWorkThrows<Result>(work: () => Result): Promise<R
 export function readFile(target: string): Promise<Uint8Array>;
 export function readFile(target: string, encoding: 'utf8'): Promise<string>;
 export function readFile(target: string, encoding?: 'utf8'): Promise<Uint8Array | string> {
-  return asPromiseRejectingWhatWorkThrows(() => {
+  return runAsNodeFsPromise(() => {
     const node = existing(target);
     if (node.kind !== 'file') {
       throw new FileError('EISDIR', `illegal operation on a directory, read '${target}'`);
@@ -127,7 +127,7 @@ export function writeFile(
   content: Uint8Array | string,
   options: { readonly flag?: 'wx' } = {},
 ): Promise<void> {
-  return asPromiseRejectingWhatWorkThrows(() => {
+  return runAsNodeFsPromise(() => {
     const parent = parentOf(target);
     const name = leaf(target);
     const current = parent.children.get(name);
@@ -155,7 +155,7 @@ function stats(node: Node): Stats {
 }
 
 export function stat(target: string): Promise<Stats> {
-  return asPromiseRejectingWhatWorkThrows(() => {
+  return runAsNodeFsPromise(() => {
     return stats(existing(target));
   });
 }
@@ -165,14 +165,14 @@ export const lstat = stat;
 
 /** There are no links, so a path that exists is its own real path. */
 export function realpath(target: string): Promise<string> {
-  return asPromiseRejectingWhatWorkThrows(() => {
+  return runAsNodeFsPromise(() => {
     existing(target);
     return resolve('/', target);
   });
 }
 
 export function chmod(target: string, _mode: number): Promise<void> {
-  return asPromiseRejectingWhatWorkThrows(() => {
+  return runAsNodeFsPromise(() => {
     existing(target);
   });
 }
@@ -182,7 +182,7 @@ export interface Dirent extends Stats {
 }
 
 export function readdir(target: string, _options: { readonly withFileTypes: true }): Promise<Dirent[]> {
-  return asPromiseRejectingWhatWorkThrows(() => {
+  return runAsNodeFsPromise(() => {
     const node = existing(target);
     if (node.kind !== 'folder') {
       throw new FileError('ENOTDIR', `not a directory, scandir '${target}'`);
@@ -192,7 +192,7 @@ export function readdir(target: string, _options: { readonly withFileTypes: true
 }
 
 export function mkdir(target: string, _options: { readonly recursive: true }): Promise<string | undefined> {
-  return asPromiseRejectingWhatWorkThrows(() => {
+  return runAsNodeFsPromise(() => {
     let node = root;
     let firstFolderMade: string | undefined;
     let current = '';
@@ -217,7 +217,7 @@ export function rm(
   target: string,
   options: { readonly force?: boolean; readonly recursive?: boolean } = {},
 ): Promise<void> {
-  return asPromiseRejectingWhatWorkThrows(() => {
+  return runAsNodeFsPromise(() => {
     const node = find(target);
     if (node === undefined) {
       if (options.force === true) {
@@ -238,7 +238,7 @@ export function rm(
 }
 
 export function rmdir(target: string): Promise<void> {
-  return asPromiseRejectingWhatWorkThrows(() => {
+  return runAsNodeFsPromise(() => {
     const node = existing(target);
     if (node.kind !== 'folder') {
       throw new FileError('ENOTDIR', `not a directory, rmdir '${target}'`);
@@ -253,7 +253,7 @@ export function rmdir(target: string): Promise<void> {
 }
 
 export function rename(from: string, to: string): Promise<void> {
-  return asPromiseRejectingWhatWorkThrows(() => {
+  return runAsNodeFsPromise(() => {
     const node = existing(from);
     if (node.kind !== 'file') {
       throw new FileError('EISDIR', `illegal operation on a directory, rename '${from}'`);

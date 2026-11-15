@@ -32,10 +32,10 @@ function statusOf(member: BatchMemberView): { readonly text: string; readonly to
 interface MemberProps {
   readonly member: BatchMemberView;
   readonly batch: BatchApply;
-  readonly working: boolean;
+  readonly reviewingOrApplying: boolean;
 }
 
-function Member({ member, batch, working }: MemberProps): JSX.Element {
+function Member({ member, batch, reviewingOrApplying: working }: MemberProps): JSX.Element {
   const status = statusOf(member);
   const out = member.status === 'left-out';
   return (
@@ -70,9 +70,9 @@ function Member({ member, batch, working }: MemberProps): JSX.Element {
           <span>In this batch</span>
         </label>
       </div>
-      {member.message !== undefined && (
+      {member.comparisonFailureMessage !== undefined && (
         <p class="notice notice-problem" role="alert">
-          {member.message}
+          {member.comparisonFailureMessage}
         </p>
       )}
       {member.startNote !== undefined && (
@@ -80,12 +80,12 @@ function Member({ member, batch, working }: MemberProps): JSX.Element {
           {member.startNote}
         </p>
       )}
-      {(member.warnings.length > 0 || member.skipped.length > 0) && (
+      {(member.warnings.length > 0 || member.skippedDrafts.length > 0) && (
         <ul class="muted small">
           {member.warnings.map((warning) => (
             <li key={warning}>{warning}</li>
           ))}
-          {member.skipped.map((skipped) => (
+          {member.skippedDrafts.map((skipped) => (
             <li key={skipped}>{skipped}</li>
           ))}
         </ul>
@@ -106,7 +106,7 @@ function Member({ member, batch, working }: MemberProps): JSX.Element {
                   <span class="visually-hidden">; after the apply, </span>
                   <span class={row.kind === 'removes' ? 'compare-removed' : 'compare-wanted'}>{row.wanted}</span>
                 </span>
-                {row.lock !== undefined && <span class="pill pill-remove">{row.lock}</span>}
+                {row.lockReason !== undefined && <span class="pill pill-remove">{row.lockReason}</span>}
                 {row.oneOff === true && <span class="pill pill-drift">One-off edit</span>}
                 {row.leaveOut !== undefined && (
                   <button
@@ -211,7 +211,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
     );
   }
   const ready = batch.ready.value.length;
-  const working = state.kind === 'reviewing' || state.kind === 'applying';
+  const reviewingOrApplying = state.kind === 'reviewing' || state.kind === 'applying';
   const members = batch.members.value;
   const refused = state.kind === 'reviewed' ? state.refused : [];
   const repositories = (amount: number): string => (amount === 1 ? '1 repository' : `${amount} repositories`);
@@ -222,7 +222,8 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
         <div class="page-heading">
           <div>
             <h1 id="batch-title">
-              Apply {state.profile === '' ? 'to several repositories' : `${state.profile} to several repositories`}
+              Apply{' '}
+              {state.profileName === '' ? 'to several repositories' : `${state.profileName} to several repositories`}
             </h1>
             <p class="muted" role="status">
               {state.kind === 'reviewing'
@@ -285,7 +286,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                       <button
                         class="button button-quiet button-small"
                         type="button"
-                        disabled={working}
+                        disabled={reviewingOrApplying}
                         aria-label={`Leave out ${change.key} everywhere`}
                         onClick={() => {
                           run(batch.everywhere(change.key, true));
@@ -306,7 +307,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                       <button
                         class="button button-quiet button-small"
                         type="button"
-                        disabled={working}
+                        disabled={reviewingOrApplying}
                         aria-label={`Put back ${key} everywhere`}
                         onClick={() => {
                           run(batch.everywhere(key, false));
@@ -321,7 +322,12 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
             </section>
             <div class="groups">
               {members.map((member) => (
-                <Member key={member.repository} member={member} batch={batch} working={working} />
+                <Member
+                  key={member.repository}
+                  member={member}
+                  batch={batch}
+                  reviewingOrApplying={reviewingOrApplying}
+                />
               ))}
             </div>
           </>
@@ -354,7 +360,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                 <button
                   class="button button-quiet"
                   type="button"
-                  disabled={working}
+                  disabled={reviewingOrApplying}
                   onClick={() => {
                     run(
                       batch.discard().then(() => {
@@ -370,7 +376,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                 <button
                   class="button"
                   type="button"
-                  disabled={working || !batch.canReviewAgain.value}
+                  disabled={reviewingOrApplying || !batch.canReviewAgain.value}
                   onClick={() => {
                     run(batch.reviewAgain());
                   }}

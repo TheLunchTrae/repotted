@@ -266,13 +266,13 @@ test('a refresh asked for during a connect waits its turn, then syncs with the n
   await vi.waitFor(() => {
     expect(request).toHaveBeenCalledTimes(1);
   });
-  expect(profiles.busy.value).toBe(true);
+  expect(profiles.syncingListingOrMovingProfiles.value).toBe(true);
   expect(profiles.source.value).toEqual({ kind: 'browser' });
 
   held.resolve(undefined);
   await Promise.all([connecting, refreshing]);
 
-  expect(profiles.busy.value).toBe(false);
+  expect(profiles.syncingListingOrMovingProfiles.value).toBe(false);
   expect(profiles.sync.value).toEqual({ status: 'synced', pulled: 0, pushed: 0 });
   expect(drawn(profiles.tree.value)).toEqual(['base', 'teams/ 1', '  web']);
 });

@@ -32,7 +32,7 @@ function rows(apply: Apply): string[] {
   const state = apply.state.value;
   return state.kind === 'reviewed'
     ? state.sections.flatMap((section) =>
-        section.rows.map((row) => `${row.key}${row.lock === undefined ? '' : ' (locked)'}`),
+        section.rows.map((row) => `${row.key}${row.lockReason === undefined ? '' : ' (locked)'}`),
       )
     : [`not reviewed: ${state.kind}`];
 }
@@ -65,7 +65,7 @@ test('an apply is reviewed first, writes nothing until asked, and then writes wh
   expect(apply.counts.value).toEqual({ changes: 2, locked: 0 });
   await apply.apply();
 
-  expect(apply.state.value).toEqual({ kind: 'applied', repository: 'lunch/app', profile: 'web', changes: 2 });
+  expect(apply.state.value).toEqual({ kind: 'applied', repository: 'lunch/app', profileName: 'web', changes: 2 });
   expect(writes(github)).toEqual(['PATCH /repos/lunch/app', 'POST /repos/lunch/app/labels']);
   expect(github.state.repository).toMatchObject({ has_wiki: false, has_projects: false });
   expect(await apply.unfinished('lunch/app')).toBe(false);
@@ -170,7 +170,7 @@ test('an unfinished apply is picked up as it was left, or started over, and a di
   expect(await exists(staged)).toBe(true);
 
   await apply.start('lunch/app', profile);
-  expect(apply.state.value).toEqual({ kind: 'unfinished', repository: 'lunch/app', profile: 'web' });
+  expect(apply.state.value).toEqual({ kind: 'unfinished', repository: 'lunch/app', profileName: 'web' });
   await apply.resume();
   await apply.review();
   expect(rows(apply)).toEqual(['repository.has_projects', 'repository.has_wiki']);
@@ -428,13 +428,13 @@ test('an apply opens on its one-off edits, which change this apply only and show
   expect(apply.state.value).toEqual({
     kind: 'editing',
     repository: 'lunch/app',
-    profile: 'web',
+    profileName: 'web',
     fromProfile: true,
     builtIn: false,
     leftOut: [],
   });
   const editor = apply.editor.value;
-  expect(editor?.drafts).toBe(false);
+  expect(editor?.canHoldDrafts).toBe(false);
   expect(writes(github)).toEqual([]);
 
   // An edit that isn't saved is saved to the apply on the way to the review, never to the profile.
@@ -481,7 +481,7 @@ test('settings are changed once, with no profile, from the repository as it is',
   expect(apply.state.value).toEqual({
     kind: 'editing',
     repository: 'lunch/app',
-    profile: '',
+    profileName: '',
     fromProfile: false,
     builtIn: false,
     leftOut: [],
@@ -570,7 +570,7 @@ test('what an apply leaves out is named on its edits, and put back there to be e
 
   expect(apply.state.value).toMatchObject({ kind: 'editing', leftOut: [] });
   await apply.editor.value?.set(setting('repository.has_wiki'), true);
-  expect(apply.editor.value?.problem.value).toBeUndefined();
+  expect(apply.editor.value?.unsavedChangesProblem.value).toBeUndefined();
 });
 
 test('changing settings once starts nothing over an apply that is unfinished', async () => {

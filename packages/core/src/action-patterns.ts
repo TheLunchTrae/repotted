@@ -161,7 +161,7 @@ function segments(parts: readonly string[]): string {
 
 type Get = (path: string) => Promise<unknown>;
 
-async function getOrUndefinedWhenNothingIsThere(get: Get, path: string): Promise<unknown> {
+async function getOrUndefinedIfMissing(get: Get, path: string): Promise<unknown> {
   try {
     return await get(path);
   } catch (error) {
@@ -181,9 +181,7 @@ async function refKind(get: Get, repo: string, ref: string): Promise<'tag' | 'br
   if (fullSha.test(ref)) {
     // GitHub answers 422 for a full SHA that names no commit.
     try {
-      return (await getOrUndefinedWhenNothingIsThere(get, `${repo}/commits/${ref}`)) === undefined
-        ? undefined
-        : 'commit';
+      return (await getOrUndefinedIfMissing(get, `${repo}/commits/${ref}`)) === undefined ? undefined : 'commit';
     } catch (error) {
       if (error instanceof GitHubError && error.status === 422) {
         return undefined;
@@ -192,12 +190,10 @@ async function refKind(get: Get, repo: string, ref: string): Promise<'tag' | 'br
     }
   }
   const name = segments(ref.split('/'));
-  if ((await getOrUndefinedWhenNothingIsThere(get, `${repo}/git/ref/tags/${name}`)) !== undefined) {
+  if ((await getOrUndefinedIfMissing(get, `${repo}/git/ref/tags/${name}`)) !== undefined) {
     return 'tag';
   }
-  return (await getOrUndefinedWhenNothingIsThere(get, `${repo}/git/ref/heads/${name}`)) === undefined
-    ? undefined
-    : 'branch';
+  return (await getOrUndefinedIfMissing(get, `${repo}/git/ref/heads/${name}`)) === undefined ? undefined : 'branch';
 }
 
 async function lookUp(get: Get, parsed: ParsedPattern): Promise<ActionLookup> {
@@ -208,7 +204,7 @@ async function lookUp(get: Get, parsed: ParsedPattern): Promise<ActionLookup> {
     return { status: 'unchecked', why: 'wildcard_owner' };
   }
   if (wild(parsed.repository)) {
-    const found = await getOrUndefinedWhenNothingIsThere(get, `/users/${encodeURIComponent(parsed.owner)}`);
+    const found = await getOrUndefinedIfMissing(get, `/users/${encodeURIComponent(parsed.owner)}`);
     if (found === undefined) {
       return { status: 'not_found', missing: 'owner', name: parsed.owner };
     }
@@ -221,7 +217,7 @@ async function lookUp(get: Get, parsed: ParsedPattern): Promise<ActionLookup> {
     };
   }
   const repo = `/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repository)}`;
-  const found = await getOrUndefinedWhenNothingIsThere(get, repo);
+  const found = await getOrUndefinedIfMissing(get, repo);
   if (found === undefined) {
     return { status: 'not_found', missing: 'repository', name: `${parsed.owner}/${parsed.repository}` };
   }
@@ -238,7 +234,7 @@ async function lookUp(get: Get, parsed: ParsedPattern): Promise<ActionLookup> {
   }
   // Without an exact ref, the path is looked for on the default branch.
   const query = ref === undefined ? '' : `?ref=${encodeURIComponent(ref)}`;
-  const contents = await getOrUndefinedWhenNothingIsThere(get, `${repo}/contents/${segments(parsed.path)}${query}`);
+  const contents = await getOrUndefinedIfMissing(get, `${repo}/contents/${segments(parsed.path)}${query}`);
   const path = parsed.path.join('/');
   return contents === undefined
     ? { status: 'missing_path', repository, path }

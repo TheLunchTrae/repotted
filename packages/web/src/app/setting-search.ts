@@ -77,7 +77,7 @@ function buildSearchIndex(): Map<SettingField, Indexed> {
     for (const group of section.groups) {
       let parent: SettingField | undefined;
       for (const field of group.fields) {
-        const owner = field.nested ? parent : undefined;
+        const owner = field.indentedUnderPreviousSetting ? parent : undefined;
         index.set(field, {
           terms: normalize(
             [
@@ -90,7 +90,7 @@ function buildSearchIndex(): Map<SettingField, Indexed> {
           ),
           parent: owner,
         });
-        if (!field.nested) {
+        if (!field.indentedUnderPreviousSetting) {
           parent = field;
         }
       }

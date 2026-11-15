@@ -121,7 +121,7 @@ function SignedIn({
     document.title = title === undefined ? 'Repotted' : `${title} - Repotted`;
   }, [title]);
   const [leaving, setLeaving] = useState(false);
-  const [signOutHeldByWritingApply, setSignOutHeldByWritingApply] = useState(false);
+  const [signOutBlockedWhileApplyWrites, setSignOutBlockedWhileApplyWrites] = useState(false);
   const leave = (): void => {
     // An apply's edits that can be saved are, as when its page is left.
     apply.close();
@@ -132,10 +132,10 @@ function SignedIn({
   // and it ends the sign-in an apply that is writing still needs.
   const signOut = (): void => {
     if (writing) {
-      setSignOutHeldByWritingApply(true);
+      setSignOutBlockedWhileApplyWrites(true);
       return;
     }
-    setSignOutHeldByWritingApply(false);
+    setSignOutBlockedWhileApplyWrites(false);
     if (profiles.unsaved.value.size > 0) {
       setLeaving(true);
     } else {
@@ -144,7 +144,7 @@ function SignedIn({
   };
   // The account menu, where this is also said, closes with the question, so it is said on the page too.
   const signOutProblem =
-    signOutHeldByWritingApply && writing
+    signOutBlockedWhileApplyWrites && writing
       ? 'Changes are being written to GitHub. Sign out once the apply has finished.'
       : account.signOutError.value;
   return (

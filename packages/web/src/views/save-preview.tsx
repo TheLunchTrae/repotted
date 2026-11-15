@@ -10,7 +10,7 @@ function count(amount: number, noun: string): string {
   return amount === 1 ? `1 ${noun}` : `${amount} ${noun}s`;
 }
 
-function message({ drafted, unsaved }: SavePreview): string {
+function message({ draftChangeCount: drafted, unsavedChangeCount: unsaved }: SavePreview): string {
   if (drafted === 0) {
     return 'What applies now against what applies once you save. Save as draft keeps these changes without applying them.';
   }
@@ -115,7 +115,7 @@ export function SavePreviewDialog({ name, editor, saving, preview }: SavePreview
       >
         <h2 id="preview-heading">Preview changes to {name}</h2>
         <p class="muted small">{message(preview)}</p>
-        {preview.changes === 0 ? (
+        {preview.changedLineCount === 0 ? (
           <p class="notice">Saving applies nothing new: what the profile applies stays as it is.</p>
         ) : (
           <Diff lines={preview.lines} />

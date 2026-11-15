@@ -30,13 +30,11 @@ import { type EditorStore, ProfileEditor } from './profile-editor.js';
 export interface Reviewed {
   /** Travels with the review, so no other plan can be applied in its place. */
   readonly plan: Plan;
-  /** How many of the plan's changes GitHub would refuse. */
-  readonly locked: number;
+  readonly lockedChangeCount: number;
   readonly sections: readonly CompareSection[];
   /** By the keys that put each back. */
   readonly leftOut: readonly string[];
-  /** The profile's drafts, which an apply leaves out. */
-  readonly skipped: readonly string[];
+  readonly skippedDrafts: readonly string[];
   readonly warnings: readonly string[];
   readonly appAccess: { readonly settings: string } | 'install' | undefined;
   /** Why the last try to apply wrote nothing, or stopped partway, with what this review then shows. */
@@ -46,13 +44,12 @@ export interface Reviewed {
 
 interface Target {
   readonly repository: string;
-  /** The profile's name as the list has it. */
-  readonly profile: string;
+  readonly profileName: string;
 }
 
 /** An apply's one-off edits are read, previewed, and written as its staged apply, which holds no drafts. */
 const stagedStore: EditorStore = {
-  drafts: false,
+  canHoldDrafts: false,
   resolve: resolveStagedApply,
   preview: previewStagedApply,
   edit: editStagedApply,
@@ -136,7 +133,7 @@ export class Apply {
   readonly counts = computed(() => {
     const state = this.state.value;
     return state.kind === 'reviewed'
-      ? { changes: state.plan.changes.length, locked: state.locked }
+      ? { changes: state.plan.changes.length, locked: state.lockedChangeCount }
       : { changes: 0, locked: 0 };
   });
 
@@ -168,7 +165,7 @@ export class Apply {
     this.#profile = profile;
     if (unfinished) {
       this.#turn += 1;
-      this.state.value = { kind: 'unfinished', repository, profile: profile.name };
+      this.state.value = { kind: 'unfinished', repository, profileName: profile.name };
       return;
     }
     await this.#work(repository, profile.name, 'reviewing', async () => {
@@ -209,7 +206,7 @@ export class Apply {
     if (state.kind !== 'editing' || !(await this.#saveEdits()) || this.state.value !== state) {
       return;
     }
-    await this.#work(state.repository, state.profile, 'reviewing', () => this.#review(state.repository, undefined));
+    await this.#work(state.repository, state.profileName, 'reviewing', () => this.#review(state.repository, undefined));
   }
 
   async backToEdits(): Promise<void> {
@@ -219,7 +216,7 @@ export class Apply {
       // The page may have moved on while the browser's files were read.
       this.state.value === state
     ) {
-      await this.#work(state.repository, state.profile, 'reviewing', () => this.#edit(state.repository));
+      await this.#work(state.repository, state.profileName, 'reviewing', () => this.#edit(state.repository));
     }
   }
 
@@ -275,7 +272,7 @@ export class Apply {
     return {
       kind: 'editing',
       repository,
-      profile: profileNameOfApply(staged.base),
+      profileName: profileNameOfApply(staged.base),
       fromProfile: staged.base !== null,
       builtIn: staged.base?.startsWith(`${builtInFolder}/`) === true,
       leftOut: staged.exclude,
@@ -295,7 +292,7 @@ export class Apply {
   async resume(): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'unfinished') {
-      await this.#work(state.repository, state.profile, 'reviewing', () => this.#edit(state.repository));
+      await this.#work(state.repository, state.profileName, 'reviewing', () => this.#edit(state.repository));
     }
   }
 
@@ -314,7 +311,7 @@ export class Apply {
     if (state.kind === 'editing' && !out) {
       // Put back from the edits, where what is left out can't be edited: the edits stay open, with the value back.
       if ((await this.#saveEdits()) && this.state.value === state) {
-        await this.#work(state.repository, state.profile, 'reviewing', async () => {
+        await this.#work(state.repository, state.profileName, 'reviewing', async () => {
           await editStagedApply(stagedFile(state.repository), [{ exclude: key, excluded: false }]);
           return this.#edit(state.repository);
         });
@@ -322,7 +319,7 @@ export class Apply {
       return;
     }
     if (state.kind === 'reviewed') {
-      await this.#work(state.repository, state.profile, 'reviewing', async () => {
+      await this.#work(state.repository, state.profileName, 'reviewing', async () => {
         await editStagedApply(stagedFile(state.repository), [{ exclude: key, excluded: out }]);
         return this.#review(state.repository, undefined);
       });
@@ -336,7 +333,9 @@ export class Apply {
       // The apply never began, as when its profile couldn't be read, so it starts now.
       await this.start(state.repository, profile);
     } else if (state.kind === 'reviewed' || state.kind === 'failed') {
-      await this.#work(state.repository, state.profile, 'reviewing', () => this.#review(state.repository, undefined));
+      await this.#work(state.repository, state.profileName, 'reviewing', () =>
+        this.#review(state.repository, undefined),
+      );
     }
   }
 
@@ -356,11 +355,16 @@ export class Apply {
     if (plan.repository.toLowerCase() !== state.repository.toLowerCase()) {
       return;
     }
-    await this.#work(state.repository, state.profile, 'applying', async () => {
+    await this.#work(state.repository, state.profileName, 'applying', async () => {
       try {
         const written = await applyPlan(this.#github, plan);
         await forget(state.repository);
-        return { kind: 'applied', repository: state.repository, profile: state.profile, changes: written.length };
+        return {
+          kind: 'applied',
+          repository: state.repository,
+          profileName: state.profileName,
+          changes: written.length,
+        };
       } catch (error) {
         if (error instanceof StalePlanError) {
           return this.#review(
@@ -422,13 +426,13 @@ export class Apply {
     return {
       kind: 'reviewed',
       repository,
-      profile,
+      profileName: profile,
       plan: staged.plan,
-      locked: locks.size,
+      lockedChangeCount: locks.size,
       sections: compareSections(staged.plan, locks, staged.exclusions),
       fromProfile: staged.staged.base !== null,
       leftOut: staged.staged.exclude,
-      skipped: staged.plan.skipped.map(describeSkipped),
+      skippedDrafts: staged.plan.skipped.map(describeSkipped),
       warnings: staged.plan.warnings.map(describeWarning),
       appAccess:
         access.app.status === 'not_installed'
@@ -448,7 +452,7 @@ export class Apply {
     work: (current: () => boolean) => Promise<ApplyState>,
   ): Promise<void> {
     const turn = (this.#turn += 1);
-    this.state.value = { kind, repository, profile };
+    this.state.value = { kind, repository, profileName: profile };
     try {
       const next = await work(() => turn === this.#turn);
       if (turn === this.#turn) {
@@ -464,7 +468,7 @@ export class Apply {
           ? 'This apply is no longer in this browser. Start it again from its repository.'
           : cleaned(messageOf(error), repository);
         if (turn === this.#turn) {
-          this.state.value = { kind: 'failed', repository, profile, message };
+          this.state.value = { kind: 'failed', repository, profileName: profile, message };
         }
       }
     }

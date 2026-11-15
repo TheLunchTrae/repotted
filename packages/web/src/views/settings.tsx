@@ -302,7 +302,7 @@ export function SettingsPage({
       run(protection.check(kept));
     }
   }, [protection, kept]);
-  const busy = profiles.busy.value;
+  const busy = profiles.syncingListingOrMovingProfiles.value;
   const onGitHub = source.kind === 'repository';
   const inFolder = source.kind === 'folder';
   const [addToFolder, setAddToFolder] = useState(false);

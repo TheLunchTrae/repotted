@@ -68,7 +68,7 @@ type FolderDialog =
   | {
       readonly kind: 'new';
       readonly repositories: readonly Repository[];
-      readonly areTheSelectedRepositories: boolean;
+      readonly isTheSelection: boolean;
     }
   | { readonly kind: 'rename'; readonly name: string }
   | { readonly kind: 'delete'; readonly name: string };
@@ -103,7 +103,7 @@ function RefreshButton({ repositories }: { readonly repositories: Repositories }
         Refresh
         {wait !== undefined && (
           <span class="refresh-countdown" aria-hidden="true">
-            &nbsp;in {countdown(repositories.refreshIn.value)}
+            &nbsp;in {countdown(repositories.secondsUntilRefreshCanRun.value)}
           </span>
         )}
       </button>
@@ -139,7 +139,7 @@ function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNamePr
   const [putIn, setPutIn] = useState(true);
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const moving = asked.kind === 'new' ? asked.repositories : [];
-  const fromSelected = asked.kind === 'new' && asked.areTheSelectedRepositories && moving.length > 0;
+  const fromSelected = asked.kind === 'new' && asked.isTheSelection && moving.length > 0;
   // The folder's name once renamed, since the menu that opened the dialog goes with its old name, or once
   // made with the selected repositories in it, since the selection's panel goes when they are deselected.
   const landed = useRef<string | undefined>(undefined);
@@ -428,7 +428,7 @@ function FolderSection({
         <FolderMenu name={folder.name} onDialog={onDialog} />
       </div>
       {folder.open &&
-        (folder.empty ? (
+        (folder.holdsNoListedRepository ? (
           <p class="empty-folder">
             Nothing in this folder yet. Select repositories, then pick this folder under{' '}
             <strong>Move to a folder</strong>.
@@ -528,7 +528,7 @@ function RepositoryPanel({
           value={repositories.folderOf(repository) ?? noFolderChoice}
           onChange={(value) => {
             if (value === newFolderChoice) {
-              onDialog({ kind: 'new', repositories: [repository], areTheSelectedRepositories: false });
+              onDialog({ kind: 'new', repositories: [repository], isTheSelection: false });
             } else {
               repositories.moveToFolder([repository], value === noFolderChoice ? undefined : value);
             }
@@ -816,7 +816,7 @@ function SelectedPanel({
             return;
           }
           if (target.kind === 'new') {
-            onDialog({ kind: 'new', repositories: selected, areTheSelectedRepositories: true });
+            onDialog({ kind: 'new', repositories: selected, isTheSelection: true });
           } else {
             const folder = target.kind === 'folder' ? target.name : undefined;
             repositories.moveToFolder(selected, folder, { deselect: true });
@@ -1137,7 +1137,7 @@ export function RepositoriesPage({
                 class="button button-quiet"
                 type="button"
                 onClick={() => {
-                  setDialog({ kind: 'new', repositories: selected, areTheSelectedRepositories: true });
+                  setDialog({ kind: 'new', repositories: selected, isTheSelection: true });
                 }}
               >
                 New folder

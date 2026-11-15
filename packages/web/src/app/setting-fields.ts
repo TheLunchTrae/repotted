@@ -4,11 +4,9 @@ export interface SettingOption {
 }
 
 export interface SettingCondition {
-  /** The other setting's key, in the same section. */
-  readonly key: string;
+  readonly otherSettingKeyInSameSection: string;
   readonly values: readonly unknown[];
-  /** Whether GitHub hides the setting, rather than leaving it in place and off. */
-  readonly hides: boolean;
+  readonly hiddenRatherThanGreyedOut: boolean;
 }
 
 interface FieldDetails {
@@ -17,14 +15,12 @@ interface FieldDetails {
   readonly label: string;
   readonly kind: 'choice' | 'number' | 'text' | 'list';
   readonly options: readonly SettingOption[];
-  /** Whether it sits indented under the setting before it, as one of that setting's own options. */
-  readonly nested: boolean;
+  readonly indentedUnderPreviousSetting: boolean;
   readonly note: string | undefined;
   readonly allowsEmpty: boolean;
   readonly emptyIsNull: boolean;
   readonly dependsOn: SettingCondition | undefined;
-  /** Whether setting it takes out every other setting in its section, and setting any of them takes it out. */
-  readonly alone: boolean;
+  readonly excludesOtherSettingsInSection: boolean;
 }
 
 export class SettingField implements FieldDetails {
@@ -33,12 +29,12 @@ export class SettingField implements FieldDetails {
   readonly label: string;
   readonly kind: FieldDetails['kind'];
   readonly options: readonly SettingOption[];
-  readonly nested: boolean;
+  readonly indentedUnderPreviousSetting: boolean;
   readonly note: string | undefined;
   readonly allowsEmpty: boolean;
   readonly emptyIsNull: boolean;
   readonly dependsOn: SettingCondition | undefined;
-  readonly alone: boolean;
+  readonly excludesOtherSettingsInSection: boolean;
 
   constructor(details: FieldDetails) {
     this.section = details.section;
@@ -46,12 +42,12 @@ export class SettingField implements FieldDetails {
     this.label = details.label;
     this.kind = details.kind;
     this.options = details.options;
-    this.nested = details.nested;
+    this.indentedUnderPreviousSetting = details.indentedUnderPreviousSetting;
     this.note = details.note;
     this.allowsEmpty = details.allowsEmpty;
     this.emptyIsNull = details.emptyIsNull;
     this.dependsOn = details.dependsOn;
-    this.alone = details.alone;
+    this.excludesOtherSettingsInSection = details.excludesOtherSettingsInSection;
   }
 
   get path(): readonly string[] {
@@ -59,7 +55,7 @@ export class SettingField implements FieldDetails {
   }
 
   under(): SettingField {
-    return new SettingField({ ...this.#details(), nested: true });
+    return new SettingField({ ...this.#details(), indentedUnderPreviousSetting: true });
   }
 
   noted(note: string): SettingField {
@@ -67,15 +63,21 @@ export class SettingField implements FieldDetails {
   }
 
   hiddenWhile(key: string, ...values: unknown[]): SettingField {
-    return new SettingField({ ...this.#details(), dependsOn: { key, values, hides: true } });
+    return new SettingField({
+      ...this.#details(),
+      dependsOn: { otherSettingKeyInSameSection: key, values, hiddenRatherThanGreyedOut: true },
+    });
   }
 
   offWhile(key: string, ...values: unknown[]): SettingField {
-    return new SettingField({ ...this.#details(), dependsOn: { key, values, hides: false } });
+    return new SettingField({
+      ...this.#details(),
+      dependsOn: { otherSettingKeyInSameSection: key, values, hiddenRatherThanGreyedOut: false },
+    });
   }
 
   standsAlone(): SettingField {
-    return new SettingField({ ...this.#details(), alone: true });
+    return new SettingField({ ...this.#details(), excludesOtherSettingsInSection: true });
   }
 
   #details(): FieldDetails {
@@ -85,12 +87,12 @@ export class SettingField implements FieldDetails {
       label: this.label,
       kind: this.kind,
       options: this.options,
-      nested: this.nested,
+      indentedUnderPreviousSetting: this.indentedUnderPreviousSetting,
       note: this.note,
       allowsEmpty: this.allowsEmpty,
       emptyIsNull: this.emptyIsNull,
       dependsOn: this.dependsOn,
-      alone: this.alone,
+      excludesOtherSettingsInSection: this.excludesOtherSettingsInSection,
     };
   }
 }
@@ -121,12 +123,12 @@ function field(
     label,
     kind,
     options,
-    nested: false,
+    indentedUnderPreviousSetting: false,
     note: undefined,
     allowsEmpty: text.allowsEmpty ?? false,
     emptyIsNull: text.emptyIsNull ?? false,
     dependsOn: undefined,
-    alone: false,
+    excludesOtherSettingsInSection: false,
   });
 }
 

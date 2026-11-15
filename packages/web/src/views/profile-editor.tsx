@@ -12,18 +12,18 @@ import { run } from './run.js';
 import { SavePreviewDialog } from './save-preview.js';
 
 function Control({ row, editor }: { readonly row: SettingRow; readonly editor: ProfileEditor }): JSX.Element {
-  const { field, value, invalid, text } = row;
+  const { field, value, typedTextProblem: invalid, textBeingTyped: text } = row;
   const id = `setting-${field.path.join('-')}`;
   if (field.kind === 'choice') {
     return (
       <div class="segments" role="radiogroup" aria-labelledby={`${id}-label`}>
-        {row.options.map((option) => (
+        {row.optionsForProfileOwnerType.map((option) => (
           <label key={option.label}>
             <input
               type="radio"
               name={id}
               checked={sameValue(option.value, value)}
-              disabled={row.off}
+              disabled={row.greyedOutOnGitHub}
               onChange={() => {
                 run(editor.set(field, option.value));
               }}
@@ -45,7 +45,7 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
         rows={Math.max(3, Array.isArray(value) ? value.length + 1 : 3)}
         aria-labelledby={`${id}-label`}
         aria-invalid={invalid !== undefined}
-        disabled={row.off}
+        disabled={row.greyedOutOnGitHub}
         value={text ?? (Array.isArray(value) ? value.join('\n') : '')}
         onInput={(event) => {
           typed(event.currentTarget.value);
@@ -63,7 +63,7 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
       inputMode={field.kind === 'number' ? 'numeric' : undefined}
       aria-labelledby={`${id}-label`}
       aria-invalid={invalid !== undefined}
-      disabled={row.off}
+      disabled={row.greyedOutOnGitHub}
       placeholder={value === undefined ? 'Not managed' : undefined}
       value={text ?? (typeof value === 'string' || typeof value === 'number' ? String(value) : '')}
       onInput={(event) => {
@@ -95,18 +95,20 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
   const id = `setting-${field.path.join('-')}`;
   const managed = row.value !== undefined;
   // An apply's editor sets values in the apply, which a profile's sets in the profile.
-  const here = editor.drafts ? 'profile' : 'apply';
+  const here = editor.canHoldDrafts ? 'profile' : 'apply';
   return (
-    <div class={`setting${field.nested ? ' setting-nested' : ''}${row.unsaved ? ' setting-unsaved' : ''}`}>
+    <div
+      class={`setting${field.indentedUnderPreviousSetting ? ' setting-nested' : ''}${row.unsaved ? ' setting-unsaved' : ''}`}
+    >
       <div class="setting-head">
         <div class="setting-text">
           <span>
             <strong id={`${id}-label`}>{field.label}</strong>
-            {row.inDraft && <span class="pill pill-draft">Draft</span>}
+            {row.valueShownIsFromDraft && <span class="pill pill-draft">Draft</span>}
             {row.ownerTag !== undefined && <span class="pill pill-owner">{row.ownerTag} only</span>}
           </span>
           <span class="muted small">
-            {row.inDraft
+            {row.valueShownIsFromDraft
               ? `In the draft${managed ? '' : ': not managed'}. Applies now: ${describe(field, row.applied)}.`
               : !managed
                 ? 'Not managed: each repository keeps its own.'
@@ -116,12 +118,12 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
                     ? `Set in this ${here}, not saved yet.`
                     : `From ${row.source}.`}
             {row.unsaved && managed && row.source !== undefined && ' Not saved yet.'}
-            {row.off && ' Off on GitHub for the setting above.'}
+            {row.greyedOutOnGitHub && ' Off on GitHub for the setting above.'}
           </span>
         </div>
         <Control row={row} editor={editor} />
         <div class="setting-actions">
-          {row.unsaved || row.invalid !== undefined ? (
+          {row.unsaved || row.typedTextProblem !== undefined ? (
             <button
               class="button button-quiet button-small"
               type="button"
@@ -148,9 +150,9 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
           )}
         </div>
       </div>
-      {row.invalid !== undefined && (
+      {row.typedTextProblem !== undefined && (
         <p class="problem small" role="alert">
-          {row.invalid}
+          {row.typedTextProblem}
         </p>
       )}
       {row.hiddenNamed > 0 && (
@@ -221,7 +223,7 @@ function DiscardDraft({ saving, onClose }: DraftProps & { readonly onClose: () =
 function DraftBanner({ editor, saving }: DraftProps): JSX.Element | null {
   const [discarding, setDiscarding] = useState(false);
   const count = editor.draftCount.value;
-  const warnings = editor.warnings.value;
+  const warnings = editor.savedDraftWarnings.value;
   if (count === 0) {
     return null;
   }
@@ -295,8 +297,8 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
     ...sections.map(({ section, groups }) => ({
       id: section.section,
       name: section.name,
-      unsaved: groups.some((group) => group.rows.some((row) => row.unsaved || row.invalid !== undefined)),
-      drafted: groups.some((group) => group.rows.some((row) => row.inDraft)),
+      unsaved: groups.some((group) => group.rows.some((row) => row.unsaved || row.typedTextProblem !== undefined)),
+      drafted: groups.some((group) => group.rows.some((row) => row.valueShownIsFromDraft)),
     })),
     ...entryLists.map((item) => ({
       id: item,
@@ -309,7 +311,7 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
   const filtering = editor.filtering.value;
   const preview = editor.preview.value;
   const search = useRef<HTMLInputElement>(null);
-  const problem = editor.problem.value ?? editor.saveError.value;
+  const problem = editor.unsavedChangesProblem.value ?? editor.saveError.value;
   const tabs = useRef<HTMLDivElement>(null);
   // The arrow keys move between tabs, as in a tab list, and only the shown tab is a Tab stop.
   const move = (event: KeyboardEvent, index: number): void => {
@@ -390,11 +392,11 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
           {filtering ? editor.foundSummary.value : ''}
         </p>
       </div>
-      {editor.ownerHidden.value > 0 && (
+      {editor.settingsHiddenForOwnerTypeCount.value > 0 && (
         <p class="muted small">
-          {editor.ownerHidden.value === 1
+          {editor.settingsHiddenForOwnerTypeCount.value === 1
             ? '1 setting that only organizations have is hidden.'
-            : `${editor.ownerHidden.value} settings that only organizations have are hidden.`}
+            : `${editor.settingsHiddenForOwnerTypeCount.value} settings that only organizations have are hidden.`}
         </p>
       )}
       {filtering && (
@@ -505,7 +507,7 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
               >
                 Reset
               </button>
-              {editor.drafts && (
+              {editor.canHoldDrafts && (
                 <>
                   <button
                     class="button button-quiet"

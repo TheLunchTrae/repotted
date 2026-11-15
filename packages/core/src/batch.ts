@@ -712,7 +712,7 @@ async function endMember(reviewed: ReviewedBatch, member: ReviewedMember): Promi
   return outcome.ended;
 }
 
-async function reasonNotTried(reviewed: ReviewedBatch, member: ReviewedMember): Promise<MemberResult | undefined> {
+async function resultIfNotTried(reviewed: ReviewedBatch, member: ReviewedMember): Promise<MemberResult | undefined> {
   const { repository } = member;
   // A batch that ended, moved or started over no longer holds the reviewed member.
   const listed = (await isBatch(reviewed.batch)) && listsMember(await readBatch(reviewed.batch), reviewed, member);
@@ -732,9 +732,9 @@ async function applyMember(github: GitHub, reviewed: ReviewedBatch, member: Revi
   const { repository } = member;
   let applied: readonly Change[];
   try {
-    const skip = await reasonNotTried(reviewed, member);
-    if (skip !== undefined) {
-      return skip;
+    const resultWithoutTrying = await resultIfNotTried(reviewed, member);
+    if (resultWithoutTrying !== undefined) {
+      return resultWithoutTrying;
     }
     // Even a plan with no changes is planned again, so a member is never called in line on an old read.
     applied = await applyPlan(github, member.plan);

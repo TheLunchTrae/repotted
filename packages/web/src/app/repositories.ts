@@ -33,8 +33,7 @@ export interface FolderGroup {
   readonly open: boolean;
   /** As in the owners' groups, and while searching, those that match. */
   readonly repositories: readonly Repository[];
-  /** Whether the folder holds no repository the list has. */
-  readonly empty: boolean;
+  readonly holdsNoListedRepository: boolean;
 }
 
 export type MoveTarget =
@@ -43,7 +42,7 @@ export type MoveTarget =
   | { readonly kind: 'new' };
 
 export interface RefreshWait {
-  /** Whether GitHub's rate limit holds it, rather than the pause after a refresh. */
+  /** False for the pause after a refresh. */
   readonly rateLimited: boolean;
   readonly until: Date;
 }
@@ -162,8 +161,7 @@ export class Repositories {
   readonly #openedName = signal<string | undefined>(undefined);
   readonly #selectedNames = signal<ReadonlySet<string>>(new Set());
   readonly #refreshWait = signal<RefreshWait | undefined>(undefined);
-  /** The time the countdown last read, which a timer moves on each second while Refresh waits. */
-  readonly #now = signal(Date.now());
+  readonly #timeCountdownLastRead = signal(Date.now());
   #clock: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
@@ -255,7 +253,7 @@ export class Repositories {
           name: folder.name,
           open: words !== '' || !this.#closedFolders.value.some((name) => sameName(name, folder.name)),
           repositories: matching,
-          empty,
+          holdsNoListedRepository: empty,
         },
       ];
     });
@@ -349,13 +347,14 @@ export class Repositories {
     return shown === total ? `All ${total}` : `${shown} of ${total}`;
   });
 
-  /** Whole seconds until Refresh reads again, or 0 when it can. */
-  readonly refreshIn = computed(() => {
+  readonly secondsUntilRefreshCanRun = computed(() => {
     const until = this.#refreshWait.value?.until.getTime() ?? 0;
-    return Math.max(0, Math.ceil((until - this.#now.value) / 1000));
+    return Math.max(0, Math.ceil((until - this.#timeCountdownLastRead.value) / 1000));
   });
 
-  readonly refreshWait = computed(() => (this.refreshIn.value > 0 ? this.#refreshWait.value : undefined));
+  readonly refreshWait = computed(() =>
+    this.secondsUntilRefreshCanRun.value > 0 ? this.#refreshWait.value : undefined,
+  );
 
   /** Unlike `refresh`, with no pause after it. */
   async load(): Promise<void> {
@@ -416,8 +415,8 @@ export class Repositories {
 
   #tick(): void {
     clearTimeout(this.#clock);
-    this.#now.value = Date.now();
-    const left = (this.#refreshWait.value?.until.getTime() ?? 0) - this.#now.value;
+    this.#timeCountdownLastRead.value = Date.now();
+    const left = (this.#refreshWait.value?.until.getTime() ?? 0) - this.#timeCountdownLastRead.value;
     if (left <= 0) {
       this.#clock = undefined;
       return;

@@ -116,7 +116,12 @@ function DeleteProfile({ listing, profiles, onClose }: ProfileProps & { readonly
           </p>
         )}
         <div class="form-actions">
-          <button class="button button-danger" type="submit" value="delete" disabled={profiles.busy.value}>
+          <button
+            class="button button-danger"
+            type="submit"
+            value="delete"
+            disabled={profiles.syncingListingOrMovingProfiles.value}
+          >
             Delete profile
           </button>
           {/* The dialog opens with the keyboard on Cancel, so Enter never deletes by itself. */}
@@ -264,7 +269,7 @@ export function ProfilesPage({ profiles, repositories, router, newProfileForm }:
   const tree = profiles.tree.value;
   const selected = profiles.selected.value;
   const conflicts = profiles.conflicts.value;
-  const busy = profiles.busy.value;
+  const busy = profiles.syncingListingOrMovingProfiles.value;
   const total = profiles.listings.value.length;
   const elsewhere = source.kind === 'folder' ? 'in the folder' : 'on GitHub';
   // On a phone the list and the open profile are two screens; app.css shows the one this names.
@@ -375,11 +380,13 @@ export function ProfilesPage({ profiles, repositories, router, newProfileForm }:
             All profiles
           </button>
         )}
-        {(conflicts.length > 0 || profiles.sync.value.status === 'failed' || profiles.error.value !== undefined) && (
+        {(conflicts.length > 0 ||
+          profiles.sync.value.status === 'failed' ||
+          profiles.listingError.value !== undefined) && (
           <div class="banners">
-            {profiles.error.value !== undefined && (
+            {profiles.listingError.value !== undefined && (
               <p class="notice notice-problem" role="alert">
-                Couldn't list the profiles: {profiles.error.value}
+                Couldn't list the profiles: {profiles.listingError.value}
               </p>
             )}
             {profiles.sync.value.status === 'failed' && (

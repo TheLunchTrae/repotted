@@ -31,11 +31,10 @@ export interface BatchMemberView {
   readonly repository: string;
   readonly status: 'changes' | 'in-line' | 'needs-access' | 'failed' | 'left-out';
   readonly changes: number;
-  /** Why it couldn't be compared. */
-  readonly message: string | undefined;
+  readonly comparisonFailureMessage: string | undefined;
   readonly sections: readonly CompareSection[];
   readonly leftOut: readonly string[];
-  readonly skipped: readonly string[];
+  readonly skippedDrafts: readonly string[];
   readonly warnings: readonly string[];
   /**
    * Said of an apply that doesn't start from the batch's profile, as one in
@@ -51,8 +50,8 @@ export interface BatchChange {
 }
 
 interface Named {
-  /** The profile's name, or none for a batch picked up without one picked. */
-  readonly profile: string;
+  /** '' for a batch picked up without a profile picked. */
+  readonly profileName: string;
 }
 
 export type BatchState =
@@ -65,8 +64,7 @@ export type BatchState =
   | ({
       readonly kind: 'failed';
       readonly message: string;
-      /** Whether a batch is there to review again. */
-      readonly batch: boolean;
+      readonly hasBatchToReviewAgain: boolean;
     } & Named)
   | ({
       readonly kind: 'reviewed';
@@ -85,7 +83,7 @@ export type BatchState =
 
 export interface BatchResult {
   readonly repository: string;
-  /** Whether it finished: written, or already in line. */
+  /** Written, or already in line. */
   readonly finished: boolean;
   readonly said: string;
 }
@@ -150,10 +148,10 @@ function membersOf(plan: BatchPlan): BatchMemberView[] {
       repository: member.repository,
       status: member.locks.length > 0 ? 'needs-access' : member.changes.length === 0 ? 'in-line' : 'changes',
       changes: member.changes.length,
-      message: undefined,
+      comparisonFailureMessage: undefined,
       sections: compareSections(member, locks, member.exclusions),
       leftOut: member.staged.exclude,
-      skipped: member.skipped.map(describeSkipped),
+      skippedDrafts: member.skipped.map(describeSkipped),
       warnings: member.warnings.map(describeWarning),
       startNote:
         member.staged.base === plan.profile
@@ -167,10 +165,10 @@ function membersOf(plan: BatchPlan): BatchMemberView[] {
     repository,
     status,
     changes: 0,
-    message,
+    comparisonFailureMessage: message,
     sections: [],
     leftOut: [],
-    skipped: [],
+    skippedDrafts: [],
     warnings: [],
     startNote: undefined,
   });
@@ -256,8 +254,8 @@ export class BatchApply {
         );
         return {
           kind: 'failed',
-          profile: held,
-          batch: true,
+          profileName: held,
+          hasBatchToReviewAgain: true,
           message: `A batch apply${held === '' ? '' : ` of ${held}`} is not finished. Review it again to pick it up, or discard it, before starting another.`,
         };
       }
@@ -290,20 +288,20 @@ export class BatchApply {
     await this.#work('', [], () => this.#review([]));
   }
 
-  /** Whether a batch is there to plan again: not after one that ended, or that never started. */
+  /** Not after a batch that ended, or that never started. */
   readonly canReviewAgain = computed(() => {
     const state = this.state.value;
     return (
       state.kind === 'reviewed' ||
-      (state.kind === 'failed' && state.batch) ||
+      (state.kind === 'failed' && state.hasBatchToReviewAgain) ||
       (state.kind === 'applied' && state.left > 0)
     );
   });
 
   async reviewAgain(): Promise<void> {
     const state = this.state.value;
-    if (this.canReviewAgain.value && 'profile' in state) {
-      await this.#work(state.profile, this.members.value, () => this.#review([]));
+    if (this.canReviewAgain.value && 'profileName' in state) {
+      await this.#work(state.profileName, this.members.value, () => this.#review([]));
     }
   }
 
@@ -311,7 +309,7 @@ export class BatchApply {
   async leaveOutRepository(repository: string, out: boolean): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'reviewed') {
-      await this.#work(state.profile, state.members, async () => {
+      await this.#work(state.profileName, state.members, async () => {
         await leaveOut(batchFolder, [repository], out);
         return this.#review([]);
       });
@@ -325,7 +323,7 @@ export class BatchApply {
   async remove(repository: string): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'reviewed') {
-      await this.#work(state.profile, state.members, async () => {
+      await this.#work(state.profileName, state.members, async () => {
         const { batch } = await discardBatchMember(batchFolder, repository);
         return batch === null ? { kind: 'idle' } : this.#review([]);
       });
@@ -337,7 +335,7 @@ export class BatchApply {
     const file =
       state.kind === 'reviewed' ? state.plan.plans.find((member) => member.repository === repository)?.file : undefined;
     if (state.kind === 'reviewed' && file !== undefined) {
-      await this.#work(state.profile, state.members, async () => {
+      await this.#work(state.profileName, state.members, async () => {
         await editStagedApply(file, [{ exclude: key, excluded: out }]);
         return this.#review([]);
       });
@@ -347,7 +345,7 @@ export class BatchApply {
   async everywhere(key: string, out: boolean): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'reviewed') {
-      await this.#work(state.profile, state.members, async () => {
+      await this.#work(state.profileName, state.members, async () => {
         const { refused } = await editEverywhere(batchFolder, key, out);
         return this.#review(refused.map((item) => `${item.repository}: ${cleaned(item.message)}`));
       });
@@ -365,7 +363,7 @@ export class BatchApply {
     if (state.kind !== 'reviewed' || this.ready.value.length === 0) {
       return;
     }
-    const { plan, profile } = state;
+    const { plan, profileName: profile } = state;
     const turn = (this.#turn += 1);
     const results: BatchResult[] = [];
     let signedOut = false;
@@ -375,7 +373,7 @@ export class BatchApply {
         this.#onSignedOut();
       }
     };
-    this.state.value = { kind: 'applying', profile, total: plan.plans.length, results };
+    this.state.value = { kind: 'applying', profileName: profile, total: plan.plans.length, results };
     try {
       await applyBatch(
         this.#github,
@@ -394,7 +392,12 @@ export class BatchApply {
           onResult: (result) => {
             results.push(resultOf(result));
             if (turn === this.#turn) {
-              this.state.value = { kind: 'applying', profile, total: plan.plans.length, results: [...results] };
+              this.state.value = {
+                kind: 'applying',
+                profileName: profile,
+                total: plan.plans.length,
+                results: [...results],
+              };
             }
             // The rest are still tried, and fail the same way, so the account is signed out once.
             if (
@@ -409,12 +412,17 @@ export class BatchApply {
       const left = (await this.unfinished()) ? (await readBatch(batchFolder)).members.length : 0;
       // Those that didn't finish come first, since they are what is left to do.
       const ordered = [...results.filter((result) => !result.finished), ...results.filter((result) => result.finished)];
-      this.state.value = { kind: 'applied', profile, results: ordered, left };
+      this.state.value = { kind: 'applied', profileName: profile, results: ordered, left };
     } catch (error) {
       if (isSignedOut(error)) {
         lostSignIn();
       }
-      this.state.value = { kind: 'failed', profile, batch: await this.#held(), message: cleaned(messageOf(error)) };
+      this.state.value = {
+        kind: 'failed',
+        profileName: profile,
+        hasBatchToReviewAgain: await this.#held(),
+        message: cleaned(messageOf(error)),
+      };
     }
   }
 
@@ -426,8 +434,8 @@ export class BatchApply {
     }
     // Nothing is reviewed while it goes, so nothing can be applied from a batch being thrown away.
     const turn = (this.#turn += 1);
-    const profile = state.kind === 'idle' ? '' : state.profile;
-    this.state.value = { kind: 'reviewing', profile, members: [] };
+    const profile = state.kind === 'idle' ? '' : state.profileName;
+    this.state.value = { kind: 'reviewing', profileName: profile, members: [] };
     try {
       if (await this.unfinished()) {
         await discardBatch(batchFolder).catch(async (error: unknown) => {
@@ -446,7 +454,12 @@ export class BatchApply {
       }
     } catch (error) {
       if (turn === this.#turn) {
-        this.state.value = { kind: 'failed', profile, batch: await this.#held(), message: cleaned(messageOf(error)) };
+        this.state.value = {
+          kind: 'failed',
+          profileName: profile,
+          hasBatchToReviewAgain: await this.#held(),
+          message: cleaned(messageOf(error)),
+        };
       }
       return;
     }
@@ -477,13 +490,13 @@ export class BatchApply {
     if (plan.failures.some((failure) => failure.error.kind === 'signed_out')) {
       this.#onSignedOut();
     }
-    return { kind: 'reviewed', profile: nameOf(plan.profile), plan, members: membersOf(plan), refused };
+    return { kind: 'reviewed', profileName: nameOf(plan.profile), plan, members: membersOf(plan), refused };
   }
 
   /** One piece of work counts at a time. */
   async #work(profile: string, members: readonly BatchMemberView[], work: () => Promise<BatchState>): Promise<void> {
     const turn = (this.#turn += 1);
-    this.state.value = { kind: 'reviewing', profile, members };
+    this.state.value = { kind: 'reviewing', profileName: profile, members };
     try {
       const next = await work();
       if (turn === this.#turn) {
@@ -495,7 +508,12 @@ export class BatchApply {
       }
       const batch = await this.#held();
       if (turn === this.#turn) {
-        this.state.value = { kind: 'failed', profile, batch, message: cleaned(messageOf(error)) };
+        this.state.value = {
+          kind: 'failed',
+          profileName: profile,
+          hasBatchToReviewAgain: batch,
+          message: cleaned(messageOf(error)),
+        };
       }
     }
   }

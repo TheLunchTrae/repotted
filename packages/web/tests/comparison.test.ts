@@ -52,7 +52,7 @@ test('a comparison says what the profile would change, by section, and leaves ou
 
   await comparison.compare('lunch/app', profile);
 
-  expect(comparison.state.value).toMatchObject({ kind: 'compared', repository: 'lunch/app', profile: 'web' });
+  expect(comparison.state.value).toMatchObject({ kind: 'compared', repository: 'lunch/app', profileName: 'web' });
   expect(rows(comparison)).toEqual([
     'Repository | Wiki | repository.has_wiki | On -> Off',
     'Actions | Allowed actions | actions.allowed_actions | All -> Selected',
@@ -60,7 +60,7 @@ test('a comparison says what the profile would change, by section, and leaves ou
     'Labels | old | label removed | On GitHub -> Removed',
     'Labels | bug | new label | Not on GitHub -> Created',
   ]);
-  expect(comparison.state.value).toMatchObject({ skipped: ['repository.has_projects'] });
+  expect(comparison.state.value).toMatchObject({ skippedDrafts: ['repository.has_projects'] });
   expect(comparison.counts.value).toEqual({ differences: 5, locked: 0, matches: 1 });
   // GitHub didn't say which installations the account has, so nothing is locked and there is nowhere to send them.
   expect(comparison.state.value).toMatchObject({ appAccess: undefined });
@@ -88,10 +88,10 @@ test('the search and the filter narrow the differences, and a new comparison cle
   expect(rows(comparison)).toEqual(['Labels | bug | new label | Not on GitHub -> Created']);
 
   comparison.search.value = '';
-  comparison.onlyLocked.value = true;
+  comparison.showOnlyLockedDifferences.value = true;
   // The installation was granted Administration, which settings need, and not Issues, which labels need.
   expect(comparison.shown.value.map((section) => section.title)).toEqual(['Labels']);
-  expect(comparison.shown.value[0]?.rows[0]?.lock).toBe('Needs Issues write');
+  expect(comparison.shown.value[0]?.rows[0]?.lockReason).toBe('Needs Issues write');
   expect(comparison.counts.value).toEqual({ differences: 4, locked: 1, matches: 1 });
   const compared = comparison.state.value;
   expect(compared.kind === 'compared' && compared.appAccess !== 'install' && compared.appAccess !== undefined).toBe(
@@ -101,7 +101,7 @@ test('the search and the filter narrow the differences, and a new comparison cle
   // Comparing again reads the profile as it is saved by then.
   await saved('repository:\n  has_wiki: false\n');
   await comparison.again();
-  expect(comparison.onlyLocked.value).toBe(false);
+  expect(comparison.showOnlyLockedDifferences.value).toBe(false);
   expect(comparison.search.value).toBe('');
   expect(rows(comparison)).toEqual(['Repository | Wiki | repository.has_wiki | On -> Off']);
 });
@@ -112,7 +112,7 @@ test("a profile for the other kind of owner can't be compared, and says how to u
 
   await comparison.compare('lunch/app', profile);
 
-  expect(comparison.state.value).toMatchObject({ kind: 'failed', mismatch: true });
+  expect(comparison.state.value).toMatchObject({ kind: 'failed', profileIsForOtherOwnerType: true });
   expect(failure(comparison)).toContain('make a copy of the profile');
 });
 
@@ -123,7 +123,7 @@ test('a comparison that fails says why by the profile’s name, and a refused si
   const comparison = new Comparison(github, signedOut);
 
   await comparison.compare('lunch/app', profile);
-  expect(comparison.state.value).toMatchObject({ kind: 'failed', mismatch: false });
+  expect(comparison.state.value).toMatchObject({ kind: 'failed', profileIsForOtherOwnerType: false });
   expect(failure(comparison)).toContain('web is not a valid profile');
   expect(signedOut).not.toHaveBeenCalled();
 
@@ -142,7 +142,7 @@ test('a slower comparison never replaces a later one, and one put away shows not
   const first = comparison.compare('lunch/app', profile);
   const second = comparison.compare('lunch/app', { file: '/profiles/other.yaml', name: 'other' });
   await Promise.all([first, second]);
-  expect(comparison.state.value).toMatchObject({ kind: 'compared', profile: 'other' });
+  expect(comparison.state.value).toMatchObject({ kind: 'compared', profileName: 'other' });
 
   const third = comparison.compare('lunch/app', profile);
   comparison.close();
@@ -157,7 +157,7 @@ function compared(changes: Changes, locks: ReadonlyMap<number, string> = new Map
   return compareSections(plan, locks).flatMap((section) =>
     section.rows.map(
       (row: CompareRow) =>
-        `${row.kind} | ${row.label} | ${row.key} | ${row.now} -> ${row.wanted}${row.lock === undefined ? '' : ` | ${row.lock}`}`,
+        `${row.kind} | ${row.label} | ${row.key} | ${row.now} -> ${row.wanted}${row.lockReason === undefined ? '' : ` | ${row.lockReason}`}`,
     ),
   );
 }
@@ -258,7 +258,7 @@ test('an App that is not installed on the repository locks every difference and 
   await comparison.compare('lunch/app', profile);
 
   expect(comparison.state.value).toMatchObject({ kind: 'compared', appAccess: 'install' });
-  expect(comparison.shown.value[0]?.rows[0]?.lock).toBe('Needs the GitHub App installed on this repository');
+  expect(comparison.shown.value[0]?.rows[0]?.lockReason).toBe('Needs the GitHub App installed on this repository');
 });
 
 test('a failure names a base profile by its file beside the profile, not by where the browser keeps it', async () => {
@@ -313,7 +313,7 @@ labels:
   expect(matches(comparison)).toEqual([]);
   expect(comparison.counts.value).toMatchObject({ differences: 3, matches: 5 });
 
-  comparison.onlyDifferences.value = false;
+  comparison.showOnlyDifferences.value = false;
   // A label the profile removes that is already gone is neither a difference nor a match.
   expect(matches(comparison)).toEqual([
     'Repository | Issues | repository.has_issues | On',
@@ -354,7 +354,7 @@ labels:
   github.state.settings['/actions/oidc/customization/sub'] = { use_default: true };
   const comparison = new Comparison(github, () => undefined);
   await comparison.compare('lunch/app', profile);
-  comparison.onlyDifferences.value = false;
+  comparison.showOnlyDifferences.value = false;
 
   // The selected actions don't apply while all are allowed, GitHub ignores
   // the claim keys with the default subject, the Pages site is new, so none
@@ -371,11 +371,11 @@ test("the choice to show what needs no change stays for the next comparison, and
   await saved('repository:\n  has_wiki: true\n  has_issues: false\n');
   const comparison = new Comparison(new FakeGitHub(), () => undefined);
   await comparison.compare('lunch/app', profile);
-  comparison.onlyDifferences.value = false;
+  comparison.showOnlyDifferences.value = false;
 
   await comparison.again();
   expect(matches(comparison)).toEqual(['Repository | Wiki | repository.has_wiki | On']);
 
-  comparison.onlyLocked.value = true;
+  comparison.showOnlyLockedDifferences.value = true;
   expect(matches(comparison)).toEqual([]);
 });

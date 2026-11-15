@@ -134,10 +134,8 @@ export class Profiles {
   /** The profiles that changed both here and where they sync with since the last sync, by path in the folder. */
   readonly conflicts = signal<readonly string[]>([]);
   readonly listings = signal<readonly ProfileListing[]>([]);
-  /** Why the folder couldn't be listed. */
-  readonly error = signal<string | undefined>(undefined);
-  /** Whether a sync, a listing, or a change of where profiles are kept is under way. */
-  readonly busy = signal(false);
+  readonly listingError = signal<string | undefined>(undefined);
+  readonly syncingListingOrMovingProfiles = signal(false);
   readonly search = signal('');
   /** Until the next change of where profiles are kept. */
   readonly connectError = signal<string | undefined>(undefined);
@@ -712,11 +710,11 @@ export class Profiles {
 
   async #work<Result>(work: () => Promise<Result>): Promise<Result> {
     return this.#queue.run(async () => {
-      this.busy.value = true;
+      this.syncingListingOrMovingProfiles.value = true;
       try {
         return await work();
       } finally {
-        this.busy.value = false;
+        this.syncingListingOrMovingProfiles.value = false;
       }
     });
   }
@@ -789,9 +787,9 @@ export class Profiles {
     try {
       await mkdir(this.folder.value, { recursive: true });
       this.listings.value = await listProfiles(this.folder.value);
-      this.error.value = undefined;
+      this.listingError.value = undefined;
     } catch (error) {
-      this.error.value = messageOf(error);
+      this.listingError.value = messageOf(error);
     }
     // Each editor reads its profile again, since a sync may have changed it or one it extends,
     // and lays its unsaved changes over what it finds. An editor whose profile is gone goes too.
