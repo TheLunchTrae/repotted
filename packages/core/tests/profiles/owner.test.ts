@@ -8,7 +8,7 @@ import { applyPlan, captureProfile, createPlan, OwnerMismatchError } from '../..
 import { changeOwnerType, ProfileError, resolveProfile } from '../../src/profiles/profile.js';
 import { profile, profileFileJsonSchema } from '../../src/profiles/schema.js';
 import { createStagedApply } from '../../src/staging/staged.js';
-import { FakeGitHub } from '../support/fake-github.js';
+import { answered, FakeGitHub } from '../support/fake-github.js';
 
 const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-owner-')));
 const repo = { owner: 'lunch', name: 'app' };
@@ -435,6 +435,28 @@ describe('planning a typed profile', () => {
           key: 'security_and_analysis',
           field: 'secret_scanning_validity_checks',
         }),
+      ]),
+    );
+  });
+
+  test('leaves out a refused read of what personal accounts lack, as a part the profile could never hold', async () => {
+    const github = new FakeGitHub({ ownerType: 'User' })
+      .fail('GET /repos/lunch/app/actions/permissions/fork-pr-workflows-private-repos', answered(403, 'Forbidden'))
+      .fail('GET /repos/lunch/app/code-quality/setup', answered(403, 'Forbidden'));
+
+    const { warnings } = await captureProfile(github, repo);
+
+    expect(warnings.filter((warning) => warning.cause === 'refused')).toEqual([]);
+    expect(warnings).toEqual(
+      expect.arrayContaining([
+        {
+          section: 'actions',
+          key: 'fork_pr_workflows_private_repos',
+          cause: 'unloadable',
+          message:
+            'actions.fork_pr_workflows_private_repos is something only organizations have, and this profile is for personal accounts, so it is left out',
+        },
+        expect.objectContaining({ section: 'security', key: 'code_quality_setup', cause: 'unloadable' }),
       ]),
     );
   });

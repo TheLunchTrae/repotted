@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { type GitHub, repoPath, type RepoRef } from '../../github/client.js';
 import type { AutolinkEntry } from '../../profiles/schema.js';
 import type { Change, SectionPlan } from '../change.js';
-import { readResource, type Unavailable } from '../endpoints.js';
+import { readResource, type Unavailable, warningForUnavailable } from '../endpoints.js';
 import { fieldChanges } from '../match.js';
 
 const liveAutolink = z.object({
@@ -33,7 +33,7 @@ function isAbsent(entry: AutolinkEntry): entry is Extract<AutolinkEntry, { absen
  */
 export function planAutolinks(desired: readonly AutolinkEntry[], live: LiveAutolinks, repo: RepoRef): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [{ section: 'autolinks', cause: live.cause, message: live.reason }] };
+    return { changes: [], warnings: [{ section: 'autolinks', ...warningForUnavailable(live) }] };
   }
   const path = `${repoPath(repo)}/autolinks`;
   const deletes: Change[] = [];

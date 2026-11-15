@@ -218,6 +218,7 @@ describe('settings at their own endpoints', () => {
         section: 'security',
         key: 'security_and_analysis',
         cause: 'refused',
+        remedy: { kind: 'admin_role' },
         message: 'GitHub did not report it; it reports it only to repository admins',
       },
     ]);
@@ -272,12 +273,14 @@ describe('settings GitHub does not offer or refuses', () => {
         section: 'actions',
         key: 'oidc_customization_sub',
         cause: 'refused',
+        remedy: { kind: 'permission', permission: 'Actions read' },
         message:
           'GitHub refused to read OIDC subject claim (Resource not accessible by integration); that needs the Actions read permission',
       },
       {
         section: 'pages',
         cause: 'refused',
+        remedy: { kind: 'permission', permission: 'Pages read' },
         message:
           'GitHub refused to read GitHub Pages (Resource not accessible by integration); that needs the Pages read permission',
       },

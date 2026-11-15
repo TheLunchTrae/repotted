@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../../github/client.js';
 import type { Ruleset, RulesetEntry } from '../../profiles/schema.js';
 import type { Change, SectionPlan } from '../change.js';
-import type { Unavailable } from '../endpoints.js';
+import { type Unavailable, warningForUnavailable } from '../endpoints.js';
 import { bodyChanges, matches, overlay } from '../match.js';
 
 const summary = z.object({ id: z.number().int(), source_type: z.string().optional() });
@@ -147,7 +147,7 @@ function writeRuleset(entry: Ruleset, current: StoredRuleset | undefined): Store
  */
 export function planRulesets(desired: readonly RulesetEntry[], live: LiveRulesets, repo: RepoRef): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [{ section: 'rulesets', cause: live.cause, message: live.reason }] };
+    return { changes: [], warnings: [{ section: 'rulesets', ...warningForUnavailable(live) }] };
   }
   const base = `${repoPath(repo)}/rulesets`;
   const byName = new Map(live.rulesets.map((entry) => [entry.ruleset.name, entry]));

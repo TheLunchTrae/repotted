@@ -2,7 +2,13 @@ import { z } from 'zod';
 
 import { type GitHub, GitHubError, parseRepo, repoPath, repoPattern, type RepoRef } from '../github/client.js';
 import { type Lock, requiredPermission } from '../github/permissions.js';
-import { describeOwnerType, type OwnerConflict, type OwnerType, withoutOwnerConflicts } from '../profiles/owner.js';
+import {
+  describeOwnerType,
+  type OwnerConflict,
+  type OwnerType,
+  partOwnerTypeCannotHold,
+  withoutOwnerConflicts,
+} from '../profiles/owner.js';
 import type { Drafts } from '../profiles/profile.js';
 import {
   actionsSettings,
@@ -29,7 +35,14 @@ import {
   skipCauses,
   type Warning,
 } from './change.js';
-import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadableReason } from './endpoints.js';
+import {
+  captureEndpoints,
+  loadable,
+  planEndpoint,
+  readEndpoints,
+  unloadableReason,
+  warningForUnavailable,
+} from './endpoints.js';
 import { actionsEndpoints, planActions, readActions } from './sections/actions.js';
 import { describeAutolink, planAutolinks, readAutolinks } from './sections/autolinks.js';
 import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';
@@ -320,7 +333,7 @@ export async function captureProfile(
     ['labels', labels],
   ] as const) {
     if (!read.available && read.cause === 'refused') {
-      warnings.push({ section, cause: read.cause, message: read.reason });
+      warnings.push({ section, ...warningForUnavailable(read) });
     }
   }
   const customProperties = properties.available ? captureCustomProperties(properties.values) : {};
@@ -364,7 +377,15 @@ export async function captureProfile(
   }
   return {
     profile,
-    warnings,
+    warnings: warnings.map((warning) => {
+      const path = [warning.section, warning.key, warning.field].filter((part) => part !== undefined);
+      const cannotHold = warning.cause === 'refused' ? partOwnerTypeCannotHold(path, live.owner) : undefined;
+      if (cannotHold === undefined) {
+        return warning;
+      }
+      const { remedy: _refusalRemedy, ...rest } = warning;
+      return { ...rest, cause: 'unloadable', message: `${cannotHold}, so it is left out` };
+    }),
   };
 }
 
@@ -414,6 +435,13 @@ const savedPlan = z.object({
         key: z.string().exactOptional(),
         field: z.string().exactOptional(),
         cause: z.enum(skipCauses).exactOptional(),
+        remedy: z
+          .discriminatedUnion('kind', [
+            z.object({ kind: z.literal('permission'), permission: z.string() }),
+            z.object({ kind: z.literal('admin_role') }),
+            z.object({ kind: z.literal('payment_method') }),
+          ])
+          .exactOptional(),
         exclusion: z.string().exactOptional(),
         message: z.string(),
       }),

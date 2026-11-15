@@ -39,7 +39,11 @@
     {
       "section": "environments",
       "cause": "refused",
-      "message": "GitHub refused to read environments (Resource not accessible by integration); reading them needs the Actions read permission"
+      "message": "GitHub refused to read environments (Resource not accessible by integration); reading them needs the Actions read permission",
+      "remedy": {
+        "kind": "permission",
+        "permission": "Actions read"
+      }
     }
   ]
 }

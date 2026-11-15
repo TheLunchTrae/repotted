@@ -76,6 +76,17 @@ const screens: Readonly<Record<string, Screen>> = {
         .getByRole('button', { name: 'Review protection…' }),
   },
   profiles: { path: '/profiles', visibleOnceDrawn: (page) => page.getByText('website', { exact: true }) },
+  'settings a capture could not read': {
+    path: '/profiles/new',
+    reachFromPath: async (page) => {
+      await page.getByRole('textbox', { name: 'Name' }).fill('dotfiles');
+      await page.getByRole('radio', { name: /^A repository/u }).check();
+      await page.getByRole('combobox', { name: 'Repository to capture' }).selectOption('trae/dotfiles');
+      await page.getByRole('button', { name: 'Capture' }).click();
+      await page.getByText("3 settings weren't captured").click();
+    },
+    visibleOnceDrawn: (page) => page.getByText('GitHub shows these only with a payment method on file.'),
+  },
 };
 
 const origin = 'https://repotted.test';

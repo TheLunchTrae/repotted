@@ -261,8 +261,10 @@ from:
   environments, and labels as they are on GitHub now, and saves them as a
   profile. Capturing only reads from GitHub. The profile appears only once
   the capture finishes; one that fails, or whose form you leave, makes
-  nothing. If the capture had to leave something out, the new profile's page
-  lists what.
+  nothing. If GitHub refused to show the capture some settings, the new
+  profile's page says how many; **Show** lists them and what would let
+  Repotted read them, such as a permission of the Repotted App or a payment
+  method on file.
 
 When there are folders, **Folder** chooses where the profile goes. Under
 **For repositories owned by**, choose **Personal accounts**,

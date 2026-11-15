@@ -199,6 +199,7 @@ export function planSecurity(
         section: 'security',
         key: 'security_and_analysis',
         cause: 'refused',
+        remedy: { kind: 'admin_role' },
         message: 'GitHub did not report it; it reports it only to repository admins',
       });
     } else {

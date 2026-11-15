@@ -515,7 +515,26 @@ drafts:
     ]);
     expect(parsePlan(JSON.parse(JSON.stringify(plan))).warnings).toEqual(plan.warnings);
     const warnings: Warning[] = [
-      { section: 'pages', cause: 'refused', message: 'GitHub refused to read GitHub Pages' },
+      {
+        section: 'pages',
+        cause: 'refused',
+        remedy: { kind: 'permission', permission: 'Pages read' },
+        message: 'GitHub refused to read GitHub Pages',
+      },
+      {
+        section: 'security',
+        key: 'security_and_analysis',
+        cause: 'refused',
+        remedy: { kind: 'admin_role' },
+        message: 'why',
+      },
+      {
+        section: 'actions',
+        key: 'max_cache_retention_days',
+        cause: 'refused',
+        remedy: { kind: 'payment_method' },
+        message: 'why',
+      },
       {
         section: 'security',
         key: 'code_quality_setup',
@@ -528,6 +547,8 @@ drafts:
     ];
     expect(warnings.map(describeWarning)).toEqual([
       'Skipped pages: GitHub refused to read GitHub Pages',
+      'Skipped security.security_and_analysis: why',
+      'Skipped actions.max_cache_retention_days: why',
       'Skipped security.code_quality_setup.runner_label: why',
       'Skipped environment "slow": why',
       'Excluding rulesets/Main leaves nothing out',
@@ -669,7 +690,13 @@ drafts:
     });
 
     expect(plan.changes.map((change) => change.section)).toEqual(['repository']);
-    expect(plan.warnings).toEqual([expect.objectContaining({ section: 'environments', cause: 'refused' })]);
+    expect(plan.warnings).toEqual([
+      expect.objectContaining({
+        section: 'environments',
+        cause: 'refused',
+        remedy: { kind: 'permission', permission: 'Actions read' },
+      }),
+    ]);
     expect((await captureProfile(github, repo)).warnings).toEqual(plan.warnings);
   });
 
@@ -682,6 +709,7 @@ drafts:
       section: 'actions',
       key: 'max_cache_retention_days',
       cause: 'refused',
+      remedy: { kind: 'payment_method' },
       message:
         'GitHub refused to read cache retention without a payment method on file (Please ensure your account has a valid payment method on file to access this service.)',
     };
@@ -718,7 +746,13 @@ drafts:
     const plan = await createPlan(github, repo, { environments: [{ name: 'npm', wait_timer: 5 }] });
 
     expect(plan.changes).toEqual([]);
-    expect(plan.warnings).toEqual([expect.objectContaining({ section: 'environments', cause: 'refused' })]);
+    expect(plan.warnings).toEqual([
+      expect.objectContaining({
+        section: 'environments',
+        cause: 'refused',
+        remedy: { kind: 'permission', permission: 'Actions read' },
+      }),
+    ]);
   });
 
   test('updates an environment named in another case, keeping what the profile leaves out', async () => {

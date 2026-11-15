@@ -57,12 +57,18 @@ export const skipCauses = ['refused', 'unavailable', 'not_applicable', 'unloadab
 
 export type SkipCause = (typeof skipCauses)[number];
 
+export type RefusalRemedy =
+  | { readonly kind: 'permission'; readonly permission: string }
+  | { readonly kind: 'admin_role' }
+  | { readonly kind: 'payment_method' };
+
 /** A warning without a `cause` leaves nothing out of the plan or capture. */
 export interface Warning {
   readonly section?: Section;
   readonly key?: string;
   readonly field?: string;
   readonly cause?: SkipCause;
+  readonly remedy?: RefusalRemedy;
   readonly exclusion?: string;
   readonly message: string;
 }

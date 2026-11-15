@@ -226,6 +226,11 @@ field of that setting, and `cause`, which says why:
 - `unloadable`: in `capture` only, a profile can't hold the value GitHub
   reports, such as an option newer than Repotted.
 
+A `refused` warning also has `remedy` when Repotted knows what would lift
+the refusal: `{ kind: permission, permission }`, with the Repotted App
+permission as its settings page names it, such as `Code scanning alerts
+read`; `{ kind: admin_role }`; or `{ kind: payment_method }`.
+
 Its `message` gives the reason in words. A warning without `cause` leaves
 nothing out, such as one about what changing visibility does, and its
 `message` is the whole warning; it has `section` and `key` when it is about

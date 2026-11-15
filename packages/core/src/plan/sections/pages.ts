@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { type GitHub, repoPath, type RepoRef } from '../../github/client.js';
 import type { PagesEntry } from '../../profiles/schema.js';
 import type { Change, SectionPlan } from '../change.js';
-import { readResource, type Unavailable } from '../endpoints.js';
+import { readResource, type Unavailable, warningForUnavailable } from '../endpoints.js';
 import { fieldChanges } from '../match.js';
 
 const liveSite = z.object({
@@ -57,7 +57,7 @@ function isAbsent(entry: PagesEntry): entry is Extract<PagesEntry, { absent: tru
 
 export function planPages(desired: PagesEntry, live: LivePages, repo: RepoRef): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [{ section: 'pages', cause: live.cause, message: live.reason }] };
+    return { changes: [], warnings: [{ section: 'pages', ...warningForUnavailable(live) }] };
   }
   const path = `${repoPath(repo)}/pages`;
   const target = 'GitHub Pages site';

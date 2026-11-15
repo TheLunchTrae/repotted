@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../../github/client.js';
 import { type Environment, type EnvironmentEntry, environmentKey } from '../../profiles/schema.js';
 import type { Change, SectionPlan } from '../change.js';
-import type { Unavailable } from '../endpoints.js';
+import { type Unavailable, warningForUnavailable } from '../endpoints.js';
 import { bodyChanges, matches } from '../match.js';
 
 type Reviewer = NonNullable<Environment['reviewers']>[number];
@@ -112,6 +112,7 @@ export async function readEnvironments(github: GitHub, repo: RepoRef): Promise<L
         available: false,
         cause: 'refused',
         reason: `GitHub refused to read environments (${error.message}); reading them needs the Actions read permission`,
+        remedy: { kind: 'permission', permission: 'Actions read' },
       };
     }
     throw error;
@@ -173,7 +174,7 @@ export function planEnvironments(
   repo: RepoRef,
 ): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [{ section: 'environments', cause: live.cause, message: live.reason }] };
+    return { changes: [], warnings: [{ section: 'environments', ...warningForUnavailable(live) }] };
   }
   const byName = new Map(live.environments.map((entry) => [environmentKey(entry.name), entry]));
   const writes: Change[] = [];

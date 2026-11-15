@@ -140,7 +140,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
   const [showYaml, setShowYaml] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [changingOwner, setChangingOwner] = useState(false);
-  const warnings = profiles.captureWarnings.value;
+  const couldNotRead = profiles.settingsCaptureCouldNotRead.value;
   const editor = profiles.editor.value;
   const opened = profiles.opened.value;
   const base = profiles.listings.value.find((item) => item.file === listing.extends);
@@ -222,14 +222,29 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           }}
         />
       )}
-      {warnings?.file === listing.file && (
+      {couldNotRead?.file === listing.file && (
         <div class="notice notice-drift" role="status">
-          <p>The capture left out what a profile can't hold:</p>
-          <ul>
-            {warnings.warnings.map((warning) => (
-              <li>{warning}</li>
-            ))}
-          </ul>
+          <details class="uncaptured">
+            <summary>
+              <span>
+                {couldNotRead.uncaptured.count === 1
+                  ? "1 setting wasn't captured"
+                  : `${couldNotRead.uncaptured.count} settings weren't captured`}
+              </span>
+              <span class="uncaptured-toggle">
+                <span class="uncaptured-show">Show</span>
+                <span class="uncaptured-hide">Hide</span>
+              </span>
+            </summary>
+            <ul>
+              {couldNotRead.uncaptured.groups.map((group) => (
+                <li key={group.settings.join()}>
+                  <strong>{group.settings.join(', ')}</strong>
+                  <span class="uncaptured-reason">{group.reason}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
         </div>
       )}
       {listing.problem !== null && (
