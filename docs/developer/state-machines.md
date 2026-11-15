@@ -9,7 +9,7 @@ links to the issue that tracks it.
 ## Token sources
 
 Every command that talks to GitHub resolves a token in `resolveToken`
-(`packages/cli/src/auth.ts`). The first source that yields a token wins.
+(`packages/cli/src/auth/sign-in.ts`). The first source that yields a token wins.
 
 | Step                                                                       | Outcome                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Next                                                           |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -33,7 +33,7 @@ sign-in that is gone from a problem that may pass.
 
 ## Device flow
 
-`repotted login` runs the GitHub App device flow (`packages/cli/src/device-flow.ts`, `startSignIn` in
+`repotted login` runs the GitHub App device flow (`packages/cli/src/auth/device-flow.ts`, `startSignIn` in
 `auth.ts`).
 
 | State                | Event                                    | Next                                                                                                   |

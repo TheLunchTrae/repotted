@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises';
 import { createGitHub } from '@repotted/core';
 
 import manifest from '../package.json' with { type: 'json' };
-import { keychain, resolveToken, startSignIn } from './auth.js';
+import { keychain, resolveToken, startSignIn } from './auth/sign-in.js';
 import { run } from './commands.js';
 
 function main(): void {

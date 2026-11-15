@@ -3,6 +3,7 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { describe, expect, test } from 'vitest';
 
+import type { FlowEnvironment, StoredToken } from '../../src/auth/device-flow.js';
 import {
   NotSignedInError,
   repottedGitHubApp,
@@ -11,8 +12,7 @@ import {
   type TokenSources,
   type TokenStore,
   tokenOrSignIn,
-} from '../src/auth.js';
-import type { FlowEnvironment, StoredToken } from '../src/device-flow.js';
+} from '../../src/auth/sign-in.js';
 
 const hour = 60 * 60 * 1000;
 
@@ -414,7 +414,7 @@ describe('release', () => {
 
   // The web app's Worker, and its Previews, sign in with the same App.
   test('gives the web app the same client ID', () => {
-    const config = readFileSync(path.join(import.meta.dirname, '../../web/wrangler.jsonc'), 'utf8');
+    const config = readFileSync(path.join(import.meta.dirname, '../../../web/wrangler.jsonc'), 'utf8');
     const ids = [...config.matchAll(/"REPOTTED_APP_CLIENT_ID": "([^"]*)"/g)].map((match) => match[1]);
     expect(ids).toStrictEqual([repottedGitHubApp.clientId, repottedGitHubApp.clientId]);
   });

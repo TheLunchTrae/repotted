@@ -346,7 +346,7 @@ placeholders, so a change to what scripts read fails the tests until its
 fixture is written again with `pnpm vitest run -u`, and shows in review as a
 change to the file.
 
-`packages/cli/src/mcp.ts` serves `capture`, `plan`, and `apply`, and the two
+`packages/cli/src/mcp/server.ts` serves `capture`, `plan`, and `apply`, and the two
 action lookups below. The server
 keeps each plan in memory under a random `plan_id`, and `apply` accepts only
 that ID, so an agent can apply only changes it has already shown as a plan, and
