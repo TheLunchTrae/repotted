@@ -128,6 +128,18 @@ describe('readBranchChanges', () => {
     );
   });
 
+  test('says when a branch shares no history with the default branch, rather than calling it missing', async () => {
+    const github = repository();
+    const head = github.commits.get(github.refs.get('main') ?? '');
+    expect(head).toBeDefined();
+    // A branch started with no parent, as `git checkout --orphan` makes one.
+    github.commits.set('orphan-commit', { tree: head?.tree ?? '', parents: [], message: 'Start again' });
+    github.refs.set('orphan', 'orphan-commit');
+    await expect(readBranchChanges(github, 'orphan', { repository: 'lunch/config' })).rejects.toThrow(
+      "orphan shares no history with main in lunch/config, so it can't be compared.",
+    );
+  });
+
   test('says what the app needs when GitHub refuses to read the repository', async () => {
     const refuse = (): Promise<unknown> =>
       Promise.reject(new GitHubError(403, 'Resource not accessible by integration'));
