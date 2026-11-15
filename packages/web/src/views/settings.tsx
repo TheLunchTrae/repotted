@@ -191,7 +191,7 @@ function ProtectionOffer({
   onDismiss,
 }: ProtectionProps & { readonly onDismiss: () => void }): JSX.Element | null {
   const state = protection.state.value;
-  if (state.kind !== 'checked' || state.repository !== repository || state.changes === 0) {
+  if (state.kind !== 'checked' || state.repository !== repository || state.changeCount === 0) {
     return null;
   }
   return (
@@ -237,11 +237,11 @@ function ProtectionRow({ protection, repository, onReview }: ProtectionProps): J
           </span>
         ) : (
           <span class="muted small" role="status">
-            {state.changes === 0
+            {state.changeCount === 0
               ? limits === ''
                 ? 'Protected.'
                 : `Protected as far as GitHub allows here: ${limits}.`
-              : `Not protected: ${state.changes === 1 ? '1 change' : `${state.changes} changes`} to review.${
+              : `Not protected: ${state.changeCount === 1 ? '1 change' : `${state.changeCount} changes`} to review.${
                   limits === '' ? '' : ` GitHub can't add all of it here: ${limits}.`
                 }`}
           </span>
@@ -259,7 +259,7 @@ function ProtectionRow({ protection, repository, onReview }: ProtectionProps): J
         </button>
       ) : (
         state.kind === 'checked' &&
-        state.changes > 0 && (
+        state.changeCount > 0 && (
           <button class="button button-quiet" type="button" onClick={onReview}>
             Review protection…
           </button>
@@ -302,7 +302,7 @@ export function SettingsPage({
       run(protection.check(kept));
     }
   }, [protection, kept]);
-  const busy = profiles.syncingListingOrMovingProfiles.value;
+  const busy = profiles.profileWorkUnderWay.value;
   const onGitHub = source.kind === 'repository';
   const inFolder = source.kind === 'folder';
   const [addToFolder, setAddToFolder] = useState(false);

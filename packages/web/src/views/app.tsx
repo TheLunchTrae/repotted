@@ -234,7 +234,7 @@ function SignedIn({
               openingProtection.current = true;
               run(
                 protection
-                  .profile()
+                  .writeProfileForApply()
                   .then((profile) => {
                     if (profile !== undefined) {
                       router.go('/apply');

@@ -135,7 +135,7 @@ export class Profiles {
   readonly conflicts = signal<readonly string[]>([]);
   readonly listings = signal<readonly ProfileListing[]>([]);
   readonly listingError = signal<string | undefined>(undefined);
-  readonly syncingListingOrMovingProfiles = signal(false);
+  readonly profileWorkUnderWay = signal(false);
   readonly search = signal('');
   /** Until the next change of where profiles are kept. */
   readonly connectError = signal<string | undefined>(undefined);
@@ -710,11 +710,11 @@ export class Profiles {
 
   async #work<Result>(work: () => Promise<Result>): Promise<Result> {
     return this.#queue.run(async () => {
-      this.syncingListingOrMovingProfiles.value = true;
+      this.profileWorkUnderWay.value = true;
       try {
         return await work();
       } finally {
-        this.syncingListingOrMovingProfiles.value = false;
+        this.profileWorkUnderWay.value = false;
       }
     });
   }

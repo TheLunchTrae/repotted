@@ -191,7 +191,7 @@ export class EntryEdits {
     ),
   );
 
-  readonly someEntryCannotSaveToApply = computed(() => this.#some((row) => row.applyProblem !== undefined));
+  readonly someEntryCannotBeSavedToApply = computed(() => this.#some((row) => row.applyProblem !== undefined));
 
   readonly someChangedEntryCannotBeDraft = computed(() => this.#some((row) => row.draftProblem !== undefined));
 

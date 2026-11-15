@@ -318,7 +318,7 @@ export class ProfileEditor {
       this.loaded.value &&
       (this.#changed.value || this.draftCount.value > 0) &&
       !this.#someTypedTextCannotBeAValue.value &&
-      !this.#entryEdits.someEntryCannotSaveToApply.value &&
+      !this.#entryEdits.someEntryCannotBeSavedToApply.value &&
       this.unsavedChangesProblem.value === undefined &&
       !this.saving.value,
   );
@@ -667,7 +667,7 @@ export class ProfileEditor {
       }
       if (
         mode === 'applies'
-          ? this.#entryEdits.someEntryCannotSaveToApply.value
+          ? this.#entryEdits.someEntryCannotBeSavedToApply.value
           : this.#entryEdits.someChangedEntryCannotBeDraft.value
       ) {
         throw new Error("A ruleset, environment, or label can't be saved as it stands. Open it to see why.");

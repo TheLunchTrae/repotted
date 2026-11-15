@@ -54,8 +54,7 @@ export type ProtectionState =
       readonly kind: 'checked';
       readonly repository: string;
       readonly owner: OwnerType;
-      /** How many changes an apply of the protection would make; 0 when the repository has it all. */
-      readonly changes: number;
+      readonly changeCount: number;
       /** Why part of the protection can't be had there, such as a plan with no rulesets. */
       readonly limits: readonly string[];
     }
@@ -111,7 +110,7 @@ export class ConfigProtection {
           kind: 'checked',
           repository,
           owner,
-          changes: plan.changes.length,
+          changeCount: plan.changes.length,
           limits: plan.warnings.filter((warning) => warning.cause === 'unavailable').map((warning) => warning.message),
         };
       }
@@ -133,7 +132,7 @@ export class ConfigProtection {
 
   // Written afresh each time, so an apply starts from the protection this
   // version of Repotted has.
-  async profile(): Promise<ComparedProfile | undefined> {
+  async writeProfileForApply(): Promise<ComparedProfile | undefined> {
     const state = this.state.value;
     if (state.kind !== 'checked') {
       return undefined;

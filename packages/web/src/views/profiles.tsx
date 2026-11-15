@@ -120,7 +120,7 @@ function DeleteProfile({ listing, profiles, onClose }: ProfileProps & { readonly
             class="button button-danger"
             type="submit"
             value="delete"
-            disabled={profiles.syncingListingOrMovingProfiles.value}
+            disabled={profiles.profileWorkUnderWay.value}
           >
             Delete profile
           </button>
@@ -269,7 +269,7 @@ export function ProfilesPage({ profiles, repositories, router, newProfileForm }:
   const tree = profiles.tree.value;
   const selected = profiles.selected.value;
   const conflicts = profiles.conflicts.value;
-  const busy = profiles.syncingListingOrMovingProfiles.value;
+  const busy = profiles.profileWorkUnderWay.value;
   const total = profiles.listings.value.length;
   const elsewhere = source.kind === 'folder' ? 'in the folder' : 'on GitHub';
   // On a phone the list and the open profile are two screens; app.css shows the one this names.
