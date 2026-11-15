@@ -606,6 +606,7 @@ number for one that is new, so its row is found whatever its name becomes.
 | Unsaved       | Its name is empty, or another entry's                              | Held back with why. A ruleset is known by its name as written, an environment or a label by its name in any case.                                                             |
 | Unsaved       | Its name is the saved name of one renamed or taken out             | Held back until that change is saved, since the file still has the name.                                                                                                      |
 | Unsaved       | A ruleset requires status checks and names none                    | Held back with why.                                                                                                                                                           |
+| Unsaved       | A ruleset's targets GitHub would refuse, or that match nothing     | Held back with why, under **Include** or **Exclude**.                                                                                                                         |
 | Unsaved       | A label's old names include its own, one twice, or another label's | Held back with why.                                                                                                                                                           |
 | Unsaved       | The engine refuses it, such as a color that isn't one              | Unsaved, with why above **Save**, which is off.                                                                                                                               |
 | Any held back | Another setting or entry changes                                   | The entries that can be saved as they stand are still previewed; **Save** stays off.                                                                                          |
@@ -641,7 +642,9 @@ them: the options write GitHub's `~DEFAULT_BRANCH` and `~ALL` into
 GitHub matches the names in any order, so names that end up the same as
 saved, in any order, give the saved entry back. The pattern box stays open
 while its option is selected, even when it holds no pattern yet; that is
-the form's own state, and an entry with patterns opens with it selected.
+the form's own state: an entry with patterns opens with it selected,
+deselecting it clears the patterns and closes it, and a push target hides
+it. Reset leaves an empty open box open, since the form stays mounted.
 `refPatternProblem` checks one pattern and `refTargetsProblem` the whole
 ruleset, and a ruleset with a problem in its targets can't be saved.
 

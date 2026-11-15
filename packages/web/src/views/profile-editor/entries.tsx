@@ -355,7 +355,7 @@ function RefTargets({ entry, saved, change, side }: RefTargetsProps): JSX.Elemen
   if ((offered && side === 'include') || names.includes(allRefsTarget)) {
     options.push([allRefsTarget, tags ? 'All tags' : 'All branches', undefined]);
   }
-  const patternsSelected = patternsOpened || patterns.length > 0;
+  const patternsSelected = (offered && patternsOpened) || patterns.length > 0;
   if (options.length === 0 && !offered && !patternsSelected) {
     return side === 'include' ? (
       <div class="setting">
@@ -388,7 +388,7 @@ function RefTargets({ entry, saved, change, side }: RefTargetsProps): JSX.Elemen
             }}
           />
         ))}
-        {(offered || patternsSelected) && (
+        {(offered || patterns.length > 0) && (
           <Check
             label={tags ? 'Tags by pattern' : 'Branches by pattern'}
             checked={patternsSelected}
@@ -417,6 +417,7 @@ function RefTargets({ entry, saved, change, side }: RefTargetsProps): JSX.Elemen
           note={`One a line, such as ${tags ? 'refs/tags/v*' : 'refs/heads/release/*'}.`}
           problem={refPatternsProblem(entry, side)}
           onText={(typed) => {
+            setPatternsOpened(true);
             change(withRefPatterns(entry, side, uniqueTrimmedNonBlankLines(typed), saved));
             return undefined;
           }}
