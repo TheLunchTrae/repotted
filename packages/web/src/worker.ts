@@ -5,6 +5,8 @@
 
 import * as z from 'zod/mini';
 
+import { postOverTls } from './post-over-tls.js';
+
 interface Env {
   REPOTTED_APP_CLIENT_ID: string;
   REPOTTED_APP_CLIENT_SECRET: string;
@@ -251,8 +253,7 @@ function refusal(response: Response, body: unknown): GitHubAnswer {
 async function requestTokens(env: Env, grant: Record<string, string>): Promise<TokenResult> {
   let response: Response;
   try {
-    response = await fetch(tokenUrl, {
-      method: 'POST',
+    response = await postOverTls(tokenUrl, {
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded',

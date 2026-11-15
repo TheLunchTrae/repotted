@@ -5,7 +5,12 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { Session } from '../../src/app/account/session.js';
+import type { postOverTls } from '../../src/post-over-tls.js';
 import worker from '../../src/worker.js';
+
+const tokenRequest = vi.hoisted(() => vi.fn<typeof postOverTls>());
+
+vi.mock('../../src/post-over-tls.js', () => ({ postOverTls: tokenRequest }));
 
 const origin = 'https://repotted.dev';
 const env = {
@@ -61,15 +66,10 @@ function setup(): Browser {
     return Response.json({ login: 'octocat' });
   };
 
-  vi.stubGlobal('fetch', (input: string, init: RequestInit = {}): Promise<Response> => {
-    if (input.startsWith('/')) {
-      return callWorker(input, init);
-    }
-    if (input === 'https://github.com/login/oauth/access_token') {
-      return Promise.resolve(tokenEndpoint(new URLSearchParams(init.body instanceof URLSearchParams ? init.body : '')));
-    }
-    return Promise.resolve(api(new Headers(init.headers)));
-  });
+  tokenRequest.mockImplementation((_url, init) => Promise.resolve(tokenEndpoint(init.body)));
+  vi.stubGlobal('fetch', (input: string, init: RequestInit = {}): Promise<Response> =>
+    input.startsWith('/') ? callWorker(input, init) : Promise.resolve(api(new Headers(init.headers))),
+  );
 
   const lock = { queue: Promise.resolve() };
   const request = (_name: string, callback: () => Promise<unknown>): Promise<unknown> => {

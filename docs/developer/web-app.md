@@ -130,8 +130,20 @@ response is `Cache-Control: no-store`. The Worker waits 10 seconds for GitHub's
 token endpoint and the page 20 seconds for the Worker, and either reads a
 timeout as GitHub being out of reach.
 
-The Worker names itself to GitHub with a `User-Agent` header. A Worker's
-`fetch` sends none of its own, and GitHub may turn away a request without one.
+The Worker sends its requests to GitHub's token endpoint over a TLS socket it
+opens with the Workers runtime's `connect()`, not with `fetch`: a Worker on a
+custom domain gets Cloudflare's 525 from `fetch` to github.com
+([workerd issue 7042](https://github.com/cloudflare/workerd/issues/7042)).
+`src/post-over-tls.ts` writes one HTTP/1.1 `POST` that closes the connection,
+and reads the answer, whether it has a length, comes in chunks, or runs to the
+close, into a `Response`, as `fetch` would. Once Cloudflare fixes `fetch`, the
+Worker goes back to it by changing that one call and deleting the module. An
+answer over 64 KiB, or one that isn't HTTP, counts as no answer; one that
+breaks off after its headers reads as an answer that broke off.
+
+The Worker names itself to GitHub with a `User-Agent` header. Neither a
+Worker's `fetch` nor its socket adds one, and GitHub may turn away a request
+without one.
 
 Every auth request logs one structured line, with its `route`, its `outcome`,
 and, when GitHub's token endpoint was asked and failed, `gitHubStatus`,
