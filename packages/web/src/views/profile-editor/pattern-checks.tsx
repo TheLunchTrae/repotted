@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 
-import { type ActionPatternChecks, patternNote } from '../../app/profile-editor/action-pattern-checks.js';
+import { type ActionPatternChecks, gitHubPageOf, patternNote } from '../../app/profile-editor/action-pattern-checks.js';
 
 export function PatternChecks({ checks }: { readonly checks: ActionPatternChecks }): JSX.Element {
   const lines = checks.lines.value.filter((line) => line.state !== undefined);
@@ -10,10 +10,18 @@ export function PatternChecks({ checks }: { readonly checks: ActionPatternChecks
       <ul role="list" aria-label="What each pattern matches on GitHub" hidden={lines.length === 0}>
         {lines.map((line, index) => {
           const note = line.state === undefined ? undefined : patternNote(line.state);
+          const pattern = line.text.trim();
+          const gitHubPage = gitHubPageOf(line.state);
           return (
             // Two lines may hold the same pattern, so a line is known by its place.
             <li key={index}>
-              <span class="mono">{line.text.trim()}</span>
+              {gitHubPage === undefined ? (
+                <span class="mono">{pattern}</span>
+              ) : (
+                <a class="mono pattern-link" href={gitHubPage} target="_blank" rel="noreferrer">
+                  {pattern}
+                </a>
+              )}
               <span class={`pattern-note pattern-${note?.tone ?? 'muted'}`}>{note?.text}</span>
             </li>
           );

@@ -89,7 +89,17 @@ export function ActionSearchBox({ editor, search }: ActionSearchProps): JSX.Elem
           {state.found.map((found) => (
             <li key={found.repository} class="found-action">
               <span>
-                <strong class="mono">{found.repository}</strong> <span class="muted small">{foundNotes(found)}</span>
+                <strong class="mono">
+                  <a
+                    class="found-action-link"
+                    href={`https://github.com/${found.repository}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {found.repository}
+                  </a>
+                </strong>{' '}
+                <span class="muted small">{foundNotes(found)}</span>
                 {found.description !== null && found.description !== '' && (
                   <span class="muted small found-description">{found.description}</span>
                 )}
