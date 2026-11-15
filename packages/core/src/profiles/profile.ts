@@ -1466,7 +1466,9 @@ export function withExtends(text: string, base: string): string {
   const document = parseDocument(text);
   const value = document.get('extends', true);
   const written = /^[\w./-]+$/u.test(base) ? base : JSON.stringify(base);
-  if (document.errors.length === 0 && isScalar(value) && value.range !== undefined && value.range !== null) {
+  const inline =
+    isScalar(value) && (value.type === 'PLAIN' || value.type === 'QUOTE_SINGLE' || value.type === 'QUOTE_DOUBLE');
+  if (document.errors.length === 0 && inline && value.range !== undefined && value.range !== null) {
     const [start, end] = value.range;
     return text.slice(0, start) + written + text.slice(end);
   }

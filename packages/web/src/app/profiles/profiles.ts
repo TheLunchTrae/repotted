@@ -753,6 +753,9 @@ export class Profiles {
         if (renamed !== path && renamed.toLowerCase() === path.toLowerCase()) {
           return `${trimmed} differs from ${path.slice(parent === '' ? 0 : parent.length + 1)} only in case, which some computers take for the same folder. Give it another name.`;
         }
+        if (renamed !== path && this.folders.value.includes(renamed)) {
+          return `There is already a folder named ${renamed}.`;
+        }
         const inAnotherCase = this.#folderInAnotherCase(renamed, path);
         return inAnotherCase === undefined
           ? folderProblem(renamed)

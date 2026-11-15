@@ -1107,6 +1107,7 @@ test('renaming a folder moves the profiles in it and under it, and refuses a nam
   const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
   await profiles.refresh();
 
+  expect(await profiles.renameFolder('teams', 'apps')).toBe('There is already a folder named apps.');
   expect(await profiles.renameFolder('teams', 'Apps')).toBe('There is already a folder named apps.');
   expect(await profiles.renameFolder('teams', 'squads')).toBeUndefined();
 

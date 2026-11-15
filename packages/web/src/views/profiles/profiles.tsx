@@ -145,7 +145,7 @@ function FolderSection({ node, profiles, onOpen, onDialog }: FolderProps): JSX.E
             <span class="muted count">{node.count}</span>
           </button>
         </Title>
-        {node.open && (
+        {node.open && inside.length > 0 && (
           <button
             class="button button-quiet button-small folder-select"
             type="button"
@@ -404,7 +404,7 @@ interface SelectedProps {
 function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedProps): JSX.Element {
   const batch = profiles.batch.value;
   const busy = profiles.profileWorkUnderWay.value;
-  const [picked, setTarget] = useState<string | undefined>(undefined);
+  const [picked, setPicked] = useState<string | undefined>(undefined);
   // A folder renamed away, or emptied by another move, is no longer a choice.
   const target =
     picked === undefined || picked === newFolderChoice || profiles.folders.value.includes(picked) ? picked : undefined;
@@ -445,7 +445,7 @@ function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedP
             value={target ?? unchosen}
             aria-describedby={problem === undefined ? undefined : 'move-problem'}
             onChange={(event) => {
-              setTarget(event.currentTarget.value);
+              setPicked(event.currentTarget.value);
               setProblem(undefined);
             }}
           >

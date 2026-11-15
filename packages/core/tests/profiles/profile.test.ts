@@ -1099,6 +1099,9 @@ test('a move points extends at the new place and keeps the rest of the file as w
   expect(withExtends('extends: "../base.yaml"\nlabels:\n- name: bug\n', 'the base.yaml')).toBe(
     'extends: "the base.yaml"\nlabels:\n- name: bug\n',
   );
+  expect(withExtends('extends: >-\n  base.yaml\nmerge: {}\n', '../shared/base.yaml')).toBe(
+    'extends: >-\n  ../shared/base.yaml\nmerge: {}\n',
+  );
   expect(declaredExtends('merge: [unclosed\n')).toBeUndefined();
   expect(declaredExtends('extends: 3\n')).toBeUndefined();
 });
