@@ -309,10 +309,14 @@ extends: [node.yaml, npm-package.yaml]
 
 Each profile brings the bases it extends with it. A base that more than one of
 them extends applies once, at its first place, so it never undoes what a
-profile after it set. Repotted refuses a profile listed twice, and profiles
+profile after it set. So list a shared base first, or leave it out: Repotted
+refuses a profile listed after one that already extends it, since it would
+change nothing there. It also refuses a profile listed twice, and profiles
 for different [owner types](#owner-type). When a later profile removes a
 ruleset, environment, label, autolink or Pages site that an earlier one adds,
-with `absent: true`, Repotted warns, since that is easy to miss.
+with `absent: true`, Repotted warns, since that is easy to miss. A profile
+that removes what its own base adds is how a profile drops an entry, so that
+gets no warning.
 
 ## Owner type
 

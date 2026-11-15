@@ -214,7 +214,7 @@ describe('starting a batch', () => {
     expect(planned.plans.map((member) => member.batch_profiles)).toEqual([[profile], [profile, node]]);
   });
 
-  test('reads a batch saved with one profile, as batches were before they took several', async () => {
+  test('reads a manifest that names one profile as a list of one', async () => {
     const { profile, folder } = await freshFolderWithProfile();
     const started = await createBatch(folder, { repositories: ['lunch/app'], profiles: [profile] });
     await writeFile(
@@ -228,6 +228,43 @@ describe('starting a batch', () => {
     expect(parse(await readFile(path.join(folder, batchManifest), 'utf8'))).toMatchObject({
       profiles: ['../profile.yaml'],
     });
+  });
+
+  test('reads a manifest whose profile is null as starting each repository as it is', async () => {
+    const { folder } = await freshFolderWithProfile();
+    const started = await createBatch(folder, { repositories: ['lunch/app'] });
+    await writeFile(
+      path.join(folder, batchManifest),
+      `id: ${started.id}\nprofile: null\nmembers:\n  - repository: lunch/app\n    file: lunch/app.yaml\n`,
+    );
+
+    expect((await readBatch(folder)).profiles).toEqual([]);
+  });
+
+  test('refuses a manifest that names both profile and profiles', async () => {
+    const { profile, folder } = await freshFolderWithProfile();
+    const started = await createBatch(folder, { repositories: ['lunch/app'], profiles: [profile] });
+    await writeFile(
+      path.join(folder, batchManifest),
+      `id: ${started.id}\nprofile: ../profile.yaml\nprofiles: [../profile.yaml]\nmembers:\n  - repository: lunch/app\n    file: lunch/app.yaml\n`,
+    );
+
+    await expect(readBatch(folder)).rejects.toThrow(/profiles or profile, not both/u);
+  });
+
+  test('refuses to start from profiles that do not apply together, and writes nothing', async () => {
+    const { root, folder } = await freshFolderWithProfile();
+    const personal = path.join(root, 'personal.yaml');
+    const team = path.join(root, 'team.yaml');
+    await writeFile(personal, 'owner_type: user\nrepository: { has_wiki: false }\n');
+    await writeFile(team, 'owner_type: organization\nrepository: { has_issues: false }\n');
+    const existing = path.join(root, 'existing.yaml');
+    await createStagedApply(existing, 'lunch/app', []);
+
+    await expect(createBatch(folder, { join: [existing], profiles: [personal, team] })).rejects.toThrow(
+      /applied with it, is for/u,
+    );
+    expect(await exists(folder)).toBe(false);
   });
 
   test('adds members from the batch profile, and takes one out with its staged apply', async () => {

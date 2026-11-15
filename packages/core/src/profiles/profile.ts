@@ -136,7 +136,7 @@ export interface LayerRead {
    * folder; later ones override earlier ones. The layer's own `extends` when
    * left out.
    */
-  readonly bases?: readonly string[] | undefined;
+  readonly listedProfiles?: readonly string[] | undefined;
 }
 
 /** Checks the whole file and yields its layer, its adjust, and anything else the file says, from one parse. */
@@ -415,7 +415,7 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
       environments: draftEnvironments,
       labels: draftLabels,
     },
-    extends: result.data.bases ?? (settings.extends === undefined ? [] : [settings.extends]),
+    extends: result.data.listedProfiles ?? (settings.extends === undefined ? [] : [settings.extends]),
   };
 }
 
@@ -741,10 +741,10 @@ interface Link {
   readonly parsed: OwnProfile;
   readonly drafts: Drafts;
   /**
-   * Which of the first file's bases the link came in through, by its place in
-   * that list. Undefined for the first file itself.
+   * Which of the profiles the first file lists reach this file through their
+   * own chains, by their places in that list. Empty for the first file itself.
    */
-  readonly base?: number | undefined;
+  readonly listedIn: ReadonlySet<number>;
 }
 
 interface Chain<Read extends LayerRead> {
@@ -752,8 +752,8 @@ interface Chain<Read extends LayerRead> {
   readonly text: string;
   /** The first file, then every file it builds on, nearest first. */
   readonly links: readonly [Link, ...Link[]];
-  /** The real path of each base the first file names, in its order. */
-  readonly bases: readonly string[];
+  /** The real path of each profile the first file lists, in its order. */
+  readonly listedProfiles: readonly string[];
 }
 
 async function readText(file: string, noun: string): Promise<{ file: string; text: string }> {
@@ -766,9 +766,9 @@ async function readText(file: string, noun: string): Promise<{ file: string; tex
 }
 
 /** A profile and the one it extends, and so on, nearest first. */
-async function readExtendsChain(start: string, firstFile: string): Promise<Link[]> {
+async function readExtendsChain(start: string, listingFile: string | undefined): Promise<Link[]> {
   const links: Link[] = [];
-  const seen = new Set([firstFile]);
+  const seen = new Set(listingFile === undefined ? [] : [listingFile]);
   let next: string | undefined = start;
   while (next !== undefined) {
     const { file: resolved, text } = await readText(next, profileLayer.noun);
@@ -777,43 +777,80 @@ async function readExtendsChain(start: string, firstFile: string): Promise<Link[
     }
     seen.add(resolved);
     const parsed = parseLayer(text, resolved, profileLayer);
-    links.push({ file: resolved, parsed: parsed.own, drafts: parsed.drafts });
+    links.push({ file: resolved, parsed: parsed.own, drafts: parsed.drafts, listedIn: new Set() });
     const [parent] = parsed.extends;
     next = parent === undefined ? undefined : path.resolve(path.dirname(resolved), parent);
   }
   return links;
 }
 
+interface Listed {
+  /** Applied first, later ones overriding earlier ones. */
+  readonly appliedFirst: readonly Link[];
+  readonly listedProfiles: readonly string[];
+}
+
 /**
- * Each base brings the profiles it extends, and they apply base first, in the
- * order the bases are named. A file that more than one base builds on, such
- * as a shared starting point, applies once, at its first place.
+ * Each listed profile brings the profiles it extends, and they apply in the
+ * order the profiles are listed. A file that more than one of them builds on,
+ * such as a shared starting point, applies once, at its first place. So a
+ * profile listed after one that already builds on it would change nothing,
+ * and is refused.
  */
-async function readChain<Read extends LayerRead>(file: string, kind: Layer<Read>): Promise<Chain<Read>> {
-  const first = await readText(path.resolve(file), kind.noun);
-  const head = parseLayer(first.text, first.file, kind);
-  const appliedBaseFirst: Link[] = [];
-  const included = new Set<string>();
-  const bases: string[] = [];
-  for (const [index, base] of head.extends.entries()) {
-    const extendsChain = await readExtendsChain(path.resolve(path.dirname(first.file), base), first.file);
-    const named = extendsChain[0]?.file ?? base;
-    if (bases.includes(named)) {
-      throw new ProfileError(`${first.file} names ${named} more than once in extends`);
+async function readListed(
+  listed: readonly string[],
+  folder: string | undefined,
+  listingFile: string | undefined,
+  namedTwice: (named: string) => string,
+): Promise<Listed> {
+  const chains: { readonly named: string; readonly chain: readonly Link[] }[] = [];
+  for (const profile of listed) {
+    const start = folder === undefined ? path.resolve(profile) : path.resolve(folder, profile);
+    const chain = await readExtendsChain(start, listingFile);
+    const named = chain[0]?.file ?? start;
+    if (chains.some((earlier) => earlier.named === named)) {
+      throw new ProfileError(namedTwice(named));
     }
-    bases.push(named);
-    for (const link of extendsChain.toReversed()) {
+    const through = chains.find((earlier) => earlier.chain.some((link) => link.file === named));
+    if (through !== undefined) {
+      throw new ProfileError(
+        `${named} is already applied through ${through.named}, so listing it after that changes nothing`,
+      );
+    }
+    chains.push({ named, chain });
+  }
+  const listedIn = (file: string): ReadonlySet<number> =>
+    new Set(chains.flatMap(({ chain }, index) => (chain.some((link) => link.file === file) ? [index] : [])));
+  const appliedFirst: Link[] = [];
+  const included = new Set<string>();
+  for (const { chain } of chains) {
+    for (const link of chain.toReversed()) {
       if (!included.has(link.file)) {
         included.add(link.file);
-        appliedBaseFirst.push({ ...link, base: index });
+        appliedFirst.push({ ...link, listedIn: listedIn(link.file) });
       }
     }
   }
+  return { appliedFirst, listedProfiles: chains.map(({ named }) => named) };
+}
+
+async function readChain<Read extends LayerRead>(file: string, kind: Layer<Read>): Promise<Chain<Read>> {
+  const first = await readText(path.resolve(file), kind.noun);
+  const head = parseLayer(first.text, first.file, kind);
+  const { appliedFirst, listedProfiles } = await readListed(
+    head.extends,
+    path.dirname(first.file),
+    first.file,
+    (named) => `${first.file} names ${named} more than once in extends`,
+  );
   return {
     head: head.read,
     text: first.text,
-    links: [{ file: first.file, parsed: head.own, drafts: head.drafts }, ...appliedBaseFirst.toReversed()],
-    bases,
+    links: [
+      { file: first.file, parsed: head.own, drafts: head.drafts, listedIn: new Set() },
+      ...appliedFirst.toReversed(),
+    ],
+    listedProfiles,
   };
 }
 
@@ -839,10 +876,18 @@ export interface ResolvedLayer<Read extends LayerRead> {
   readonly resolved: ResolvedProfile;
   /** Each part of the first file's adjust that changed nothing. */
   readonly unmatched: readonly string[];
-  /** The real path of each base the first file names, in its order. */
-  readonly bases: readonly string[];
-  /** Where a later base removes what an earlier one adds, which is easy to miss. */
-  readonly overrideWarnings: readonly string[];
+  readonly listedProfiles: readonly string[];
+  /** Where a later listed profile removes what an earlier one adds, which is easy to miss. */
+  readonly overrideWarnings: readonly OverrideWarning[];
+}
+
+/** Whether one listed profile's chain holds both, or either is the first file itself. */
+function sharesListedProfile(left: Link, right: Link): boolean {
+  return (
+    left.listedIn.size === 0 ||
+    right.listedIn.size === 0 ||
+    [...left.listedIn].some((index) => right.listedIn.has(index))
+  );
 }
 
 /**
@@ -851,11 +896,11 @@ export interface ResolvedLayer<Read extends LayerRead> {
  */
 function chainOwnerType(chain: readonly Link[]): { type: OwnerType; file: string } | undefined {
   const typed = chain.flatMap((link) =>
-    link.parsed.owner_type === undefined ? [] : [{ type: link.parsed.owner_type, file: link.file, base: link.base }],
+    link.parsed.owner_type === undefined ? [] : [{ type: link.parsed.owner_type, file: link.file, link }],
   );
   const [first] = typed;
   const other = typed.find((link) => link.type !== first?.type);
-  if (first !== undefined && other !== undefined && first.base !== undefined && first.base !== other.base) {
+  if (first !== undefined && other !== undefined && !sharesListedProfile(first.link, other.link)) {
     throw new ProfileError(
       `${first.file} is for ${describeOwnerType(first.type)}, but ${other.file}, applied with it, is for ${describeOwnerType(other.type)}`,
     );
@@ -935,6 +980,8 @@ function ownerChanges(head: Link | undefined): Record<OwnerType, string[]> {
 }
 
 interface RemovableEntry {
+  readonly section: EntryList;
+  readonly name: string;
   readonly key: string;
   readonly described: string;
   readonly absent: boolean;
@@ -943,21 +990,29 @@ interface RemovableEntry {
 function removableEntries(parsed: OwnProfile): RemovableEntry[] {
   return [
     ...(parsed.autolinks ?? []).map((entry) => ({
+      section: 'autolinks' as const,
+      name: entry.key_prefix,
       key: `autolinks/${entry.key_prefix}`,
       described: `autolink "${entry.key_prefix}"`,
       absent: entry.absent === true,
     })),
     ...(parsed.rulesets ?? []).map((entry) => ({
+      section: 'rulesets' as const,
+      name: entry.name,
       key: `rulesets/${entry.name}`,
       described: `ruleset "${entry.name}"`,
       absent: entry.absent === true,
     })),
     ...(parsed.environments ?? []).map((entry) => ({
+      section: 'environments' as const,
+      name: entry.name,
       key: `environments/${environmentKey(entry.name)}`,
       described: `environment "${entry.name}"`,
       absent: entry.absent === true,
     })),
     ...(parsed.labels ?? []).map((entry) => ({
+      section: 'labels' as const,
+      name: entry.name,
       key: `labels/${labelKey(entry.name)}`,
       described: `label "${entry.name}"`,
       absent: entry.absent === true,
@@ -966,14 +1021,21 @@ function removableEntries(parsed: OwnProfile): RemovableEntry[] {
 }
 
 /**
- * A base that removes an entry, or the Pages site, that an earlier base adds
- * wins, since later bases override earlier ones. Within one base, a profile
- * removing what the profile it extends adds is how a profile drops an entry,
- * so only removals across bases are named.
+ * A listed profile that removes an entry, or the Pages site, that an earlier
+ * one adds wins, since later profiles override earlier ones. A profile
+ * removing what a profile in its own chain adds is how a profile drops an
+ * entry, so only removals across listed profiles are named.
  */
-function removalWarnings(links: readonly Link[]): string[] {
-  const warnings: string[] = [];
-  const appliedBaseFirst = links.filter((link) => link.base !== undefined).toReversed();
+export interface OverrideWarning {
+  readonly section: EntryList | 'pages';
+  /** The entry's name; none for the Pages site. */
+  readonly key?: string;
+  readonly message: string;
+}
+
+function removalWarnings(links: readonly Link[]): OverrideWarning[] {
+  const warnings: OverrideWarning[] = [];
+  const appliedBaseFirst = links.filter((link) => link.listedIn.size > 0).toReversed();
   const adders = new Map<string, Link>();
   for (const link of appliedBaseFirst) {
     for (const entry of removableEntries(link.parsed)) {
@@ -983,10 +1045,12 @@ function removalWarnings(links: readonly Link[]): string[] {
         continue;
       }
       adders.delete(entry.key);
-      if (adder !== undefined && adder.base !== link.base) {
-        warnings.push(
-          `${path.basename(link.file)} removes the ${entry.described} that ${path.basename(adder.file)} adds, since later profiles override earlier ones`,
-        );
+      if (adder !== undefined && !sharesListedProfile(adder, link)) {
+        warnings.push({
+          section: entry.section,
+          key: entry.name,
+          message: `${path.basename(link.file)} removes the ${entry.described} that ${path.basename(adder.file)} adds, since later profiles override earlier ones`,
+        });
       }
     }
   }
@@ -999,10 +1063,11 @@ function removalWarnings(links: readonly Link[]): string[] {
     if (pages.absent !== true) {
       pagesAdder = link;
     } else if (pagesAdder !== undefined) {
-      if (pagesAdder.base !== link.base) {
-        warnings.push(
-          `${path.basename(link.file)} removes the Pages site that ${path.basename(pagesAdder.file)} sets up, since later profiles override earlier ones`,
-        );
+      if (!sharesListedProfile(pagesAdder, link)) {
+        warnings.push({
+          section: 'pages',
+          message: `${path.basename(link.file)} removes the Pages site that ${path.basename(pagesAdder.file)} sets up, since later profiles override earlier ones`,
+        });
       }
       pagesAdder = undefined;
     }
@@ -1075,11 +1140,11 @@ export async function resolveLayer<Read extends LayerRead>(
   file: string,
   kind: Layer<Read>,
 ): Promise<ResolvedLayer<Read>> {
-  const { head, links, bases } = await readChain(file, kind);
+  const { head, links, listedProfiles } = await readChain(file, kind);
   return {
     head,
     ...resolveChain(links, path.resolve(file), head.adjust),
-    bases,
+    listedProfiles,
     overrideWarnings: removalWarnings(links),
   };
 }
@@ -1093,8 +1158,28 @@ export async function parseProfile(text: string, directory: string): Promise<Res
   const parsed = parseLayer(text, 'The profile', profileLayer);
   const [parent] = parsed.extends;
   const base = parent === undefined ? [] : (await readChain(path.resolve(directory, parent), profileLayer)).links;
-  return resolveChain([{ file: 'The profile', parsed: parsed.own, drafts: parsed.drafts }, ...base], 'The profile')
-    .resolved;
+  return resolveChain(
+    [{ file: 'The profile', parsed: parsed.own, drafts: parsed.drafts, listedIn: new Set() }, ...base],
+    'The profile',
+  ).resolved;
+}
+
+/**
+ * The profiles as one, applied in the order given with later ones overriding
+ * earlier ones, as a staged apply that lists them applies them.
+ */
+export async function resolveProfilesTogether(profiles: readonly string[]): Promise<ResolvedProfile> {
+  const { appliedFirst } = await readListed(
+    profiles,
+    undefined,
+    undefined,
+    (named) => `${named} is given more than once`,
+  );
+  const [last, ...rest] = appliedFirst.toReversed();
+  if (last === undefined) {
+    throw new ProfileError('Name at least one profile to apply together');
+  }
+  return resolveChain([last, ...rest], last.file).resolved;
 }
 
 export interface ProfileListing {
@@ -1421,7 +1506,7 @@ async function editChain<Read extends LayerRead>(
   edits: (head: Read) => readonly ProfileEdit[],
   layer: Layer<Read>,
 ): Promise<EditedLayer<Read>> {
-  const { head, text: original, links, bases } = await readChain(file, layer);
+  const { head, text: original, links, listedProfiles } = await readChain(file, layer);
   const [own, ...base] = links;
   const document = parseDocument(original);
   const seen = new Set<string>();
@@ -1468,11 +1553,11 @@ async function editChain<Read extends LayerRead>(
   const indent = /^( +)\S/mu.exec(original)?.[1]?.length ?? 2;
   const text = document.toString({ lineWidth: 0, indent });
   const edited = parseLayer(text, own.file, layer);
-  const editedLinks = [{ file: own.file, parsed: edited.own, drafts: edited.drafts }, ...base];
+  const editedLinks = [{ file: own.file, parsed: edited.own, drafts: edited.drafts, listedIn: own.listedIn }, ...base];
   const result = {
     head: edited.read,
     ...resolveChain(editedLinks, own.file, edited.read.adjust),
-    bases,
+    listedProfiles,
     overrideWarnings: removalWarnings(editedLinks),
   };
   layer.check(result);

@@ -885,7 +885,7 @@ async function stageBatch(
       profiles: options.profiles,
     });
   } else if (options.profiles.length > 0) {
-    throw new UsageError("A batch's new repositories start from its profile, so --profile needs --batch.");
+    throw new UsageError("A batch's new repositories start from its profiles, so --profile needs --batch.");
   } else if (membership) {
     batch = await addToBatch(folder, additions);
   }

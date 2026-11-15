@@ -18,7 +18,7 @@ import {
   type Plan,
   StalePlanError,
 } from '../plan/plan.js';
-import { ProfileError, resolveProfile } from '../profiles/profile.js';
+import { ProfileError, resolveProfile, resolveProfilesTogether } from '../profiles/profile.js';
 import { hexDigest } from '../shared/bytes.js';
 import { replaceFile } from '../shared/files.js';
 import {
@@ -62,7 +62,11 @@ const savedManifest = z
     id: z.string().min(1),
     /** Each relative to the folder, in the order they apply; empty for the repository as it is. */
     profiles: z.array(z.string().min(1)).optional(),
-    /** One profile, or null for none, as a batch saved before `profiles` has it. */
+    /**
+     * One profile, or null for none, which reads as a list of one, or of
+     * none, and is saved as `profiles`. Published versions of the CLI write
+     * it, and the web app keeps batches in the browser, so both are read.
+     */
     profile: z.string().min(1).nullable().optional(),
     members: z.array(savedMember),
   })
@@ -108,7 +112,6 @@ export interface Batch {
   readonly members: readonly BatchMember[];
 }
 
-/** What the batch starts the repository from: its own profiles, or else the batch's. */
 function memberProfiles(batch: Batch, member: BatchMember): readonly string[] {
   return member.profiles ?? batch.profiles;
 }
@@ -364,6 +367,9 @@ export async function createBatch(folder: string, start: BatchStart): Promise<Ba
   const profiles: string[] = [];
   for (const profile of start.profiles ?? []) {
     profiles.push((await resolveProfile(profile)).chain[0] ?? path.resolve(profile));
+  }
+  if (profiles.length > 1) {
+    await resolveProfilesTogether(profiles);
   }
   // The first folder mkdir made, if any, so a failed start removes what it made and nothing more.
   const made = await mkdir(folder, { recursive: true });

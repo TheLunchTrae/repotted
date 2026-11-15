@@ -1435,6 +1435,30 @@ describe('stage', () => {
     await fixture('staged-plan-skipped', planned);
   });
 
+  test('starts a batch from several profiles, given in the order they apply', async () => {
+    const node = path.join(directory, 'batch-layer-node.yaml');
+    const docs = path.join(directory, 'batch-layer-docs.yaml');
+    await writeFile(node, 'repository: { has_wiki: false }\n');
+    await writeFile(docs, 'repository: { has_issues: false }\n');
+    const folder = path.join(directory, 'batch-layers');
+
+    const started = await cli(
+      new FakeGitHub({}, 'lunch/app'),
+      'stage',
+      folder,
+      '--batch',
+      '--new',
+      'lunch/app',
+      '-p',
+      node,
+      '-p',
+      docs,
+    );
+
+    expect(started.code).toBe(0);
+    expect(started.err).toContain(`from ${node}, then ${docs}`);
+  });
+
   test('starts from several profiles, given in the order they apply', async () => {
     const node = path.join(directory, 'staged-layer-node.yaml');
     const docs = path.join(directory, 'staged-layer-docs.yaml');

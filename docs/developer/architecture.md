@@ -359,8 +359,9 @@ start from profiles of its own, which the manifest records with it, so one
 batch can re-apply each repository's own list of profiles. Each member's plan
 says, in `batch_profiles`, what the batch starts it from, so a program can
 tell a staged apply that was in progress before the batch from one the batch
-started. A manifest saved with one `profile`, as before batches took several,
-reads as a list of one and is saved as `profiles` from then on.
+started. A manifest that names one `profile`, or null, reads as a list of one,
+or of none, and is saved as `profiles`. Published versions of the CLI write
+that form, and the web app keeps batches in the browser, so it is still read.
 
 ## The CLI and the MCP server
 

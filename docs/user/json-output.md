@@ -249,7 +249,8 @@ read`; `{ kind: admin_role }`; or `{ kind: payment_method }`.
 Its `message` gives the reason in words. A warning without `cause` leaves
 nothing out, such as one about what changing visibility does, and its
 `message` is the whole warning; it has `section` and `key` when it is about
-one setting or entry, or, in a staged plan, `exclusion`, an exclusion that
+one setting or entry, such as a later profile removing a ruleset an earlier
+one adds (`section` alone for the Pages site), or, in a staged plan, `exclusion`, an exclusion that
 leaves nothing out, as the staged apply lists it. A member that doesn't
 apply is left out. Text output prints each warning as a line, such as this
 one for a warning with `section: actions`, `key: allowed_actions` and

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type * as FileSystem from 'node:fs/promises';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -672,15 +672,53 @@ describe('staged apply from several profiles', () => {
     expect(staged.sources['repository']).toEqual({ has_wiki: node, has_projects: docs });
   });
 
-  test('refuses a profile named twice, and leaves no file behind', async () => {
-    const { profiles, staged: file } = await freshFolderWithProfiles({ node: 'repository: { has_wiki: false }\n' });
+  test('refuses a profile given twice, under any spelling or through a link, and writes no file', async () => {
+    const {
+      folder,
+      profiles,
+      staged: file,
+    } = await freshFolderWithProfiles({
+      node: 'repository: { has_wiki: false }\n',
+    });
+    const node = only(profiles, 'node');
+    const linked = path.join(folder, 'linked.yaml');
+    await symlink(node, linked);
+
+    for (const again of [node, path.join(folder, 'sub', '..', 'node.yaml'), linked]) {
+      const error = await rejection(createStagedApply(file, 'lunch/app', [node, again]));
+      expect(error).toBeInstanceOf(ProfileError);
+      expect(String(error)).toContain(`${await realpath(node)} is given more than once`);
+      expect(await rejection(readFile(file))).toBeInstanceOf(Error);
+    }
+  });
+
+  test('refuses a hand-written list that names a profile twice', async () => {
+    const { staged: file } = await freshFolderWithProfiles({ node: 'repository: { has_wiki: false }\n' });
+    await writeFile(file, 'apply_to: lunch/app\nextends: [node.yaml, ./node.yaml]\n');
+
+    const error = await rejection(resolveStagedApply(file));
+
+    expect(String(error)).toContain('more than once in extends');
+  });
+
+  test('refuses a profile listed after one that already builds on it', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      shared: 'repository: { has_wiki: true }\n',
+      node: 'extends: shared.yaml\nrepository: { has_wiki: false }\n',
+    });
+    const shared = only(profiles, 'shared');
     const node = only(profiles, 'node');
 
-    const error = await rejection(createStagedApply(file, 'lunch/app', [node, node]));
+    const error = await rejection(createStagedApply(file, 'lunch/app', [node, shared]));
 
     expect(error).toBeInstanceOf(ProfileError);
-    expect(String(error)).toContain('more than once in extends');
+    expect(String(error)).toContain(
+      `${shared} is already applied through ${node}, so listing it after that changes nothing`,
+    );
     expect(await rejection(readFile(file))).toBeInstanceOf(Error);
+    // Listed first, the shared profile is the starting point the other builds on.
+    const staged = await createStagedApply(file, 'lunch/app', [shared, node]);
+    expect(staged.profile.repository).toEqual({ has_wiki: false });
   });
 
   test('refuses profiles for different owner types', async () => {
@@ -698,6 +736,20 @@ describe('staged apply from several profiles', () => {
     expect(await rejection(readFile(file))).toBeInstanceOf(Error);
   });
 
+  test('says a listed profile builds on one for another owner type, rather than that it is applied with it', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      plain: 'repository: { has_wiki: false }\n',
+      team: 'owner_type: organization\nrepository: { has_issues: false }\n',
+      personal: 'owner_type: user\nextends: team.yaml\nrepository: { has_projects: false }\n',
+    });
+
+    const error = await rejection(
+      createStagedApply(file, 'lunch/app', [only(profiles, 'plain'), only(profiles, 'personal')]),
+    );
+
+    expect(String(error)).toContain(`but it builds on ${only(profiles, 'team')}`);
+  });
+
   test('warns when a later profile removes what an earlier one adds, but not when a profile drops what it extends', async () => {
     const { profiles, staged: file } = await freshFolderWithProfiles({
       protected: `${mainRuleset}pages: { build_type: workflow }\n`,
@@ -708,16 +760,28 @@ describe('staged apply from several profiles', () => {
     const layered = await createStagedApply(file, 'lunch/app', [only(profiles, 'protected'), only(profiles, 'loose')]);
     const warning =
       'loose.yaml removes the ruleset "Main" that protected.yaml adds, since later profiles override earlier ones';
-    expect(layered.warnings).toEqual([
-      warning,
-      'loose.yaml removes the Pages site that protected.yaml sets up, since later profiles override earlier ones',
-    ]);
+    const pagesWarning =
+      'loose.yaml removes the Pages site that protected.yaml sets up, since later profiles override earlier ones';
+    expect(layered.warnings).toEqual([warning, pagesWarning]);
     const { plan } = await planStagedApply(new FakeGitHub(), file);
-    expect(plan.warnings).toContainEqual({ message: warning });
+    expect(plan.warnings).toContainEqual({ section: 'rulesets', key: 'Main', message: warning });
+    expect(plan.warnings).toContainEqual({ section: 'pages', message: pagesWarning });
 
     await discardStagedApply(file);
     const extended = await createStagedApply(file, 'lunch/app', [only(profiles, 'child')]);
     expect(extended.warnings).toEqual([]);
+  });
+
+  test('says nothing when a listed profile drops what its own base adds, though an earlier one shares that base', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      shared: mainRuleset,
+      first: 'extends: shared.yaml\nrepository: { has_wiki: false }\n',
+      second: 'extends: shared.yaml\nrulesets: [{ name: Main, absent: true }]\n',
+    });
+
+    const staged = await createStagedApply(file, 'lunch/app', [only(profiles, 'first'), only(profiles, 'second')]);
+
+    expect(staged.warnings).toEqual([]);
   });
 
   test('reads a staged apply whose extends lists its profiles by hand', async () => {

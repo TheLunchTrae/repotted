@@ -20,6 +20,7 @@ import {
   type ResolvedLayer,
   resolveLayer,
   resolveProfile,
+  resolveProfilesTogether,
   settingPath,
   settingsSections,
 } from '../profiles/profile.js';
@@ -209,18 +210,18 @@ interface StagedRead {
   readonly own: StagedFile;
   readonly layer: ProfileFile;
   readonly adjust: Adjust;
-  readonly bases: readonly string[];
+  readonly listedProfiles: readonly string[];
 }
 
 const stagedLayer: Layer<StagedRead> = {
   noun: 'staged apply',
   schema: stagedFile.transform((own): StagedRead => {
-    const { apply_to: _repository, exclude = [], extends: bases, ...layer } = own;
+    const { apply_to: _repository, exclude = [], extends: listed, ...layer } = own;
     return {
       own,
       layer,
       adjust: excluding(exclude),
-      bases: bases === undefined ? [] : typeof bases === 'string' ? [bases] : bases,
+      listedProfiles: listed === undefined ? [] : typeof listed === 'string' ? [listed] : listed,
     };
   }),
   ownTopLevelKeys: new Set(['exclude']),
@@ -302,7 +303,7 @@ function staged({
   head: { own },
   resolved,
   unmatched,
-  bases,
+  listedProfiles,
   overrideWarnings,
 }: ResolvedLayer<StagedRead>): StagedApply {
   const exclude = own.exclude ?? [];
@@ -311,12 +312,16 @@ function staged({
   return {
     file: resolved.chain[0] ?? '',
     repository: own.apply_to,
-    profiles: bases,
+    profiles: listedProfiles,
     exclude,
     chain: resolved.chain,
     profile: resolved.profile,
     drafts: resolved.drafts,
-    warnings: [...resolved.warnings, ...overrideWarnings, ...unmatched.map(unmatchedWarning)],
+    warnings: [
+      ...resolved.warnings,
+      ...overrideWarnings.map((warning) => warning.message),
+      ...unmatched.map(unmatchedWarning),
+    ],
     sources: { ...sourcesWithoutExclusions(settled, exclusions), drafts },
   };
 }
@@ -329,8 +334,8 @@ export async function resolveStagedApply(file: string): Promise<StagedApply> {
 /**
  * `profiles` apply in order, later ones overriding earlier ones; none starts
  * from the repository as it is. The file must not exist yet, so a staged apply
- * in progress is never lost, and it is removed again when the profiles don't
- * resolve together.
+ * in progress is never lost, and nothing is written when the profiles don't
+ * resolve, alone or together.
  */
 export async function createStagedApply(
   file: string,
@@ -345,6 +350,9 @@ export async function createStagedApply(
       : '# The profile it extends stays as it is unless these edits are saved to it.',
   ];
   const data: Record<string, unknown> = { apply_to: `${repo.owner}/${repo.name}` };
+  if (profiles.length > 1) {
+    await resolveProfilesTogether(profiles);
+  }
   if (profiles.length > 0) {
     const folder = await realpath(path.dirname(path.resolve(file))).catch(() => path.dirname(path.resolve(file)));
     const relativePaths: string[] = [];
@@ -566,7 +574,7 @@ export async function planStagedApply(
     ...created,
     warnings: [
       ...created.warnings,
-      ...read.overrideWarnings.map((message) => ({ message })),
+      ...read.overrideWarnings,
       ...read.unmatched.map((exclusion) => ({ exclusion, message: unmatchedWarning(exclusion) })),
     ],
   };
