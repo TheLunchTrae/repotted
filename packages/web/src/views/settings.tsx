@@ -224,10 +224,7 @@ function ProtectionRow({ protection, repository, onReview }: ProtectionProps): J
   if (state.kind === 'idle' || state.kind === 'none' || state.repository !== repository) {
     return null;
   }
-  const limits =
-    state.kind === 'checked' && state.limits.length > 0
-      ? ` GitHub can't add all of it here: ${state.limits.join('; ')}.`
-      : '';
+  const limits = state.kind === 'checked' ? state.limits.join('; ') : '';
   return (
     <div class="setting-row">
       <div class="setting-text">
@@ -244,9 +241,12 @@ function ProtectionRow({ protection, repository, onReview }: ProtectionProps): J
         ) : (
           <span class="muted small" role="status">
             {state.changes === 0
-              ? 'Protected.'
-              : `Not protected: ${state.changes === 1 ? '1 change' : `${state.changes} changes`} to review.`}
-            {limits}
+              ? limits === ''
+                ? 'Protected.'
+                : `Protected as far as GitHub allows here: ${limits}.`
+              : `Not protected: ${state.changes === 1 ? '1 change' : `${state.changes} changes`} to review.${
+                  limits === '' ? '' : ` GitHub can't add all of it here: ${limits}.`
+                }`}
           </span>
         )}
       </div>

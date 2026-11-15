@@ -1,7 +1,7 @@
 import type { Signal } from '@preact/signals';
 import type { GitHub } from '@repotted/core';
 import type { JSX } from 'preact';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
 import { AddressedRepository } from '../app/addressed-repository.js';
@@ -90,6 +90,8 @@ function SignedIn({
   }, [repositories, source]);
   // The repository a new profile was asked to capture, from the repositories page.
   const [captureFrom, setCaptureFrom] = useState<string | undefined>(undefined);
+  /** Whether a press of Review protection… is still starting its apply. */
+  const openingProtection = useRef(false);
   // The browser asks before a reload or a closed tab discards changes that aren't saved.
   useEffect(() => {
     const ask = (event: BeforeUnloadEvent): void => {
@@ -235,15 +237,22 @@ function SignedIn({
           protection={protection}
           onReviewProtection={() => {
             const state = protection.state.value;
-            if (state.kind === 'checked') {
+            // A second press while the first is starting would start a second apply over the first.
+            if (state.kind === 'checked' && !openingProtection.current) {
+              openingProtection.current = true;
               run(
-                protection.profile().then((profile) => {
-                  if (profile !== undefined) {
-                    router.go('/apply');
-                    return apply.start(state.repository, profile);
-                  }
-                  return undefined;
-                }),
+                protection
+                  .profile()
+                  .then((profile) => {
+                    if (profile !== undefined) {
+                      router.go('/apply');
+                      return apply.start(state.repository, profile);
+                    }
+                    return undefined;
+                  })
+                  .finally(() => {
+                    openingProtection.current = false;
+                  }),
               );
             }
           }}

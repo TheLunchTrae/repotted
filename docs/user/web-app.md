@@ -469,7 +469,9 @@ the protection, and the row then shows what is left to review.
 
 A private repository on GitHub's free plan can't have rulesets, so there the
 protection keeps only the workflow settings, and the row says so. A
-repository owned by an organization is offered no protection yet.
+repository owned by an organization is offered no protection yet, and
+neither is one you aren't an admin of, since only an admin can change these
+settings.
 
 The built-in protection isn't one of your profiles. One-off edits to its
 apply stay with that apply, so its apply has no **Save edits to profile**.

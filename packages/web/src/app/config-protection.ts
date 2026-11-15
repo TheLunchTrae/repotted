@@ -66,6 +66,13 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Whether the signed-in account can change the repository's rulesets and Actions settings. */
+function isAdmin(answer: unknown): boolean {
+  const permissions: unknown =
+    typeof answer === 'object' && answer !== null ? Reflect.get(answer, 'permissions') : undefined;
+  return typeof permissions === 'object' && permissions !== null && Reflect.get(permissions, 'admin') === true;
+}
+
 function ownerOf(answer: unknown): OwnerType | undefined {
   const owner: unknown = typeof answer === 'object' && answer !== null ? Reflect.get(answer, 'owner') : undefined;
   const type: unknown = typeof owner === 'object' && owner !== null ? Reflect.get(owner, 'type') : undefined;
@@ -98,9 +105,11 @@ export class ConfigProtection {
     let next: ProtectionState;
     try {
       const repo = parseRepo(repository);
-      const owner = ownerOf(await this.#github.request('GET', `/repos/${repo.owner}/${repo.name}`));
+      const answer = await this.#github.request('GET', `/repos/${repo.owner}/${repo.name}`);
+      const owner = ownerOf(answer);
       const builtIn = owner === undefined ? undefined : builtIns[owner];
-      if (owner === undefined || builtIn === undefined) {
+      // Only an admin can read and change what the protection sets, so no one else is offered it.
+      if (owner === undefined || builtIn === undefined || !isAdmin(answer)) {
         next = { kind: 'none', repository };
       } else {
         const { profile } = await parseProfile(builtIn.text, builtInFolder);

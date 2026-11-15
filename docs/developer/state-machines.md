@@ -319,16 +319,16 @@ changes. Settings checks again each time it opens while the profiles are
 kept in a repository, and forgets the check when they are not. A turn
 counter drops a check that lands after a later one or after `forget`.
 
-| State    | Event                                                      | Next                                                                                                                                           |
-| -------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Any      | Settings opens with profiles kept in a repository          | Checking, for that repository.                                                                                                                 |
-| Checking | The repository is owned by a user                          | Checked, with the count of changes the built-in would make and why GitHub can't have part of it, as for a private repository with no rulesets. |
-| Checking | The repository is owned by an organization, or by neither  | None: no offer and no row.                                                                                                                     |
-| Checking | GitHub can't be read                                       | Failed, with why. A lost sign-in also goes to the sign-in page.                                                                                |
-| Checking | Another check starts, or the profiles leave the repository | Checking the new one, or Idle. The first check's result is dropped when it lands.                                                              |
-| Checked  | **Review protection…**                                     | Checked, with an [apply](#web-apply) started from the built-in, written afresh under `/built-in` so it is this version's.                      |
-| Failed   | **Check again**                                            | Checking.                                                                                                                                      |
-| Any      | The profiles move to the browser or a folder               | Idle.                                                                                                                                          |
+| State    | Event                                                                      | Next                                                                                                                                           |
+| -------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any      | Settings opens with profiles kept in a repository                          | Checking, for that repository.                                                                                                                 |
+| Checking | The repository is owned by a user, and the account is its admin            | Checked, with the count of changes the built-in would make and why GitHub can't have part of it, as for a private repository with no rulesets. |
+| Checking | The repository is owned by an organization, or the account isn't its admin | None: no offer and no row.                                                                                                                     |
+| Checking | GitHub can't be read                                                       | Failed, with why. A lost sign-in also goes to the sign-in page.                                                                                |
+| Checking | Another check starts, or the profiles leave the repository                 | Checking the new one, or Idle. The first check's result is dropped when it lands.                                                              |
+| Checked  | **Review protection…**                                                     | Checked, with an [apply](#web-apply) started from the built-in, written afresh under `/built-in` so it is this version's.                      |
+| Failed   | **Check again**                                                            | Checking.                                                                                                                                      |
+| Any      | The profiles move to the browser or a folder                               | Idle.                                                                                                                                          |
 
 The offer above the settings list shows only for the repository just picked,
 and only while it is Checked with changes. **Not now** hides it until a
