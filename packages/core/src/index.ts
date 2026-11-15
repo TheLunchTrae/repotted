@@ -32,7 +32,7 @@ export {
   settingPath,
   stringifyProfile,
 } from './profiles/profile.js';
-export { ownerHas, ownerTypes, settingRules } from './profiles/owner.js';
+export { ownerHas, ownerTypes, partOwnerTypeCannotHold, settingRules } from './profiles/owner.js';
 export type { OwnerNeed, OwnerType } from './profiles/owner.js';
 export type { EntryEdit, ProfileEdit } from './profiles/profile.js';
 export { lockChanges } from './github/permissions.js';

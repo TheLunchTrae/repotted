@@ -213,6 +213,7 @@ input[type='checkbox'] {
   .tab,
   .tree-item,
   .account-menu > summary,
+  .notice .uncaptured summary,
   .check,
   .owner-choices label,
   .diff-fold,
@@ -1026,12 +1027,6 @@ input[type='checkbox'] {
 .uncaptured-reason {
   font-size: 14px;
   opacity: 0.85;
-}
-
-@media (pointer: coarse) {
-  .uncaptured summary {
-    min-height: 44px;
-  }
 }
 
 .notice-actions {

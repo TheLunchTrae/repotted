@@ -70,11 +70,18 @@ test('names a refused section by its title and a read of several settings by the
           remedy: { kind: 'permission', permission: 'Actions read' },
           message: 'GitHub refused to read fork pull request settings',
         },
+        {
+          section: 'repository',
+          key: 'pull_request_creation_cap',
+          cause: 'refused',
+          remedy: { kind: 'permission', permission: 'Administration read' },
+          message: 'GitHub refused to read the pull request limit',
+        },
       ],
       'organization',
     ),
   ).toEqual({
-    count: 7,
+    count: 8,
     groups: [
       { settings: ['Rulesets'], reason: "Needs the Repotted App's Metadata read permission." },
       {
@@ -88,6 +95,10 @@ test('names a refused section by its title and a read of several settings by the
           'Run workflows from fork pull requests',
         ],
         reason: "Needs the Repotted App's Actions read permission.",
+      },
+      {
+        settings: ['Limit open pull requests per user'],
+        reason: "Needs the Repotted App's Administration read permission.",
       },
     ],
   });
@@ -108,4 +119,18 @@ test('names only what a profile of its owner type can hold', () => {
       'user',
     ).groups,
   ).toEqual([{ settings: ['Secret Protection'], reason: 'GitHub shows it only to repository admins.' }]);
+  expect(
+    uncapturedSettings(
+      [
+        {
+          section: 'security',
+          key: 'code_quality_setup',
+          cause: 'refused',
+          remedy: { kind: 'permission', permission: 'Code scanning alerts read' },
+          message: 'GitHub refused to read code quality',
+        },
+      ],
+      'user',
+    ),
+  ).toEqual({ count: 0, groups: [] });
 });

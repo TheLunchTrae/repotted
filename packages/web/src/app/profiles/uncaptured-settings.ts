@@ -1,4 +1,4 @@
-import { ownerHas, type OwnerType, type Plan, settingRules } from '@repotted/core';
+import { type OwnerType, partOwnerTypeCannotHold, type Plan } from '@repotted/core';
 
 import { sectionTitles } from '../apply/comparison.js';
 import { type SettingField, settingSections } from '../profile-editor/setting-fields.js';
@@ -23,17 +23,12 @@ function capitalized(text: string): string {
 }
 
 function ownerTypeCanHold(field: SettingField, ownerType: OwnerType | undefined): boolean {
-  return !settingRules.some(
-    (rule) =>
-      rule.value === undefined &&
-      !ownerHas(ownerType, rule.needs) &&
-      rule.path.every((part, index) => field.path[index] === part),
-  );
+  return partOwnerTypeCannotHold(field.path, ownerType) === undefined;
 }
 
 /**
- * A read that covers several editor settings is named by the ones the editor
- * shows first, as the settings shown beneath them depend on those.
+ * A read that covers several editor settings is named by the ones that
+ * depend on none of the others.
  */
 function settingNamesOf({ section, key, field }: Warning, ownerType: OwnerType | undefined): readonly string[] {
   if (section === undefined) {
@@ -43,18 +38,19 @@ function settingNamesOf({ section, key, field }: Warning, ownerType: OwnerType |
     return [sectionTitles[section]];
   }
   const path = [section, key, field].filter((part) => part !== undefined);
-  const covered = editorFields.filter(
-    (editorField) =>
-      path.every((part, index) => editorField.path[index] === part) && ownerTypeCanHold(editorField, ownerType),
-  );
+  const underPath = editorFields.filter((editorField) => path.every((part, index) => editorField.path[index] === part));
+  if (underPath.length === 0) {
+    return [capitalized((field ?? key).replaceAll('_', ' '))];
+  }
+  const covered = underPath.filter((editorField) => ownerTypeCanHold(editorField, ownerType));
   const exact = covered.find((editorField) => editorField.path.length === path.length);
   if (exact !== undefined) {
     return [exact.label];
   }
-  const shownFirst = covered.filter((editorField) => !editorField.indentedUnderPreviousSetting);
-  return shownFirst.length > 0
-    ? shownFirst.map((editorField) => editorField.label)
-    : [capitalized((field ?? key).replaceAll('_', ' '))];
+  const coveredKeys = new Set(covered.map((editorField) => editorField.key));
+  return covered
+    .filter((editorField) => !coveredKeys.has(editorField.dependsOn?.otherSettingKeyInSameSection ?? ''))
+    .map((editorField) => editorField.label);
 }
 
 function reasonOf(warning: Warning, settingCount: number): string {
@@ -89,9 +85,8 @@ export function uncapturedSettings(warnings: readonly Warning[], ownerType: Owne
     }
     byRemedy.set(remedyKey, group);
   }
-  const groups = [...byRemedy.values()].map(({ first, settings }) => ({
-    settings,
-    reason: reasonOf(first, settings.length),
-  }));
+  const groups = [...byRemedy.values()]
+    .filter(({ settings }) => settings.length > 0)
+    .map(({ first, settings }) => ({ settings, reason: reasonOf(first, settings.length) }));
   return { count: groups.reduce((total, group) => total + group.settings.length, 0), groups };
 }
