@@ -18,7 +18,7 @@ test('names what a capture of a personal repository could not read by its editor
   const { warnings } = await captureProfile(github, parseRepo('trae/config'));
 
   expect(warnings).toContainEqual(expect.objectContaining({ key: 'allow_forking', cause: 'unloadable' }));
-  expect(uncapturedSettings(warnings)).toEqual({
+  expect(uncapturedSettings(warnings, 'user')).toEqual({
     count: 3,
     groups: [
       {
@@ -33,31 +33,79 @@ test('names what a capture of a personal repository could not read by its editor
   });
 });
 
-test('names a refused section by its title and a refused group of settings by its key in words', () => {
+test('names a refused section by its title and a read of several settings by the ones the editor shows first', () => {
   expect(
-    uncapturedSettings([
+    uncapturedSettings(
+      [
+        {
+          section: 'rulesets',
+          cause: 'refused',
+          remedy: { kind: 'permission', permission: 'Metadata read' },
+          message: 'GitHub refused to read rulesets',
+        },
+        {
+          section: 'security',
+          key: 'security_and_analysis',
+          cause: 'refused',
+          remedy: { kind: 'admin_role' },
+          message: 'GitHub did not report it; it reports it only to repository admins',
+        },
+        {
+          section: 'actions',
+          key: 'allowed_actions',
+          cause: 'not_applicable',
+          message: 'it only applies while Actions is enabled',
+        },
+        {
+          section: 'actions',
+          key: 'oidc_customization_sub',
+          cause: 'refused',
+          remedy: { kind: 'permission', permission: 'Actions read' },
+          message: 'GitHub refused to read OIDC',
+        },
+        {
+          section: 'actions',
+          key: 'fork_pr_workflows_private_repos',
+          cause: 'refused',
+          remedy: { kind: 'permission', permission: 'Actions read' },
+          message: 'GitHub refused to read fork pull request settings',
+        },
+      ],
+      'organization',
+    ),
+  ).toEqual({
+    count: 7,
+    groups: [
+      { settings: ['Rulesets'], reason: "Needs the Repotted App's Metadata read permission." },
       {
-        section: 'rulesets',
-        cause: 'refused',
-        remedy: { kind: 'permission', permission: 'Metadata read' },
-        message: 'GitHub refused to read rulesets',
+        settings: ['GitHub Advanced Security', 'GitHub Code Security', 'Secret Protection'],
+        reason: 'GitHub shows these only to repository admins.',
       },
       {
-        section: 'security',
-        key: 'security_and_analysis',
-        cause: 'refused',
-        remedy: { kind: 'admin_role' },
-        message: 'GitHub did not report it; it reports it only to repository admins',
+        settings: [
+          'Use the default subject claim',
+          'Use immutable IDs in the subject',
+          'Run workflows from fork pull requests',
+        ],
+        reason: "Needs the Repotted App's Actions read permission.",
       },
-      {
-        section: 'actions',
-        key: 'allowed_actions',
-        cause: 'not_applicable',
-        message: 'it only applies while Actions is enabled',
-      },
-    ]).groups,
-  ).toEqual([
-    { settings: ['Rulesets'], reason: "Needs the Repotted App's Metadata read permission." },
-    { settings: ['Security and analysis'], reason: 'GitHub shows it only to repository admins.' },
-  ]);
+    ],
+  });
+});
+
+test('names only what a profile of its owner type can hold', () => {
+  expect(
+    uncapturedSettings(
+      [
+        {
+          section: 'security',
+          key: 'security_and_analysis',
+          cause: 'refused',
+          remedy: { kind: 'admin_role' },
+          message: 'GitHub did not report it; it reports it only to repository admins',
+        },
+      ],
+      'user',
+    ).groups,
+  ).toEqual([{ settings: ['Secret Protection'], reason: 'GitHub shows it only to repository admins.' }]);
 });

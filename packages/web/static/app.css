@@ -1028,6 +1028,12 @@ input[type='checkbox'] {
   opacity: 0.85;
 }
 
+@media (pointer: coarse) {
+  .uncaptured summary {
+    min-height: 44px;
+  }
+}
+
 .notice-actions {
   display: flex;
   align-items: center;

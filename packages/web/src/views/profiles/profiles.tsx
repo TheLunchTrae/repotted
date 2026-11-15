@@ -231,7 +231,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
                   ? "1 setting wasn't captured"
                   : `${couldNotRead.uncaptured.count} settings weren't captured`}
               </span>
-              <span class="uncaptured-toggle" aria-hidden="true">
+              <span class="uncaptured-toggle">
                 <span class="uncaptured-show">Show</span>
                 <span class="uncaptured-hide">Hide</span>
               </span>

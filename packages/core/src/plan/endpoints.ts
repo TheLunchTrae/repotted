@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { type GitHub, GitHubError, repoPath, type RepoRef } from '../github/client.js';
 import { requiredPermission } from '../github/permissions.js';
-import type { Change, RefusalRemedy, Section, SectionPlan, SettingsSection, SkipCause, Warning } from './change.js';
+import type { Change, RefusalRemedy, Section, SectionPlan, SettingsSection, Warning } from './change.js';
 import { fieldChanges } from './match.js';
 
 interface EndpointBase {
@@ -58,12 +58,9 @@ interface ObjectEndpoint {
  * account without a payment method on file. `unavailable`: GitHub does not
  * offer it on the repository.
  */
-export interface Unavailable {
-  readonly available: false;
-  readonly cause: Extract<SkipCause, 'refused' | 'unavailable'>;
-  readonly reason: string;
-  readonly remedy?: RefusalRemedy;
-}
+export type Unavailable =
+  | { readonly available: false; readonly cause: 'refused'; readonly reason: string; readonly remedy: RefusalRemedy }
+  | { readonly available: false; readonly cause: 'unavailable'; readonly reason: string };
 
 export type EndpointValue = { readonly available: true; readonly value: unknown } | Unavailable;
 
@@ -82,11 +79,9 @@ export function refusedRead(error: GitHubError, path: string, what: string): Una
 }
 
 export function warningForUnavailable(unavailable: Unavailable): Pick<Warning, 'cause' | 'message' | 'remedy'> {
-  return {
-    cause: unavailable.cause,
-    message: unavailable.reason,
-    ...(unavailable.remedy === undefined ? {} : { remedy: unavailable.remedy }),
-  };
+  return unavailable.cause === 'refused'
+    ? { cause: unavailable.cause, message: unavailable.reason, remedy: unavailable.remedy }
+    : { cause: unavailable.cause, message: unavailable.reason };
 }
 
 export async function readResource(

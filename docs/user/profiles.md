@@ -340,7 +340,9 @@ one takes its new type, so it stops resolving if it sets something the type
 doesn't have, until it is changed too.
 
 `capture` writes the captured repository's owner type, and leaves out, with a
-warning, anything GitHub reports that the owner doesn't have.
+warning, anything GitHub reports that the owner doesn't have. When GitHub
+refuses to show such a setting, the warning says the owner doesn't have it,
+not that GitHub refused.
 
 ## How changes apply
 

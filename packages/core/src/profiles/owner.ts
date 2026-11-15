@@ -65,6 +65,17 @@ function describeNeed(needs: OwnerNeed): string {
   }[needs];
 }
 
+/** Why an owner type can never hold a whole part, such as a section or a setting. */
+export function partOwnerTypeCannotHold(path: readonly string[], type: OwnerType | undefined): string | undefined {
+  const rule = settingRules.find(
+    (each) =>
+      each.value === undefined && !ownerHas(type, each.needs) && each.path.every((part, index) => path[index] === part),
+  );
+  return rule === undefined || type === undefined
+    ? undefined
+    : `${rule.path.join('.')} is something ${describeNeed(rule.needs)}, and this profile is for ${describeOwnerType(type)}`;
+}
+
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

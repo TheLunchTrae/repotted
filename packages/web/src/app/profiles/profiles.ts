@@ -513,7 +513,7 @@ export class Profiles {
       try {
         const captured = await captureProfile(this.#github, parseRepo(profile.start.repository));
         text = stringifyProfile(captured.profile);
-        uncaptured = uncapturedSettings(captured.warnings);
+        uncaptured = uncapturedSettings(captured.warnings, captured.profile.owner_type);
       } catch (error) {
         if (isSignedOut(error)) {
           this.#onSignedOut();
