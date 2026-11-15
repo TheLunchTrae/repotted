@@ -53,7 +53,6 @@ export type ProtectionState =
   | {
       readonly kind: 'checked';
       readonly repository: string;
-      /** What owns the repository, which picks the protection that fits it. */
       readonly owner: OwnerType;
       /** How many changes an apply of the protection would make; 0 when the repository has it all. */
       readonly changes: number;
@@ -66,8 +65,7 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Whether the signed-in account can change the repository's rulesets and Actions settings. */
-function isAdmin(answer: unknown): boolean {
+function signedInAccountIsRepositoryAdmin(answer: unknown): boolean {
   const permissions: unknown =
     typeof answer === 'object' && answer !== null ? Reflect.get(answer, 'permissions') : undefined;
   return typeof permissions === 'object' && permissions !== null && Reflect.get(permissions, 'admin') === true;
@@ -79,28 +77,23 @@ function ownerOf(answer: unknown): OwnerType | undefined {
   return type === 'User' ? 'user' : type === 'Organization' ? 'organization' : undefined;
 }
 
-/**
- * The built-in protection for the repository the profiles are kept in:
- * whether it fits that repository, and what an apply of it would change
- * there. Checking only reads; the protection is written only by an apply
- * the user reviews, from `profile`.
- */
+// Checking only reads; the protection is written only by an apply the user
+// reviews, from `profile`.
 export class ConfigProtection {
   readonly state = signal<ProtectionState>({ kind: 'idle' });
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
-  /** Counts the checks, so one that lands after a later one changes nothing. */
-  #turn = 0;
+  // So a check that lands after a later one changes nothing.
+  #latestCheckTurn = 0;
 
   constructor(github: GitHub, onSignedOut: () => void) {
     this.#github = github;
     this.#onSignedOut = onSignedOut;
   }
 
-  /** Reads what an apply of the protection would change in `repository`, `owner/name`. */
   async check(repository: string): Promise<void> {
-    const turn = (this.#turn += 1);
+    const turn = (this.#latestCheckTurn += 1);
     this.state.value = { kind: 'checking', repository };
     let next: ProtectionState;
     try {
@@ -109,7 +102,7 @@ export class ConfigProtection {
       const owner = ownerOf(answer);
       const builtIn = owner === undefined ? undefined : builtIns[owner];
       // Only an admin can read and change what the protection sets, so no one else is offered it.
-      if (owner === undefined || builtIn === undefined || !isAdmin(answer)) {
+      if (owner === undefined || builtIn === undefined || !signedInAccountIsRepositoryAdmin(answer)) {
         next = { kind: 'none', repository };
       } else {
         const { profile } = await parseProfile(builtIn.text, builtInFolder);
@@ -128,23 +121,18 @@ export class ConfigProtection {
       }
       next = { kind: 'failed', repository, message: messageOf(error) };
     }
-    if (turn === this.#turn) {
+    if (turn === this.#latestCheckTurn) {
       this.state.value = next;
     }
   }
 
-  /** Forgets the last check, as when the profiles are no longer kept in a repository. */
   forget(): void {
-    this.#turn += 1;
+    this.#latestCheckTurn += 1;
     this.state.value = { kind: 'idle' };
   }
 
-  /**
-   * Writes the protection that fits the checked repository where an apply
-   * can start from it, and gives it as the profile to apply. The file is
-   * written afresh each time, so an apply starts from the protection this
-   * version of Repotted has.
-   */
+  // Written afresh each time, so an apply starts from the protection this
+  // version of Repotted has.
   async profile(): Promise<ComparedProfile | undefined> {
     const state = this.state.value;
     if (state.kind !== 'checked') {

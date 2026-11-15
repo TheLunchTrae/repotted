@@ -60,7 +60,7 @@ export type ApplyState =
   | ({
       readonly kind: 'editing';
       readonly fromProfile: boolean;
-      /** Whether that profile is built into Repotted, which edits can't be saved to. */
+      /** Edits can't be saved to a profile built into Repotted. */
       readonly builtIn: boolean;
       /** What this apply leaves out, which can't be edited here until it is put back. */
       readonly leftOut: readonly string[];
