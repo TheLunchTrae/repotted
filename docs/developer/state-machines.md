@@ -635,6 +635,16 @@ unset leaves each repository's rules alone, while one that sets any removes
 every other on apply: turning the last rule off unsets `rules` again when the
 file set none, and **Leave its rules to GitHub** unsets it outright.
 
+The ruleset form's targets are `conditions.ref_name`, as the profile has
+them: the options write GitHub's `~DEFAULT_BRANCH` and `~ALL` into
+`include` and `exclude`, and the pattern box writes the other names.
+GitHub matches the names in any order, so names that end up the same as
+saved, in any order, give the saved entry back. The pattern box stays open
+while its option is selected, even when it holds no pattern yet; that is
+the form's own state, and an entry with patterns opens with it selected.
+`refPatternProblem` checks one pattern and `refTargetsProblem` the whole
+ruleset, and a ruleset with a problem in its targets can't be saved.
+
 A setting GitHub hides, for the value of the one it follows or because that
 one is hidden, is not drawn, and the highest shown setting that hides it
 counts how many such settings a profile still names. A setting GitHub greys

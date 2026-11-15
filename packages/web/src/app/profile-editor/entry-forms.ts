@@ -19,8 +19,8 @@ function entries(value: unknown): readonly Entry[] {
   return items(value).filter(isEntry);
 }
 
-function sameText(left: readonly unknown[], right: readonly unknown[]): boolean {
-  return left.length === right.length && left.every((item, index) => item === right[index]);
+function sameMembers(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((item) => right.includes(item));
 }
 
 export function uniqueTrimmedNonBlankLines(text: string): string[] {
@@ -40,25 +40,24 @@ export function withKey(entry: Entry, key: string, value: unknown): Entry {
   return value === undefined ? rest : { ...rest, [key]: value };
 }
 
-export function refNames(entry: Entry, side: 'include' | 'exclude'): readonly string[] {
+export function refNames(entry: Entry, side: RefSide): readonly string[] {
   const conditions = isEntry(entry['conditions']) ? entry['conditions'] : {};
   const refName = isEntry(conditions['ref_name']) ? conditions['ref_name'] : {};
   return items(refName[side]).map(String);
 }
 
-/** GitHub takes the two sides together, so both are written, and with neither the condition goes. */
-export function withRefNames(
-  entry: Entry,
-  side: 'include' | 'exclude',
-  names: readonly string[],
-  saved?: Entry,
-): Entry {
+/**
+ * GitHub takes the two sides together, so both are written, and with neither
+ * the condition goes. GitHub matches the names in any order, so the same
+ * names as saved give the saved shape back.
+ */
+export function withRefNames(entry: Entry, side: RefSide, names: readonly string[], saved?: Entry): Entry {
   const next = { include: refNames(entry, 'include'), exclude: refNames(entry, 'exclude'), [side]: names };
   const conditions = isEntry(entry['conditions']) ? entry['conditions'] : {};
   if (
     saved !== undefined &&
-    sameText(next.include, refNames(saved, 'include')) &&
-    sameText(next.exclude, refNames(saved, 'exclude'))
+    sameMembers(next.include, refNames(saved, 'include')) &&
+    sameMembers(next.exclude, refNames(saved, 'exclude'))
   ) {
     const savedConditions = isEntry(saved['conditions']) ? saved['conditions'] : {};
     const { ref_name: _old, ...others } = conditions;
@@ -68,6 +67,120 @@ export function withRefNames(
   const { ref_name: _old, ...others } = conditions;
   const merged = next.include.length + next.exclude.length > 0 ? { ...others, ref_name: next } : others;
   return withKey(entry, 'conditions', Object.keys(merged).length > 0 ? merged : undefined);
+}
+
+export type RefSide = 'include' | 'exclude';
+
+/** GitHub's ruleset targets other than a ref pattern: each repository's default branch, and every branch or tag. */
+export const defaultBranchTarget = '~DEFAULT_BRANCH';
+export const allRefsTarget = '~ALL';
+
+function isNamedRefTarget(name: string): boolean {
+  return name === defaultBranchTarget || name === allRefsTarget;
+}
+
+/** Undefined when the profile leaves the target to each repository. */
+export function rulesetTarget(entry: Entry): 'branch' | 'tag' | 'push' | undefined {
+  const target = entry['target'];
+  return target === 'branch' || target === 'tag' || target === 'push' ? target : undefined;
+}
+
+export function refPatterns(entry: Entry, side: RefSide): readonly string[] {
+  return refNames(entry, side).filter((name) => !isNamedRefTarget(name));
+}
+
+/** Selecting adds the target at the end, so the names the file has keep their order. */
+export function withNamedRefTarget(
+  entry: Entry,
+  side: RefSide,
+  target: string,
+  selected: boolean,
+  saved?: Entry,
+): Entry {
+  const others = refNames(entry, side).filter((name) => name !== target);
+  return withRefNames(entry, side, selected ? [...others, target] : others, saved);
+}
+
+/** A named target typed among the patterns is selected. */
+export function withRefPatterns(entry: Entry, side: RefSide, typed: readonly string[], saved?: Entry): Entry {
+  const named = refNames(entry, side).filter(isNamedRefTarget);
+  const typedNamed = typed.filter((name) => isNamedRefTarget(name) && !named.includes(name));
+  const patterns = typed.filter((name) => !isNamedRefTarget(name));
+  return withRefNames(entry, side, [...named, ...typedNamed, ...patterns], saved);
+}
+
+const refPrefixes = { branch: 'refs/heads/', tag: 'refs/tags/' } as const;
+
+/** What git refuses in a ref name, leaving out what fnmatch patterns use. */
+const sequencesRefNamesRefuse = ['..', '//', '\\', ':', '^', '~', '@{'] as const;
+
+/**
+ * Why GitHub would refuse a ref pattern or match nothing with it. A ruleset
+ * whose target is left to each repository may hold branch or tag patterns.
+ */
+export function refPatternProblem(pattern: string, target: 'branch' | 'tag' | undefined): string | undefined {
+  if (pattern.startsWith('~')) {
+    return `${pattern} isn't a target GitHub knows.`;
+  }
+  const prefix =
+    target === undefined
+      ? Object.values(refPrefixes).find((candidate) => pattern.startsWith(candidate))
+      : refPrefixes[target];
+  if (prefix === undefined || !pattern.startsWith(prefix)) {
+    return target === 'tag'
+      ? 'Start each tag pattern with refs/tags/, as in refs/tags/v*.'
+      : target === 'branch'
+        ? 'Start each branch pattern with refs/heads/, as in refs/heads/release/*.'
+        : 'Start each pattern with refs/heads/ for branches or refs/tags/ for tags.';
+  }
+  const kind = prefix === refPrefixes.tag ? 'tag' : 'branch';
+  const name = pattern.slice(prefix.length);
+  if (name === '') {
+    return `${pattern} needs a ${kind} name or pattern after it.`;
+  }
+  if (/[\s\p{Cc}]/u.test(name)) {
+    return `${pattern}: a ${kind} name can't have spaces.`;
+  }
+  const refused = sequencesRefNamesRefuse.find((sequence) => name.includes(sequence));
+  if (refused !== undefined) {
+    return `${pattern}: a ${kind} name can't have ${refused}.`;
+  }
+  const ending = ['/', '.lock', '.'].find((end) => name.endsWith(end));
+  if (ending !== undefined) {
+    return `${pattern}: a ${kind} name can't end with ${ending}.`;
+  }
+  return name.split('/').some((part) => part.startsWith('.'))
+    ? `${pattern}: no part of a ${kind} name can start with a dot.`
+    : undefined;
+}
+
+/** A push ruleset's patterns are refused whole, by `namedRefTargetsProblem`. */
+export function refPatternsProblem(entry: Entry, side: RefSide): string | undefined {
+  const target = rulesetTarget(entry);
+  if (target === 'push') {
+    return undefined;
+  }
+  return refPatterns(entry, side)
+    .map((pattern) => refPatternProblem(pattern, target))
+    .find((problem) => problem !== undefined);
+}
+
+export function namedRefTargetsProblem(entry: Entry, side: RefSide): string | undefined {
+  const target = rulesetTarget(entry);
+  const names = refNames(entry, side);
+  if (target === 'push' && names.length > 0) {
+    return 'A push ruleset has no branch or tag targets. Deselect them.';
+  }
+  return target === 'tag' && names.includes(defaultBranchTarget)
+    ? "A tag ruleset can't target the default branch. Deselect it."
+    : undefined;
+}
+
+/** The first reason, of both sides, why GitHub would refuse the ruleset's targets or match nothing with them. */
+export function refTargetsProblem(entry: Entry): string | undefined {
+  return (['include', 'exclude'] as const)
+    .map((side) => namedRefTargetsProblem(entry, side) ?? refPatternsProblem(entry, side))
+    .find((problem) => problem !== undefined);
 }
 
 export function ruleOf(entry: Entry | undefined, type: string): Entry | undefined {
@@ -129,7 +242,7 @@ export function rulesetProblem(entry: Entry): string | undefined {
   const checks = ruleOf(entry, 'required_status_checks');
   return checks !== undefined && statusChecks(entry).length === 0
     ? 'Name at least one status check that must pass.'
-    : undefined;
+    : refTargetsProblem(entry);
 }
 
 export type DeploymentBranches = 'any' | 'protected' | 'chosen';
