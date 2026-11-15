@@ -1,8 +1,6 @@
 packages:
   - packages/*
 
-# New dependencies land with a caret range; pnpm-lock.yaml holds the exact
-# versions that installs use.
 savePrefix: '^'
 
 # Delay newly resolved versions for three days; OpenSSF reports that most

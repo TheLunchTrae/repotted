@@ -4,8 +4,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { describe, expect, test } from 'vitest';
 
 import {
-  app,
   NotSignedInError,
+  repottedGitHubApp,
   resolveToken,
   startSignIn,
   type TokenSources,
@@ -53,10 +53,6 @@ class MemoryStore implements TokenStore {
   }
 }
 
-/**
- * GitHub's sign-in endpoints, answering from a script, with a clock that
- * moves only when the flow sleeps.
- */
 class FakeGitHubLogin implements FlowEnvironment {
   clock = 1_000_000;
   readonly sleeps: number[] = [];
@@ -104,7 +100,7 @@ function sources(store: TokenStore, environment: FlowEnvironment, extra: Partial
     env: { REPOTTED_GITHUB_CLIENT_ID: 'Iv1.test' },
     store,
     environment,
-    ghToken: () => Promise.reject(new Error('gh is not installed')),
+    readGitHubCliToken: () => Promise.reject(new Error('gh is not installed')),
     ...extra,
   };
 }
@@ -222,10 +218,12 @@ describe('resolveToken', () => {
     if (!(error instanceof NotSignedInError)) {
       throw new Error('expected a NotSignedInError');
     }
-    expect(error.problems).toHaveLength(1);
-    expect(error.problems[0]).toContain('The Repotted sign-in expired.');
+    expect(error.signInProblems).toHaveLength(1);
+    expect(error.signInProblems[0]).toContain('The Repotted sign-in expired.');
     expect(error.lost).toBe(true);
-    expect(await resolveToken(sources(store, login, { ghToken: () => Promise.resolve('gho_cli') }))).toBe('gho_cli');
+    expect(await resolveToken(sources(store, login, { readGitHubCliToken: () => Promise.resolve('gho_cli') }))).toBe(
+      'gho_cli',
+    );
   });
   test('counts the sign-in lost only when GitHub refuses it', async () => {
     const expiring = (): MemoryStore =>
@@ -240,7 +238,6 @@ describe('resolveToken', () => {
     const login = new FakeGitHubLogin([]);
 
     expect(await lost(sources(expiring(), new FakeGitHubLogin([{ error: 'bad_refresh_token' }])))).toBe(true);
-    // GitHub out of reach, or failing on its side, leaves the sign-in for the next try.
     const answering = (fetch: FlowEnvironment['fetch']): FlowEnvironment => ({
       now: login.now,
       sleep: login.sleep,
@@ -250,7 +247,6 @@ describe('resolveToken', () => {
     expect(await lost(sources(expiring(), offline))).toBe(false);
     const failing = answering(() => Promise.resolve(new Response('', { status: 502 })));
     expect(await lost(sources(expiring(), failing))).toBe(false);
-    // So does a keychain that would not open, such as a dismissed unlock prompt.
     expect(await lost(sources(new BrokenKeychain(), login))).toBe(false);
     expect(await lost(sources(new MemoryStore(), login))).toBe(true);
   });
@@ -413,13 +409,13 @@ describe('device flow', () => {
 describe('release', () => {
   // A build without the client ID cannot sign in, so the gate holds it back.
   test('ships with the Repotted GitHub App client ID', () => {
-    expect(app.clientId).not.toBe('');
+    expect(repottedGitHubApp.clientId).not.toBe('');
   });
 
   // The web app's Worker, and its Previews, sign in with the same App.
   test('gives the web app the same client ID', () => {
     const config = readFileSync(path.join(import.meta.dirname, '../../web/wrangler.jsonc'), 'utf8');
     const ids = [...config.matchAll(/"REPOTTED_APP_CLIENT_ID": "([^"]*)"/g)].map((match) => match[1]);
-    expect(ids).toStrictEqual([app.clientId, app.clientId]);
+    expect(ids).toStrictEqual([repottedGitHubApp.clientId, repottedGitHubApp.clientId]);
   });
 });

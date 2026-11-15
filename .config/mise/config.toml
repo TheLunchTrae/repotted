@@ -4,7 +4,6 @@ min_version = "2026.9.16"
 
 [settings]
 lockfile = true
-# The platforms the tools are locked for: CI's, and the ones contributors work on.
 lockfile_platforms = ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"]
 
 [tools]

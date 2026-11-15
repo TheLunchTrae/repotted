@@ -1,12 +1,9 @@
 name: Deploy Web
 run-name: ${{ inputs.publish && 'Deploy Web' || 'Deploy Web preview' }}
 
-# The owner starts a run with Run workflow on main; nothing else does, as with
-# the release workflows. A run builds the web app and checks the Worker bundle.
-# With Publish not selected, the default, it deploys the repotted Worker's
-# Preview named for the branch, main.preview.repotted.dev, so repotted.dev keeps
-# its version; with Publish selected, it deploys to repotted.dev. The deploy-web
-# environment holds the Cloudflare values and allows only main.
+# Without Publish, a run deploys the repotted Worker's Preview named for the
+# branch, main.preview.repotted.dev, so repotted.dev keeps its version. The
+# deploy-web environment holds the Cloudflare values and allows only main.
 on:
   workflow_dispatch:
     inputs:
