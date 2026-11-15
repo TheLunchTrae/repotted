@@ -4,7 +4,7 @@ import { FakeGitRepository } from '../../core/tests/fake-git.js';
 import { BranchPreview, type PreviewState } from '../src/app/branch-preview.js';
 import type { Preferences } from '../src/app/preferences.js';
 import { Profiles } from '../src/app/profiles.js';
-import { readdir, rm } from '../src/engine/files.js';
+import { mkdir, readdir, rm, writeFile } from '../src/engine/files.js';
 
 afterEach(async () => {
   await rm('/', { recursive: true });
@@ -63,6 +63,7 @@ test('shows what a branch changes in each profile, including those that change o
     base: 'main',
     behind: 0,
     stale: false,
+    local: [],
     truncated: false,
     unchanged: 0,
   });
@@ -219,4 +220,73 @@ test('lists the branches to preview, without the default one', async () => {
 
   await preview.listBranches('lunch/config');
   expect(preview.branches.value).toEqual({ kind: 'listed', base: 'main', branches: ['feature'], more: false });
+});
+
+test('leaves out a profile broken alike on both sides, and names files by their path among the profiles', async () => {
+  const github = repository();
+  github.write({ 'profiles/bad.yaml': 'nonsense: true\n' });
+  const { preview } = await setUp(github);
+  github.write({ 'profiles/new.yaml': site, 'profiles/worse.yaml': 'extends: missing.yaml\n' }, { branch: 'feature' });
+
+  await preview.open('feature');
+  const state = ready(preview.state.value);
+  expect(state.profiles.map((profile) => profile.path)).toEqual(['new.yaml', 'worse.yaml']);
+  expect(state.profiles[1]?.problem).toContain('missing.yaml');
+  expect(state.profiles[1]?.problem).not.toContain('/preview');
+});
+
+test('says when a profile that is broken on the default branch loads on the branch', async () => {
+  const github = repository();
+  github.write({ 'profiles/bad.yaml': 'nonsense: true\n' });
+  const { preview } = await setUp(github);
+  github.write({ 'profiles/bad.yaml': site }, { branch: 'feature' });
+
+  await preview.open('feature');
+  const [fixed] = ready(preview.state.value).profiles;
+  expect(fixed).toMatchObject({ path: 'bad.yaml', status: 'changed', problem: undefined });
+  expect(fixed?.problemBefore).toContain('bad.yaml');
+  expect(fixed?.problemBefore).not.toContain('/preview');
+});
+
+test('refuses a profile on the branch that extends a file outside the profiles', async () => {
+  const github = repository();
+  const { preview } = await setUp(github);
+  await mkdir('/profiles/browser', { recursive: true });
+  await writeFile('/profiles/browser/secret.yaml', 'repository:\n  has_wiki: true\n');
+  github.write({ 'profiles/evil.yaml': 'extends: ../../../../profiles/browser/secret.yaml\n' }, { branch: 'feature' });
+
+  await preview.open('feature');
+  const [evil] = ready(preview.state.value).profiles;
+  expect(evil).toMatchObject({
+    path: 'evil.yaml',
+    problem: 'It extends a profile outside the profiles folder.',
+    sections: [],
+  });
+});
+
+test('names the profiles changed here since the last sync, which it starts from', async () => {
+  const github = repository();
+  const { preview } = await setUp(github);
+  const copy = '/profiles/github/lunch/config/@profiles';
+  await writeFile(`${copy}/base.yaml`, 'repository:\n  has_wiki: true\n');
+  await rm(`${copy}/site.yaml`);
+  await writeFile(`${copy}/mine.yaml`, site);
+  github.write({ 'profiles/new.yaml': site }, { branch: 'feature' });
+
+  await preview.open('feature');
+  expect(ready(preview.state.value)).toMatchObject({
+    stale: false,
+    local: ['base.yaml', 'mine.yaml', 'site.yaml'],
+  });
+});
+
+test('says when GitHub has more branches than one page lists', async () => {
+  const github = repository();
+  const { preview } = await setUp(github);
+  for (let index = 0; index < 100; index += 1) {
+    github.write({ 'profiles/a.yaml': `labels: []\n# ${index}\n` }, { branch: `b${String(index).padStart(3, '0')}` });
+  }
+
+  await preview.listBranches('lunch/config');
+  expect(preview.branches.value).toMatchObject({ kind: 'listed', more: true });
 });

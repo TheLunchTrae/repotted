@@ -205,8 +205,12 @@ reads only the blobs of the profiles it adds or changes. The preview copies
 the working copy, in a turn of the profiles' queue so no sync changes it
 mid-read, into `/preview/<n>/before` and `/preview/<n>/after`, lays the
 branch's files over the second, and resolves every profile on both sides, so
-a profile that changes only through its base shows too. Its rows reuse the
-comparison's names for settings and values. `keepFiles` keeps nothing under
+a profile that changes only through its base shows too. A profile whose
+chain leaves its side's folder doesn't load, so a branch can't point one at
+the browser's other profiles. The before side is the working copy, not the
+default branch, so the preview lists the profiles whose blob ids differ from
+the sync record, which it would show as undone by the branch. Its rows reuse
+the comparison's names for settings and values. `keepFiles` keeps nothing under
 `/preview`, and the preview deletes its folder when it closes. A read costs
 one request for the repository, one for the branch, one comparison, and one
 for each changed profile.
@@ -246,8 +250,9 @@ agree on what a row means.
 visits: it loads what IndexedDB holds into memory before the app draws, then
 writes each change there in order, by the file's path. So a working copy,
 with saves that haven't reached GitHub, is there on the next visit. The
-engine's temporary files and a branch preview's files are not kept. In a browser that gives the site no
-storage, the files last for the visit, and Settings says so.
+engine's temporary files and a branch preview's files are not kept. In a
+browser that gives the site no storage, the files last for the visit, and
+Settings says so.
 
 What is kept must be the files as they were at one moment, or a later sync
 can take a profile the browser lost for one the user deleted. So one tab

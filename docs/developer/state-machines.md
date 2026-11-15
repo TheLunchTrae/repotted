@@ -563,7 +563,9 @@ the editor's unsaved changes. One comparison counts at a time.
 of the repository the profiles are kept in, against the profiles as the
 browser has them. It only reads from GitHub. Its address is
 `/profiles?preview=<branch>`, and which branch is previewed stays in the
-browser. One preview counts at a time.
+browser. It starts from the profiles in the browser, not the default branch,
+so Ready names the profiles changed there since the last sync. One preview
+counts at a time.
 
 | State                     | Event                                                                             | Next                                                                                                                                                                                                        |
 | ------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -572,6 +574,8 @@ browser. One preview counts at a time.
 | Loading                   | The profiles aren't kept in a repository                                          | Failed, saying to choose one in Settings.                                                                                                                                                                   |
 | Loading                   | GitHub has no such branch, refuses, or names the default one                      | Failed, with why. A lost sign-in also goes to the sign-in page. The copy is deleted.                                                                                                                        |
 | Loading                   | Another branch is asked for                                                       | Loading, for the new one. The first one's result is dropped and its files deleted when it lands.                                                                                                            |
+| Failed                    | The address names the same branch again                                           | Loading, as **Refresh** does.                                                                                                                                                                               |
+| Loading                   | The same branch is asked for again                                                | Loading, with nothing more read.                                                                                                                                                                            |
 | Ready or Failed           | **Refresh**                                                                       | Loading, with the branch and the working copy read again.                                                                                                                                                   |
 | Ready                     | The address names the same branch again                                           | Ready, with nothing read, as on the way back from a comparison.                                                                                                                                             |
 | Ready                     | **Compare with a repository**                                                     | Ready, kept while the compare page is open; its back link returns to the preview.                                                                                                                           |

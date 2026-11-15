@@ -45,6 +45,8 @@ export interface BranchOptions {
 
 /** The most files GitHub lists in a comparison. */
 const compareLimit = 300;
+/** How many blobs are read at once. */
+const blobReads = 4;
 
 const repositoryInfo = z.looseObject({ default_branch: z.string() });
 const comparison = z.looseObject({
@@ -151,7 +153,8 @@ export async function readBranchChanges(
   let headCommit: string;
   let compared: z.infer<typeof comparison>;
   try {
-    headCommit = headInfo.parse(await github.request('GET', `${repoPath(repo)}/git/refs/heads/${encodeBranch(branch)}`))
+    // The singular endpoint matches the name exactly, where the plural one lists every branch it starts.
+    headCommit = headInfo.parse(await github.request('GET', `${repoPath(repo)}/git/ref/heads/${encodeBranch(branch)}`))
       .object.sha;
     // Files are listed on the first page whatever its size, so one commit a page keeps the answer small.
     compared = comparison.parse(
@@ -170,7 +173,12 @@ export async function readBranchChanges(
       throw explain(error, options.repository, undefined);
     }
   };
-  const files: BranchFileChange[] = [];
+  // What each changed profile becomes, its content read once the list is known.
+  type Pending =
+    | { readonly status: 'removed'; readonly file: string }
+    | { readonly status: 'added' | 'modified'; readonly file: string; readonly sha: string }
+    | { readonly status: 'renamed'; readonly file: string; readonly previous: string; readonly sha: string };
+  const pending: Pending[] = [];
   const others: string[] = [];
   for (const entry of compared.files) {
     const file = inFolder(entry.filename, folder);
@@ -184,9 +192,9 @@ export async function readBranchChanges(
       continue;
     }
     if (entry.status === 'renamed' && wasProfile !== undefined) {
-      files.push(
+      pending.push(
         profile !== undefined && entry.sha !== undefined
-          ? { status: 'renamed', file: profile, previous: wasProfile, content: await read(entry.sha) }
+          ? { status: 'renamed', file: profile, previous: wasProfile, sha: entry.sha }
           : // Moved out of the profiles, or to a name a profile can't have, it is gone from them.
             { status: 'removed', file: wasProfile },
       );
@@ -196,15 +204,27 @@ export async function readBranchChanges(
       continue;
     }
     if (entry.status === 'removed') {
-      files.push({ status: 'removed', file: profile });
+      pending.push({ status: 'removed', file: profile });
     } else if (entry.sha !== undefined) {
-      files.push({
-        // A copy, or a file moved in from outside the profiles, is new to them.
-        status: entry.status === 'modified' || entry.status === 'changed' ? 'modified' : 'added',
-        file: profile,
-        content: await read(entry.sha),
-      });
+      // A copy, or a file moved in from outside the profiles, is new to them.
+      const status = entry.status === 'modified' || entry.status === 'changed' ? 'modified' : 'added';
+      pending.push({ status, file: profile, sha: entry.sha });
     }
+  }
+  const files: BranchFileChange[] = [];
+  // A few reads at a time, which keeps a branch that changes many profiles quick without a burst of requests.
+  for (let start = 0; start < pending.length; start += blobReads) {
+    files.push(
+      ...(await Promise.all(
+        pending.slice(start, start + blobReads).map(async (change): Promise<BranchFileChange> => {
+          if (change.status === 'removed') {
+            return change;
+          }
+          const { sha, ...rest } = change;
+          return { ...rest, content: await read(sha) };
+        }),
+      )),
+    );
   }
   return {
     repository: options.repository,

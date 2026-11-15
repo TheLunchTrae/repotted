@@ -105,7 +105,7 @@ function SignedIn({
     };
   }, [profiles, apply]);
   const path = router.path.value;
-  // The branch the address previews, as `/profiles?preview=agent/fix`; a link to it opens it.
+  // The branch the address previews, as `/profiles?preview=agent%2Ffix`; a link to it opens it.
   const previewing = path === '/profiles' ? (new URLSearchParams(router.search.value).get('preview') ?? '') : '';
   // A preview is of the profiles' repository, so it goes when they are kept somewhere else, before
   // the one the address asks for opens of the new one.
@@ -238,7 +238,6 @@ function SignedIn({
       ) : previewing !== '' ? (
         <BranchPreviewPage
           preview={preview}
-          profiles={profiles}
           repositories={repositories}
           router={router}
           branch={previewing}

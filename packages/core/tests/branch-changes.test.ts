@@ -66,7 +66,7 @@ describe('readBranchChanges', () => {
     await readBranchChanges(github, 'feature', { repository: 'lunch/config', path: 'profiles' });
     expect(github.calls.map((call) => call.path.split('?')[0]?.split('/').slice(4, 6).join('/'))).toEqual([
       '',
-      'git/refs',
+      'git/ref',
       'compare/main...' + (github.refs.get('feature') ?? ''),
       'git/blobs',
     ]);
@@ -85,6 +85,25 @@ describe('readBranchChanges', () => {
     github.write({ 'profiles/gone.yaml': null, 'archive/gone.yaml': 'labels: []\n' }, { branch: 'feature' });
     const changes = await readBranchChanges(github, 'feature', { repository: 'lunch/config', path: 'profiles' });
     expect(changes.files).toEqual([{ status: 'removed', file: 'gone.yaml' }]);
+  });
+
+  test('says when GitHub listed as many files as it lists, so some may be missing', async () => {
+    const github = repository();
+    const many = Object.fromEntries(
+      Array.from({ length: 301 }, (_, index) => [`profiles/p${index}.yaml`, `labels: []\n# ${index}\n`]),
+    );
+    github.write(many, { branch: 'feature' });
+    const changes = await readBranchChanges(github, 'feature', { repository: 'lunch/config', path: 'profiles' });
+    expect(changes.files).toHaveLength(300);
+    expect(changes.truncated).toBe(true);
+  });
+
+  test('takes a branch name only as a whole name, not as the start of others', async () => {
+    const github = repository();
+    github.write({ 'profiles/a.yaml': 'labels: []\n' }, { branch: 'agent/fix' });
+    await expect(readBranchChanges(github, 'agent', { repository: 'lunch/config' })).rejects.toThrow(
+      'lunch/config has no branch named agent',
+    );
   });
 
   test('refuses the default branch, which the profiles already come from', async () => {

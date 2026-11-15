@@ -139,9 +139,6 @@ export class FakeGitRepository implements GitHub {
     );
   }
 
-  /** The most files a comparison lists, as GitHub lists 300. */
-  compareFileLimit = 300;
-
   /**
    * Commits files to a branch, a string to write and null to delete, as a
    * push from elsewhere would. The default branch when none is named; a
@@ -269,6 +266,15 @@ export class FakeGitRepository implements GitHub {
     const ref = route.startsWith(`${base}/git/refs/heads/`)
       ? decodeURIComponent(route.slice(`${base}/git/refs/heads/`.length))
       : undefined;
+    // The singular endpoint, which answers only a branch of exactly that name.
+    if (method === 'GET' && route.startsWith(`${base}/git/ref/heads/`)) {
+      const name = route.slice(`${base}/git/ref/heads/`.length).split('/').map(decodeURIComponent).join('/');
+      const head = this.refs.get(name);
+      if (head === undefined) {
+        throw new GitHubError(404, 'Not Found');
+      }
+      return { ref: `refs/heads/${name}`, object: { sha: head, type: 'commit' } };
+    }
     if (ref !== undefined && method === 'GET') {
       if (this.refs.size === 0) {
         throw new GitHubError(409, 'Git Repository is empty.');
@@ -316,7 +322,8 @@ export class FakeGitRepository implements GitHub {
         behind_by: count(from) - count(mergeBase),
         base_commit: { sha: from },
         merge_base_commit: { sha: mergeBase },
-        files: this.changedFiles(mergeBase, to).slice(0, this.compareFileLimit),
+        // GitHub lists 300 files at most.
+        files: this.changedFiles(mergeBase, to).slice(0, 300),
       };
     }
     if (method === 'GET' && route === `${base}/branches`) {

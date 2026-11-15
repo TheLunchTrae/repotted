@@ -61,6 +61,8 @@ export interface PreviewedProfile {
   readonly file: string | undefined;
   /** Why it doesn't load on the branch, when it doesn't. */
   readonly problem: string | undefined;
+  /** Why it doesn't load on the default branch, when it doesn't there but does on the branch. */
+  readonly problemBefore: string | undefined;
   /** What applies differently, by section; nothing for a removed profile. */
   readonly sections: readonly PreviewSection[];
   /** Its file's text on each side, when the branch changes the file. */
@@ -83,6 +85,12 @@ export interface Previewed {
   readonly truncated: boolean;
   /** Whether the profiles here are older than the default branch, so they aren't what it holds now. */
   readonly stale: boolean;
+  /**
+   * The profiles changed here since the last sync, by path: edited, made, or
+   * deleted. The preview starts from the profiles here, so it shows those
+   * changes as undone by the branch.
+   */
+  readonly local: readonly string[];
   /** Whether the branch changes the shared preferences, which the preview doesn't show. */
   readonly preferences: boolean;
   /** Where the preview keeps the profiles as they are on the branch. */
@@ -153,14 +161,64 @@ async function copyProfiles(from: string, to: string, prefix = ''): Promise<void
   }
 }
 
-/** The commit the folder last synced with, from its sync record, or undefined when it has none. */
-async function syncedCommit(folder: string): Promise<string | undefined> {
+/** The commit the folder last synced with, and each profile's blob id then, from its sync record. */
+async function syncRecordOf(folder: string): Promise<{ commit: string | undefined; files: Map<string, string> }> {
   try {
     const record: unknown = JSON.parse(await readFile(join(folder, syncRecord), 'utf8'));
-    return isRecord(record) && typeof record['commit'] === 'string' ? record['commit'] : undefined;
+    const files = isRecord(record) && isRecord(record['files']) ? record['files'] : {};
+    return {
+      commit: isRecord(record) && typeof record['commit'] === 'string' ? record['commit'] : undefined,
+      files: new Map(
+        Object.entries(files).flatMap(([file, id]) => (typeof id === 'string' ? [[file, id] as const] : [])),
+      ),
+    };
   } catch {
-    return undefined;
+    return { commit: undefined, files: new Map() };
   }
+}
+
+/** The id git gives a file's content, which a sync record lists. */
+async function blobId(content: Uint8Array): Promise<string> {
+  const header = new TextEncoder().encode(`blob ${content.byteLength}\0`);
+  const whole = new Uint8Array(header.length + content.byteLength);
+  whole.set(header);
+  whole.set(content, header.length);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-1', whole));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** Every profile under a folder, by its path there, with nothing hidden. */
+async function profilePaths(folder: string, prefix = ''): Promise<string[]> {
+  const paths: string[] = [];
+  for (const entry of await readdir(join(folder, prefix), { withFileTypes: true })) {
+    const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.name.startsWith('.')) {
+      continue;
+    }
+    if (entry.isDirectory()) {
+      paths.push(...(await profilePaths(folder, path)));
+    } else if (/\.ya?ml$/iu.test(entry.name)) {
+      paths.push(path);
+    }
+  }
+  return paths;
+}
+
+/** The profiles a folder changed since its last sync, by path, as its record and its files differ. */
+async function localChanges(folder: string, synced: ReadonlyMap<string, string>): Promise<string[]> {
+  const changed = new Set<string>();
+  const here = await profilePaths(folder);
+  for (const path of here) {
+    if (synced.get(path) !== (await blobId(await readFile(join(folder, path))))) {
+      changed.add(path);
+    }
+  }
+  for (const path of synced.keys()) {
+    if (!here.includes(path)) {
+      changed.add(path);
+    }
+  }
+  return [...changed].sort();
 }
 
 /** Lays the branch's changes over a copy of the profiles. */
@@ -188,9 +246,16 @@ interface Side {
   readonly problem: string | undefined;
 }
 
-/** Each profile under a folder, by its path there, read and resolved. */
+/**
+ * Each profile under a folder, by its path there, read and resolved. A
+ * problem names files by their path among the profiles, so the same problem
+ * reads the same on both sides. A profile that extends a file outside the
+ * folder doesn't load: a branch could otherwise point one at the browser's
+ * other profiles.
+ */
 async function readSide(root: string): Promise<Map<string, Side>> {
   const sides = new Map<string, Side>();
+  const inside = `${root}/`;
   for (const listing of await listProfiles(root)) {
     const path = relative(root, listing.file);
     const text = await readFile(listing.file, 'utf8').catch(() => '');
@@ -198,12 +263,25 @@ async function readSide(root: string): Promise<Map<string, Side>> {
     let problem = listing.problem ?? undefined;
     if (problem === undefined) {
       try {
-        resolved = await resolveProfile(listing.file);
+        const read = await resolveProfile(listing.file);
+        const outside = read.chain.find((file) => !file.startsWith(inside));
+        if (outside === undefined) {
+          resolved = read;
+        } else {
+          problem = 'It extends a profile outside the profiles folder.';
+        }
       } catch (error) {
         problem = messageOf(error);
       }
     }
-    sides.set(path, { name: listing.name, folder: listing.folder, file: listing.file, text, resolved, problem });
+    sides.set(path, {
+      name: listing.name,
+      folder: listing.folder,
+      file: listing.file,
+      text,
+      resolved,
+      problem: problem?.replaceAll(inside, ''),
+    });
   }
   return sides;
 }
@@ -381,6 +459,7 @@ async function compareSides(
       previous,
       file: now.file,
       problem: now.problem,
+      problemBefore: now.problem === undefined ? was?.problem : undefined,
       sections,
       text: textChanged ? { before: was?.text ?? '', after: now.text } : undefined,
     });
@@ -395,28 +474,10 @@ async function compareSides(
         previous: undefined,
         file: undefined,
         problem: undefined,
+        problemBefore: undefined,
         sections: [],
         text: { before: was.text, after: '' },
       });
-    }
-  }
-  // Moved away and not seen again on the branch, as when its new path isn't one a profile can have.
-  for (const [path, previous] of moved) {
-    if (!after.has(path)) {
-      const was = before.get(previous);
-      if (was !== undefined) {
-        profiles.push({
-          path: previous,
-          name: was.name,
-          folder: was.folder,
-          status: 'removed',
-          previous: undefined,
-          file: undefined,
-          problem: undefined,
-          sections: [],
-          text: { before: was.text, after: '' },
-        });
-      }
     }
   }
   profiles.sort((a, b) => a.path.localeCompare(b.path));
@@ -519,13 +580,14 @@ export class BranchPreview {
     const roots = { before: `${folder}/before`, after: `${folder}/after` };
     try {
       // The profiles as they are here, copied in a turn of their own so no sync changes them while they are read.
-      const { source, synced } = await this.#profiles.read(async (profiles, from) => {
+      const { source, synced, local } = await this.#profiles.read(async (profiles, from) => {
         if (from.kind !== 'repository') {
           throw new Error('A preview of a branch needs profiles kept in a GitHub repository. Choose one in Settings.');
         }
         await copyProfiles(profiles, roots.before);
         await copyProfiles(profiles, roots.after);
-        return { source: from, synced: await syncedCommit(profiles) };
+        const record = await syncRecordOf(profiles);
+        return { source: from, synced: record.commit, local: await localChanges(profiles, record.files) };
       });
       const changes = await readBranchChanges(this.#github, branch, {
         repository: source.repository,
@@ -542,7 +604,8 @@ export class BranchPreview {
         await rm(folder, { recursive: true, force: true });
         return;
       }
-      await this.#drop();
+      // The folders change hands at once, so nothing can come between the check above and the new state.
+      const old = this.#folder;
       this.#folder = folder;
       this.state.value = {
         kind: 'ready',
@@ -554,18 +617,22 @@ export class BranchPreview {
         behind: changes.behind,
         truncated: changes.truncated,
         stale: synced !== changes.baseCommit,
+        local,
         preferences: changes.others.includes(preferencesFile),
         folder: roots.after,
         profiles,
         unchanged,
       };
+      if (old !== undefined) {
+        await rm(old, { recursive: true, force: true });
+      }
     } catch (error) {
       const message = this.#failed(error);
-      await rm(folder, { recursive: true, force: true });
       if (turn === this.#turn) {
-        await this.#drop();
         this.state.value = { kind: 'failed', branch, message };
+        await this.#drop();
       }
+      await rm(folder, { recursive: true, force: true });
     }
   }
 }

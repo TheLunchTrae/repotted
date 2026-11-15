@@ -449,10 +449,14 @@ does.
 Previewing only reads from GitHub: nothing is saved, synced, or kept in the
 browser. **Refresh** reads the branch again, and **Exit preview** goes back
 to your profiles. Only what the branch itself changes counts, as in a pull
-request. A banner says when the branch is behind the default branch, where a
-profile both changed shows as the branch has it, and when the profiles in the
-browser are older than the default branch, which a sync fixes. Changes the
-branch makes to hidden repositories and folders aren't shown.
+request, and it is laid over the profiles in your browser. So a banner says
+when those differ from the default branch: when profiles have changes that
+aren't synced, which the preview would show as undone by the branch, and
+when the profiles are older than the default branch. Sync, then refresh, to
+leave both out. A banner also says when the branch is behind the default
+branch, where a profile both changed shows as the branch has it. A profile on
+the branch that extends a file outside the profiles folder doesn't load.
+Changes the branch makes to hidden repositories and folders aren't shown.
 
 ### Keep profiles in a folder on this computer
 
