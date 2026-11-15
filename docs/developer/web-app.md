@@ -55,9 +55,9 @@ browser. It signs in and lists the user's repositories.
 - `wrangler.jsonc`: the Worker's config. `assets.run_worker_first` sends only
   `/api/*` to the Worker; Cloudflare serves every other path from `dist/`, and a
   path with no file gets `index.html`, for the app's own routes. The Worker's
-  `workers.dev` address and Version URLs are off, and its `previews` block
-  holds what the [preview](#deploy) needs. The custom domains are set in the
-  dashboard, not here; [Deploy](#deploy) says why.
+  `workers.dev` address and Version URLs are off. The custom domains and the
+  App's client ID and secret are set in the dashboard, not here;
+  [Deploy](#deploy) says why.
 
 The Worker and the page run on web platform APIs, so
 `packages/web/tsconfig.json` checks them with the DOM library in place of
@@ -317,9 +317,7 @@ referrer, and tells browsers to use only HTTPS for repotted.dev for two years.
 Wrangler serves the Worker and the assets together at
 `http://localhost:8787`, rebuilding on changes. Sign-in needs a GitHub App that
 lists `http://localhost:8787/api/auth/callback` as a callback URL, and a client
-secret for it in `packages/web/.dev.vars`, which git ignores. For an App other
-than the Repotted App, its client ID goes there too, in place of the one in
-`wrangler.jsonc`:
+secret and client ID for it in `packages/web/.dev.vars`, which git ignores:
 
 ```sh
 REPOTTED_APP_CLIENT_SECRET=...
@@ -377,12 +375,12 @@ and certificate for `*.preview.repotted.dev`; the first certificate can take a
 while to issue. The preview is public, as repotted.dev is, unless Cloudflare
 Access is put in front of it.
 
-The client ID is public, so it is a variable in `wrangler.jsonc`, the same ID as
-`app.clientId` in `packages/cli/src/auth/sign-in.ts`; a CLI test fails when they differ.
-Previews take none of the production variables, so it is set again in the
-`previews` block. The client secret is set once as the Worker secret
-`REPOTTED_APP_CLIENT_SECRET`, in the dashboard or with `wrangler secret put`,
-and once for Previews, as below. Wrangler never deletes a Worker's secrets:
+The client ID, `REPOTTED_APP_CLIENT_ID`, is the same ID as `app.clientId` in
+`packages/cli/src/auth/sign-in.ts`. It is set in the dashboard, on the Worker
+and for Previews, as is the client secret `REPOTTED_APP_CLIENT_SECRET`, which
+can also be set with `wrangler secret put`. `keep_vars` in `wrangler.jsonc`
+makes `wrangler deploy` keep the dashboard's variables rather than replace
+them with the config's. Wrangler never deletes a Worker's secrets:
 every deploy keeps the ones the version before it had, and every preview
 deployment the ones the Preview had, so the workflow never handles the secret.
 

@@ -11,19 +11,9 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"],
   },
-  // The Repotted App's client ID is public, as in packages/cli/src/auth/sign-in.ts.
-  // Its client secret is set once on the Worker, and every upload keeps it.
-  "vars": {
-    "REPOTTED_APP_CLIENT_ID": "Iv23liAnsCkUv2UeQoiK",
-  },
-  // Deploy Web's preview is one named Preview, main. Previews take none of the
-  // production vars, so the client ID is set again here; the client secret is
-  // set once for Previews in the dashboard.
-  "previews": {
-    "vars": {
-      "REPOTTED_APP_CLIENT_ID": "Iv23liAnsCkUv2UeQoiK",
-    },
-  },
+  // The Repotted App's client ID and secret are set on the Worker and on its
+  // Previews in the dashboard, and every deploy keeps them.
+  "keep_vars": true,
   // The custom domains are attached once in the dashboard, repotted.dev for
   // production and preview.repotted.dev for Previews, so deploys need no zone
   // permission and leave them alone. The workers.dev address and its Version

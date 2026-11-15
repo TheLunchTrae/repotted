@@ -57,8 +57,8 @@ jobs:
         with:
           cache: false
           task: ts:web:check
-      # The client ID comes from wrangler.jsonc, and every deploy keeps the
-      # client secret already set on the Worker or its Preview.
+      # Every deploy keeps the client ID and secret already set on the Worker
+      # or its Preview.
       - name: Upload the Worker and its assets
         id: deploy
         working-directory: packages/web

@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { describe, expect, test } from 'vitest';
 
@@ -410,12 +408,5 @@ describe('release', () => {
   // A build without the client ID cannot sign in, so the gate holds it back.
   test('ships with the Repotted GitHub App client ID', () => {
     expect(repottedGitHubApp.clientId).not.toBe('');
-  });
-
-  // The web app's Worker, and its Previews, sign in with the same App.
-  test('gives the web app the same client ID', () => {
-    const config = readFileSync(path.join(import.meta.dirname, '../../../web/wrangler.jsonc'), 'utf8');
-    const ids = [...config.matchAll(/"REPOTTED_APP_CLIENT_ID": "([^"]*)"/g)].map((match) => match[1]);
-    expect(ids).toStrictEqual([repottedGitHubApp.clientId, repottedGitHubApp.clientId]);
   });
 });
