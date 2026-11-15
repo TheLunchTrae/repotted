@@ -1007,6 +1007,62 @@ test('moving profiles kept on GitHub moves their files and points what extends t
   expect(profiles.batch.value).toEqual([]);
 });
 
+test('a move is one commit, keeps a .yml name, and opens the folder it went to', async () => {
+  const github = repository();
+  github.write({ 'profiles/apps/site.yml': 'extends: ../base.yaml\n' });
+  const profiles = await connected(github);
+  profiles.toggleFolder('teams');
+  const commits = github.commits.size;
+
+  expect(await profiles.move([listed(profiles, 'site')], 'teams')).toBeUndefined();
+
+  expect(github.commits.size).toBe(commits + 1);
+  expect(github.files()['profiles/teams/site.yml']).toBe('extends: ../base.yaml\n');
+  expect(drawn(profiles.tree.value)).toEqual(['base', 'teams/ 2', '  site', '  web']);
+});
+
+test('a folder that matches another in case only, or runs through a profile, is refused', async () => {
+  await inBrowser({ 'base.yaml': base, 'Teams/web.yaml': web, 'apps/ios/app.yaml': base, 'loose.yaml': base });
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  await profiles.refresh();
+  const before = drawn(profiles.tree.value);
+
+  expect(await profiles.move([listed(profiles, 'loose')], 'teams')).toBe('There is already a folder named Teams.');
+  expect(await profiles.move([listed(profiles, 'loose')], 'APPS/new')).toBe('There is already a folder named apps.');
+  expect(await profiles.move([listed(profiles, 'loose')], 'base.yaml')).toBe(
+    "base.yaml is a profile, so it can't be a folder.",
+  );
+  expect(await profiles.renameFolder('Teams', 'teams')).toBe(
+    'teams differs from Teams only in case, which some computers take for the same folder. Give it another name.',
+  );
+  expect(await profiles.renameFolder('apps/ios', 'IOS')).toBe(
+    'IOS differs from ios only in case, which some computers take for the same folder. Give it another name.',
+  );
+
+  expect(drawn(profiles.tree.value)).toEqual(before);
+  expect(await profiles.renameFolder('apps', 'Apps-old')).toBeUndefined();
+});
+
+test('a write that fails partway takes back what the move wrote, and nothing is committed', async () => {
+  const github = repository();
+  github.write({ 'profiles/aaa.yaml': 'extends: base.yaml\n', 'profiles/zzz.yaml': base });
+  const profiles = await connected(github);
+  // A folder where base.yaml would go, which the list never shows, as it holds no profile.
+  await mkdir(`${copy}/shared/base.yaml`, { recursive: true });
+  const commits = github.commits.size;
+
+  expect(
+    await profiles.move([listed(profiles, 'aaa'), listed(profiles, 'base'), listed(profiles, 'zzz')], 'shared'),
+  ).toBe('base.yaml is already in shared.');
+
+  expect(github.commits.size).toBe(commits);
+  expect(await readFile(`${copy}/aaa.yaml`, 'utf8')).toBe('extends: base.yaml\n');
+  expect(await readFile(`${copy}/base.yaml`, 'utf8')).toBe(base);
+  expect((await readdir(`${copy}/shared`, { withFileTypes: true })).map((entry) => entry.name)).toEqual(['base.yaml']);
+  expect(profiles.listings.value.every((listing) => listing.problem === null)).toBe(true);
+  expect(drawn(profiles.tree.value)).toEqual(['aaa', 'base', 'zzz', 'teams/ 1', '  web']);
+});
+
 test('a move that would replace a profile, would rewrite or move one with unsaved changes, or holds one that does not load, moves nothing', async () => {
   await inBrowser({
     'base.yaml': base,
@@ -1067,6 +1123,10 @@ test('renaming a folder moves the profiles in it and under it, and refuses a nam
   expect(await readFile('/profiles/browser/squads/ios/app.yaml', 'utf8')).toBe('extends: ../web.yaml\n');
   expect(await readFile('/profiles/browser/apps/site.yaml', 'utf8')).toBe('extends: ../squads/ios/app.yaml\n');
   expect(profiles.listings.value.every((listing) => listing.problem === null)).toBe(true);
+
+  profiles.toggleFolder('squads/ios');
+  expect(await profiles.renameFolder('squads', 'teams')).toBeUndefined();
+  expect(drawn(profiles.tree.value)).toEqual(['base', 'apps/ 1', '  site', 'teams/ 2', '  web', '  ios/ 1 closed']);
 });
 
 test('deleting the selected profiles together names what extends any of them and commits once', async () => {

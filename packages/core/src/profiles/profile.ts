@@ -1459,14 +1459,19 @@ export function declaredExtends(text: string): string | undefined {
 }
 
 /**
- * Points `extends` at `base`, as a move of the profile or of its base needs,
- * keeping the file's comments, line endings and indent width.
+ * Points `extends` at `base`, as a move of the profile or of its base needs.
+ * Only the value's own text changes, so the rest of the file stays as written.
  */
 export function withExtends(text: string, base: string): string {
   const document = parseDocument(text);
+  const value = document.get('extends', true);
+  const written = /^[\w./-]+$/u.test(base) ? base : JSON.stringify(base);
+  if (document.errors.length === 0 && isScalar(value) && value.range !== undefined && value.range !== null) {
+    const [start, end] = value.range;
+    return text.slice(0, start) + written + text.slice(end);
+  }
   document.set('extends', base);
-  const indent = /^( +)\S/mu.exec(text)?.[1]?.length ?? 2;
-  const edited = document.toString({ lineWidth: 0, indent });
+  const edited = document.toString({ lineWidth: 0 });
   return text.includes('\r\n') ? edited.replaceAll('\n', '\r\n') : edited;
 }
 

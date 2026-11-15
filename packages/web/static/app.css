@@ -1123,11 +1123,6 @@ input[type='checkbox']:disabled {
   background: var(--sunken);
 }
 
-.tree-item[aria-current='true'] {
-  background: var(--tint);
-  font-weight: 500;
-}
-
 .tree-item:focus-visible {
   outline-offset: -2px;
 }

@@ -241,8 +241,7 @@ engine's in-memory files, in one of three folders:
 
 Syncs, new profiles, deletions, moves, and changes of where profiles are kept
 take turns in one queue, so a sync never reads a folder that is being
-changed. A
-capture reads GitHub with the engine's `captureProfile` before it takes its
+changed. A capture reads GitHub with the engine's `captureProfile` before it takes its
 turn, so a slow read holds nothing up. Of the capture's warnings, the new
 profile's page shows only the `refused` ones, which someone can act on:
 `uncaptured-settings.ts` names each by its label in `setting-fields.ts` and
@@ -254,12 +253,13 @@ parse go unmentioned there.
 [State machines](state-machines.md#web-profiles-source) lists the
 transitions.
 
-A profile folder is a real subfolder of the profiles folder, so it lasts only
-while a profile is in it, and `extends` is a path from the profile's own
-folder. `Profiles.move` and `Profiles.renameFolder` move files, and in the
-same turn rewrite `extends` in every listed profile whose path to its base
-changes, with core's `withExtends`, which keeps the file's comments, line
-endings and indent. The batch selection, `Profiles.batch`, and which folders
+A profile folder is a real subfolder of the profiles folder, which the list
+shows only while a profile is in it, and `extends` is a path from the
+profile's own folder. `Profiles.move` and `Profiles.renameFolder` move files,
+and in the same turn rewrite `extends` in every listed profile whose path to
+its base changes, with core's `withExtends`, which replaces only the value's
+text. A write that fails takes back the writes before it, so a move is made
+whole or not at all. The batch selection, `Profiles.batch`, and which folders
 are closed are kept for the visit only, never in shared preferences, so
 opening a folder or selecting a profile commits nothing.
 [State machines](state-machines.md#web-profile-batch-actions) lists the

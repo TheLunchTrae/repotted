@@ -265,13 +265,13 @@ The **Profiles** page lists every profile, under where they are kept, with
 what owns the repositories each is for and which profile it extends. Type in
 **Find a profile** to narrow the list. Folders show above the profiles that
 are in none, with the number of profiles in each, and a folder inside
-another shows under it; click a folder's name to close or open it. Which
-folders are closed is remembered by this browser alone. A profile Repotted
+another shows under it; click a folder's name to close or open it. Folders
+open again when you reload the page. A profile Repotted
 can't use is marked **Problem**, and opening it says why. One with changes
 that aren't saved is marked **Not saved**.
 
 Click a profile to open it. It takes the whole page, and **All profiles**
-above it, or the browser's back, returns to the list where you left it. The
+above it returns to the list where you left it. The
 page says what owns the repositories it is for and which profile it extends.
 **Show YAML** shows the profile's file as it is saved; it starts hidden.
 
@@ -279,27 +279,33 @@ page says what owns the repositories it is for and which profile it extends.
 
 Select profiles with the box beside each to work on several at once. A panel
 beside the list, or under it on a phone, names them. **Select all** beside
-the count selects every profile the list shows, and each open folder has its
-own **Select all**, which takes in the folders inside it; each turns into
-**Deselect all** once everything it covers is selected. **Deselect all** in
-the panel clears the selection. The selection is this browser's alone and
-goes when you leave the page.
+the count selects every profile the list shows, leaving out those in closed
+folders, and each open folder has its own **Select all**, which takes in the
+open folders inside it; each turns into **Deselect all** once everything it
+covers is selected. **Deselect all** in the panel clears the selection. The
+selection stays in this tab, while you open profiles or other pages, until
+you reload the page.
 
 To move the selected profiles into a folder, choose it under **Move to a
-folder** in the panel and click **Move**. **No folder** moves them to the top
-of the list, and **New folder…** asks for a name first; give a path such as
-`apps/desktop` for a folder inside another. A folder lasts only as long as a
-profile is in it, so a new folder starts with the profiles you move into it.
-To rename a folder, use its **Edit** menu; every profile in it, and in the
-folders inside it, moves with it.
+folder** in the panel and click **Move**. **No folder** takes them out of
+every folder, and **New folder…** asks for a name first; give a path such as
+`apps/desktop` for a folder inside another. The list shows a folder only
+while a profile is in it, so a new folder starts with the profiles you move
+into it. To rename a folder, use its **Edit** menu; every profile in it, and
+in the folders inside it, moves with it.
 
 A move changes where the profiles' files are. Every profile that extends one
 of them, and every moved profile that extends another, is pointed at the new
 place in the same change, so nothing stops loading. When your profiles are
-kept on GitHub, the move is one commit. Repotted won't move a profile that
-doesn't load, since what it extends is unknown, or one with changes that
-aren't saved; nor will it move one onto a profile of the same name, whatever
-the case, and it says which.
+kept on GitHub, the move is one commit, and the files keep their names and
+the rest of their text. Repotted says why and moves nothing when a profile
+doesn't load, since what it extends is unknown; when a profile that would
+move or be pointed elsewhere has changes that aren't saved; when a profile of
+the same name, in any case, is already where one would go; or when the
+folder's name matches another folder's, or a profile's file, in another
+case. A rename that only changes a folder's case is refused too, since some
+computers take the two for one folder. If a write fails partway, what was
+written is taken back.
 
 ### Make a profile
 

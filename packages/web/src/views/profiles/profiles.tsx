@@ -32,9 +32,9 @@ function nameOf(profiles: Profiles, listing: ProfileListing): string {
   return profiles.pathOf(listing).replace(/\.ya?ml$/iu, '');
 }
 
-/** In the order the list draws them: its folders' first, then its own. */
-function profilesIn(node: ProfileFolderNode): readonly ProfileListing[] {
-  return [...node.folders.flatMap(profilesIn), ...node.profiles];
+/** Those the list shows, in its order: its folders' first, then its own, leaving out closed folders. */
+function shownIn(node: ProfileFolderNode): readonly ProfileListing[] {
+  return node.open ? [...node.folders.flatMap(shownIn), ...node.profiles] : [];
 }
 
 function parentOf(path: string): string {
@@ -122,7 +122,7 @@ interface FolderProps {
 
 function FolderSection({ node, profiles, onOpen, onDialog }: FolderProps): JSX.Element {
   const searching = profiles.search.value.trim() !== '';
-  const inside = profilesIn(node);
+  const inside = shownIn(node);
   const everyShownProfileSelected = inside.length > 0 && inside.every((listing) => profiles.isInBatch(listing));
   const Title = node.path.includes('/') ? 'h3' : 'h2';
   return (
@@ -190,12 +190,19 @@ function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps)
   const [name, setName] = useState(renaming?.name ?? '');
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const landed = useRef<string | undefined>(undefined);
+  const [moving, setMoving] = useState(false);
   const count = asked.kind === 'new-folder' ? asked.listings.length : 0;
   return (
     <dialog
       class="dialog"
       ref={dialog}
       aria-labelledby="folder-name-heading"
+      onCancel={(event) => {
+        // Escape would hide why a move under way failed.
+        if (moving) {
+          event.preventDefault();
+        }
+      }}
       onClose={() => {
         onClose(landed.current);
       }}
@@ -214,17 +221,22 @@ function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps)
           }
           const folder =
             renaming === undefined ? trimmed : [parentOf(renaming.path), trimmed].filter(Boolean).join('/');
+          setMoving(true);
           run(
             (renaming === undefined
               ? profiles.move(asked.kind === 'new-folder' ? asked.listings : [], trimmed)
               : profiles.renameFolder(renaming.path, trimmed)
-            ).then((failure) => {
-              setProblem(failure);
-              if (failure === undefined) {
-                landed.current = folder;
-                dialog.current?.close();
-              }
-            }),
+            )
+              .then((failure) => {
+                setProblem(failure);
+                if (failure === undefined) {
+                  landed.current = folder;
+                  dialog.current?.close();
+                }
+              })
+              .finally(() => {
+                setMoving(false);
+              }),
           );
         }}
       >
@@ -264,7 +276,7 @@ function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps)
           >
             {renaming === undefined ? 'Create and move' : 'Rename folder'}
           </button>
-          <button class="button button-quiet" type="submit" value="cancel">
+          <button class="button button-quiet" type="submit" value="cancel" disabled={moving}>
             Cancel
           </button>
         </div>
@@ -284,6 +296,7 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
   const dialog = useModal();
   const [error, setError] = useState<string | undefined>(undefined);
   const deleted = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const dependents = profiles.dependents(...listings);
   const source = profiles.source.value.kind;
   const one = listings.length === 1 ? listings[0] : undefined;
@@ -292,6 +305,12 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
       class="dialog"
       ref={dialog}
       aria-labelledby="delete-heading"
+      onCancel={(event) => {
+        // Escape would hide why a delete under way failed.
+        if (deleting) {
+          event.preventDefault();
+        }
+      }}
       onClose={() => {
         onClose(deleted.current);
       }}
@@ -301,14 +320,20 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
         onSubmit={(event) => {
           if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'delete') {
             event.preventDefault();
+            setDeleting(true);
             run(
-              profiles.remove(...listings).then((failure) => {
-                setError(failure);
-                if (failure === undefined) {
-                  deleted.current = true;
-                  dialog.current?.close();
-                }
-              }),
+              profiles
+                .remove(...listings)
+                .then((failure) => {
+                  setError(failure);
+                  if (failure === undefined) {
+                    deleted.current = true;
+                    dialog.current?.close();
+                  }
+                })
+                .finally(() => {
+                  setDeleting(false);
+                }),
             );
           }
         }}
@@ -356,7 +381,7 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
             {one === undefined ? `Delete ${listings.length} profiles` : 'Delete profile'}
           </button>
           {/* The dialog opens with the keyboard on Cancel, so Enter never deletes by itself. */}
-          <button class="button button-quiet" type="submit" value="cancel" autofocus>
+          <button class="button button-quiet" type="submit" value="cancel" disabled={deleting} autofocus>
             Cancel
           </button>
         </div>
@@ -379,7 +404,10 @@ interface SelectedProps {
 function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedProps): JSX.Element {
   const batch = profiles.batch.value;
   const busy = profiles.profileWorkUnderWay.value;
-  const [target, setTarget] = useState<string | undefined>(undefined);
+  const [picked, setTarget] = useState<string | undefined>(undefined);
+  // A folder renamed away, or emptied by another move, is no longer a choice.
+  const target =
+    picked === undefined || picked === newFolderChoice || profiles.folders.value.includes(picked) ? picked : undefined;
   const [problem, setProblem] = useState<string | undefined>(undefined);
   return (
     <aside class="panel" aria-label="Selected profiles">
@@ -692,7 +720,7 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
   const batch = profiles.batch.value;
   const busy = profiles.profileWorkUnderWay.value;
   const total = profiles.listings.value.length;
-  const shown = profilesIn(tree);
+  const shown = shownIn(tree);
   const everyShownProfileSelected = shown.length > 0 && shown.every((listing) => profiles.isInBatch(listing));
   // The list and an open profile, or the new-profile form, are two screens.
   const showing = newProfileForm !== undefined ? '/profiles/new' : selected?.file;
