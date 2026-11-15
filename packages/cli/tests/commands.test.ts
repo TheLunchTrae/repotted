@@ -55,20 +55,15 @@ function cli(github: FakeGitHub, ...argv: string[]): Promise<Result> {
   return cliWith(github, {}, ...argv);
 }
 
-/** stdout as one JSON document, which fails the test when it is anything else. */
 function document(result: Result): unknown {
   const parsed: unknown = JSON.parse(result.out);
   return parsed;
 }
 
-/**
- * Holds a document `--json` prints to its fixture, so a change to what
- * scripts read from the CLI shows in review as a change to the file. Each
- * string that starts with this test's folder, or with a key of `names`,
- * starts with a placeholder instead, with forward slashes, and so does one
- * that is a key of `names` alone, such as a random id. The file is then the
- * same on every machine.
- */
+// Holds a document `--json` prints to its fixture, so a change to what scripts
+// read from the CLI shows in review as a change to the file. Placeholders stand
+// in for this test's folder and each key of `names`, such as a random id, so
+// the file is the same on every machine.
 async function fixture(name: string, result: Result, names: Record<string, string> = {}): Promise<void> {
   // An empty name would stand for every string.
   if (Object.keys(names).includes('')) {
@@ -350,7 +345,6 @@ describe('batch', () => {
     const names = { [path.dirname(folder)]: '<batch>', [id ?? '']: '<id>' };
     await fixture('batch', started, names);
 
-    // One repository's one-off edit, then a value left out of every repository.
     const edited = await cliWith(
       github,
       {},
@@ -437,7 +431,6 @@ describe('batch', () => {
     );
     const plans = path.join(folder, 'plans.json');
 
-    // A repository that could not be planned exits 1, though the rest are planned and saved.
     const planned = await cliWith(github, {}, 'plan', '--staged', folder, '--out', plans);
     expect(planned.code).toBe(1);
     expect(planned.out).toContain('lunch/app: 1 change');
@@ -572,7 +565,6 @@ describe('batch', () => {
   });
 });
 
-/** A GitHub that answers each path with what `answers` holds for it, throws what is an error, and 404s the rest. */
 function answering(answers: Readonly<Record<string, unknown>>): GitHub {
   return {
     request(_method, requested) {
@@ -617,7 +609,6 @@ describe('action commands', () => {
     ];
 
     const checked = await cliWith(github, {}, 'check-actions', ...patterns, '--json');
-    // A pattern that matches nothing, or is none, fails the command, for scripts.
     expect(checked).toMatchObject({ code: 1, err: '' });
     expect(document(checked)).toMatchObject({
       checks: [
@@ -744,7 +735,6 @@ describe('account commands', () => {
     );
     expect(document(passing)).toMatchObject({ error: { kind: 'error' } });
 
-    // Other refusals from GitHub say nothing about the sign-in.
     const refused = new FakeGitHub({ account }).fail(
       /^/u,
       new GitHubError(403, 'Resource not accessible by integration'),
@@ -806,7 +796,6 @@ describe('account commands', () => {
     });
     await fixture('status', signedIn);
 
-    // Another App's install page is not one Repotted knows.
     const otherApp = await cliWith(
       new FakeGitHub({ account }),
       { env: { REPOTTED_GITHUB_CLIENT_ID: 'Iv1.other' } },
@@ -848,8 +837,8 @@ describe('account commands', () => {
       deviceCode: 'device',
       userCode: 'ABCD-1234',
       verificationUri: 'https://github.com/login/device',
-      interval: 5,
-      expiresAt: Date.UTC(2026, 0, 1),
+      pollIntervalSeconds: 5,
+      expiresAtEpochMilliseconds: Date.UTC(2026, 0, 1),
     };
     let printed = '';
     const running = run(['login', '--json'], {
@@ -883,7 +872,6 @@ describe('account commands', () => {
       expires_at: '2026-01-01T00:00:00.000Z',
     });
     expect(lines[1]).toMatchObject({ event: 'signed_in' });
-    // One document a line, which the app reads as each comes.
     await expect(printed).toMatchFileSnapshot(path.join(fixtures, 'login.jsonl'));
   });
 
@@ -891,8 +879,8 @@ describe('account commands', () => {
     deviceCode: 'device',
     userCode: 'ABCD-1234',
     verificationUri: 'https://github.com/login/device',
-    interval: 5,
-    expiresAt: Date.UTC(2026, 0, 1),
+    pollIntervalSeconds: 5,
+    expiresAtEpochMilliseconds: Date.UTC(2026, 0, 1),
   };
 
   test('login --json ends with an error line when the sign-in fails after the code', async () => {

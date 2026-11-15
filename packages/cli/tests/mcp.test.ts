@@ -17,7 +17,7 @@ async function connect(github: GitHub, readOnly = false, onClient: () => void = 
       onClient();
       return Promise.resolve(github);
     },
-    cwd: examples,
+    profileBaseDirectory: examples,
     readOnly,
   });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();

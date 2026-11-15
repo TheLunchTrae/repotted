@@ -3,17 +3,15 @@ import { useEffect, useState } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
 import type { ConfigProtection } from '../app/config-protection.js';
-import { installUrl } from '../app/github-app.js';
+import { repottedAppInstallUrl } from '../app/github-app.js';
 import type { Keeping } from '../app/kept-files.js';
 import type { Profiles } from '../app/profiles.js';
 import type { Repositories } from '../app/repositories.js';
 import { run } from './run.js';
 
-/** What the last sync did, or why it failed, as a line under where the profiles are kept. */
 export function SyncNote({ profiles }: { readonly profiles: Profiles }): JSX.Element | null {
   const sync = profiles.sync.value;
-  // What the profiles sync with: GitHub, or the folder on this computer.
-  const other = profiles.source.value.kind === 'folder' ? 'the folder' : 'GitHub';
+  const syncDestination = profiles.source.value.kind === 'folder' ? 'the folder' : 'GitHub';
   if (sync.status === 'failed') {
     return (
       <p class="problem small" role="alert">
@@ -36,15 +34,15 @@ export function SyncNote({ profiles }: { readonly profiles: Profiles }): JSX.Ele
   if (sync.status === 'syncing') {
     return (
       <p class="muted small" role="status">
-        Syncing with {other}…
+        Syncing with {syncDestination}…
       </p>
     );
   }
   if (sync.status === 'synced') {
     const conflicts = profiles.conflicts.value.length;
     const moved = [
-      sync.pulled > 0 ? `${sync.pulled} from ${other}` : undefined,
-      sync.pushed > 0 ? `${sync.pushed} to ${other}` : undefined,
+      sync.pulled > 0 ? `${sync.pulled} from ${syncDestination}` : undefined,
+      sync.pushed > 0 ? `${sync.pushed} to ${syncDestination}` : undefined,
     ].filter((part) => part !== undefined);
     return (
       <p class="muted small" role="status">
@@ -52,7 +50,7 @@ export function SyncNote({ profiles }: { readonly profiles: Profiles }): JSX.Ele
           ? `Synced, with ${conflicts} ${conflicts === 1 ? 'profile' : 'profiles'} changed in both places.`
           : moved.length > 0
             ? `Synced: ${moved.join(', ')}.`
-            : `In sync with ${other}.`}
+            : `In sync with ${syncDestination}.`}
       </p>
     );
   }
@@ -75,15 +73,14 @@ function ConnectForm({ profiles, repositories, onClose, onConnected }: ConnectFo
   const [working, setWorking] = useState(false);
   const error = profiles.connectError.value;
   const count = profiles.listings.value.length;
-  // Adding is offered only for another place than the profiles are in now.
-  const same =
+  const alreadyKeptThere =
     source.kind === 'repository' &&
     source.repository.toLowerCase() === repository.trim().toLowerCase() &&
     source.path === path.trim().replace(/^\/+|\/+$/gu, '');
 
   const connect = async (): Promise<void> => {
     setWorking(true);
-    const problem = await profiles.connect(repository, path, addLocal && !same);
+    const problem = await profiles.connect(repository, path, addLocal && !alreadyKeptThere);
     setWorking(false);
     if (problem === undefined) {
       onConnected();
@@ -139,7 +136,7 @@ function ConnectForm({ profiles, repositories, onClose, onConnected }: ConnectFo
           Only YAML files sync, from this folder and the folders in it. Hidden folders such as .github stay out.
         </span>
       </label>
-      {count > 0 && !same && (
+      {count > 0 && !alreadyKeptThere && (
         <label class="check">
           <input
             type="checkbox"
@@ -194,7 +191,7 @@ function ProtectionOffer({
   onDismiss,
 }: ProtectionProps & { readonly onDismiss: () => void }): JSX.Element | null {
   const state = protection.state.value;
-  if (state.kind !== 'checked' || state.repository !== repository || state.changes === 0) {
+  if (state.kind !== 'checked' || state.repository !== repository || state.changeCount === 0) {
     return null;
   }
   return (
@@ -240,11 +237,11 @@ function ProtectionRow({ protection, repository, onReview }: ProtectionProps): J
           </span>
         ) : (
           <span class="muted small" role="status">
-            {state.changes === 0
+            {state.changeCount === 0
               ? limits === ''
                 ? 'Protected.'
                 : `Protected as far as GitHub allows here: ${limits}.`
-              : `Not protected: ${state.changes === 1 ? '1 change' : `${state.changes} changes`} to review.${
+              : `Not protected: ${state.changeCount === 1 ? '1 change' : `${state.changeCount} changes`} to review.${
                   limits === '' ? '' : ` GitHub can't add all of it here: ${limits}.`
                 }`}
           </span>
@@ -262,7 +259,7 @@ function ProtectionRow({ protection, repository, onReview }: ProtectionProps): J
         </button>
       ) : (
         state.kind === 'checked' &&
-        state.changes > 0 && (
+        state.changeCount > 0 && (
           <button class="button button-quiet" type="button" onClick={onReview}>
             Review protection…
           </button>
@@ -279,9 +276,7 @@ interface SettingsProps {
   readonly repositories: Repositories;
   readonly keeping: Keeping;
   readonly protection: ConfigProtection;
-  /** Opens the apply of the built-in protection to the repository the profiles are kept in. */
   readonly onReviewProtection: () => void;
-  /** Signs out, after asking about unsaved changes when there are any. */
   readonly onSignOut: () => void;
 }
 
@@ -307,7 +302,7 @@ export function SettingsPage({
       run(protection.check(kept));
     }
   }, [protection, kept]);
-  const busy = profiles.busy.value;
+  const busy = profiles.profileWorkUnderWay.value;
   const onGitHub = source.kind === 'repository';
   const inFolder = source.kind === 'folder';
   const [addToFolder, setAddToFolder] = useState(false);
@@ -343,7 +338,7 @@ export function SettingsPage({
                   </span>
                 )}
               </div>
-              <a class="button button-quiet" href={installUrl} target="_blank" rel="noreferrer">
+              <a class="button button-quiet" href={repottedAppInstallUrl} target="_blank" rel="noreferrer">
                 Add repositories
               </a>
               <button class="button button-quiet" type="button" disabled={account.signingOut.value} onClick={onSignOut}>

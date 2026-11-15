@@ -71,29 +71,25 @@ import {
 import { z } from 'zod';
 
 import {
+  definedTokenVariables,
   enterCode,
   installUrl,
   NotSignedInError,
   type SignIn,
   tokenOrSignIn,
-  tokenVariables,
   usesRepottedApp,
 } from './auth.js';
 
-/** What the CLI reaches outside itself: GitHub, the terminal, and its own version. */
 export interface Io {
   readonly version: string;
-  /** The environment, for the token variables and the client ID override. */
   readonly env: NodeJS.ProcessEnv;
   github(): Promise<GitHub>;
   out(text: string): void;
   err(text: string): void;
-  /** Whether a person can answer a prompt. */
   readonly interactive: boolean;
   confirm(question: string): Promise<boolean>;
-  /** Starts the device flow; the token is stored once the user enters the code. */
   signIn(): Promise<SignIn>;
-  /** Removes the stored sign-in; returns whether there was one. */
+  /** Resolves to whether there was a stored sign-in to remove. */
   signOut(): Promise<boolean>;
 }
 
@@ -161,11 +157,6 @@ function json(io: Io, value: unknown): void {
   io.out(`${JSON.stringify(value)}\n`);
 }
 
-/**
- * The page of GitHub's docs that a refusal links to, which text output names
- * after the failure. The refusal may be the cause of the failure, as of a
- * sync GitHub refused.
- */
 function docsLink(error: unknown): string {
   for (let current = error; current instanceof Error; current = current.cause) {
     if (current instanceof GitHubError) {
@@ -219,11 +210,10 @@ async function planBatchCommand(io: Io, folder: string, out: string | undefined,
   if (out !== undefined) {
     await writeFile(out, `${JSON.stringify(result, null, 2)}\n`);
   }
-  // A repository that could not be planned leaves the batch unreviewed, which a script should notice.
-  const code = result.failures.length > 0 ? 1 : 0;
+  const exitCode = result.failures.length > 0 ? 1 : 0;
   if (asJson) {
     json(io, result);
-    return code;
+    return exitCode;
   }
   io.out(`${result.plans.map((member) => formatPlan(member, member.locks)).join('\n\n')}\n`);
   for (const { repository, error } of result.failures) {
@@ -235,15 +225,14 @@ async function planBatchCommand(io: Io, folder: string, out: string | undefined,
   if (out !== undefined) {
     io.err(`Saved the plans to ${out}. Apply them with: repotted apply ${out}\n`);
   }
-  return code;
+  return exitCode;
 }
 
 function plural(count: number, noun: string, nouns = `${noun}s`): string {
   return `${count} ${count === 1 ? noun : nouns}`;
 }
 
-/** One member's result as text, after the repository's name. */
-function describeResult(result: MemberResult): string {
+function describeMemberResult(result: MemberResult): string {
   switch (result.status) {
     case 'applied':
       return `applied ${plural(result.applied.length, 'change')}.${result.ended ? '' : ' Its staged apply stays, since it changed after the review or left the batch.'}`;
@@ -266,11 +255,11 @@ function describeResult(result: MemberResult): string {
   }
 }
 
-/** One member's result for --json: an apply failure leaves its cause out, which says no more than its message. */
-function resultDocument(result: MemberResult): unknown {
+function memberResultJsonDocument(result: MemberResult): unknown {
   if (result.status !== 'apply_failed') {
     return result;
   }
+  // An apply failure's cause says no more than its message.
   const { cause: _cause, ...rest } = result;
   return rest;
 }
@@ -311,12 +300,11 @@ async function applyBatchCommand(io: Io, data: unknown, flags: BatchApplyFlags):
     stopOnFailure: flags.stopOnFailure,
     ...(flags.json
       ? {}
-      : { onResult: (result: MemberResult) => io.err(`${result.repository}: ${describeResult(result)}\n`) }),
+      : { onResult: (result: MemberResult) => io.err(`${result.repository}: ${describeMemberResult(result)}\n`) }),
   });
-  // A repository that was not applied, or failed, leaves the batch unfinished, which a script should notice.
   const unfinished = results.filter(isUnfinished);
   if (flags.json) {
-    json(io, { batch: reviewed.batch, results: results.map(resultDocument) });
+    json(io, { batch: reviewed.batch, results: results.map(memberResultJsonDocument) });
   } else if (unfinished.length > 0) {
     io.err(
       `${plural(unfinished.length, 'repository', 'repositories')} did not finish. Review what is left with: repotted plan --staged ${reviewed.batch}\n`,
@@ -344,7 +332,6 @@ async function plan(io: Io, args: string[]): Promise<number> {
   }
   let repo: ReturnType<typeof parseRepo>;
   let result: Plan;
-  // A staged plan's document also says what the plan applies and what leaves each change out.
   let stagedPlan: StagedPlan | undefined;
   let github: GitHub;
   if (values.staged === undefined) {
@@ -547,11 +534,10 @@ async function sync(io: Io, args: string[]): Promise<number> {
     ...(values.only === undefined ? {} : { only: values.only }),
     ...(values.message === undefined ? {} : { message: values.message }),
   });
-  // A conflict leaves the folder out of step, which a script should notice.
-  const code = result.conflicts.length > 0 ? 1 : 0;
+  const exitCode = result.conflicts.length > 0 ? 1 : 0;
   if (values.json === true) {
     json(io, result);
-    return code;
+    return exitCode;
   }
   const where = result.path === '' ? result.repository : `${result.repository}/${result.path}`;
   io.out(
@@ -560,11 +546,10 @@ async function sync(io: Io, args: string[]): Promise<number> {
   for (const file of result.conflicts) {
     io.err(`${file} changed here and on GitHub. Keep one with --prefer local or --prefer remote.\n`);
   }
-  return code;
+  return exitCode;
 }
 
-/** Reads `section.key=json` for --set, or `section.key` for --unset. */
-function profileEdit(argument: string, unset: boolean): ProfileEdit {
+function parseSettingEdit(argument: string, unset: boolean): ProfileEdit {
   if (unset) {
     return { path: argument.split('.'), value: undefined };
   }
@@ -583,8 +568,7 @@ function profileEdit(argument: string, unset: boolean): ProfileEdit {
   return { path: argument.slice(0, separator).split('.'), value };
 }
 
-/** Reads a ruleset, environment or label for --ruleset, --environment or --label: a JSON object with a name. */
-function entryEdit(list: EntryEdit['list'], text: string): EntryEdit {
+function parseEntryEdit(list: EntryEdit['list'], text: string): EntryEdit {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -607,11 +591,9 @@ const drops: Readonly<Record<string, Pick<EntryEdit, 'list' | 'draft'>>> = {
   'drop-draft-label': { list: 'labels', draft: true },
 };
 
-/**
- * The profile edits in command-line order. A write right after a drop from
- * the same list renames the dropped entry, so dropping a draft and writing
- * its entry without `"draft": true` finishes the draft in place.
- */
+// A write right after a drop from the same list renames the dropped entry, so
+// dropping a draft and writing its entry without `"draft": true` finishes the
+// draft in place.
 function profileEdits(tokens: readonly { kind: string; name?: string; value?: string | undefined }[]): ProfileEdit[] {
   const edits: ProfileEdit[] = [];
   for (const token of tokens) {
@@ -622,11 +604,11 @@ function profileEdits(tokens: readonly { kind: string; name?: string; value?: st
     }
     const drop = drops[token.name];
     if (token.name === 'set' || token.name === 'unset') {
-      edits.push(profileEdit(value, token.name === 'unset'));
+      edits.push(parseSettingEdit(value, token.name === 'unset'));
     } else if (drop !== undefined) {
       edits.push({ ...drop, name: value, entry: undefined });
     } else if (token.name === 'ruleset' || token.name === 'environment' || token.name === 'label') {
-      const edit = entryEdit(`${token.name}s`, value);
+      const edit = parseEntryEdit(`${token.name}s`, value);
       if (previous !== undefined && 'list' in previous && previous.list === edit.list && previous.entry === undefined) {
         edits[edits.length - 1] = { ...edit, name: previous.name, draft: previous.draft === true };
       } else {
@@ -715,7 +697,6 @@ async function profile(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
-/** What `stage` does to one staged apply file, alone or as a member of a batch. */
 interface StageOptions {
   readonly new?: string | undefined;
   readonly profile?: string | undefined;
@@ -790,7 +771,6 @@ function printBatch(io: Io, batch: Batch): void {
   }
 }
 
-/** What `stage` does to a batch folder: start it, add, leave out or put back members, edit them, or discard it. */
 interface BatchStageOptions extends StageOptions {
   readonly start: boolean;
   readonly repositories: readonly string[];
@@ -881,7 +861,6 @@ async function stageBatch(
         io.err(`warning: ${repository} kept its staged apply as it is: ${message}\n`);
       }
     }
-    // A repository that refused leaves the batch out of step, which a script should notice.
     return result.refused.length > 0 ? 1 : 0;
   }
   if (edits.length > 0 || options.saveToProfile) {
@@ -1033,8 +1012,7 @@ async function repos(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
-/** The check statuses of a pattern that allows or blocks what it means to: the rest fail the command. */
-const sound = new Set(['match', 'owner', 'unchecked']);
+const passingCheckStatuses = new Set(['match', 'owner', 'unchecked']);
 
 async function checkActions(io: Io, args: string[]): Promise<number> {
   const { positionals, values } = parseArgs({ args, options: { json: { type: 'boolean' } }, allowPositionals: true });
@@ -1049,7 +1027,7 @@ async function checkActions(io: Io, args: string[]): Promise<number> {
       io.out(`${describeActionCheck(check)}\n`);
     }
   }
-  return checks.every((check) => sound.has(check.status)) ? 0 : 1;
+  return checks.every((check) => passingCheckStatuses.has(check.status)) ? 0 : 1;
 }
 
 async function findActionsCommand(io: Io, args: string[]): Promise<number> {
@@ -1071,14 +1049,12 @@ async function findActionsCommand(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
-/** Where to install the Repotted App on more repositories; null when another App signs in. */
 function appInstallUrl(env: NodeJS.ProcessEnv): string | null {
   return usesRepottedApp(env) ? installUrl : null;
 }
 
-/** The token variable that is set and used before the sign-in, if any. */
-function tokenVariable(env: NodeJS.ProcessEnv): string | null {
-  return tokenVariables(env)[0] ?? null;
+function tokenVariableInUse(env: NodeJS.ProcessEnv): string | null {
+  return definedTokenVariables(env)[0] ?? null;
 }
 
 async function status(io: Io, args: string[]): Promise<number> {
@@ -1094,7 +1070,7 @@ async function status(io: Io, args: string[]): Promise<number> {
         reason,
         message,
         problems,
-        token_variable: tokenVariable(io.env),
+        token_variable: tokenVariableInUse(io.env),
         install_url: appInstallUrl(io.env),
       });
     } else {
@@ -1107,11 +1083,10 @@ async function status(io: Io, args: string[]): Promise<number> {
     user = await currentUser(await io.github());
   } catch (error) {
     if (error instanceof NotSignedInError) {
-      return signedOut('not_signed_in', error.message, error.problems);
+      return signedOut('not_signed_in', error.message, error.signInProblems);
     }
-    // GitHub rejects a revoked or mistyped token.
     if (error instanceof GitHubError && error.status === 401) {
-      const variable = tokenVariable(io.env);
+      const variable = tokenVariableInUse(io.env);
       return signedOut(
         'rejected',
         variable === null
@@ -1121,7 +1096,7 @@ async function status(io: Io, args: string[]): Promise<number> {
     }
     throw error;
   }
-  const variable = tokenVariable(io.env);
+  const variable = tokenVariableInUse(io.env);
   if (values.json === true) {
     json(io, {
       signed_in: true,
@@ -1140,12 +1115,11 @@ async function login(io: Io, args: string[]): Promise<number> {
   const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } });
   const signIn = await io.signIn();
   if (values.json === true) {
-    // JSON Lines: the code to show first, then the outcome once the user enters it.
     json(io, {
       event: 'code',
       verification_uri: signIn.code.verificationUri,
       user_code: signIn.code.userCode,
-      expires_at: new Date(signIn.code.expiresAt).toISOString(),
+      expires_at: new Date(signIn.code.expiresAtEpochMilliseconds).toISOString(),
     });
     try {
       await signIn.finished;
@@ -1159,7 +1133,7 @@ async function login(io: Io, args: string[]): Promise<number> {
     json(io, {
       event: 'signed_in',
       install_url: appInstallUrl(io.env),
-      token_variable: tokenVariable(io.env),
+      token_variable: tokenVariableInUse(io.env),
     });
     return 0;
   }
@@ -1170,7 +1144,7 @@ async function login(io: Io, args: string[]): Promise<number> {
       ? `Signed in. Install the Repotted GitHub App on the repositories it should manage: ${installUrl}\n`
       : 'Signed in. Install your GitHub App on the repositories it should manage.\n',
   );
-  const overrides = tokenVariables(io.env);
+  const overrides = definedTokenVariables(io.env);
   if (overrides.length > 0) {
     io.err(`${overrides.join(' and ')} ${overrides.length === 1 ? 'is' : 'are'} set and used before this sign-in.\n`);
   }
@@ -1200,7 +1174,7 @@ async function mcp(io: Io, args: string[]): Promise<number> {
   const server = await createServer({
     version: io.version,
     github: async () => createGitHub(await mcpToken()),
-    cwd: process.cwd(),
+    profileBaseDirectory: process.cwd(),
     readOnly: values['read-only'] === true,
   });
   await server.connect(new StdioServerTransport());
@@ -1247,7 +1221,6 @@ async function dispatch(io: Io, argv: string[]): Promise<number> {
   return handler(io, rest);
 }
 
-/** Whether GitHub refused the failed request, or the request behind the failure, for a rate limit. */
 function rateLimited(error: unknown): boolean {
   for (let current = error; current instanceof Error; current = current.cause) {
     if (current instanceof GitHubError) {
@@ -1257,11 +1230,6 @@ function rateLimited(error: unknown): boolean {
   return false;
 }
 
-/**
- * The JSON failure kind: misuse, a sign-in that is missing or that GitHub
- * refuses, a profile for the other kind of owner, or anything else, including a passing problem such as an
- * unreadable keychain, which the next try may not meet.
- */
 function failureKind(error: unknown, misused: boolean): 'usage' | 'signed_out' | 'owner_mismatch' | 'error' {
   if (misused) {
     return 'usage';
@@ -1274,10 +1242,6 @@ function failureKind(error: unknown, misused: boolean): 'usage' | 'signed_out' |
     : 'error';
 }
 
-/**
- * Runs one command and returns its exit code: 1 when it fails, 2 when it was
- * misused. With `--json`, a failure is a JSON document on stdout as well.
- */
 export async function run(argv: string[], io: Io): Promise<number> {
   try {
     return await dispatch(io, argv);
@@ -1289,7 +1253,6 @@ export async function run(argv: string[], io: Io): Promise<number> {
     const message = error instanceof Error ? error.message : String(error);
     // Also --json=true, which parseArgs rejects, so the rejection is JSON too.
     if (argv.some((arg) => /^--json(?:=|$)/.test(arg))) {
-      // A rate limit says so, since trying again later passes it.
       json(io, {
         error: { kind: failureKind(error, misused), message, ...(rateLimited(error) ? { rate_limited: true } : {}) },
       });

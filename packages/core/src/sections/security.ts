@@ -24,7 +24,6 @@ interface Adjusted {
   readonly dropped?: { readonly fields: string[]; readonly reason: string };
 }
 
-/** Leaves the fields out of what the profile names, with the reason, or changes nothing when there are none. */
 function without(desired: Record<string, unknown>, fields: string[], reason: string): Adjusted {
   return fields.length > 0
     ? {
@@ -35,12 +34,11 @@ function without(desired: Record<string, unknown>, fields: string[], reason: str
 }
 
 /**
- * Leaves out the runner fields of code scanning or code quality that GitHub
- * would not keep. GitHub reports no runner while a setup is not configured,
- * runs a configured one on standard runners unless told otherwise, reports
- * no runner label with standard runners, and refuses labeled runners
- * without one. GitHub's docs don't say so; this is how it reports these
- * settings, and what the fake GitHub models.
+ * GitHub reports no runner while a setup is not configured, runs a configured
+ * one on standard runners unless told otherwise, reports no runner label with
+ * standard runners, and refuses labeled runners without one. GitHub's docs
+ * don't say so; this is how it reports these settings, and what the fake
+ * GitHub models.
  */
 function keepRunnerLabel(desired: Record<string, unknown>, live: Record<string, unknown>): Adjusted {
   const named = (field: string) => desired[field] !== undefined;
@@ -69,8 +67,7 @@ function keepRunnerLabel(desired: Record<string, unknown>, live: Record<string, 
 }
 
 /**
- * Security and code quality settings at endpoints of their own, in the
- * order they apply: Dependabot alerts before the security updates that
+ * In the order they apply: Dependabot alerts before the security updates that
  * answer them, and code scanning after the repository settings that turn on
  * the Advanced Security it may need.
  */
@@ -105,7 +102,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     target: 'code scanning default setup',
     method: 'PATCH',
     schema: securityFields.code_scanning_default_setup,
-    identifying: ['languages'],
+    repositorySpecificFields: ['languages'],
     fromGitHub: combineScriptLanguages,
     adjust: keepRunnerLabel,
   },
@@ -124,7 +121,7 @@ export const securityEndpoints: readonly Endpoint[] = [
     target: 'code quality setup',
     method: 'PATCH',
     schema: securityFields.code_quality_setup,
-    identifying: ['languages'],
+    repositorySpecificFields: ['languages'],
     adjust: keepRunnerLabel,
   },
   {
@@ -161,7 +158,7 @@ export const securityEndpoints: readonly Endpoint[] = [
       }
       return { desired };
     },
-    body: (body) => {
+    adjustWriteBody: (body) => {
       if (body['runner_type'] === 'standard') {
         return { runner_type: 'standard' };
       }
@@ -174,7 +171,6 @@ export const securityEndpoints: readonly Endpoint[] = [
 
 const securityAndAnalysisKeys = Object.keys(securityAndAnalysis.shape);
 
-/** The parts of `security_and_analysis` a profile can set, as the repository reports them. */
 export function liveSecurityAndAnalysis(
   reported: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
@@ -186,9 +182,8 @@ export function liveSecurityAndAnalysis(
 }
 
 /**
- * Plans the security section. `security_and_analysis` is written to the
- * repository, so it needs the admin view of the repository, which reports
- * it. Turning Dependabot alerts off turns security updates off first.
+ * `security_and_analysis` is written to the repository, so it needs the admin
+ * view of the repository, which reports it.
  */
 export function planSecurity(
   desired: SecuritySettings,

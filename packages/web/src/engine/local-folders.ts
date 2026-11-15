@@ -14,7 +14,6 @@ type Entry = FileSystemDirectoryHandle | FileSystemFileHandle;
 type Directory = FileSystemDirectoryHandle & Permissions & { values(): AsyncIterable<Entry> };
 type Picker = (options: { mode: 'readwrite'; id: string }) => Promise<FileSystemDirectoryHandle>;
 
-/** Whether a value is a directory handle with the parts of the API the DOM library leaves out. */
 function isDirectory(value: unknown): value is Directory {
   return (
     typeof value === 'object' &&
@@ -101,7 +100,6 @@ function folderOf(directory: Directory): LocalFolder {
         const [at, name] = await parent(directory, path, false);
         await at.removeEntry(name);
       } catch (error) {
-        // A file that is already gone is removed.
         if (!(error instanceof DOMException && error.name === 'NotFoundError')) {
           throw error;
         }
@@ -111,9 +109,9 @@ function folderOf(directory: Directory): LocalFolder {
 }
 
 /**
- * The browser's folders. `indexedDB` and `showDirectoryPicker` are asked for
- * at each use, since naming the first can throw and the second is missing
- * outside Chromium browsers; `scope` is what the picker is called on.
+ * `indexedDB` and `showDirectoryPicker` are asked for at each use, since
+ * naming the first can throw and the second is missing outside Chromium
+ * browsers; `scope` is what the picker is called on.
  */
 export function browserFolders(
   indexedDB: () => IDBFactory,

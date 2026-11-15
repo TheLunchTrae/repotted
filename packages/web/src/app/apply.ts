@@ -27,38 +27,29 @@ import { type ComparedProfile, type CompareSection, compareSections } from './co
 import { builtInFolder } from './config-protection.js';
 import { type EditorStore, ProfileEditor } from './profile-editor.js';
 
-/** An apply as reviewed: the changes it would write, what was left out of it, and what stops it. */
 export interface Reviewed {
-  /**
-   * The plan this review shows, which is the one an apply from it writes.
-   * It travels with the review, so no other plan can be applied in its place.
-   */
+  /** Travels with the review, so no other plan can be applied in its place. */
   readonly plan: Plan;
-  /** How many of the plan's changes GitHub would refuse. */
-  readonly locked: number;
+  readonly lockedChangeCount: number;
   readonly sections: readonly CompareSection[];
-  /** What this apply leaves out of the profile, by the keys that put each back. */
+  /** By the keys that put each back. */
   readonly leftOut: readonly string[];
-  /** The profile's drafts, which an apply leaves out, each in a few words. */
-  readonly skipped: readonly string[];
+  readonly skippedDrafts: readonly string[];
   readonly warnings: readonly string[];
-  /** Where the Repotted App's access is reviewed on GitHub, as a comparison has it. */
   readonly appAccess: { readonly settings: string } | 'install' | undefined;
   /** Why the last try to apply wrote nothing, or stopped partway, with what this review then shows. */
   readonly notice: string | undefined;
-  /** Whether the apply starts from a profile, and not from the repository as it is. */
   readonly fromProfile: boolean;
 }
 
 interface Target {
   readonly repository: string;
-  /** The profile's name as the list has it. */
-  readonly profile: string;
+  readonly profileName: string;
 }
 
 /** An apply's one-off edits are read, previewed, and written as its staged apply, which holds no drafts. */
 const stagedStore: EditorStore = {
-  drafts: false,
+  canHoldDrafts: false,
   resolve: resolveStagedApply,
   preview: previewStagedApply,
   edit: editStagedApply,
@@ -66,33 +57,26 @@ const stagedStore: EditorStore = {
 
 export type ApplyState =
   | { readonly kind: 'idle' }
-  /**
-   * The first step: the apply's one-off edits, in `editor`. They apply on
-   * top of the profile for this apply only. `fromProfile` is false for an
-   * apply that starts from the repository as it is.
-   */
   | ({
       readonly kind: 'editing';
       readonly fromProfile: boolean;
-      /** Whether that profile is built into Repotted, which edits can't be saved to. */
+      /** Edits can't be saved to a profile built into Repotted. */
       readonly builtIn: boolean;
       /** What this apply leaves out, which can't be edited here until it is put back. */
       readonly leftOut: readonly string[];
     } & Target)
-  /** An apply to the repository was started earlier and not finished: it is picked up, or started over. */
   | ({ readonly kind: 'unfinished' } & Target)
   | ({ readonly kind: 'reviewing' | 'applying' } & Target)
   | ({ readonly kind: 'failed'; readonly message: string } & Target)
   | ({ readonly kind: 'reviewed' } & Target & Reviewed)
   | ({ readonly kind: 'applied'; readonly changes: number } & Target);
 
-/** Where the browser keeps the apply to a repository until it is finished or discarded. */
 function stagedFile(repository: string): string {
   const repo = parseRepo(repository);
   return `/staged/${repo.owner.toLowerCase()}/${repo.name.toLowerCase()}.yaml`;
 }
 
-/** Removes the apply the browser keeps for a repository, however the file reads. */
+/** However the file reads. */
 async function forget(repository: string): Promise<void> {
   await discardStagedApply(stagedFile(repository)).catch(() => rm(stagedFile(repository), { force: true }));
 }
@@ -105,8 +89,7 @@ function cleaned(message: string, repository: string): string {
     .replaceAll(`${builtInFolder}/`, '');
 }
 
-/** The name an apply goes by: the profile it starts from, or none for one that starts from the repository as it is. */
-function nameOf(base: string | null): string {
+function profileNameOfApply(base: string | null): string {
   return base === null ? '' : basename(base).replace(/\.ya?ml$/u, '');
 }
 
@@ -115,17 +98,14 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * One apply of a profile to one repository: reviewed first, and written
- * only when asked to after that. It is kept as the engine's staged apply, a
- * file in the browser, so an apply left unfinished is there to pick up.
- * Nothing is written to GitHub except by `apply`, which writes exactly the
- * plan last reviewed, and nothing when the repository has changed since.
+ * It is kept as the engine's staged apply, a file in the browser, so an
+ * apply left unfinished is there to pick up. Nothing is written to GitHub
+ * except by `apply`, which writes exactly the plan last reviewed, and nothing
+ * when the repository has changed since.
  */
 export class Apply {
   readonly state = signal<ApplyState>({ kind: 'idle' });
-  /** The editor of the apply's one-off edits, while the apply is open. */
   readonly editor = signal<ProfileEditor | undefined>(undefined);
-  /** Why the one-off edits couldn't be saved to the profile, until the next try. */
   readonly editError = signal<string | undefined>(undefined);
 
   readonly #github: GitHub;
@@ -150,24 +130,21 @@ export class Apply {
     this.#writeProfile = writeProfile;
   }
 
-  /** How many changes the reviewed plan writes, and how many of them GitHub would refuse. */
   readonly counts = computed(() => {
     const state = this.state.value;
     return state.kind === 'reviewed'
-      ? { changes: state.plan.changes.length, locked: state.locked }
+      ? { changes: state.plan.changes.length, locked: state.lockedChangeCount }
       : { changes: 0, locked: 0 };
   });
 
   /**
-   * Whether the review can be applied: it has a change, and none GitHub
-   * would refuse, since the apply would stop there and leave the changes
-   * after it unwritten.
+   * Not while GitHub would refuse a change, since the apply would stop there
+   * and leave the changes after it unwritten.
    */
   readonly canApply = computed(
     () => this.state.value.kind === 'reviewed' && this.counts.value.changes > 0 && this.counts.value.locked === 0,
   );
 
-  /** Whether an apply to the repository was started and not finished. */
   async unfinished(repository: string): Promise<boolean> {
     return stat(stagedFile(repository)).then(
       () => true,
@@ -175,10 +152,6 @@ export class Apply {
     );
   }
 
-  /**
-   * Starts an apply of a profile to a repository and reviews it. Where an
-   * apply to the repository is unfinished, it asks which to go on with.
-   */
   async start(repository: string, profile: ComparedProfile): Promise<void> {
     // An apply that is writing is neither replaced nor joined: its page shows it until it ends.
     if (this.#writing()) {
@@ -192,7 +165,7 @@ export class Apply {
     this.#profile = profile;
     if (unfinished) {
       this.#turn += 1;
-      this.state.value = { kind: 'unfinished', repository, profile: profile.name };
+      this.state.value = { kind: 'unfinished', repository, profileName: profile.name };
       return;
     }
     await this.#work(repository, profile.name, 'reviewing', async () => {
@@ -202,7 +175,6 @@ export class Apply {
     });
   }
 
-  /** Starts an apply that changes settings once, from the repository as it is, with no profile. */
   async startWithoutProfile(repository: string): Promise<void> {
     if (this.#writing()) {
       return;
@@ -224,10 +196,9 @@ export class Apply {
   }
 
   /**
-   * Goes on from the edits to the review. Edits that aren't saved are saved
-   * to the apply first, never to the profile, so the review shows what the
-   * edits say. It stays on the edits, with why, while one isn't valid or
-   * can't be saved.
+   * Edits that aren't saved are saved to the apply first, never to the
+   * profile, so the review shows what the edits say. It stays on the edits,
+   * with why, while one isn't valid or can't be saved.
    */
   async review(): Promise<void> {
     const state = this.state.value;
@@ -235,10 +206,9 @@ export class Apply {
     if (state.kind !== 'editing' || !(await this.#saveEdits()) || this.state.value !== state) {
       return;
     }
-    await this.#work(state.repository, state.profile, 'reviewing', () => this.#review(state.repository, undefined));
+    await this.#work(state.repository, state.profileName, 'reviewing', () => this.#review(state.repository, undefined));
   }
 
-  /** Goes back from the review to the edits. */
   async backToEdits(): Promise<void> {
     const state = this.state.value;
     if (
@@ -246,15 +216,11 @@ export class Apply {
       // The page may have moved on while the browser's files were read.
       this.state.value === state
     ) {
-      await this.#work(state.repository, state.profile, 'reviewing', () => this.#edit(state.repository));
+      await this.#work(state.repository, state.profileName, 'reviewing', () => this.#edit(state.repository));
     }
   }
 
-  /**
-   * Writes the one-off edits into the profile, which then sets them itself.
-   * Edits that aren't saved are saved to the apply first, so the profile
-   * gets what the editor shows.
-   */
+  /** Edits that aren't saved are saved to the apply first, so the profile gets what the editor shows. */
   async saveToProfile(): Promise<void> {
     const state = this.state.value;
     this.editError.value = undefined;
@@ -283,7 +249,7 @@ export class Apply {
     }
   }
 
-  /** Saves the editor's unsaved edits to the apply, and says whether nothing is left unsaved. */
+  /** Says whether nothing is left unsaved. */
   async #saveEdits(): Promise<boolean> {
     const editor = this.editor.value;
     if (editor === undefined || !editor.dirty.value) {
@@ -297,7 +263,6 @@ export class Apply {
     return !editor.dirty.peek() && editor.saveError.peek() === undefined;
   }
 
-  /** Opens the apply's one-off edits in an editor of their own. */
   async #edit(repository: string): Promise<ApplyState> {
     const staged = await resolveStagedApply(stagedFile(repository));
     const editor = new ProfileEditor(stagedFile(repository), undefined, stagedStore);
@@ -307,7 +272,7 @@ export class Apply {
     return {
       kind: 'editing',
       repository,
-      profile: nameOf(staged.base),
+      profileName: profileNameOfApply(staged.base),
       fromProfile: staged.base !== null,
       builtIn: staged.base?.startsWith(`${builtInFolder}/`) === true,
       leftOut: staged.exclude,
@@ -327,11 +292,10 @@ export class Apply {
   async resume(): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'unfinished') {
-      await this.#work(state.repository, state.profile, 'reviewing', () => this.#edit(state.repository));
+      await this.#work(state.repository, state.profileName, 'reviewing', () => this.#edit(state.repository));
     }
   }
 
-  /** Throws the unfinished apply away and starts one from the profile picked. */
   async startOver(): Promise<void> {
     const state = this.state.value;
     const profile = this.#profile;
@@ -341,13 +305,13 @@ export class Apply {
     }
   }
 
-  /** Leaves a change out of this apply, or puts one back, and reviews it again. The profile keeps it either way. */
+  /** The profile keeps the change either way. */
   async leaveOut(key: string, out: boolean): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'editing' && !out) {
       // Put back from the edits, where what is left out can't be edited: the edits stay open, with the value back.
       if ((await this.#saveEdits()) && this.state.value === state) {
-        await this.#work(state.repository, state.profile, 'reviewing', async () => {
+        await this.#work(state.repository, state.profileName, 'reviewing', async () => {
           await editStagedApply(stagedFile(state.repository), [{ exclude: key, excluded: false }]);
           return this.#edit(state.repository);
         });
@@ -355,14 +319,13 @@ export class Apply {
       return;
     }
     if (state.kind === 'reviewed') {
-      await this.#work(state.repository, state.profile, 'reviewing', async () => {
+      await this.#work(state.repository, state.profileName, 'reviewing', async () => {
         await editStagedApply(stagedFile(state.repository), [{ exclude: key, excluded: out }]);
         return this.#review(state.repository, undefined);
       });
     }
   }
 
-  /** Reads GitHub and the profile again, as after access was granted or the profile saved. */
   async reviewAgain(): Promise<void> {
     const state = this.state.value;
     const profile = this.#profile;
@@ -370,16 +333,17 @@ export class Apply {
       // The apply never began, as when its profile couldn't be read, so it starts now.
       await this.start(state.repository, profile);
     } else if (state.kind === 'reviewed' || state.kind === 'failed') {
-      await this.#work(state.repository, state.profile, 'reviewing', () => this.#review(state.repository, undefined));
+      await this.#work(state.repository, state.profileName, 'reviewing', () =>
+        this.#review(state.repository, undefined),
+      );
     }
   }
 
   /**
-   * Writes the reviewed changes to GitHub. The engine plans again first and
-   * writes only when that gives the same changes, so a repository that
-   * changed since the review gets nothing written and a fresh review. A
-   * change GitHub refuses partway leaves the ones before it written, and
-   * the review that follows shows what is left.
+   * The engine plans again first and writes only when that gives the same
+   * changes, so a repository that changed since the review gets nothing
+   * written and a fresh review. A change GitHub refuses partway leaves the
+   * ones before it written, and the review that follows shows what is left.
    */
   async apply(): Promise<void> {
     const state = this.state.value;
@@ -391,11 +355,16 @@ export class Apply {
     if (plan.repository.toLowerCase() !== state.repository.toLowerCase()) {
       return;
     }
-    await this.#work(state.repository, state.profile, 'applying', async () => {
+    await this.#work(state.repository, state.profileName, 'applying', async () => {
       try {
         const written = await applyPlan(this.#github, plan);
         await forget(state.repository);
-        return { kind: 'applied', repository: state.repository, profile: state.profile, changes: written.length };
+        return {
+          kind: 'applied',
+          repository: state.repository,
+          profileName: state.profileName,
+          changes: written.length,
+        };
       } catch (error) {
         if (error instanceof StalePlanError) {
           return this.#review(
@@ -417,7 +386,6 @@ export class Apply {
     });
   }
 
-  /** Throws the apply away. The profile stays as it is, and nothing on GitHub changes. */
   async discard(): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'idle' || state.kind === 'applying') {
@@ -429,7 +397,7 @@ export class Apply {
     this.state.value = { kind: 'idle' };
   }
 
-  /** Leaves the apply's page. The apply itself is kept, to pick up from its repository. */
+  /** The apply itself is kept, to pick up from its repository. */
   close(): void {
     if (this.state.value.kind !== 'applying') {
       this.#turn += 1;
@@ -443,7 +411,6 @@ export class Apply {
     }
   }
 
-  /** Whether an apply is writing to GitHub right now. */
   #writing(): boolean {
     return this.state.value.kind === 'applying';
   }
@@ -454,18 +421,18 @@ export class Apply {
       readAccess(this.#github, parseRepo(repository)),
     ]);
     // An apply picked up goes by the profile it started from, which may not be the one picked now.
-    const profile = nameOf(staged.staged.base);
+    const profile = profileNameOfApply(staged.staged.base);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));
     return {
       kind: 'reviewed',
       repository,
-      profile,
+      profileName: profile,
       plan: staged.plan,
-      locked: locks.size,
+      lockedChangeCount: locks.size,
       sections: compareSections(staged.plan, locks, staged.exclusions),
       fromProfile: staged.staged.base !== null,
       leftOut: staged.staged.exclude,
-      skipped: staged.plan.skipped.map(describeSkipped),
+      skippedDrafts: staged.plan.skipped.map(describeSkipped),
       warnings: staged.plan.warnings.map(describeWarning),
       appAccess:
         access.app.status === 'not_installed'
@@ -477,7 +444,7 @@ export class Apply {
     };
   }
 
-  /** Shows `kind` while `work` runs, then what it gives, or why it failed. One piece of work counts at a time. */
+  /** One piece of work counts at a time. */
   async #work(
     repository: string,
     profile: string,
@@ -485,7 +452,7 @@ export class Apply {
     work: (current: () => boolean) => Promise<ApplyState>,
   ): Promise<void> {
     const turn = (this.#turn += 1);
-    this.state.value = { kind, repository, profile };
+    this.state.value = { kind, repository, profileName: profile };
     try {
       const next = await work(() => turn === this.#turn);
       if (turn === this.#turn) {
@@ -501,7 +468,7 @@ export class Apply {
           ? 'This apply is no longer in this browser. Start it again from its repository.'
           : cleaned(messageOf(error), repository);
         if (turn === this.#turn) {
-          this.state.value = { kind: 'failed', repository, profile, message };
+          this.state.value = { kind: 'failed', repository, profileName: profile, message };
         }
       }
     }

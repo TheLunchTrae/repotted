@@ -66,7 +66,6 @@ test('a batch reviews each repository, writes nothing until asked, and then writ
   expect(writes(of('lunch/app'))).toEqual(['PATCH /repos/lunch/app']);
   expect(writes(of('lunch/api'))).toEqual([]);
   expect(of('lunch/app').state.repository).toMatchObject({ has_wiki: false, has_projects: false });
-  // Every repository finished, so the batch has ended.
   expect(await batch.unfinished()).toBe(false);
 });
 
@@ -151,7 +150,7 @@ test('an apply in progress joins a batch as it is, and stays when the batch is d
   batch.close();
   expect(batch.state.value).toEqual({ kind: 'idle' });
   await batch.resume();
-  expect(batch.state.value).toMatchObject({ kind: 'reviewed', profile: 'web' });
+  expect(batch.state.value).toMatchObject({ kind: 'reviewed', profileName: 'web' });
 
   await batch.discard();
   expect(await batch.unfinished()).toBe(false);
@@ -182,11 +181,11 @@ test('a batch started while another is unfinished starts nothing, and names the 
   await batch.start(['lunch/new'], { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
 
   // What a review or a discard from here acts on is the batch of web, so that is the one named.
-  expect(batch.state.value).toMatchObject({ kind: 'failed', profile: 'web', batch: true });
+  expect(batch.state.value).toMatchObject({ kind: 'failed', profileName: 'web', hasBatchToReviewAgain: true });
   expect(await new Apply(github, () => undefined).unfinished('lunch/new')).toBe(false);
 
   await batch.reviewAgain();
-  expect(batch.state.value).toMatchObject({ kind: 'reviewed', profile: 'web' });
+  expect(batch.state.value).toMatchObject({ kind: 'reviewed', profileName: 'web' });
   expect(statuses(batch)).toEqual(['lunch/app changes 1']);
   await batch.apply();
   expect(writes(of('lunch/new'))).toEqual([]);
@@ -284,7 +283,10 @@ test('a repository whose apply is gone or unreadable is named, and one that is g
   ]);
   const gone =
     state.kind === 'reviewed' ? state.members.find((member) => member.repository === 'lunch/app') : undefined;
-  expect(gone).toMatchObject({ status: 'failed', message: expect.stringContaining('Its apply is gone') as unknown });
+  expect(gone).toMatchObject({
+    status: 'failed',
+    comparisonFailureMessage: expect.stringContaining('Its apply is gone') as unknown,
+  });
 
   await batch.remove('lunch/app');
   expect(statuses(batch)).toEqual(['lunch/web changes 1', 'lunch/api failed 0']);
@@ -298,7 +300,7 @@ test('a batch that cannot be read fails on resume, and discarding it clears it',
 
   await batch.resume();
   const state = batch.state.value;
-  expect(state).toMatchObject({ kind: 'failed', batch: true });
+  expect(state).toMatchObject({ kind: 'failed', hasBatchToReviewAgain: true });
   expect(state.kind === 'failed' ? state.message : '').toContain('the batch is not a valid batch');
 
   await batch.discard();
@@ -320,8 +322,7 @@ test('nothing is applied from a batch that is being discarded', async () => {
   expect(writes(of('lunch/app'))).toEqual([]);
 });
 
-/** A GitHub whose requests wait until they are let go, so work on it can be held open. */
-class Held extends FakeGitHub {
+class GitHubWithHeldRequests extends FakeGitHub {
   #gate: Promise<void> | undefined;
   #open: () => void = () => undefined;
 
@@ -349,7 +350,7 @@ class Held extends FakeGitHub {
 
 test('a batch that is writing is neither replaced, resumed, nor discarded, and a late review changes nothing', async () => {
   await saved();
-  const app = new Held({}, 'lunch/app');
+  const app = new GitHubWithHeldRequests({}, 'lunch/app');
   const api = new FakeGitHub({}, 'lunch/api');
   const batch = new BatchApply(new FakeFleet([api, app]), () => undefined);
   await batch.start(['lunch/app', 'lunch/api'], profile);

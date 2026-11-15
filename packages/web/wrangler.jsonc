@@ -6,8 +6,6 @@
   "build": {
     "command": "node build.ts",
   },
-  // Only /api/* reaches the Worker; every other path is a static file, and a
-  // path with no file gets index.html, for the web app's own routes.
   "assets": {
     "directory": "dist",
     "not_found_handling": "single-page-application",

@@ -19,27 +19,24 @@ interface NewProfileProps {
   readonly profiles: Profiles;
   readonly repositories: Repositories;
   readonly router: Router;
-  /** The repository to capture, when the form was opened from one. */
-  readonly repository: string | undefined;
+  readonly repositoryToCapture: string | undefined;
 }
 
-export function NewProfileForm({ profiles, repositories, router, repository }: NewProfileProps): JSX.Element {
+export function NewProfileForm({ profiles, repositories, router, repositoryToCapture }: NewProfileProps): JSX.Element {
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const captured = repositories.list.value?.repositories ?? [];
   const [name, setName] = useState('');
   const [folder, setFolder] = useState(profiles.selected.value?.folder ?? '');
-  const [kind, setKind] = useState<NewProfileStart['kind']>(repository === undefined ? 'empty' : 'repository');
-  // What the user picked. Until they pick, or once their pick is gone, the first one listed stands.
+  const [kind, setKind] = useState<NewProfileStart['kind']>(repositoryToCapture === undefined ? 'empty' : 'repository');
   const [pickedBase, setBaseFile] = useState<string | undefined>(undefined);
-  const [pickedFrom, setFrom] = useState(repository);
+  const [pickedFrom, setFrom] = useState(repositoryToCapture);
   const [owner, setOwner] = useState<OwnerChoice>('any');
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  // Closing the form stops a capture from making its profile.
-  const closed = useRef(new AbortController());
+  const formClosed = useRef(new AbortController());
   useEffect(
     () => () => {
-      closed.current.abort();
+      formClosed.current.abort();
     },
     [],
   );
@@ -58,14 +55,13 @@ export function NewProfileForm({ profiles, repositories, router, repository }: N
         : from === ''
           ? undefined
           : { kind, repository: from };
-  // The owner follows from a capture's repository and from a typed base.
   const fixedOwner =
     kind === 'repository'
       ? "The repository's owner sets the type."
       : kind === 'extends' && base !== undefined && base.owner_type !== null
         ? `${base.name} is for ${ownerLabels[base.owner_type].toLowerCase()}, so this one is too.`
         : undefined;
-  // While it works, the name it holds is its own.
+  // While it works, the name that already exists is the profile's own.
   const problem = working || name.trim() === '' ? undefined : profiles.nameProblem(name, folder);
 
   const create = async (): Promise<void> => {
@@ -76,9 +72,9 @@ export function NewProfileForm({ profiles, repositories, router, repository }: N
     setError(undefined);
     const failure = await profiles.create(
       { name, folder, start, ownerType: owner === 'any' ? undefined : owner },
-      closed.current.signal,
+      formClosed.current.signal,
     );
-    if (closed.current.signal.aborted) {
+    if (formClosed.current.signal.aborted) {
       return;
     }
     setWorking(false);

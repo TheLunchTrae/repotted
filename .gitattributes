@@ -2,7 +2,6 @@
 # required for execution.
 * text=auto eol=lf
 
-# Shell and platform scripts
 *.sh text eol=lf
 *.bash text eol=lf
 *.zsh text eol=lf
@@ -10,7 +9,6 @@
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
 
-# Source
 *.c text
 *.h text
 *.cc text
@@ -70,7 +68,6 @@
 *.zig text
 *.zon text
 
-# Build/config
 *.cmake text
 CMakeLists.txt text
 Makefile text
@@ -130,14 +127,12 @@ go.work.sum text
 cabal.project text
 cabal.project.freeze text linguist-generated=true
 
-# Docs/data
 *.csv text
 *.md text diff=markdown
 *.mdx text diff=markdown
 *.sql text
 *.txt text
 
-# Binary assets/artifacts
 *.7z binary
 *.a binary
 *.avif binary

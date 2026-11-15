@@ -14,13 +14,12 @@ const session = new Session();
 const github = sessionGitHub(session);
 const account = new Account(session, github);
 
-// The Worker reports a failed sign-in in the query; drop it so a reload
-// doesn't show it again.
-const reason = new URLSearchParams(location.search).get('sign-in');
-if (reason !== null) {
+// Dropped so a reload doesn't report the failed sign-in again.
+const signInFailureReason = new URLSearchParams(location.search).get('sign-in');
+if (signInFailureReason !== null) {
   history.replaceState(null, '', location.pathname);
 }
-run(account.load(signInFailure(reason)));
+run(account.load(signInFailure(signInFailureReason)));
 
 // The kept files are in memory before anything reads a profile.
 const keeping = await keepFiles(

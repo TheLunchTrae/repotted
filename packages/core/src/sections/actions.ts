@@ -6,7 +6,7 @@ import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
 import { actionsEndpointFields, type ActionsSettings } from '../schema.js';
 
-/** Actions settings at endpoints of their own, which apply after the policy. */
+// These apply after the policy.
 export const actionsEndpoints: readonly Endpoint[] = [
   {
     kind: 'field',
@@ -120,9 +120,9 @@ function only<T extends object, K extends keyof T>(source: T, keys: readonly K[]
 }
 
 /**
- * Plans the three Actions endpoints in the order they must run: the policy,
- * then its selected-actions list, then workflow token permissions. Each write
- * is a PUT, so its body carries live values for the keys the profile omits.
+ * The endpoints must run in this order: the policy, then its selected-actions
+ * list, then workflow token permissions. Each write is a PUT, so its body
+ * carries live values for the keys the profile omits.
  */
 export function planActions(desired: ActionsSettings, live: ActionsSettings, repo: RepoRef): SectionPlan {
   const base = `${repoPath(repo)}/actions/permissions`;

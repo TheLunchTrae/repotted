@@ -3,22 +3,20 @@ import { z } from 'zod';
 
 export type Method = 'GET' | 'PATCH' | 'POST' | 'PUT' | 'DELETE';
 
-/** The REST calls Repotted makes. Responses are untrusted and parsed by each section. */
+/** Responses are untrusted and parsed by each section. */
 export interface GitHub {
   request(method: Method, path: string, body?: unknown): Promise<unknown>;
 }
 
 /**
- * A request GitHub answered with an error. The message is GitHub's own,
- * followed by the details it lists in `errors`; the page of its docs that it
- * links to is kept apart, so a reason shown to people does not carry it.
+ * The message is GitHub's own, followed by the details it lists in `errors`.
+ * Its documentation link is kept apart, so a reason shown to people does not
+ * carry it.
  */
 export class GitHubError extends Error {
   readonly status: number;
   readonly documentationUrl: string | undefined;
-  /** Whether GitHub refused the request for a rate limit, which a later try may pass. */
   readonly rateLimited: boolean;
-  /** When GitHub says a rate-limited request may be tried again, if it says. */
   readonly retryAt: Date | undefined;
 
   constructor(
@@ -43,12 +41,7 @@ const errorBody = z.object({
   documentation_url: z.string().optional().catch(undefined),
 });
 
-/**
- * One of GitHub's `errors` as text: a string as it is, an object by its
- * `message`, and one without a message, such as GitHub's standard validation
- * errors, by its field, or else its resource, and its code, as
- * `key_prefix already_exists`.
- */
+// GitHub's standard validation errors carry no message, and read as `key_prefix already_exists`.
 function errorDetail(item: unknown): string[] {
   if (typeof item === 'string') {
     return [item];
@@ -65,11 +58,6 @@ function errorDetail(item: unknown): string[] {
   return named.length === 0 ? [] : [named.join(' ')];
 }
 
-/**
- * When a rate-limited request may be tried again: `retry-after` seconds from
- * now, or else the `x-ratelimit-reset` time, in seconds since the epoch, of a
- * limit with no requests remaining.
- */
 function retryTime(headers: Readonly<Record<string, unknown>>, now: number): Date | undefined {
   const after = Number(headers['retry-after']);
   if (headers['retry-after'] !== undefined && Number.isFinite(after) && after >= 0) {
@@ -84,10 +72,9 @@ function retryTime(headers: Readonly<Record<string, unknown>>, now: number): Dat
 }
 
 /**
- * The error for a response GitHub sent with an error status, from its body
- * and headers. GitHub answers a rate limit with a 429, or a 403 with no
- * requests remaining or a `retry-after`; a secondary limit can come with
- * neither header, and its message then says it is a rate limit.
+ * GitHub answers a rate limit with a 429, or a 403 with no requests remaining
+ * or a `retry-after`. A secondary limit can come with neither header, and only
+ * its message then says it is a rate limit.
  */
 export function responseError(
   status: number,
@@ -121,7 +108,6 @@ export function responseError(
   );
 }
 
-/** A repository named `owner/name`. */
 export interface RepoRef {
   readonly owner: string;
   readonly name: string;
@@ -144,16 +130,14 @@ export function repoPath(repo: RepoRef): string {
   return `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`;
 }
 
-// What Octokit's RequestError carries: the response, when GitHub sent one.
-const requestFailure = z.object({
+const octokitRequestError = z.object({
   status: z.number(),
   response: z.object({ data: z.unknown(), headers: z.record(z.string(), z.unknown()) }).optional(),
 });
 
 /**
- * A client for GitHub's REST API. It signs requests with `auth` when that is
- * a token; when it is a `fetch`, that function sends each request and signs
- * it, which lets a sign-in that refreshes its token supply the current one.
+ * An `auth` that is a `fetch` sends and signs each request itself, which lets
+ * a sign-in that refreshes its token supply the current one.
  */
 export function createGitHub(auth: string | typeof fetch): GitHub {
   const octokit = new Octokit({
@@ -170,7 +154,7 @@ export function createGitHub(auth: string | typeof fetch): GitHub {
         const data: unknown = response.data;
         return data;
       } catch (error) {
-        const failure = requestFailure.safeParse(error);
+        const failure = octokitRequestError.safeParse(error);
         if (!failure.success || !(error instanceof Error)) {
           throw error;
         }
@@ -186,10 +170,6 @@ export function createGitHub(auth: string | typeof fetch): GitHub {
 
 const pageSize = 100;
 
-/**
- * Reads a list GitHub serves in pages, a page at a time, until a page comes
- * back short or the items reach the `total` a page reports.
- */
 export async function readAllPages<Item>(
   path: string,
   fetchPage: (url: string) => Promise<{ readonly items: readonly Item[]; readonly total?: number }>,

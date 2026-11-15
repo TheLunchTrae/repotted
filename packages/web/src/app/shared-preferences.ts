@@ -8,25 +8,20 @@ import type { Preferences } from './preferences.js';
 import type { ProfilesSource } from './profiles.js';
 import { SerialQueue } from './serial-queue.js';
 
-/**
- * The file beside the profiles in a config repository that holds the
- * preferences that follow the user. It is hidden, so a profile sync and the
- * profile list leave it out.
- */
+/** Hidden, so a profile sync and the profile list leave it out. */
 export const preferencesFile = '.repotted-preferences.json';
 
-/** Makes a preference's next value from its value now; undefined deletes it. */
+/** Returning undefined deletes the preference. */
 export type Change = (current: unknown) => unknown;
 
-const message = 'Update Repotted preferences';
+const commitMessage = 'Update Repotted preferences';
 const contents = z.object({ sha: z.string(), content: z.string() });
 const saved = z.record(z.string(), z.unknown());
-// A save that loses to another one, here or elsewhere, reads the file again and tries again this many times.
-const tries = 3;
+// A save that loses to another one, here or elsewhere, reads the file again and tries again.
+const maximumSaveAttempts = 3;
 
 interface Place {
   readonly repository: string;
-  /** The file's path in the repository. */
   readonly file: string;
 }
 
@@ -37,7 +32,7 @@ interface Pending {
 }
 
 interface Remote {
-  /** The file's blob, or undefined when the repository lacks the file. */
+  /** Undefined when the repository lacks the file. */
   readonly sha: string | undefined;
   readonly values: Record<string, unknown>;
 }
@@ -60,7 +55,6 @@ function stringify(values: Record<string, unknown>): string {
   return `${JSON.stringify(sorted, null, 2)}\n`;
 }
 
-/** The values with each change made in turn, onto whatever the value is by then. */
 function withChanges(values: Record<string, unknown>, changes: readonly Pending[]): Record<string, unknown> {
   let next = values;
   for (const { key, change } of changes) {
@@ -78,11 +72,10 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * Preferences that follow the user, such as the repositories and owners the
- * list hides. While profiles are kept in a config repository, they are kept
- * in `preferencesFile` beside them and committed there; otherwise they are
- * kept in this browser. Reading one inside a computed tracks it, so a value
- * that arrives from the repository updates what depends on it.
+ * While profiles are kept in a config repository, the preferences are
+ * committed to `preferencesFile` beside them; otherwise they are kept in
+ * this browser. Reading one inside a computed tracks it, so a value that
+ * arrives from the repository updates what depends on it.
  *
  * A change made here is kept as the change, not its result, and is made again
  * onto the file as it is when it is saved. So a change to one name in a list
@@ -90,7 +83,6 @@ function messageOf(error: unknown): string {
  * before it finished reading it.
  */
 export class SharedPreferences implements Preferences {
-  /** Why the file couldn't be read or saved, until a read or save succeeds. */
   readonly error = signal<string | undefined>(undefined);
 
   readonly #github: GitHub;
@@ -99,16 +91,13 @@ export class SharedPreferences implements Preferences {
   readonly #queue = new SerialQueue();
   /** Counts each change, so a read in a computed runs again after one. */
   readonly #version = signal(0);
-  /** The file they are kept in, or undefined for this browser. */
+  /** Undefined while the preferences are kept in this browser. */
   #place: Place | undefined;
-  /** The file as last read or saved. */
-  #base: Record<string, unknown> = {};
-  /** The base with the changes not saved yet. */
-  #values: Record<string, unknown> = {};
-  /** Changes not saved yet, in the order they were made. A change for a file no longer used stays until it is saved there. */
+  #fileAsLastReadOrSaved: Record<string, unknown> = {};
+  #fileWithPendingChanges: Record<string, unknown> = {};
+  /** In the order they were made. A change for a file no longer used stays until it is saved there. */
   #pending: readonly Pending[] = [];
-  /** The read under way, which a reload waits for rather than starting another. */
-  #read: Promise<void> | undefined;
+  #readUnderWay: Promise<void> | undefined;
 
   constructor(github: GitHub, browser: Preferences, onSignedOut: () => void) {
     this.#github = github;
@@ -116,38 +105,36 @@ export class SharedPreferences implements Preferences {
     this.#onSignedOut = onSignedOut;
   }
 
-  /** Keeps them where the profiles are, reading the file when that is a repository. */
   use(source: ProfilesSource): Promise<void> {
     const place =
       source.kind === 'repository'
         ? { repository: source.repository, file: join(source.path, preferencesFile) }
         : undefined;
     if (samePlace(place, this.#place)) {
-      return this.#read ?? Promise.resolve();
+      return this.#readUnderWay ?? Promise.resolve();
     }
     this.#place = place;
-    this.#base = {};
-    this.#read = undefined;
+    this.#fileAsLastReadOrSaved = {};
+    this.#readUnderWay = undefined;
     this.error.value = undefined;
     this.#changed();
     return this.reload();
   }
 
-  /** Reads the file again, so changes made elsewhere show. A read already under way is the one waited for. */
   reload(): Promise<void> {
     const place = this.#place;
     if (place === undefined) {
       return Promise.resolve();
     }
-    if (this.#read !== undefined) {
-      return this.#read;
+    if (this.#readUnderWay !== undefined) {
+      return this.#readUnderWay;
     }
     const reading: Promise<void> = this.#queue
       .run(async () => {
         try {
           const remote = await this.#fetch(place);
           if (samePlace(this.#place, place)) {
-            this.#base = remote.values;
+            this.#fileAsLastReadOrSaved = remote.values;
             this.#changed();
             if (this.#pending.some((pending) => samePlace(pending.place, place))) {
               // Changes a save failed to commit try again, and keep showing why until they are saved.
@@ -161,25 +148,24 @@ export class SharedPreferences implements Preferences {
         }
       })
       .finally(() => {
-        if (this.#read === reading) {
-          this.#read = undefined;
+        if (this.#readUnderWay === reading) {
+          this.#readUnderWay = undefined;
         }
       });
-    this.#read = reading;
+    this.#readUnderWay = reading;
     return reading;
   }
 
   read(key: string): unknown {
     // Read for its tracking: a computed that reads a preference runs again when one changes.
     void this.#version.value;
-    return this.#place === undefined ? this.#browser.read(key) : this.#values[key];
+    return this.#place === undefined ? this.#browser.read(key) : this.#fileWithPendingChanges[key];
   }
 
   write(key: string, value: unknown): void {
     this.update(key, () => value);
   }
 
-  /** Changes a preference from its value now, and again from the file's value when it is saved. */
   update(key: string, change: Change): void {
     const place = this.#place;
     if (place === undefined) {
@@ -195,14 +181,13 @@ export class SharedPreferences implements Preferences {
 
   #changed(): void {
     const place = this.#place;
-    this.#values = withChanges(
-      this.#base,
+    this.#fileWithPendingChanges = withChanges(
+      this.#fileAsLastReadOrSaved,
       this.#pending.filter((pending) => samePlace(pending.place, place)),
     );
     this.#version.value += 1;
   }
 
-  /** Commits the changes for this file onto it as it is now, so keys and values changed elsewhere are kept. */
   async #save(place: Place): Promise<void> {
     const changes = this.#pending.filter((pending) => samePlace(pending.place, place));
     if (changes.length === 0) {
@@ -216,7 +201,7 @@ export class SharedPreferences implements Preferences {
         try {
           if (stringify(next) !== stringify(remote.values)) {
             await this.#github.request('PUT', this.#path(place), {
-              message,
+              message: commitMessage,
               content: encode(stringify(next)),
               ...(remote.sha === undefined ? {} : { sha: remote.sha }),
             });
@@ -225,14 +210,14 @@ export class SharedPreferences implements Preferences {
         } catch (error) {
           // GitHub answers 409 when the file changed since it was read, and 422 when it was made meanwhile.
           const lost = error instanceof GitHubError && (error.status === 409 || error.status === 422);
-          if (!lost || attempt === tries) {
+          if (!lost || attempt === maximumSaveAttempts) {
             throw error;
           }
         }
       }
       this.#pending = this.#pending.filter((pending) => !changes.includes(pending));
       if (samePlace(this.#place, place)) {
-        this.#base = merged;
+        this.#fileAsLastReadOrSaved = merged;
         this.error.value = undefined;
         this.#changed();
       }

@@ -1,7 +1,6 @@
 import type { Change } from './change.js';
 import type { Method } from './github.js';
 
-/** A GitHub App permission, by the key GitHub gives it in an installation's `permissions`. */
 type AppPermission =
   | 'administration'
   | 'metadata'
@@ -11,14 +10,12 @@ type AppPermission =
   | 'security_events'
   | 'issues';
 
-/** One App permission at the level a request needs. */
 interface Permission {
   readonly name: AppPermission;
   readonly level: 'read' | 'write';
 }
 
-// The names GitHub's App settings page gives the permissions.
-const labels: Readonly<Record<AppPermission, string>> = {
+const permissionNamesOnGitHubAppSettingsPage: Readonly<Record<AppPermission, string>> = {
   administration: 'Administration',
   metadata: 'Metadata',
   actions: 'Actions',
@@ -31,9 +28,8 @@ const labels: Readonly<Record<AppPermission, string>> = {
 const read = (name: AppPermission): Permission => ({ name, level: 'read' });
 const write = (name: AppPermission): Permission => ({ name, level: 'write' });
 
-// The GitHub App permission each request needs, as GitHub's REST docs list
-// them for GitHub App user tokens. Paths are relative to the repository.
-const reads: readonly (readonly [RegExp, readonly Permission[]])[] = [
+// As GitHub's REST docs list them for GitHub App user tokens. Paths are relative to the repository.
+const permissionsNeededToRead: readonly (readonly [RegExp, readonly Permission[]])[] = [
   [/^$/u, [read('metadata')]],
   [/^\/topics$/u, [read('metadata')]],
   [/^\/private-vulnerability-reporting$/u, [read('metadata')]],
@@ -50,60 +46,54 @@ const reads: readonly (readonly [RegExp, readonly Permission[]])[] = [
   [/^\/interaction-limits\/pulls\/creation-cap$/u, [write('administration')]],
 ];
 
-const writes: readonly (readonly [RegExp, readonly Permission[]])[] = [
+const permissionsNeededToWrite: readonly (readonly [RegExp, readonly Permission[]])[] = [
   [/^\/actions\/oidc\/customization\/sub$/u, [write('actions')]],
   [/^\/properties\/values$/u, [write('repository_custom_properties')]],
   [/^\/pages$/u, [write('administration'), write('pages')]],
   [/^\/labels(\/.*)?$/u, [write('issues')]],
 ];
 
-/**
- * The permissions a request to a repository path, as `/repos/{owner}/{repo}/pages`,
- * needs. Everything Repotted reads or writes that the tables leave out needs
- * Administration.
- */
+/** Everything Repotted reads or writes that the tables leave out needs Administration. */
 function requiredPermissions(method: Method, path: string): readonly Permission[] {
   const relative = path.split('?')[0]?.replace(/^\/repos\/[^/]+\/[^/]+/u, '') ?? '';
-  const found = (method === 'GET' ? reads : writes).find(([pattern]) => pattern.test(relative));
+  const found = (method === 'GET' ? permissionsNeededToRead : permissionsNeededToWrite).find(([pattern]) =>
+    pattern.test(relative),
+  );
   return found?.[1] ?? [method === 'GET' ? read('administration') : write('administration')];
 }
 
-/** Permissions as GitHub's settings page names them, as in "Administration write and Pages write". */
 function describePermissions(permissions: readonly Permission[]): string {
-  return permissions.map((permission) => `${labels[permission.name]} ${permission.level}`).join(' and ');
+  return permissions
+    .map((permission) => `${permissionNamesOnGitHubAppSettingsPage[permission.name]} ${permission.level}`)
+    .join(' and ');
 }
 
-/** The permission a request needs, in words. */
 export function requiredPermission(method: Method, path: string): string {
   return describePermissions(requiredPermissions(method, path));
 }
 
-/** The signed-in account's role on a repository, the highest of GitHub's `permissions` flags. */
 export type Role = 'admin' | 'maintain' | 'write' | 'triage' | 'read';
 
 /**
- * What the GitHub App may do on the repository. `unknown` when the token
- * cannot read installations, as a `GITHUB_TOKEN` or the GitHub CLI's token,
- * so nothing is known about the App.
+ * `unknown`: the token cannot read installations, as a `GITHUB_TOKEN` or the
+ * GitHub CLI's token.
  */
 export type AppAccess =
   | {
       readonly status: 'installed';
-      /** The permissions granted to the App's installation, by GitHub's key, as `{ pages: 'write' }`. */
       readonly permissions: Readonly<Record<string, string>>;
-      /** The installation's settings page on GitHub, where its owner reviews what the App may do. */
       readonly settings_url: string | null;
     }
   | { readonly status: 'not_installed' }
   | { readonly status: 'unknown' };
 
-/** What the signed-in account and its App may change on one repository. A null role is one GitHub did not report. */
+/** A null role is one GitHub did not report. */
 export interface Access {
   readonly role: Role | null;
   readonly app: AppAccess;
 }
 
-/** A change Repotted cannot make, by its index in the plan's changes, and why, in a few words. */
+/** `change` is the change's index in the plan's changes. */
 export interface Lock {
   readonly change: number;
   readonly reason: string;
@@ -114,10 +104,8 @@ function grants(granted: string | undefined, level: Permission['level']): boolea
 }
 
 /**
- * The changes that `access` does not allow, each with its reason. Repotted
- * lists only repositories the account administers, and treats every write
- * as needing admin. What the access leaves unknown locks nothing; limits of
- * the repository's plan or its owner's policies show only when a write fails.
+ * What the access leaves unknown locks nothing. Limits of the repository's plan
+ * or its owner's policies show only when a write fails.
  */
 export function lockChanges(access: Access, changes: readonly Change[]): Lock[] {
   const locks: Lock[] = [];

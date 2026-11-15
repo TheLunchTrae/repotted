@@ -6,18 +6,15 @@ import { run } from './run.js';
 
 interface LeaveProps {
   readonly profiles: Profiles;
-  /** Goes on with what the question held back, once no profile has unsaved changes. */
   readonly onLeave: () => void;
   readonly onClose: () => void;
 }
 
-/** Asks what to do with unsaved changes before signing out, which would drop them. */
 export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   const [working, setWorking] = useState(false);
   const [problem, setProblem] = useState<string | undefined>(undefined);
-  /** Whether every change is saved in this browser while the sync that takes them elsewhere didn't finish. */
-  const [unsynced, setUnsynced] = useState(false);
+  const [savedButNotSynced, setSavedButNotSynced] = useState(false);
   const names = profiles.unsavedNames.value;
   useEffect(() => {
     dialog.current?.showModal();
@@ -39,7 +36,7 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
           return;
         }
         if (saved === 'unsynced') {
-          setUnsynced(true);
+          setSavedButNotSynced(true);
           return;
         }
       } else {
@@ -67,7 +64,7 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
         }
       }}
     >
-      {unsynced ? (
+      {savedButNotSynced ? (
         <>
           <h2 id="leave-heading">Sign out before your changes are synced?</h2>
           <p>
@@ -95,7 +92,7 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
         </p>
       )}
       <div class="form-actions">
-        {unsynced ? (
+        {savedButNotSynced ? (
           <button class="button" type="button" autofocus onClick={signOut}>
             Sign out anyway
           </button>

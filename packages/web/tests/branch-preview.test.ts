@@ -60,51 +60,79 @@ test('shows what a branch changes in each profile, including those that change o
   const state = ready(preview.state.value);
   expect(state).toMatchObject({
     branch: 'agent/wiki',
-    base: 'main',
-    behind: 0,
-    stale: false,
-    local: [],
-    truncated: false,
-    unchanged: 0,
+    defaultBranch: 'main',
+    commitsBehindDefaultBranch: 0,
+    localProfilesOlderThanDefaultBranch: false,
+    profilesChangedSinceLastSync: [],
+    changedFilesTruncated: false,
+    unchangedProfileCount: 0,
   });
-  expect(state.profiles.map((profile) => [profile.path, profile.status])).toEqual([
+  expect(state.changedProfiles.map((profile) => [profile.path, profile.status])).toEqual([
     ['base.yaml', 'changed'],
     ['new.yaml', 'added'],
     ['site.yaml', 'removed'],
     ['teams/web.yaml', 'through-base'],
   ]);
-  const [changed, added, removed, through] = state.profiles;
+  const [changed, added, removed, through] = state.changedProfiles;
   expect(changed?.sections).toEqual([
     {
       section: 'repository',
       title: 'Repository',
       rows: [
-        { kind: 'changes', label: 'Wiki', key: 'repository.has_wiki', before: 'Off', after: 'On', from: undefined },
+        {
+          kind: 'changes',
+          label: 'Wiki',
+          key: 'repository.has_wiki',
+          before: 'Off',
+          after: 'On',
+          fromExtendedProfile: undefined,
+        },
       ],
     },
     {
       section: 'labels',
       title: 'Labels',
       rows: [
-        { kind: 'changes', label: 'bug', key: 'color', before: 'd73a4a', after: 'ffffff', from: undefined },
-        { kind: 'adds', label: 'docs', key: 'new label', before: 'Not set', after: 'Added', from: undefined },
+        {
+          kind: 'changes',
+          label: 'bug',
+          key: 'color',
+          before: 'd73a4a',
+          after: 'ffffff',
+          fromExtendedProfile: undefined,
+        },
+        {
+          kind: 'adds',
+          label: 'docs',
+          key: 'new label',
+          before: 'Not set',
+          after: 'Added',
+          fromExtendedProfile: undefined,
+        },
       ],
     },
   ]);
-  expect(changed?.text).toEqual({ before: base, after: expect.stringContaining('has_wiki: true') as unknown });
+  expect(changed?.changedFileText).toEqual({
+    before: base,
+    after: expect.stringContaining('has_wiki: true') as unknown,
+  });
   expect(added?.sections.flatMap((section) => section.rows.map((row) => [row.key, row.kind]))).toEqual([
     ['merge.allow_squash_merge', 'adds'],
   ]);
-  expect(removed).toMatchObject({ file: undefined, sections: [], text: { before: site, after: '' } });
-  // A base's change is a change to the profile that extends it, which says where it comes from.
-  expect(through?.text).toBeUndefined();
-  expect(through?.sections.flatMap((section) => section.rows.map((row) => [row.key, row.from]))).toEqual([
-    ['repository.has_wiki', 'base.yaml'],
-    ['color', 'base.yaml'],
-    ['new label', 'base.yaml'],
-  ]);
-  // The branch's profiles are kept in a folder of the preview's own, which a comparison reads.
-  expect(through?.file).toBe(`${state.folder}/teams/web.yaml`);
+  expect(removed).toMatchObject({
+    fileOnBranch: undefined,
+    sections: [],
+    changedFileText: { before: site, after: '' },
+  });
+  expect(through?.changedFileText).toBeUndefined();
+  expect(through?.sections.flatMap((section) => section.rows.map((row) => [row.key, row.fromExtendedProfile]))).toEqual(
+    [
+      ['repository.has_wiki', 'base.yaml'],
+      ['color', 'base.yaml'],
+      ['new label', 'base.yaml'],
+    ],
+  );
+  expect(through?.fileOnBranch).toBe(`${state.branchProfilesFolder}/teams/web.yaml`);
 });
 
 test('follows a profile the branch moves, and says why one that no longer loads fails', async () => {
@@ -121,13 +149,13 @@ test('follows a profile the branch moves, and says why one that no longer loads 
 
   await preview.open('feature');
   const state = ready(preview.state.value);
-  expect(state.profiles.map((profile) => [profile.path, profile.status, profile.previous])).toEqual([
+  expect(state.changedProfiles.map((profile) => [profile.path, profile.status, profile.movedFromPath])).toEqual([
     ['sites/site.yaml', 'renamed', 'site.yaml'],
     ['teams/web.yaml', 'changed', undefined],
   ]);
-  expect(state.profiles[0]?.sections).toEqual([]);
-  expect(state.profiles[1]?.problem).toContain('gone.yaml');
-  expect(state.unchanged).toBe(1);
+  expect(state.changedProfiles[0]?.sections).toEqual([]);
+  expect(state.changedProfiles[1]?.problemOnBranch).toContain('gone.yaml');
+  expect(state.unchangedProfileCount).toBe(1);
 });
 
 test('says when the profiles here are older than the default branch, and how far behind the branch is', async () => {
@@ -137,8 +165,11 @@ test('says when the profiles here are older than the default branch, and how far
   github.write({ 'profiles/site.yaml': 'merge: {}\n' });
 
   await preview.open('feature');
-  expect(ready(preview.state.value)).toMatchObject({ stale: true, behind: 1 });
-  expect(ready(preview.state.value).profiles.map((profile) => profile.path)).toEqual(['new.yaml']);
+  expect(ready(preview.state.value)).toMatchObject({
+    localProfilesOlderThanDefaultBranch: true,
+    commitsBehindDefaultBranch: 1,
+  });
+  expect(ready(preview.state.value).changedProfiles.map((profile) => profile.path)).toEqual(['new.yaml']);
 });
 
 test('notes a change to the shared preferences, which it does not show', async () => {
@@ -147,7 +178,11 @@ test('notes a change to the shared preferences, which it does not show', async (
   github.write({ 'profiles/.repotted-preferences.json': '{}\n' }, { branch: 'feature' });
 
   await preview.open('feature');
-  expect(ready(preview.state.value)).toMatchObject({ preferences: true, profiles: [], unchanged: 3 });
+  expect(ready(preview.state.value)).toMatchObject({
+    changesSharedPreferences: true,
+    changedProfiles: [],
+    unchangedProfileCount: 3,
+  });
 });
 
 test('opening the same branch again reads nothing, and a refresh reads it again', async () => {
@@ -162,7 +197,7 @@ test('opening the same branch again reads nothing, and a refresh reads it again'
 
   github.write({ 'profiles/other.yaml': site }, { branch: 'feature' });
   await preview.refresh();
-  expect(ready(preview.state.value).profiles.map((profile) => profile.path)).toEqual(['new.yaml', 'other.yaml']);
+  expect(ready(preview.state.value).changedProfiles.map((profile) => profile.path)).toEqual(['new.yaml', 'other.yaml']);
 });
 
 test('a later preview wins over a slower one, and each keeps only its own files', async () => {
@@ -176,7 +211,7 @@ test('a later preview wins over a slower one, and each keeps only its own files'
   expect(state.branch).toBe('b');
   expect(
     await readdir('/preview', { withFileTypes: true }).then((entries) => entries.map((entry) => entry.name)),
-  ).toEqual([state.folder.split('/')[2]]);
+  ).toEqual([state.branchProfilesFolder.split('/')[2]]);
 
   await preview.close();
   expect(preview.state.value).toEqual({ kind: 'idle' });
@@ -195,10 +230,9 @@ test('a branch that cannot be read fails with why, and keeps no files', async ()
   });
   expect(await readdir('/preview', { withFileTypes: true })).toEqual([]);
 
-  // A branch pushed since is read on the next try.
   github.write({ 'profiles/new.yaml': site }, { branch: 'nope' });
   await preview.refresh();
-  expect(ready(preview.state.value).profiles).toHaveLength(1);
+  expect(ready(preview.state.value).changedProfiles).toHaveLength(1);
 });
 
 test('needs profiles kept in a repository', async () => {
@@ -219,7 +253,12 @@ test('lists the branches to preview, without the default one', async () => {
   github.write({ 'profiles/a.yaml': site }, { branch: 'feature' });
 
   await preview.listBranches('lunch/config');
-  expect(preview.branches.value).toEqual({ kind: 'listed', base: 'main', branches: ['feature'], more: false });
+  expect(preview.branches.value).toEqual({
+    kind: 'listed',
+    defaultBranch: 'main',
+    branches: ['feature'],
+    moreBranchesThanListed: false,
+  });
 });
 
 test('leaves out a profile broken alike on both sides, and names files by their path among the profiles', async () => {
@@ -230,9 +269,9 @@ test('leaves out a profile broken alike on both sides, and names files by their 
 
   await preview.open('feature');
   const state = ready(preview.state.value);
-  expect(state.profiles.map((profile) => profile.path)).toEqual(['new.yaml', 'worse.yaml']);
-  expect(state.profiles[1]?.problem).toContain('missing.yaml');
-  expect(state.profiles[1]?.problem).not.toContain('/preview');
+  expect(state.changedProfiles.map((profile) => profile.path)).toEqual(['new.yaml', 'worse.yaml']);
+  expect(state.changedProfiles[1]?.problemOnBranch).toContain('missing.yaml');
+  expect(state.changedProfiles[1]?.problemOnBranch).not.toContain('/preview');
 });
 
 test('says when a profile that is broken on the default branch loads on the branch', async () => {
@@ -242,10 +281,10 @@ test('says when a profile that is broken on the default branch loads on the bran
   github.write({ 'profiles/bad.yaml': site }, { branch: 'feature' });
 
   await preview.open('feature');
-  const [fixed] = ready(preview.state.value).profiles;
-  expect(fixed).toMatchObject({ path: 'bad.yaml', status: 'changed', problem: undefined });
-  expect(fixed?.problemBefore).toContain('bad.yaml');
-  expect(fixed?.problemBefore).not.toContain('/preview');
+  const [fixed] = ready(preview.state.value).changedProfiles;
+  expect(fixed).toMatchObject({ path: 'bad.yaml', status: 'changed', problemOnBranch: undefined });
+  expect(fixed?.problemFixedByBranch).toContain('bad.yaml');
+  expect(fixed?.problemFixedByBranch).not.toContain('/preview');
 });
 
 test('refuses a profile on the branch that extends a file outside the profiles', async () => {
@@ -256,10 +295,10 @@ test('refuses a profile on the branch that extends a file outside the profiles',
   github.write({ 'profiles/evil.yaml': 'extends: ../../../../profiles/browser/secret.yaml\n' }, { branch: 'feature' });
 
   await preview.open('feature');
-  const [evil] = ready(preview.state.value).profiles;
+  const [evil] = ready(preview.state.value).changedProfiles;
   expect(evil).toMatchObject({
     path: 'evil.yaml',
-    problem: 'It extends a profile outside the profiles folder.',
+    problemOnBranch: 'It extends a profile outside the profiles folder.',
     sections: [],
   });
 });
@@ -275,8 +314,8 @@ test('names the profiles changed here since the last sync, which it starts from'
 
   await preview.open('feature');
   expect(ready(preview.state.value)).toMatchObject({
-    stale: false,
-    local: ['base.yaml', 'mine.yaml', 'site.yaml'],
+    localProfilesOlderThanDefaultBranch: false,
+    profilesChangedSinceLastSync: ['base.yaml', 'mine.yaml', 'site.yaml'],
   });
 });
 
@@ -288,5 +327,5 @@ test('says when GitHub has more branches than one page lists', async () => {
   }
 
   await preview.listBranches('lunch/config');
-  expect(preview.branches.value).toMatchObject({ kind: 'listed', more: true });
+  expect(preview.branches.value).toMatchObject({ kind: 'listed', moreBranchesThanListed: true });
 });

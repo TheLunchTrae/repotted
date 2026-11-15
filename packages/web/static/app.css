@@ -1,5 +1,3 @@
-/* The colors and type of the approved mock-ups. Each color has a light and a
-   dark value, and the browser picks by the system's setting. */
 @font-face {
   font-family: 'Atkinson Hyperlegible Next';
   src: url('/fonts/AtkinsonHyperlegibleNext-Regular.ttf') format('truetype');
@@ -129,7 +127,6 @@ a {
   text-decoration: none;
 }
 
-/* Controls */
 .button {
   display: inline-flex;
   align-items: center;
@@ -255,7 +252,6 @@ input[type='checkbox'] {
     margin-block: 0;
   }
 
-  /* A batch's left-out keys each get a line of their own. */
   p > .left-out-key {
     display: block;
     padding-block: 12px;
@@ -369,7 +365,6 @@ input[type='checkbox'] {
   font-variant-numeric: tabular-nums;
 }
 
-/* Menus: a details element whose panel hangs under its summary. */
 .menu {
   position: relative;
 }
@@ -432,7 +427,6 @@ input[type='checkbox'] {
     margin-top: 6px;
   }
 
-  /* An entry's status takes its own line under the entry's buttons. */
   .entry-bar > span.muted {
     flex: 1 1 100%;
     order: 1;
@@ -511,7 +505,6 @@ input[type='checkbox'] {
   margin-top: 6px;
 }
 
-/* Sign-in */
 .sign-in {
   display: grid;
   min-height: 100dvh;
@@ -539,7 +532,6 @@ input[type='checkbox'] {
   font-size: 15px;
 }
 
-/* The shell */
 .shell {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -605,7 +597,6 @@ input[type='checkbox'] {
   stroke-width: 2;
 }
 
-/* On a phone the account menu also holds the pages, above the account. */
 .menu-pages {
   display: grid;
   gap: 2px;
@@ -623,7 +614,6 @@ input[type='checkbox'] {
   min-width: 0;
 }
 
-/* Pages */
 .page {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -656,8 +646,6 @@ input[type='checkbox'] {
   gap: 12px 24px;
 }
 
-/* A heading names a repository or profile, which can be one long word; it
-   breaks inside the name rather than widening the page. */
 .page-heading > div:first-child {
   display: grid;
   gap: 4px;
@@ -720,7 +708,6 @@ input[type='checkbox'] {
   font-size: 15px;
 }
 
-/* The owner's login, which can be one long word. */
 .group-heading > span:first-child {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -824,7 +811,6 @@ input[type='checkbox'] {
   overflow-wrap: anywhere;
 }
 
-/* On a phone a repository's details are a screen of their own, in place of the list. */
 @media (max-width: 760px) {
   .page-details > .page-body {
     display: none;
@@ -1044,7 +1030,6 @@ input[type='checkbox'] {
   tab-size: 2;
 }
 
-/* The profiles sidebar */
 .sidebar {
   display: grid;
   gap: 12px;
@@ -1143,12 +1128,10 @@ input[type='checkbox'] {
   rotate: 45deg;
 }
 
-/* The way back to the list from an open profile, which only a phone needs. */
 .profiles-back {
   display: none;
 }
 
-/* On a phone the list and the open profile take the page in turn, as data-screen says. */
 @media (max-width: 760px) {
   .page-with-sidebar[data-screen='profile'] > .sidebar {
     display: none;
@@ -1190,7 +1173,6 @@ input[type='checkbox'] {
   }
 }
 
-/* Settings */
 .settings-group {
   display: grid;
   gap: 10px;
@@ -1239,7 +1221,6 @@ input[type='checkbox'] {
   font-weight: 500;
 }
 
-/* A field's hint can hold a profile's file name, which breaks rather than widening the page. */
 .form-field .small {
   font-weight: 400;
   overflow-wrap: anywhere;
@@ -1373,7 +1354,6 @@ select.field {
   filter: brightness(1.1);
 }
 
-/* A name in a dialog (a repository, a profile or its file) breaks rather than running past its edge. */
 .dialog {
   max-width: min(32rem, calc(100vw - 32px));
   overflow-wrap: anywhere;
@@ -1439,7 +1419,6 @@ select.field {
   padding-inline-start: 20px;
 }
 
-/* Repository folders */
 .folder-heading {
   display: flex;
   align-items: center;
@@ -1549,7 +1528,6 @@ select.field {
   accent-color: var(--rail);
 }
 
-/* Selecting several repositories */
 .selectable-row {
   display: flex;
   align-items: center;
@@ -1560,7 +1538,6 @@ select.field {
   min-width: 0;
 }
 
-/* A hidden repository, shown while Show hidden is on. */
 .selectable-row-hidden .row-name {
   color: var(--muted);
 }
@@ -1584,7 +1561,6 @@ select.field {
   accent-color: var(--rail);
 }
 
-/* A selected repository's name breaks rather than widening the page. */
 .selected-names {
   display: grid;
   overflow-wrap: anywhere;
@@ -1606,14 +1582,12 @@ select.field {
   content: ' · ';
 }
 
-/* A left-out key is one long word, which breaks rather than widening the page. */
 .left-out-key .mono,
 .left-out .mono,
 .notice li.mono {
   overflow-wrap: anywhere;
 }
 
-/* A comparison */
 .left-out {
   display: grid;
   gap: 2px;
@@ -1671,7 +1645,6 @@ select.field {
   max-width: 100%;
 }
 
-/* A picker and the button that acts on its choice, side by side at any width. */
 .move-row {
   display: flex;
   align-items: center;
@@ -1688,7 +1661,6 @@ select.field {
   flex: none;
 }
 
-/* The profile editor */
 .filters {
   display: flex;
   flex-wrap: wrap;
@@ -1833,7 +1805,6 @@ select.field {
   position: static;
 }
 
-/* The bar sits at the foot of the screen, so its menu opens upward. */
 .menu-panel-up {
   top: auto;
   bottom: calc(100% + 6px);
@@ -1843,7 +1814,6 @@ select.field {
   min-width: 220px;
 }
 
-/* Its actions read as a menu's items, not a stack of buttons. */
 .bar-more .menu-panel .button {
   justify-content: flex-start;
   width: 100%;
@@ -1864,7 +1834,6 @@ select.field {
   margin-inline-end: auto;
 }
 
-/* Rulesets, environments, and labels */
 .entry-bar {
   display: flex;
   flex-wrap: wrap;
@@ -1876,8 +1845,6 @@ select.field {
   flex: 1;
 }
 
-/* A batch member's heading names its repository, and breaks inside a long
-   name rather than widening the page. */
 .entry-bar h2 {
   overflow-wrap: anywhere;
 }
@@ -1992,7 +1959,6 @@ select.field {
 
 /* The phone layout. phone.ts's usePhone matches this width; change both together. */
 @media (max-width: 760px) {
-  /* The bar keeps to one row: the wordmark at the start, the account menu, which holds the pages, at the end. */
   .shell-bar {
     gap: 12px;
     padding: 10px 16px;
@@ -2049,7 +2015,6 @@ select.field {
   }
 }
 
-/* A preview of a branch of the profiles' repository */
 .pill-add {
   background: var(--add-bg);
   color: var(--add);

@@ -29,15 +29,10 @@ import { z } from 'zod';
 
 export interface ServerOptions {
   readonly version: string;
-  /**
-   * Called on every tool call, so the server starts without a token and
-   * picks up a refreshed one: user tokens expire, and refreshing one ends the
-   * old token.
-   */
+  // Called on every tool call, so the server starts without a token and picks
+  // up a refreshed one: user tokens expire, and refreshing one ends the old token.
   readonly github: () => Promise<GitHub>;
-  /** Directory that profile paths and `extends` resolve from. */
-  readonly cwd: string;
-  /** Leaves out the apply tool. */
+  readonly profileBaseDirectory: string;
   readonly readOnly: boolean;
 }
 
@@ -68,11 +63,8 @@ const instructions = [
   'apply makes the changes of one earlier plan, by its plan_id, and only if the repository has not changed since. Show the user the plan and get their agreement before calling apply.',
 ].join(' ');
 
-/**
- * An MCP server over the core engine. capture and plan only read. apply
- * takes nothing but the id of a plan this server made, so an agent can only
- * apply changes that were shown as a plan first.
- */
+// The apply tool takes nothing but the id of a plan this server made, so an
+// agent can only apply changes that were shown as a plan first.
 export async function createServer(options: ServerOptions): Promise<McpServer> {
   // The published package leaves the SDK to npm, so a static import would
   // load it, and its JSON Schema validator, for every command.
@@ -120,8 +112,8 @@ export async function createServer(options: ServerOptions): Promise<McpServer> {
         }
         const desired =
           profilePath === undefined
-            ? await parseProfile(profile ?? '', options.cwd)
-            : await resolveProfile(path.resolve(options.cwd, profilePath));
+            ? await parseProfile(profile ?? '', options.profileBaseDirectory)
+            : await resolveProfile(path.resolve(options.profileBaseDirectory, profilePath));
         const github = await client();
         const repo = parseRepo(name);
         const plan = await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts));

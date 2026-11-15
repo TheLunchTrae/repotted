@@ -19,7 +19,12 @@ import type { ActionSearch } from './action-search.js';
 import { EntryEdits, type EntryList, type EntryRow, type SaveMode } from './entry-edits.js';
 import type { Entry } from './entry-forms.js';
 import { type DiffFold, type DiffLine, diffLines, foldUnchanged } from './line-diff.js';
-import { ownDraft, ownUnsets, type ResolvedProfile, settingsSections as draftSections } from './own-drafts.js';
+import {
+  comparableOwnDraft,
+  ownUnsets,
+  type ResolvedProfile,
+  settingsSections as draftSections,
+} from './own-drafts.js';
 import { sameValue } from './same-value.js';
 import { type SettingField, type SettingGroup, type SettingOption, settingSections } from './setting-fields.js';
 import { matchesSearch, parentOf, searchWords } from './setting-search.js';
@@ -30,8 +35,7 @@ import { matchesSearch, parentOf, searchWords } from './setting-search.js';
  * apply, whose one-off edits can't be drafts.
  */
 export interface EditorStore {
-  /** Whether the file can hold drafts, so the editor offers to save as one. */
-  readonly drafts: boolean;
+  readonly canHoldDrafts: boolean;
   readonly resolve: (file: string) => Promise<ResolvedProfile>;
   readonly preview: (
     file: string,
@@ -41,43 +45,35 @@ export interface EditorStore {
 }
 
 const profileStore: EditorStore = {
-  drafts: true,
+  canHoldDrafts: true,
   resolve: resolveProfile,
   preview: previewProfile,
   edit: editProfile,
 };
 
-/** One setting to write, or with an undefined value to stop naming, in the open profile's file. */
+/** An undefined value stops naming the setting in the open profile's file. */
 interface SettingEdit {
   readonly path: readonly string[];
   readonly value: unknown;
 }
 
-/** One setting as the editor draws it. */
 export interface SettingRow {
   readonly field: SettingField;
-  /** The choices an owner of the profile's type has. */
-  readonly options: readonly SettingOption[];
+  readonly optionsForProfileOwnerType: readonly SettingOption[];
   /** Who alone has the setting, where the profile's type doesn't already say: organizations, or those on GitHub Enterprise Cloud. */
   readonly ownerTag: 'Organizations' | 'Enterprise Cloud' | undefined;
-  /** What applies with the unsaved changes: this profile's value, a base profile's, or undefined when none sets it. */
+  /** With the unsaved changes: this profile's value, a base profile's, or undefined when none sets it. */
   readonly value: unknown;
-  /** The profile that sets the value: 'here' for the open one, a base profile's file name, or undefined. */
+  /** 'here' for the open profile, a base profile's file name, or undefined. */
   readonly source: string | undefined;
-  /** Whether it has a change that isn't saved. */
   readonly unsaved: boolean;
-  /** Whether this profile's draft has the setting, whatever unsaved change is over it. */
-  readonly drafted: boolean;
-  /** Whether the value shown is this profile's draft of it, which doesn't apply until a save finishes the draft. */
-  readonly inDraft: boolean;
+  readonly savedDraftHasSetting: boolean;
+  readonly valueShownIsFromDraft: boolean;
   /** What applies now, from this profile or a base profile, whatever the draft and the unsaved changes say. */
   readonly applied: unknown;
-  /** Whether GitHub greys it out for the value of the setting it follows. */
-  readonly off: boolean;
-  /** What is being typed for it, as typed, until the box is left. */
-  readonly text: string | undefined;
-  /** Why what was typed can't be a value, which holds the save back. */
-  readonly invalid: string | undefined;
+  readonly greyedOutOnGitHub: boolean;
+  readonly textBeingTyped: string | undefined;
+  readonly typedTextProblem: string | undefined;
   /** How many settings under it GitHub hides for its value while a profile still names them. */
   readonly hiddenNamed: number;
 }
@@ -90,17 +86,13 @@ export interface GroupRows {
 /** What a save that applies would change: the profile that applies now against the one that would, as a diff of YAML. */
 export interface SavePreview {
   readonly lines: readonly (DiffLine | DiffFold)[];
-  /** How many lines the save adds or removes; none when it would apply nothing new. */
-  readonly changes: number;
-  /** How many changes the draft held, and how many weren't saved, when the preview was made. */
-  readonly drafted: number;
-  readonly unsaved: number;
+  readonly changedLineCount: number;
+  readonly draftChangeCount: number;
+  readonly unsavedChangeCount: number;
 }
 
-/** The filters over the settings: each shows only the settings it names. */
 export type SettingFilter = 'managed' | 'unsaved' | 'drafts';
 
-/** One group of the settings a search or filter found, under its tab's name. */
 export interface FoundGroup extends GroupRows {
   readonly tab: string;
 }
@@ -134,7 +126,6 @@ function reasonOf(error: unknown, file: string): string {
     .replaceAll(/\s*→ at /gu, ', at ');
 }
 
-/** What a profile applies, as the lines of its YAML; none for a profile that sets nothing. */
 function yamlLines(resolved: ResolvedProfile): string[] {
   const text = stringifyProfile(resolved.profile).trimEnd();
   return text === '' || text === '{}' ? [] : text.split('\n');
@@ -154,12 +145,10 @@ function keyOf(path: readonly string[]): string {
 type SourceSection = keyof ResolvedProfile['sources'];
 
 function sectionOf(field: SettingField): Exclude<SourceSection, 'drafts'> {
-  // Every field's section is one of the profile's settings sections.
   // eslint-disable-next-line typescript/no-unsafe-type-assertion -- setting-fields.ts names only sections the engine has, which its test holds to the schema
   return field.section as Exclude<SourceSection, 'drafts'>;
 }
 
-/** What typed text is as a setting's value, or why it can't be one. */
 function parse(field: SettingField, text: string): { readonly value: unknown } | { readonly problem: string } {
   const trimmed = text.trim();
   if (field.kind === 'list') {
@@ -188,7 +177,6 @@ const allFields: readonly SettingField[] = settingSections.flatMap((section) =>
   section.groups.flatMap((group) => group.fields),
 );
 
-/** Every setting of one section, in the editor's order. */
 function fieldsOf(section: string): readonly SettingField[] {
   return allFields.filter((item) => item.section === section);
 }
@@ -206,10 +194,9 @@ function fits(type: OwnerType | undefined, need: OwnerNeed | undefined): boolean
   return need === undefined || ownerHas(type, need);
 }
 
-/** A type a profile can be for: one kind of owner, or any. */
 export type OwnerChoice = OwnerType | 'any';
 
-/** What a profile's file would stop managing under another owner type, as `owner_changes` names it, as the editor names it. */
+/** `path` is as `owner_changes` names it; the answer is as the editor names it. */
 function describeOwnerChange(path: string): string {
   const draft = path.startsWith('drafts.');
   const target = draft ? path.slice('drafts.'.length) : path;
@@ -230,45 +217,34 @@ function describeOwnerChange(path: string): string {
 }
 
 /**
- * The open profile's settings and the changes to them that aren't saved.
  * Every change is previewed through the engine as it is made, so the editor
  * shows what a save would give, base profiles included, and a change the
  * engine refuses says why before anything is written.
  */
 export class ProfileEditor {
   readonly file: string;
-  /** Why the profile can't be read. */
   readonly loadError = signal<string | undefined>(undefined);
-  /** Why the unsaved changes can't be saved as they stand. */
-  readonly problem = signal<string | undefined>(undefined);
-  /** Why the last save failed, until the next save or change. */
+  readonly unsavedChangesProblem = signal<string | undefined>(undefined);
   readonly saveError = signal<string | undefined>(undefined);
   readonly saving = signal(false);
 
   readonly #saved = signal<ResolvedProfile | undefined>(undefined);
-  /** The profile as a save would leave it, while there are unsaved changes the engine accepts. */
-  readonly #preview = signal<ResolvedProfile | undefined>(undefined);
+  /** Undefined unless there are unsaved changes the engine accepts. */
+  readonly #profileAsSaveWouldLeaveIt = signal<ResolvedProfile | undefined>(undefined);
   readonly #edits = signal<ReadonlyMap<string, SettingEdit>>(new Map());
-  /** What is being typed in each box, with why it can't be a value when it can't. */
   readonly #typed = signal<ReadonlyMap<string, { readonly text: string; readonly problem: string | undefined }>>(
     new Map(),
   );
-  /** The rulesets, environments, and labels, with the changes to them that aren't saved. */
   readonly #entryEdits = new EntryEdits();
-  /** The changes a save under way is writing, which the file has as soon as it ends. */
-  #writing: ReadonlyMap<string, SettingEdit> = new Map();
-  /** Counts previews, so a slow one never replaces a later one's result. */
-  #previews = 0;
+  #settingEditsSaveIsWriting: ReadonlyMap<string, SettingEdit> = new Map();
+  #latestPreviewNumber = 0;
   /** Counts what a preview of a save can go out of date by, so one made before then is never shown. */
   #opens = 0;
 
-  /** What each allowed action pattern matches on GitHub, when the editor has a way to ask. */
   readonly patterns: ActionPatternChecks | undefined;
-  /** The search for repositories to allow actions from, when the editor has a way to ask. */
   readonly actionSearch: ActionSearch | undefined;
 
-  /** Whether the file can hold drafts: a profile can, and an apply's one-off edits can't. */
-  readonly drafts: boolean;
+  readonly canHoldDrafts: boolean;
   readonly #store: EditorStore;
 
   constructor(
@@ -278,21 +254,21 @@ export class ProfileEditor {
   ) {
     this.file = file;
     this.#store = store;
-    this.drafts = store.drafts;
+    this.canHoldDrafts = store.canHoldDrafts;
     this.patterns = github?.patterns;
     this.actionSearch = github?.search;
   }
 
-  /** Whether the profile has been read. */
   readonly loaded = computed(() => this.#saved.value !== undefined);
 
   /**
-   * Whether any change, typed or chosen, isn't saved. A profile that can't be
-   * read counts for nothing, since it offers no way to save or reset; its
-   * changes come back if it reads again.
+   * A profile that can't be read counts for nothing, since it offers no way
+   * to save or reset; its changes come back if it reads again.
    */
   readonly dirty = computed(
-    () => this.loaded.value && (this.#edits.value.size > 0 || this.#entryEdits.count.value > 0 || this.#refused.value),
+    () =>
+      this.loaded.value &&
+      (this.#edits.value.size > 0 || this.#entryEdits.count.value > 0 || this.#someTypedTextCannotBeAValue.value),
   );
 
   /**
@@ -310,7 +286,7 @@ export class ProfileEditor {
     return settings.length + this.#otherDrafts().length + others.length + this.#entryEdits.draftCount.value;
   });
 
-  /** The kind of owner the profile is for, from its own file or a base profile's; undefined for any owner. */
+  /** From the profile's own file or a base profile's; undefined for any owner. */
   readonly ownerType = computed(() => this.#saved.value?.profile.owner_type);
 
   /**
@@ -320,33 +296,30 @@ export class ProfileEditor {
   readonly ownerTypeFrom = computed(() => {
     const saved = this.#saved.value;
     // A base's type holds whether or not the open file repeats it, so the file's own line changes nothing.
-    const source = this.#baseOwnerSource.value ?? saved?.owner_source ?? undefined;
+    const source = this.#baseProfileSettingOwnerType.value ?? saved?.owner_source ?? undefined;
     return source === undefined || source === saved?.chain[0] ? undefined : basename(source);
   });
 
-  /** How many settings the editor leaves out because owners of the profile's type don't have them. */
-  readonly ownerHidden = computed(() => {
+  readonly settingsHiddenForOwnerTypeCount = computed(() => {
     const type = this.ownerType.value;
     return allFields.filter((field) => !fits(type, needOf(field.path))).length;
   });
 
-  /** Whether the owner type can change now: the change writes at once, so it waits until nothing is unsaved. */
+  /** The change writes at once, so it waits until nothing is unsaved. */
   readonly canChangeOwnerType = computed(() => this.loaded.value && !this.dirty.value && !this.saving.value);
 
-  /** The preview of a save, while it is open. */
   readonly preview = signal<SavePreview | undefined>(undefined);
 
-  /** What stops each draft from applying as it stands, as the profile was last read or saved. */
-  readonly warnings = computed(() => this.#saved.value?.warnings ?? []);
+  readonly savedDraftWarnings = computed(() => this.#saved.value?.warnings ?? []);
 
-  /** Whether Save can run: it applies the unsaved changes and the draft together, so it needs one of them. */
+  /** Save applies the unsaved changes and the draft together, so it needs one of them. */
   readonly canSave = computed(
     () =>
       this.loaded.value &&
       (this.#changed.value || this.draftCount.value > 0) &&
-      !this.#refused.value &&
-      !this.#entryEdits.held.value &&
-      this.problem.value === undefined &&
+      !this.#someTypedTextCannotBeAValue.value &&
+      !this.#entryEdits.someEntryCannotBeSavedToApply.value &&
+      this.unsavedChangesProblem.value === undefined &&
       !this.saving.value,
   );
 
@@ -356,10 +329,10 @@ export class ProfileEditor {
    * value a draft can't hold stop it.
    */
   readonly draftProblem = computed(() => {
-    if (!this.drafts) {
+    if (!this.canHoldDrafts) {
       return undefined;
     }
-    if (this.#entryEdits.draftHeld.value) {
+    if (this.#entryEdits.someChangedEntryCannotBeDraft.value) {
       return 'Give each new or renamed ruleset, environment, and label a name no other has, to keep them as a draft.';
     }
     const empty = allFields.find((field) => {
@@ -371,21 +344,19 @@ export class ProfileEditor {
       : `${empty.label}: an empty value can't be kept in a draft. Save it, or reset it.`;
   });
 
-  /** Whether Save as draft can run: it keeps the unsaved changes without applying them. */
   readonly canSaveAsDraft = computed(
     () =>
-      this.drafts &&
+      this.canHoldDrafts &&
       this.loaded.value &&
       this.#changed.value &&
-      !this.#refused.value &&
+      !this.#someTypedTextCannotBeAValue.value &&
       this.draftProblem.value === undefined &&
       !this.saving.value,
   );
 
-  /** Whether the draft can be discarded: that writes at once, so it waits until nothing unsaved would go with it. */
+  /** Discarding writes at once, so it waits until nothing unsaved would go with it. */
   readonly canDiscardDraft = computed(() => this.draftCount.value > 0 && !this.dirty.value && !this.saving.value);
 
-  /** Each tab's groups and settings, as they stand with the unsaved changes. */
   readonly sections = computed(() =>
     settingSections.map((section) => ({
       section,
@@ -393,18 +364,15 @@ export class ProfileEditor {
     })),
   );
 
-  /** What is typed in the settings search. */
   readonly query = computed(() => this.#finding.value.query);
 
-  /** The filters that are on. */
   readonly filters = computed(() => this.#finding.value.filters);
 
-  /** Whether a search or filter is on, so the settings it found show in place of the tabs. */
   readonly filtering = computed(
     () => searchWords(this.#finding.value.query).length > 0 || this.#finding.value.filters.size > 0,
   );
 
-  /** How many of the settings shown the search and filters found; one shown only for what sits under it is not counted. */
+  /** A setting shown only for what sits under it is not counted. */
   readonly foundCount = computed(() => {
     const { fits } = this.#finding.value;
     return this.found.value.reduce(
@@ -413,7 +381,6 @@ export class ProfileEditor {
     );
   });
 
-  /** How many settings were found, or why none were, and where else to look. */
   readonly foundSummary = computed(() => {
     const count = this.foundCount.value;
     const { query, filters } = this.#finding.value;
@@ -434,12 +401,10 @@ export class ProfileEditor {
   });
 
   /**
-   * The settings the search and filters found, group by group across the
-   * tabs, each sub-option with the setting it sits under. What is found
-   * changes when the search or a filter does, or the profile is read again,
-   * and not as a row is edited, so a row doesn't vanish under the hand. A
-   * found setting that an edit hides, as GitHub does for the value of the
-   * one above it, leaves that one in place to change back.
+   * What is found changes when the search or a filter does, or the profile
+   * is read again, and not as a row is edited, so a row doesn't vanish under
+   * the hand. A found setting that an edit hides, as GitHub does for the
+   * value of the one above it, leaves that one in place to change back.
    */
   readonly found = computed((): FoundGroup[] => {
     const { shown } = this.#finding.value;
@@ -455,7 +420,6 @@ export class ProfileEditor {
     );
   });
 
-  /** The rulesets, environments, and labels, by list, as they stand with the unsaved changes. */
   readonly entries = this.#entryEdits.rows;
 
   readonly #changed = computed(() => this.#edits.value.size > 0 || this.#entryEdits.count.value > 0);
@@ -464,13 +428,13 @@ export class ProfileEditor {
 
   readonly #finding = signal<Finding>(nothingFound);
 
-  /** The profile among those the open one extends that sets their owner type, when one does. */
-  readonly #baseOwnerSource = signal<string | undefined>(undefined);
+  readonly #baseProfileSettingOwnerType = signal<string | undefined>(undefined);
 
-  /** Whether something typed can't be a value. */
-  readonly #refused = computed(() => [...this.#typed.value.values()].some((typed) => typed.problem !== undefined));
+  readonly #someTypedTextCannotBeAValue = computed(() =>
+    [...this.#typed.value.values()].some((typed) => typed.problem !== undefined),
+  );
 
-  /** Reads the profile as it is saved, and lays the unsaved changes over it again. */
+  /** Lays the unsaved changes over the profile as it is saved now. */
   async load(): Promise<void> {
     try {
       this.#saved.value = await this.#store.resolve(this.file);
@@ -480,7 +444,7 @@ export class ProfileEditor {
     } catch (error) {
       this.#saved.value = undefined;
       this.#entryEdits.setSaved(undefined);
-      this.#preview.value = undefined;
+      this.#profileAsSaveWouldLeaveIt.value = undefined;
       this.closePreview();
       this.patterns?.follow(undefined);
       this.loadError.value = reasonOf(error, this.file);
@@ -490,16 +454,15 @@ export class ProfileEditor {
     this.#findAgain();
   }
 
-  /** Sets a setting in this profile, or with undefined stops setting it here, so a base profile's value applies. */
+  /** An undefined value stops setting it here, so a base profile's value applies. */
   async set(field: SettingField, value: unknown): Promise<void> {
     this.#forget(field);
     await this.#change(field, value);
   }
 
   /**
-   * Takes what is being typed for a number, text, or list setting, as each
-   * key is pressed. The box keeps the text as typed until `settle`. Text
-   * that can't be a value says why and holds the save back.
+   * The box keeps the text as typed until `settle`. Text that can't be a
+   * value says why and holds the save back.
    */
   async type(field: SettingField, text: string): Promise<void> {
     const parsed = parse(field, text);
@@ -511,23 +474,22 @@ export class ProfileEditor {
     }
   }
 
-  /** The allowed action patterns as the box has them, a line each, or undefined while the list doesn't show. */
+  /** Undefined while the list doesn't show. */
   readonly #patternLines = computed(() => {
     const row = this.sections.value
       .flatMap((section) => section.groups.flatMap((group) => group.rows))
       .find((item) => keyOf(item.field.path) === patternsPath);
     return row === undefined
       ? undefined
-      : (row.text?.split('\n') ?? (Array.isArray(row.value) ? row.value.map(String) : []));
+      : (row.textBeingTyped?.split('\n') ?? (Array.isArray(row.value) ? row.value.map(String) : []));
   });
 
-  /** Whether the list allows every action of a repository, as `owner/name@*` on a line, in any case. */
+  /** As `owner/name@*` on a line, in any case. */
   allowsRepository(repository: string): boolean {
     const pattern = `${repository}@*`.toLowerCase();
     return (this.#patternLines.value ?? []).some((line) => line.trim().toLowerCase() === pattern);
   }
 
-  /** Adds `owner/name@*` on a new line at the end of the allowed action patterns. */
   async allowRepository(repository: string): Promise<void> {
     const field = allFields.find((item) => keyOf(item.path) === patternsPath);
     // A list that doesn't show, as with every action allowed, is not added to: its lines aren't the box's to read.
@@ -545,11 +507,7 @@ export class ProfileEditor {
     }
   }
 
-  /**
-   * Opens the preview of a save: what applies now against what applies once
-   * Save runs, the draft and the unsaved changes together. It is offered
-   * when Save is, since it shows what Save would do.
-   */
+  /** Offered when Save is, since it shows what Save would do: the draft and the unsaved changes together. */
   async openPreview(): Promise<void> {
     if (!this.canSave.value) {
       return;
@@ -569,9 +527,9 @@ export class ProfileEditor {
       const lines = diffLines(yamlLines(before), yamlLines(after));
       this.preview.value = {
         lines: foldUnchanged(lines),
-        changes: lines.filter((line) => line.kind !== 'same').length,
-        drafted,
-        unsaved,
+        changedLineCount: lines.filter((line) => line.kind !== 'same').length,
+        draftChangeCount: drafted,
+        unsavedChangeCount: unsaved,
       };
     } catch (error) {
       if (turn === this.#opens) {
@@ -580,18 +538,16 @@ export class ProfileEditor {
     }
   }
 
-  /** Closes the preview, and leaves behind one that is still being made. */
+  /** Leaves behind a preview that is still being made. */
   closePreview(): void {
     this.#opens += 1;
     this.preview.value = undefined;
   }
 
-  /** Finds the settings the words typed fit, among those the filters leave. */
   search(query: string): void {
     this.#find(query, this.#finding.value.filters);
   }
 
-  /** Turns a filter on or off. */
   filter(filter: SettingFilter, on: boolean): void {
     const filters = new Set(this.#finding.value.filters);
     if (on) {
@@ -602,7 +558,6 @@ export class ProfileEditor {
     this.#find(this.#finding.value.query, filters);
   }
 
-  /** Clears the search and every filter, so the tabs show again. */
   clearFilters(): void {
     this.#finding.value = nothingFound;
   }
@@ -625,13 +580,13 @@ export class ProfileEditor {
       (row) =>
         matchesSearch(row.field, words) &&
         (!filters.has('managed') || row.value !== undefined) &&
-        (!filters.has('unsaved') || row.unsaved || row.invalid !== undefined) &&
-        (!filters.has('drafts') || row.drafted),
+        (!filters.has('unsaved') || row.unsaved || row.typedTextProblem !== undefined) &&
+        (!filters.has('drafts') || row.savedDraftHasSetting),
     );
     // A setting shows under the one it belongs to, and the one whose value decides whether it shows.
     const above = fits.flatMap(({ field }) => [
       parentOf(field),
-      fieldsOf(field.section).find((other) => other.key === field.dependsOn?.key),
+      fieldsOf(field.section).find((other) => other.key === field.dependsOn?.otherSettingKeyInSameSection),
     ]);
     const paths = (fields: readonly (SettingField | undefined)[]): Set<string> =>
       new Set(fields.flatMap((field) => (field === undefined ? [] : [keyOf(field.path)])));
@@ -639,50 +594,42 @@ export class ProfileEditor {
     this.#finding.value = { query, filters, fits: found, shown: new Set([...found, ...paths(above)]) };
   }
 
-  /** Starts a ruleset, environment, or label, and answers the key the editor knows it by. */
   async addEntry(list: EntryList, entry: Entry): Promise<string> {
     const key = this.#entryEdits.add(list, entry);
     await this.#entriesChanged();
     return key;
   }
 
-  /** Replaces an entry with what its form made of it. */
   async changeEntry(row: EntryRow, entry: Entry): Promise<void> {
     this.#entryEdits.change(row, entry);
     await this.#entriesChanged();
   }
 
-  /** Has the profile remove the entry from each repository, or manage it again with what it had. */
   async setAbsent(row: EntryRow, absent: boolean): Promise<void> {
     this.#entryEdits.setAbsent(row, absent);
     await this.#entriesChanged();
   }
 
-  /** Stops this profile from managing an entry it names itself, or lets go of one that is new. */
   async takeOut(row: EntryRow): Promise<void> {
     this.#entryEdits.takeOut(row);
     await this.#entriesChanged();
   }
 
-  /** Puts back an entry that an unsaved change, or the draft, takes out of the profile. */
   async putBack(row: EntryRow): Promise<void> {
     this.#entryEdits.putBack(row);
     await this.#entriesChanged();
   }
 
-  /** Puts an entry back as it is saved. */
   async resetEntry(row: EntryRow): Promise<void> {
     this.#entryEdits.reset(row);
     await this.#entriesChanged();
   }
 
-  /** Keeps a change to an entry that changed elsewhere since, over that change. */
   async keepEntry(row: EntryRow): Promise<void> {
     this.#entryEdits.keepMine(row);
     await this.#entriesChanged();
   }
 
-  /** Puts a setting back as it is saved. */
   async reset(field: SettingField): Promise<void> {
     const edits = new Map(this.#edits.value);
     edits.delete(keyOf(field.path));
@@ -692,7 +639,6 @@ export class ProfileEditor {
     await this.#previewEdits();
   }
 
-  /** Puts the whole profile back as it is saved. */
   async resetAll(): Promise<void> {
     this.#edits.value = new Map();
     this.#entryEdits.resetAll();
@@ -719,7 +665,11 @@ export class ProfileEditor {
           'A ruleset, environment, or label changed elsewhere since you changed it. Open it to keep yours or reset it.',
         );
       }
-      if (mode === 'applies' ? this.#entryEdits.held.value : this.#entryEdits.draftHeld.value) {
+      if (
+        mode === 'applies'
+          ? this.#entryEdits.someEntryCannotBeSavedToApply.value
+          : this.#entryEdits.someChangedEntryCannotBeDraft.value
+      ) {
         throw new Error("A ruleset, environment, or label can't be saved as it stands. Open it to see why.");
       }
       const entries = this.#entryEdits.saving(mode);
@@ -733,9 +683,8 @@ export class ProfileEditor {
   }
 
   /**
-   * Makes the profile one for another kind of owner, or for any. What the
-   * new type doesn't have is left not managed, as `ownerLeaving` lists, so
-   * the change stops when the file would now leave something else.
+   * What the new type doesn't have is left not managed, as `ownerLeaving`
+   * lists, so the change stops when the file would now leave something else.
    */
   async changeOwnerType(write: (work: () => Promise<void>) => Promise<void>, type: OwnerChoice): Promise<void> {
     if (
@@ -766,14 +715,11 @@ export class ProfileEditor {
   async #readBaseOwner(): Promise<void> {
     const base = this.#saved.value?.chain[1];
     // A base that can't be read fails the open profile's own read, so this one only ever follows a read that worked.
-    this.#baseOwnerSource.value =
+    this.#baseProfileSettingOwnerType.value =
       base === undefined ? undefined : ((await resolveProfile(base).catch(() => undefined))?.owner_source ?? undefined);
   }
 
-  /**
-   * Takes this profile's own draft out of its file, so only what applies
-   * stays. It keeps what the editor doesn't show, such as a draft autolink.
-   */
+  /** Keeps what the editor doesn't show, such as a draft autolink. */
   async discardDraft(write: (work: () => Promise<void>) => Promise<void>): Promise<void> {
     if (!this.canDiscardDraft.value) {
       return;
@@ -803,10 +749,10 @@ export class ProfileEditor {
     this.saving.value = true;
     this.saveError.value = undefined;
     this.closePreview();
-    this.#writing = writing;
+    this.#settingEditsSaveIsWriting = writing;
     this.#entryEdits.begin();
     let wrote = false;
-    const shown = this.#saved.value === undefined ? undefined : ownDraft(this.#saved.value);
+    const shown = this.#saved.value === undefined ? undefined : comparableOwnDraft(this.#saved.value);
     try {
       await write(async () => {
         // The file may have changed since it was read, as by the sync before this turn. An entry is
@@ -815,7 +761,7 @@ export class ProfileEditor {
         this.#saved.value = current;
         this.#entryEdits.setSaved(current);
         // Every save finishes, adds to, or discards the whole draft, so it acts only on the draft that was shown.
-        if (!sameValue(shown, ownDraft(current))) {
+        if (!sameValue(shown, comparableOwnDraft(current))) {
           throw new Error("The profile's draft changed elsewhere. Look at it as it is now, then try again.");
         }
         this.#saved.value = await act(writing);
@@ -842,14 +788,13 @@ export class ProfileEditor {
       this.saveError.value = reasonOf(error, this.file);
     } finally {
       this.#entryEdits.saved(wrote);
-      this.#writing = new Map();
+      this.#settingEditsSaveIsWriting = new Map();
       this.saving.value = false;
     }
     await this.#previewEdits();
     this.#findAgain();
   }
 
-  /** This profile's own draft of a setting, as saved. */
   #draft(field: SettingField): SettingDraft | undefined {
     const saved = this.#saved.value;
     if (saved === undefined) {
@@ -865,8 +810,7 @@ export class ProfileEditor {
       : undefined;
   }
 
-  /** What the file gives a setting as last saved, which its row starts from: the draft's value, or what the file applies. */
-  #start(field: SettingField): unknown {
+  #valueRowStartsFrom(field: SettingField): unknown {
     const draft = this.#draft(field);
     return draft === undefined ? this.#applied(field) : draft === 'unset' ? undefined : draft.value;
   }
@@ -921,7 +865,7 @@ export class ProfileEditor {
         continue;
       }
       const applied = this.#applied(field);
-      const final = edit === undefined ? this.#start(field) : edit.value;
+      const final = edit === undefined ? this.#valueRowStartsFrom(field) : edit.value;
       const differs = !sameValue(final, applied);
       const drafted = draft !== undefined && draft !== 'unset';
       if (mode === 'applies') {
@@ -963,8 +907,8 @@ export class ProfileEditor {
     const change = (target: SettingField, next: unknown): void => {
       const key = keyOf(target.path);
       // A change back to what the file has, or will have once a save under way ends, is no change.
-      const writing = this.#writing.get(key);
-      if (sameValue(next, writing === undefined ? this.#start(target) : writing.value)) {
+      const writing = this.#settingEditsSaveIsWriting.get(key);
+      if (sameValue(next, writing === undefined ? this.#valueRowStartsFrom(target) : writing.value)) {
         edits.delete(key);
       } else {
         edits.set(key, { path: target.path, value: next });
@@ -974,7 +918,11 @@ export class ProfileEditor {
     if (value !== undefined) {
       // A setting that stands alone and the rest of its section take each other out.
       for (const other of fieldsOf(field.section)) {
-        if (other !== field && (field.alone || other.alone) && this.#valueOf(other, edits) !== undefined) {
+        if (
+          other !== field &&
+          (field.excludesOtherSettingsInSection || other.excludesOtherSettingsInSection) &&
+          this.#valueOf(other, edits) !== undefined
+        ) {
           change(other, undefined);
         }
       }
@@ -1006,9 +954,11 @@ export class ProfileEditor {
    */
   #valueOf(field: SettingField, edits: ReadonlyMap<string, SettingEdit>): unknown {
     const edit = edits.get(keyOf(field.path));
-    const final = edit === undefined ? this.#start(field) : edit.value;
+    const final = edit === undefined ? this.#valueRowStartsFrom(field) : edit.value;
     // A null is a value, which clears the setting on GitHub; only no value here falls through.
-    return final === undefined ? getIn((this.#preview.value ?? this.#saved.value)?.profile, field.path) : final;
+    return final === undefined
+      ? getIn((this.#profileAsSaveWouldLeaveIt.value ?? this.#saved.value)?.profile, field.path)
+      : final;
   }
 
   async #entriesChanged(): Promise<void> {
@@ -1024,41 +974,43 @@ export class ProfileEditor {
       .flatMap((section) => section.groups.flatMap((group) => group.rows))
       .find((item) => keyOf(item.field.path) === patternsPath);
     this.patterns?.follow(
-      row === undefined || !Array.isArray(row.value) ? undefined : (row.text?.split('\n') ?? row.value.map(String)),
+      row === undefined || !Array.isArray(row.value)
+        ? undefined
+        : (row.textBeingTyped?.split('\n') ?? row.value.map(String)),
     );
   }
 
   async #previewSave(): Promise<void> {
     // Each leaves an open preview of a save out of date.
     this.closePreview();
-    const turn = (this.#previews += 1);
+    const turn = (this.#latestPreviewNumber += 1);
     // An entry that can't be saved as it stands, such as one with no name, is held back before the engine sees it.
     const edits =
       this.#saved.value === undefined
         ? []
         : [...this.#settingWrites(this.#edits.value, 'applies', []), ...this.#entryEdits.writes()];
     if (edits.length === 0) {
-      this.#preview.value = undefined;
-      this.problem.value = undefined;
+      this.#profileAsSaveWouldLeaveIt.value = undefined;
+      this.unsavedChangesProblem.value = undefined;
       return;
     }
     try {
       const { after } = await this.#store.preview(this.file, edits);
-      if (turn === this.#previews) {
-        this.#preview.value = after;
-        this.problem.value = undefined;
+      if (turn === this.#latestPreviewNumber) {
+        this.#profileAsSaveWouldLeaveIt.value = after;
+        this.unsavedChangesProblem.value = undefined;
       }
     } catch (error) {
-      if (turn === this.#previews) {
+      if (turn === this.#latestPreviewNumber) {
         // No profile to show but the saved one, with each edit laid over its own setting.
-        this.#preview.value = undefined;
-        this.problem.value = reasonOf(error, this.file);
+        this.#profileAsSaveWouldLeaveIt.value = undefined;
+        this.unsavedChangesProblem.value = reasonOf(error, this.file);
       }
     }
   }
 
   #rows(group: SettingGroup): SettingRow[] {
-    const shown = this.#preview.value ?? this.#saved.value;
+    const shown = this.#profileAsSaveWouldLeaveIt.value ?? this.#saved.value;
     if (shown === undefined) {
       return [];
     }
@@ -1066,7 +1018,7 @@ export class ProfileEditor {
     const section = fieldsOf(group.fields[0]?.section ?? '');
     const holds = (field: SettingField): boolean => {
       const condition = field.dependsOn;
-      const other = section.find((item) => item.key === condition?.key);
+      const other = section.find((item) => item.key === condition?.otherSettingKeyInSameSection);
       if (condition === undefined || other === undefined) {
         return false;
       }
@@ -1077,7 +1029,10 @@ export class ProfileEditor {
     return (
       group.fields
         // What owners of the profile's type don't have is left out, settings and choices, so it is never part of a save.
-        .filter((field) => fits(owner, needOf(field.path)) && !(field.dependsOn?.hides === true && holds(field)))
+        .filter(
+          (field) =>
+            fits(owner, needOf(field.path)) && !(field.dependsOn?.hiddenRatherThanGreyedOut === true && holds(field)),
+        )
         .map((field) => {
           const key = keyOf(field.path);
           const source = shown.sources[sectionOf(field)][field.key];
@@ -1085,7 +1040,7 @@ export class ProfileEditor {
           const need = needOf(field.path);
           return {
             field,
-            options: field.options.filter((option) => fits(owner, needOf(field.path, option.value))),
+            optionsForProfileOwnerType: field.options.filter((option) => fits(owner, needOf(field.path, option.value))),
             ownerTag:
               need === 'enterprise'
                 ? ('Enterprise Cloud' as const)
@@ -1095,16 +1050,16 @@ export class ProfileEditor {
             value: this.#valueOf(field, edits),
             source: source === undefined ? undefined : source === shown.chain[0] ? 'here' : basename(source),
             unsaved: edits.has(key),
-            drafted: this.#draft(field) !== undefined,
-            inDraft: !edits.has(key) && this.#draft(field) !== undefined,
+            savedDraftHasSetting: this.#draft(field) !== undefined,
+            valueShownIsFromDraft: !edits.has(key) && this.#draft(field) !== undefined,
             applied: getIn(this.#saved.value?.profile, field.path),
-            off: field.dependsOn?.hides === false && holds(field),
-            text: typed?.text,
-            invalid: typed?.problem,
+            greyedOutOnGitHub: field.dependsOn?.hiddenRatherThanGreyedOut === false && holds(field),
+            textBeingTyped: typed?.text,
+            typedTextProblem: typed?.problem,
             hiddenNamed: section.filter(
               (other) =>
-                other.dependsOn?.hides === true &&
-                other.dependsOn.key === field.key &&
+                other.dependsOn?.hiddenRatherThanGreyedOut === true &&
+                other.dependsOn.otherSettingKeyInSameSection === field.key &&
                 holds(other) &&
                 this.#valueOf(other, edits) !== undefined,
             ).length,

@@ -5,7 +5,6 @@ import { Account, signInFailure } from '../src/app/account.js';
 import { type Session, SessionUnavailableError } from '../src/session.js';
 
 function session(signOut: () => Promise<void> = () => Promise.resolve()): Session {
-  // The account uses only the session's sign-out; requests go through the GitHub client.
   // eslint-disable-next-line typescript/no-unsafe-type-assertion -- a Session can't be built without a browser's locks and fetch, and Account calls nothing else on it
   return { signOut } as unknown as Session;
 }
@@ -85,7 +84,7 @@ test('a sign-in GitHub stops accepting returns to the sign-in page with why', as
   const account = new Account(session(), new FakeGitHub());
   await account.load();
 
-  account.refused();
+  account.gitHubRefusedSignIn();
 
   expect(account.state.value).toEqual({
     status: 'signed-out',
@@ -98,7 +97,7 @@ test('a refusal that arrives after a sign-out leaves what the sign-out said', as
   await account.load();
   await account.signOut();
 
-  account.refused();
+  account.gitHubRefusedSignIn();
 
   expect(account.state.value).toEqual({ status: 'signed-out', message: 'Signed out.' });
 });

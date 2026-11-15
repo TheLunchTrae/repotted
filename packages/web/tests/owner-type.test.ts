@@ -62,20 +62,26 @@ test('a profile shows only the settings and choices owners of its type have, and
   expect(personal.ownerType.value).toBe('user');
   expect(row(personal, 'repository.allow_forking')).toBeUndefined();
   expect(row(personal, 'pages.public')).toBeUndefined();
-  expect(row(personal, 'actions.access_level')?.options.map((option) => option.value)).toEqual(['none', 'user']);
-  expect(personal.ownerHidden.value).toBeGreaterThan(5);
+  expect(row(personal, 'actions.access_level')?.optionsForProfileOwnerType.map((option) => option.value)).toEqual([
+    'none',
+    'user',
+  ]);
+  expect(personal.settingsHiddenForOwnerTypeCount.value).toBeGreaterThan(5);
 
   const org = await opened({ 'web.yaml': organization });
   expect(row(org, 'repository.allow_forking')).toMatchObject({ value: true, ownerTag: undefined });
   expect(row(org, 'pages.public')).toMatchObject({ ownerTag: 'Enterprise Cloud' });
-  expect(row(org, 'actions.access_level')?.options.map((option) => option.value)).toEqual(['none', 'organization']);
-  expect(org.ownerHidden.value).toBe(0);
+  expect(row(org, 'actions.access_level')?.optionsForProfileOwnerType.map((option) => option.value)).toEqual([
+    'none',
+    'organization',
+  ]);
+  expect(org.settingsHiddenForOwnerTypeCount.value).toBe(0);
 
   const any = await opened({ 'web.yaml': 'repository:\n  has_wiki: false\n' });
   expect(any.ownerType.value).toBeUndefined();
   expect(row(any, 'repository.allow_forking')).toMatchObject({ ownerTag: 'Organizations' });
   expect(row(any, 'repository.has_wiki')).toMatchObject({ ownerTag: undefined });
-  expect(row(any, 'actions.access_level')?.options).toHaveLength(3);
+  expect(row(any, 'actions.access_level')?.optionsForProfileOwnerType).toHaveLength(3);
 });
 
 test('changing the type says what it leaves not managed, then leaves exactly that', async () => {
@@ -171,7 +177,7 @@ test('a change to a setting the new type lacks, made while the type change waits
 
   expect(editor.saveError.value).toBeUndefined();
   expect(editor.ownerType.value).toBe('user');
-  expect(editor.problem.value).toBeUndefined();
+  expect(editor.unsavedChangesProblem.value).toBeUndefined();
   expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: true, unsaved: true });
   expect(editor.canSave.value).toBe(true);
 });

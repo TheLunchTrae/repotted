@@ -17,7 +17,7 @@ export type LiveAutolink = z.infer<typeof liveAutolink>;
 
 export type LiveAutolinks = { readonly available: true; readonly autolinks: readonly LiveAutolink[] } | Unavailable;
 
-/** Reads the repository's autolinks. GitHub sends them all in one list. */
+// GitHub sends every autolink in one list, without pages.
 export async function readAutolinks(github: GitHub, repo: RepoRef): Promise<LiveAutolinks> {
   const read = await readResource(github, repo, '/autolinks', 'autolinks');
   return read.available ? { available: true, autolinks: z.array(liveAutolink).parse(read.value) } : read;
@@ -75,7 +75,6 @@ export function planAutolinks(desired: readonly AutolinkEntry[], live: LiveAutol
   return { changes: [...deletes, ...creates], warnings: [] };
 }
 
-/** An autolink as a profile describes it, for capture. */
 export function describeAutolink(autolink: LiveAutolink): AutolinkEntry {
   return {
     key_prefix: autolink.key_prefix,

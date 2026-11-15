@@ -1,9 +1,3 @@
-/**
- * Whether two values of the plain data that YAML and JSON give, which is
- * scalars, arrays, and objects with string keys, are the same all the way
- * down. Scalars compare with `Object.is`, an object's key order doesn't
- * count, and a key set to `undefined` differs from a key left out.
- */
 export function isDeepEqual(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) {
     return true;

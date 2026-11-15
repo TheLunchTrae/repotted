@@ -22,8 +22,7 @@ interface FolderNode {
 
 type Node = FileNode | FolderNode;
 
-/** A change to one file: its absolute path, and a copy of its content, or undefined once it is removed. */
-export type FileChange = (file: string, content: Uint8Array | undefined) => void;
+export type FileChange = (absolutePath: string, contentCopyUnlessRemoved: Uint8Array | undefined) => void;
 
 const root: FolderNode = { kind: 'folder', children: new Map() };
 const watchers = new Set<FileChange>();
@@ -70,7 +69,6 @@ function parentOf(target: string): FolderNode {
   return parent;
 }
 
-/** The name of the file or folder a path leads to, whatever `.` and `..` it holds. */
 function leaf(target: string): string {
   return basename(resolve('/', target));
 }
@@ -99,7 +97,6 @@ function announceRemoved(target: string, node: Node): void {
   }
 }
 
-/** Calls `watcher` after each file is written or removed, in order, until the returned function is called. */
 export function watchFiles(watcher: FileChange): () => void {
   watchers.add(watcher);
   return () => {
@@ -107,8 +104,7 @@ export function watchFiles(watcher: FileChange): () => void {
   };
 }
 
-/** Runs `work` as Node's file functions do: what it throws comes back as a rejection. */
-function settle<Result>(work: () => Result): Promise<Result> {
+function runAsNodeFsPromise<Result>(work: () => Result): Promise<Result> {
   return new Promise((resolve) => {
     resolve(work());
   });
@@ -117,7 +113,7 @@ function settle<Result>(work: () => Result): Promise<Result> {
 export function readFile(target: string): Promise<Uint8Array>;
 export function readFile(target: string, encoding: 'utf8'): Promise<string>;
 export function readFile(target: string, encoding?: 'utf8'): Promise<Uint8Array | string> {
-  return settle(() => {
+  return runAsNodeFsPromise(() => {
     const node = existing(target);
     if (node.kind !== 'file') {
       throw new FileError('EISDIR', `illegal operation on a directory, read '${target}'`);
@@ -126,13 +122,12 @@ export function readFile(target: string, encoding?: 'utf8'): Promise<Uint8Array 
   });
 }
 
-/** Writes a file whole. With the flag `wx`, the file must not exist yet. */
 export function writeFile(
   target: string,
   content: Uint8Array | string,
   options: { readonly flag?: 'wx' } = {},
 ): Promise<void> {
-  return settle(() => {
+  return runAsNodeFsPromise(() => {
     const parent = parentOf(target);
     const name = leaf(target);
     const current = parent.children.get(name);
@@ -160,7 +155,7 @@ function stats(node: Node): Stats {
 }
 
 export function stat(target: string): Promise<Stats> {
-  return settle(() => {
+  return runAsNodeFsPromise(() => {
     return stats(existing(target));
   });
 }
@@ -170,25 +165,24 @@ export const lstat = stat;
 
 /** There are no links, so a path that exists is its own real path. */
 export function realpath(target: string): Promise<string> {
-  return settle(() => {
+  return runAsNodeFsPromise(() => {
     existing(target);
     return resolve('/', target);
   });
 }
 
 export function chmod(target: string, _mode: number): Promise<void> {
-  return settle(() => {
+  return runAsNodeFsPromise(() => {
     existing(target);
   });
 }
 
-/** A folder's entry, as the engine's `Dirent` from `node:fs`. */
 export interface Dirent extends Stats {
   readonly name: string;
 }
 
 export function readdir(target: string, _options: { readonly withFileTypes: true }): Promise<Dirent[]> {
-  return settle(() => {
+  return runAsNodeFsPromise(() => {
     const node = existing(target);
     if (node.kind !== 'folder') {
       throw new FileError('ENOTDIR', `not a directory, scandir '${target}'`);
@@ -197,11 +191,10 @@ export function readdir(target: string, _options: { readonly withFileTypes: true
   });
 }
 
-/** Makes a folder and the folders above it, and answers the first one it made, as Node does. */
 export function mkdir(target: string, _options: { readonly recursive: true }): Promise<string | undefined> {
-  return settle(() => {
+  return runAsNodeFsPromise(() => {
     let node = root;
-    let made: string | undefined;
+    let firstFolderMade: string | undefined;
     let current = '';
     for (const name of segments(target)) {
       current = `${current}/${name}`;
@@ -209,23 +202,22 @@ export function mkdir(target: string, _options: { readonly recursive: true }): P
       if (next === undefined) {
         next = { kind: 'folder', children: new Map() };
         node.children.set(name, next);
-        made ??= current;
+        firstFolderMade ??= current;
       }
       if (next.kind !== 'folder') {
         throw new FileError('EEXIST', `file already exists, mkdir '${target}'`);
       }
       node = next;
     }
-    return made;
+    return firstFolderMade;
   });
 }
 
-/** Removes a file, or with `recursive` a folder and what it holds. With `force`, a path that isn't there is fine. */
 export function rm(
   target: string,
   options: { readonly force?: boolean; readonly recursive?: boolean } = {},
 ): Promise<void> {
-  return settle(() => {
+  return runAsNodeFsPromise(() => {
     const node = find(target);
     if (node === undefined) {
       if (options.force === true) {
@@ -245,9 +237,8 @@ export function rm(
   });
 }
 
-/** Removes a folder that holds nothing. */
 export function rmdir(target: string): Promise<void> {
-  return settle(() => {
+  return runAsNodeFsPromise(() => {
     const node = existing(target);
     if (node.kind !== 'folder') {
       throw new FileError('ENOTDIR', `not a directory, rmdir '${target}'`);
@@ -261,9 +252,8 @@ export function rmdir(target: string): Promise<void> {
   });
 }
 
-/** Moves a file over whatever file is at `to`, which is how the engine replaces a file whole. */
 export function rename(from: string, to: string): Promise<void> {
-  return settle(() => {
+  return runAsNodeFsPromise(() => {
     const node = existing(from);
     if (node.kind !== 'file') {
       throw new FileError('EISDIR', `illegal operation on a directory, rename '${from}'`);

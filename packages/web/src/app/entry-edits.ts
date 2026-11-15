@@ -8,27 +8,25 @@ import { sameValue } from './same-value.js';
 export const entryLists = ['rulesets', 'environments', 'labels'] as const;
 export type EntryList = (typeof entryLists)[number];
 
-/** How a save writes the changes: so they apply, or as the profile's draft, which plans leave out. */
 export type SaveMode = 'applies' | 'draft';
 
-/** One ruleset, environment, or label as the editor draws it. */
 export interface EntryRow {
   readonly list: EntryList;
-  /** What the editor knows the entry by while it is open, whatever its name becomes. */
+  /** Stable while the editor is open, whatever the entry's name becomes. */
   readonly key: string;
-  /** The entry as it stands with the unsaved changes, or undefined when this profile stops naming it. */
+  /** With the unsaved changes, or undefined when this profile stops naming it. */
   readonly entry: Entry | undefined;
   /**
-   * The entry as last saved, which the row starts from: this profile's draft
-   * of it when it has one, and what applies otherwise. Undefined for one
-   * that is new, and for one the draft takes out of the profile.
+   * What the row starts from: this profile's draft of the entry when it has
+   * one, and what applies otherwise. Undefined for one that is new, and for
+   * one the draft takes out of the profile.
    */
   readonly saved: Entry | undefined;
-  /** The entry as it applies now, here or from a base profile, when it does. */
+  /** As it applies now, here or from a base profile. */
   readonly applied: Entry | undefined;
-  /** Its name as saved, or undefined for one that is new. */
+  /** Undefined for one that is new. */
   readonly savedName: string | undefined;
-  /** The profile that sets it: 'here', a base profile's file name, or undefined for one that is new. */
+  /** 'here', a base profile's file name, or undefined for one that is new. */
   readonly source: string | undefined;
   readonly unsaved: boolean;
   /**
@@ -42,15 +40,13 @@ export interface EntryRow {
    * so it waits until the user keeps theirs or resets it.
    */
   readonly outOfDate: boolean;
-  /** Why it can't be saved so it applies, such as a name another entry has. */
-  readonly problem: string | undefined;
-  /** Why it can't be kept as a draft, which may be unfinished: only what is wrong with its name. */
+  readonly applyProblem: string | undefined;
+  /** A draft may be unfinished, so this is only what is wrong with its name. */
   readonly draftProblem: string | undefined;
 }
 
-type Row = Omit<EntryRow, 'problem' | 'draftProblem'>;
+type Row = Omit<EntryRow, 'applyProblem' | 'draftProblem'>;
 
-/** One entry to write under the name the file knows it by, or to stop naming, as the engine takes it. */
 export interface EntryWrite {
   readonly list: EntryList;
   readonly name: string;
@@ -61,27 +57,22 @@ export interface EntryWrite {
 
 interface EntryChange {
   readonly list: EntryList;
-  /** The name the entry is saved under, or undefined for one that is new. */
+  /** Undefined for one that is new. */
   readonly name: string | undefined;
   readonly entry: Entry | undefined;
-  /** The saved entry the change was made on. */
-  readonly base: Entry | undefined;
+  readonly savedEntryChangeWasMadeOn: Entry | undefined;
   /** The entry as it was managed, while the change removes it from repositories, so managing it again brings it back. */
   readonly kept?: Entry;
 }
 
-/** One entry the saved profile has: what applies, this profile's draft of it, or both. */
 interface Slot {
   readonly key: string;
   readonly applied: Entry | undefined;
-  /** Whether the open file itself names the entry that applies. */
-  readonly own: boolean;
-  /** The base profile that names the entry that applies, when the open file doesn't. */
-  readonly base: string | undefined;
-  /** The open file's draft of the entry, without its `draft` key. */
-  readonly draft: Entry | undefined;
-  /** Whether the open file's draft takes the entry out of the profile. */
-  readonly unset: boolean;
+  readonly openFileNamesAppliedEntry: boolean;
+  readonly baseProfileNamingAppliedEntry: string | undefined;
+  /** Without its `draft` key. */
+  readonly openFileDraft: Entry | undefined;
+  readonly openFileDraftTakesOut: boolean;
 }
 
 const nouns: Readonly<Record<EntryList, string>> = {
@@ -94,8 +85,7 @@ function nameOf(entry: Entry | undefined): string {
   return typeof entry?.['name'] === 'string' ? entry['name'].trim() : '';
 }
 
-/** An entry as it is written: its name trimmed, and first. */
-function written(entry: Entry): Entry {
+function withTrimmedNameFirst(entry: Entry): Entry {
   const { name: _name, ...rest } = entry;
   return { name: nameOf(entry), ...rest };
 }
@@ -105,13 +95,15 @@ function identity(list: EntryList, name: string): string {
   return list === 'rulesets' ? name : name.toLowerCase();
 }
 
-/** The entry a slot's row starts from: the draft's, or what applies; none when the draft takes it out. */
-function opened(slot: Slot): Entry | undefined {
-  return slot.unset ? undefined : (slot.draft ?? slot.applied);
+function entryRowStartsFrom(slot: Slot): Entry | undefined {
+  return slot.openFileDraftTakesOut ? undefined : (slot.openFileDraft ?? slot.applied);
 }
 
 function same(left: Entry | undefined, right: Entry | undefined): boolean {
-  return sameValue(left === undefined ? undefined : written(left), right === undefined ? undefined : written(right));
+  return sameValue(
+    left === undefined ? undefined : withTrimmedNameFirst(left),
+    right === undefined ? undefined : withTrimmedNameFirst(right),
+  );
 }
 
 /**
@@ -127,8 +119,8 @@ function writesFor(
   mode: SaveMode,
 ): { readonly writes: readonly EntryWrite[]; readonly unset: string | undefined } {
   const applied = slot?.applied;
-  const own = slot?.own === true ? nameOf(applied) : undefined;
-  const draft = slot?.draft === undefined ? undefined : nameOf(slot.draft);
+  const own = slot?.openFileNamesAppliedEntry === true ? nameOf(applied) : undefined;
+  const draft = slot?.openFileDraft === undefined ? undefined : nameOf(slot.openFileDraft);
   const dropDraft: EntryWrite[] = draft === undefined ? [] : [{ list, name: draft, draft: true, entry: undefined }];
   const applies = final !== undefined && applied !== undefined && same(final, applied);
   if (mode === 'applies') {
@@ -138,7 +130,7 @@ function writesFor(
         unset: undefined,
       };
     }
-    const entry = written(final);
+    const entry = withTrimmedNameFirst(final);
     if (applies) {
       return { writes: dropDraft, unset: undefined };
     }
@@ -154,10 +146,10 @@ function writesFor(
   if (final === undefined || applies) {
     return { writes: dropDraft, unset: final === undefined && own !== undefined ? `${list}/${own}` : undefined };
   }
-  const entry = { ...written(final), draft: true };
+  const entry = { ...withTrimmedNameFirst(final), draft: true };
   const name = nameOf(final);
   return {
-    writes: same(final, slot?.draft) ? [] : [{ list, name: draft ?? name, draft: true, entry }],
+    writes: same(final, slot?.openFileDraft) ? [] : [{ list, name: draft ?? name, draft: true, entry }],
     // A draft under another name leaves the entry that applies behind, so finishing it takes that one out.
     unset: own !== undefined && identity(list, own) !== identity(list, name) ? `${list}/${own}` : undefined,
   };
@@ -173,10 +165,8 @@ function writesFor(
 export class EntryEdits {
   readonly #saved = signal<ResolvedProfile | undefined>(undefined);
   readonly #changes = signal<ReadonlyMap<string, EntryChange>>(new Map());
-  /** The changes a save under way is writing. */
-  #writing: ReadonlyMap<string, EntryChange> = new Map();
-  /** Numbers the new entries, so each has a key before it has a name. */
-  #added = 0;
+  #changesSaveIsWriting: ReadonlyMap<string, EntryChange> = new Map();
+  #lastNewEntryNumber = 0;
 
   readonly #slots = computed<Readonly<Record<EntryList, readonly Slot[]>>>(() => ({
     rulesets: this.#slotsOf('rulesets'),
@@ -190,24 +180,21 @@ export class EntryEdits {
     labels: this.#rows('labels'),
   }));
 
-  /** How many entries have a change. */
   readonly count = computed(() => this.#changes.value.size);
 
-  /** How many entries this profile's own draft adds, changes, or takes out. */
   readonly draftCount = computed(() =>
     entryLists.reduce(
-      (count, list) => count + this.#slots.value[list].filter((slot) => slot.draft !== undefined || slot.unset).length,
+      (count, list) =>
+        count +
+        this.#slots.value[list].filter((slot) => slot.openFileDraft !== undefined || slot.openFileDraftTakesOut).length,
       0,
     ),
   );
 
-  /** Whether any entry can't be saved so it applies, as it stands. */
-  readonly held = computed(() => this.#some((row) => row.problem !== undefined));
+  readonly someEntryCannotBeSavedToApply = computed(() => this.#some((row) => row.applyProblem !== undefined));
 
-  /** Whether any changed entry can't be kept as a draft, as it stands. */
-  readonly draftHeld = computed(() => this.#some((row) => row.draftProblem !== undefined));
+  readonly someChangedEntryCannotBeDraft = computed(() => this.#some((row) => row.draftProblem !== undefined));
 
-  /** Takes the profile as it is saved now, as after a sync or a save. */
   setSaved(saved: ResolvedProfile | undefined): void {
     this.#saved.value = saved;
     // A change that takes out an entry that is already gone has nothing left to do.
@@ -222,37 +209,29 @@ export class EntryEdits {
     }
   }
 
-  /**
-   * What a save that applies would write as things stand, for a preview:
-   * the entries with no problem, each one's draft finished with it.
-   */
+  /** For a preview: only the entries with no problem, each one's draft finished with it. */
   writes(): EntryWrite[] {
     const fine = new Set(
       entryLists.flatMap((list) =>
-        this.rows.value[list].filter((row) => row.problem === undefined).map((row) => row.key),
+        this.rows.value[list].filter((row) => row.applyProblem === undefined).map((row) => row.key),
       ),
     );
     return this.#plan(this.#changes.value, 'applies', (key) => fine.has(key)).writes;
   }
 
-  /** Starts a ruleset, environment, or label, and answers the key the editor knows it by. */
   add(list: EntryList, entry: Entry): string {
-    this.#added += 1;
-    const key = `${list}:new:${this.#added}`;
-    this.#set(key, { list, name: undefined, entry, base: undefined });
+    this.#lastNewEntryNumber += 1;
+    const key = `${list}:new:${this.#lastNewEntryNumber}`;
+    this.#set(key, { list, name: undefined, entry, savedEntryChangeWasMadeOn: undefined });
     return key;
   }
 
-  /** Replaces an entry with what its form made of it. An entry changed back to what is saved is no change. */
+  /** An entry changed back to what is saved is no change. */
   change(row: EntryRow, entry: Entry): void {
     this.#put(row, { entry });
   }
 
-  /**
-   * Has the profile remove the entry from each repository, or manage it
-   * again. Removing keeps only its name, and managing it again brings back
-   * what it had.
-   */
+  /** Removing keeps only the entry's name, and managing it again brings back what it had. */
   setAbsent(row: EntryRow, absent: boolean): void {
     const entry = row.entry;
     if (entry === undefined || (entry['absent'] === true) === absent) {
@@ -269,9 +248,8 @@ export class EntryEdits {
     this.#put(row, { entry: kept === undefined ? { name } : { ...kept, name } });
   }
 
-  /** Stops this profile from managing an entry it names itself, or lets go of one that is new. */
   takeOut(row: EntryRow): void {
-    if (row.savedName === undefined && !this.#writing.has(row.key)) {
+    if (row.savedName === undefined && !this.#changesSaveIsWriting.has(row.key)) {
       this.#set(row.key, undefined);
     } else {
       this.#put(row, { entry: undefined });
@@ -292,13 +270,18 @@ export class EntryEdits {
   }
 
   /**
-   * Puts an entry back as it is saved. While a save is writing a change to
-   * it, putting it back is itself a change, to what it was: the entry as it
-   * was saved, or for one that was new, none.
+   * While a save is writing a change to the entry, putting it back is itself
+   * a change, to what it was: the entry as it was saved, or for one that was
+   * new, none.
    */
   reset(row: EntryRow): void {
-    if (this.#writing.has(row.key)) {
-      this.#set(row.key, { list: row.list, name: row.savedName, entry: row.saved, base: row.saved });
+    if (this.#changesSaveIsWriting.has(row.key)) {
+      this.#set(row.key, {
+        list: row.list,
+        name: row.savedName,
+        entry: row.saved,
+        savedEntryChangeWasMadeOn: row.saved,
+      });
     } else {
       this.#set(row.key, undefined);
     }
@@ -315,10 +298,14 @@ export class EntryEdits {
     }
     if (this.#slot(row.list, row.key) === undefined) {
       this.#set(row.key, undefined);
-      this.#added += 1;
-      this.#set(`${row.list}:new:${this.#added}`, { ...change, name: undefined, base: undefined });
+      this.#lastNewEntryNumber += 1;
+      this.#set(`${row.list}:new:${this.#lastNewEntryNumber}`, {
+        ...change,
+        name: undefined,
+        savedEntryChangeWasMadeOn: undefined,
+      });
     } else {
-      this.#set(row.key, { ...change, base: row.saved });
+      this.#set(row.key, { ...change, savedEntryChangeWasMadeOn: row.saved });
     }
   }
 
@@ -328,22 +315,19 @@ export class EntryEdits {
 
   /** Marks the changes a save writes, which stay as they are until `saved` says how it went. */
   begin(): void {
-    this.#writing = this.#changes.value;
+    this.#changesSaveIsWriting = this.#changes.value;
   }
 
-  /**
-   * What the save under way writes, over the profile as it is saved now,
-   * and the keys of `drafts.unset` a draft lists for the entries.
-   */
   saving(mode: SaveMode): { readonly writes: EntryWrite[]; readonly unsets: string[] } {
-    return this.#plan(this.#writing, mode, () => true);
+    return this.#plan(this.#changesSaveIsWriting, mode, () => true);
   }
 
-  /** The writes that take this profile's own draft entries out of its file. */
   discards(): EntryWrite[] {
     return entryLists.flatMap((list) =>
       this.#slots.value[list].flatMap((slot): EntryWrite[] =>
-        slot.draft === undefined ? [] : [{ list, name: nameOf(slot.draft), draft: true, entry: undefined }],
+        slot.openFileDraft === undefined
+          ? []
+          : [{ list, name: nameOf(slot.openFileDraft), draft: true, entry: undefined }],
       ),
     );
   }
@@ -354,13 +338,13 @@ export class EntryEdits {
    * file in its turn, whatever became of the change while it waited.
    */
   writesOverChange(): boolean {
-    return [...this.#writing].some(([key, change]) => {
+    return [...this.#changesSaveIsWriting].some(([key, change]) => {
       if (change.name === undefined) {
         // A new entry whose name the file has by now would be written over that entry.
-        return this.#named(change.list, nameOf(change.entry)) !== undefined;
+        return this.#slotNamed(change.list, nameOf(change.entry)) !== undefined;
       }
       const slot = this.#slot(change.list, key);
-      return slot === undefined || !sameValue(change.base, opened(slot));
+      return slot === undefined || !sameValue(change.savedEntryChangeWasMadeOn, entryRowStartsFrom(slot));
     });
   }
 
@@ -370,8 +354,8 @@ export class EntryEdits {
    * leaves every change as it is.
    */
   saved(wrote: boolean): void {
-    const writing = this.#writing;
-    this.#writing = new Map();
+    const writing = this.#changesSaveIsWriting;
+    this.#changesSaveIsWriting = new Map();
     if (!wrote) {
       return;
     }
@@ -383,13 +367,21 @@ export class EntryEdits {
       } else if (change !== was && !sameValue(change.entry, was.entry)) {
         // The row the save left the entry in, which the change is now made on.
         const slot =
-          was.entry === undefined ? this.#slot(change.list, key) : this.#named(change.list, nameOf(was.entry));
+          was.entry === undefined ? this.#slot(change.list, key) : this.#slotNamed(change.list, nameOf(was.entry));
         if (slot !== undefined) {
-          left.set(slot.key, { ...change, name: nameOf(opened(slot) ?? slot.applied), base: opened(slot) });
+          left.set(slot.key, {
+            ...change,
+            name: nameOf(entryRowStartsFrom(slot) ?? slot.applied),
+            savedEntryChangeWasMadeOn: entryRowStartsFrom(slot),
+          });
         } else if (change.entry !== undefined) {
           // An entry the save took out and that has one again is a new one.
-          this.#added += 1;
-          left.set(`${change.list}:new:${this.#added}`, { ...change, name: undefined, base: undefined });
+          this.#lastNewEntryNumber += 1;
+          left.set(`${change.list}:new:${this.#lastNewEntryNumber}`, {
+            ...change,
+            name: undefined,
+            savedEntryChangeWasMadeOn: undefined,
+          });
         }
       }
     }
@@ -406,7 +398,7 @@ export class EntryEdits {
     // While a save writes this entry, every change to it is kept, since what is saved is about to be what the save wrote.
     // An entry the draft takes out is saved as out, so taking it out is no change either.
     const unchanged =
-      !this.#writing.has(row.key) &&
+      !this.#changesSaveIsWriting.has(row.key) &&
       row.savedName !== undefined &&
       (next.entry === undefined
         ? saved === undefined && !row.outOfDate
@@ -419,7 +411,7 @@ export class EntryEdits {
             list: row.list,
             name: row.savedName,
             entry: next.entry,
-            base: current === undefined ? saved : current.base,
+            savedEntryChangeWasMadeOn: current === undefined ? saved : current.savedEntryChangeWasMadeOn,
             ...(next.kept === undefined
               ? current?.kept === undefined
                 ? {}
@@ -443,11 +435,10 @@ export class EntryEdits {
     return this.#slots.value[list].find((slot) => slot.key === key);
   }
 
-  /** The saved entry of a name, applying or a draft. */
-  #named(list: EntryList, name: string): Slot | undefined {
+  #slotNamed(list: EntryList, name: string): Slot | undefined {
     const id = identity(list, name);
     return this.#slots.value[list].find((slot) =>
-      [slot.applied, slot.draft].some((entry) => entry !== undefined && identity(list, nameOf(entry)) === id),
+      [slot.applied, slot.openFileDraft].some((entry) => entry !== undefined && identity(list, nameOf(entry)) === id),
     );
   }
 
@@ -481,11 +472,11 @@ export class EntryEdits {
       return {
         key: `${list}/${name}`,
         applied,
-        own: here,
-        base: here ? undefined : basename(file),
-        draft,
+        openFileNamesAppliedEntry: here,
+        baseProfileNamingAppliedEntry: here ? undefined : basename(file),
+        openFileDraft: draft,
         // Only an entry this file names can be taken out of it.
-        unset: here && draft === undefined && unsets.has(identity(list, name)),
+        openFileDraftTakesOut: here && draft === undefined && unsets.has(identity(list, name)),
       };
     });
     // A draft of an entry that doesn't apply yet follows what applies.
@@ -494,10 +485,10 @@ export class EntryEdits {
       .map((draft): Slot => ({
         key: `${list}/${nameOf(draft)}`,
         applied: undefined,
-        own: false,
-        base: undefined,
-        draft,
-        unset: false,
+        openFileNamesAppliedEntry: false,
+        baseProfileNamingAppliedEntry: undefined,
+        openFileDraft: draft,
+        openFileDraftTakesOut: false,
       }));
     return [...applying, ...alone];
   }
@@ -521,7 +512,7 @@ export class EntryEdits {
       for (const slot of this.#slots.value[list]) {
         if (takes(slot.key)) {
           const change = changes.get(slot.key);
-          add(list, slot, change === undefined ? opened(slot) : change.entry);
+          add(list, slot, change === undefined ? entryRowStartsFrom(slot) : change.entry);
         }
       }
       for (const [key, change] of changes) {
@@ -542,7 +533,7 @@ export class EntryEdits {
     }
     const listed = slots.map((slot) => {
       const change = changes.get(slot.key);
-      const start = opened(slot);
+      const start = entryRowStartsFrom(slot);
       return {
         list,
         key: slot.key,
@@ -551,19 +542,22 @@ export class EntryEdits {
         applied: slot.applied,
         savedName: nameOf(start ?? slot.applied),
         // A draft of a base profile's entry overrides it here once it is finished.
-        source: slot.own || slot.draft !== undefined ? 'here' : slot.base,
+        source:
+          slot.openFileNamesAppliedEntry || slot.openFileDraft !== undefined
+            ? 'here'
+            : slot.baseProfileNamingAppliedEntry,
         unsaved: change !== undefined,
         inDraft:
           change !== undefined
             ? undefined
-            : slot.unset
+            : slot.openFileDraftTakesOut
               ? ('taken-out' as const)
-              : slot.draft === undefined
+              : slot.openFileDraft === undefined
                 ? undefined
                 : slot.applied === undefined
                   ? ('new' as const)
                   : ('changed' as const),
-        outOfDate: change !== undefined && !sameValue(change.base, start),
+        outOfDate: change !== undefined && !sameValue(change.savedEntryChangeWasMadeOn, start),
       };
     });
     const known = new Set(listed.map((row) => row.key));
@@ -586,7 +580,7 @@ export class EntryEdits {
     return all.map((row) => ({
       ...row,
       // A draft is checked as its change is, since a save that applies finishes it.
-      problem: row.unsaved || row.inDraft !== undefined ? this.#problem(row, all, true) : undefined,
+      applyProblem: row.unsaved || row.inDraft !== undefined ? this.#problem(row, all, true) : undefined,
       draftProblem: row.unsaved ? this.#problem(row, all, false) : undefined,
     }));
   }

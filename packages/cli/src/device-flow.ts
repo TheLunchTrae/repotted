@@ -9,11 +9,6 @@ export class AuthError extends Error {
   }
 }
 
-/**
- * GitHub answered a token request with an OAuth error, such as
- * `bad_refresh_token` or `access_denied`: it refused the grant, rather than
- * being unreachable or failing on its side.
- */
 export class GrantRefusedError extends AuthError {
   constructor(message: string) {
     super(message);
@@ -21,7 +16,6 @@ export class GrantRefusedError extends AuthError {
   }
 }
 
-/** A user token for the Repotted GitHub App, as the keychain holds it. */
 export const storedToken = z.object({
   access_token: z.string().min(1),
   /** Epoch milliseconds; absent when the App does not expire user tokens. */
@@ -36,13 +30,10 @@ export interface DeviceCode {
   readonly deviceCode: string;
   readonly userCode: string;
   readonly verificationUri: string;
-  /** Seconds between polls, as GitHub asks. */
-  readonly interval: number;
-  /** Epoch milliseconds after which the code no longer works. */
-  readonly expiresAt: number;
+  readonly pollIntervalSeconds: number;
+  readonly expiresAtEpochMilliseconds: number;
 }
 
-/** The network and clock the device flow uses; tests pass their own. */
 export interface FlowEnvironment {
   readonly fetch: (url: string, init: RequestInit) => Promise<Response>;
   readonly sleep: (milliseconds: number) => Promise<void>;
@@ -116,7 +107,6 @@ function toStored(environment: FlowEnvironment, token: z.infer<typeof tokenRespo
   };
 }
 
-/** Asks GitHub for a code that the user enters at the verification page. */
 export async function requestDeviceCode(
   clientId: string,
   environment: FlowEnvironment = defaultEnvironment,
@@ -129,20 +119,19 @@ export async function requestDeviceCode(
     deviceCode: code.device_code,
     userCode: code.user_code,
     verificationUri: code.verification_uri,
-    interval: code.interval,
-    expiresAt: environment.now() + code.expires_in * 1000,
+    pollIntervalSeconds: code.interval,
+    expiresAtEpochMilliseconds: environment.now() + code.expires_in * 1000,
   };
 }
 
-/** Polls until the user enters the code, declines, or the code expires. */
 export async function waitForToken(
   clientId: string,
   code: DeviceCode,
   environment: FlowEnvironment = defaultEnvironment,
 ): Promise<StoredToken> {
-  let interval = code.interval;
-  while (environment.now() < code.expiresAt) {
-    await environment.sleep(interval * 1000);
+  let pollIntervalSeconds = code.pollIntervalSeconds;
+  while (environment.now() < code.expiresAtEpochMilliseconds) {
+    await environment.sleep(pollIntervalSeconds * 1000);
     const token = parse(
       tokenResponse,
       await post(environment, 'https://github.com/login/oauth/access_token', {
@@ -156,7 +145,7 @@ export async function waitForToken(
     }
     if ('error' in token && token.error === 'slow_down') {
       // GitHub asks for five more seconds between polls each time.
-      interval += 5;
+      pollIntervalSeconds += 5;
       continue;
     }
     return toStored(environment, token);
@@ -164,7 +153,7 @@ export async function waitForToken(
   throw new AuthError('The sign-in code expired before it was entered. Sign in again.');
 }
 
-/** Trades a refresh token for a new token. Device-flow tokens refresh without a client secret. */
+// Device-flow tokens refresh without a client secret.
 export async function refreshToken(
   clientId: string,
   refresh: string,

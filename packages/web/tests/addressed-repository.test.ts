@@ -130,7 +130,6 @@ test('on a phone a link to a repository the list does not show is let go of in p
   expect(entries()).toEqual(['/', '/?repository=octo/app']);
 });
 
-/** A phone with octo/app opened from the list, then hidden from its screen. */
 async function hiddenFromItsScreen() {
   const opened = page('/');
   await opened.refreshing;

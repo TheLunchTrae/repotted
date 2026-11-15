@@ -3,20 +3,13 @@ import { z } from 'zod';
 import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from './github.js';
 import type { Access, AppAccess, Role } from './permissions.js';
 
-/** A repository the signed-in account can manage settings on. */
 export interface Repository {
-  /** `owner/name`. */
   readonly full_name: string;
   readonly private: boolean;
   readonly archived: boolean;
 }
 
 export interface RepositoryList {
-  /**
-   * `installations`: the repositories a GitHub App user token reaches, through
-   * the App's installations. `admin`: the repositories any other token can
-   * administer.
-   */
   readonly source: 'installations' | 'admin';
   readonly repositories: readonly Repository[];
 }
@@ -72,8 +65,7 @@ async function installationRepositories(
   const found = new Map<string, Repository>();
   for (const installation of installations) {
     const repositories = await installationRepositoryList(github, installation.id);
-    // An installation lists the repositories the user can read; only those
-    // they administer can have their settings changed.
+    // An installation lists every repository the user can read.
     for (const entry of repositories.filter(administered)) {
       found.set(entry.full_name, describe(entry));
     }
@@ -89,10 +81,7 @@ async function adminRepositories(github: GitHub): Promise<Repository[]> {
   return repositories.filter(administered).map(describe);
 }
 
-/**
- * The App installations the token reaches, or undefined when GitHub refuses
- * the list, which it does to any token but a GitHub App user token.
- */
+/** Undefined when GitHub refuses the list, which it does to any token but a GitHub App user token. */
 async function listInstallations(github: GitHub): Promise<z.infer<typeof installation>[] | undefined> {
   try {
     return await readAllPages('/user/installations', async (url) => {
@@ -109,11 +98,8 @@ async function listInstallations(github: GitHub): Promise<z.infer<typeof install
 }
 
 /**
- * Lists the repositories Repotted can manage with this token, by name: those
- * the account administers. A GitHub App user token reaches them through the
- * App's installations. GitHub refuses the installation list to any other
- * token with a 403, so it gets every repository the account administers,
- * which the token itself may not be allowed to change.
+ * A token that is not a GitHub App user token gets every repository the
+ * account administers, which the token itself may not be allowed to change.
  */
 export async function listRepositories(github: GitHub): Promise<RepositoryList> {
   const installations = await listInstallations(github);
@@ -149,30 +135,26 @@ function readRole(flags: z.infer<typeof viewer>['permissions']): Role | null {
   return order.find(([flag]) => flags?.[flag] === true)?.[1] ?? null;
 }
 
-/** `fullName` is the repository's name as GitHub has it now, after any rename or transfer. */
-async function readAppAccess(github: GitHub, fullName: string): Promise<AppAccess> {
+async function readAppAccess(github: GitHub, fullNameOnGitHubNow: string): Promise<AppAccess> {
   const installations = await listInstallations(github);
   if (installations === undefined) {
     return { status: 'unknown' };
   }
   // An account installs an App once, so the installation on the owner is the only one that can cover the repository.
-  const owner = fullName.split('/')[0] ?? fullName;
+  const owner = fullNameOnGitHubNow.split('/')[0] ?? fullNameOnGitHubNow;
   const owned = installations.find((item) => sameName(item.account?.login, owner));
   const covers =
     owned !== undefined &&
     (owned.repository_selection === 'all' ||
-      (await installationRepositoryList(github, owned.id)).some((entry) => sameName(entry.full_name, fullName)));
+      (await installationRepositoryList(github, owned.id)).some((entry) =>
+        sameName(entry.full_name, fullNameOnGitHubNow),
+      ));
   if (owned === undefined || !covers) {
     return { status: 'not_installed' };
   }
   return { status: 'installed', permissions: owned.permissions ?? {}, settings_url: owned.html_url ?? null };
 }
 
-/**
- * What the signed-in account and its GitHub App may change on `repo`: the
- * account's role there, and the permissions granted to the App's
- * installation on it. It only reads.
- */
 export async function readAccess(github: GitHub, repo: RepoRef): Promise<Access> {
   const found = viewer.parse(await github.request('GET', repoPath(repo)));
   return {
@@ -183,7 +165,6 @@ export async function readAccess(github: GitHub, repo: RepoRef): Promise<Access>
 
 const user = z.object({ login: z.string(), name: z.string().nullish() });
 
-/** The account a token signs in as. */
 export async function currentUser(github: GitHub): Promise<{ login: string; name: string | null }> {
   const parsed = user.parse(await github.request('GET', '/user'));
   return { login: parsed.login, name: parsed.name ?? null };

@@ -58,7 +58,6 @@ function describe(error: z.ZodError): string {
   return z.prettifyError(error);
 }
 
-/** A profile file without its drafts: what it adds to the profile that applies. */
 type OwnProfile = Omit<ProfileFile, 'autolinks' | 'rulesets' | 'environments' | 'labels' | 'drafts'> & {
   autolinks?: AutolinkEntry[] | undefined;
   rulesets?: RulesetEntry[] | undefined;
@@ -66,13 +65,6 @@ type OwnProfile = Omit<ProfileFile, 'autolinks' | 'rulesets' | 'environments' | 
   labels?: LabelEntry[] | undefined;
 };
 
-/**
- * A profile's drafts: settings by section, as the profile's `drafts` holds
- * them, the autolinks, rulesets, environments and labels marked `draft: true`,
- * and `unset`, what finishing the drafts stops managing, as
- * `repository.has_wiki` or `rulesets/Legacy`. Plan and apply leave every
- * draft out.
- */
 export interface Drafts extends Partial<Record<SettingsSection, Readonly<Record<string, unknown>> | undefined>> {
   autolinks?: DraftAutolink[] | undefined;
   rulesets?: DraftEntry[] | undefined;
@@ -93,7 +85,6 @@ function isDraftAutolink(entry: object): entry is DraftAutolink {
   return isDraft(entry);
 }
 
-/** Splits a list into its entries and its drafts; a list left empty is left out. */
 function partition<Entry extends object, Draft extends object>(
   list: readonly (Entry | Draft)[] | undefined,
   draft: (item: Entry | Draft) => item is Draft,
@@ -114,7 +105,6 @@ function partition<Entry extends object, Draft extends object>(
   ];
 }
 
-/** The names that appear more than once in a list of drafts, as problems. */
 function duplicateKeys<Entry>(
   list: readonly Entry[] | undefined,
   label: (entry: Entry) => string,
@@ -132,36 +122,25 @@ function duplicateKeys<Entry>(
 }
 
 /**
- * Changes a chain's merged profile before it is checked, as a staged apply
- * leaves out what it excludes, so only the result has to be a valid profile.
- * It names, as `unmatched`, each part of the change that changed nothing.
+ * Changes a chain's merged profile before it is checked, so only the result
+ * has to be a valid profile. `unmatched` names each part of the change that
+ * changed nothing.
  */
 export type Adjust = (data: unknown) => { readonly data: unknown; readonly unmatched: readonly string[] };
 
-/** What one parse of a chain's first file yields: its profile layer, and what changes the merged profile. */
 export interface LayerRead {
   readonly layer: ProfileFile;
   readonly adjust?: Adjust | undefined;
 }
 
-/**
- * How a chain's first file reads: a profile file, or a file that carries a
- * profile layer with keys of its own, such as a staged apply. The schema
- * checks the whole file and yields its layer, its adjust, and anything else
- * the file says, from one parse.
- */
+/** Checks the whole file and yields its layer, its adjust, and anything else the file says, from one parse. */
 export type LayerSchema<Read extends LayerRead> = z.ZodType<Read>;
 
-/**
- * A kind of file a chain starts with: what it is called, how it reads, keys
- * of its own that an edit may set, and a last check before an edit is saved.
- */
 export interface Layer<Read extends LayerRead> {
-  /** What the file is called in errors, as `profile` or `staged apply`. */
+  /** As `profile` or `staged apply`, in errors. */
   readonly noun: string;
   readonly schema: LayerSchema<Read>;
-  /** Top-level keys of the file's own, which a setting edit may set or remove whole. */
-  readonly paths: ReadonlySet<string>;
+  readonly ownTopLevelKeys: ReadonlySet<string>;
   /** Throws when the edited file, resolved, is not one to save. */
   readonly check: (edited: ResolvedLayer<Read>) => void;
 }
@@ -169,11 +148,10 @@ export interface Layer<Read extends LayerRead> {
 const profileLayer: Layer<LayerRead> = {
   noun: 'profile',
   schema: profileFile.transform((layer) => ({ layer })),
-  paths: new Set(),
+  ownTopLevelKeys: new Set(),
   check: () => undefined,
 };
 
-/** A value of a merged profile, with the file that sets it. */
 interface Sourced<Entry> {
   readonly entry: Entry;
   readonly file: string;
@@ -195,16 +173,13 @@ function mergeByKey<Entry>(
 
 type Settings = Record<string, unknown>;
 
-/** The lists of entries a profile holds, each known by its prefix or name. */
 type EntryList = 'autolinks' | 'rulesets' | 'environments' | 'labels';
 
-/** The sections that hold settings, which merge key by key. */
 export const settingsSections = ['repository', 'merge', 'actions', 'security', 'custom_properties', 'pages'] as const;
 
 export type SettingsSection = (typeof settingsSections)[number];
 
-/** The keys of a section's schema whose value is an object of settings. */
-function groups(schema: z.ZodObject): ReadonlySet<string> {
+function keysHoldingAnObjectOfSettings(schema: z.ZodObject): ReadonlySet<string> {
   return new Set(
     Object.entries(schema.shape)
       .filter(([, field]) => (field instanceof z.ZodOptional ? field.unwrap() : field) instanceof z.ZodObject)
@@ -214,19 +189,18 @@ function groups(schema: z.ZodObject): ReadonlySet<string> {
 
 /**
  * Keys whose value is itself an object of settings, such as
- * `selected_actions`. They merge key by key, one level down, so an override
- * can change one of them and keep the rest.
+ * `selected_actions`, merge key by key, one level down, so an override can
+ * change one of them and keep the rest.
  */
 const groupKeys: Readonly<Record<SettingsSection, ReadonlySet<string>>> = {
-  repository: groups(repositorySettings),
+  repository: keysHoldingAnObjectOfSettings(repositorySettings),
   merge: new Set(),
-  actions: groups(actionsSettings),
-  security: groups(securitySettings),
+  actions: keysHoldingAnObjectOfSettings(actionsSettings),
+  security: keysHoldingAnObjectOfSettings(securitySettings),
   custom_properties: new Set(),
-  pages: groups(pagesSite),
+  pages: keysHoldingAnObjectOfSettings(pagesSite),
 };
 
-/** Each section's schema, by which a setting in it is checked. */
 const sectionSchemas: Readonly<Record<SettingsSection, z.ZodObject | undefined>> = {
   repository: repositorySettings,
   merge: mergeSettingsSchema,
@@ -246,18 +220,14 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/**
- * Whether a path names one setting: a section's key, or a key inside one of
- * its groups, as `actions.selected_actions.verified_allowed`.
- */
 function isSettingsSection(name: string | undefined): name is SettingsSection {
   return settingsSections.some((section) => section === name);
 }
 
 /**
- * What a path under a settings section names: one setting, such as
- * `repository.has_wiki` or `actions.selected_actions.verified_allowed`, a
- * group of settings, such as `actions.selected_actions`, or nothing.
+ * One setting, such as `repository.has_wiki` or
+ * `actions.selected_actions.verified_allowed`; a group of settings, such as
+ * `actions.selected_actions`; or nothing.
  */
 export function settingPath(path: readonly string[]): 'setting' | 'group' | undefined {
   const [section, key, inner, ...rest] = path;
@@ -279,7 +249,6 @@ export function settingPath(path: readonly string[]): 'setting' | 'group' | unde
   return group?.shape[inner] === undefined ? undefined : 'setting';
 }
 
-/** What a key of `drafts.unset` names: one setting, or one entry of a list. */
 type Unset =
   | { readonly kind: 'setting'; readonly path: readonly string[] }
   | { readonly kind: 'entry'; readonly list: EntryList; readonly name: string };
@@ -295,7 +264,6 @@ function isEntryList(name: string): name is EntryList {
   return Object.hasOwn(entryKeys, name);
 }
 
-/** Reads a key of `drafts.unset`, as `repository.has_wiki` or `rulesets/Legacy`, or undefined when it names nothing. */
 function parseUnset(key: string): Unset | undefined {
   const slash = key.indexOf('/');
   if (slash !== -1) {
@@ -307,7 +275,7 @@ function parseUnset(key: string): Unset | undefined {
   return settingPath(parts) === 'setting' ? { kind: 'setting', path: parts } : undefined;
 }
 
-/** The key an unset is known by, so two spellings of one environment's or label's name are one. */
+/** Two spellings of one environment's or label's name are one unset. */
 function unsetKey(unset: Unset): string {
   return unset.kind === 'setting' ? unset.path.join('.') : `${unset.list}/${entryKeys[unset.list](unset.name)}`;
 }
@@ -316,7 +284,6 @@ function getIn(value: unknown, keys: readonly string[]): unknown {
   return keys.reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), value);
 }
 
-/** Whether a file's settings or entries, its own or its drafts, name what `unset` names. */
 function names(layer: Readonly<Record<string, unknown>>, unset: Unset): boolean {
   if (unset.kind === 'setting') {
     return getIn(layer, unset.path) !== undefined;
@@ -336,10 +303,6 @@ function names(layer: Readonly<Record<string, unknown>>, unset: Unset): boolean 
   );
 }
 
-/**
- * What is wrong with a file's `drafts.unset`: a key that names nothing, one
- * named twice, or one that a draft of the same file also changes.
- */
 function unsetProblems(keys: readonly string[] | undefined, drafts: Readonly<Record<string, unknown>>): string[] {
   const seen = new Set<string>();
   const problems: string[] = [];
@@ -362,10 +325,7 @@ function unsetProblems(keys: readonly string[] | undefined, drafts: Readonly<Rec
   return problems;
 }
 
-/**
- * A file's `drafts.unset` that names what the file itself does not set:
- * finishing the draft would change nothing there.
- */
+/** Finishing a draft whose `drafts.unset` names what the file itself does not set would change nothing there. */
 function unsetWarnings(link: Link): string[] {
   return (link.drafts.unset ?? []).flatMap((key) => {
     const unset = parseUnset(key);
@@ -377,7 +337,6 @@ function unsetWarnings(link: Link): string[] {
   });
 }
 
-/** A file's layer read and split into what applies and its drafts. */
 interface ParsedLayer<Read extends LayerRead> {
   readonly read: Read;
   readonly own: OwnProfile;
@@ -454,19 +413,13 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
   };
 }
 
-/**
- * Where a setting is in its section: `[key]`, or `[group, key]` inside a
- * group such as `selected_actions`, which an override can change one key of
- * and keep the rest.
- */
+/** `[key]`, or `[group, key]` inside a group such as `selected_actions`. */
 type SettingPath = readonly [string] | readonly [string, string];
 
-/** Whether `value` is a group of settings at `key`, such as `selected_actions`. */
 function isGroup(section: SettingsSection, key: string, value: unknown): value is Readonly<Record<string, unknown>> {
   return groupKeys[section].has(key) && isRecord(value);
 }
 
-/** A section's settings, each with its path. */
 export function flattenSettings(
   section: SettingsSection,
   settings: Readonly<Record<string, unknown>>,
@@ -478,7 +431,6 @@ export function flattenSettings(
   );
 }
 
-/** A section's settings from their paths, as `flattenSettings` gives them. */
 function unflattenSettings(settings: Iterable<readonly [SettingPath, unknown]>): Settings {
   const result: Settings = {};
   for (const [[key, inner], value] of settings) {
@@ -492,18 +444,13 @@ function unflattenSettings(settings: Iterable<readonly [SettingPath, unknown]>):
   return result;
 }
 
-/** A setting of a merge, with its path as `flattenSettings` gives it and the file that sets it. */
 interface SourcedSetting extends Sourced<unknown> {
   readonly path: SettingPath;
 }
 
-/** A section's settings by their path joined with dots, as `has_wiki` or `selected_actions.verified_allowed`. */
+/** By path joined with dots, as `has_wiki` or `selected_actions.verified_allowed`. */
 type SourcedSettings = Map<string, SourcedSetting>;
 
-/**
- * A profile or its drafts mid-merge: each setting and entry carries the file
- * that sets it.
- */
 interface SourcedLayer<Autolink, Ruleset, Environment, Label> {
   settings: Partial<Record<SettingsSection, SourcedSettings>>;
   autolinks?: Sourced<Autolink>[] | undefined;
@@ -562,7 +509,6 @@ const rulesetKey = (entry: { name: string }): string => entry.name;
 const environmentEntryKey = (entry: { name: string }): string => environmentKey(entry.name);
 const labelEntryKey = (entry: { name: string }): string => labelKey(entry.name);
 
-/** Lays each section's settings in `override` over `base`'s. */
 function mergeSections(
   base: Partial<Record<SettingsSection, SourcedSettings>>,
   override: Readonly<Partial<Record<SettingsSection, Settings | undefined>>>,
@@ -579,11 +525,10 @@ function mergeSections(
 }
 
 /**
- * Lays `override` over `base`, a profile over a profile or drafts over
- * drafts. Settings merge key by key, and so do the settings inside a group
- * such as `selected_actions`; an autolink, ruleset, environment or label in the
- * override replaces the base entry of the same name whole. Drafts never
- * merge with what applies.
+ * Settings merge key by key, and so do the settings inside a group such as
+ * `selected_actions`; an autolink, ruleset, environment or label in the
+ * override replaces the base entry of the same name whole. Drafts never merge
+ * with what applies.
  */
 function mergeLayers<
   Autolink extends { key_prefix: string },
@@ -670,7 +615,6 @@ function toDrafts(merged: SourcedDrafts, unset: ReadonlyMap<string, Sourced<stri
   );
 }
 
-/** What stops one draft setting from applying as it stands, if anything. */
 function settingProblems(section: SettingsSection, key: string, value: unknown): string[] {
   const schema = sectionSchemas[section];
   const field: unknown = schema === undefined ? customProperties : schema.shape[key];
@@ -681,7 +625,6 @@ function settingProblems(section: SettingsSection, key: string, value: unknown):
   return result.success ? [] : issueLines(result.error);
 }
 
-/** What stops one draft entry from applying as it stands, if anything. */
 function entryProblems(schema: z.ZodType, { draft: _draft, ...entry }: Readonly<Record<string, unknown>>): string[] {
   const result = schema.safeParse(entry);
   return result.success ? [] : issueLines(result.error);
@@ -706,11 +649,7 @@ function renamedDraftWarnings(applied: Profile, drafts: Drafts): string[] {
   });
 }
 
-/**
- * What stops each draft from applying as it stands: a key the section does
- * not have, or a value or entry the profile would reject. A draft may be
- * unfinished, so these are warnings; finishing a draft makes them errors.
- */
+/** A draft may be unfinished, so these are warnings; finishing a draft makes them errors. */
 function draftWarnings(drafts: Drafts): string[] {
   const warnings: string[] = [];
   for (const section of settingsSections) {
@@ -756,10 +695,9 @@ function fileDraftWarnings(drafts: Drafts, file: string): string[] {
 }
 
 /**
- * The file that sets each value of a resolved profile. Settings go by key,
- * and a setting inside a group by `<group>.<key>`, as
- * `selected_actions.verified_allowed` under `actions`. Autolinks go by
- * prefix, and rulesets, environments and labels by name.
+ * Settings go by key, and a setting inside a group by `<group>.<key>`, as
+ * `selected_actions.verified_allowed` under `actions`. Autolinks go by prefix,
+ * and rulesets, environments and labels by name.
  */
 export type ProfileSources = Readonly<
   Record<SettingsSection | EntryList, Record<string, string>> & {
@@ -771,17 +709,15 @@ export type ProfileSources = Readonly<
   }
 >;
 
-/** A profile file laid over every profile it extends. */
 export interface ResolvedProfile {
   /** The profile file, then each one it extends, as real paths. */
   readonly chain: readonly string[];
-  /** What applies: the profile without its drafts. */
   readonly profile: Profile;
   readonly drafts: Drafts;
   /** What stops each draft from applying as it stands. */
   readonly warnings: readonly string[];
   readonly sources: ProfileSources;
-  /** The file in the chain that sets the owner type, or null when none does. */
+  /** Null when no file in the chain sets the owner type. */
   readonly owner_source: string | null;
   /**
    * What changing the first file's owner type to each type would leave not
@@ -800,10 +736,8 @@ interface Link {
   readonly drafts: Drafts;
 }
 
-/** A chain as read: each file read once, its first file's text, and what one parse of that text yields. */
 interface Chain<Read extends LayerRead> {
   readonly head: Read;
-  /** The first file's text, which an edit changes. */
   readonly text: string;
   readonly links: readonly [Link, ...Link[]];
 }
@@ -836,7 +770,6 @@ async function readChain<Read extends LayerRead>(file: string, kind: Layer<Read>
   return { head: head.read, text: first.text, links };
 }
 
-/** The file that sets each setting and entry of a merge, by section. */
 function sourcesOf(
   merged: SourcedProfile | SourcedDrafts,
 ): Record<SettingsSection | EntryList, Record<string, string>> {
@@ -854,7 +787,6 @@ function sourcesOf(
   };
 }
 
-/** A chain resolved from what one read of its first file yields. */
 export interface ResolvedLayer<Read extends LayerRead> {
   readonly head: Read;
   readonly resolved: ResolvedProfile;
@@ -862,10 +794,7 @@ export interface ResolvedLayer<Read extends LayerRead> {
   readonly unmatched: readonly string[];
 }
 
-/**
- * The owner type of a chain and the file that sets it: the nearest file that
- * names one. Files that name different ones cannot extend each other.
- */
+/** The nearest file that names an owner type sets it. Files that name different ones cannot extend each other. */
 function chainOwnerType(chain: readonly Link[]): { type: OwnerType; file: string } | undefined {
   const typed = chain.flatMap((link) =>
     link.parsed.owner_type === undefined ? [] : [{ type: link.parsed.owner_type, file: link.file }],
@@ -880,17 +809,14 @@ function chainOwnerType(chain: readonly Link[]): { type: OwnerType; file: string
   return first;
 }
 
-/** The target of an owner type conflict, as `owner_changes` names it. */
 function conflictTarget({ edit }: OwnerConflict): string {
   return 'list' in edit ? `${edit.draft === true ? 'drafts.' : ''}${edit.list}/${edit.name}` : edit.path.join('.');
 }
 
-/** The targets of owner type conflicts, as `owner_changes` names them. */
 function conflictTargets(conflicts: readonly OwnerConflict[]): string[] {
   return [...new Set(conflicts.map(conflictTarget))];
 }
 
-/** The edits that change a profile file's owner type and leave not managed what the type doesn't have. */
 function ownerTypeEdits(layer: ProfileFile, type: OwnerType | undefined): ProfileEdit[] {
   const conflicts = [...ownerConflicts(layer, type, { drafts: true }), ...draftOwnerConflicts(layer.drafts, type)];
   const edits = new Map<string, ProfileEdit>();
@@ -933,12 +859,10 @@ function ownerTypeEdits(layer: ProfileFile, type: OwnerType | undefined): Profil
   return [{ path: ['owner_type'], value: type }, ...edits.values(), ...unsetEdits];
 }
 
-/** The draft rulesets and environments that owners of `type` don't have. */
 function draftEntryOwnerConflicts(drafts: Drafts, type: OwnerType | undefined): OwnerConflict[] {
   return ownerConflicts({ rulesets: drafts.rulesets, environments: drafts.environments }, type, { drafts: true });
 }
 
-/** What changing a file's owner type to each type would leave not managed in it. */
 function ownerChanges(head: Link | undefined): Record<OwnerType, string[]> {
   const targets = (type: OwnerType): string[] =>
     head === undefined
@@ -1012,7 +936,6 @@ function resolveChain(
   };
 }
 
-/** Reads a chain whose first file is of `kind`, reading each file once, and resolves it. */
 export async function resolveLayer<Read extends LayerRead>(
   file: string,
   kind: Layer<Read>,
@@ -1021,15 +944,11 @@ export async function resolveLayer<Read extends LayerRead>(
   return { head, ...resolveChain(links, path.resolve(file), head.adjust) };
 }
 
-/** Reads a profile file and every profile it extends, and says which file sets each value. */
 export async function resolveProfile(file: string): Promise<ResolvedProfile> {
   return (await resolveLayer(file, profileLayer)).resolved;
 }
 
-/**
- * Parses profile YAML that is not in a file, such as text an agent sends.
- * `extends` resolves from `directory`.
- */
+/** For profile YAML that is not in a file, such as text an agent sends. `extends` resolves from `directory`. */
 export async function parseProfile(text: string, directory: string): Promise<ResolvedProfile> {
   const parsed = parseLayer(text, 'The profile', profileLayer);
   const base =
@@ -1038,23 +957,20 @@ export async function parseProfile(text: string, directory: string): Promise<Res
     .resolved;
 }
 
-/** A profile file in a folder of profiles, as a list of them shows it. */
 export interface ProfileListing {
   /** The file name without its extension. */
   readonly name: string;
   /** The subfolder the file is in, from the listed folder, with `/` separators; '' for the folder itself. */
   readonly folder: string;
-  /** The file's real path, as \`resolveProfile\` reports it in its chain. */
   readonly file: string;
-  /** The real path of the profile this one extends, or null when it extends none or cannot be read. */
+  /** Null when it extends none or the profile it extends cannot be read. */
   readonly extends: string | null;
-  /** Why the profile cannot be used, or null when it resolves. */
+  /** Null when it resolves. */
   readonly problem: string | null;
-  /** What owns the repositories the profile is for, or null when it is for any owner or doesn't resolve. */
+  /** Null when it is for any owner or doesn't resolve. */
   readonly owner_type: OwnerType | null;
 }
 
-/** Adds the profiles in one folder, then those in its subfolders, to `listings`. */
 async function listFolder(root: string, folder: string, entries: Dirent[], listings: ProfileListing[]): Promise<void> {
   const byName = (a: Dirent, b: Dirent): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   for (const entry of entries.filter((item) => /\.ya?ml$/iu.test(item.name) && !item.isDirectory()).sort(byName)) {
@@ -1092,11 +1008,7 @@ async function listFolder(root: string, folder: string, entries: Dirent[], listi
   }
 }
 
-/**
- * Lists the YAML profiles in a folder and its subfolders, by folder and then
- * name, and whether each resolves. Hidden subfolders, such as .git, and linked
- * ones are left out, as a sync leaves them out.
- */
+/** Hidden subfolders, such as .git, and linked ones are left out, as a sync leaves them out. */
 export async function listProfiles(directory: string): Promise<ProfileListing[]> {
   const root = path.resolve(directory);
   const listings: ProfileListing[] = [];
@@ -1110,18 +1022,17 @@ export async function listProfiles(directory: string): Promise<ProfileListing[]>
   return listings;
 }
 
-/** One setting to change in a profile file: a value to set, or undefined to remove it. */
+/** An undefined `value` removes the setting. */
 export interface SettingEdit {
-  /** The section and key, such as `['repository', 'has_wiki']` or `['actions', 'selected_actions', 'verified_allowed']`. */
+  /** As `['repository', 'has_wiki']` or `['actions', 'selected_actions', 'verified_allowed']`. */
   readonly path: readonly string[];
   readonly value: unknown;
 }
 
 /**
- * One ruleset, environment or label to change in a profile file, by name: the entry
- * to write, or undefined to stop naming it here, so the entry of that name in
- * a base profile, if any, applies again. An entry with another name renames
- * the file's entry in place.
+ * An undefined `entry` stops naming it here, so the entry of that name in a
+ * base profile, if any, applies again. An entry with another name renames the
+ * file's entry in place.
  *
  * A file may hold a draft and an entry of the same name, so `draft` says
  * which one the edit finds. The entry written is a draft when it has
@@ -1138,9 +1049,9 @@ export interface EntryEdit {
 export type ProfileEdit = SettingEdit | EntryEdit;
 
 /**
- * Whether a path under `drafts` names one draft setting. A draft may name a
- * key the section does not have yet, so any key goes, and a key inside a
- * group such as `selected_actions` goes by the group's key as settings do.
+ * A draft may name a key the section does not have yet, so any key goes, and
+ * a key inside a group such as `selected_actions` goes by the group's key as
+ * settings do.
  */
 function isDraftPath(path: readonly string[]): boolean {
   const [section, key, inner, ...rest] = path;
@@ -1179,9 +1090,9 @@ function identity(value: unknown): string | undefined {
 }
 
 /**
- * Makes `map` hold `value` and changes only the keys that differ, so the
- * rest keep their place and comments. A scalar keeps its comment when only
- * its value changes, and a list keeps the items it still holds.
+ * Changes only the keys that differ, so the rest keep their place and
+ * comments. A scalar keeps its comment when only its value changes, and a list
+ * keeps the items it still holds.
  */
 function updateMap(document: Document, map: YAMLMap, value: Readonly<Record<string, unknown>>): void {
   // A list reuses each item that is the same, then each known by the same
@@ -1225,8 +1136,8 @@ function updateMap(document: Document, map: YAMLMap, value: Readonly<Record<stri
   }
 }
 
-/** Whether `node` holds a YAML anchor or alias, which an edit could leave dangling or expand. */
-function sharesNodes(node: YAMLSeq): boolean {
+/** An edit could leave a YAML anchor or alias dangling, or expand it. */
+function holdsYamlAnchorOrAlias(node: YAMLSeq): boolean {
   let shares = false;
   visit(node, (_, item) => {
     if (isAlias(item) || (isNode(item) && item.anchor !== undefined)) {
@@ -1238,11 +1149,7 @@ function sharesNodes(node: YAMLSeq): boolean {
   return shares;
 }
 
-/**
- * Writes, renames or removes the file's own entry of the edit's name. A
- * written entry takes the place of the one it replaces, and a new name goes
- * at the end.
- */
+/** A written entry takes the place of the one it replaces, and a new name goes at the end. */
 function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void {
   const key = { rulesets: (name: string) => name, environments: environmentKey, labels: labelKey }[edit.list];
   const from = edit.draft === true;
@@ -1268,7 +1175,7 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
     throw new ProfileError(`Cannot edit ${edit.list}: it is not a list`);
   }
   const list = isSeq(found) ? found : undefined;
-  if (list !== undefined && sharesNodes(list)) {
+  if (list !== undefined && holdsYamlAnchorOrAlias(list)) {
     throw new ProfileError(`Cannot edit ${edit.list}: the file shares parts of them with YAML anchors and aliases`);
   }
   const find = (wanted: string, draft: boolean): number =>
@@ -1309,8 +1216,7 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
   }
 }
 
-/** Moves the comment and blank line over one key to another, as when a key goes in or out above it. */
-function moveLead(from: Scalar, to: Scalar): void {
+function moveLeadingCommentAndBlankLine(from: Scalar, to: Scalar): void {
   if (from.commentBefore !== undefined && from.commentBefore !== null) {
     // A comment the key already has stays, under the one that moves.
     to.commentBefore =
@@ -1326,8 +1232,8 @@ function moveLead(from: Scalar, to: Scalar): void {
 }
 
 /**
- * Sets `owner_type`. A file that doesn't name it yet gets it first, or right
- * after `extends`, with any comment over the file's first key kept above it.
+ * A file that doesn't name `owner_type` yet gets it first, or right after
+ * `extends`, with any comment over the file's first key kept above it.
  */
 function setOwnerType(document: Document, value: unknown): void {
   const contents = document.contents;
@@ -1339,12 +1245,12 @@ function setOwnerType(document: Document, value: unknown): void {
   const pair = document.createPair('owner_type', value);
   const first = contents.items[0]?.key;
   if (at === 0 && isScalar(first) && isScalar(pair.key)) {
-    moveLead(first, pair.key);
+    moveLeadingCommentAndBlankLine(first, pair.key);
   }
   contents.items.splice(at, 0, pair);
 }
 
-/** Removes `owner_type`, and leaves the comment over it to the key after it. */
+/** The comment over `owner_type` goes to the key after it. */
 function removeOwnerType(document: Document): void {
   const contents = document.contents;
   if (isMap(contents)) {
@@ -1352,13 +1258,12 @@ function removeOwnerType(document: Document): void {
     const key = contents.items[at]?.key;
     const next = contents.items[at + 1]?.key;
     if (isScalar(key) && isScalar(next)) {
-      moveLead(key, next);
+      moveLeadingCommentAndBlankLine(key, next);
     }
   }
   document.delete('owner_type');
 }
 
-/** A chain's first file with edits made to its text, resolved, and not yet saved. */
 interface EditedLayer<Read extends LayerRead> {
   /**
    * Resolves the chain as it was read. Only a preview needs it, and an edit
@@ -1386,7 +1291,7 @@ async function editChain<Read extends LayerRead>(
       continue;
     }
     const key = edit.path.join('.');
-    if (!isEditable(edit.path) && !layer.paths.has(key)) {
+    if (!isEditable(edit.path) && !layer.ownTopLevelKeys.has(key)) {
       throw new ProfileError(`Cannot edit ${key}: it is not one setting of a profile section, or a draft of one`);
     }
     if (seen.has(key)) {
@@ -1404,7 +1309,6 @@ async function editChain<Read extends LayerRead>(
       );
       continue;
     }
-    // Nothing to remove when the file does not name the setting.
     if (!document.hasIn(edit.path)) {
       continue;
     }
@@ -1437,9 +1341,8 @@ async function editChain<Read extends LayerRead>(
 }
 
 /**
- * Edits the first file of a chain, as `editProfile` does, for any kind of
- * layer. The file is read once, and `edits` says what to change from what
- * that read yields, so the edits and the text they change agree.
+ * The file is read once, and `edits` says what to change from what that read
+ * yields, so the edits and the text they change agree.
  */
 export async function editLayer<Read extends LayerRead>(
   file: string,
@@ -1460,19 +1363,14 @@ export async function editLayer<Read extends LayerRead>(
 }
 
 /**
- * Changes settings in one profile file and keeps its comments, line endings
- * and indent width; YAML layout such as quoting and list indentation may be
- * normalized. The file changes only when the result, laid over the profiles
- * it extends, is a valid profile.
+ * Keeps the file's comments, line endings and indent width; YAML layout such
+ * as quoting and list indentation may be normalized. The file changes only
+ * when the result, laid over the profiles it extends, is a valid profile.
  */
 export async function editProfile(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
   return (await editLayer(file, () => edits, profileLayer)).resolved;
 }
 
-/**
- * What the first file of a chain resolves to now and with `edits`, as
- * `editLayer` would leave it, for any kind of layer. Nothing is written.
- */
 export async function previewLayer<Read extends LayerRead>(
   file: string,
   edits: (head: Read) => readonly ProfileEdit[],
@@ -1482,22 +1380,16 @@ export async function previewLayer<Read extends LayerRead>(
   return { before: await resolveLayer(file, layer), after: result };
 }
 
-/** What a profile resolves to before and after edits that are not saved. */
 export interface ProfilePreview {
   readonly before: ResolvedProfile;
   readonly after: ResolvedProfile;
 }
 
-/**
- * Resolves a profile as it is and as `editProfile` would leave it, and saves
- * nothing. The edits are checked as `editProfile` checks them.
- */
 export async function previewProfile(file: string, edits: readonly ProfileEdit[]): Promise<ProfilePreview> {
   const { before, result } = await editChain(file, () => edits, profileLayer);
   return { before: before(), after: result.resolved };
 }
 
-/** Whether a file sets, itself, what an owner type conflict in a base names. */
 function overrides(own: Link, { edit }: OwnerConflict): boolean {
   if ('list' in edit) {
     const entries = edit.draft === true ? own.drafts[edit.list] : own.parsed[edit.list];
@@ -1511,9 +1403,8 @@ function overrides(own: Link, { edit }: OwnerConflict): boolean {
 }
 
 /**
- * Why an owner type change that failed can't go ahead, when a base the file
- * builds on sets what the type lacks and the file doesn't override it: the
- * change edits only the file, so only the base can drop it.
+ * A base the file builds on sets what the type lacks and the file doesn't
+ * override it: the change edits only the file, so only the base can drop it.
  */
 async function blockingBase(file: string, type: OwnerType | undefined, error: unknown): Promise<Error | undefined> {
   if (type === undefined || !(error instanceof ProfileError)) {
@@ -1551,13 +1442,7 @@ async function blockingBase(file: string, type: OwnerType | undefined, error: un
   return undefined;
 }
 
-/**
- * Makes a profile file one for owners of `type`, or for any owner when it is
- * undefined, and leaves not managed what that type doesn't have in the file:
- * it removes those settings, drops a push ruleset, and writes a ruleset or
- * environment without the parts only organizations have. The base profiles
- * stay as they are, so the file changes only when they agree with the type.
- */
+/** The base profiles stay as they are, so the file changes only when they agree with the type. */
 export async function changeOwnerType(file: string, type: OwnerType | undefined): Promise<ResolvedProfile> {
   try {
     return (await editLayer(file, (head) => ownerTypeEdits(head.layer, type), profileLayer)).resolved;

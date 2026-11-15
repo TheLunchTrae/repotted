@@ -3,7 +3,6 @@ import type { JSX } from 'preact';
 import type { Account } from '../app/account.js';
 import { run } from './run.js';
 
-/** The page a browser that isn't signed in gets, whatever the address. */
 export function SignIn({ account }: { readonly account: Account }): JSX.Element {
   const state = account.state.value;
   return (

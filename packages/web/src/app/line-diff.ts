@@ -1,20 +1,17 @@
-/** One line of a diff: in both texts, only in the new one, or only in the old one. */
 export interface DiffLine {
   readonly kind: 'same' | 'added' | 'removed';
   readonly text: string;
 }
 
-/** A run of lines that are the same in both texts, folded away from the changes around it. */
 export interface DiffFold {
   readonly kind: 'fold';
   readonly lines: readonly string[];
 }
 
 /**
- * The lines of `before` and `after` as one diff, by their longest common
- * run of lines, with each removed line ahead of the added lines that
- * replace it. It compares every line with every line, which suits texts
- * the size of a profile.
+ * A longest-common-subsequence diff, with each removed line ahead of the
+ * added lines that replace it. It compares every line with every line, which
+ * suits texts the size of a profile.
  */
 export function diffLines(before: readonly string[], after: readonly string[]): DiffLine[] {
   // common[i][j] is how many lines the texts share from line i of before and line j of after on.
@@ -49,11 +46,7 @@ export function diffLines(before: readonly string[], after: readonly string[]): 
   return lines;
 }
 
-/**
- * A diff with each run of unchanged lines folded, but for `context` lines
- * beside a change. A run too short to be worth a fold stays as it is.
- */
-export function foldUnchanged(lines: readonly DiffLine[], context = 3): (DiffLine | DiffFold)[] {
+export function foldUnchanged(lines: readonly DiffLine[], contextLinesBesideChange = 3): (DiffLine | DiffFold)[] {
   const folded: (DiffLine | DiffFold)[] = [];
   let start = 0;
   while (start < lines.length) {
@@ -61,15 +54,14 @@ export function foldUnchanged(lines: readonly DiffLine[], context = 3): (DiffLin
     while (end < lines.length && lines[end]?.kind === 'same') {
       end += 1;
     }
-    // The run keeps its lines beside a change: after one, when it isn't the first run, and before one, when it isn't the last.
-    const from = start === 0 ? start : start + context;
-    const to = end === lines.length ? end : end - context;
-    if (to - from > 1) {
-      folded.push(...lines.slice(start, from), {
+    const foldStart = start === 0 ? start : start + contextLinesBesideChange;
+    const foldEnd = end === lines.length ? end : end - contextLinesBesideChange;
+    if (foldEnd - foldStart > 1) {
+      folded.push(...lines.slice(start, foldStart), {
         kind: 'fold',
-        lines: lines.slice(from, to).map((line) => line.text),
+        lines: lines.slice(foldStart, foldEnd).map((line) => line.text),
       });
-      folded.push(...lines.slice(to, end));
+      folded.push(...lines.slice(foldEnd, end));
     } else {
       folded.push(...lines.slice(start, end));
     }

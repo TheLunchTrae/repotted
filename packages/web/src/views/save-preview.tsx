@@ -10,7 +10,7 @@ function count(amount: number, noun: string): string {
   return amount === 1 ? `1 ${noun}` : `${amount} ${noun}s`;
 }
 
-function message({ drafted, unsaved }: SavePreview): string {
+function message({ draftChangeCount: drafted, unsavedChangeCount: unsaved }: SavePreview): string {
   if (drafted === 0) {
     return 'What applies now against what applies once you save. Save as draft keeps these changes without applying them.';
   }
@@ -45,7 +45,6 @@ function Line({ line }: { readonly line: DiffLine }): JSX.Element {
   );
 }
 
-/** A profile's YAML as a diff, with each run of unchanged lines folded until it is asked for. */
 export function Diff({
   lines,
   label = 'Changes to what applies',
@@ -93,7 +92,6 @@ interface SavePreviewProps {
   readonly preview: SavePreview;
 }
 
-/** The preview of a save: what the profile applies now against what it would, with the ways to save from there. */
 export function SavePreviewDialog({ name, editor, saving, preview }: SavePreviewProps): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -123,7 +121,7 @@ export function SavePreviewDialog({ name, editor, saving, preview }: SavePreview
       >
         <h2 id="preview-heading">Preview changes to {name}</h2>
         <p class="muted small">{message(preview)}</p>
-        {preview.changes === 0 ? (
+        {preview.changedLineCount === 0 ? (
           <p class="notice">Saving applies nothing new: what the profile applies stays as it is.</p>
         ) : (
           <Diff lines={preview.lines} />

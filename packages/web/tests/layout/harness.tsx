@@ -118,7 +118,6 @@ const keeping = await keepFiles(
   browserFiles(() => indexedDB),
   navigator.locks,
 );
-// Two kept profiles, one in a folder, so the profiles list has rows to lay out.
 await mkdir('/profiles/browser/teams', { recursive: true });
 await writeFile('/profiles/browser/base.yaml', 'repository:\n  has_wiki: false\n  delete_branch_on_merge: true\n');
 await writeFile(

@@ -10,7 +10,6 @@ interface ActionSearchProps {
   readonly search: ActionSearch;
 }
 
-/** The search under the allowed action patterns: repositories from GitHub, each with a way to allow its actions. */
 export function ActionSearchBox({ editor, search }: ActionSearchProps): JSX.Element {
   const state = search.state.value;
   const box = useRef<HTMLInputElement>(null);
@@ -64,7 +63,6 @@ export function ActionSearchBox({ editor, search }: ActionSearchProps): JSX.Elem
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             event.preventDefault();
-            // A key held down is one search, however fast its answers land.
             if (!event.repeat) {
               search.enter();
             }

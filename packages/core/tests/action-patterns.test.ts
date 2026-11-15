@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { checkActionPatterns, describeActionCheck, findActions } from '../src/action-patterns.js';
 import { type GitHub, GitHubError, responseError } from '../src/github.js';
 
-/** A GitHub that answers each path with what `answers` holds for it, throws what is an error, and 404s the rest. */
+/** What `answers` holds that is an error is thrown, and a path it leaves out is a 404. */
 function fakeGitHub(answers: Readonly<Record<string, unknown>>): GitHub & { readonly paths: string[] } {
   const paths: string[] = [];
   return {

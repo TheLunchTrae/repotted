@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'vitest';
 
 import { ProfileEditor } from '../src/app/profile-editor.js';
 import { type SettingField, settingSections } from '../src/app/setting-fields.js';
-import { matchesSearch, otherNames, searchWords } from '../src/app/setting-search.js';
+import { matchesSearch, searchSynonymsBySettingPath, searchWords } from '../src/app/setting-search.js';
 import { mkdir, rm, writeFile } from '../src/engine/files.js';
 
 afterEach(async () => {
@@ -37,7 +37,9 @@ function found(editor: ProfileEditor): string[] {
 }
 
 test('every other name belongs to a setting the editor has', () => {
-  expect(Object.keys(otherNames).filter((path) => !fields.some((item) => item.path.join('.') === path))).toEqual([]);
+  expect(
+    Object.keys(searchSynonymsBySettingPath).filter((path) => !fields.some((item) => item.path.join('.') === path)),
+  ).toEqual([]);
 });
 
 test('a setting is found by the start of each word typed, in its label, key, or other names', () => {

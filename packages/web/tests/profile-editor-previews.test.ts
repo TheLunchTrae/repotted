@@ -37,6 +37,6 @@ test('a preview that ends after a later one does not replace what the later one 
   held.resolve(undefined);
   await slow;
 
-  expect(editor.problem.value).toBeUndefined();
+  expect(editor.unsavedChangesProblem.value).toBeUndefined();
   expect(editor.dirty.value).toBe(false);
 });

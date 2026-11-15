@@ -108,14 +108,14 @@ test('a change the engine refuses says why, holds the save back, and writes noth
   await editor.set(field('merge.allow_merge_commit'), false);
   await editor.set(field('merge.allow_rebase_merge'), false);
 
-  expect(editor.problem.value).toMatch(/merge/iu);
+  expect(editor.unsavedChangesProblem.value).toMatch(/merge/iu);
   expect(editor.canSave.value).toBe(false);
   expect(row(editor, 'merge.allow_rebase_merge')).toMatchObject({ value: false, unsaved: true });
   await editor.save(write);
   expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(base);
 
   await editor.reset(field('merge.allow_rebase_merge'));
-  expect(editor.problem.value).toBeUndefined();
+  expect(editor.unsavedChangesProblem.value).toBeUndefined();
   expect(editor.canSave.value).toBe(true);
 });
 
@@ -124,26 +124,29 @@ test('typed text that cannot be a value stays as typed with why, until it can', 
   const days = field('actions.artifact_and_log_retention.days');
 
   await editor.type(days, '0');
-  expect(row(editor, days.path.join('.'))).toMatchObject({ text: '0', invalid: 'Type a whole number, 1 or more.' });
+  expect(row(editor, days.path.join('.'))).toMatchObject({
+    textBeingTyped: '0',
+    typedTextProblem: 'Type a whole number, 1 or more.',
+  });
   expect(editor.dirty.value).toBe(true);
   expect(editor.canSave.value).toBe(false);
 
   await editor.type(days, ' 30 ');
   expect(row(editor, days.path.join('.'))).toMatchObject({
     value: 30,
-    text: ' 30 ',
-    invalid: undefined,
+    textBeingTyped: ' 30 ',
+    typedTextProblem: undefined,
     unsaved: true,
   });
   editor.settle(days);
-  expect(row(editor, days.path.join('.'))?.text).toBeUndefined();
+  expect(row(editor, days.path.join('.'))?.textBeingTyped).toBeUndefined();
 
   await editor.type(field('repository.default_branch'), '  ');
-  expect(row(editor, 'repository.default_branch')?.invalid).toContain("can't be empty");
+  expect(row(editor, 'repository.default_branch')?.typedTextProblem).toContain("can't be empty");
   editor.settle(field('repository.default_branch'));
-  expect(row(editor, 'repository.default_branch')?.text).toBe('  ');
+  expect(row(editor, 'repository.default_branch')?.textBeingTyped).toBe('  ');
   await editor.reset(field('repository.default_branch'));
-  expect(row(editor, 'repository.default_branch')?.invalid).toBeUndefined();
+  expect(row(editor, 'repository.default_branch')?.typedTextProblem).toBeUndefined();
 
   await editor.type(field('repository.description'), '');
   expect(row(editor, 'repository.description')).toMatchObject({ value: '', unsaved: true });
@@ -171,10 +174,10 @@ test('a setting GitHub hides goes with the one it follows, and that one counts w
 test('a setting GitHub greys out stays in place and is marked off', async () => {
   const editor = await opened({ 'web.yaml': 'security:\n  vulnerability_alerts: false\n' });
 
-  expect(row(editor, 'security.automated_security_fixes')).toMatchObject({ off: true });
+  expect(row(editor, 'security.automated_security_fixes')).toMatchObject({ greyedOutOnGitHub: true });
 
   await editor.set(field('security.vulnerability_alerts'), true);
-  expect(row(editor, 'security.automated_security_fixes')).toMatchObject({ off: false });
+  expect(row(editor, 'security.automated_security_fixes')).toMatchObject({ greyedOutOnGitHub: false });
 });
 
 test('taking the Pages site down and describing one take each other out', async () => {
@@ -183,7 +186,7 @@ test('taking the Pages site down and describing one take each other out', async 
   await editor.set(field('pages.absent'), true);
   expect(row(editor, 'pages.build_type')?.value).toBeUndefined();
   expect(row(editor, 'pages.https_enforced')?.value).toBeUndefined();
-  expect(editor.problem.value).toBeUndefined();
+  expect(editor.unsavedChangesProblem.value).toBeUndefined();
 
   await editor.save(write);
   expect(await readFile('/profiles/web.yaml', 'utf8')).toBe('pages:\n  absent: true\n');
@@ -235,13 +238,13 @@ test('settings with no change show as saved while another change is refused, and
 
   await editor.set(field('repository.has_wiki'), false);
   await editor.set(field('merge.allow_squash_merge'), false);
-  expect(editor.problem.value).toBeDefined();
+  expect(editor.unsavedChangesProblem.value).toBeDefined();
   await editor.reset(field('repository.has_wiki'));
   expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: true, source: 'here', unsaved: false });
 
   // A setting GitHub hides goes with the one it follows, refused change or not.
   await editor.set(field('repository.has_pull_requests'), false);
-  expect(editor.problem.value).toBeDefined();
+  expect(editor.unsavedChangesProblem.value).toBeDefined();
   expect(row(editor, 'repository.pull_request_creation_policy')).toBeUndefined();
 });
 
@@ -319,7 +322,7 @@ test('every setting the editor offers, with every choice it gives, is one the en
     for (const value of values) {
       const editor = await opened({ 'probe.yaml': '' }, 'probe.yaml');
       await editor.set(item, value);
-      expect(editor.problem.value, `${item.path.join('.')}: ${JSON.stringify(value)}`).toBeUndefined();
+      expect(editor.unsavedChangesProblem.value, `${item.path.join('.')}: ${JSON.stringify(value)}`).toBeUndefined();
       expect(row(editor, item.path.join('.')), item.path.join('.')).toMatchObject({ value, unsaved: true });
     }
   }
@@ -397,7 +400,11 @@ test('lists each ruleset, environment, and label with the profile that sets it',
     'web.yaml': 'extends: base.yaml\nenvironments:\n  - name: production\n    wait_timer: 5\n',
   });
 
-  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ source: 'base.yaml', unsaved: false, problem: undefined });
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({
+    source: 'base.yaml',
+    unsaved: false,
+    applyProblem: undefined,
+  });
   expect(entry(editor, 'environments', 'production')).toMatchObject({ source: 'here', savedName: 'production' });
   expect(editor.entries.value.labels.map((row) => row.entry?.['name'])).toEqual(['bug']);
 });
@@ -431,14 +438,14 @@ test('a new entry needs a name no other has, in any case, before it can be saved
     }
     return found;
   };
-  expect(added()).toMatchObject({ problem: 'Give it a name.', savedName: undefined, source: undefined });
+  expect(added()).toMatchObject({ applyProblem: 'Give it a name.', savedName: undefined, source: undefined });
   expect(editor.canSave.value).toBe(false);
 
   await editor.changeEntry(added(), { name: 'BUG' });
-  expect(added().problem).toBe('The profile already has a label named BUG.');
+  expect(added().applyProblem).toBe('The profile already has a label named BUG.');
 
   await editor.changeEntry(added(), { name: ' docs ', color: '0075ca' });
-  expect(added().problem).toBeUndefined();
+  expect(added().applyProblem).toBeUndefined();
   await editor.save(write);
   expect(await readFile('/profiles/web.yaml', 'utf8')).toMatch(/- name: docs\n\s+color: 0075ca/u);
   expect(editor.entries.value.labels.map((row) => row.savedName)).toEqual(['bug', 'docs']);
@@ -469,7 +476,7 @@ test('an entry the engine refuses says why and holds the save back', async () =>
 
   await editor.changeEntry(bug, { ...bug.entry, color: 'not-a-color' });
 
-  expect(editor.problem.value).toMatch(/color/iu);
+  expect(editor.unsavedChangesProblem.value).toMatch(/color/iu);
   expect(editor.canSave.value).toBe(false);
   await editor.changeEntry(entry(editor, 'labels', 'bug'), { ...bug.entry });
   expect(editor.dirty.value).toBe(false);
@@ -520,14 +527,14 @@ test('a ruleset that requires status checks and names none is held back', async 
   const main = entry(editor, 'rulesets', 'Main');
 
   await editor.changeEntry(main, { ...main.entry, rules: [{ type: 'required_status_checks' }] });
-  expect(entry(editor, 'rulesets', 'Main').problem).toBe('Name at least one status check that must pass.');
+  expect(entry(editor, 'rulesets', 'Main').applyProblem).toBe('Name at least one status check that must pass.');
   expect(editor.canSave.value).toBe(false);
 
   await editor.changeEntry(entry(editor, 'rulesets', 'Main'), {
     ...main.entry,
     rules: [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'quality' }] } }],
   });
-  expect(entry(editor, 'rulesets', 'Main').problem).toBeUndefined();
+  expect(entry(editor, 'rulesets', 'Main').applyProblem).toBeUndefined();
   expect(editor.canSave.value).toBe(true);
 });
 
@@ -542,11 +549,11 @@ test('an entry that changed elsewhere since its change is held back until the us
   await editor.load();
 
   expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ outOfDate: true, unsaved: true });
-  expect(entry(editor, 'rulesets', 'Main').problem).toContain('changed elsewhere');
+  expect(entry(editor, 'rulesets', 'Main').applyProblem).toContain('changed elsewhere');
   expect(editor.canSave.value).toBe(false);
 
   await editor.keepEntry(entry(editor, 'rulesets', 'Main'));
-  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ outOfDate: false, problem: undefined });
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ outOfDate: false, applyProblem: undefined });
   await editor.save(write);
   const text = await readFile('/profiles/web.yaml', 'utf8');
   expect(text).toContain('enforcement: evaluate');
@@ -589,11 +596,15 @@ test('a change to an entry that was removed elsewhere stays in view, to add it a
   expect(editor.entries.value.rulesets).toEqual([]);
   const orphan = entry(editor, 'labels', 'bug');
   expect(orphan).toMatchObject({ outOfDate: true, saved: undefined, savedName: 'bug' });
-  expect(orphan.problem).toContain('removed elsewhere');
+  expect(orphan.applyProblem).toContain('removed elsewhere');
   expect(editor.canSave.value).toBe(false);
 
   await editor.keepEntry(orphan);
-  expect(entry(editor, 'labels', 'bug')).toMatchObject({ outOfDate: false, savedName: undefined, problem: undefined });
+  expect(entry(editor, 'labels', 'bug')).toMatchObject({
+    outOfDate: false,
+    savedName: undefined,
+    applyProblem: undefined,
+  });
   await editor.save(write);
   expect(await readFile('/profiles/web.yaml', 'utf8')).toMatch(/color: "?5319e7/u);
 });
@@ -604,14 +615,14 @@ test('only a changed entry is checked, so a profile the engine takes can always 
       'rulesets:\n  - name: CI\n    rules:\n      - type: required_status_checks\n  - name: ci\n    target: tag\n',
   });
 
-  expect(editor.entries.value.rulesets.map((row) => row.problem)).toEqual([undefined, undefined]);
+  expect(editor.entries.value.rulesets.map((row) => row.applyProblem)).toEqual([undefined, undefined]);
   await editor.set(field('repository.has_wiki'), true);
   expect(editor.canSave.value).toBe(true);
 
   // Rulesets are told apart by case, so each can change without the other in its way.
   const lower = entry(editor, 'rulesets', 'ci');
   await editor.changeEntry(lower, { ...lower.entry, target: 'branch' });
-  expect(entry(editor, 'rulesets', 'ci').problem).toBeUndefined();
+  expect(entry(editor, 'rulesets', 'ci').applyProblem).toBeUndefined();
   await editor.save(write);
   expect(await readFile('/profiles/web.yaml', 'utf8')).toContain('target: branch');
 });
@@ -644,7 +655,7 @@ test('a name typed and put back is no change, and a saved name in use by an unsa
 
   await editor.takeOut(entry(editor, 'labels', 'bug'));
   await editor.addEntry('labels', { name: 'Bug' });
-  expect(editor.entries.value.labels.find((row) => row.savedName === undefined)?.problem).toContain(
+  expect(editor.entries.value.labels.find((row) => row.savedName === undefined)?.applyProblem).toContain(
     'is the saved name of one you renamed or took out',
   );
   expect(editor.canSave.value).toBe(false);
@@ -658,7 +669,7 @@ test('an entry with a problem holds the save back, while the other changes are s
     await editor.set(field(name), false);
   }
 
-  expect(editor.problem.value).toMatch(/merge/iu);
+  expect(editor.unsavedChangesProblem.value).toMatch(/merge/iu);
   expect(editor.canSave.value).toBe(false);
 });
 
@@ -748,7 +759,7 @@ test("the order a form leaves an entry's keys in never reads as a change, here o
   held.resolve(undefined);
   await saving;
 
-  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ unsaved: true, outOfDate: false, problem: undefined });
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ unsaved: true, outOfDate: false, applyProblem: undefined });
   expect(editor.canSave.value).toBe(true);
 });
 

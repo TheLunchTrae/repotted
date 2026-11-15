@@ -1,4 +1,4 @@
-/** Runs pieces of work one at a time, in the order they were added, whether or not the ones before failed. */
+/** Work still runs, in order, when the work before it failed. */
 export class SerialQueue {
   #last: Promise<unknown> = Promise.resolve();
 

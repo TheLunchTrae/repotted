@@ -14,7 +14,6 @@ const liveSite = z.object({
   public: z.boolean().nullish(),
 });
 
-/** The settings of a Pages site that a profile can set, as GitHub reports them. */
 interface LiveSite {
   readonly build_type?: 'legacy' | 'workflow';
   readonly source?: { branch: string; path: '/' | '/docs' };
@@ -23,7 +22,6 @@ interface LiveSite {
   readonly public?: boolean;
 }
 
-/** The repository's Pages site, or null when it has none. */
 export type LivePages = { readonly available: true; readonly site: LiveSite | null } | Unavailable;
 
 export async function readPages(github: GitHub, repo: RepoRef): Promise<LivePages> {
@@ -57,11 +55,6 @@ function isAbsent(entry: PagesEntry): entry is Extract<PagesEntry, { absent: tru
   return entry.absent === true;
 }
 
-/**
- * Plans the Pages site: creates it when the profile describes one the
- * repository lacks, then sets what creating it cannot, and deletes it for
- * `absent: true`.
- */
 export function planPages(desired: PagesEntry, live: LivePages, repo: RepoRef): SectionPlan {
   if (!live.available) {
     return { changes: [], warnings: [{ section: 'pages', cause: live.cause, message: live.reason }] };
@@ -130,9 +123,9 @@ export function planPages(desired: PagesEntry, live: LivePages, repo: RepoRef): 
 }
 
 /**
- * A site as a profile describes it, for capture. A site built by a workflow
- * has no source to keep, the custom domain belongs to one repository, and
- * who may see the site follows the repository's visibility.
+ * A site built by a workflow has no source to keep, the custom domain belongs
+ * to one repository, and who may see the site follows the repository's
+ * visibility.
  */
 export function describePages(site: LiveSite): PagesEntry {
   return {

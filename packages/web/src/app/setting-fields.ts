@@ -1,21 +1,12 @@
-// The settings the profile editor offers, in the order of its tabs: what each
-// is called, the choices it takes, and what it depends on. A setting's path
-// is its section and its key in a profile, as `merge.allow_squash_merge`, with
-// dots inside the key for a setting in a group.
-
-/** A value a setting can take, with what the editor calls it. */
 export interface SettingOption {
   readonly label: string;
   readonly value: unknown;
 }
 
-/** When a setting follows another: GitHub hides it, or greys it out, while the other has one of these values. */
 export interface SettingCondition {
-  /** The other setting's key, in the same section. */
-  readonly key: string;
+  readonly otherSettingKeyInSameSection: string;
   readonly values: readonly unknown[];
-  /** Whether GitHub hides the setting, rather than leaving it in place and off. */
-  readonly hides: boolean;
+  readonly hiddenRatherThanGreyedOut: boolean;
 }
 
 interface FieldDetails {
@@ -24,17 +15,12 @@ interface FieldDetails {
   readonly label: string;
   readonly kind: 'choice' | 'number' | 'text' | 'list';
   readonly options: readonly SettingOption[];
-  /** Whether it sits indented under the setting before it, as one of that setting's own options. */
-  readonly nested: boolean;
-  /** What to know about it, such as an option beside it that has no API. */
+  readonly indentedUnderPreviousSetting: boolean;
   readonly note: string | undefined;
-  /** Whether a text setting may be empty. */
   readonly allowsEmpty: boolean;
-  /** Whether an empty text setting is saved as null, which clears it on GitHub. */
   readonly emptyIsNull: boolean;
   readonly dependsOn: SettingCondition | undefined;
-  /** Whether setting it takes out every other setting in its section, and setting any of them takes it out. */
-  readonly alone: boolean;
+  readonly excludesOtherSettingsInSection: boolean;
 }
 
 export class SettingField implements FieldDetails {
@@ -43,12 +29,12 @@ export class SettingField implements FieldDetails {
   readonly label: string;
   readonly kind: FieldDetails['kind'];
   readonly options: readonly SettingOption[];
-  readonly nested: boolean;
+  readonly indentedUnderPreviousSetting: boolean;
   readonly note: string | undefined;
   readonly allowsEmpty: boolean;
   readonly emptyIsNull: boolean;
   readonly dependsOn: SettingCondition | undefined;
-  readonly alone: boolean;
+  readonly excludesOtherSettingsInSection: boolean;
 
   constructor(details: FieldDetails) {
     this.section = details.section;
@@ -56,21 +42,20 @@ export class SettingField implements FieldDetails {
     this.label = details.label;
     this.kind = details.kind;
     this.options = details.options;
-    this.nested = details.nested;
+    this.indentedUnderPreviousSetting = details.indentedUnderPreviousSetting;
     this.note = details.note;
     this.allowsEmpty = details.allowsEmpty;
     this.emptyIsNull = details.emptyIsNull;
     this.dependsOn = details.dependsOn;
-    this.alone = details.alone;
+    this.excludesOtherSettingsInSection = details.excludesOtherSettingsInSection;
   }
 
-  /** The setting's place in a profile: its section, then each key down to it. */
   get path(): readonly string[] {
     return [this.section, ...this.key.split('.')];
   }
 
   under(): SettingField {
-    return new SettingField({ ...this.#details(), nested: true });
+    return new SettingField({ ...this.#details(), indentedUnderPreviousSetting: true });
   }
 
   noted(note: string): SettingField {
@@ -78,15 +63,21 @@ export class SettingField implements FieldDetails {
   }
 
   hiddenWhile(key: string, ...values: unknown[]): SettingField {
-    return new SettingField({ ...this.#details(), dependsOn: { key, values, hides: true } });
+    return new SettingField({
+      ...this.#details(),
+      dependsOn: { otherSettingKeyInSameSection: key, values, hiddenRatherThanGreyedOut: true },
+    });
   }
 
   offWhile(key: string, ...values: unknown[]): SettingField {
-    return new SettingField({ ...this.#details(), dependsOn: { key, values, hides: false } });
+    return new SettingField({
+      ...this.#details(),
+      dependsOn: { otherSettingKeyInSameSection: key, values, hiddenRatherThanGreyedOut: false },
+    });
   }
 
   standsAlone(): SettingField {
-    return new SettingField({ ...this.#details(), alone: true });
+    return new SettingField({ ...this.#details(), excludesOtherSettingsInSection: true });
   }
 
   #details(): FieldDetails {
@@ -96,12 +87,12 @@ export class SettingField implements FieldDetails {
       label: this.label,
       kind: this.kind,
       options: this.options,
-      nested: this.nested,
+      indentedUnderPreviousSetting: this.indentedUnderPreviousSetting,
       note: this.note,
       allowsEmpty: this.allowsEmpty,
       emptyIsNull: this.emptyIsNull,
       dependsOn: this.dependsOn,
-      alone: this.alone,
+      excludesOtherSettingsInSection: this.excludesOtherSettingsInSection,
     };
   }
 }
@@ -112,7 +103,6 @@ export interface SettingGroup {
   readonly fields: readonly SettingField[];
 }
 
-/** One tab of the editor: the settings of one section of a profile. */
 export interface SettingSection {
   readonly name: string;
   readonly section: string;
@@ -133,12 +123,12 @@ function field(
     label,
     kind,
     options,
-    nested: false,
+    indentedUnderPreviousSetting: false,
     note: undefined,
     allowsEmpty: text.allowsEmpty ?? false,
     emptyIsNull: text.emptyIsNull ?? false,
     dependsOn: undefined,
-    alone: false,
+    excludesOtherSettingsInSection: false,
   });
 }
 
@@ -166,7 +156,7 @@ function onOff(section: string, key: string, label: string): SettingField {
   ]);
 }
 
-/** A feature under `security_and_analysis`, which GitHub turns on and off by a status. */
+/** GitHub turns a feature under `security_and_analysis` on and off by a status. */
 function feature(key: string, label: string): SettingField {
   return custom('security', `security_and_analysis.${key}`, label, [
     ['On', { status: 'enabled' }],

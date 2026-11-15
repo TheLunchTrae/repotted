@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'vitest';
 
-import { type BranchFileChange, listBranches, readBranchChanges } from '../src/branch-changes.js';
+import { type BranchProfileChange, listBranches, readBranchChanges } from '../src/branch-changes.js';
 import { GitHubError } from '../src/github.js';
 import { FakeGitRepository } from './fake-git.js';
 
-/** Each change as text, so a test reads what the branch holds. */
-function shown(files: readonly BranchFileChange[]): unknown[] {
+function withContentAsText(files: readonly BranchProfileChange[]): unknown[] {
   return files.map((change) =>
     'content' in change ? { ...change, content: new TextDecoder().decode(change.content) } : change,
   );
@@ -38,16 +37,27 @@ describe('readBranchChanges', () => {
       { branch: 'agent/tidy' },
     );
     const changes = await readBranchChanges(github, 'agent/tidy', { repository: 'lunch/config', path: 'profiles' });
-    expect(shown(changes.files)).toEqual([
-      { status: 'modified', file: 'base.yaml', content: 'merge:\n  allow_squash_merge: false\n' },
-      { status: 'removed', file: 'gone.yaml' },
-      { status: 'added', file: 'new.yaml', content: 'repository:\n  has_wiki: false\n' },
-      { status: 'renamed', file: 'teams/old.yaml', previous: 'old.yaml', content: 'extends: base.yaml\n' },
+    expect(withContentAsText(changes.changedProfiles)).toEqual([
+      { status: 'modified', profilePath: 'base.yaml', content: 'merge:\n  allow_squash_merge: false\n' },
+      { status: 'removed', profilePath: 'gone.yaml' },
+      { status: 'added', profilePath: 'new.yaml', content: 'repository:\n  has_wiki: false\n' },
+      {
+        status: 'renamed',
+        profilePath: 'teams/old.yaml',
+        previousProfilePath: 'old.yaml',
+        content: 'extends: base.yaml\n',
+      },
     ]);
-    expect(changes.others).toEqual(['.repotted-preferences.json']);
-    expect(changes).toMatchObject({ base: 'main', branch: 'agent/tidy', ahead: 1, behind: 0, truncated: false });
-    expect(changes.headCommit).toBe(github.refs.get('agent/tidy'));
-    expect(changes.baseCommit).toBe(github.refs.get('main'));
+    expect(changes.otherChangedFiles).toEqual(['.repotted-preferences.json']);
+    expect(changes).toMatchObject({
+      defaultBranch: 'main',
+      branch: 'agent/tidy',
+      commitsAheadOfDefaultBranch: 1,
+      commitsBehindDefaultBranch: 0,
+      changedFilesTruncated: false,
+    });
+    expect(changes.branchCommit).toBe(github.refs.get('agent/tidy'));
+    expect(changes.defaultBranchCommit).toBe(github.refs.get('main'));
   });
 
   test('leaves out what the default branch changed since the branch left it, and counts how far behind it is', async () => {
@@ -55,8 +65,8 @@ describe('readBranchChanges', () => {
     github.write({ 'profiles/new.yaml': 'labels: []\n' }, { branch: 'feature' });
     github.write({ 'profiles/base.yaml': 'merge: {}\n' });
     const changes = await readBranchChanges(github, 'feature', { repository: 'lunch/config', path: 'profiles' });
-    expect(changes.files.map((change) => change.file)).toEqual(['new.yaml']);
-    expect(changes).toMatchObject({ ahead: 1, behind: 1 });
+    expect(changes.changedProfiles.map((change) => change.profilePath)).toEqual(['new.yaml']);
+    expect(changes).toMatchObject({ commitsAheadOfDefaultBranch: 1, commitsBehindDefaultBranch: 1 });
   });
 
   test('reads only the blobs of changed profiles, in a few requests', async () => {
@@ -76,15 +86,15 @@ describe('readBranchChanges', () => {
     const github = repository();
     github.write({ '.github/workflows/ci.yaml': 'on: push\n', 'top.yml': 'labels: []\n' }, { branch: 'feature' });
     const changes = await readBranchChanges(github, 'feature', { repository: 'lunch/config' });
-    expect(changes.files.map((change) => change.file)).toEqual(['top.yml']);
-    expect(changes.others).toEqual(['.github/workflows/ci.yaml']);
+    expect(changes.changedProfiles.map((change) => change.profilePath)).toEqual(['top.yml']);
+    expect(changes.otherChangedFiles).toEqual(['.github/workflows/ci.yaml']);
   });
 
   test('says when a profile is moved out of the profiles folder that it is gone from them', async () => {
     const github = repository();
     github.write({ 'profiles/gone.yaml': null, 'archive/gone.yaml': 'labels: []\n' }, { branch: 'feature' });
     const changes = await readBranchChanges(github, 'feature', { repository: 'lunch/config', path: 'profiles' });
-    expect(changes.files).toEqual([{ status: 'removed', file: 'gone.yaml' }]);
+    expect(changes.changedProfiles).toEqual([{ status: 'removed', profilePath: 'gone.yaml' }]);
   });
 
   test('says when GitHub listed as many files as it lists, so some may be missing', async () => {
@@ -94,8 +104,8 @@ describe('readBranchChanges', () => {
     );
     github.write(many, { branch: 'feature' });
     const changes = await readBranchChanges(github, 'feature', { repository: 'lunch/config', path: 'profiles' });
-    expect(changes.files).toHaveLength(300);
-    expect(changes.truncated).toBe(true);
+    expect(changes.changedProfiles).toHaveLength(300);
+    expect(changes.changedFilesTruncated).toBe(true);
   });
 
   test('takes a branch name only as a whole name, not as the start of others', async () => {
@@ -161,9 +171,9 @@ describe('listBranches', () => {
     github.write({ 'profiles/a.yaml': 'labels: []\n' }, { branch: 'feature' });
     github.write({ 'profiles/b.yaml': 'labels: []\n' }, { branch: 'agent/fix' });
     expect(await listBranches(github, 'lunch/config')).toEqual({
-      base: 'main',
+      defaultBranch: 'main',
       branches: ['agent/fix', 'feature'],
-      more: false,
+      moreBranchesThanListed: false,
     });
   });
 });

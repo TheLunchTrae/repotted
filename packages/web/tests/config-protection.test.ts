@@ -25,7 +25,7 @@ test("checking a personal repository counts the protection's changes and writes 
     kind: 'checked',
     repository: 'lunch/app',
     owner: 'user',
-    changes: 3,
+    changeCount: 3,
     limits: [],
   });
   expect(github.writes).toEqual([]);
@@ -35,7 +35,7 @@ test('an apply of the protection writes it, and the repository then checks as pr
   const github = personal();
   const protection = new ConfigProtection(github, () => undefined);
   await protection.check('lunch/app');
-  const profile = await protection.profile();
+  const profile = await protection.writeProfileForApply();
   if (profile === undefined) {
     throw new Error('The protection fits a personal repository.');
   }
@@ -58,14 +58,14 @@ test('an apply of the protection writes it, and the repository then checks as pr
 
   await protection.check('lunch/app');
 
-  expect(protection.state.value).toMatchObject({ kind: 'checked', changes: 0 });
+  expect(protection.state.value).toMatchObject({ kind: 'checked', changeCount: 0 });
 });
 
 test("one-off edits to an apply of the protection can't be saved to it", async () => {
   const github = personal();
   const protection = new ConfigProtection(github, () => undefined);
   await protection.check('lunch/app');
-  const profile = await protection.profile();
+  const profile = await protection.writeProfileForApply();
   if (profile === undefined) {
     throw new Error('The protection fits a personal repository.');
   }
@@ -90,7 +90,7 @@ test('an apply of the protection that is picked up later still saves nothing to 
   const github = personal();
   const protection = new ConfigProtection(github, () => undefined);
   await protection.check('lunch/app');
-  const profile = await protection.profile();
+  const profile = await protection.writeProfileForApply();
   if (profile === undefined) {
     throw new Error('The protection fits a personal repository.');
   }
@@ -120,7 +120,7 @@ test("an organization's repository is offered no protection", async () => {
   await protection.check('lunch/app');
 
   expect(protection.state.value).toEqual({ kind: 'none', repository: 'lunch/app' });
-  expect(await protection.profile()).toBeUndefined();
+  expect(await protection.writeProfileForApply()).toBeUndefined();
   expect(github.calls.map((call) => call.path)).toEqual(['/repos/lunch/app']);
 });
 
@@ -135,7 +135,7 @@ test("what the repository's plan can't have is said beside what is left to apply
 
   expect(protection.state.value).toMatchObject({
     kind: 'checked',
-    changes: 1,
+    changeCount: 1,
     limits: ['this repository’s plan does not support rulesets'],
   });
 });

@@ -29,8 +29,7 @@ async function text(file: string): Promise<string | undefined> {
   }
 }
 
-/** The profiles in a folder, as text by path; hidden files are left out. */
-async function contents(directory: string): Promise<Record<string, string>> {
+async function profileTextsByPath(directory: string): Promise<Record<string, string>> {
   const entries = await readdir(directory, { recursive: true, withFileTypes: true });
   const files: Record<string, string> = {};
   for (const entry of entries.filter((item) => item.isFile() && !item.name.startsWith('.'))) {
@@ -40,8 +39,7 @@ async function contents(directory: string): Promise<Record<string, string>> {
   return files;
 }
 
-/** Why a sync failed; the test fails when it succeeds. */
-async function failure(promise: Promise<unknown>): Promise<string> {
+async function syncFailureMessage(promise: Promise<unknown>): Promise<string> {
   try {
     await promise;
   } catch (error) {
@@ -77,7 +75,7 @@ describe('syncFolder', () => {
       pushed: [],
       conflicts: [],
     });
-    expect(await contents(local)).toEqual({
+    expect(await profileTextsByPath(local)).toEqual({
       'base.yaml': base,
       'app.yml': app,
       'team/web.yaml': 'extends: ../base.yaml\n',
@@ -116,7 +114,7 @@ describe('syncFolder', () => {
       'added.yaml': base,
     };
     expect(github.files()).toEqual(expected);
-    expect(await contents(local)).toEqual(expected);
+    expect(await profileTextsByPath(local)).toEqual(expected);
     expect(result.commit).toBe(github.refs.get('main') ?? null);
   });
 
@@ -174,7 +172,7 @@ describe('syncFolder', () => {
 
     expect(result).toMatchObject({ pushed: ['base.yaml'], pulled: ['app.yaml'], conflicts: [] });
     expect(github.files()).toEqual({ 'base.yaml': '# mine\n', 'app.yaml': '# landed first\n' });
-    expect(await contents(local)).toEqual(github.files());
+    expect(await profileTextsByPath(local)).toEqual(github.files());
   });
 
   test('starts an empty repository with the folder it is given', async () => {
@@ -214,17 +212,21 @@ describe('syncFolder', () => {
     await syncFolder(github, local, { repository: 'lunch/config' });
 
     expect(await syncFolder(github, local, { repository: 'LUNCH/Config' })).toMatchObject({ pulled: [] });
-    expect(await failure(syncFolder(github, local, { repository: 'lunch/other' }))).toContain(
+    expect(await syncFailureMessage(syncFolder(github, local, { repository: 'lunch/other' }))).toContain(
       'syncs with lunch/config',
     );
-    expect(await failure(syncFolder(github, local, { path: 'profiles' }))).toContain('syncs with lunch/config');
-    expect(await failure(syncFolder(github, await folder()))).toContain('does not sync with a repository yet');
-    expect(await failure(syncFolder(github, await folder(), { repository: 'lunch/config', path: '../x' }))).toContain(
-      'Expected a folder in the repository',
+    expect(await syncFailureMessage(syncFolder(github, local, { path: 'profiles' }))).toContain(
+      'syncs with lunch/config',
     );
+    expect(await syncFailureMessage(syncFolder(github, await folder()))).toContain(
+      'does not sync with a repository yet',
+    );
+    expect(
+      await syncFailureMessage(syncFolder(github, await folder(), { repository: 'lunch/config', path: '../x' })),
+    ).toContain('Expected a folder in the repository');
 
     github.write({ 'Base.yaml': base });
-    expect(await failure(syncFolder(github, local))).toContain('differ only in case');
+    expect(await syncFailureMessage(syncFolder(github, local))).toContain('differ only in case');
     expect(JSON.parse((await text(path.join(local, syncStateFile))) ?? '{}')).toMatchObject({
       repository: 'lunch/config',
     });
@@ -242,11 +244,11 @@ describe('syncFolder', () => {
       message: 'Repository rule violations found\n\nChanges must be made through a pull request.\n\n',
       ...docs,
     });
-    const ruleset = await failure(syncFolder(github, local));
+    const ruleset = await syncFailureMessage(syncFolder(github, local));
     github.refuseWrites = responseError(403, { message: 'Resource not accessible by integration', ...docs });
-    const permission = await failure(syncFolder(github, local));
+    const permission = await syncFailureMessage(syncFolder(github, local));
     github.refuseWrites = undefined;
-    const missing = await failure(syncFolder(github, await folder(), { repository: 'lunch/missing' }));
+    const missing = await syncFailureMessage(syncFolder(github, await folder(), { repository: 'lunch/missing' }));
 
     expect(ruleset).toContain('GitHub refused the commit to main in lunch/config: Repository rule violations found.');
     expect(ruleset).toContain('needs a bypass for you or the Repotted App');
@@ -286,7 +288,7 @@ describe('syncFolder', () => {
 
     expect(result).toMatchObject({ conflicts: [], pulled: ['a.yaml'], pushed: ['b.yaml'] });
     expect(github.files()).toEqual({ 'a.yaml': '# v3\n', 'b.yaml': '# mine\n' });
-    expect(await contents(local)).toEqual(github.files());
+    expect(await profileTextsByPath(local)).toEqual(github.files());
   });
 
   test('a repository made again under the same name, or emptied, deletes nothing here', async () => {
@@ -299,7 +301,7 @@ describe('syncFolder', () => {
     again.write({ 'base.yaml': '# new\n' });
     const recreated = await syncFolder(again, local);
     expect(recreated).toMatchObject({ conflicts: ['base.yaml'], pushed: ['app.yaml'], pulled: [] });
-    expect(await contents(local)).toEqual({ 'base.yaml': base, 'app.yaml': app });
+    expect(await profileTextsByPath(local)).toEqual({ 'base.yaml': base, 'app.yaml': app });
 
     const emptied = new FakeGitRepository();
     emptied.write({ 'base.yaml': base });
@@ -307,7 +309,7 @@ describe('syncFolder', () => {
     await syncFolder(emptied, copy, { repository: 'lunch/config' });
     emptied.refs.clear();
     expect(await syncFolder(emptied, copy)).toMatchObject({ pulled: [], pushed: ['base.yaml'] });
-    expect(await contents(copy)).toEqual({ 'base.yaml': base });
+    expect(await profileTextsByPath(copy)).toEqual({ 'base.yaml': base });
     expect(emptied.files()).toEqual({ 'base.yaml': base });
   });
 
@@ -340,7 +342,7 @@ describe('syncFolder', () => {
     const result = await syncFolder(github, local);
 
     expect(result).toMatchObject({ pulled: ['readme.yaml'], pushed: ['app.yaml', 'base.yaml'], conflicts: [] });
-    expect(await contents(local)).toEqual({ 'base.yaml': base, 'app.yaml': app, 'readme.yaml': base });
+    expect(await profileTextsByPath(local)).toEqual({ 'base.yaml': base, 'app.yaml': app, 'readme.yaml': base });
   });
 
   test('a record from before repository ids syncs as a first sync', async () => {
@@ -380,15 +382,17 @@ describe('syncFolder', () => {
     await symlink(outside, path.join(local, 'team'));
     github.write({ 'team/web.yaml': app });
 
-    expect(await failure(syncFolder(github, local))).toContain('is a link or a file');
+    expect(await syncFailureMessage(syncFolder(github, local))).toContain('is a link or a file');
     expect(await readdir(outside)).toEqual([]);
 
     const other = new FakeGitRepository();
     other.write({ 'Base.yaml': base });
     const copy = await folder();
     await writeFile(path.join(copy, 'base.yaml'), '# mine\n');
-    expect(await failure(syncFolder(other, copy, { repository: 'lunch/config' }))).toContain('differ only in case');
-    expect(await contents(copy)).toEqual({ 'base.yaml': '# mine\n' });
+    expect(await syncFailureMessage(syncFolder(other, copy, { repository: 'lunch/config' }))).toContain(
+      'differ only in case',
+    );
+    expect(await profileTextsByPath(copy)).toEqual({ 'base.yaml': '# mine\n' });
   });
 
   test('applies a rename made only in case on GitHub', async () => {
@@ -401,7 +405,7 @@ describe('syncFolder', () => {
     const result = await syncFolder(github, local);
 
     expect(result).toMatchObject({ pulled: ['Base.yaml', 'base.yaml'], conflicts: [] });
-    expect(await contents(local)).toEqual({ 'Base.yaml': base });
+    expect(await profileTextsByPath(local)).toEqual({ 'Base.yaml': base });
     expect(await syncFolder(github, local)).toMatchObject({ pulled: [], pushed: [] });
     expect(github.files()).toEqual({ 'Base.yaml': base });
   });

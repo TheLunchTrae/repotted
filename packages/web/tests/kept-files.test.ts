@@ -4,7 +4,6 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { browserFiles, type FileKeeper, keepFiles, type SiteLocks } from '../src/app/kept-files.js';
 import { mkdir, readFile, rm, writeFile } from '../src/engine/files.js';
 
-/** A browser's locks for one site: a named lock is held by one holder until its work ends. */
 function siteLocks(): SiteLocks {
   const held = new Set<string>();
   return {

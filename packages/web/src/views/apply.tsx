@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { repositoryAddress } from '../app/addressed-repository.js';
 import type { Apply } from '../app/apply.js';
 import type { CompareRow } from '../app/comparison.js';
-import { installUrl } from '../app/github-app.js';
+import { repottedAppInstallUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
 import { BarActions } from './action-bar.js';
 import { Link } from './link.js';
@@ -27,7 +27,7 @@ function Row({ row, apply }: { readonly row: CompareRow; readonly apply: Apply }
         <span class="visually-hidden">; after the apply, </span>
         <span class={row.kind === 'removes' ? 'compare-removed' : 'compare-wanted'}>{row.wanted}</span>
       </span>
-      {row.lock !== undefined && <span class="pill pill-remove">{row.lock}</span>}
+      {row.lockReason !== undefined && <span class="pill pill-remove">{row.lockReason}</span>}
       {row.oneOff === true && <span class="pill pill-drift">One-off edit</span>}
       {row.leaveOut !== undefined && (
         <button
@@ -45,7 +45,6 @@ function Row({ row, apply }: { readonly row: CompareRow; readonly apply: Apply }
   );
 }
 
-/** Asks once more before anything is written, with what will be. */
 function Confirm({ apply, onClose }: { readonly apply: Apply; readonly onClose: () => void }): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   const state = apply.state.value;
@@ -87,11 +86,9 @@ interface ApplyProps {
   readonly router: Router;
 }
 
-/** One apply of a profile to a repository: what it would change, what is left out of it, and the step that writes it. */
 export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
   const state = apply.state.value;
   const [confirming, setConfirming] = useState(false);
-  // Back to the repository this is about, open on the repositories page.
   const back = (
     <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
       Back to repositories
@@ -134,7 +131,8 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
         <div class="page-heading">
           <div>
             <h1 id="apply-title">
-              Apply {state.profile === '' ? '' : `${state.profile} `}to <span class="mono">{state.repository}</span>
+              Apply {state.profileName === '' ? '' : `${state.profileName} `}to{' '}
+              <span class="mono">{state.repository}</span>
             </h1>
             <p class="muted" role="status">
               {state.kind === 'editing'
@@ -177,7 +175,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 run(apply.startOver());
               }}
             >
-              Start over with {state.profile}
+              Start over with {state.profileName}
             </button>
           </div>
         )}
@@ -217,15 +215,15 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
             )}
             <ProfileSettings
               key={editor.file}
-              name={state.profile}
+              name={state.profileName}
               editor={editor}
-              pushes={editor.ownerType.value !== 'user'}
+              ownerTypeHasPushRulesets={editor.ownerType.value !== 'user'}
               saving={{
                 save: () => editor.save((work) => work()),
                 discardDraft: () => Promise.resolve(),
                 onGitHub: false,
                 saveLabel: 'Save edits',
-                more: (
+                extraBarActions: (
                   <>
                     {discard}
                     {state.fromProfile && !state.builtIn && (
@@ -242,7 +240,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                     )}
                   </>
                 ),
-                next: (
+                primaryActionInsteadOfSave: (
                   <button
                     class="button button-primary"
                     type="button"
@@ -275,11 +273,11 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 </ul>
               </div>
             )}
-            {state.skipped.length > 0 && (
+            {state.skippedDrafts.length > 0 && (
               <div class="notice">
                 <p>The profile's draft is left out. It holds:</p>
                 <ul>
-                  {state.skipped.map((skipped) => (
+                  {state.skippedDrafts.map((skipped) => (
                     <li key={skipped} class="mono small">
                       {skipped}
                     </li>
@@ -297,7 +295,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                   <p class="notice-actions">
                     <a
                       class="button button-small"
-                      href={state.appAccess === 'install' ? installUrl : state.appAccess.settings}
+                      href={state.appAccess === 'install' ? repottedAppInstallUrl : state.appAccess.settings}
                       target="_blank"
                       rel="noreferrer"
                     >
@@ -358,7 +356,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
         {state.kind !== 'applied' && state.kind !== 'unfinished' && state.kind !== 'editing' && (
           <div class="save-bar">
             <BarActions
-              main={
+              mainAction={
                 <button
                   class="button button-primary"
                   type="button"
@@ -370,7 +368,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                   Apply
                 </button>
               }
-              others={
+              otherActions={
                 <>
                   {discard}
                   <button

@@ -18,7 +18,6 @@ const tokens = {
   token_type: 'bearer',
 };
 
-// GitHub's token endpoint, stubbed afresh for each test.
 const github = vi.fn<typeof fetch>();
 
 beforeEach(() => {
@@ -38,7 +37,6 @@ function cookies(response: Response): string[] {
   return response.headers.getSetCookie();
 }
 
-/** The form GitHub's token endpoint received on its only call. */
 function sentGrant(): URLSearchParams {
   expect(github).toHaveBeenCalledTimes(1);
   const [url, init] = github.mock.calls[0] ?? [];

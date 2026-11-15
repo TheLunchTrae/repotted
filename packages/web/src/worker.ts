@@ -19,15 +19,13 @@ const tokenUrl = 'https://github.com/login/oauth/access_token';
 const signInCookie = '__Host-repotted-sign-in';
 const refreshCookie = '__Host-repotted-refresh';
 const accessCookie = '__Host-repotted-access';
-// How long a sign-in started here may take on GitHub before its state expires.
-const signInSeconds = 10 * 60;
+const signInStateLifetimeSeconds = 10 * 60;
 // An access token this close to expiry is replaced rather than handed out, the
 // same margin the page refreshes at.
 const refreshMarginMs = 5 * 60 * 1000;
-// How long the Worker waits on GitHub's token endpoint; the page waits longer.
-const gitHubTimeoutMs = 10_000;
+// Shorter than the page's wait on the Worker in session.ts.
+const gitHubTokenEndpointTimeoutMs = 10_000;
 
-/** Why a sign-in came back without one, as the page reads it from `?sign-in=`. */
 type SignInFailure = 'denied' | 'expired' | 'failed';
 
 // A token without an expiry comes without a refresh token: the App's "Expire
@@ -44,7 +42,6 @@ type GitHubTokens = z.infer<typeof tokenResponse>;
 
 type TokenResult = { kind: 'tokens'; tokens: GitHubTokens } | { kind: 'refused' } | { kind: 'unavailable' };
 
-/** The access token the browser's tabs share, as its cookie keeps it. */
 interface AccessToken {
   token: string;
   expiresAt: number;
@@ -88,7 +85,6 @@ function issuedAccessToken(tokens: GitHubTokens): AccessToken {
   };
 }
 
-/** The cookies that keep a new pair of tokens: the refresh token, and the access token with its expiry. */
 function tokenCookies(tokens: GitHubTokens, access: AccessToken): string[] {
   return [
     cookie(refreshCookie, tokens.refresh_token, tokens.refresh_token_expires_in, 'Strict'),
@@ -172,7 +168,7 @@ async function requestTokens(env: Env, grant: Record<string, string>): Promise<T
         client_secret: env.REPOTTED_APP_CLIENT_SECRET,
         ...grant,
       }),
-      signal: AbortSignal.timeout(gitHubTimeoutMs),
+      signal: AbortSignal.timeout(gitHubTokenEndpointTimeoutMs),
     });
     if (response.status >= 500) {
       return { kind: 'unavailable' };
@@ -185,7 +181,6 @@ async function requestTokens(env: Env, grant: Record<string, string>): Promise<T
   return response.ok && tokens.success ? { kind: 'tokens', tokens: tokens.data } : { kind: 'refused' };
 }
 
-/** Sends the browser to GitHub with a fresh state and PKCE challenge, kept in a short-lived cookie. */
 async function signIn(request: Request, env: Env): Promise<Response> {
   const state = randomToken();
   const verifier = randomToken();
@@ -202,15 +197,16 @@ async function signIn(request: Request, env: Env): Promise<Response> {
   }).toString();
   // Lax, not Strict: the browser comes back from GitHub on a cross-site
   // navigation, and only a Lax cookie goes with it.
-  return redirect(location.toString(), [cookie(signInCookie, `${state}.${verifier}`, signInSeconds, 'Lax')]);
+  return redirect(location.toString(), [
+    cookie(signInCookie, `${state}.${verifier}`, signInStateLifetimeSeconds, 'Lax'),
+  ]);
 }
 
-/** Finishes a sign-in: checks the state, trades the code for tokens, and keeps the refresh token. */
 async function callback(request: Request, env: Env): Promise<Response> {
   const params = new URL(request.url).searchParams;
-  // The started sign-in is spent whatever happens next.
-  const cleared = cookie(signInCookie, '', 0, 'Lax');
-  const failed = (reason: SignInFailure): Response => redirect(`/?sign-in=${reason}`, [cleared]);
+  // The started sign-in is spent whatever happens next, so its state is single-use.
+  const clearedSignInCookie = cookie(signInCookie, '', 0, 'Lax');
+  const failed = (reason: SignInFailure): Response => redirect(`/?sign-in=${reason}`, [clearedSignInCookie]);
 
   // GitHub reports other errors, such as a callback URL the App doesn't list,
   // the same way; signing in again won't fix those, so they aren't "expired".
@@ -235,10 +231,9 @@ async function callback(request: Request, env: Env): Promise<Response> {
   if (result.kind !== 'tokens') {
     return failed('failed');
   }
-  return redirect('/', [cleared, ...tokenCookies(result.tokens, issuedAccessToken(result.tokens))]);
+  return redirect('/', [clearedSignInCookie, ...tokenCookies(result.tokens, issuedAccessToken(result.tokens))]);
 }
 
-/** The request's JSON body, `{}` when it has none, or undefined when it isn't JSON. */
 async function readJson(request: Request): Promise<unknown> {
   try {
     const text = await request.text();

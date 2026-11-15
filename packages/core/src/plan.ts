@@ -9,7 +9,7 @@ import {
   skipCauses,
   type Warning,
 } from './change.js';
-import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadable } from './endpoints.js';
+import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadableReason } from './endpoints.js';
 import { isDeepEqual } from './equal.js';
 import { type GitHub, GitHubError, parseRepo, repoPath, repoPattern, type RepoRef } from './github.js';
 import { describeOwnerType, type OwnerConflict, type OwnerType, withoutOwnerConflicts } from './owner.js';
@@ -40,15 +40,13 @@ import { planRepository, readRepository, repositoryEndpoints, repositoryOwnerTyp
 import { planRulesets, readRulesets } from './sections/rulesets.js';
 import { liveSecurityAndAnalysis, planSecurity, securityEndpoints } from './sections/security.js';
 
-/** A draft that a plan leaves out: a setting by its key, or an entry by its prefix or name. */
 export interface Skipped {
   readonly section: Section;
   readonly target: string;
-  /** Present when the draft stops managing the target, from `drafts.unset`, rather than changing it. */
+  /** From `drafts.unset`: the draft stops managing the target rather than changing it. */
   readonly unset?: true | undefined;
 }
 
-/** The changes a profile needs on one repository, in the order they apply. */
 export interface Plan {
   readonly repository: string;
   readonly desired: Profile;
@@ -58,7 +56,6 @@ export interface Plan {
   readonly warnings: readonly Warning[];
 }
 
-/** The drafts of one section: settings by key, autolinks by prefix, and other entries by name. */
 function draftTargets(drafts: Drafts, section: Section): string[] {
   if (section === 'autolinks') {
     return (drafts.autolinks ?? []).map((entry) => entry.key_prefix);
@@ -69,14 +66,13 @@ function draftTargets(drafts: Drafts, section: Section): string[] {
   return Object.keys(drafts[section] ?? {});
 }
 
-/** The section and target a key of `drafts.unset` names, as `repository.has_wiki` or `rulesets/Legacy`. */
+/** A key of `drafts.unset` reads as `repository.has_wiki` or `rulesets/Legacy`. */
 function unsetTarget(key: string): { section: Section; target: string } | undefined {
   const at = key.includes('/') ? key.indexOf('/') : key.indexOf('.');
   const section = sections.find((name) => name === key.slice(0, at));
   return section === undefined ? undefined : { section, target: key.slice(at + 1) };
 }
 
-/** What a plan skips for these drafts, in the order their sections apply. */
 export function skippedDrafts(drafts: Drafts): Skipped[] {
   const unset = (drafts.unset ?? []).flatMap((key) => {
     const target = unsetTarget(key);
@@ -88,11 +84,6 @@ export function skippedDrafts(drafts: Drafts): Skipped[] {
   ]);
 }
 
-/**
- * A profile for one kind of owner, planned for a repository of the other
- * kind. The profile would set what the repository doesn't have, so the
- * plan stops before it reads anything else.
- */
 export class OwnerMismatchError extends Error {
   readonly profile: OwnerType;
   readonly repository: OwnerType;
@@ -107,12 +98,7 @@ export class OwnerMismatchError extends Error {
   }
 }
 
-/**
- * Reads only the sections the profile mentions and plans the writes that
- * bring them in line. Settings and rulesets the profile does not name are
- * left alone. `skipped` lists the profile's drafts, which `desired` never
- * holds, so the plan can say what it left out.
- */
+/** `skipped` lists the profile's drafts, which `desired` never holds, so the plan can say what it left out. */
 export async function createPlan(
   github: GitHub,
   repo: RepoRef,
@@ -206,10 +192,9 @@ export async function createPlan(
 }
 
 /**
- * The captured rulesets, environments or labels that a profile can hold. One that
- * fails its schema is left out whole, with a warning: a ruleset without one
- * of its rules would have that rule removed on apply, while a profile leaves
- * a ruleset it does not name alone.
+ * An entry that fails its schema is left out whole, with a warning: a ruleset
+ * without one of its rules would have that rule removed on apply, while a
+ * profile leaves a ruleset it does not name alone.
  */
 function loadableEntries<Entry extends { readonly name: string }>(
   section: 'rulesets' | 'environments' | 'labels',
@@ -219,7 +204,7 @@ function loadableEntries<Entry extends { readonly name: string }>(
 ): Entry[] {
   const kept: Entry[] = [];
   for (const entry of entries) {
-    const problem = unloadable(schema, entry);
+    const problem = unloadableReason(schema, entry);
     if (problem === undefined) {
       kept.push(entry);
     } else {
@@ -229,7 +214,6 @@ function loadableEntries<Entry extends { readonly name: string }>(
   return kept;
 }
 
-/** Where in a profile an owner type conflict is, as a warning names it. */
 function conflictWarning({ edit }: OwnerConflict): Pick<Warning, 'section' | 'key' | 'field'> {
   if ('list' in edit) {
     return { section: edit.list, key: edit.name };
@@ -244,9 +228,8 @@ function conflictWarning({ edit }: OwnerConflict): Pick<Warning, 'section' | 'ke
 }
 
 /**
- * Reads every section into a profile that describes the repository as it
- * is. Settings that name the repository, such as its description, stay out,
- * so the profile can describe other repositories too.
+ * Settings that name the repository, such as its description, stay out, so the
+ * profile can describe other repositories too.
  */
 export async function captureProfile(
   github: GitHub,
@@ -519,7 +502,6 @@ function describeTarget(section: Section, target: string): string {
   }
 }
 
-/** A draft a plan leaves out, as plan output names it. */
 export function describeSkipped({ section, target, unset }: Skipped): string {
   const named = isListSection(section) ? describeTarget(section, target) : `${section}.${target}`;
   if (unset === true) {
@@ -535,7 +517,6 @@ const entryNouns: Partial<Record<Section, string>> = {
   labels: 'label',
 };
 
-/** A warning as text output prints it: one that left something out names it before saying why. */
 export function describeWarning({ section, key, field, cause, message }: Warning): string {
   if (cause === undefined || section === undefined) {
     return message;
@@ -548,7 +529,6 @@ export function describeWarning({ section, key, field, cause, message }: Warning
   return `Skipped ${where}: ${message}`;
 }
 
-/** The plan as text; a change in `locks` says why Repotted cannot make it. */
 export function formatPlan(plan: Plan, locks: readonly Lock[] = []): string {
   const lines = [
     plan.changes.length === 0
@@ -574,11 +554,9 @@ export function formatPlan(plan: Plan, locks: readonly Lock[] = []): string {
 }
 
 /**
- * Why GitHub refused the change that failed, when it says something lasting
- * about the repository, the token or the App: a `402`, `403` or `422`. A
- * refusal for want of a permission names the permission; any other, such as
- * a feature the repository's plan or billing lacks or an organization
- * policy, gives GitHub's reason. Null for anything else, a rate limit
+ * Only a `402`, `403` or `422` says something lasting about the repository, the
+ * token or the App. A refusal for want of a permission names the permission;
+ * any other gives GitHub's reason. Null for anything else, a rate limit
  * included.
  */
 export function failureReason(error: ApplyError): string | null {
@@ -593,7 +571,6 @@ export function failureReason(error: ApplyError): string | null {
   return cause.message;
 }
 
-/** What an ApplyError means for the repository: what was written and what failed. */
 export function describeFailure(error: ApplyError): string {
   const cause = error.cause instanceof Error ? error.cause.message : String(error.cause);
   const { method, path } = error.failed.request;

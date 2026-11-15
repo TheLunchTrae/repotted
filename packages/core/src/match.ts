@@ -5,10 +5,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Whether live state satisfies what a profile asks for. Objects match on the
- * keys the profile sets, so defaults GitHub fills in never count as drift.
- * Arrays match when they hold the same number of items and each desired item
- * matches a different live item, in any order.
+ * Objects match on only the keys the profile sets, so defaults GitHub fills in
+ * never count as drift. Arrays match in any order.
  */
 export function matches(desired: unknown, live: unknown): boolean {
   if (Array.isArray(desired)) {
@@ -45,12 +43,10 @@ export function matches(desired: unknown, live: unknown): boolean {
 
 export interface FieldChange {
   readonly field: string;
-  /** Absent when the live repository has no value for the field. */
   readonly from?: unknown;
   readonly to?: unknown;
 }
 
-/** The top-level fields of `desired` that `live` does not satisfy. */
 export function fieldChanges(
   desired: Record<string, unknown>,
   live: Record<string, unknown> | undefined,
@@ -61,10 +57,8 @@ export function fieldChanges(
 }
 
 /**
- * Every top-level field of `body` that differs from `current`, for a write
- * that replaces the whole value, so a reviewer sees its whole effect. Fields
- * compare exactly rather than as `matches` does, since the write sends each
- * one as it is.
+ * For a write that replaces the whole value. Fields compare exactly rather
+ * than as `matches` does, since the write sends each one as it is.
  */
 export function bodyChanges(body: object, current: object | undefined): FieldChange[] {
   const before = new Map<string, unknown>(Object.entries(current ?? {}));
@@ -74,11 +68,8 @@ export function bodyChanges(body: object, current: object | undefined): FieldCha
 }
 
 /**
- * Lays `desired` over `live` for a write that replaces the whole value:
- * objects merge key by key, so keys the profile leaves out keep their live
- * values. In a list, each object takes the first unused live item it
- * `matches`, so an item keeps live keys the profile leaves out, as matching
- * ignores them. Anything else the profile names replaces the live value.
+ * For a write that replaces the whole value: keys the profile leaves out, in an
+ * object or in a list item that `matches`, keep their live values.
  */
 export function overlay(desired: unknown, live: unknown): unknown {
   if (Array.isArray(desired) && Array.isArray(live)) {

@@ -15,7 +15,6 @@ function match(pattern: string): ActionPatternCheck {
   return { pattern, status: 'match', blocks: false, repository: pattern.split('@')[0] ?? pattern, archived: false };
 }
 
-/** A check that answers when told to, and remembers what each run asked. */
 function held(): {
   readonly runs: string[][];
   readonly check: (patterns: readonly string[]) => Promise<ActionPatternCheck[]>;

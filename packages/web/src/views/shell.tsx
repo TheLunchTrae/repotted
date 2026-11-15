@@ -2,13 +2,12 @@ import type { ComponentChildren, JSX, RefObject } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
-import { installUrl } from '../app/github-app.js';
+import { repottedAppInstallUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
 import { Link } from './link.js';
 import { usePhone } from './phone.js';
 
-/** Closes an open `details` menu when the user clicks outside it or presses Escape, as a menu does. */
-export function useDismiss(): RefObject<HTMLDetailsElement | null> {
+export function useDismissibleMenu(): RefObject<HTMLDetailsElement | null> {
   const menu = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     const close = (event: Event): void => {
@@ -36,23 +35,22 @@ export function useDismiss(): RefObject<HTMLDetailsElement | null> {
 }
 
 interface AccountMenuProps extends Omit<ShellProps, 'children'> {
-  /** Whether the menu also holds the pages, as it does on a phone, where the shell bar has no room for them. */
-  readonly pages: boolean;
+  readonly holdsPageLinks: boolean;
 }
 
-function AccountMenu({ account, user, router, onSignOut, pages }: AccountMenuProps): JSX.Element {
-  const menu = useDismiss();
+function AccountMenu({ account, user, router, onSignOut, holdsPageLinks }: AccountMenuProps): JSX.Element {
+  const menu = useDismissibleMenu();
   // A phone's button shows only the avatar, so its menu names who's signed in even without a display name.
-  const signedIn = user.name ?? (pages ? user.login : null);
-  const pagesBefore = useRef(pages);
+  const signedIn = user.name ?? (holdsPageLinks ? user.login : null);
+  const heldPageLinksBefore = useRef(holdsPageLinks);
   // Crossing the phone width adds or removes the menu's pages, which can take
   // the focused link with them, so an open menu closes and gives focus back to its button.
   useEffect(() => {
     const element = menu.current;
-    if (pagesBefore.current === pages || element === null) {
+    if (heldPageLinksBefore.current === holdsPageLinks || element === null) {
       return;
     }
-    pagesBefore.current = pages;
+    heldPageLinksBefore.current = holdsPageLinks;
     if (element.open) {
       const focusLost = document.activeElement === document.body || element.contains(document.activeElement);
       element.open = false;
@@ -60,17 +58,17 @@ function AccountMenu({ account, user, router, onSignOut, pages }: AccountMenuPro
         element.querySelector('summary')?.focus();
       }
     }
-  }, [pages, menu]);
+  }, [holdsPageLinks, menu]);
   return (
     <details class="menu account-menu" ref={menu}>
-      <summary aria-label={pages ? `Menu: ${user.login}` : `Account: ${user.login}`}>
+      <summary aria-label={holdsPageLinks ? `Menu: ${user.login}` : `Account: ${user.login}`}>
         <img
           src={`https://avatars.githubusercontent.com/${encodeURIComponent(user.login)}?size=64`}
           alt=""
           width="28"
           height="28"
         />
-        {pages ? (
+        {holdsPageLinks ? (
           <svg class="menu-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 7h16M4 12h16M4 17h16" />
           </svg>
@@ -87,15 +85,15 @@ function AccountMenu({ account, user, router, onSignOut, pages }: AccountMenuPro
           }
         }}
       >
-        {pages && (
+        {holdsPageLinks && (
           <nav class="menu-pages" aria-label="Pages">
-            <Link class="menu-item" router={router} to="/" nav>
+            <Link class="menu-item" router={router} to="/" marksCurrentPage>
               Repositories
             </Link>
-            <Link class="menu-item" router={router} to="/profiles" nav>
+            <Link class="menu-item" router={router} to="/profiles" marksCurrentPage>
               Profiles
             </Link>
-            <Link class="menu-item" router={router} to="/settings" nav>
+            <Link class="menu-item" router={router} to="/settings" marksCurrentPage>
               Settings
             </Link>
           </nav>
@@ -104,12 +102,12 @@ function AccountMenu({ account, user, router, onSignOut, pages }: AccountMenuPro
           {signedIn !== null && <strong>{signedIn}</strong>}
           <span class="muted">Signed in with the Repotted App</span>
         </p>
-        {!pages && (
+        {!holdsPageLinks && (
           <Link class="menu-item" router={router} to="/settings">
             Settings
           </Link>
         )}
-        <a class="menu-item" href={installUrl} target="_blank" rel="noreferrer">
+        <a class="menu-item" href={repottedAppInstallUrl} target="_blank" rel="noreferrer">
           Add repositories
         </a>
         <button class="menu-item" type="button" disabled={account.signingOut.value} onClick={onSignOut}>
@@ -129,35 +127,32 @@ interface ShellProps {
   readonly account: Account;
   readonly user: User;
   readonly router: Router;
-  /** Signs out, after asking about unsaved changes when there are any. */
   readonly onSignOut: () => void;
   readonly children: ComponentChildren;
 }
 
-/** The frame every signed-in page sits in: the app's name, its pages, and the account; on a phone, the pages are in the account menu. */
 export function Shell({ account, user, router, onSignOut, children }: ShellProps): JSX.Element {
-  // A phone's bar keeps to one row: the pages move into the account menu.
-  const phone = usePhone();
+  const onPhone = usePhone();
   return (
     <div class="shell">
       <header class="shell-bar">
         <Link class="wordmark" router={router} to="/">
           Repotted
         </Link>
-        {!phone && (
+        {!onPhone && (
           <nav aria-label="Pages">
-            <Link class="nav-link" router={router} to="/" nav>
+            <Link class="nav-link" router={router} to="/" marksCurrentPage>
               Repositories
             </Link>
-            <Link class="nav-link" router={router} to="/profiles" nav>
+            <Link class="nav-link" router={router} to="/profiles" marksCurrentPage>
               Profiles
             </Link>
-            <Link class="nav-link nav-link-end" router={router} to="/settings" nav>
+            <Link class="nav-link nav-link-end" router={router} to="/settings" marksCurrentPage>
               Settings
             </Link>
           </nav>
         )}
-        <AccountMenu account={account} user={user} router={router} onSignOut={onSignOut} pages={phone} />
+        <AccountMenu account={account} user={user} router={router} onSignOut={onSignOut} holdsPageLinks={onPhone} />
       </header>
       <main class="shell-main">{children}</main>
     </div>

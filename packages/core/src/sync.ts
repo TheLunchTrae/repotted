@@ -7,10 +7,7 @@ import { fromBase64, hexDigest, toBase64 } from './bytes.js';
 import { replaceFile } from './files.js';
 import { type GitHub, GitHubError, parseRepo, type RepoRef, repoPath } from './github.js';
 
-/**
- * The file in a synced folder that records what the folder and its
- * repository last agreed on. It is JSON, so profile listings skip it.
- */
+// JSON, so profile listings skip it.
 export const syncStateFile = '.repotted-sync.json';
 
 const syncState = z.strictObject({
@@ -27,15 +24,13 @@ const syncState = z.strictObject({
 type SyncState = z.infer<typeof syncState>;
 
 export interface SyncOptions {
-  /** `owner/name`. A folder's first sync needs it; later syncs read it from the folder. */
+  /** A folder's first sync needs it; later syncs read it from the folder. */
   readonly repository?: string;
-  /** The folder in the repository that holds the profiles; the root when left out. */
   readonly path?: string;
-  /** Which side wins a file that changed both here and on GitHub since the last sync. */
   readonly prefer?: 'local' | 'remote';
   /** The files `prefer` settles, by path in the folder; every file in conflict when left out. */
   readonly only?: readonly string[];
-  /** The commit message; Repotted writes one from the files when left out. */
+  /** Repotted writes a commit message from the files when left out. */
   readonly message?: string;
 }
 
@@ -43,13 +38,10 @@ export interface SyncResult {
   readonly repository: string;
   readonly path: string;
   readonly branch: string;
-  /** The branch's commit after the sync, or null for a repository with no commits. */
+  /** Null for a repository with no commits. */
   readonly commit: string | null;
-  /** Files written or deleted here from GitHub, by path in the folder. */
   readonly pulled: readonly string[];
-  /** Files committed to GitHub from here. */
   readonly pushed: readonly string[];
-  /** Files that changed on both sides and were left as they are on each. */
   readonly conflicts: readonly string[];
 }
 
@@ -60,8 +52,7 @@ export class SyncError extends Error {
   }
 }
 
-/** Says what to change when GitHub refuses a sync, and passes anything else on. */
-function explain(error: unknown, repository: string, branch: string): unknown {
+function explainSyncRefusal(error: unknown, repository: string, branch: string): unknown {
   if (!(error instanceof GitHubError)) {
     return error;
   }
@@ -82,8 +73,7 @@ function explain(error: unknown, repository: string, branch: string): unknown {
   return error;
 }
 
-/** The id git gives a file's content, which GitHub's trees list. */
-async function blobId(content: Uint8Array): Promise<string> {
+async function gitBlobId(content: Uint8Array): Promise<string> {
   const header = new TextEncoder().encode(`blob ${content.byteLength}\0`);
   const whole = new Uint8Array(header.length + content.byteLength);
   whole.set(header);
@@ -107,7 +97,6 @@ export function isProfilePath(file: string): boolean {
   return /\.ya?ml$/iu.test(file) && !file.split('/').some(badSegment);
 }
 
-/** A folder in the repository as `a/b`, or '' for the root. */
 export function repositoryFolder(value: string | undefined): string {
   const trimmed = (value ?? '').replace(/^\/+|\/+$/gu, '');
   if (trimmed === '') {
@@ -167,8 +156,7 @@ async function pullTarget(folder: string, file: string): Promise<string> {
   return path.join(folder, ...segments);
 }
 
-/** The blob id of the file there now; undefined when there is none. */
-async function currentId(target: string, file: string): Promise<string | undefined> {
+async function gitBlobIdOnDisk(target: string, file: string): Promise<string | undefined> {
   const found = await lstat(target).catch((error: unknown) => {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return undefined;
@@ -181,10 +169,10 @@ async function currentId(target: string, file: string): Promise<string | undefin
   if (!found.isFile()) {
     throw new SyncError(`${file} in the synced folder is a link or a folder, so Repotted cannot sync it.`);
   }
-  return blobId(await readFile(target));
+  return gitBlobId(await readFile(target));
 }
 
-/** Two files whose paths differ only in case, which macOS and Windows folders cannot hold side by side. */
+// macOS and Windows folders cannot hold two paths that differ only in case side by side.
 function caseClash(files: Iterable<string>): [string, string] | undefined {
   const lowered = new Map<string, string>();
   for (const file of files) {
@@ -197,7 +185,7 @@ function caseClash(files: Iterable<string>): [string, string] | undefined {
   return undefined;
 }
 
-/** The profiles under a folder, by path with `/` separators, as their content. Links are not followed. */
+// Links are not followed.
 async function localFiles(folder: string, prefix = ''): Promise<Map<string, Uint8Array>> {
   const files = new Map<string, Uint8Array>();
   for (const entry of await readdir(path.join(folder, prefix), { withFileTypes: true })) {
@@ -227,9 +215,8 @@ const treeInfo = z.looseObject({
 const blobInfo = z.looseObject({ content: z.string(), encoding: z.literal('base64') });
 
 interface Remote {
-  /** The branch's commit and its tree, or null when the repository has no commits yet. */
+  /** Null when the repository has no commits yet. */
   readonly head: { commit: string; tree: string } | null;
-  /** Each profile's blob id and file mode, by path in the folder. */
   readonly files: Map<string, { id: string; mode: string }>;
 }
 
@@ -288,8 +275,12 @@ async function readRemote(github: GitHub, repo: RepoRef, branch: string, folder:
 
 const comparison = z.looseObject({ status: z.string() });
 
-/** Whether the branch's head is the commit the folder last synced at, or comes after it. */
-async function descends(github: GitHub, repo: RepoRef, commit: string | null, head: Remote['head']): Promise<boolean> {
+async function headDescendsFromLastSyncedCommit(
+  github: GitHub,
+  repo: RepoRef,
+  commit: string | null,
+  head: Remote['head'],
+): Promise<boolean> {
   if (commit === null || head === null) {
     return false;
   }
@@ -325,10 +316,7 @@ function commitMessage(changes: readonly { file: string; verb: 'Add' | 'Update' 
 
 type Action = 'pull' | 'push' | 'conflict' | 'same';
 
-/**
- * What to do with one file, from its blob id as of the last sync, here, and
- * on GitHub; undefined is a file that does not exist on that side.
- */
+// Each id is the file's blob id on that side; undefined is a file that does not exist there.
 function decide(
   base: string | undefined,
   local: string | undefined,
@@ -354,12 +342,10 @@ function decide(
 }
 
 /**
- * Brings a folder of profiles and a folder in a GitHub repository in line:
- * a file changed on one side since the last sync takes that side's version,
- * and a file changed on both is left alone on each and reported, unless
- * `prefer` names the side to keep. Local changes go to the branch as one
- * commit, which only fast-forwards the branch. Only YAML profiles sync;
- * hidden files and folders stay out of it on both sides.
+ * A file changed on both sides since the last sync is left alone on each and
+ * reported, unless `prefer` names the side to keep. Local changes go to the
+ * branch as one commit, which only fast-forwards the branch. Only YAML profiles
+ * sync; hidden files and folders stay out of it on both sides.
  */
 export async function syncFolder(github: GitHub, directory: string, options: SyncOptions = {}): Promise<SyncResult> {
   const folder = path.resolve(directory);
@@ -385,7 +371,7 @@ export async function syncFolder(github: GitHub, directory: string, options: Syn
   try {
     info = repositoryInfo.parse(await github.request('GET', repoPath(repo)));
   } catch (error) {
-    throw explain(error, repositoryName, saved?.branch ?? 'the default branch');
+    throw explainSyncRefusal(error, repositoryName, saved?.branch ?? 'the default branch');
   }
   const branch = info.default_branch;
   // A repository made again under the same name shares nothing with what the
@@ -403,23 +389,26 @@ export async function syncFolder(github: GitHub, directory: string, options: Syn
     try {
       remote = await readRemote(github, repo, branch, prefix);
     } catch (error) {
-      throw explain(error, repositoryName, branch);
+      throw explainSyncRefusal(error, repositoryName, branch);
     }
     // Neither does a branch whose history no longer holds the last sync's
     // commit, such as an emptied repository, a force push or another
     // default branch.
     let kept: boolean;
     try {
-      kept = attempt > 0 || base.size === 0 || (await descends(github, repo, saved?.commit ?? null, remote.head));
+      kept =
+        attempt > 0 ||
+        base.size === 0 ||
+        (await headDescendsFromLastSyncedCommit(github, repo, saved?.commit ?? null, remote.head));
     } catch (error) {
-      throw explain(error, repositoryName, branch);
+      throw explainSyncRefusal(error, repositoryName, branch);
     }
     if (!kept) {
       base.clear();
     }
     const local = await localFiles(folder);
     const localIds = new Map(
-      await Promise.all([...local].map(async ([file, content]) => [file, await blobId(content)] as const)),
+      await Promise.all([...local].map(async ([file, content]) => [file, await gitBlobId(content)] as const)),
     );
     const localClash = caseClash(localIds.keys());
     if (localClash !== undefined) {
@@ -477,7 +466,7 @@ export async function syncFolder(github: GitHub, directory: string, options: Syn
       const content = remoteId === undefined ? undefined : await readBlob(github, repo, remoteId);
       // A file edited here since the sync read it, such as by a save while
       // it ran, keeps the edit and waits as a conflict.
-      if ((await currentId(target, file)) !== localIds.get(file)) {
+      if ((await gitBlobIdOnDisk(target, file)) !== localIds.get(file)) {
         keep(file);
         continue;
       }
@@ -536,7 +525,7 @@ export async function syncFolder(github: GitHub, directory: string, options: Syn
             },
           );
           pushed.add(first);
-          base.set(first, await blobId(content));
+          base.set(first, await gitBlobId(content));
           continue;
         }
         const tree = [];
@@ -582,7 +571,7 @@ export async function syncFolder(github: GitHub, directory: string, options: Syn
       if (error instanceof GitHubError && /fast.?forward/iu.test(error.message)) {
         continue;
       }
-      throw explain(error, repositoryName, branch);
+      throw explainSyncRefusal(error, repositoryName, branch);
     }
 
     const state: SyncState = {

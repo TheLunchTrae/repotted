@@ -47,7 +47,6 @@ function names(repositories: Repositories): string[] {
   ]);
 }
 
-/** Preferences kept in this browser, as when profiles are not kept in a repository. */
 function inBrowser(github: GitHub, preferences: Preferences = memory()): SharedPreferences {
   return new SharedPreferences(github, preferences, () => undefined);
 }
@@ -162,16 +161,16 @@ test('Refresh waits a while after the read it started, counting down, while the 
   await repositories.refresh();
   expect(repositories.list.value?.repositories).toHaveLength(1);
   expect(repositories.refreshWait.value?.rateLimited).toBe(false);
-  expect(repositories.refreshIn.value).toBe(refreshPause / 1000);
+  expect(repositories.secondsUntilRefreshCanRun.value).toBe(refreshPause / 1000);
 
   github.state.account = account(everyone);
   await repositories.refresh();
   expect(repositories.list.value?.repositories).toHaveLength(1);
 
   vi.advanceTimersByTime(refreshPause - 1000);
-  expect(repositories.refreshIn.value).toBe(1);
+  expect(repositories.secondsUntilRefreshCanRun.value).toBe(1);
   vi.advanceTimersByTime(1000);
-  expect(repositories.refreshIn.value).toBe(0);
+  expect(repositories.secondsUntilRefreshCanRun.value).toBe(0);
   expect(repositories.refreshWait.value).toBeUndefined();
 
   await repositories.refresh();
@@ -191,7 +190,7 @@ test("a rate limit holds Refresh until GitHub's time, or a minute when GitHub gi
 
   expect(repositories.error.value).toBe('API rate limit exceeded');
   expect(repositories.refreshWait.value?.rateLimited).toBe(true);
-  expect(repositories.refreshIn.value).toBe(120);
+  expect(repositories.secondsUntilRefreshCanRun.value).toBe(120);
   vi.advanceTimersByTime(refreshPause);
   await repositories.refresh();
   expect(repositories.list.value).toBeUndefined();
@@ -200,14 +199,14 @@ test("a rate limit holds Refresh until GitHub's time, or a minute when GitHub gi
   github.fail('GET /user/installations', limited(), 1);
   await repositories.refresh();
   expect(repositories.refreshWait.value?.rateLimited).toBe(true);
-  expect(repositories.refreshIn.value).toBe(60);
+  expect(repositories.secondsUntilRefreshCanRun.value).toBe(60);
 
   // A reset time already past by this device's clock, as when it runs ahead of GitHub's, waits the minute too.
   vi.advanceTimersByTime(60_000);
   github.fail('GET /user/installations', limited(new Date(Date.now() - 30_000)), 1);
   await repositories.refresh();
   expect(repositories.refreshWait.value?.rateLimited).toBe(true);
-  expect(repositories.refreshIn.value).toBe(60);
+  expect(repositories.secondsUntilRefreshCanRun.value).toBe(60);
 
   vi.advanceTimersByTime(60_000);
   await repositories.refresh();
@@ -423,7 +422,7 @@ test('with profiles in a repository, the list hides what its file holds and a hi
 
 function folders(repositories: Repositories): string[] {
   return repositories.folders.value.flatMap((folder) => [
-    `${folder.name}${folder.open ? '' : ' (closed)'}${folder.empty ? ' (empty)' : ''}:`,
+    `${folder.name}${folder.open ? '' : ' (closed)'}${folder.holdsNoListedRepository ? ' (empty)' : ''}:`,
     ...folder.repositories.map((repository) => repository.full_name),
   ]);
 }

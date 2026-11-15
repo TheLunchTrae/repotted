@@ -125,9 +125,14 @@ version-numbered names.
 - Respect Chesterton fences. Understand why code exists before deleting or
   replacing it; once it serves no current contract, delete it.
 - Name things for what they do in the domain, in `CONTEXT.md` vocabulary.
-- Comments explain a current invariant, a non-obvious algorithm, a trust
-  boundary, or a public interface. Delete prose that retells an old
-  implementation or narrates what names and types already say.
+- Let names explain the code. Prefer a longer, descriptive name for a
+  variable, function, class, or type over a comment that explains a vague
+  one. Write a comment only when it says something the code cannot: a
+  non-obvious reason, a GitHub API quirk or workaround, an invariant or trust
+  boundary the types don't enforce, or a non-obvious algorithm. Tool
+  directives such as lint suppressions are fine. Don't add doc comments that
+  restate a name, type, or signature, and delete comments that narrate steps,
+  retell an old implementation, or have gone stale.
 - Write good-enough idiomatic code that is easy to reason about, and optimize
   only what a measurement shows matters. Measure before a choice that is
   expensive to reverse.

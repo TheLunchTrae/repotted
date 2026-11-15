@@ -9,7 +9,7 @@ import {
   type Entry,
   hexColor,
   isEntry,
-  linesOf,
+  uniqueTrimmedNonBlankLines,
   refNames,
   ruleOf,
   statusChecks,
@@ -83,7 +83,6 @@ function luminance(hex: string): number {
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 }
 
-/** A string or a number as text, and anything else as none. */
 function text(value: unknown): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
 }
@@ -94,7 +93,6 @@ function items(value: unknown): readonly unknown[] {
 
 interface FormProps {
   readonly entry: Entry;
-  /** The entry as the profile has it saved, when it does. */
   readonly saved: Entry | undefined;
   readonly change: (entry: Entry) => void;
 }
@@ -104,7 +102,6 @@ interface ChoiceProps {
   readonly options: readonly (readonly [string, unknown])[];
   /** The value chosen, or undefined when each repository keeps its own. */
   readonly value: unknown;
-  /** Takes the choice, or undefined to leave it to GitHub. */
   readonly onChoose: (value: unknown) => void;
 }
 
@@ -307,8 +304,12 @@ function Kept({ entry, saved, change, name, label, none, noun }: KeptProps): JSX
   );
 }
 
-/** A whole number from 0 up to a limit, as typed, or why the text isn't one. */
-function count(typed: string, most: number, what: string): { readonly value: number | undefined } | string {
+/** A string answer is why the text isn't a whole number from 0 up to `most`. */
+function parseWholeNumberUpTo(
+  typed: string,
+  most: number,
+  what: string,
+): { readonly value: number | undefined } | string {
   const digits = typed.trim();
   if (digits === '') {
     return { value: undefined };
@@ -318,7 +319,12 @@ function count(typed: string, most: number, what: string): { readonly value: num
     : `${what} is a whole number, from 0 to ${most}.`;
 }
 
-function RulesetForm({ entry, saved, change, pushes }: FormProps & { readonly pushes: boolean }): JSX.Element {
+function RulesetForm({
+  entry,
+  saved,
+  change,
+  ownerTypeHasPushRulesets,
+}: FormProps & { readonly ownerTypeHasPushRulesets: boolean }): JSX.Element {
   const known = new Set(ruleKinds.map(([type]) => type));
   const others = items(entry['rules'])
     .filter(isEntry)
@@ -336,7 +342,7 @@ function RulesetForm({ entry, saved, change, pushes }: FormProps & { readonly pu
       value={refNames(entry, side).join('\n')}
       note={note}
       onText={(typed) => {
-        change(withRefNames(entry, side, linesOf(typed), saved));
+        change(withRefNames(entry, side, uniqueTrimmedNonBlankLines(typed), saved));
         return undefined;
       }}
     />
@@ -346,7 +352,11 @@ function RulesetForm({ entry, saved, change, pushes }: FormProps & { readonly pu
       <Group title="Target">
         <Choice
           label="Applies to"
-          options={[['Branches', 'branch'], ['Tags', 'tag'], ...(pushes ? [['Pushes', 'push'] as const] : [])]}
+          options={[
+            ['Branches', 'branch'],
+            ['Tags', 'tag'],
+            ...(ownerTypeHasPushRulesets ? [['Pushes', 'push'] as const] : []),
+          ]}
           value={entry['target']}
           onChoose={(value) => {
             change(withKey(entry, 'target', value));
@@ -414,7 +424,7 @@ function RulesetForm({ entry, saved, change, pushes }: FormProps & { readonly pu
                   value={text(pullParameters['required_approving_review_count'])}
                   placeholder="Each repository's own"
                   onText={(typed) => {
-                    const approvals = count(typed, 10, 'Required approvals');
+                    const approvals = parseWholeNumberUpTo(typed, 10, 'Required approvals');
                     if (typeof approvals === 'string') {
                       return approvals;
                     }
@@ -450,7 +460,7 @@ function RulesetForm({ entry, saved, change, pushes }: FormProps & { readonly pu
                   value={statusChecks(entry).join('\n')}
                   note="One check a line, by the name it reports."
                   onText={(typed) => {
-                    change(withStatusChecks(entry, linesOf(typed)));
+                    change(withStatusChecks(entry, uniqueTrimmedNonBlankLines(typed)));
                     return undefined;
                   }}
                 />
@@ -486,7 +496,7 @@ function EnvironmentForm({ entry, saved, change }: FormProps): JSX.Element {
       value={branchPolicies(entry, type).join('\n')}
       note={type === 'branch' ? 'One pattern a line, such as main or release/*.' : 'One pattern a line, such as v*.'}
       onText={(typed) => {
-        change(withBranchPolicies(entry, type, linesOf(typed)));
+        change(withBranchPolicies(entry, type, uniqueTrimmedNonBlankLines(typed)));
         return undefined;
       }}
     />
@@ -499,7 +509,7 @@ function EnvironmentForm({ entry, saved, change }: FormProps): JSX.Element {
           value={text(entry['wait_timer'])}
           placeholder="Each repository's own"
           onText={(typed) => {
-            const minutes = count(typed, 43_200, 'The wait timer');
+            const minutes = parseWholeNumberUpTo(typed, 43_200, 'The wait timer');
             if (typeof minutes === 'string') {
               return minutes;
             }
@@ -648,7 +658,7 @@ function LabelForm({ entry, change, savedName }: FormProps & { readonly savedNam
           value={renamedFrom.join('\n')}
           note="One old name a line."
           onText={(typed) => {
-            const names = linesOf(typed);
+            const names = uniqueTrimmedNonBlankLines(typed);
             change(withKey(entry, 'renamed_from', names.length > 0 ? names : undefined));
             return undefined;
           }}
@@ -702,11 +712,11 @@ interface EntryFormProps {
   readonly editor: ProfileEditor;
   readonly row: EntryRow;
   readonly entry: Entry;
-  readonly pushes: boolean;
+  readonly ownerTypeHasPushRulesets: boolean;
   readonly onBack: () => void;
 }
 
-function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.Element {
+function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: EntryFormProps): JSX.Element {
   const noun = nouns[row.list];
   const back = useRef<HTMLButtonElement>(null);
   // The form takes the keyboard when it opens, since the row that opened it is gone.
@@ -740,7 +750,7 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
               : row.inDraft === 'changed'
                 ? 'Changed in the draft. It applies once you save.'
                 : row.source === 'here'
-                  ? editor.drafts
+                  ? editor.canHoldDrafts
                     ? 'Set in this profile.'
                     : 'Set in this apply.'
                   : `From ${row.source}. Changing it here overrides it.`}
@@ -771,7 +781,7 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
       </div>
       {row.outOfDate && (
         <div class="notice notice-drift" role="alert">
-          <p>{row.problem}</p>
+          <p>{row.applyProblem}</p>
           <div class="notice-actions">
             <button
               class="button"
@@ -799,7 +809,7 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
           label="Name"
           value={name}
           disabled={!renamable}
-          problem={row.outOfDate ? undefined : row.problem}
+          problem={row.outOfDate ? undefined : row.applyProblem}
           note={
             !renamable
               ? `It comes from ${row.source}, so it keeps its name.`
@@ -841,7 +851,12 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
         </div>
       </Group>
       {!absent && row.list === 'rulesets' && (
-        <RulesetForm entry={entry} saved={row.saved} change={change} pushes={pushes} />
+        <RulesetForm
+          entry={entry}
+          saved={row.saved}
+          change={change}
+          ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
+        />
       )}
       {!absent && row.list === 'environments' && <EnvironmentForm entry={entry} saved={row.saved} change={change} />}
       {!absent && row.list === 'labels' && (
@@ -854,12 +869,10 @@ function EntryForm({ editor, row, entry, pushes, onBack }: EntryFormProps): JSX.
 interface EntriesProps {
   readonly editor: ProfileEditor;
   readonly list: EntryList;
-  /** Whether the profile's owner type has push rulesets. */
-  readonly pushes: boolean;
+  readonly ownerTypeHasPushRulesets: boolean;
 }
 
-/** One tab of rulesets, environments, or labels: the list, or the one that is open. */
-export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Element {
+export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: EntriesProps): JSX.Element {
   const [openKey, setOpenKey] = useState<string | undefined>(undefined);
   const rows = editor.entries.value[kind];
   const noun = nouns[kind];
@@ -895,7 +908,7 @@ export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Eleme
         editor={editor}
         row={shown}
         entry={shown.entry}
-        pushes={pushes}
+        ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
         onBack={() => {
           setOpenKey(undefined);
         }}
@@ -954,7 +967,7 @@ export function Entries({ editor, list: kind, pushes }: EntriesProps): JSX.Eleme
                   {row.outOfDate ? (
                     <span class="pill pill-remove">Changed elsewhere</span>
                   ) : (
-                    row.problem !== undefined && <span class="pill pill-remove">Not finished</span>
+                    row.applyProblem !== undefined && <span class="pill pill-remove">Not finished</span>
                   )}
                   {row.unsaved && <span class="pill pill-drift">Not saved</span>}
                   {row.inDraft !== undefined && (

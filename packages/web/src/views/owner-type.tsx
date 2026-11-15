@@ -31,7 +31,6 @@ interface OwnerTypeProps {
   readonly onClose: () => void;
 }
 
-/** Picks the kind of owner a profile is for, and says what the change would leave not managed before it writes. */
 export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   const current: OwnerChoice = editor.ownerType.value ?? 'any';

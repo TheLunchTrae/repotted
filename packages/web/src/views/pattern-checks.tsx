@@ -2,7 +2,6 @@ import type { JSX } from 'preact';
 
 import { type ActionPatternChecks, patternNote } from '../app/action-pattern-checks.js';
 
-/** Beside each allowed action pattern, what it matches on GitHub, with the count under them and a way to ask again. */
 export function PatternChecks({ checks }: { readonly checks: ActionPatternChecks }): JSX.Element {
   const lines = checks.lines.value.filter((line) => line.state !== undefined);
   return (

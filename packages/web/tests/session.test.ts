@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { Session, SessionUnavailableError } from '../src/session.js';
 
-/** Stubs the Worker, and a Web Lock that runs its callbacks one at a time, as the browser's does. */
 function setup(): ReturnType<typeof vi.fn<typeof fetch>> {
   const worker = vi.fn<typeof fetch>();
   const lock = { queue: Promise.resolve() };

@@ -4,9 +4,9 @@ import { type GitHub, GitHubError, type Method } from '../src/github.js';
 type Tree = Map<string, { id: string; mode: string }>;
 
 /**
- * SHA-1 in hex, computed at once: the fake names commits, trees, and blobs
- * as git does, inside methods that answer without waiting, which the web
- * platform's own digest can't do.
+ * Computed at once: the fake names commits, trees, and blobs as git does,
+ * inside methods that answer without waiting, which the web platform's own
+ * digest can't do.
  */
 function sha1(bytes: Uint8Array): string {
   const length = bytes.length;
@@ -55,7 +55,6 @@ function sha1(bytes: Uint8Array): string {
   return state.map((word) => (word >>> 0).toString(16).padStart(8, '0')).join('');
 }
 
-/** The id git gives a file's content. */
 function blobId(content: Uint8Array): string {
   const header = new TextEncoder().encode(`blob ${content.byteLength}\0`);
   const whole = new Uint8Array(header.length + content.byteLength);
@@ -81,38 +80,27 @@ function hash(value: string): string {
   return sha1(new TextEncoder().encode(value));
 }
 
-/**
- * One repository's git data, as the contents and git data APIs serve it, for
- * the sync tests. Its owner can write to it directly, as a push from
- * elsewhere would.
- */
 export class FakeGitRepository implements GitHub {
-  /** How many fakes exist, which numbers each one. */
-  private static made = 0;
+  private static fakesMade = 0;
   readonly blobs = new Map<string, Uint8Array>();
   readonly trees = new Map<string, Tree>();
   readonly commits = new Map<string, Commit>();
   readonly refs = new Map<string, string>();
   readonly calls: { method: Method; path: string }[] = [];
-  /** Runs just before a branch moves, as a push that lands first would. */
   beforeRefUpdate: (() => void) | undefined;
-  /** Runs just before a blob is read, as an edit made here during a sync would. */
   beforeBlobRead: (() => void) | undefined;
-  /** Runs just before a file is written through the contents API, as a push that lands first would. */
   beforeContentsWrite: (() => void) | undefined;
-  /** The error GitHub answers every write with, as a ruleset or a missing permission would. */
   refuseWrites: GitHubError | undefined;
 
   readonly fullName: string;
-  /** GitHub's id for the repository; each fake is a repository of its own. */
   readonly id: number;
   defaultBranch: string;
 
   constructor(fullName = 'lunch/config', defaultBranch = 'main') {
     this.fullName = fullName;
     this.defaultBranch = defaultBranch;
-    FakeGitRepository.made += 1;
-    this.id = FakeGitRepository.made;
+    FakeGitRepository.fakesMade += 1;
+    this.id = FakeGitRepository.fakesMade;
   }
 
   private storeTree(tree: Tree): string {
@@ -127,7 +115,6 @@ export class FakeGitRepository implements GitHub {
     return id;
   }
 
-  /** The branch's files as text, by path. */
   files(branch = this.defaultBranch): Record<string, string> {
     const head = this.refs.get(branch);
     if (head === undefined) {
@@ -139,11 +126,7 @@ export class FakeGitRepository implements GitHub {
     );
   }
 
-  /**
-   * Commits files to a branch, a string to write and null to delete, as a
-   * push from elsewhere would. The default branch when none is named; a
-   * branch that doesn't exist yet starts from the default branch.
-   */
+  /** A branch that doesn't exist yet starts from the default branch. */
   write(
     changes: Record<string, string | null>,
     options: { mode?: string; message?: string; branch?: string } = {},
@@ -170,12 +153,10 @@ export class FakeGitRepository implements GitHub {
     return commit;
   }
 
-  /** The commit a branch name or a commit id names. */
-  private commitOf(name: string): string | undefined {
+  private commitOfBranchOrCommitId(name: string): string | undefined {
     return this.refs.get(name) ?? (this.commits.has(name) ? name : undefined);
   }
 
-  /** The newest commit both reach, or undefined when they share none. */
   private mergeBase(from: string, to: string): string | undefined {
     const reached = new Set([from, ...this.ancestors(from)]);
     const queue = [to];
@@ -196,7 +177,6 @@ export class FakeGitRepository implements GitHub {
     return this.trees.get(this.commits.get(commit)?.tree ?? '') ?? new Map();
   }
 
-  /** The files that differ from one commit's tree to another's, as a comparison lists them, a moved file as renamed. */
   private changedFiles(from: string, to: string): Record<string, unknown>[] {
     const before = this.treeOf(from);
     const after = this.treeOf(to);
@@ -233,7 +213,6 @@ export class FakeGitRepository implements GitHub {
     return found;
   }
 
-  /** The branch's commit messages, newest first. */
   log(branch = this.defaultBranch): string[] {
     const messages: string[] = [];
     let id = this.refs.get(branch);
@@ -266,7 +245,6 @@ export class FakeGitRepository implements GitHub {
     const ref = route.startsWith(`${base}/git/refs/heads/`)
       ? decodeURIComponent(route.slice(`${base}/git/refs/heads/`.length))
       : undefined;
-    // The singular endpoint, which answers only a branch of exactly that name.
     if (method === 'GET' && route.startsWith(`${base}/git/ref/heads/`)) {
       const name = route.slice(`${base}/git/ref/heads/`.length).split('/').map(decodeURIComponent).join('/');
       const head = this.refs.get(name);
@@ -304,8 +282,8 @@ export class FakeGitRepository implements GitHub {
       : undefined;
     if (method === 'GET' && compare !== undefined) {
       const [fromName = '', toName = ''] = compare.map(decodeURIComponent);
-      const from = this.commitOf(fromName);
-      const to = this.commitOf(toName);
+      const from = this.commitOfBranchOrCommitId(fromName);
+      const to = this.commitOfBranchOrCommitId(toName);
       if (from === undefined || to === undefined) {
         throw new GitHubError(404, 'Not Found');
       }

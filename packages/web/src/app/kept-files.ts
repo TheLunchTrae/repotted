@@ -14,7 +14,6 @@ import { type Signal, signal } from '@preact/signals';
 import { mkdir, watchFiles, writeFile } from '../engine/files.js';
 import { dirname } from '../engine/path.js';
 
-/** Where files are kept between visits, each under its absolute path. */
 export interface FileKeeper {
   load(): Promise<ReadonlyMap<string, Uint8Array>>;
   put(file: string, content: Uint8Array): Promise<void>;
@@ -48,7 +47,7 @@ function finished(transaction: IDBTransaction): Promise<void> {
   });
 }
 
-/** The browser's own storage for this site, in IndexedDB. `indexedDB` is asked for at each use, since naming it can throw. */
+/** `indexedDB` is asked for at each use, since naming it can throw. */
 export function browserFiles(indexedDB: () => IDBFactory): FileKeeper {
   let opened: Promise<IDBDatabase> | undefined;
   const open = (): Promise<IDBDatabase> => {
@@ -67,7 +66,6 @@ export function browserFiles(indexedDB: () => IDBFactory): FileKeeper {
           resolve(connection);
         }, reject);
       });
-      // A failed open is tried again by the next call.
       opened.catch(() => {
         opened = undefined;
       });
@@ -114,11 +112,10 @@ export type Keeping = 'keeping' | 'visit-only' | 'stopped' | 'elsewhere';
 
 // The file the engine writes beside a file it is replacing, which is gone again at once.
 const temporary = /\/\.[^/]+\.tmp$/u;
-/** Where a preview of a branch puts the profiles it reads, which last only as long as the preview. */
-export const previewFolder = '/preview';
+/** Never kept between visits: its files last only as long as the preview. */
+export const branchPreviewFolder = '/preview';
 const lockName = 'repotted-files';
 
-/** The part of the browser's Web Locks that keeping uses. */
 export interface SiteLocks {
   request(
     name: string,
@@ -127,8 +124,7 @@ export interface SiteLocks {
   ): Promise<unknown>;
 }
 
-/** Takes the site-wide lock for as long as the tab lives, or answers false when another tab holds it. */
-function holdLock(locks: SiteLocks): Promise<boolean> {
+function holdSiteLockUntilTabCloses(locks: SiteLocks): Promise<boolean> {
   return new Promise((resolve, reject) => {
     locks
       .request(lockName, { ifAvailable: true }, (lock) => {
@@ -140,15 +136,12 @@ function holdLock(locks: SiteLocks): Promise<boolean> {
   });
 }
 
-/**
- * Puts the kept files in memory, then keeps every later change, and answers
- * how that stands, which changes at most once more, to `stopped`.
- */
+/** The answered state changes at most once more, to `stopped`. */
 export async function keepFiles(keeper: FileKeeper, locks: SiteLocks | undefined): Promise<Signal<Keeping>> {
   const keeping = signal<Keeping>('keeping');
   // A browser without locks, or one that refuses them as it does a site whose
   // data it blocks, can't say that no other tab keeps the files, so nothing is kept.
-  const held = locks === undefined ? undefined : await holdLock(locks).catch(() => undefined);
+  const held = locks === undefined ? undefined : await holdSiteLockUntilTabCloses(locks).catch(() => undefined);
   if (held !== true) {
     keeping.value = held === undefined ? 'visit-only' : 'elsewhere';
     return keeping;
@@ -168,7 +161,7 @@ export async function keepFiles(keeper: FileKeeper, locks: SiteLocks | undefined
   }
   let last = Promise.resolve();
   watchFiles((file, content) => {
-    if (temporary.test(file) || file.startsWith(`${previewFolder}/`)) {
+    if (temporary.test(file) || file.startsWith(`${branchPreviewFolder}/`)) {
       return;
     }
     last = last.then(async () => {

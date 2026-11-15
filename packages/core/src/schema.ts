@@ -5,7 +5,6 @@ import { ownerConflicts, ownerTypes, settingRules } from './owner.js';
 // Field names are the GitHub REST API's own, so a profile maps onto requests
 // without translation and the REST docs describe every key.
 
-/** Settings on the repository itself, read and written at `/repos/{owner}/{repo}`. */
 export const repositoryFields = {
   description: z.string(),
   homepage: z.string(),
@@ -26,9 +25,8 @@ export const repositoryFields = {
 };
 
 /**
- * Repository settings that name one repository rather than describe a
- * setup, so a capture leaves them out and a captured profile does not carry
- * them to other repositories.
+ * These name one repository rather than describe a setup, so a capture leaves
+ * them out and a captured profile does not carry them to other repositories.
  */
 export const identifyingRepositoryFields: ReadonlySet<string> = new Set([
   'description',
@@ -37,14 +35,12 @@ export const identifyingRepositoryFields: ReadonlySet<string> = new Set([
   'topics',
 ]);
 
-/** A topic as GitHub accepts it: lowercase letters, digits and hyphens, at most 50 characters. */
 const topic = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-]{0,49}$/u, 'A topic is lowercase letters, digits and hyphens, at most 50 characters');
 
 /**
- * Repository settings that GitHub keeps at endpoints of their own. Each is
- * named for its path, as `immutable_releases` is for
+ * Each is named for its path, as `immutable_releases` is for
  * `/repos/{owner}/{repo}/immutable-releases`, and an object holds that
  * endpoint's own fields.
  */
@@ -61,7 +57,6 @@ export const repositoryEndpointFields = {
     .strict(),
 };
 
-/** Merge methods and their commit messages, on the same endpoint. */
 export const mergeFields = {
   allow_merge_commit: z.boolean(),
   allow_squash_merge: z.boolean(),
@@ -88,10 +83,8 @@ export const commitPairs = [
 ] as const;
 
 /**
- * What GitHub would reject in these merge settings: a title and message pair
- * it does not offer, or every merge method turned off. A setting left out is
- * not checked, so a profile alone and a profile laid over live settings both
- * pass through here.
+ * A setting left out is not checked, so a profile alone and a profile laid
+ * over live settings both pass through here.
  */
 export function mergeSettingsProblems(merge: MergeSettings): string[] {
   const problems: string[] = [];
@@ -131,9 +124,9 @@ export const selectedActions = z
   .strict();
 
 /**
- * Actions settings at endpoints of their own under `actions/`. An endpoint
- * with one field goes by that field's name; one with several goes by its
- * path, as `fork_pr_workflows_private_repos` does, and holds its fields.
+ * An endpoint under `actions/` with one field goes by that field's name; one
+ * with several goes by its path, as `fork_pr_workflows_private_repos` does,
+ * and holds its fields.
  */
 export const actionsEndpointFields = {
   access_level: z.enum(['none', 'user', 'organization']),
@@ -183,9 +176,8 @@ export const actionsSettings = z
 const status = z.object({ status: z.enum(['enabled', 'disabled']) }).strict();
 
 /**
- * The `security_and_analysis` object that `/repos/{owner}/{repo}` reads and
- * writes. GitHub reports `dependabot_security_updates` there too, but sets it
- * only through `automated_security_fixes`.
+ * GitHub reports `dependabot_security_updates` there too, but sets it only
+ * through `automated_security_fixes`.
  */
 export const securityAndAnalysis = z
   .object({
@@ -222,9 +214,8 @@ const runnerSetup = {
 };
 
 /**
- * Security and code quality settings, named for their endpoints' paths
- * under the repository, except `security_and_analysis`, which is a field of
- * the repository itself.
+ * Named for their endpoints' paths under the repository, except
+ * `security_and_analysis`, which is a field of the repository itself.
  */
 export const securityFields = {
   security_and_analysis: securityAndAnalysis,
@@ -284,9 +275,8 @@ export const securitySettings = z
   });
 
 /**
- * Custom property values by property name; null clears a value. GitHub
- * documents a property name as 1 to 75 of `a-z`, `A-Z`, `0-9`, `_`, `-`,
- * `$` and `#`.
+ * Null clears a value. GitHub documents a property name as 1 to 75 of `a-z`,
+ * `A-Z`, `0-9`, `_`, `-`, `$` and `#`.
  */
 export const customProperties = z
   .record(z.string(), z.union([z.string(), z.array(z.string()), z.null()]))
@@ -309,8 +299,7 @@ export const customProperties = z
  */
 const unmarked = z.undefined().optional();
 
-/** The message for a marking key that holds anything but `true`. */
-function marked(key: 'absent' | 'draft'): { error: z.core.$ZodErrorMap } {
+function markingKeyError(key: 'absent' | 'draft'): { error: z.core.$ZodErrorMap } {
   return { error: (issue) => (issue.code === 'invalid_union' ? `${key} is true or left out` : undefined) };
 }
 
@@ -322,7 +311,6 @@ export const autolink = z
   })
   .strict();
 
-/** An autolink the profile removes by its prefix. */
 const absentAutolink = z
   .object({
     key_prefix: z.string().min(1),
@@ -334,7 +322,7 @@ const absentAutolink = z
 export const autolinkEntry = z.discriminatedUnion(
   'absent',
   [absentAutolink, autolink.extend({ absent: unmarked, draft: unmarked })],
-  marked('absent'),
+  markingKeyError('absent'),
 );
 
 export const pagesSite = z
@@ -356,13 +344,12 @@ export const pagesSite = z
   .partial()
   .strict();
 
-/** A GitHub Pages site the profile turns off. */
 const absentPages = z.object({ absent: z.literal(true) }).strict();
 
 export const pagesEntry = z.discriminatedUnion(
   'absent',
   [absentPages, pagesSite.extend({ absent: unmarked })],
-  marked('absent'),
+  markingKeyError('absent'),
 );
 
 export const bypassActor = z
@@ -438,7 +425,6 @@ export const ruleset = z
   })
   .strict();
 
-/** A ruleset the profile removes by name. */
 const absentRuleset = z
   .object({
     name: z.string().min(1),
@@ -450,7 +436,7 @@ const absentRuleset = z
 export const rulesetEntry = z.discriminatedUnion(
   'absent',
   [absentRuleset, ruleset.extend({ absent: unmarked, draft: unmarked })],
-  marked('absent'),
+  markingKeyError('absent'),
 );
 
 export const environmentReviewer = z
@@ -470,7 +456,6 @@ export const deploymentBranchPolicy = z
     message: 'Set exactly one of protected_branches and custom_branch_policies to true',
   });
 
-/** A branch or tag name pattern that may deploy to an environment. */
 export const branchPolicy = z
   .object({
     name: z.string().min(1),
@@ -519,7 +504,6 @@ export const environment = z
     }
   });
 
-/** An environment the profile removes by name. */
 const absentEnvironment = z
   .object({
     name: z.string().min(1),
@@ -531,7 +515,7 @@ const absentEnvironment = z
 export const environmentEntry = z.discriminatedUnion(
   'absent',
   [absentEnvironment, environment.extend({ absent: unmarked, draft: unmarked })],
-  marked('absent'),
+  markingKeyError('absent'),
 );
 
 /** GitHub treats environment names as case-insensitive, so entries pair by this key. */
@@ -539,10 +523,7 @@ export function environmentKey(name: string): string {
   return name.toLowerCase();
 }
 
-/**
- * A label's color: six hex digits, with or without `#`, in any case. YAML
- * reads digits alone, as `000000`, as a number, so the color has to be quoted.
- */
+// YAML reads digits alone, as `000000`, as a number, so the color has to be quoted.
 const labelColor = z
   .string({
     error: (issue) => (issue.input === undefined ? undefined : "color is six hex digits in quotes, as '000000'"),
@@ -563,7 +544,6 @@ export const label = z
   })
   .strict();
 
-/** A label the profile removes by name. */
 const absentLabel = z
   .object({
     name: z.string().min(1).max(50),
@@ -575,7 +555,7 @@ const absentLabel = z
 export const labelEntry = z.discriminatedUnion(
   'absent',
   [absentLabel, label.extend({ absent: unmarked, draft: unmarked })],
-  marked('absent'),
+  markingKeyError('absent'),
 );
 
 /** GitHub treats label names as case-insensitive, so entries pair by this key. */
@@ -638,7 +618,6 @@ function addDuplicateNameIssues(
   }
 }
 
-/** What owns the repositories a profile is for; a profile without it is for any owner. */
 export const ownerType = z.enum(ownerTypes);
 
 export const profile = z
@@ -676,16 +655,12 @@ export const profile = z
     }
   });
 
-/**
- * A ruleset, environment or label saved as a draft. Only its name has to be valid:
- * the rest may be unfinished, and plan and apply leave it out.
- */
+/** Only a draft's name has to be valid: the rest may be unfinished, and plan and apply leave it out. */
 export const draftEntry = z.looseObject({
   name: z.string().min(1),
   draft: z.literal(true),
 });
 
-/** An autolink saved as a draft, known by its prefix as an autolink is. */
 export const draftAutolink = z.looseObject({
   key_prefix: z.string().min(1),
   draft: z.literal(true),
@@ -703,11 +678,7 @@ const draftValues = z.record(z.string(), z.unknown()).superRefine((values, conte
   }
 });
 
-/**
- * Draft settings by section, one for each section that holds settings. Any
- * key and value is kept, since a draft may be unfinished; what would stop it
- * from applying is a warning.
- */
+/** Any key and value is kept, since a draft may be unfinished; what would stop it from applying is a warning. */
 export const draftSettings = z
   .object({
     repository: draftValues,
@@ -726,7 +697,6 @@ export const draftSettings = z
   .partial()
   .strict();
 
-/** A profile file, which may extend another profile file. */
 export const profileFile = z
   .object({
     extends: z.string().min(1).optional(),
@@ -737,10 +707,14 @@ export const profileFile = z
     security: securitySettings.optional(),
     custom_properties: customProperties.optional(),
     pages: pagesEntry.optional(),
-    autolinks: z.array(z.discriminatedUnion('draft', [draftAutolink, autolinkEntry], marked('draft'))).optional(),
-    rulesets: z.array(z.discriminatedUnion('draft', [draftEntry, rulesetEntry], marked('draft'))).optional(),
-    environments: z.array(z.discriminatedUnion('draft', [draftEntry, environmentEntry], marked('draft'))).optional(),
-    labels: z.array(z.discriminatedUnion('draft', [draftEntry, labelEntry], marked('draft'))).optional(),
+    autolinks: z
+      .array(z.discriminatedUnion('draft', [draftAutolink, autolinkEntry], markingKeyError('draft')))
+      .optional(),
+    rulesets: z.array(z.discriminatedUnion('draft', [draftEntry, rulesetEntry], markingKeyError('draft'))).optional(),
+    environments: z
+      .array(z.discriminatedUnion('draft', [draftEntry, environmentEntry], markingKeyError('draft')))
+      .optional(),
+    labels: z.array(z.discriminatedUnion('draft', [draftEntry, labelEntry], markingKeyError('draft'))).optional(),
     drafts: draftSettings.optional(),
   })
   .strict();
@@ -749,10 +723,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/**
- * The properties an object schema allows at `key`, in its own `properties`
- * or in any branch of a union, as Pages' site is.
- */
+/** In the schema's own `properties` or in any branch of a union, as Pages' site is. */
 function propertySchemas(schema: Record<string, unknown>, key: string): Record<string, unknown>[] {
   const properties = schema['properties'];
   const own = isObject(properties) ? properties[key] : undefined;
@@ -763,11 +734,6 @@ function propertySchemas(schema: Record<string, unknown>, key: string): Record<s
   ];
 }
 
-/**
- * Marks each setting that only some owners have with `x-repotted-owner`,
- * the owner it needs, and each value that only some owners have under
- * `x-repotted-owner-values`, so tools that read the schema know them.
- */
 function markOwners(schema: Record<string, unknown>): void {
   for (const rule of settingRules) {
     const targets = rule.path.reduce((found, key) => found.flatMap((item) => propertySchemas(item, key)), [schema]);
@@ -783,10 +749,9 @@ function markOwners(schema: Record<string, unknown>): void {
 }
 
 /**
- * The JSON Schema of a profile file, for editors and other tools that read
- * profiles. It holds each key and the values it takes, but not the checks
- * that span keys, such as merge commit pairs and repeated names, which only
- * Repotted makes. It is Draft 7, which editors' YAML support reads.
+ * It holds each key and the values it takes, but not the checks that span
+ * keys, such as merge commit pairs and repeated names, which only Repotted
+ * makes. It is Draft 7, which editors' YAML support reads.
  */
 export function profileFileJsonSchema(): Record<string, unknown> {
   const schema = z.toJSONSchema(profileFile, {

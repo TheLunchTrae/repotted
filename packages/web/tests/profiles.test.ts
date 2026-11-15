@@ -25,11 +25,9 @@ const base = 'repository:\n  has_wiki: false\n';
 const web = 'extends: ../base.yaml\nmerge:\n  allow_squash_merge: true\n';
 const copy = '/profiles/github/lunch/config/@profiles';
 
-/** A repository whose request for the repository itself, which starts every sync, can be made to fail. */
-class Unreliable extends FakeGitRepository {
+class RepositoryWithFailingSyncs extends FakeGitRepository {
   #failures: Error[] = [];
 
-  /** Fails the next `times` syncs with `error`, or every one. */
   fail(error: Error, times = Infinity): this {
     this.#failures = Array.from({ length: Math.min(times, 100) }, () => error);
     return this;
@@ -42,9 +40,8 @@ class Unreliable extends FakeGitRepository {
   }
 }
 
-/** A config repository with a base profile and one in a subfolder, under `profiles/`. */
-function repository(): Unreliable {
-  const github = new Unreliable();
+function repository(): RepositoryWithFailingSyncs {
+  const github = new RepositoryWithFailingSyncs();
   github.write({ 'profiles/base.yaml': base, 'profiles/teams/web.yaml': web, 'README.md': '# Config' });
   return github;
 }
@@ -56,7 +53,6 @@ async function inBrowser(files: Record<string, string>): Promise<void> {
   }
 }
 
-/** The sidebar's tree as text: each folder with its count, then what it holds, indented. */
 function drawn(node: ProfileFolderNode, indent = ''): string[] {
   return [
     ...node.profiles.map((profile) => `${indent}${profile.name}`),
@@ -270,13 +266,13 @@ test('a refresh asked for during a connect waits its turn, then syncs with the n
   await vi.waitFor(() => {
     expect(request).toHaveBeenCalledTimes(1);
   });
-  expect(profiles.busy.value).toBe(true);
+  expect(profiles.profileWorkUnderWay.value).toBe(true);
   expect(profiles.source.value).toEqual({ kind: 'browser' });
 
   held.resolve(undefined);
   await Promise.all([connecting, refreshing]);
 
-  expect(profiles.busy.value).toBe(false);
+  expect(profiles.profileWorkUnderWay.value).toBe(false);
   expect(profiles.sync.value).toEqual({ status: 'synced', pulled: 0, pushed: 0 });
   expect(drawn(profiles.tree.value)).toEqual(['base', 'teams/ 1', '  web']);
 });

@@ -52,7 +52,6 @@ export function browser(start: string, later = false) {
       listeners.push(listener);
     },
   });
-  /** The browser's forward, to the entry after this one. */
   const forward = (): void => {
     at += 1;
     show(entries[at]?.address ?? '/');

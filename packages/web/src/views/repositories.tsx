@@ -5,15 +5,15 @@ import type { AddressedRepository } from '../app/addressed-repository.js';
 import type { Apply } from '../app/apply.js';
 import type { BatchApply } from '../app/batch-apply.js';
 import type { ComparedProfile } from '../app/comparison.js';
-import { installUrl } from '../app/github-app.js';
+import { repottedAppInstallUrl } from '../app/github-app.js';
 import type { Profiles } from '../app/profiles.js';
 import { type FolderGroup, refreshPause, type Repositories, type Repository } from '../app/repositories.js';
 import { usePhone } from './phone.js';
 import { run } from './run.js';
-import { useDismiss } from './shell.js';
+import { useDismissibleMenu } from './shell.js';
 
 function OwnerFilter({ repositories }: { readonly repositories: Repositories }): JSX.Element {
-  const menu = useDismiss();
+  const menu = useDismissibleMenu();
   const owners = repositories.owners.value;
   return (
     <details class="menu" ref={menu}>
@@ -64,32 +64,26 @@ function OwnerFilter({ repositories }: { readonly repositories: Repositories }):
   );
 }
 
-/** A dialog open over the list: naming a new folder or renaming one, or deleting one. */
 type FolderDialog =
   | {
       readonly kind: 'new';
       readonly repositories: readonly Repository[];
-      /** Whether they are the selected repositories, which putting them in the folder deselects. */
-      readonly selected: boolean;
+      readonly isTheSelection: boolean;
     }
   | { readonly kind: 'rename'; readonly name: string }
   | { readonly kind: 'delete'; readonly name: string };
 
-/** The value of the folder pickers' choice that asks for a new folder. */
 const newFolderChoice = '\u0000new';
-/** The value of the folder pickers' choice that takes repositories out of every folder. */
 const noFolderChoice = '';
 
-/** Seconds as the countdown on Refresh shows them: by the second under a minute, else by the minute. */
 function countdown(seconds: number): string {
   return seconds < 60 ? `${seconds}s` : `${Math.ceil(seconds / 60)} min`;
 }
 
 /**
- * Refresh, off while a read runs and while it waits after one, with the wait
- * counting down on it. It stays focusable while off, so the focus a press
- * gave it isn't lost. The countdown isn't part of its name, so a screen
- * reader isn't told each second; its description says why it waits, once.
+ * It stays focusable while off, so the focus a press gave it isn't lost. The
+ * countdown isn't part of its name, so a screen reader isn't told each second;
+ * its description says why it waits, once.
  */
 function RefreshButton({ repositories }: { readonly repositories: Repositories }): JSX.Element {
   const wait = repositories.refreshWait.value;
@@ -109,7 +103,7 @@ function RefreshButton({ repositories }: { readonly repositories: Repositories }
         Refresh
         {wait !== undefined && (
           <span class="refresh-countdown" aria-hidden="true">
-            &nbsp;in {countdown(repositories.refreshIn.value)}
+            &nbsp;in {countdown(repositories.secondsUntilRefreshCanRun.value)}
           </span>
         )}
       </button>
@@ -124,7 +118,6 @@ function RefreshButton({ repositories }: { readonly repositories: Repositories }
   );
 }
 
-/** Opens the dialog when it mounts, and calls `onClose` when it closes, by its buttons or Escape. */
 function useModal(): RefObject<HTMLDialogElement | null> {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -136,14 +129,9 @@ function useModal(): RefObject<HTMLDialogElement | null> {
 interface FolderNameProps {
   readonly repositories: Repositories;
   readonly dialog: Extract<FolderDialog, { kind: 'new' | 'rename' }>;
-  /**
-   * Called when it closes, with the folder that takes the focus: the one
-   * renamed, or the one made with the selected repositories put in it, if any.
-   */
-  readonly onClose: (focus: string | undefined) => void;
+  readonly onClose: (folderToFocus: string | undefined) => void;
 }
 
-/** Names a new folder, optionally with repositories to put in it, or renames one. */
 function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNameProps): JSX.Element {
   const dialog = useModal();
   const renaming = asked.kind === 'rename' ? asked.name : undefined;
@@ -151,7 +139,7 @@ function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNamePr
   const [putIn, setPutIn] = useState(true);
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const moving = asked.kind === 'new' ? asked.repositories : [];
-  const fromSelected = asked.kind === 'new' && asked.selected && moving.length > 0;
+  const fromSelected = asked.kind === 'new' && asked.isTheSelection && moving.length > 0;
   // The folder's name once renamed, since the menu that opened the dialog goes with its old name, or once
   // made with the selected repositories in it, since the selection's panel goes when they are deselected.
   const landed = useRef<string | undefined>(undefined);
@@ -229,7 +217,6 @@ function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNamePr
   );
 }
 
-/** Asks before a folder is deleted, saying its repositories stay as they are. */
 function DeleteFolderDialog({
   repositories,
   name,
@@ -237,8 +224,7 @@ function DeleteFolderDialog({
 }: {
   readonly repositories: Repositories;
   readonly name: string;
-  /** Called when it closes, with the folder whose menu takes the focus: none once it is deleted. */
-  readonly onClose: (focus: string | undefined) => void;
+  readonly onClose: (folderToFocus: string | undefined) => void;
 }): JSX.Element {
   const dialog = useModal();
   return (
@@ -277,15 +263,12 @@ function DeleteFolderDialog({
 interface FolderPickerProps {
   readonly repositories: Repositories;
   readonly id: string;
-  /** The choice shown, or none yet, which shows a prompt to choose. */
   readonly value: string | undefined;
   readonly onChange: (value: string) => void;
 }
 
-/** The value of the prompt a folder picker shows before anything is chosen. */
 const unchosen = '\u0000unchosen';
 
-/** The folders to pick from, with no folder and a new folder. */
 function FolderPicker({ repositories, id, value, onChange }: FolderPickerProps): JSX.Element {
   return (
     <select
@@ -319,7 +302,7 @@ function FolderMenu({
   readonly name: string;
   readonly onDialog: (dialog: FolderDialog) => void;
 }): JSX.Element {
-  const menu = useDismiss();
+  const menu = useDismissibleMenu();
   const pick = (dialog: FolderDialog): void => {
     if (menu.current !== null) {
       menu.current.open = false;
@@ -358,7 +341,6 @@ function FolderMenu({
 interface RowProps {
   readonly repository: Repository;
   readonly repositories: Repositories;
-  /** Whether the row names the owner, as a folder's rows do, since a folder holds several owners'. */
   readonly withOwner: boolean;
 }
 
@@ -409,8 +391,8 @@ function FolderSection({
 }): JSX.Element {
   const searching = repositories.search.value.trim() !== '';
   const count = folder.repositories.length;
-  // What the folder shows, which a search narrows; all of it selected turns Select all into Deselect all.
-  const every = count > 0 && folder.repositories.every((repository) => repositories.isSelected(repository));
+  const everyShownRepositorySelected =
+    count > 0 && folder.repositories.every((repository) => repositories.isSelected(repository));
   return (
     <section class="folder" aria-label={folder.name}>
       <div class="folder-heading">
@@ -435,18 +417,18 @@ function FolderSection({
           <button
             class="button button-quiet button-small folder-select"
             type="button"
-            aria-label={`${every ? 'Deselect all in' : 'Select all in'} ${folder.name}`}
+            aria-label={`${everyShownRepositorySelected ? 'Deselect all in' : 'Select all in'} ${folder.name}`}
             onClick={() => {
-              repositories.selectEach(folder.repositories, !every);
+              repositories.selectEach(folder.repositories, !everyShownRepositorySelected);
             }}
           >
-            {every ? 'Deselect all' : 'Select all'}
+            {everyShownRepositorySelected ? 'Deselect all' : 'Select all'}
           </button>
         )}
         <FolderMenu name={folder.name} onDialog={onDialog} />
       </div>
       {folder.open &&
-        (folder.empty ? (
+        (folder.holdsNoListedRepository ? (
           <p class="empty-folder">
             Nothing in this folder yet. Select repositories, then pick this folder under{' '}
             <strong>Move to a folder</strong>.
@@ -491,7 +473,6 @@ function RepositoryPanel({
   onApply,
   onBack,
 }: PanelProps): JSX.Element {
-  // Whether an apply here was left unfinished, which the browser keeps.
   const [unfinished, setUnfinished] = useState(false);
   // Looked up again whenever the apply moves on, since one that ends or is discarded is no longer there.
   const moved = apply.state.value.kind;
@@ -509,7 +490,6 @@ function RepositoryPanel({
       current = false;
     };
   }, [apply, repository.full_name, moved]);
-  // A profile that can't be read has nothing to compare with.
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const profile = listings.find((listing) => listing.file === picked) ?? listings[0];
@@ -548,7 +528,7 @@ function RepositoryPanel({
           value={repositories.folderOf(repository) ?? noFolderChoice}
           onChange={(value) => {
             if (value === newFolderChoice) {
-              onDialog({ kind: 'new', repositories: [repository], selected: false });
+              onDialog({ kind: 'new', repositories: [repository], isTheSelection: false });
             } else {
               repositories.moveToFolder([repository], value === noFolderChoice ? undefined : value);
             }
@@ -674,8 +654,7 @@ function RepositoryPanel({
   );
 }
 
-/** Focuses the search when the user presses `/` outside a field, as GitHub's own lists do. */
-function useSearchKey(): RefObject<HTMLInputElement | null> {
+function useSlashKeyToFocusSearch(): RefObject<HTMLInputElement | null> {
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const focus = (event: KeyboardEvent): void => {
@@ -738,7 +717,6 @@ function useListReturn(
   const closed = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     if (details) {
-      // The details open at their top.
       closed.current = name;
       scrollTo(0, 0);
       return undefined;
@@ -784,34 +762,27 @@ function useListReturn(
 
 interface RepositoriesProps {
   readonly repositories: Repositories;
-  /** The opened repository in the page's address. */
   readonly address: AddressedRepository;
   readonly profiles: Profiles;
-  /** Starts a new profile that captures this repository, `owner/name`. */
   readonly onCapture: (repository: string) => void;
-  /** Compares this repository, `owner/name`, with a profile. */
   readonly onCompare: PanelProps['onCompare'];
   readonly apply: Apply;
   readonly onApply: PanelProps['onApply'];
   readonly batch: BatchApply;
-  /** Starts a batch of the profile over the repositories, or resumes the unfinished one when no profile is given. */
+  /** With no profile, resumes the unfinished batch. */
   readonly onBatch: (repositories: readonly string[], profile: ComparedProfile | undefined) => void;
 }
 
 interface SelectedProps {
   readonly repositories: Repositories;
   readonly onDialog: (dialog: FolderDialog) => void;
-  /** Whether a batch is unfinished, which is resumed or discarded before another starts. */
   readonly unfinished: boolean;
   readonly profiles: Profiles;
   readonly onBatch: RepositoriesProps['onBatch'];
-  /** Called after a move, which deselects the repositories and so closes this panel, with the folder they went to. */
   readonly onMoved: (folder: string | undefined) => void;
-  /** Deselects every repository, which closes this panel. */
   readonly onDeselectAll: () => void;
 }
 
-/** The panel for the selected repositories: the profile to apply to them all, each reviewed on its own first. */
 function SelectedPanel({
   repositories,
   onDialog,
@@ -845,7 +816,7 @@ function SelectedPanel({
             return;
           }
           if (target.kind === 'new') {
-            onDialog({ kind: 'new', repositories: selected, selected: true });
+            onDialog({ kind: 'new', repositories: selected, isTheSelection: true });
           } else {
             const folder = target.kind === 'folder' ? target.name : undefined;
             repositories.moveToFolder(selected, folder, { deselect: true });
@@ -957,7 +928,6 @@ export function RepositoriesPage({
   onBatch,
 }: RepositoriesProps): JSX.Element {
   const selected = repositories.selected.value;
-  // Whether a batch was left unfinished, which the browser keeps.
   const [unfinished, setUnfinished] = useState(false);
   const moved = batch.state.value.kind;
   useEffect(() => {
@@ -973,7 +943,7 @@ export function RepositoriesPage({
       current = false;
     };
   }, [batch, moved]);
-  const search = useSearchKey();
+  const search = useSlashKeyToFocusSearch();
   const list = repositories.list.value;
   const loading = repositories.loading.value;
   const error = repositories.error.value;
@@ -1008,7 +978,7 @@ export function RepositoriesPage({
       (toggle ?? section?.querySelector<HTMLElement>('.folder-menu > summary') ?? newFolderButton.current)?.focus();
     });
   };
-  /** Deselects every repository; the buttons that do it go with the selection, so the focus moves to New folder. */
+  // The buttons that deselect go with the selection, so the focus moves to New folder.
   const deselectAll = (): void => {
     repositories.deselectAll();
     requestAnimationFrame(() => {
@@ -1081,7 +1051,7 @@ export function RepositoriesPage({
           </div>
           <div class="page-actions">
             {fromApp && total > 0 && (
-              <a class="button" href={installUrl} target="_blank" rel="noreferrer">
+              <a class="button" href={repottedAppInstallUrl} target="_blank" rel="noreferrer">
                 Add repositories
               </a>
             )}
@@ -1113,7 +1083,7 @@ export function RepositoriesPage({
                 : 'Your account administers no repositories.'}
             </p>
             {fromApp && (
-              <a class="button button-primary" href={installUrl} target="_blank" rel="noreferrer">
+              <a class="button button-primary" href={repottedAppInstallUrl} target="_blank" rel="noreferrer">
                 Add repositories
               </a>
             )}
@@ -1167,7 +1137,7 @@ export function RepositoriesPage({
                 class="button button-quiet"
                 type="button"
                 onClick={() => {
-                  setDialog({ kind: 'new', repositories: selected, selected: true });
+                  setDialog({ kind: 'new', repositories: selected, isTheSelection: true });
                 }}
               >
                 New folder

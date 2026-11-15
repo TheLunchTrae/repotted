@@ -33,8 +33,7 @@ afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-/** A fresh folder with a profile, so tests never share files. */
-async function folder(profileText: string): Promise<{ profile: string; staged: string }> {
+async function freshFolderWithProfile(profileText: string): Promise<{ profile: string; staged: string }> {
   const name = randomUUID();
   const profile = path.join(directory, `profile-${name}.yaml`);
   await writeFile(profile, profileText);
@@ -51,8 +50,7 @@ rulesets:
     rules: [{ type: deletion }]
 `;
 
-/** A repository that offers every setting the wide profile names, at GitHub's defaults. */
-const offered = {
+const everyWideProfileSettingOfferedAtGitHubDefaults = {
   settings: {
     '/immutable-releases': { enabled: false, enforced_by_owner: false },
     '/interaction-limits/pulls/creation-cap': { enabled: false, max_open_pull_requests: 10, include_drafts: true },
@@ -66,8 +64,7 @@ const offered = {
   },
 };
 
-/** A profile that changes something in every section, so its plan has every kind of change. */
-const wide = {
+const profileChangingEverySection = {
   repository: {
     has_wiki: false,
     topics: ['tools'],
@@ -113,7 +110,6 @@ function targets(changes: readonly { action: string; target: string }[]): string
   return changes.map((change) => `${change.action} ${change.target}`);
 }
 
-/** Makes the next read of `file` give its text as it is now, and then gives the file `next`, as another program might. */
 async function replacedAfterNextRead(file: string, next: string): Promise<void> {
   const text = await readFile(file, 'utf8');
   vi.mocked(readFile).mockImplementationOnce(async (read) => {
@@ -125,7 +121,7 @@ async function replacedAfterNextRead(file: string, next: string): Promise<void> 
 
 describe('staged apply', () => {
   test('starts from a profile and resolves to it until edited', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     const staged = await createStagedApply(files.staged, 'lunch/app', files.profile);
 
     expect(staged.repository).toBe('lunch/app');
@@ -136,7 +132,7 @@ describe('staged apply', () => {
   });
 
   test('never replaces a staged apply that already exists', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
 
@@ -145,14 +141,14 @@ describe('staged apply', () => {
   });
 
   test('writes nothing when the profile it would start from does not resolve', async () => {
-    const files = await folder('repository: { no_such_setting: true }\n');
+    const files = await freshFolderWithProfile('repository: { no_such_setting: true }\n');
 
     expect(await rejection(createStagedApply(files.staged, 'lunch/app', files.profile))).toBeInstanceOf(ProfileError);
     expect(await rejection(readFile(files.staged))).toBeInstanceOf(Error);
   });
 
   test('starts from the repository as it is when it names no profile', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', undefined);
     const github = new FakeGitHub();
 
@@ -165,7 +161,7 @@ describe('staged apply', () => {
   });
 
   test('lays one-off edits over the profile and leaves the profile file as it is', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     await editStagedApply(files.staged, [
       {
@@ -194,7 +190,7 @@ describe('staged apply', () => {
   });
 
   test('previews one-off edits without writing them, and refuses what an edit would', async () => {
-    const { profile, staged } = await folder('repository:\n  has_wiki: true\n');
+    const { profile, staged } = await freshFolderWithProfile('repository:\n  has_wiki: true\n');
     await createStagedApply(staged, 'lunch/app', profile);
     const text = await readFile(staged, 'utf8');
 
@@ -210,7 +206,7 @@ describe('staged apply', () => {
   });
 
   test('leaves out what it excludes, and stops excluding it again', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     const excluded = await editStagedApply(files.staged, [
       { exclude: 'repository.has_wiki', excluded: true },
@@ -231,7 +227,7 @@ describe('staged apply', () => {
   });
 
   test('excludes a whole section, a group of settings, and a list entry by its key', async () => {
-    const files = await folder(`
+    const files = await freshFolderWithProfile(`
 actions: { allowed_actions: selected, selected_actions: { github_owned_allowed: true, verified_allowed: false } }
 environments: [{ name: Production }]
 merge: { allow_rebase_merge: false }
@@ -249,7 +245,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('refuses an exclusion that names nothing, or that clashes with an edit, and keeps the file', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
     const before = await readFile(files.staged, 'utf8');
@@ -262,7 +258,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('refuses an edit that the profile it starts from makes invalid', async () => {
-    const files = await folder(
+    const files = await freshFolderWithProfile(
       'merge: { squash_merge_commit_title: PR_TITLE, squash_merge_commit_message: PR_BODY }\n',
     );
     await createStagedApply(files.staged, 'lunch/app', files.profile);
@@ -277,7 +273,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('refuses its plan when the repository changed after review', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     const github = new FakeGitHub();
     const { plan } = await planStagedApply(github, files.staged);
@@ -289,7 +285,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('applies what was reviewed even when the profile changes after review', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     const github = new FakeGitHub();
     const { plan } = await planStagedApply(github, files.staged);
@@ -301,7 +297,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('reports what was applied when a write fails partway', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     const github = new FakeGitHub();
     const { plan } = await planStagedApply(github, files.staged);
@@ -316,7 +312,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('saves its edits to the profile and then resolves the same', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     const edited = await editStagedApply(files.staged, [
       { path: ['repository', 'has_wiki'], value: true },
@@ -333,7 +329,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('keeps a change made while its edits are saved, and says the edits were not cleared', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
     const changed = `apply_to: lunch/app\nextends: ${path.basename(files.profile)}\nrepository: { has_wiki: false }\n`;
@@ -348,7 +344,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('has no profile to save edits to when it starts from the repository', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', undefined);
     await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
 
@@ -361,7 +357,7 @@ merge: { allow_rebase_merge: false }
 
   test('saves a group of settings and a new ruleset to the profile', async () => {
     const files =
-      await folder(`${base}actions: { allowed_actions: selected, selected_actions: { github_owned_allowed: true } }
+      await freshFolderWithProfile(`${base}actions: { allowed_actions: selected, selected_actions: { github_owned_allowed: true } }
 `);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     const release = { name: 'Release', target: 'tag', enforcement: 'active', bypass_actors: [], rules: [] };
@@ -378,7 +374,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('refuses to save autolinks, or a change between a Pages site and none, and changes neither file', async () => {
-    const files = await folder(`${base}pages: { build_type: workflow }
+    const files = await freshFolderWithProfile(`${base}pages: { build_type: workflow }
 `);
     const profileText = await readFile(files.profile, 'utf8');
     await createStagedApply(files.staged, 'lunch/app', files.profile);
@@ -404,7 +400,9 @@ merge: { allow_rebase_merge: false }
   });
 
   test('checks the profile only once its exclusions are left out', async () => {
-    const files = await folder('security: { vulnerability_alerts: true, automated_security_fixes: true }\n');
+    const files = await freshFolderWithProfile(
+      'security: { vulnerability_alerts: true, automated_security_fixes: true }\n',
+    );
     await createStagedApply(files.staged, 'lunch/app', files.profile);
 
     const staged = await editStagedApply(files.staged, [
@@ -416,7 +414,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('refuses an exclusion that leaves nothing out, and knows an environment by any case', async () => {
-    const files = await folder(`${base}environments: [{ name: Prod }]
+    const files = await freshFolderWithProfile(`${base}environments: [{ name: Prod }]
 `);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     const before = await readFile(files.staged, 'utf8');
@@ -436,7 +434,7 @@ merge: { allow_rebase_merge: false }
 
   test("leaves a change out with its own environment, though its target reads as another's", async () => {
     // The branch policy's target, "Prod: branch main", is also the second environment's name.
-    const files = await folder(`environments:
+    const files = await freshFolderWithProfile(`environments:
   - name: Prod
     deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
     branch_policies: [{ name: main }]
@@ -458,7 +456,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('warns when its profile changes so that an exclusion leaves nothing out', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     await editStagedApply(files.staged, [{ exclude: 'rulesets/Main', excluded: true }]);
     await writeFile(files.profile, 'repository: { has_wiki: false }\n');
@@ -472,10 +470,13 @@ merge: { allow_rebase_merge: false }
   });
 
   test('names what leaves out every change and field of its plan, each of which then leaves the plan', async () => {
-    const files = await folder(stringify(wide));
+    const files = await freshFolderWithProfile(stringify(profileChangingEverySection));
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     await editStagedApply(files.staged, [{ path: ['merge', 'allow_squash_merge'], value: false }]);
-    const { plan, exclusions } = await planStagedApply(new FakeGitHub(offered), files.staged);
+    const { plan, exclusions } = await planStagedApply(
+      new FakeGitHub(everyWideProfileSettingOfferedAtGitHubDefaults),
+      files.staged,
+    );
 
     // Every field of a settings change, and every change to an entry, has its exclusion.
     const entries = new Set(['rulesets', 'environments', 'autolinks', 'pages']);
@@ -495,9 +496,9 @@ merge: { allow_rebase_merge: false }
       const copy = path.join(directory, `staged-${randomUUID()}.yaml`);
       await writeFile(copy, await readFile(files.staged, 'utf8'));
       await editStagedApply(copy, [{ exclude: exclusion.key, excluded: true }]);
-      const left = (await planStagedApply(new FakeGitHub(offered), copy)).plan.changes.filter(
-        (other) => other.section === change?.section && other.target.startsWith(change.target),
-      );
+      const left = (
+        await planStagedApply(new FakeGitHub(everyWideProfileSettingOfferedAtGitHubDefaults), copy)
+      ).plan.changes.filter((other) => other.section === change?.section && other.target.startsWith(change.target));
       expect(
         exclusion.field === null
           ? left
@@ -510,7 +511,7 @@ merge: { allow_rebase_merge: false }
     ['shows', (file: string) => resolveStagedApply(file)],
     ['plans', async (file: string) => (await planStagedApply(new FakeGitHub(), file)).staged],
   ])('%s its file as one read found it, though the file changes meanwhile', async (_, read) => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     await editStagedApply(files.staged, [
       { path: ['repository', 'has_wiki'], value: true },
@@ -528,7 +529,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('edits its file as one read found it, though the file changes meanwhile', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     await editStagedApply(files.staged, [{ exclude: 'repository.delete_branch_on_merge', excluded: true }]);
     await replacedAfterNextRead(
@@ -544,7 +545,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('discards only a staged apply file', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
 
     expect(await rejection(discardStagedApply(files.profile))).toBeInstanceOf(ProfileError);
@@ -554,7 +555,7 @@ merge: { allow_rebase_merge: false }
   });
 
   test('leaves the drafts of the profile it starts from out of its plan, and lists them', async () => {
-    const files = await folder(`${base}  - name: Release
+    const files = await freshFolderWithProfile(`${base}  - name: Release
     target: tag
     draft: true
 drafts:
@@ -576,7 +577,7 @@ drafts:
   });
 
   test('holds no drafts of its own, and cannot exclude the drafts of its profile', async () => {
-    const files = await folder(base);
+    const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', files.profile);
     const before = await readFile(files.staged, 'utf8');
 
