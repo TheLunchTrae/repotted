@@ -24,12 +24,14 @@ import {
   visibilityFilters,
   visibilityLabels,
 } from '../../app/repositories/sort-and-filters.js';
+import { useMenuPanelKeptOnPage } from '../layout/menu-placement.js';
 import { usePhone } from '../layout/phone.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu } from '../layout/shell.js';
 
 function OwnerFilter({ repositories }: { readonly repositories: Repositories }): JSX.Element {
   const menu = useDismissibleMenu();
+  useMenuPanelKeptOnPage(menu);
   const owners = repositories.owners.value;
   return (
     <details class="menu" ref={menu}>
@@ -119,6 +121,7 @@ function FilterChoices<Choice extends string>({
 
 function FilterMenu({ repositories }: { readonly repositories: Repositories }): JSX.Element {
   const menu = useDismissibleMenu();
+  useMenuPanelKeptOnPage(menu);
   const filters = repositories.filters.value;
   const topics = repositories.topicChoices.value;
   const count = repositories.filterCount.value;
@@ -132,7 +135,7 @@ function FilterMenu({ repositories }: { readonly repositories: Repositories }): 
           </span>
         )}
       </summary>
-      <div class="menu-panel menu-panel-end-on-wide-screens filter-panel">
+      <div class="menu-panel filter-panel">
         <FilterChoices
           legend="Visibility"
           name="filter-visibility"
@@ -192,13 +195,14 @@ function FilterMenu({ repositories }: { readonly repositories: Repositories }): 
 
 function SortMenu({ repositories }: { readonly repositories: Repositories }): JSX.Element {
   const menu = useDismissibleMenu();
+  useMenuPanelKeptOnPage(menu);
   const order = repositories.sortOrder.value;
   return (
     <details class="menu" ref={menu}>
       <summary class="button button-quiet">
         Sort: <span class="sort-order">{sortOrderLabels[order]}</span>
       </summary>
-      <div class="menu-panel menu-panel-end-on-wide-screens">
+      <div class="menu-panel">
         <fieldset class="owner-choices">
           <legend>Sort repositories by</legend>
           {sortOrders.map((choice) => (

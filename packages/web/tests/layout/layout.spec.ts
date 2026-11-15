@@ -69,6 +69,22 @@ const screens: Readonly<Record<string, Screen>> = {
         name: 'Remove the topic filter an-unusually-long-github-topic-of-fifty-characters',
       }),
   },
+  'filter menu beside the selected panel': {
+    path: '/',
+    reachFromPath: async (page) => {
+      await page.getByRole('checkbox', { name: 'Select lunch/api' }).check();
+      await page.locator('summary', { hasText: 'Filter' }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('checkbox', { name: /^an-unusually-long-github-topic/u }),
+  },
+  'sort menu beside the selected panel': {
+    path: '/',
+    reachFromPath: async (page) => {
+      await page.getByRole('checkbox', { name: 'Select lunch/api' }).check();
+      await page.locator('summary', { hasText: 'Sort:' }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('radio', { name: 'Last pushed, oldest first' }),
+  },
   'sort menu': {
     path: '/',
     reachFromPath: (page) => page.locator('summary', { hasText: 'Sort:' }).click(),

@@ -428,10 +428,10 @@ input[type='checkbox']:disabled {
   left: auto;
 }
 
-/* Wider than a phone, a menu late in a toolbar opens toward the start so it
-   stays on the page; on a phone it spans the page like any other. */
+/* Set when a panel opens, wider than a phone, where opening from its
+   button's start would run past the page; on a phone it spans the page. */
 @media (min-width: 761px) {
-  .menu-panel-end-on-wide-screens {
+  .menu-panel[data-opens-toward='start'] {
     right: 0;
     left: auto;
   }
