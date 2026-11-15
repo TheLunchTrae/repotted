@@ -8,10 +8,10 @@ import type { Repositories } from '../../app/repositories/repositories.js';
 import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
-import { SyncNote } from '../settings/settings.js';
 import { previewAddress, PreviewPicker } from './branch-preview.js';
 import { NewProfileForm } from './new-profile.js';
 import { OwnerTypeDialog } from './owner-type.js';
+import { SyncNote } from './sync-note.js';
 
 // The phone breakpoint in app.css.
 const phoneMediaQuery = '(max-width: 760px)';
