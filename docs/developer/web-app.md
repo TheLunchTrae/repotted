@@ -143,9 +143,9 @@ media type only when it is a plain type. A failed renewal's 502 and a refused
 renewal's 401 carry `gitHubAnswer` too, and the sign-in page shows the 502's;
 a refused renewal reads as signed out. A failed sign-in's redirect to
 `/?sign-in=failed` carries only GitHub's error code as `github-error`, or else
-a status that isn't a success as `github-status`. The address is anyone's to write, so the page
-shows only the error codes GitHub documents for a sign-in and a three-digit
-status.
+a status that isn't a success as `github-status`. The address is anyone's to
+write, so the page shows only the error codes GitHub documents for a sign-in
+and a three-digit status.
 
 A status of 520 to 526 or 530 comes from Cloudflare, not GitHub: Cloudflare
 couldn't connect to GitHub. The logs and the page say so.
