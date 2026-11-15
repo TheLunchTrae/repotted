@@ -216,6 +216,7 @@ Select checks for the change:
 | Dependencies or exports | `ts:audit`, `ts:knip`                            |
 | Formatting              | `ts:fmt:check`; `ts:standards` applies autofixes |
 | Web app or Worker       | `ts:test`, `ts:type`, `ts:web:check`             |
+| Web app layout or CSS   | `ts:web:layout`, which needs Chromium            |
 
 Before handoff, run `mise run standards:check`. Run `mise run ts:lock` after
 changing declared dependencies and commit `pnpm-lock.yaml`.

@@ -19,8 +19,10 @@
       "ignoreDependencies": ["@octokit/core"],
     },
     "packages/web": {
-      "entry": ["src/worker.ts", "src/main.tsx", "build.ts", "tests/**/*.test.ts"],
-      "project": ["*.ts", "src/**/*.{ts,tsx}", "tests/**/*.ts"],
+      // The layout test bundles its harness by path, not by import.
+      "entry": ["src/worker.ts", "src/main.tsx", "build.ts", "tests/**/*.test.ts", "tests/layout/harness.tsx"],
+      "project": ["*.ts", "src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
+      "playwright": { "config": ["tests/layout/playwright.config.ts"] },
     },
   },
 }
