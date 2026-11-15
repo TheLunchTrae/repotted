@@ -707,7 +707,7 @@ describe('account commands', () => {
     expect(listed).toMatchObject({ code: 0, err: '' });
     expect(document(listed)).toEqual({
       source: 'installations',
-      repositories: [{ full_name: 'lunch/app', private: true, archived: false, topics: [] }],
+      repositories: [{ full_name: 'lunch/app', private: true, archived: false, topics: [], pushed_at: null }],
       missing_permissions: [
         { owner: 'lunch', permissions: ['Pages'], settings_url: 'https://github.com/settings/installations/1' },
       ],

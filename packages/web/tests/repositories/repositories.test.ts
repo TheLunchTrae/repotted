@@ -872,3 +872,183 @@ test('a hand-edited file with a folder named twice or a repository in two folder
   expect(folders(repositories)).toEqual(['Apps:', 'Acme/api', 'Web:', 'acme/web', 'zeta/site']);
   expect(names(repositories)).toEqual(['trae:', 'trae/dotfiles']);
 });
+
+function detailed(repositories: readonly FakeAccount['repositories'][number][]): FakeAccount {
+  return {
+    login: 'trae',
+    name: null,
+    repositories: [],
+    installations: [
+      { id: 1, repositories: repositories.map((repository) => ({ ...repository, permissions: { admin: true } })) },
+    ],
+  };
+}
+
+const varied = detailed([
+  { full_name: 'trae/app', private: true, topics: ['npm', 'web'], pushed_at: '2026-11-10T00:00:00Z' },
+  { full_name: 'trae/blog', private: false, topics: ['web'], pushed_at: '2026-11-14T00:00:00Z' },
+  { full_name: 'trae/empty', private: false, pushed_at: null },
+  { full_name: 'trae/old', private: false, archived: true, topics: ['npm'], pushed_at: '2025-01-01T00:00:00Z' },
+  { full_name: 'acme/api', private: true, topics: ['npm'], pushed_at: '2026-11-12T00:00:00Z' },
+]);
+
+function shown(repositories: Repositories): string[] {
+  return [...folders(repositories), ...names(repositories)];
+}
+
+test('sorts each folder and owner group by name either way or by last push, with never pushed last', async () => {
+  const browser = memory({ 'repository-folders': [{ name: 'Kept', repositories: ['trae/old', 'trae/app'] }] });
+  const repositories = await opened(new FakeGitHub({ account: varied }), browser);
+  expect(shown(repositories)).toEqual([
+    'Kept:',
+    'trae/app',
+    'trae/old',
+    'trae:',
+    'trae/blog',
+    'trae/empty',
+    'acme:',
+    'acme/api',
+  ]);
+
+  repositories.setSortOrder('name-descending');
+  expect(shown(repositories)).toEqual([
+    'Kept:',
+    'trae/old',
+    'trae/app',
+    'trae:',
+    'trae/empty',
+    'trae/blog',
+    'acme:',
+    'acme/api',
+  ]);
+
+  repositories.setSortOrder('pushed-oldest');
+  expect(shown(repositories)).toEqual([
+    'Kept:',
+    'trae/old',
+    'trae/app',
+    'trae:',
+    'trae/blog',
+    'trae/empty',
+    'acme:',
+    'acme/api',
+  ]);
+
+  repositories.setSortOrder('pushed-newest');
+  expect(names(repositories)).toEqual(['trae:', 'trae/blog', 'trae/empty', 'acme:', 'acme/api']);
+  expect(browser.kept['repository-sort-order']).toBe('pushed-newest');
+
+  repositories.setSortOrder('name-ascending');
+  expect(browser.kept['repository-sort-order']).toBeUndefined();
+});
+
+test('filters folders and owner groups by visibility, archived, and any chosen topic', async () => {
+  const browser = memory({ 'repository-folders': [{ name: 'Kept', repositories: ['trae/old'] }] });
+  const repositories = await opened(new FakeGitHub({ account: varied }), browser);
+
+  repositories.setTopicChosen('npm', true);
+  expect(shown(repositories)).toEqual(['Kept:', 'trae/old', 'trae:', 'trae/app', 'acme:', 'acme/api']);
+  expect(repositories.countLabel.value).toBe('3 of 5');
+
+  repositories.setArchivedFilter('not-archived');
+  expect(shown(repositories)).toEqual(['trae:', 'trae/app', 'acme:', 'acme/api']);
+
+  repositories.setTopicChosen('web', true);
+  repositories.setVisibilityFilter('public');
+  expect(shown(repositories)).toEqual(['trae:', 'trae/blog']);
+  expect(repositories.filterChips.value.map((chip) => chip.label)).toEqual([
+    'Public',
+    'Not archived',
+    'Topic npm',
+    'Topic web',
+  ]);
+  expect(repositories.topicChoices.value).toEqual([
+    { topic: 'npm', count: 0, chosen: true },
+    { topic: 'web', count: 1, chosen: true },
+  ]);
+  expect(browser.kept['repository-filters']).toEqual({
+    visibility: 'public',
+    archived: 'not-archived',
+    topics: ['npm', 'web'],
+  });
+
+  repositories.setVisibilityFilter('private');
+  repositories.setTopicChosen('web', false);
+  repositories.setArchivedFilter('archived');
+  expect(shown(repositories)).toEqual([]);
+
+  repositories.clearFilters();
+  expect(repositories.countLabel.value).toBe('All 5');
+  expect(browser.kept['repository-filters']).toBeUndefined();
+});
+
+test('a chosen topic no repository has stays a choice, so it can be unchosen', async () => {
+  const browser = memory({ 'repository-filters': { visibility: 'any', archived: 'any', topics: ['gone'] } });
+  const repositories = await opened(new FakeGitHub({ account: varied }), browser);
+
+  expect(shown(repositories)).toEqual([]);
+  expect(repositories.topicChoices.value).toEqual([
+    { topic: 'gone', count: 0, chosen: true },
+    { topic: 'npm', count: 3, chosen: false },
+    { topic: 'web', count: 2, chosen: false },
+  ]);
+});
+
+test('while filtering, an empty folder hides, and the opened repository closes until it passes again', async () => {
+  const browser = memory({ 'repository-folders': [{ name: 'New', repositories: [] }] });
+  const repositories = await opened(new FakeGitHub({ account: varied }), browser);
+  repositories.open(listed(repositories, 'trae/blog'));
+  expect(folders(repositories)).toEqual(['New (empty):']);
+
+  repositories.setVisibilityFilter('private');
+  expect(folders(repositories)).toEqual([]);
+  expect(repositories.opened.value).toBeUndefined();
+
+  repositories.setVisibilityFilter('any');
+  expect(repositories.opened.value?.full_name).toBe('trae/blog');
+});
+
+test('a filter that matches only hidden repositories counts the hidden ones it matches', async () => {
+  const browser = memory({ 'hidden-repositories': ['trae/old', 'trae/blog'] });
+  const repositories = await opened(new FakeGitHub({ account: varied }), browser);
+
+  repositories.setArchivedFilter('archived');
+  expect(shown(repositories)).toEqual([]);
+  expect(repositories.hiddenMatches.value).toBe(1);
+});
+
+test('the sort order and filters stay in this browser while the other choices are in the config repository', async () => {
+  const source = { kind: 'repository', repository: 'trae/config', path: 'profiles' } as const;
+  const config = new FakeGitRepository('trae/config');
+  const browser = memory();
+  const preferences = new SharedPreferences(config, browser, () => undefined);
+  const github = new FakeGitHub({ account: varied });
+  const repositories = new Repositories(github, user, preferences, browser, () => undefined);
+  await repositories.load();
+  await preferences.use(source);
+  const request = vi.spyOn(config, 'request');
+
+  repositories.setSortOrder('pushed-newest');
+  repositories.setTopicChosen('web', true);
+  await preferences.reload();
+
+  expect(request.mock.calls.filter(([method]) => method !== 'GET')).toEqual([]);
+  expect(browser.kept).toEqual({
+    'repository-sort-order': 'pushed-newest',
+    'repository-filters': { visibility: 'any', archived: 'any', topics: ['web'] },
+  });
+  const again = new Repositories(github, user, preferences, browser, () => undefined);
+  await again.load();
+  expect(names(again)).toEqual(['trae:', 'trae/blog', 'trae/app']);
+});
+
+test('a saved sort order or filters it cannot read fall back to the defaults', async () => {
+  const browser = memory({
+    'repository-sort-order': 'stars',
+    'repository-filters': { visibility: 'secret', archived: 'archived', topics: 'npm' },
+  });
+  const repositories = await opened(new FakeGitHub({ account: varied }), browser);
+
+  expect(repositories.sortOrder.value).toBe('name-ascending');
+  expect(repositories.filters.value).toEqual({ visibility: 'any', archived: 'archived', topics: [] });
+});

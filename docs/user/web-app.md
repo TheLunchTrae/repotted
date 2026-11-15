@@ -86,6 +86,23 @@ and click **Show in list** to bring it back for good. If a search matches
 only hidden repositories, or every repository is hidden, the list says so
 and offers **Show hidden**.
 
+**Sort**, beside the owners button, orders the repositories in each folder
+and under each owner by **Name, A to Z**, **Name, Z to A**, **Last pushed,
+newest first** or **Last pushed, oldest first**. The owners keep their order.
+Sorting by last push shows when each repository was last pushed to, and a
+repository nothing has been pushed to goes last either way.
+
+**Filter**, beside it, narrows the list to **Public** or **Private**
+repositories, to those that are **Archived** or **Not archived**, and to
+those with any of the topics you select. Each choice adds a chip under the
+search box; click a chip to remove that filter, or click **Clear filters**.
+The button counts how many filters are on. Filters and a search work
+together, and a repository has to pass both to show. While a filter is on,
+the count beside **Refresh** counts only the repositories that pass, folders
+with nothing in them don't show, and if nothing passes the list says so and
+offers **Clear filters**. A panel you had open closes while its repository
+is filtered out, and the selection stays as it was.
+
 To keep repositories together, put them in folders. Click **New folder**
 beside the count, name it, and leave the box that puts the selected
 repositories in it checked to fill it at once. To move repositories later,
@@ -110,8 +127,8 @@ browser you sign in on. Each change is committed straight to the repository,
 and **Refresh** picks up changes made in another browser. When your profiles
 are kept in this browser or a folder on this computer, this browser remembers
 them instead. Choices made in one place don't move to the other. Which
-folders are closed is always remembered by this browser alone, so opening or
-closing one commits nothing.
+folders are closed, the sort order and the filters are always remembered by
+this browser alone, so changing them commits nothing.
 
 Click a repository to open its panel. **Open on GitHub** opens it there, and
 **Capture as a new profile** starts [a profile](#make-a-profile) that

@@ -58,6 +58,7 @@ function listed(...repositories: FakeGitRepository[]): Repository[] {
     private: true,
     archived: false,
     topics: repository.topics,
+    pushed_at: null,
   }));
 }
 

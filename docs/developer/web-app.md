@@ -210,8 +210,13 @@ that did. It is a hidden file, so a profile sync and the profile list leave
 it alone. Another list setting that should follow the user takes its own key
 in the same file, and changes it through `update`, as folders do. A choice
 that changes often and matters to one browser, such as which folders are
-closed (`closed-repository-folders`), goes straight to the browser's
-`Preferences` instead, so it never makes a commit. Nothing moves between the
+closed (`closed-repository-folders`), the list's sort order
+(`repository-sort-order`) and its filters (`repository-filters`), goes
+straight to the browser's `Preferences` instead, so it never makes a commit.
+Each of those keys is removed when its choice is back at the default, so a
+browser that never changed it keeps nothing. Sorting and filtering live in
+`src/app/repositories/sort-and-filters.ts`; `Repositories` applies them to
+its folders, owner groups and count. Nothing moves between the
 browser and the file when the profiles move.
 [State machines](state-machines.md#web-shared-preferences) lists the
 transitions.

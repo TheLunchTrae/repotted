@@ -29,6 +29,7 @@ describe('listRepositories', () => {
                 private: true,
                 archived: true,
                 topics: ['repotted-config'],
+                pushed_at: '2026-11-15T12:00:00Z',
                 permissions: { admin: true },
               },
               { full_name: 'acme/read-only', private: false, permissions: { admin: false } },
@@ -48,6 +49,7 @@ describe('listRepositories', () => {
       private: true,
       archived: true,
       topics: ['repotted-config'],
+      pushed_at: '2026-11-15T12:00:00Z',
     });
     expect(list.repositories.at(-1)?.full_name).toBe('lunch/repo-100');
   });
@@ -87,7 +89,7 @@ describe('listRepositories', () => {
         login: 'lunch',
         name: null,
         repositories: [
-          { full_name: 'lunch/b', private: false, permissions: { admin: true } },
+          { full_name: 'lunch/b', private: false, pushed_at: '2026-11-14T09:30:00Z', permissions: { admin: true } },
           { full_name: 'lunch/a', private: true, permissions: { admin: true } },
           { full_name: 'other/c', private: false, permissions: { admin: false } },
         ],
@@ -97,8 +99,8 @@ describe('listRepositories', () => {
     expect(await listRepositories(github)).toEqual({
       source: 'admin',
       repositories: [
-        { full_name: 'lunch/a', private: true, archived: false, topics: [] },
-        { full_name: 'lunch/b', private: false, archived: false, topics: [] },
+        { full_name: 'lunch/a', private: true, archived: false, topics: [], pushed_at: null },
+        { full_name: 'lunch/b', private: false, archived: false, topics: [], pushed_at: '2026-11-14T09:30:00Z' },
       ],
       missing_permissions: [],
     });
