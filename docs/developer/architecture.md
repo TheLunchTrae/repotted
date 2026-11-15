@@ -229,7 +229,9 @@ skips something names where, by section, key and field, and why, by `cause`:
 `refused` and `unavailable` mostly come from `Unavailable`, `not_applicable`
 from a plan step that sees a setting doesn't apply with the others, and
 `unloadable` from a capture that can't hold what GitHub reports, as when a
-setting fails its schema. Its `message` is the reason
+setting fails its schema. A `refused` warning also has `remedy` when
+Repotted knows what would lift the refusal: the App permission it needs, the
+admin role, or a payment method on file. Its `message` is the reason
 alone. A warning without a cause skips nothing, such as the note on a change
 of visibility, and its `message` is the whole text. Readers go by these
 members, never by the wording, since a reason that GitHub words, such as

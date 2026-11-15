@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-import { type GitHub, GitHubError, type Method, repoPath, type RepoRef } from '../github/client.js';
+import { type GitHub, GitHubError, repoPath, type RepoRef } from '../github/client.js';
 import { requiredPermission } from '../github/permissions.js';
-import type { Change, Section, SectionPlan, SettingsSection, SkipCause, Warning } from './change.js';
+import type { Change, RefusalRemedy, Section, SectionPlan, SettingsSection, SkipCause, Warning } from './change.js';
 import { fieldChanges } from './match.js';
 
 interface EndpointBase {
@@ -62,6 +62,7 @@ export interface Unavailable {
   readonly available: false;
   readonly cause: Extract<SkipCause, 'refused' | 'unavailable'>;
   readonly reason: string;
+  readonly remedy?: RefusalRemedy;
 }
 
 export type EndpointValue = { readonly available: true; readonly value: unknown } | Unavailable;
@@ -70,10 +71,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function refusal(error: GitHubError, method: Method, path: string, what: string): string {
-  const permission = requiredPermission(method, path);
-  const verb = method === 'GET' ? 'read' : 'change';
-  return `GitHub refused to ${verb} ${what} (${error.message}); that needs the ${permission} permission`;
+export function refusedRead(error: GitHubError, path: string, what: string): Unavailable {
+  const permission = requiredPermission('GET', path);
+  return {
+    available: false,
+    cause: 'refused',
+    reason: `GitHub refused to read ${what} (${error.message}); that needs the ${permission} permission`,
+    remedy: { kind: 'permission', permission },
+  };
+}
+
+export function warningForUnavailable(unavailable: Unavailable): Pick<Warning, 'cause' | 'message' | 'remedy'> {
+  return {
+    cause: unavailable.cause,
+    message: unavailable.reason,
+    ...(unavailable.remedy === undefined ? {} : { remedy: unavailable.remedy }),
+  };
 }
 
 export async function readResource(
@@ -94,7 +107,7 @@ export async function readResource(
       return { available: true, value: valueWhen404MeansOffOrAbsent };
     }
     if (error.status === 403) {
-      return { available: false, cause: 'refused', reason: refusal(error, 'GET', path, target) };
+      return refusedRead(error, path, target);
     }
     // 402 for a billed feature, such as the Actions cache retention limit,
     // on an account with no payment method on file. Adding one lifts it, so
@@ -104,6 +117,7 @@ export async function readResource(
         available: false,
         cause: 'refused',
         reason: `GitHub refused to read ${target} without a payment method on file (${error.message})`,
+        remedy: { kind: 'payment_method' },
       };
     }
     // 404 for a feature the repository's plan or owner lacks; 405, 409 and
@@ -178,7 +192,7 @@ export function planEndpoint(
   repo: RepoRef,
 ): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [{ section, key: endpoint.key, cause: live.cause, message: live.reason }] };
+    return { changes: [], warnings: [{ section, key: endpoint.key, ...warningForUnavailable(live) }] };
   }
   const path = `${repoPath(repo)}${endpoint.path}`;
   const changes: Change[] = [];
@@ -318,7 +332,7 @@ export function captureEndpoints(
       }
     } else if (value.cause === 'refused') {
       // A setting the repository does not have is no news; one GitHub hides is.
-      warnings.push({ section, key: endpoint.key, cause: value.cause, message: value.reason });
+      warnings.push({ section, key: endpoint.key, ...warningForUnavailable(value) });
     }
   }
   return { settings, warnings };

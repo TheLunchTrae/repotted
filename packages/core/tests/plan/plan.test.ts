@@ -669,7 +669,13 @@ drafts:
     });
 
     expect(plan.changes.map((change) => change.section)).toEqual(['repository']);
-    expect(plan.warnings).toEqual([expect.objectContaining({ section: 'environments', cause: 'refused' })]);
+    expect(plan.warnings).toEqual([
+      expect.objectContaining({
+        section: 'environments',
+        cause: 'refused',
+        remedy: { kind: 'permission', permission: 'Actions read' },
+      }),
+    ]);
     expect((await captureProfile(github, repo)).warnings).toEqual(plan.warnings);
   });
 
@@ -682,6 +688,7 @@ drafts:
       section: 'actions',
       key: 'max_cache_retention_days',
       cause: 'refused',
+      remedy: { kind: 'payment_method' },
       message:
         'GitHub refused to read cache retention without a payment method on file (Please ensure your account has a valid payment method on file to access this service.)',
     };
@@ -718,7 +725,13 @@ drafts:
     const plan = await createPlan(github, repo, { environments: [{ name: 'npm', wait_timer: 5 }] });
 
     expect(plan.changes).toEqual([]);
-    expect(plan.warnings).toEqual([expect.objectContaining({ section: 'environments', cause: 'refused' })]);
+    expect(plan.warnings).toEqual([
+      expect.objectContaining({
+        section: 'environments',
+        cause: 'refused',
+        remedy: { kind: 'permission', permission: 'Actions read' },
+      }),
+    ]);
   });
 
   test('updates an environment named in another case, keeping what the profile leaves out', async () => {

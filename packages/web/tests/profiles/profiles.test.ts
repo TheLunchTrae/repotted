@@ -377,7 +377,7 @@ test('a new profile never takes a name that is there, whatever its case, or one 
   expect(await readFile('/profiles/browser/Base.yaml', 'utf8')).toBe(base);
 });
 
-test('a capture makes a profile of the repository, holds its name while it reads, and says what it left out', async () => {
+test('a capture makes a profile of the repository, holds its name while it reads, and stays quiet about what its owner type can never hold', async () => {
   const github = new FakeGitHub(
     { repository: { has_wiki: false, allow_forking: true }, ownerType: 'User' },
     'trae/site',
@@ -405,15 +405,8 @@ test('a capture makes a profile of the repository, holds its name while it reads
   expect(profiles.nameProblem('other', '')).toBeUndefined();
   expect(profiles.selected.value).toMatchObject({ name: 'site', problem: null, owner_type: 'user' });
   expect(profiles.opened.value?.text).toContain('has_wiki: false');
-  // A personal repository has no forking setting to keep, so the capture leaves it out and says so.
-  expect(profiles.captureWarnings.value?.file).toBe('/profiles/browser/site.yaml');
-  expect(profiles.captureWarnings.value?.warnings.join('\n')).toContain('allow_forking');
-
-  const site = profiles.selected.value;
-  if (site !== undefined) {
-    await profiles.remove(site);
-  }
-  expect(profiles.captureWarnings.value).toBeUndefined();
+  expect(profiles.opened.value?.text).not.toContain('allow_forking');
+  expect(profiles.settingsCaptureCouldNotRead.value).toBeUndefined();
 });
 
 test('a capture goes on past a setting GitHub withholds without a payment method, and says so', async () => {
@@ -433,9 +426,21 @@ test('a capture goes on past a setting GitHub withholds without a payment method
     }),
   ).toBeUndefined();
   expect(profiles.selected.value).toMatchObject({ name: 'site', problem: null });
-  expect(profiles.captureWarnings.value?.warnings).toContain(
-    'Skipped actions.max_cache_retention_days: GitHub refused to read cache retention without a payment method on file (Please ensure your account has a valid payment method on file to access this service.)',
-  );
+  expect(profiles.settingsCaptureCouldNotRead.value).toEqual({
+    file: '/profiles/browser/site.yaml',
+    uncaptured: {
+      count: 1,
+      groups: [
+        { settings: ['Cache retention, in days'], reason: 'GitHub shows it only with a payment method on file.' },
+      ],
+    },
+  });
+
+  const site = profiles.selected.value;
+  if (site !== undefined) {
+    await profiles.remove(site);
+  }
+  expect(profiles.settingsCaptureCouldNotRead.value).toBeUndefined();
 });
 
 test('a capture that fails, or whose form closed, leaves no profile behind', async () => {

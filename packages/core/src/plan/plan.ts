@@ -29,7 +29,14 @@ import {
   skipCauses,
   type Warning,
 } from './change.js';
-import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadableReason } from './endpoints.js';
+import {
+  captureEndpoints,
+  loadable,
+  planEndpoint,
+  readEndpoints,
+  unloadableReason,
+  warningForUnavailable,
+} from './endpoints.js';
 import { actionsEndpoints, planActions, readActions } from './sections/actions.js';
 import { describeAutolink, planAutolinks, readAutolinks } from './sections/autolinks.js';
 import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';
@@ -320,7 +327,7 @@ export async function captureProfile(
     ['labels', labels],
   ] as const) {
     if (!read.available && read.cause === 'refused') {
-      warnings.push({ section, cause: read.cause, message: read.reason });
+      warnings.push({ section, ...warningForUnavailable(read) });
     }
   }
   const customProperties = properties.available ? captureCustomProperties(properties.values) : {};

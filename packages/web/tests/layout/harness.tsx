@@ -1,6 +1,7 @@
 // The web app as src/main.tsx starts it, against an in-memory GitHub with a
-// signed-in account, eight repositories, an empty repository to keep profiles
-// in, and two kept profiles, so the layout
+// signed-in account, eight repositories, one of which GitHub won't show every
+// setting of, an empty repository to keep profiles in, and two kept profiles,
+// so the layout
 // test sees full pages with no sign-in and no network. `?signed-out` starts it
 // with GitHub refusing the sign-in, which shows the sign-in page.
 
@@ -76,9 +77,19 @@ const app = new FakeGitHub(
   },
   'lunch/app',
 );
-const others = names
-  .slice(1)
-  .map((name) => new FakeGitHub({ account, ownerType: name.startsWith('trae/') ? 'User' : 'Organization' }, name));
+const paymentMethodMissing = answered(
+  402,
+  'Please ensure your account has a valid payment method on file to access this service.',
+);
+const others = names.slice(1).map((name) => {
+  const github = new FakeGitHub({ account, ownerType: name.startsWith('trae/') ? 'User' : 'Organization' }, name);
+  return name === 'trae/dotfiles'
+    ? github
+        .fail(`GET /repos/${name}/code-scanning/ai-scan`, answered(403, 'Resource not accessible by integration'))
+        .fail(`GET /repos/${name}/actions/cache/retention-limit`, paymentMethodMissing)
+        .fail(`GET /repos/${name}/actions/cache/storage-limit`, paymentMethodMissing)
+    : github;
+});
 
 // An empty personal repository to keep profiles in: its files from one fake, its settings from another.
 const configName = 'trae/repotted-config';

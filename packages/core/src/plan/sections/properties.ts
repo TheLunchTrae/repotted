@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { type GitHub, repoPath, type RepoRef } from '../../github/client.js';
 import type { CustomProperties } from '../../profiles/schema.js';
 import type { SectionPlan } from '../change.js';
-import { readResource, type Unavailable } from '../endpoints.js';
+import { readResource, type Unavailable, warningForUnavailable } from '../endpoints.js';
 import { matches } from '../match.js';
 
 const liveValues = z.array(
@@ -29,7 +29,7 @@ export async function readCustomProperties(github: GitHub, repo: RepoRef): Promi
 
 export function planCustomProperties(desired: CustomProperties, live: LiveProperties, repo: RepoRef): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [{ section: 'custom_properties', cause: live.cause, message: live.reason }] };
+    return { changes: [], warnings: [{ section: 'custom_properties', ...warningForUnavailable(live) }] };
   }
   const current = live.values;
   const fields = Object.entries(desired)

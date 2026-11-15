@@ -2,7 +2,6 @@ import { computed, signal } from '@preact/signals';
 import {
   captureProfile,
   checkActionPatterns,
-  describeWarning,
   findActions,
   type GitHub,
   listProfiles,
@@ -29,6 +28,7 @@ import {
   syncLocalFolder,
   unsyncedFiles,
 } from './local-folder.js';
+import { type UncapturedSettings, uncapturedSettings } from './uncaptured-settings.js';
 
 export type ProfileListing = Awaited<ReturnType<typeof listProfiles>>[number];
 
@@ -141,10 +141,9 @@ export class Profiles {
   readonly connectError = signal<string | undefined>(undefined);
   /** The browser wants the user's leave again on each visit before the folder on this computer can be used. */
   readonly needsFolderAccess = signal(false);
-  /** What a capture left out of the profile it made. */
-  readonly captureWarnings = signal<{ readonly file: string; readonly warnings: readonly string[] } | undefined>(
-    undefined,
-  );
+  readonly settingsCaptureCouldNotRead = signal<
+    { readonly file: string; readonly uncaptured: UncapturedSettings } | undefined
+  >(undefined);
   readonly opened = signal<{ readonly file: string; readonly text: string } | undefined>(undefined);
 
   readonly #github: GitHub;
@@ -508,13 +507,13 @@ export class Profiles {
     const file = this.#fileOf(profile.name.trim(), profile.folder);
     const folder = this.folder.value;
     let text: string;
-    let warnings: readonly string[] = [];
+    let uncaptured: UncapturedSettings = { count: 0, groups: [] };
     if (profile.start.kind === 'repository') {
       this.#capturing.add(file.toLowerCase());
       try {
         const captured = await captureProfile(this.#github, parseRepo(profile.start.repository));
         text = stringifyProfile(captured.profile);
-        warnings = captured.warnings.map(describeWarning);
+        uncaptured = uncapturedSettings(captured.warnings);
       } catch (error) {
         if (isSignedOut(error)) {
           this.#onSignedOut();
@@ -566,7 +565,7 @@ export class Profiles {
       }
       await this.#sync({});
       await this.#list();
-      this.captureWarnings.value = warnings.length > 0 ? { file, warnings } : undefined;
+      this.settingsCaptureCouldNotRead.value = uncaptured.count > 0 ? { file, uncaptured } : undefined;
       await this.select(this.listings.value.find((listing) => listing.file === file));
       return undefined;
     });
@@ -596,8 +595,8 @@ export class Profiles {
       await rm(listing.file, { force: true });
       // Its unsaved changes go with it.
       this.#editors.value = this.#editors.value.filter((editor) => editor.file !== listing.file);
-      if (this.captureWarnings.value?.file === listing.file) {
-        this.captureWarnings.value = undefined;
+      if (this.settingsCaptureCouldNotRead.value?.file === listing.file) {
+        this.settingsCaptureCouldNotRead.value = undefined;
       }
       await this.#sync({});
       await this.#list();
@@ -710,7 +709,7 @@ export class Profiles {
     this.#preferences.write(sourceKey, source);
     this.#closedFolders.value = new Set();
     this.#editors.value = [];
-    this.captureWarnings.value = undefined;
+    this.settingsCaptureCouldNotRead.value = undefined;
     this.#selectedFile.value = undefined;
     this.opened.value = undefined;
   }

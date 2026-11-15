@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../../github/client.js';
 import { type Label, type LabelEntry, labelKey } from '../../profiles/schema.js';
 import type { Change, SectionPlan, Warning } from '../change.js';
-import { refusal, type Unavailable } from '../endpoints.js';
+import { refusedRead, type Unavailable, warningForUnavailable } from '../endpoints.js';
 import type { FieldChange } from '../match.js';
 
 const liveLabel = z.object({ name: z.string(), color: z.string(), description: z.string().nullish() });
@@ -28,7 +28,7 @@ export async function readLabels(github: GitHub, repo: RepoRef): Promise<LiveLab
     };
   } catch (error) {
     if (error instanceof GitHubError && error.status === 403) {
-      return { available: false, cause: 'refused', reason: refusal(error, 'GET', path, 'labels') };
+      return refusedRead(error, path, 'labels');
     }
     throw error;
   }
@@ -73,7 +73,7 @@ function labelWriteBody(fields: readonly FieldChange[]): Record<string, unknown>
  */
 export function planLabels(desired: readonly LabelEntry[], live: LiveLabels, repo: RepoRef): SectionPlan {
   if (!live.available) {
-    return { changes: [], warnings: [{ section: 'labels', cause: live.cause, message: live.reason }] };
+    return { changes: [], warnings: [{ section: 'labels', ...warningForUnavailable(live) }] };
   }
   const path = `${repoPath(repo)}/labels`;
   const labelPath = (name: string): string => `${path}/${encodeURIComponent(name)}`;
