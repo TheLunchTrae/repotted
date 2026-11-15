@@ -268,9 +268,11 @@ test('settings owners of the profile type lack are neither counted nor removed',
   if (forkingGroup === undefined) {
     throw new Error('Forking has no group.');
   }
-  const editor = await opened({ 'web.yaml': 'owner_type: user\nrepository:\n  allow_forking: true\n' });
+  const editor = await opened({ 'web.yaml': 'owner_type: user\n' });
+  expect(editor.loadError.value).toBeUndefined();
   expect(row(editor, 'repository.allow_forking')).toBeUndefined();
-  expect(batchOf(editor, forkingGroup.title)?.namedHere).toBe(0);
+  await editor.set(forking, false);
+  expect(batchOf(editor, forkingGroup.title)).toMatchObject({ namedHere: 0, unsaved: 0 });
 
   await editor.removeAllIn(forkingGroup);
   expect(editor.batchDone.value).toBeUndefined();
