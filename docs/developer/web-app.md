@@ -147,7 +147,8 @@ since its redirect carries no detail.
 `observability` in `wrangler.jsonc` keeps Workers Logs and traces on, for
 production and Previews alike: `wrangler deploy` turns observability off when
 its config leaves it out, even when the dashboard turned it on. The lines
-show in the Worker's logs in the dashboard.
+show in the Worker's logs in the dashboard. `redact_query_string` leaves query
+strings out of logs and traces, since the callback's holds the sign-in code.
 
 A refused refresh leaves the cookies alone, since clearing them could replace
 newer tokens that another tab stored meanwhile. Sign-out ends the sign-in in
