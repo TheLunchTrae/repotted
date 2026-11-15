@@ -1,14 +1,14 @@
 import { render } from 'preact';
 
-import { Account, signInFailure } from './app/account.js';
-import { browserFiles, keepFiles } from './app/kept-files.js';
-import { browserPreferences } from './app/preferences.js';
-import { Router } from './app/router.js';
+import { Account, signInFailure } from './app/account/account.js';
+import { Session } from './app/account/session.js';
+import { Router } from './app/navigation/router.js';
+import { browserPreferences } from './app/preferences/preferences.js';
+import { browserFiles, keepFiles } from './app/storage/kept-files.js';
 import { sessionGitHub } from './engine/github.js';
 import { browserFolders } from './engine/local-folders.js';
-import { Session } from './session.js';
 import { App } from './views/app.js';
-import { run } from './views/run.js';
+import { run } from './views/layout/run.js';
 
 const session = new Session();
 const github = sessionGitHub(session);

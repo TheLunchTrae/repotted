@@ -9,15 +9,15 @@ import { render } from 'preact';
 
 import { FakeGitRepository } from '../../../core/tests/support/fake-git.js';
 import { answered, type FakeAccount, FakeFleet, FakeGitHub } from '../../../core/tests/support/fake-github.js';
-import { Account } from '../../src/app/account.js';
-import { browserFiles, keepFiles } from '../../src/app/kept-files.js';
-import { browserPreferences } from '../../src/app/preferences.js';
-import { Router } from '../../src/app/router.js';
+import { Account } from '../../src/app/account/account.js';
+import type { Session } from '../../src/app/account/session.js';
+import { Router } from '../../src/app/navigation/router.js';
+import { browserPreferences } from '../../src/app/preferences/preferences.js';
+import { browserFiles, keepFiles } from '../../src/app/storage/kept-files.js';
 import { mkdir, writeFile } from '../../src/engine/files.js';
 import { browserFolders } from '../../src/engine/local-folders.js';
-import type { Session } from '../../src/session.js';
 import { App } from '../../src/views/app.js';
-import { run } from '../../src/views/run.js';
+import { run } from '../../src/views/layout/run.js';
 
 // A long name, as some repositories have, is what pushes a row past a phone's width.
 const names = [

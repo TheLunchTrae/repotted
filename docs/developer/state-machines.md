@@ -70,7 +70,7 @@ keychain-failed state, because the lookup runs before that state is checked.
 
 The web app signs in through its Worker (`packages/web/src/worker.ts`), and
 each tab asks it for the access token through a `Session`
-(`packages/web/src/session.ts`). [The web app](web-app.md#sign-in) explains the
+(`packages/web/src/app/account/session.ts`). [The web app](web-app.md#sign-in) explains the
 cookies. All tabs share the access token the access cookie keeps, since each
 refresh revokes the one before.
 
@@ -96,7 +96,7 @@ refresh revokes the one before.
 
 ## Web account
 
-`Account` (`packages/web/src/app/account.ts`) holds who is signed in to the
+`Account` (`packages/web/src/app/account/account.ts`) holds who is signed in to the
 tab. The app draws the sign-in page in every state but Signed in.
 
 | State       | Event                                                                       | Next                                                                                                                                                                                                                                                                             |
@@ -123,7 +123,7 @@ asked about. A sign-in GitHub refuses mid-visit asks nothing either.
 
 ## Web repositories
 
-`Repositories` (`packages/web/src/app/repositories.ts`) holds the repository
+`Repositories` (`packages/web/src/app/repositories/repositories.ts`) holds the repository
 list for one sign-in.
 
 | State               | Event                                                    | Next                                                                                                                                                                                              |
@@ -223,7 +223,7 @@ saved meanwhile.
 
 ## Web shared preferences
 
-`SharedPreferences` (`packages/web/src/app/shared-preferences.ts`) keeps the
+`SharedPreferences` (`packages/web/src/app/preferences/shared-preferences.ts`) keeps the
 preferences that follow the user where the profiles are. Its saves and reads
 run one at a time, in order. It is given the profiles' place when it is made,
 so the first list read already knows what that place hides.
@@ -256,7 +256,7 @@ another is saving.
 
 ## Web profiles source
 
-`Profiles` (`packages/web/src/app/profiles.ts`) keeps where the profiles are,
+`Profiles` (`packages/web/src/app/profiles/profiles.ts`) keeps where the profiles are,
 saved as `profiles-source` in the browser's
 [preferences](web-app.md#the-app), and the sync state the pages show. Every
 event below waits its turn in one queue.
@@ -295,7 +295,7 @@ A profile open when the list is read again shows its file as it is then, and
 closes when the file is gone.
 
 A folder on the computer syncs through `syncLocalFolder`
-(`packages/web/src/app/local-folder.ts`), which compares the working copy,
+(`packages/web/src/app/profiles/local-folder.ts`), which compares the working copy,
 the folder, and its own record of what the two last agreed on, kept in the
 working copy. A first sync, with no record, deletes nothing on either side.
 A working copy is replaced record first and record last, so what the browser
@@ -311,7 +311,7 @@ in on it sees them, and a sync runs with that account's access.
 
 ## Web config repository protection
 
-`ConfigProtection` (`packages/web/src/app/config-protection.ts`) checks the
+`ConfigProtection` (`packages/web/src/app/profiles/config-protection.ts`) checks the
 repository the profiles are kept in against the built-in protection that
 fits what owns it. Only a personal repository has one for now. A check only
 reads: it plans the built-in with the engine's `createPlan` and counts the
@@ -336,7 +336,7 @@ repository is picked again; nothing is saved.
 
 ## Web profile editor
 
-`ProfileEditor` (`packages/web/src/app/profile-editor.ts`) holds one open
+`ProfileEditor` (`packages/web/src/app/profile-editor/profile-editor.ts`) holds one open
 profile's settings and the changes to them that aren't saved. `Profiles`
 keeps an editor for each profile opened since profiles were last moved, so
 unsaved changes outlast a look at another profile, and reads each again
@@ -445,7 +445,7 @@ engine's `changeOwnerType`.
 
 ### Allowed action pattern checks
 
-`ActionPatternChecks` (`packages/web/src/app/action-pattern-checks.ts`)
+`ActionPatternChecks` (`packages/web/src/app/profile-editor/action-pattern-checks.ts`)
 says, for each line of **Allowed action patterns**, what its pattern matches
 on GitHub, read with the engine's `checkActionPatterns`. The states are those
 of one pattern's text, trimmed. A line shows the state of the text it holds
@@ -473,7 +473,7 @@ The checks only inform. Nothing here holds a save back.
 
 ### Action search
 
-`ActionSearch` (`packages/web/src/app/action-search.ts`) is the search box
+`ActionSearch` (`packages/web/src/app/profile-editor/action-search.ts`) is the search box
 under the list. It runs the engine's `findActions` and shows the
 repositories under the box. One search counts at a time: a newer one leaves
 the one before it behind, so an older answer never replaces a newer one.
@@ -516,7 +516,7 @@ changes.
 
 ### Each ruleset, environment, or label
 
-`EntryEdits` (`packages/web/src/app/entry-edits.ts`) holds the changes to
+`EntryEdits` (`packages/web/src/app/profile-editor/entry-edits.ts`) holds the changes to
 entries. The engine writes an entry whole, so a change holds the whole entry,
 with the saved entry it was made on. An entry's key is its saved name, or a
 number for one that is new, so its row is found whatever its name becomes.
@@ -563,7 +563,7 @@ GitHub greys out stays in place, off.
 
 ## Web compare
 
-`Comparison` (`packages/web/src/app/comparison.ts`) compares one repository
+`Comparison` (`packages/web/src/app/apply/comparison.ts`) compares one repository
 with one profile: it resolves the profile, plans it with the engine's
 `createPlan`, and reads the account's access to mark what Repotted can't
 change. It only reads from GitHub, and reads the profile as saved, without
@@ -584,7 +584,7 @@ the editor's unsaved changes. One comparison counts at a time.
 
 ## Web branch preview
 
-`BranchPreview` (`packages/web/src/app/branch-preview.ts`) previews a branch
+`BranchPreview` (`packages/web/src/app/profiles/branch-preview.ts`) previews a branch
 of the repository the profiles are kept in, against the profiles as the
 browser has them. It only reads from GitHub. Its address is
 `/profiles?preview=<branch>`, and which branch is previewed stays in the
@@ -609,7 +609,7 @@ counts at a time.
 
 ## Web apply
 
-`Apply` (`packages/web/src/app/apply.ts`) is one apply of a profile to one
+`Apply` (`packages/web/src/app/apply/apply.ts`) is one apply of a profile to one
 repository, kept as the engine's [staged apply](#staged-apply) in the
 browser's files under `/staged/<owner>/<name>.yaml`. It writes to GitHub
 only in Applying, with the engine's `applyPlan` over the plan last reviewed,
@@ -651,7 +651,7 @@ the plan it shows, so no other plan can be applied in its place.
 
 ## Web batch apply
 
-`BatchApply` (`packages/web/src/app/batch-apply.ts`) applies one profile to
+`BatchApply` (`packages/web/src/app/apply/batch-apply.ts`) applies one profile to
 several repositories through the engine's [batch](#batch), a folder in the
 browser's files at `/batch`. Its members are staged applies under `/staged`,
 the same files as [applies made one at a time](#web-apply), so an apply in
@@ -688,7 +688,7 @@ reviewed state holds. One piece of work counts at a time.
 
 ## Web new profile
 
-`Profiles.create` (`packages/web/src/app/profiles.ts`) makes a profile for
+`Profiles.create` (`packages/web/src/app/profiles/profiles.ts`) makes a profile for
 the new profile form. It never replaces a file: the name is checked against
 the list when the form asks, and the write itself refuses a file that is
 there. A capture reads GitHub before it takes its turn in the queue, and
@@ -729,7 +729,7 @@ question warns and doesn't block.
 
 ## Web kept files
 
-`keepFiles` (`packages/web/src/app/kept-files.ts`) keeps the engine's files in
+`keepFiles` (`packages/web/src/app/storage/kept-files.ts`) keeps the engine's files in
 IndexedDB. What is kept must be the files as they were at one moment: a sync
 record kept without one of the profiles it lists reads as that profile
 deleted here, and the next sync would delete it on GitHub.
@@ -753,7 +753,7 @@ the write to IndexedDB follows the change in memory
 
 ## Web navigation
 
-`Router` (`packages/web/src/app/router.ts`) holds the address of the page
+`Router` (`packages/web/src/app/navigation/router.ts`) holds the address of the page
 within the app.
 
 | State    | Event                              | Next                                                     |
