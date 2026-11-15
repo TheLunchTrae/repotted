@@ -1,7 +1,14 @@
 import { signal } from '@preact/signals';
 import { currentUser, type GitHub, GitHubError } from '@repotted/core';
 
-import { type Session, SessionUnavailableError } from './session.js';
+import * as z from 'zod/mini';
+
+import {
+  GitHubApiUnreachableError,
+  type Session,
+  SessionUnavailableError,
+  type SessionUnavailableReason,
+} from './session.js';
 
 export interface User {
   readonly login: string;
@@ -15,12 +22,11 @@ export type AccountState =
   | { readonly status: 'signed-in'; readonly user: User };
 
 export type SignInCheckFailure =
-  | { readonly kind: 'sign-in-service-unreachable' }
-  | { readonly kind: 'sign-in-service-failed'; readonly status: number }
-  | { readonly kind: 'github-sign-in-renewal-unavailable' }
+  | SessionUnavailableReason
+  | { readonly kind: 'github-unreachable' }
   | { readonly kind: 'github-rate-limited'; readonly retryAt: Date | undefined }
   | { readonly kind: 'github-unavailable'; readonly status: number }
-  | { readonly kind: 'github-unreachable' }
+  | { readonly kind: 'github-account-answer-unreadable' }
   | { readonly kind: 'unexpected'; readonly detail: string };
 
 const maximumCauseDepth = 10;
@@ -42,33 +48,31 @@ function findInCauseChain<Found>(
 const isSessionUnavailableError = (candidate: unknown): candidate is SessionUnavailableError =>
   candidate instanceof SessionUnavailableError;
 
-// fetch rejects with a TypeError when a request never gets an answer: no
-// connection, a blocked address, or a refused CORS check.
-const isNetworkFailure = (candidate: unknown): candidate is TypeError => candidate instanceof TypeError;
+const isGitHubApiUnreachableError = (candidate: unknown): candidate is GitHubApiUnreachableError =>
+  candidate instanceof GitHubApiUnreachableError;
 
 export function signInCheckFailure(error: unknown): SignInCheckFailure {
   const sessionUnavailable = findInCauseChain(error, isSessionUnavailableError);
   if (sessionUnavailable !== undefined) {
-    switch (sessionUnavailable.reason.kind) {
-      case 'worker-unreachable':
-        return { kind: 'sign-in-service-unreachable' };
-      case 'github-token-endpoint-unavailable':
-        return { kind: 'github-sign-in-renewal-unavailable' };
-      case 'worker-failed':
-        return { kind: 'sign-in-service-failed', status: sessionUnavailable.reason.status };
-    }
+    return sessionUnavailable.reason;
+  }
+  if (findInCauseChain(error, isGitHubApiUnreachableError) !== undefined) {
+    return { kind: 'github-unreachable' };
   }
   if (error instanceof GitHubError) {
+    if (!error.receivedResponse) {
+      return { kind: 'unexpected', detail: error.message };
+    }
     if (error.rateLimited) {
       return { kind: 'github-rate-limited', retryAt: error.retryAt };
-    }
-    if (findInCauseChain(error, isNetworkFailure) !== undefined) {
-      return { kind: 'github-unreachable' };
     }
     if (error.status >= 500) {
       return { kind: 'github-unavailable', status: error.status };
     }
     return { kind: 'unexpected', detail: `GitHub answered ${error.status}: ${error.message}` };
+  }
+  if (error instanceof z.core.$ZodError) {
+    return { kind: 'github-account-answer-unreadable' };
   }
   return { kind: 'unexpected', detail: error instanceof Error ? error.message : String(error) };
 }
@@ -96,6 +100,7 @@ export class Account {
 
   readonly #session: Session;
   readonly #github: GitHub;
+  #signedOutMessageOfLastCheck: string | undefined;
 
   constructor(session: Session, github: GitHub) {
     this.#session = session;
@@ -103,6 +108,7 @@ export class Account {
   }
 
   async load(signedOutMessage?: string): Promise<void> {
+    this.#signedOutMessageOfLastCheck = signedOutMessage;
     this.state.value = { status: 'checking' };
     try {
       this.state.value = { status: 'signed-in', user: await currentUser(this.#github) };
@@ -111,6 +117,10 @@ export class Account {
         ? { status: 'signed-out', message: signedOutMessage }
         : { status: 'check-failed', failure: signInCheckFailure(error) };
     }
+  }
+
+  checkAgain(): Promise<void> {
+    return this.load(this.#signedOutMessageOfLastCheck);
   }
 
   gitHubRefusedSignIn(): void {

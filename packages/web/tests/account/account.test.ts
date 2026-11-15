@@ -54,7 +54,7 @@ test('GitHub out of reach is not a sign-out, and a later try can sign in', async
 test('a sign-out that fails stays signed in and says so, and the next try clears it', async () => {
   const signOut = vi
     .fn<() => Promise<void>>()
-    .mockRejectedValueOnce(new SessionUnavailableError({ kind: 'worker-unreachable' }, 'offline'))
+    .mockRejectedValueOnce(new SessionUnavailableError({ kind: 'sign-in-service-unreachable' }, 'offline'))
     .mockResolvedValueOnce();
   const account = new Account(session(signOut), new FakeGitHub());
   await account.load();
@@ -156,7 +156,7 @@ describe('a sign-in check that fails says what failed', () => {
       'the Worker answers a page instead of a token',
       () => Promise.resolve(new Response('<html>')),
       () => Promise.resolve(user()),
-      { kind: 'sign-in-service-failed', status: 200 },
+      { kind: 'sign-in-service-answer-unreadable', status: 200 },
     ],
     [
       "GitHub's API is out of reach",
@@ -186,6 +186,18 @@ describe('a sign-in check that fails says what failed', () => {
       { kind: 'github-rate-limited', retryAt: new Date(rateLimitResetSeconds * 1000) },
     ],
     [
+      "GitHub's answer about the account isn't what Repotted reads",
+      () => Promise.resolve(tokenAnswer()),
+      () => Promise.resolve(Response.json({ name: 'no login' })),
+      { kind: 'github-account-answer-unreadable' },
+    ],
+    [
+      'the request to GitHub is aborted before an answer',
+      () => Promise.resolve(tokenAnswer()),
+      () => Promise.reject(new DOMException('The operation was aborted.', 'AbortError')),
+      { kind: 'unexpected', detail: 'The operation was aborted.' },
+    ],
+    [
       'GitHub answers something else',
       () => Promise.resolve(tokenAnswer()),
       () => Promise.resolve(Response.json({ message: 'Not Found' }, { status: 404 })),
@@ -200,6 +212,37 @@ describe('a sign-in check that fails says what failed', () => {
     expect(account.state.value).toEqual({ status: 'check-failed', failure });
   });
 
+  test('a browser without Web Locks is not read as GitHub out of reach', async () => {
+    answerRequests(
+      () => Promise.resolve(tokenAnswer()),
+      () => Promise.resolve(user()),
+    );
+    vi.stubGlobal('navigator', {});
+    const account = browserAccount();
+
+    await account.load();
+
+    const { state } = account;
+    expect(state.value).toMatchObject({ status: 'check-failed', failure: { kind: 'unexpected' } });
+  });
+
+  test('Try again keeps why the sign-in had just failed', async () => {
+    const worker = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status: 502 }))
+      .mockResolvedValueOnce(Response.json({ error: 'signed_out' }, { status: 401 }));
+    answerRequests(worker, () => Promise.resolve(user()));
+    const account = browserAccount();
+
+    await account.load(signInFailure('failed'));
+    await account.checkAgain();
+
+    expect(account.state.value).toEqual({
+      status: 'signed-out',
+      message: "GitHub didn't complete the sign-in. Try again.",
+    });
+  });
+
   test('Try again signs in once the cause has passed', async () => {
     const worker = vi
       .fn<() => Promise<Response>>()
@@ -211,7 +254,7 @@ describe('a sign-in check that fails says what failed', () => {
     await account.load();
     expect(account.state.value.status).toBe('check-failed');
 
-    await account.load();
+    await account.checkAgain();
     expect(account.state.value).toEqual(signedIn);
   });
 });

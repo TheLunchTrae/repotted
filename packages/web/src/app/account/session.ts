@@ -29,9 +29,10 @@ function isFresh(token: Token | undefined): token is Token {
 }
 
 export type SessionUnavailableReason =
-  | { readonly kind: 'worker-unreachable' }
-  | { readonly kind: 'github-token-endpoint-unavailable' }
-  | { readonly kind: 'worker-failed'; readonly status: number };
+  | { readonly kind: 'sign-in-service-unreachable' }
+  | { readonly kind: 'sign-in-service-failed'; readonly status: number }
+  | { readonly kind: 'sign-in-service-answer-unreadable'; readonly status: number }
+  | { readonly kind: 'github-sign-in-renewal-unavailable' };
 
 /** Thrown when the Worker or GitHub can't refresh the sign-in right now; the sign-in itself is kept. */
 export class SessionUnavailableError extends Error {
@@ -44,13 +45,21 @@ export class SessionUnavailableError extends Error {
   }
 }
 
+/** Thrown when a request to GitHub's API gets no answer at all, such as with no connection or a blocked address. */
+export class GitHubApiUnreachableError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("GitHub's API can't be reached.", options);
+    this.name = 'GitHubApiUnreachableError';
+  }
+}
+
 const workerErrorAnswer = z.object({ error: z.string() });
 
-async function workerFailure(response: Response): Promise<SessionUnavailableReason> {
+async function tokenRefreshFailure(response: Response): Promise<SessionUnavailableReason> {
   const answer = workerErrorAnswer.safeParse(await response.json().catch(() => undefined));
   return response.status === 502 && answer.success && answer.data.error === 'unavailable'
-    ? { kind: 'github-token-endpoint-unavailable' }
-    : { kind: 'worker-failed', status: response.status };
+    ? { kind: 'github-sign-in-renewal-unavailable' }
+    : { kind: 'sign-in-service-failed', status: response.status };
 }
 
 export class Session {
@@ -67,12 +76,17 @@ export class Session {
    * once more; a second refusal comes back as GitHub's answer.
    */
   async fetchGitHub(path: string, init: RequestInit = {}): Promise<Response | undefined> {
-    const send = (token: string): Promise<Response> => {
+    const send = async (token: string): Promise<Response> => {
       const headers = new Headers(init.headers);
       headers.set('Accept', 'application/vnd.github+json');
       headers.set('Authorization', `Bearer ${token}`);
-      // GitHub lets a browser cache a read for a minute, which would hide a change made elsewhere since.
-      return fetch(`${gitHubApi}${path}`, { cache: 'no-store', ...init, headers });
+      try {
+        // GitHub lets a browser cache a read for a minute, which would hide a change made elsewhere since.
+        return await fetch(`${gitHubApi}${path}`, { cache: 'no-store', ...init, headers });
+      } catch (error) {
+        // fetch rejects with a TypeError only when no answer arrived; an abort keeps its own error.
+        throw error instanceof TypeError ? new GitHubApiUnreachableError({ cause: error }) : error;
+      }
     };
     const token = await this.accessToken();
     if (token === undefined) {
@@ -95,7 +109,10 @@ export class Session {
     await navigator.locks.request(lockName, async () => {
       const response = await this.#postToWorker('/api/auth/sign-out', undefined);
       if (!response.ok) {
-        throw new SessionUnavailableError(await workerFailure(response), `Signing out failed: ${response.status}.`);
+        throw new SessionUnavailableError(
+          { kind: 'sign-in-service-failed', status: response.status },
+          `Signing out failed: ${response.status}.`,
+        );
       }
       this.#current = undefined;
     });
@@ -121,14 +138,14 @@ export class Session {
       }
       if (!response.ok) {
         throw new SessionUnavailableError(
-          await workerFailure(response),
+          await tokenRefreshFailure(response),
           `The sign-in couldn't be refreshed: ${response.status}.`,
         );
       }
       const answer = tokenAnswer.safeParse(await response.json().catch(() => undefined));
       if (!answer.success) {
         throw new SessionUnavailableError(
-          { kind: 'worker-failed', status: response.status },
+          { kind: 'sign-in-service-answer-unreadable', status: response.status },
           "The Worker's answer had no access token.",
         );
       }
@@ -153,9 +170,13 @@ export class Session {
         signal: AbortSignal.timeout(workerTimeoutMs),
       });
     } catch (error) {
-      throw new SessionUnavailableError({ kind: 'worker-unreachable' }, "Repotted's server can't be reached.", {
-        cause: error,
-      });
+      throw new SessionUnavailableError(
+        { kind: 'sign-in-service-unreachable' },
+        "Repotted's server can't be reached.",
+        {
+          cause: error,
+        },
+      );
     }
   }
 }

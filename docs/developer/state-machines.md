@@ -120,15 +120,19 @@ tab. The app draws the sign-in page in every state but Signed in.
 A failed check names its cause, which `signInCheckFailure` in `account.ts`
 reads from the error and its causes:
 
-| Cause                                                                 | The page says                                                    |
-| --------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| The Worker gives no answer, or none in 20 seconds                     | Repotted's sign-in service didn't answer.                        |
-| The Worker answers 502 `unavailable`: GitHub's token endpoint failed  | GitHub couldn't renew the sign-in just now.                      |
-| The Worker answers any other error, or an answer with no access token | Repotted's sign-in service answered with an error, and its code. |
-| GitHub's API answers with a rate limit                                | The limit is used up, until the time GitHub gives when it does.  |
-| GitHub's API gives no answer, such as a blocked `api.github.com`      | Repotted can't reach GitHub.                                     |
-| GitHub's API answers 500 or more                                      | GitHub is having trouble, and its code.                          |
-| Anything else                                                         | Checking the sign-in failed, with GitHub's code and message.     |
+| Cause                                                                        | The page says                                                      |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| The Worker gives no answer, or none in 20 seconds                            | Repotted's sign-in service didn't answer.                          |
+| The Worker answers 502 `unavailable`: GitHub's token endpoint failed         | GitHub couldn't renew the sign-in just now.                        |
+| The Worker answers any other error                                           | Repotted's sign-in service answered with an error, and its code.   |
+| The Worker answers with no access token, such as with a page                 | Repotted couldn't read the sign-in service's answer, and its code. |
+| A request to GitHub's API gets no answer, such as a blocked `api.github.com` | Repotted can't reach GitHub.                                       |
+| GitHub's API answers with a rate limit                                       | The limit is used up, until the time GitHub gives when it does.    |
+| GitHub's API answers 500 or more                                             | GitHub is having trouble, and its code.                            |
+| GitHub's answer about the account isn't one Repotted can read                | GitHub's answer about the account couldn't be read.                |
+| Anything else                                                                | Checking the sign-in failed, with the error's message.             |
+
+**Try again** checks again with what the first check would have said when signed out, such as why a sign-in had just failed.
 
 Edits to a profile whose file can't be read then, as after a sync brought
 in one that isn't valid YAML, are not counted as unsaved, so they are not

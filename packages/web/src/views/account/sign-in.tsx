@@ -13,6 +13,8 @@ function checkFailureMessage(failure: SignInCheckFailure): string {
       return "Repotted's sign-in service didn't answer. Check your connection and try again.";
     case 'sign-in-service-failed':
       return `Repotted's sign-in service answered with an error (${failure.status}). Try again; if it keeps happening, the service needs a fix.`;
+    case 'sign-in-service-answer-unreadable':
+      return `Repotted's sign-in service sent an answer Repotted couldn't read (${failure.status}). Try again; if it keeps happening, the service needs a fix.`;
     case 'github-sign-in-renewal-unavailable':
       return "GitHub couldn't renew your sign-in just now. Try again in a minute.";
     case 'github-rate-limited':
@@ -23,6 +25,8 @@ function checkFailureMessage(failure: SignInCheckFailure): string {
       return `GitHub is having trouble right now (it answered ${failure.status}). Try again in a few minutes.`;
     case 'github-unreachable':
       return "Repotted can't reach GitHub. Check your connection, and that nothing in this browser blocks api.github.com.";
+    case 'github-account-answer-unreadable':
+      return "GitHub's answer about your account couldn't be read. Try again.";
     case 'unexpected':
       return `Checking your sign-in failed: ${failure.detail}`;
   }
@@ -53,7 +57,7 @@ export function SignIn({ account }: { readonly account: Account }): JSX.Element 
               class="button"
               type="button"
               onClick={() => {
-                run(account.load());
+                run(account.checkAgain());
               }}
             >
               Try again
