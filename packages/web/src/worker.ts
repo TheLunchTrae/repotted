@@ -220,11 +220,18 @@ function mediaType(response: Response): string {
   return plainMediaType.test(type) ? type : 'an unusual content type';
 }
 
+// Cloudflare answers these itself when its connection to GitHub fails, so
+// they say nothing about GitHub.
+const cloudflareConnectionFailureStatuses = new Set([520, 521, 522, 523, 524, 525, 526, 530]);
+
 function answerWithStatus(response: Response, detail?: string): GitHubAnswer {
+  const statusDescription = cloudflareConnectionFailureStatuses.has(response.status)
+    ? `Cloudflare couldn't connect to GitHub, status ${response.status}`
+    : `status ${response.status}`;
   return {
     status: response.status,
     oauthError: undefined,
-    description: detail === undefined ? `status ${response.status}` : `status ${response.status}, ${detail}`,
+    description: detail === undefined ? statusDescription : `${statusDescription}, ${detail}`,
   };
 }
 
@@ -312,20 +319,17 @@ async function signIn(request: Request, env: Env): Promise<Response> {
   ]);
 }
 
-/**
- * Only GitHub's status and its checked error code go in the address, so a
- * crafted link can't put words of its own into the page's message.
- */
+// The address is the page's to show, so it carries GitHub's checked error
+// code, or else its status, and never a description or any part of the sign-in.
 function signInFailureQuery(reason: SignInFailure, gitHubAnswer: GitHubAnswer | undefined): string {
   const query = new URLSearchParams({ 'sign-in': reason });
   if (reason !== 'failed') {
     return query.toString();
   }
-  if (gitHubAnswer?.status !== undefined) {
-    query.set('github-status', String(gitHubAnswer.status));
-  }
   if (gitHubAnswer?.oauthError !== undefined) {
     query.set('github-error', gitHubAnswer.oauthError);
+  } else if (gitHubAnswer?.status !== undefined) {
+    query.set('github-status', String(gitHubAnswer.status));
   }
   return query.toString();
 }
@@ -347,7 +351,7 @@ async function callback(request: Request, env: Env): Promise<Response> {
     return failed(error === 'access_denied' ? 'denied' : 'failed', {
       status: undefined,
       oauthError: code.success ? code.data : undefined,
-      description: `an error${code.success ? `, ${code.data}` : ''}`,
+      description: `sent back an error${code.success ? `, ${code.data}` : ''}`,
     });
   }
   const [state = '', verifier = ''] = (readCookie(request, signInCookie) ?? '').split('.');

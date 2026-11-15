@@ -8,9 +8,7 @@ test("names what GitHub sent when it couldn't renew the sign-in", () => {
       kind: 'github-sign-in-renewal-unavailable',
       gitHubAnswer: 'status 403, text/html, not JSON',
     }),
-  ).toBe(
-    "GitHub couldn't renew your sign-in just now (GitHub sent status 403, text/html, not JSON). Try again in a minute.",
-  );
+  ).toBe("GitHub couldn't renew your sign-in just now (status 403, text/html, not JSON). Try again in a minute.");
 });
 
 test('leaves out what GitHub sent when the Worker gave no word of it', () => {

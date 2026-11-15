@@ -82,17 +82,37 @@ const signInFailureMessagesByRedirectReason: Readonly<Record<string, string>> = 
   expired: 'That sign-in expired. Sign in again.',
 };
 
-function failedSignInMessage(query: URLSearchParams): string {
-  const status = query.get('github-status');
+// The address is anyone's to write, so the page shows only error codes GitHub
+// documents for a sign-in and a status, never other words from the address.
+const signInErrorCodesGitHubDocuments = new Set([
+  'redirect_uri_mismatch',
+  'application_suspended',
+  'incorrect_client_credentials',
+  'bad_verification_code',
+  'unverified_user_email',
+]);
+
+const cloudflareConnectionFailureStatuses = new Set(['520', '521', '522', '523', '524', '525', '526', '530']);
+
+function whatGitHubSent(query: URLSearchParams): string | undefined {
   const oauthError = query.get('github-error');
-  // The address is anyone's to write, so only a status and an error code show.
-  const gitHubSent = [
-    status !== null && /^\d{3}$/u.test(status) ? `status ${status}` : undefined,
-    oauthError !== null && /^[a-z_]{1,64}$/u.test(oauthError) ? oauthError : undefined,
-  ].filter((part) => part !== undefined);
-  return gitHubSent.length === 0
+  if (oauthError !== null && signInErrorCodesGitHubDocuments.has(oauthError)) {
+    return `GitHub sent ${oauthError}`;
+  }
+  const status = query.get('github-status');
+  if (status === null || !/^\d{3}$/u.test(status)) {
+    return undefined;
+  }
+  return cloudflareConnectionFailureStatuses.has(status)
+    ? `Cloudflare couldn't connect to GitHub, status ${status}`
+    : `GitHub sent status ${status}`;
+}
+
+function failedSignInMessage(query: URLSearchParams): string {
+  const gitHubSent = whatGitHubSent(query);
+  return gitHubSent === undefined
     ? "GitHub didn't complete the sign-in. Try again."
-    : `GitHub didn't complete the sign-in (GitHub sent ${gitHubSent.join(', ')}). Try again.`;
+    : `GitHub didn't complete the sign-in (${gitHubSent}). Try again.`;
 }
 
 export function signInFailure(query: URLSearchParams): string | undefined {

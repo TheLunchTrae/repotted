@@ -94,12 +94,12 @@ in gets a 401, as a refused token does, so one check covers both.
 The web app signs in with the Repotted App's web flow, with PKCE. The
 [GitHub App](github-app.md) page covers the App itself.
 
-| Endpoint                  | What it does                                                                                                                                                                                                                               |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /api/auth/sign-in`   | Makes a state and a PKCE verifier, keeps both in a 10-minute cookie, and sends the browser to GitHub with the state and the verifier's S256 challenge.                                                                                     |
-| `GET /api/auth/callback`  | Checks the state against the cookie, trades the code for tokens with the verifier and the client secret, keeps both tokens in cookies, and sends the browser to `/`. A failure goes to `/?sign-in=…`, with GitHub's status and error code. |
-| `POST /api/auth/token`    | Returns the kept access token and its seconds left. When that token has 5 minutes or less left, or the request names it as one GitHub refused, it first trades the refresh token for new tokens and keeps both.                            |
-| `POST /api/auth/sign-out` | Clears both tokens' cookies.                                                                                                                                                                                                               |
+| Endpoint                  | What it does                                                                                                                                                                                                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/auth/sign-in`   | Makes a state and a PKCE verifier, keeps both in a 10-minute cookie, and sends the browser to GitHub with the state and the verifier's S256 challenge.                                                                                                          |
+| `GET /api/auth/callback`  | Checks the state against the cookie, trades the code for tokens with the verifier and the client secret, keeps both tokens in cookies, and sends the browser to `/`. A failure goes to `/?sign-in=…`, with GitHub's error code or status where GitHub sent one. |
+| `POST /api/auth/token`    | Returns the kept access token and its seconds left. When that token has 5 minutes or less left, or the request names it as one GitHub refused, it first trades the refresh token for new tokens and keeps both.                                                 |
+| `POST /api/auth/sign-out` | Clears both tokens' cookies.                                                                                                                                                                                                                                    |
 
 The page calls GitHub's API directly with the access token; GitHub's API
 allows cross-origin requests. Each tab holds the token in memory and asks the
@@ -141,8 +141,14 @@ log as warnings. No line holds a token, code, verifier, cookie or the client
 secret; GitHub's error code is kept only when it is a plain code, and its
 media type only when it is a plain type. A failed renewal's 502 and a refused
 renewal's 401 carry `gitHubAnswer` too, and the sign-in page shows the 502's;
-a refused renewal reads as signed out. A failed code exchange only logs it,
-since its redirect carries no detail.
+a refused renewal reads as signed out. A failed sign-in's redirect to
+`/?sign-in=failed` carries only GitHub's error code as `github-error`, or else
+its status as `github-status`. The address is anyone's to write, so the page
+shows only the error codes GitHub documents for a sign-in and a three-digit
+status.
+
+A status of 520 to 526 or 530 comes from Cloudflare, not GitHub: Cloudflare
+couldn't connect to GitHub. The logs and the page say so.
 
 `observability` in `wrangler.jsonc` keeps Workers Logs and traces on, for
 production and Previews alike: `wrangler deploy` turns observability off when

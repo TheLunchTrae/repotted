@@ -173,7 +173,7 @@ describe('callback', () => {
     [
       'refuses the code',
       () => Promise.resolve(Response.json({ error: 'bad_verification_code' })),
-      '/?sign-in=failed&github-status=200&github-error=bad_verification_code',
+      '/?sign-in=failed&github-error=bad_verification_code',
     ],
     [
       'issues a token that never expires',
@@ -244,6 +244,21 @@ describe('logs', () => {
     );
   });
 
+  test("logs a status Cloudflare sends for its own failed connection as Cloudflare's, not GitHub's", async () => {
+    const { state, cookie } = await startedSignIn();
+    github.mockResolvedValue(new Response('', { status: 525 }));
+
+    await call(`/api/auth/callback?code=the-code&state=${state}`, { headers: { Cookie: cookie.split(';')[0] ?? '' } });
+
+    expect(warned).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: 'callback',
+        gitHubStatus: 525,
+        gitHubAnswer: "Cloudflare couldn't connect to GitHub, status 525",
+      }),
+    );
+  });
+
   test('logs only a well-formed error code GitHub sent back with the browser', async () => {
     await call('/api/auth/callback?error=%3Cscript%3Eghr_leak&state=x');
 
@@ -252,7 +267,7 @@ describe('logs', () => {
         route: 'callback',
         outcome: 'failed',
         gitHubOAuthError: undefined,
-        gitHubAnswer: 'an error',
+        gitHubAnswer: 'sent back an error',
       }),
     );
     expect(everythingLogged()).not.toContain('ghr_leak');

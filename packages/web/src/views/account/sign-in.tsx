@@ -18,7 +18,7 @@ export function checkFailureMessage(failure: SignInCheckFailure): string {
     case 'github-sign-in-renewal-unavailable':
       return failure.gitHubAnswer === undefined
         ? "GitHub couldn't renew your sign-in just now. Try again in a minute."
-        : `GitHub couldn't renew your sign-in just now (GitHub sent ${failure.gitHubAnswer}). Try again in a minute.`;
+        : `GitHub couldn't renew your sign-in just now (${failure.gitHubAnswer}). Try again in a minute.`;
     case 'github-rate-limited':
       return failure.retryAt === undefined
         ? "GitHub's rate limit for your account is used up. Try again in a few minutes."
