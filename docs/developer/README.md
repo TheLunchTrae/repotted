@@ -21,12 +21,22 @@ use Repotted, see the [user guide](../user/README.md).
 
 ## Layout
 
-- `packages/core`: the engine, private to the workspace. `schema.ts` defines
-  profiles, `sections/` holds one adapter per section, `endpoints.ts`
-  reads and plans the settings at endpoints of their own, `permissions.ts`
-  names the permission each request needs and locks the changes an account
-  can't make, `profile.ts` loads, merges, and
-  edits profiles, and `plan.ts` plans and applies.
+- `packages/core`: the engine, private to the workspace. `src/index.ts` is
+  its only public API. Its folders group the engine by domain:
+  - `github/`: the GitHub client, the permission each request needs and the
+    changes an account can't make, and the repositories an account reaches.
+  - `profiles/`: the profile schema, loading, merging, and editing profiles,
+    owner types, action pattern checks, syncing a profile folder with a
+    config repository, and reading what a branch of it changes.
+  - `plan/`: planning and applying, what a change is, what counts as drift,
+    the settings at endpoints of their own, and `sections/`, one adapter per
+    section.
+  - `staging/`: staged applies and batches.
+  - `shared/`: hashing and base64, deep equality, and safe file writes.
+
+  `tests/` mirrors `src/`, and `tests/support/` holds the in-memory GitHub and
+  git the tests run on.
+
 - `packages/cli`: the published `repotted` package: the CLI and the MCP
   server over the engine. Its build bundles core into one file, since core is
   never published on its own.

@@ -55,7 +55,7 @@ jobs:
             packages/web
             packages/core/src
             packages/core/package.json
-            packages/core/tests/fake-github.ts
+            packages/core/tests/support
             package.json
             pnpm-lock.yaml
             pnpm-workspace.yaml

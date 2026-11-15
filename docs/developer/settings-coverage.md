@@ -19,7 +19,7 @@ the YAML, the list of those in its `profile-editor.test.ts`), and this page.
 
 Most repository settings are fields of `GET` and `PATCH /repos/{owner}/{repo}`.
 The rest each live at an endpoint of their own under the repository.
-`packages/core/src/endpoints.ts` describes those endpoints once, as data, and
+`packages/core/src/plan/endpoints.ts` describes those endpoints once, as data, and
 reads and plans them all the same way:
 
 - A `toggle` is on while a `GET` finds it on. `PUT` turns it on and `DELETE`
@@ -81,7 +81,7 @@ with a `402` while the account has no payment method on file, as it can for
 the Actions cache limits, is skipped the same way, and its warning says a
 payment method is missing. A `403` on a write stops apply, and
 `describeFailure` names the permission too. Both come from
-`requiredPermission` in `packages/core/src/permissions.ts`, which records the
+`requiredPermission` in `packages/core/src/github/permissions.ts`, which records the
 permission GitHub's docs give for each endpoint that needs more than
 Administration. The same tables let `lockChanges` mark a planned change the
 App's installation wasn't granted, so a new endpoint that needs another
@@ -93,7 +93,7 @@ permission gets its row there.
 [Profiles](../user/profiles.md#sections) lists them by section. The
 repository and merge settings are fields of `PATCH /repos/{owner}/{repo}`,
 except those at endpoints of their own, which `repositoryEndpoints` in
-`packages/core/src/sections/repository.ts` lists with their paths.
+`packages/core/src/plan/sections/repository.ts` lists with their paths.
 `securityEndpoints` in `security.ts` lists the security settings outside
 `security_and_analysis`, and `actionsEndpoints` in `actions.ts` the Actions
 settings outside the policy. The adapters in that folder read and write the
@@ -216,7 +216,7 @@ Some settings exist only for repositories that organizations own, and a few
 only for organizations on GitHub Enterprise Cloud. A profile's
 [owner type](../user/profiles.md#owner-type) refuses them on a personal
 profile, and the web app hides them there. `settingRules` and the sets
-under it in `packages/core/src/owner.ts` list them, and the web app reads
+under it in `packages/core/src/profiles/owner.ts` list them, and the web app reads
 them from there.
 
 | What                                                                           | Who has it                        | GitHub's docs                                                                                                                                                                                                          |

@@ -769,7 +769,7 @@ didn't shows in Settings.
 
 ## Plan and apply
 
-`createPlan` only reads. `applyPlan` (`packages/core/src/plan.ts`) plans
+`createPlan` only reads. `applyPlan` (`packages/core/src/plan/plan.ts`) plans
 again from the reviewed plan's profile and writes only when that yields the
 same changes.
 
@@ -793,7 +793,7 @@ keeps the plan.
 ## Drafts
 
 A ruleset, environment, autolink, or setting in a profile file is a draft or
-an entry that applies (`packages/core/src/profile.ts`). The marker lives in
+an entry that applies (`packages/core/src/profiles/profile.ts`). The marker lives in
 the file, so the state is whatever the file says when it's read.
 
 | State   | Event                                                     | Next                                                                                                          |
@@ -813,7 +813,7 @@ names an entry of that name, which then applies again.
 
 ## Staged apply
 
-A staged apply is a file (`packages/core/src/staged.ts`); its state is the
+A staged apply is a file (`packages/core/src/staging/staged.ts`); its state is the
 file and the plan made from it. Each edit is checked whole before the file
 changes, so every failed event below leaves the file as it was.
 
@@ -845,7 +845,7 @@ discarded, so a stale or partly applied apply can be planned again from it.
 
 ## Batch
 
-A batch is a folder (`packages/core/src/batch.ts`) whose manifest lists one
+A batch is a folder (`packages/core/src/staging/batch.ts`) whose manifest lists one
 staged apply for each repository; each member's own state is as in
 [Staged apply](#staged-apply). The manifest has an id, so a batch started
 again in the same folder is another batch. It is replaced whole on each
@@ -873,7 +873,7 @@ still lose one change.
 
 ## Config repository sync
 
-`syncFolder` (`packages/core/src/sync.ts`) brings a folder and a folder in a
+`syncFolder` (`packages/core/src/profiles/sync.ts`) brings a folder and a folder in a
 repository in line, file by file, against the blob ids in
 `.repotted-sync.json`. Only `.yaml` and `.yml` files sync, and a file or
 folder whose name starts with a dot stays out on both sides. So the
