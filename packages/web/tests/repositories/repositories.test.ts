@@ -94,6 +94,32 @@ test('a search or a hidden owner that takes the opened repository out of view cl
   expect(repositories.opened.value).toBeUndefined();
 });
 
+test('names each shown owner whose installation lacks a permission the Repotted App asks for', async () => {
+  const repository = (full_name: string) => ({ full_name, private: false, permissions: { admin: true } });
+  const repositories = await opened(
+    new FakeGitHub({
+      account: {
+        login: 'trae',
+        name: null,
+        repositories: [],
+        installations: [
+          { id: 1, permissions: { metadata: 'read' }, repositories: [repository('Acme/api')] },
+          { id: 2, permissions: { metadata: 'read' }, repositories: [repository('trae/dotfiles')] },
+        ],
+      },
+    }),
+  );
+  expect(repositories.installationsMissingPermissions.value.map((installation) => installation.owner)).toEqual([
+    'Acme',
+    'trae',
+  ]);
+
+  repositories.setOwnerShown('acme', false);
+  expect(repositories.installationsMissingPermissions.value).toEqual([
+    expect.objectContaining({ owner: 'trae', settings_url: 'https://github.com/settings/installations/2' }),
+  ]);
+});
+
 test('keeps the hidden owners, and an owner new to the list shows', async () => {
   const preferences = memory();
   const github = new FakeGitHub({ account: account(everyone) });
@@ -239,7 +265,7 @@ test('a refresh asked for while one runs starts no second read', async () => {
   held.resolve({ total_count: 0, installations: [] });
   await first;
   expect(repositories.loading.value).toBe(false);
-  expect(repositories.list.value).toEqual({ source: 'installations', repositories: [] });
+  expect(repositories.list.value).toEqual({ source: 'installations', repositories: [], missing_permissions: [] });
 });
 
 test('a refresh keeps the list in use while it reads, and the opened repository when the new list has it', async () => {

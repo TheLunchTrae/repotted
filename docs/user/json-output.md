@@ -151,13 +151,20 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   conflicts }`, where the last three list files by their path in the folder,
   and `commit` is the branch's commit after the sync, or null for an empty
   repository. It exits 1 when `conflicts` is not empty.
-- `repos` prints `{ source, repositories }`, each repository as
-  `{ full_name, private, archived }`, sorted by name: the repositories your
-  account administers. With a Repotted App sign-in, `source` is
-  `installations` and the list holds those the App is installed on. GitHub
-  refuses the installation list to any other token, which gets `admin` and
-  every repository the account administers; the token itself may not be
-  allowed to change them (see [Sign in](sign-in.md#use-a-token-instead)).
+- `repos` prints `{ source, repositories, missing_permissions }`, each
+  repository as `{ full_name, private, archived }`, sorted by name: the
+  repositories your account administers. With a Repotted App sign-in,
+  `source` is `installations` and the list holds those the App is installed
+  on. GitHub refuses the installation list to any other token, which gets
+  `admin` and every repository the account administers; the token itself may
+  not be allowed to change them (see
+  [Sign in](sign-in.md#use-a-token-instead)). `missing_permissions` lists,
+  by owner, each installation that holds a listed repository and hasn't
+  accepted every permission the Repotted App asks for, as
+  `{ owner, permissions, settings_url }`: `permissions` by the names the
+  App's settings page gives them, and `settings_url` the installation's
+  settings page, where an owner accepts them, or null. It is empty for
+  `admin`. Without `--json`, `repos` writes a line to stderr for each.
 - `check-actions` prints `{ checks }`, one check for each pattern, in order,
   and exits 1 unless every status is `match`, `owner` or `unchecked`. Each has `pattern` and `status`, and every one but `invalid` has `blocks`,
   which is true for a pattern that starts with `!`. A member that doesn't

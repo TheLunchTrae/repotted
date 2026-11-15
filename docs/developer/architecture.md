@@ -245,6 +245,12 @@ permissions of the App's installation that covers it. `lockChanges` in
 `permissions.ts` sets those against each change and returns the ones Repotted
 can't make, by index. The CLI adds both to the plan document as `access` and
 `locks`, outside `changes`, so the plan that apply compares is unchanged.
+`permissionsMissingForProfilePart` in `plan/part-permissions.ts` answers the
+same question for a part of a profile, a section or one of its keys, by the
+endpoint that holds it, so an editor can turn the part off before any plan.
+`listRepositories` also returns `missing_permissions`: each installation that
+holds a listed repository and hasn't accepted every permission in
+`permissionsTheRepottedAppAsksFor`, with its settings page.
 Apply checks neither: GitHub decides at the write, and `failureReason` in
 `plan.ts` turns a lasting `402`, `403` or `422` into a short reason.
 

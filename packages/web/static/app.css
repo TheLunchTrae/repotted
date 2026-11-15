@@ -1029,6 +1029,10 @@ input[type='checkbox'] {
   opacity: 0.85;
 }
 
+.entry-fields {
+  display: contents;
+}
+
 .notice-actions {
   display: flex;
   align-items: center;

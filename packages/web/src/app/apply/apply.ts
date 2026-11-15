@@ -1,5 +1,6 @@
 import { computed, signal } from '@preact/signals';
 import {
+  type AppAccess,
   ApplyError,
   applyPlan,
   createStagedApply,
@@ -110,6 +111,7 @@ export class Apply {
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
+  #lastAppAccessRead: { readonly repository: string; readonly app: AppAccess } | undefined;
   #profile: ComparedProfile | undefined;
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
@@ -157,6 +159,7 @@ export class Apply {
     if (this.#writing()) {
       return;
     }
+    this.#lastAppAccessRead = undefined;
     const unfinished = await this.unfinished(repository);
     // Looked at again, since an apply may have begun to write while the browser's files were read.
     if (this.#writing()) {
@@ -179,6 +182,7 @@ export class Apply {
     if (this.#writing()) {
       return;
     }
+    this.#lastAppAccessRead = undefined;
     const unfinished = await this.unfinished(repository);
     if (this.#writing()) {
       return;
@@ -268,6 +272,12 @@ export class Apply {
     const editor = new ProfileEditor(stagedFile(repository), undefined, stagedStore);
     await editor.load();
     this.editor.value = editor;
+    const known = this.#lastAppAccessRead;
+    if (known?.repository === repository) {
+      editor.useInstallation(known.app);
+    } else {
+      this.#turnOffWhatTheInstallationLacks(editor, repository);
+    }
     this.editError.value = undefined;
     return {
       kind: 'editing',
@@ -277,6 +287,26 @@ export class Apply {
       builtIn: staged.base?.startsWith(`${builtInFolder}/`) === true,
       leftOut: staged.exclude,
     };
+  }
+
+  /**
+   * The editor opens without waiting for this. Until it ends, or if it fails,
+   * the edits are only checked at review, as they are for any repository.
+   */
+  #turnOffWhatTheInstallationLacks(editor: ProfileEditor, repository: string): void {
+    readAccess(this.#github, parseRepo(repository)).then(
+      (access) => {
+        if (this.editor.value === editor) {
+          this.#lastAppAccessRead = { repository, app: access.app };
+          editor.useInstallation(access.app);
+        }
+      },
+      (error: unknown) => {
+        if (isSignedOut(error)) {
+          this.#onSignedOut();
+        }
+      },
+    );
   }
 
   /** Picks up the unfinished apply to a repository from its panel, with no profile picked. */
@@ -392,6 +422,7 @@ export class Apply {
       return;
     }
     this.#turn += 1;
+    this.#lastAppAccessRead = undefined;
     await forget(state.repository);
     this.editor.value = undefined;
     this.state.value = { kind: 'idle' };
@@ -407,6 +438,7 @@ export class Apply {
         editor.save((work) => work()).catch(() => undefined);
       }
       this.editor.value = undefined;
+      this.#lastAppAccessRead = undefined;
       this.state.value = { kind: 'idle' };
     }
   }
@@ -416,10 +448,14 @@ export class Apply {
   }
 
   async #review(repository: string, notice: string | undefined): Promise<ApplyState> {
+    const turn = this.#turn;
     const [staged, access] = await Promise.all([
       planStagedApply(this.#github, stagedFile(repository)),
       readAccess(this.#github, parseRepo(repository)),
     ]);
+    if (turn === this.#turn) {
+      this.#lastAppAccessRead = { repository, app: access.app };
+    }
     // An apply picked up goes by the profile it started from, which may not be the one picked now.
     const profile = profileNameOfApply(staged.staged.base);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));

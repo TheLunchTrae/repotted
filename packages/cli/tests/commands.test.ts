@@ -675,10 +675,25 @@ describe('action commands', () => {
 });
 
 describe('account commands', () => {
+  const everyPermissionButPages = {
+    administration: 'write',
+    contents: 'write',
+    actions: 'write',
+    repository_custom_properties: 'write',
+    issues: 'write',
+    security_events: 'read',
+    metadata: 'read',
+  };
   const account = {
     login: 'lunch',
     name: 'Lunch',
-    installations: [{ id: 1, repositories: [{ full_name: 'lunch/app', private: true, permissions: { admin: true } }] }],
+    installations: [
+      {
+        id: 1,
+        permissions: everyPermissionButPages,
+        repositories: [{ full_name: 'lunch/app', private: true, permissions: { admin: true } }],
+      },
+    ],
     repositories: [],
   };
   const signedOut = {
@@ -693,10 +708,17 @@ describe('account commands', () => {
     expect(document(listed)).toEqual({
       source: 'installations',
       repositories: [{ full_name: 'lunch/app', private: true, archived: false }],
+      missing_permissions: [
+        { owner: 'lunch', permissions: ['Pages'], settings_url: 'https://github.com/settings/installations/1' },
+      ],
     });
     await fixture('repos', listed);
 
-    expect(await cli(github, 'repos')).toMatchObject({ code: 0, out: 'lunch/app (private)\n' });
+    expect(await cli(github, 'repos')).toMatchObject({
+      code: 0,
+      out: 'lunch/app (private)\n',
+      err: "The Repotted App on lunch doesn't have the Pages permission yet. Repotted can't read or change what needs it until an owner of lunch accepts it: https://github.com/settings/installations/1\n",
+    });
   });
 
   test('repos says why a list is empty', async () => {

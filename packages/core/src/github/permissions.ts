@@ -3,6 +3,7 @@ import type { Method } from './client.js';
 
 type AppPermission =
   | 'administration'
+  | 'contents'
   | 'metadata'
   | 'actions'
   | 'pages'
@@ -17,6 +18,7 @@ interface Permission {
 
 const permissionNamesOnGitHubAppSettingsPage: Readonly<Record<AppPermission, string>> = {
   administration: 'Administration',
+  contents: 'Contents',
   metadata: 'Metadata',
   actions: 'Actions',
   pages: 'Pages',
@@ -27,6 +29,18 @@ const permissionNamesOnGitHubAppSettingsPage: Readonly<Record<AppPermission, str
 
 const read = (name: AppPermission): Permission => ({ name, level: 'read' });
 const write = (name: AppPermission): Permission => ({ name, level: 'write' });
+
+/** As the Repotted App's registration on GitHub asks for them. */
+const permissionsTheRepottedAppAsksFor: readonly Permission[] = [
+  write('administration'),
+  write('contents'),
+  write('actions'),
+  write('pages'),
+  write('repository_custom_properties'),
+  write('issues'),
+  read('security_events'),
+  read('metadata'),
+];
 
 // As GitHub's REST docs list them for GitHub App user tokens. Paths are relative to the repository.
 const permissionsNeededToRead: readonly (readonly [RegExp, readonly Permission[]])[] = [
@@ -101,6 +115,42 @@ export interface Lock {
 
 function grants(granted: string | undefined, level: Permission['level']): boolean {
   return granted === 'write' || granted === 'admin' || (level === 'read' && granted === 'read');
+}
+
+function namesOfPermissionsNotGranted(
+  granted: Readonly<Record<string, string>>,
+  permissions: readonly Permission[],
+): readonly string[] {
+  const names = permissions
+    .filter((permission) => !grants(granted[permission.name], permission.level))
+    .map((permission) => permissionNamesOnGitHubAppSettingsPage[permission.name]);
+  return [...new Set(names)];
+}
+
+export function permissionsInProse(permissions: readonly string[]): string {
+  return `${new Intl.ListFormat('en').format(permissions)} ${permissions.length === 1 ? 'permission' : 'permissions'}`;
+}
+
+/**
+ * GitHub keeps an installation on the permissions its owner accepted, so
+ * those the App asks for later stay missing until an owner accepts them.
+ */
+export function permissionsInstallationHasNotAccepted(granted: Readonly<Record<string, string>>): readonly string[] {
+  return namesOfPermissionsNotGranted(granted, permissionsTheRepottedAppAsksFor);
+}
+
+/**
+ * What reading and writing a path relative to the repository needs that the
+ * installation lacks. What the access leaves unknown lacks nothing.
+ */
+export function permissionsMissingToManage(app: AppAccess, relativePath: string): readonly string[] {
+  if (app.status !== 'installed') {
+    return [];
+  }
+  return namesOfPermissionsNotGranted(app.permissions, [
+    ...requiredPermissions('GET', relativePath),
+    ...requiredPermissions('PUT', relativePath),
+  ]);
 }
 
 /**

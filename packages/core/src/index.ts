@@ -35,9 +35,12 @@ export {
 export { ownerHas, ownerTypes, partOwnerTypeCannotHold, settingRules } from './profiles/owner.js';
 export type { OwnerNeed, OwnerType } from './profiles/owner.js';
 export type { EntryEdit, ProfileEdit } from './profiles/profile.js';
-export { lockChanges } from './github/permissions.js';
+export { lockChanges, permissionsInProse } from './github/permissions.js';
+export type { AppAccess } from './github/permissions.js';
+export { permissionsMissingForProfilePart } from './plan/part-permissions.js';
 export { profileFileJsonSchema } from './profiles/schema.js';
-export { currentUser, listRepositories, readAccess } from './github/repositories.js';
+export { currentUser, listRepositories, readAccess, readInstallationSettingsUrl } from './github/repositories.js';
+export type { InstallationMissingPermissions } from './github/repositories.js';
 export { listBranches, readBranchChanges } from './profiles/branch-changes.js';
 export type { BranchChanges, BranchProfileChange } from './profiles/branch-changes.js';
 export { syncFolder } from './profiles/sync.js';

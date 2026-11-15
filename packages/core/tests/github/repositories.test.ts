@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { GitHubError, responseError } from '../../src/github/client.js';
-import { currentUser, listRepositories } from '../../src/github/repositories.js';
+import { type GitHub, GitHubError, responseError } from '../../src/github/client.js';
+import { currentUser, listRepositories, readInstallationSettingsUrl } from '../../src/github/repositories.js';
 import { FakeGitHub, type FakeRepository } from '../support/fake-github.js';
 
 function repositories(prefix: string, count: number, extra: Partial<FakeRepository> = {}): FakeRepository[] {
@@ -89,7 +89,76 @@ describe('listRepositories', () => {
         { full_name: 'lunch/a', private: true, archived: false },
         { full_name: 'lunch/b', private: false, archived: false },
       ],
+      missing_permissions: [],
     });
+  });
+});
+
+describe('the permissions an installation has not accepted', () => {
+  const everyPermission = {
+    administration: 'write',
+    contents: 'write',
+    actions: 'write',
+    pages: 'write',
+    repository_custom_properties: 'write',
+    issues: 'write',
+    security_events: 'read',
+    metadata: 'read',
+  };
+
+  test('are named for each owner whose listed repositories they hold back', async () => {
+    const { pages: _pages, ...withoutPages } = everyPermission;
+    const github = new FakeGitHub({
+      account: {
+        login: 'lunch',
+        name: null,
+        installations: [
+          { id: 1, permissions: withoutPages, repositories: repositories('lunch', 1) },
+          {
+            id: 2,
+            permissions: { ...everyPermission, actions: 'read', issues: 'read' },
+            repositories: repositories('acme', 1),
+          },
+          { id: 3, permissions: everyPermission, repositories: repositories('done', 1) },
+          // Nothing it holds is listed, so nothing it lacks keeps a listed setting off.
+          { id: 4, permissions: {}, repositories: repositories('quiet', 1, { permissions: { admin: false } }) },
+        ],
+        repositories: [],
+      },
+    });
+
+    expect((await listRepositories(github)).missing_permissions).toEqual([
+      {
+        owner: 'acme',
+        permissions: ['Actions', 'Issues'],
+        settings_url: 'https://github.com/settings/installations/2',
+      },
+      { owner: 'lunch', permissions: ['Pages'], settings_url: 'https://github.com/settings/installations/1' },
+    ]);
+    expect(await readInstallationSettingsUrl(github, 'ACME')).toBe('https://github.com/settings/installations/2');
+    expect(await readInstallationSettingsUrl(github, 'nobody')).toBeNull();
+  });
+
+  test('are none for an installation GitHub answers without its permissions', async () => {
+    const fake = new FakeGitHub({
+      account: {
+        login: 'lunch',
+        name: null,
+        installations: [{ id: 1, repositories: repositories('lunch', 1) }],
+        repositories: [],
+      },
+    });
+    const github: GitHub = {
+      request: (method, path, body) =>
+        path.startsWith('/user/installations?')
+          ? Promise.resolve({
+              total_count: 1,
+              installations: [{ id: 1, account: { login: 'lunch' }, repository_selection: 'selected' }],
+            })
+          : fake.request(method, path, body),
+    };
+
+    expect((await listRepositories(github)).missing_permissions).toEqual([]);
   });
 });
 

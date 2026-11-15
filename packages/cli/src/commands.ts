@@ -50,6 +50,7 @@ import {
   lockChanges,
   parsePlan,
   parseRepo,
+  permissionsInProse,
   type ProfileEdit,
   profileFileJsonSchema,
   readAccess,
@@ -1001,6 +1002,13 @@ async function repos(io: Io, args: string[]): Promise<number> {
   for (const repository of list.repositories) {
     const notes = [repository.private ? 'private' : '', repository.archived ? 'archived' : ''].filter(Boolean);
     io.out(`${repository.full_name}${notes.length > 0 ? ` (${notes.join(', ')})` : ''}\n`);
+  }
+  for (const installation of list.missing_permissions) {
+    const where = installation.settings_url === null ? '.' : `: ${installation.settings_url}`;
+    const them = installation.permissions.length === 1 ? 'it' : 'them';
+    io.err(
+      `The Repotted App on ${installation.owner} doesn't have the ${permissionsInProse(installation.permissions)} yet. Repotted can't read or change what needs ${them} until an owner of ${installation.owner} accepts ${them}${where}\n`,
+    );
   }
   if (list.repositories.length === 0) {
     io.err(

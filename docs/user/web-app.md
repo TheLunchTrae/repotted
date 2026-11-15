@@ -48,6 +48,14 @@ installed on and that you administer. To add repositories to the list, click
 **Add repositories**, which opens the Repotted App's install page on GitHub,
 then **Refresh**.
 
+When the Repotted App's installation on an account or organization hasn't
+been given every permission the App asks for, the page names that owner and
+the missing permissions. **Review on GitHub** opens the installation's
+settings, where an owner of that account accepts them; then click
+**Refresh**. Until then, Repotted can't read or change what needs them on
+that owner's repositories, and turns those settings off when you edit an
+apply. An owner you hide shows no such notice.
+
 After a refresh, **Refresh** waits 15 seconds before it can read the list
 again, and counts down on the button while it waits, so that pressing it
 repeatedly doesn't use up your GitHub requests. When GitHub answers with its
@@ -166,6 +174,16 @@ From there you can:
 What the apply leaves out is listed above the edits with **Put back**, since
 a change can't be both left out and edited.
 
+Settings that need a permission the Repotted App's installation hasn't been
+given are turned off, with a note that names it and **Review on GitHub**.
+A permission every setting on a tab needs is named once at the top of the
+tab, one every setting in a group needs under the group's heading, and any
+other on the setting itself. A list of rulesets, environments or labels that
+needs one can't take a new entry, and its entries open read-only, though
+**Put it back**, **Reset** and **Take out of profile** still work. The
+editor opens before Repotted has read the installation, so they turn off a
+moment later.
+
 The second step shows each change by section, with what GitHub has now and
 what it will have after the apply. From there you can:
 
@@ -264,7 +282,8 @@ from:
   nothing. If GitHub refused to show the capture some settings, the new
   profile's page says how many; **Show** lists them and what would let
   Repotted read them, such as a permission of the Repotted App or a payment
-  method on file.
+  method on file. When a permission of the App would, **Review on GitHub**
+  opens the App's installation settings, where an owner accepts it.
 
 When there are folders, **Folder** chooses where the profile goes. Under
 **For repositories owned by**, choose **Personal accounts**,

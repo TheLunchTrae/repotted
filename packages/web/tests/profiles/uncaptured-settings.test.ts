@@ -30,6 +30,8 @@ test('names what a capture of a personal repository could not read by its editor
         reason: 'GitHub shows these only with a payment method on file.',
       },
     ],
+    needsAppPermission: true,
+    installationSettingsUrl: null,
   });
 });
 
@@ -101,6 +103,8 @@ test('names a refused section by its title and a read of several settings by the
         reason: "Needs the Repotted App's Administration read permission.",
       },
     ],
+    needsAppPermission: true,
+    installationSettingsUrl: null,
   });
 });
 
@@ -132,5 +136,5 @@ test('names only what a profile of its owner type can hold', () => {
       ],
       'user',
     ),
-  ).toEqual({ count: 0, groups: [] });
+  ).toEqual({ count: 0, groups: [], needsAppPermission: false, installationSettingsUrl: null });
 });

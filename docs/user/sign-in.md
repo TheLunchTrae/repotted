@@ -40,11 +40,25 @@ The App asks for these repository permissions:
 
 - **Administration**, read and write: to read repository settings and
   rulesets, and to change them when you apply a plan.
-- **Actions**, read: to list deployment environments.
+- **Actions**, read and write: to read deployment environments and the cache
+  size limit, and to read and set the OpenID Connect subject claim.
 - **Contents**, read and write: to keep profiles in a GitHub repository and
   commit your changes to them. Repotted reads and writes only YAML profiles
   there.
+- **Pages**, read and write: to manage GitHub Pages.
+- **Custom properties**, read and write: to set a repository's custom
+  property values.
+- **Issues**, read and write: to manage labels.
+- **Code scanning alerts**, read: to read the code scanning AI Scan setting.
 - **Metadata**, read: required by GitHub for every App.
+
+When the App asks for a permission it didn't have before, GitHub asks an
+owner of each account or organization it is installed on to accept it, and
+until they do, the App goes on without it there. Repotted reads which
+permissions each installation has when it lists your repositories. The
+repositories page names each owner whose installation lacks some, with
+**Review on GitHub** to accept them, and the settings that need them are
+turned off while you edit an apply to one of its repositories.
 
 Repotted can only do what your own GitHub account may do on a repository. To
 change a repository's settings, you need to be an administrator of it.

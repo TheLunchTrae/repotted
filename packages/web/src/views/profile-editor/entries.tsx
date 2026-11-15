@@ -24,6 +24,7 @@ import {
 import type { ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import { sameValue } from '../../app/profile-editor/same-value.js';
 import { run } from '../layout/run.js';
+import { MissingPermissionsNote } from './missing-permissions-note.js';
 
 const nouns: Readonly<Record<EntryList, { readonly one: string; readonly many: string; readonly title: string }>> = {
   rulesets: { one: 'ruleset', many: 'rulesets', title: 'Ruleset' },
@@ -726,6 +727,7 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
   const change = (next: Entry): void => {
     run(editor.changeEntry(row, next));
   };
+  const missingPermissions = editor.entryListMissingPermissions.value[row.list];
   const absent = entry['absent'] === true;
   const renamable = row.source === 'here' || row.source === undefined;
   const name = typeof entry['name'] === 'string' ? entry['name'] : '';
@@ -804,64 +806,69 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
           </div>
         </div>
       )}
-      <Group title={noun.title}>
-        <TextBox
-          label="Name"
-          value={name}
-          disabled={!renamable}
-          problem={row.outOfDate ? undefined : row.applyProblem}
-          note={
-            !renamable
-              ? `It comes from ${row.source}, so it keeps its name.`
-              : renamed && row.list !== 'labels'
-                ? `GitHub knows each ${noun.one} by its name, so applying this profile creates ${name.trim()} and leaves ${appliedName} on each repository as it is.`
-                : undefined
-          }
-          onText={(typed) => {
-            change({ ...entry, name: typed });
-            return undefined;
-          }}
-        />
-        <div class="setting">
-          <div class="segments" role="radiogroup" aria-label={`What the profile does with the ${noun.one}`}>
-            <label>
-              <input
-                type="radio"
-                name="entry-state"
-                checked={!absent}
-                onChange={() => {
-                  run(editor.setAbsent(row, false));
-                }}
-              />
-              <span>Manage it</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="entry-state"
-                checked={absent}
-                onChange={() => {
-                  run(editor.setAbsent(row, true));
-                }}
-              />
-              <span>Remove it from the repository</span>
-            </label>
+      {missingPermissions.length > 0 && (
+        <MissingPermissionsNote permissions={missingPermissions} settingsUrl={editor.installationSettingsUrl.value} />
+      )}
+      <fieldset class="entry-fields" disabled={missingPermissions.length > 0}>
+        <Group title={noun.title}>
+          <TextBox
+            label="Name"
+            value={name}
+            disabled={!renamable}
+            problem={row.outOfDate ? undefined : row.applyProblem}
+            note={
+              !renamable
+                ? `It comes from ${row.source}, so it keeps its name.`
+                : renamed && row.list !== 'labels'
+                  ? `GitHub knows each ${noun.one} by its name, so applying this profile creates ${name.trim()} and leaves ${appliedName} on each repository as it is.`
+                  : undefined
+            }
+            onText={(typed) => {
+              change({ ...entry, name: typed });
+              return undefined;
+            }}
+          />
+          <div class="setting">
+            <div class="segments" role="radiogroup" aria-label={`What the profile does with the ${noun.one}`}>
+              <label>
+                <input
+                  type="radio"
+                  name="entry-state"
+                  checked={!absent}
+                  onChange={() => {
+                    run(editor.setAbsent(row, false));
+                  }}
+                />
+                <span>Manage it</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="entry-state"
+                  checked={absent}
+                  onChange={() => {
+                    run(editor.setAbsent(row, true));
+                  }}
+                />
+                <span>Remove it from the repository</span>
+              </label>
+            </div>
+            {absent && <p class="muted small">Applying deletes it from each repository that follows the profile.</p>}
           </div>
-          {absent && <p class="muted small">Applying deletes it from each repository that follows the profile.</p>}
-        </div>
-      </Group>
-      {!absent && row.list === 'rulesets' && (
-        <RulesetForm
-          entry={entry}
-          saved={row.saved}
-          change={change}
-          ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
-        />
-      )}
-      {!absent && row.list === 'environments' && <EnvironmentForm entry={entry} saved={row.saved} change={change} />}
-      {!absent && row.list === 'labels' && (
-        <LabelForm entry={entry} saved={row.saved} change={change} savedName={appliedName} />
-      )}
+        </Group>
+        {!absent && row.list === 'rulesets' && (
+          <RulesetForm
+            entry={entry}
+            saved={row.saved}
+            change={change}
+            ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
+          />
+        )}
+        {!absent && row.list === 'environments' && <EnvironmentForm entry={entry} saved={row.saved} change={change} />}
+        {!absent && row.list === 'labels' && (
+          <LabelForm entry={entry} saved={row.saved} change={change} savedName={appliedName} />
+        )}
+      </fieldset>
     </div>
   );
 }
@@ -876,6 +883,8 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
   const [openKey, setOpenKey] = useState<string | undefined>(undefined);
   const rows = editor.entries.value[kind];
   const noun = nouns[kind];
+  const missingPermissions = editor.entryListMissingPermissions.value[kind];
+  const turnedOff = missingPermissions.length > 0;
   // A save gives a new or renamed entry the key of its saved name, so the open one is found by that name then.
   const openName = useRef<string | undefined>(undefined);
   const open =
@@ -885,6 +894,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
       : rows.find((row) => row.savedName === openName.current));
   openName.current = typeof open?.entry?.['name'] === 'string' ? open.entry['name'].trim() : undefined;
   const add = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLUListElement>(null);
   const shown = open?.entry === undefined ? undefined : open;
   // Once the open entry is gone, as after a reset of a new one, the list shows.
   useEffect(() => {
@@ -896,7 +906,11 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
   const wasOpen = useRef(false);
   useEffect(() => {
     if (wasOpen.current && shown === undefined) {
-      add.current?.focus();
+      if (add.current?.disabled === false) {
+        add.current.focus();
+      } else {
+        list.current?.querySelector<HTMLButtonElement>('button.row:not(:disabled)')?.focus();
+      }
     }
     wasOpen.current = shown !== undefined;
   }, [shown]);
@@ -918,6 +932,9 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
 
   return (
     <div class="groups">
+      {turnedOff && (
+        <MissingPermissionsNote permissions={missingPermissions} settingsUrl={editor.installationSettingsUrl.value} />
+      )}
       <div class="entry-bar">
         <p class="muted small">
           {rows.length === 0
@@ -928,6 +945,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
           class="button"
           type="button"
           ref={add}
+          disabled={turnedOff}
           onClick={() => {
             run(editor.addEntry(kind, { name: '' }).then(setOpenKey));
           }}
@@ -936,7 +954,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
         </button>
       </div>
       {rows.length > 0 && (
-        <ul class="rows">
+        <ul class="rows" ref={list}>
           {rows.map((row) => {
             const entry = row.entry;
             const name = entry === undefined ? (row.savedName ?? '') : text(entry['name']);
