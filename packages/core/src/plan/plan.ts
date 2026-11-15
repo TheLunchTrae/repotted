@@ -1,20 +1,9 @@
 import { z } from 'zod';
 
-import {
-  type Change,
-  isListSection,
-  listSections,
-  type Section,
-  sections,
-  skipCauses,
-  type Warning,
-} from './change.js';
-import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadableReason } from './endpoints.js';
-import { isDeepEqual } from './equal.js';
-import { type GitHub, GitHubError, parseRepo, repoPath, repoPattern, type RepoRef } from './github.js';
-import { describeOwnerType, type OwnerConflict, type OwnerType, withoutOwnerConflicts } from './owner.js';
-import { type Lock, requiredPermission } from './permissions.js';
-import type { Drafts } from './profile.js';
+import { type GitHub, GitHubError, parseRepo, repoPath, repoPattern, type RepoRef } from '../github/client.js';
+import { type Lock, requiredPermission } from '../github/permissions.js';
+import { describeOwnerType, type OwnerConflict, type OwnerType, withoutOwnerConflicts } from '../profiles/owner.js';
+import type { Drafts } from '../profiles/profile.js';
 import {
   actionsSettings,
   commitPairs,
@@ -29,7 +18,18 @@ import {
   ruleset,
   securityAndAnalysis,
   securitySettings,
-} from './schema.js';
+} from '../profiles/schema.js';
+import { isDeepEqual } from '../shared/equal.js';
+import {
+  type Change,
+  isListSection,
+  listSections,
+  type Section,
+  sections,
+  skipCauses,
+  type Warning,
+} from './change.js';
+import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadableReason } from './endpoints.js';
 import { actionsEndpoints, planActions, readActions } from './sections/actions.js';
 import { describeAutolink, planAutolinks, readAutolinks } from './sections/autolinks.js';
 import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';

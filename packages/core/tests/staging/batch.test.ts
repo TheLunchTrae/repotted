@@ -7,6 +7,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
 import { parse } from 'yaml';
 
+import { type GitHub, GitHubError } from '../../src/github/client.js';
 import {
   addToBatch,
   applyBatch,
@@ -21,10 +22,9 @@ import {
   parseBatchPlan,
   planBatch,
   readBatch,
-} from '../src/batch.js';
-import { type GitHub, GitHubError } from '../src/github.js';
-import { createStagedApply, editStagedApply, resolveStagedApply } from '../src/staged.js';
-import { answered, FakeFleet, FakeGitHub } from './fake-github.js';
+} from '../../src/staging/batch.js';
+import { createStagedApply, editStagedApply, resolveStagedApply } from '../../src/staging/staged.js';
+import { answered, FakeFleet, FakeGitHub } from '../support/fake-github.js';
 
 // The real path, because batches report real paths and macOS links its temporary folder.
 const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-batch-')));

@@ -1,5 +1,5 @@
-import { fromBase64, toBase64 } from '../src/bytes.js';
-import { type GitHub, GitHubError, type Method } from '../src/github.js';
+import { type GitHub, GitHubError, type Method } from '../../src/github/client.js';
+import { fromBase64, toBase64 } from '../../src/shared/bytes.js';
 
 type Tree = Map<string, { id: string; mode: string }>;
 

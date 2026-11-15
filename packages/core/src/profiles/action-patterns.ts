@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { type GitHub, GitHubError } from './github.js';
+import { type GitHub, GitHubError } from '../github/client.js';
 
 type ActionLookup =
   | {

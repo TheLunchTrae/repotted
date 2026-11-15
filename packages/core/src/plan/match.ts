@@ -1,4 +1,4 @@
-import { isDeepEqual } from './equal.js';
+import { isDeepEqual } from '../shared/equal.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

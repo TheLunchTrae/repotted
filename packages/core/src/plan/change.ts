@@ -1,4 +1,4 @@
-import type { Method } from './github.js';
+import type { Method } from '../github/client.js';
 import type { FieldChange } from './match.js';
 
 export interface Request {

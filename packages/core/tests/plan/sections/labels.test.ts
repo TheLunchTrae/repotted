@@ -5,13 +5,20 @@ import path from 'node:path';
 
 import { afterAll, describe, expect, test } from 'vitest';
 
-import { parseRepo } from '../src/github.js';
-import { lockChanges } from '../src/permissions.js';
-import { applyPlan, captureProfile, createPlan, formatPlan, skippedDrafts, StalePlanError } from '../src/plan.js';
-import { editProfile, resolveProfile } from '../src/profile.js';
-import { type LabelEntry, profileFileJsonSchema } from '../src/schema.js';
-import { createStagedApply, editStagedApply, planStagedApply } from '../src/staged.js';
-import { answered, FakeGitHub } from './fake-github.js';
+import { parseRepo } from '../../../src/github/client.js';
+import { lockChanges } from '../../../src/github/permissions.js';
+import {
+  applyPlan,
+  captureProfile,
+  createPlan,
+  formatPlan,
+  skippedDrafts,
+  StalePlanError,
+} from '../../../src/plan/plan.js';
+import { editProfile, resolveProfile } from '../../../src/profiles/profile.js';
+import { type LabelEntry, profileFileJsonSchema } from '../../../src/profiles/schema.js';
+import { createStagedApply, editStagedApply, planStagedApply } from '../../../src/staging/staged.js';
+import { answered, FakeGitHub } from '../../support/fake-github.js';
 
 const repo = parseRepo('lunch/app');
 const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-labels-')));

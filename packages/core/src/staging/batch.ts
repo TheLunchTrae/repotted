@@ -4,11 +4,10 @@ import path from 'node:path';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 
-import { hexDigest } from './bytes.js';
-import type { Change } from './change.js';
-import { replaceFile } from './files.js';
-import { type GitHub, GitHubError, parseRepo, repoPattern } from './github.js';
-import { type Access, type Lock, lockChanges } from './permissions.js';
+import { type GitHub, GitHubError, parseRepo, repoPattern } from '../github/client.js';
+import { type Access, type Lock, lockChanges } from '../github/permissions.js';
+import { readAccess } from '../github/repositories.js';
+import type { Change } from '../plan/change.js';
 import {
   ApplyError,
   applyPlan,
@@ -18,9 +17,10 @@ import {
   parsePlan,
   type Plan,
   StalePlanError,
-} from './plan.js';
-import { ProfileError, resolveProfile } from './profile.js';
-import { readAccess } from './repositories.js';
+} from '../plan/plan.js';
+import { ProfileError, resolveProfile } from '../profiles/profile.js';
+import { hexDigest } from '../shared/bytes.js';
+import { replaceFile } from '../shared/files.js';
 import {
   createStagedApply,
   editStagedApply,

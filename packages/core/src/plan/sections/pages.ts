@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
+import { type GitHub, repoPath, type RepoRef } from '../../github/client.js';
+import type { PagesEntry } from '../../profiles/schema.js';
 import type { Change, SectionPlan } from '../change.js';
 import { readResource, type Unavailable } from '../endpoints.js';
-import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
-import type { PagesEntry } from '../schema.js';
 
 const liveSite = z.object({
   build_type: z.enum(['legacy', 'workflow']).nullish(),

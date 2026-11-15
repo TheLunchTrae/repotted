@@ -4,9 +4,8 @@ import path from 'node:path';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 
-import { isDeepEqual } from './equal.js';
-import { type GitHub, parseRepo, repoPattern } from './github.js';
-import { createPlan, type Plan, skippedDrafts } from './plan.js';
+import { type GitHub, parseRepo, repoPattern } from '../github/client.js';
+import { createPlan, type Plan, skippedDrafts } from '../plan/plan.js';
 import {
   type Adjust,
   type Drafts,
@@ -23,8 +22,9 @@ import {
   resolveProfile,
   settingPath,
   settingsSections,
-} from './profile.js';
-import { environmentKey, labelKey, type Profile, profileFile, type ProfileFile } from './schema.js';
+} from '../profiles/profile.js';
+import { environmentKey, labelKey, type Profile, profileFile, type ProfileFile } from '../profiles/schema.js';
+import { isDeepEqual } from '../shared/equal.js';
 
 const entryKeyByExcludableList = {
   autolinks: (entry: Record<string, unknown>) => String(entry['key_prefix']),

@@ -14,7 +14,7 @@ interface SettingRule {
 }
 
 /**
- * [Settings coverage](../../../docs/developer/settings-coverage.md#owners)
+ * [Settings coverage](../../../../docs/developer/settings-coverage.md#owners)
  * gives GitHub's docs for each.
  */
 export const settingRules: readonly SettingRule[] = [

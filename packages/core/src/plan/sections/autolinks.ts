@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
+import { type GitHub, repoPath, type RepoRef } from '../../github/client.js';
+import type { AutolinkEntry } from '../../profiles/schema.js';
 import type { Change, SectionPlan } from '../change.js';
 import { readResource, type Unavailable } from '../endpoints.js';
-import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
-import type { AutolinkEntry } from '../schema.js';
 
 const liveAutolink = z.object({
   id: z.number().int(),

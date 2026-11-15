@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { answered, FakeGitHub } from '../../core/tests/fake-github.js';
+import { answered, FakeGitHub } from '../../core/tests/support/fake-github.js';
 import { Account, signInFailure } from '../src/app/account.js';
 import { type Session, SessionUnavailableError } from '../src/session.js';
 

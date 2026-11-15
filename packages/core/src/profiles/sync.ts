@@ -3,9 +3,9 @@ import path from 'node:path';
 
 import { z } from 'zod';
 
-import { fromBase64, hexDigest, toBase64 } from './bytes.js';
-import { replaceFile } from './files.js';
-import { type GitHub, GitHubError, parseRepo, type RepoRef, repoPath } from './github.js';
+import { type GitHub, GitHubError, parseRepo, type RepoRef, repoPath } from '../github/client.js';
+import { fromBase64, hexDigest, toBase64 } from '../shared/bytes.js';
+import { replaceFile } from '../shared/files.js';
 
 // JSON, so profile listings skip it.
 export const syncStateFile = '.repotted-sync.json';

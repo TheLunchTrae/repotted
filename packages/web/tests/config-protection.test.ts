@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
 
-import { answered, FakeGitHub } from '../../core/tests/fake-github.js';
+import { answered, FakeGitHub } from '../../core/tests/support/fake-github.js';
 import { Apply } from '../src/app/apply.js';
 import { ConfigProtection } from '../src/app/config-protection.js';
 import { settingSections } from '../src/app/setting-fields.js';

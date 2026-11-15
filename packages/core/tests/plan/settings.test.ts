@@ -3,14 +3,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
-import { GitHubError, parseRepo } from '../src/github.js';
-import { ApplyError, applyPlan, captureProfile, createPlan, describeFailure } from '../src/plan.js';
-import { editProfile, parseProfile, resolveProfile, stringifyProfile } from '../src/profile.js';
-import { profile as profileSchema, type Profile } from '../src/schema.js';
-import { actionsEndpoints } from '../src/sections/actions.js';
-import { repositoryEndpoints } from '../src/sections/repository.js';
-import { securityEndpoints } from '../src/sections/security.js';
-import { answered, FakeGitHub, type FakeState } from './fake-github.js';
+import { GitHubError, parseRepo } from '../../src/github/client.js';
+import { ApplyError, applyPlan, captureProfile, createPlan, describeFailure } from '../../src/plan/plan.js';
+import { actionsEndpoints } from '../../src/plan/sections/actions.js';
+import { repositoryEndpoints } from '../../src/plan/sections/repository.js';
+import { securityEndpoints } from '../../src/plan/sections/security.js';
+import { editProfile, parseProfile, resolveProfile, stringifyProfile } from '../../src/profiles/profile.js';
+import { profile as profileSchema, type Profile } from '../../src/profiles/schema.js';
+import { answered, FakeGitHub, type FakeState } from '../support/fake-github.js';
 
 const repo = parseRepo('lunch/app');
 

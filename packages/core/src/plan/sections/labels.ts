@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
+import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../../github/client.js';
+import { type Label, type LabelEntry, labelKey } from '../../profiles/schema.js';
 import type { Change, SectionPlan, Warning } from '../change.js';
 import { refusal, type Unavailable } from '../endpoints.js';
-import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../github.js';
 import type { FieldChange } from '../match.js';
-import { type Label, type LabelEntry, labelKey } from '../schema.js';
 
 const liveLabel = z.object({ name: z.string(), color: z.string(), description: z.string().nullish() });
 

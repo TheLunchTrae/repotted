@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
+import { type GitHub, repoPath, type RepoRef } from '../../github/client.js';
+import { actionsEndpointFields, type ActionsSettings } from '../../profiles/schema.js';
 import type { Change, SectionPlan, Warning } from '../change.js';
 import type { Endpoint } from '../endpoints.js';
-import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
-import { actionsEndpointFields, type ActionsSettings } from '../schema.js';
 
 // These apply after the policy.
 export const actionsEndpoints: readonly Endpoint[] = [

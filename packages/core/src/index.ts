@@ -1,6 +1,11 @@
-export { checkActionPatterns, describeActionCheck, describeFoundAction, findActions } from './action-patterns.js';
-export { createGitHub, GitHubError, parseRepo } from './github.js';
-export type { GitHub } from './github.js';
+export {
+  checkActionPatterns,
+  describeActionCheck,
+  describeFoundAction,
+  findActions,
+} from './profiles/action-patterns.js';
+export { createGitHub, GitHubError, parseRepo } from './github/client.js';
+export type { GitHub } from './github/client.js';
 export {
   applyPlan,
   ApplyError,
@@ -15,8 +20,8 @@ export {
   parsePlan,
   skippedDrafts,
   StalePlanError,
-} from './plan.js';
-export type { Plan } from './plan.js';
+} from './plan/plan.js';
+export type { Plan } from './plan/plan.js';
 export {
   changeOwnerType,
   editProfile,
@@ -26,16 +31,16 @@ export {
   resolveProfile,
   settingPath,
   stringifyProfile,
-} from './profile.js';
-export { ownerHas, ownerTypes, settingRules } from './owner.js';
-export type { OwnerNeed, OwnerType } from './owner.js';
-export type { EntryEdit, ProfileEdit } from './profile.js';
-export { lockChanges } from './permissions.js';
-export { profileFileJsonSchema } from './schema.js';
-export { currentUser, listRepositories, readAccess } from './repositories.js';
-export { listBranches, readBranchChanges } from './branch-changes.js';
-export type { BranchChanges, BranchProfileChange } from './branch-changes.js';
-export { syncFolder } from './sync.js';
+} from './profiles/profile.js';
+export { ownerHas, ownerTypes, settingRules } from './profiles/owner.js';
+export type { OwnerNeed, OwnerType } from './profiles/owner.js';
+export type { EntryEdit, ProfileEdit } from './profiles/profile.js';
+export { lockChanges } from './github/permissions.js';
+export { profileFileJsonSchema } from './profiles/schema.js';
+export { currentUser, listRepositories, readAccess } from './github/repositories.js';
+export { listBranches, readBranchChanges } from './profiles/branch-changes.js';
+export type { BranchChanges, BranchProfileChange } from './profiles/branch-changes.js';
+export { syncFolder } from './profiles/sync.js';
 export {
   createStagedApply,
   discardStagedApply,
@@ -44,8 +49,8 @@ export {
   previewStagedApply,
   resolveStagedApply,
   saveStagedEdits,
-} from './staged.js';
-export type { StagedApply, StagedEdit, StagedPlan } from './staged.js';
+} from './staging/staged.js';
+export type { StagedApply, StagedEdit, StagedPlan } from './staging/staged.js';
 export {
   addToBatch,
   applyBatch,
@@ -62,5 +67,5 @@ export {
   parseBatchPlan,
   planBatch,
   readBatch,
-} from './batch.js';
-export type { Batch, BatchPlan, MemberResult } from './batch.js';
+} from './staging/batch.js';
+export type { Batch, BatchPlan, MemberResult } from './staging/batch.js';

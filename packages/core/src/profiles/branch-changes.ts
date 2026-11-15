@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import { fromBase64 } from './bytes.js';
-import { type GitHub, GitHubError, parseRepo, type RepoRef, repoPath } from './github.js';
+import { type GitHub, GitHubError, parseRepo, type RepoRef, repoPath } from '../github/client.js';
+import { fromBase64 } from '../shared/bytes.js';
 import { isProfilePath, repositoryFolder, SyncError } from './sync.js';
 
 export type BranchProfileChange =

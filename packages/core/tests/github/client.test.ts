@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { createGitHub, GitHubError } from '../src/github.js';
+import { createGitHub, GitHubError } from '../../src/github/client.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();

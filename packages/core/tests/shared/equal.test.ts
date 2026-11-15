@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { expect, test } from 'vitest';
 
-import { isDeepEqual } from '../src/equal.js';
+import { isDeepEqual } from '../../src/shared/equal.js';
 
 // Node's comparison is the reference for plain data.
 test('compares the data YAML and JSON give as Node does', () => {

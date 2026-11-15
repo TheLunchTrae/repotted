@@ -1,4 +1,4 @@
-import { type GitHub, GitHubError, type Method, responseError } from '../src/github.js';
+import { type GitHub, GitHubError, type Method, responseError } from '../../src/github/client.js';
 
 interface StoredRuleset {
   id: number;

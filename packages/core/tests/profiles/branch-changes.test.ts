@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
-import { type BranchProfileChange, listBranches, readBranchChanges } from '../src/branch-changes.js';
-import { GitHubError } from '../src/github.js';
-import { FakeGitRepository } from './fake-git.js';
+import { GitHubError } from '../../src/github/client.js';
+import { type BranchProfileChange, listBranches, readBranchChanges } from '../../src/profiles/branch-changes.js';
+import { FakeGitRepository } from '../support/fake-git.js';
 
 function withContentAsText(files: readonly BranchProfileChange[]): unknown[] {
   return files.map((change) =>

@@ -19,8 +19,8 @@ import {
 } from 'yaml';
 import { z } from 'zod';
 
-import { isDeepEqual } from './equal.js';
-import { replaceFile } from './files.js';
+import { isDeepEqual } from '../shared/equal.js';
+import { replaceFile } from '../shared/files.js';
 import { describeOwnerType, draftOwnerConflicts, type OwnerConflict, ownerConflicts, type OwnerType } from './owner.js';
 import {
   actionsSettings,

@@ -7,8 +7,8 @@
 import type { GitHub } from '@repotted/core';
 import { render } from 'preact';
 
-import { FakeGitRepository } from '../../../core/tests/fake-git.js';
-import { answered, type FakeAccount, FakeFleet, FakeGitHub } from '../../../core/tests/fake-github.js';
+import { FakeGitRepository } from '../../../core/tests/support/fake-git.js';
+import { answered, type FakeAccount, FakeFleet, FakeGitHub } from '../../../core/tests/support/fake-github.js';
 import { Account } from '../../src/app/account.js';
 import { browserFiles, keepFiles } from '../../src/app/kept-files.js';
 import { browserPreferences } from '../../src/app/preferences.js';

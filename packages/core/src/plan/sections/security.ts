@@ -1,8 +1,8 @@
+import { repoPath, type RepoRef } from '../../github/client.js';
+import { securityAndAnalysis, securityFields, type SecuritySettings } from '../../profiles/schema.js';
 import type { Change, SectionPlan, Warning } from '../change.js';
 import { type Endpoint, type EndpointValue, planEndpoint } from '../endpoints.js';
-import { repoPath, type RepoRef } from '../github.js';
 import { fieldChanges } from '../match.js';
-import { securityAndAnalysis, securityFields, type SecuritySettings } from '../schema.js';
 
 /**
  * GitHub reports JavaScript and TypeScript apart for code scanning but takes

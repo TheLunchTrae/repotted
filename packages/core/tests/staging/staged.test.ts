@@ -7,8 +7,8 @@ import path from 'node:path';
 import { afterAll, describe, expect, test, vi } from 'vitest';
 import { stringify } from 'yaml';
 
-import { ApplyError, applyPlan, parsePlan, StalePlanError } from '../src/plan.js';
-import { ProfileError } from '../src/profile.js';
+import { ApplyError, applyPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
+import { ProfileError } from '../../src/profiles/profile.js';
 import {
   createStagedApply,
   discardStagedApply,
@@ -17,8 +17,8 @@ import {
   previewStagedApply,
   resolveStagedApply,
   saveStagedEdits,
-} from '../src/staged.js';
-import { FakeGitHub } from './fake-github.js';
+} from '../../src/staging/staged.js';
+import { FakeGitHub } from '../support/fake-github.js';
 
 // By name rather than by import, since a typed mock takes only one signature of the overloaded readFile.
 vi.mock('node:fs/promises', async (original) => {

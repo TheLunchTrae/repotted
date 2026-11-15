@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
-import type { Warning } from '../src/change.js';
-import { parseRepo, repoPath } from '../src/github.js';
-import { matches } from '../src/match.js';
+import { parseRepo, repoPath } from '../../src/github/client.js';
+import type { Warning } from '../../src/plan/change.js';
+import { matches } from '../../src/plan/match.js';
 import {
   ApplyError,
   applyPlan,
@@ -17,17 +17,17 @@ import {
   parsePlan,
   skippedDrafts,
   StalePlanError,
-} from '../src/plan.js';
-import { resolveProfile } from '../src/profile.js';
-import type { Profile } from '../src/schema.js';
-import { EnvironmentSettingsError } from '../src/sections/environments.js';
-import { MergeSettingsError } from '../src/sections/repository.js';
-import { answered, FakeGitHub } from './fake-github.js';
+} from '../../src/plan/plan.js';
+import { EnvironmentSettingsError } from '../../src/plan/sections/environments.js';
+import { MergeSettingsError } from '../../src/plan/sections/repository.js';
+import { resolveProfile } from '../../src/profiles/profile.js';
+import type { Profile } from '../../src/profiles/schema.js';
+import { answered, FakeGitHub } from '../support/fake-github.js';
 
 const loadProfile = async (file: string): Promise<Profile> => (await resolveProfile(file)).profile;
 
 const repo = parseRepo('lunch/app');
-const examples = path.join(import.meta.dirname, '../../../examples');
+const examples = path.join(import.meta.dirname, '../../../../examples');
 const mainBranch = { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } };
 
 function rejection(promise: Promise<unknown>): Promise<unknown> {

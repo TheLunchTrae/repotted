@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, test, vi } from 'vitest';
 
-import { replaceFile } from '../src/files.js';
+import { replaceFile } from '../../src/shared/files.js';
 
 vi.mock(import('node:fs/promises'), async (original) => {
   const actual = await original();

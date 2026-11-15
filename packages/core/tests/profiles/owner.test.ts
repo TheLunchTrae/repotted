@@ -4,11 +4,11 @@ import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
 import { parse } from 'yaml';
 
-import { applyPlan, captureProfile, createPlan, OwnerMismatchError } from '../src/plan.js';
-import { changeOwnerType, ProfileError, resolveProfile } from '../src/profile.js';
-import { profile, profileFileJsonSchema } from '../src/schema.js';
-import { createStagedApply } from '../src/staged.js';
-import { FakeGitHub } from './fake-github.js';
+import { applyPlan, captureProfile, createPlan, OwnerMismatchError } from '../../src/plan/plan.js';
+import { changeOwnerType, ProfileError, resolveProfile } from '../../src/profiles/profile.js';
+import { profile, profileFileJsonSchema } from '../../src/profiles/schema.js';
+import { createStagedApply } from '../../src/staging/staged.js';
+import { FakeGitHub } from '../support/fake-github.js';
 
 const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-owner-')));
 const repo = { owner: 'lunch', name: 'app' };

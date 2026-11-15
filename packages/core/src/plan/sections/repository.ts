@@ -1,8 +1,5 @@
-import type { Change, SectionPlan, Warning } from '../change.js';
-import { type Endpoint, type EndpointValue, planEndpoint, readEndpoints } from '../endpoints.js';
-import { type GitHub, repoPath, type RepoRef } from '../github.js';
-import { fieldChanges, matches } from '../match.js';
-import type { OwnerType } from '../owner.js';
+import { type GitHub, repoPath, type RepoRef } from '../../github/client.js';
+import type { OwnerType } from '../../profiles/owner.js';
 import {
   commitPairs,
   mergeFields,
@@ -12,7 +9,10 @@ import {
   repositoryEndpointFields,
   repositoryFields,
   type RepositorySettings,
-} from '../schema.js';
+} from '../../profiles/schema.js';
+import type { Change, SectionPlan, Warning } from '../change.js';
+import { type Endpoint, type EndpointValue, planEndpoint, readEndpoints } from '../endpoints.js';
+import { fieldChanges, matches } from '../match.js';
 
 export const repositoryEndpoints: readonly Endpoint[] = [
   {

@@ -1,5 +1,5 @@
-import type { Change } from './change.js';
-import type { Method } from './github.js';
+import type { Change } from '../plan/change.js';
+import type { Method } from './client.js';
 
 type AppPermission =
   | 'administration'

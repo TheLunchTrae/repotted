@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { expect, test } from 'vitest';
 
-import { fromBase64, hexDigest, toBase64 } from '../src/bytes.js';
+import { fromBase64, hexDigest, toBase64 } from '../../src/shared/bytes.js';
 
 // Larger than one chunk of the encoder, with every byte value.
 const large = Uint8Array.from({ length: 100_000 }, (_, index) => (index * 31) % 256);

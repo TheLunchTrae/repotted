@@ -10,7 +10,7 @@ import {
   ProfileError,
   resolveProfile,
   stringifyProfile,
-} from '../src/profile.js';
+} from '../../src/profiles/profile.js';
 import {
   commitPairs,
   draftSettings,
@@ -18,7 +18,7 @@ import {
   mergeSettingsProblems,
   profile,
   type Profile,
-} from '../src/schema.js';
+} from '../../src/profiles/schema.js';
 
 // The real path, because profiles report real paths and macOS links its temporary folder.
 const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-profile-')));
@@ -254,7 +254,7 @@ rulesets:
   });
 
   test('loads the example profiles', async () => {
-    const examples = path.join(import.meta.dirname, '../../../examples');
+    const examples = path.join(import.meta.dirname, '../../../../examples');
     const profile = await loadProfile(path.join(examples, 'repotted.yaml'));
 
     expect(profile.merge).toEqual({ allow_merge_commit: false, allow_squash_merge: false, allow_rebase_merge: true });

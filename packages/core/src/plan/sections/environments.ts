@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
+import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../../github/client.js';
+import { type Environment, type EnvironmentEntry, environmentKey } from '../../profiles/schema.js';
 import type { Change, SectionPlan } from '../change.js';
 import type { Unavailable } from '../endpoints.js';
-import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../github.js';
 import { bodyChanges, matches } from '../match.js';
-import { type Environment, type EnvironmentEntry, environmentKey } from '../schema.js';
 
 type Reviewer = NonNullable<Environment['reviewers']>[number];
 

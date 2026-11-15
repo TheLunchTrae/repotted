@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { checkActionPatterns, describeActionCheck, findActions } from '../src/action-patterns.js';
-import { type GitHub, GitHubError, responseError } from '../src/github.js';
+import { type GitHub, GitHubError, responseError } from '../../src/github/client.js';
+import { checkActionPatterns, describeActionCheck, findActions } from '../../src/profiles/action-patterns.js';
 
 /** What `answers` holds that is an error is thrown, and a path it leaves out is a 404. */
 function fakeGitHub(answers: Readonly<Record<string, unknown>>): GitHub & { readonly paths: string[] } {

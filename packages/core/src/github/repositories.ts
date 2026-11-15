@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from './github.js';
+import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from './client.js';
 import type { Access, AppAccess, Role } from './permissions.js';
 
 export interface Repository {

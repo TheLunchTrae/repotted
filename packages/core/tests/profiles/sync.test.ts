@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { responseError } from '../src/github.js';
-import { listProfiles } from '../src/profile.js';
-import { syncFolder, syncStateFile } from '../src/sync.js';
-import { FakeGitRepository } from './fake-git.js';
+import { responseError } from '../../src/github/client.js';
+import { listProfiles } from '../../src/profiles/profile.js';
+import { syncFolder, syncStateFile } from '../../src/profiles/sync.js';
+import { FakeGitRepository } from '../support/fake-git.js';
 
 const folders: string[] = [];
 

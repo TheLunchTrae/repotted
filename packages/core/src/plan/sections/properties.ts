@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
+import { type GitHub, repoPath, type RepoRef } from '../../github/client.js';
+import type { CustomProperties } from '../../profiles/schema.js';
 import type { SectionPlan } from '../change.js';
 import { readResource, type Unavailable } from '../endpoints.js';
-import { type GitHub, repoPath, type RepoRef } from '../github.js';
 import { matches } from '../match.js';
-import type { CustomProperties } from '../schema.js';
 
 const liveValues = z.array(
   z.object({

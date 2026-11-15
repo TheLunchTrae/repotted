@@ -5,12 +5,12 @@ import path from 'node:path';
 
 import { afterAll, afterEach, describe, expect, test, vi } from 'vitest';
 
-import { addToBatch, batchManifest, createBatch, readBatch } from '../src/batch.js';
+import { addToBatch, batchManifest, createBatch, readBatch } from '../../src/staging/batch.js';
 
 // Runs once a staged apply is made, so a test can act as another program between a batch's read and its write.
 const hook: { afterCreate: (() => Promise<void>) | undefined } = { afterCreate: undefined };
 
-vi.mock(import('../src/staged.js'), async (original) => {
+vi.mock(import('../../src/staging/staged.js'), async (original) => {
   const staged = await original();
   return {
     ...staged,
@@ -22,7 +22,7 @@ vi.mock(import('../src/staged.js'), async (original) => {
   };
 });
 
-const { createStagedApply } = await import('../src/staged.js');
+const { createStagedApply } = await import('../../src/staging/staged.js');
 
 const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-batch-races-')));
 

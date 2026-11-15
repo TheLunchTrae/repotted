@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'vitest';
 
-import type { Change } from '../src/change.js';
-import { GitHubError, responseError } from '../src/github.js';
-import { lockChanges } from '../src/permissions.js';
-import { ApplyError, createPlan, failureReason } from '../src/plan.js';
-import { readAccess } from '../src/repositories.js';
-import { FakeGitHub, type FakeInstallation } from './fake-github.js';
+import { GitHubError, responseError } from '../../src/github/client.js';
+import { lockChanges } from '../../src/github/permissions.js';
+import { readAccess } from '../../src/github/repositories.js';
+import type { Change } from '../../src/plan/change.js';
+import { ApplyError, createPlan, failureReason } from '../../src/plan/plan.js';
+import { FakeGitHub, type FakeInstallation } from '../support/fake-github.js';
 
 const app = { owner: 'lunch', name: 'app' };
 const lunchApp = { full_name: 'lunch/app', private: false, permissions: { admin: true } };

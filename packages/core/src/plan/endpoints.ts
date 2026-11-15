@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
+import { type GitHub, GitHubError, type Method, repoPath, type RepoRef } from '../github/client.js';
+import { requiredPermission } from '../github/permissions.js';
 import type { Change, Section, SectionPlan, SettingsSection, SkipCause, Warning } from './change.js';
-import { type GitHub, GitHubError, type Method, repoPath, type RepoRef } from './github.js';
 import { fieldChanges } from './match.js';
-import { requiredPermission } from './permissions.js';
 
 interface EndpointBase {
   readonly key: string;

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
-import { GitHubError, responseError } from '../src/github.js';
-import { currentUser, listRepositories } from '../src/repositories.js';
-import { FakeGitHub, type FakeRepository } from './fake-github.js';
+import { GitHubError, responseError } from '../../src/github/client.js';
+import { currentUser, listRepositories } from '../../src/github/repositories.js';
+import { FakeGitHub, type FakeRepository } from '../support/fake-github.js';
 
 function repositories(prefix: string, count: number, extra: Partial<FakeRepository> = {}): FakeRepository[] {
   return Array.from({ length: count }, (_, index) => ({
