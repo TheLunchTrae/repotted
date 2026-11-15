@@ -894,6 +894,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
       : rows.find((row) => row.savedName === openName.current));
   openName.current = typeof open?.entry?.['name'] === 'string' ? open.entry['name'].trim() : undefined;
   const add = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLUListElement>(null);
   const shown = open?.entry === undefined ? undefined : open;
   // Once the open entry is gone, as after a reset of a new one, the list shows.
   useEffect(() => {
@@ -905,7 +906,11 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
   const wasOpen = useRef(false);
   useEffect(() => {
     if (wasOpen.current && shown === undefined) {
-      add.current?.focus();
+      if (add.current?.disabled === false) {
+        add.current.focus();
+      } else {
+        list.current?.querySelector<HTMLButtonElement>('button.row:not(:disabled)')?.focus();
+      }
     }
     wasOpen.current = shown !== undefined;
   }, [shown]);
@@ -949,7 +954,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
         </button>
       </div>
       {rows.length > 0 && (
-        <ul class="rows">
+        <ul class="rows" ref={list}>
           {rows.map((row) => {
             const entry = row.entry;
             const name = entry === undefined ? (row.savedName ?? '') : text(entry['name']);

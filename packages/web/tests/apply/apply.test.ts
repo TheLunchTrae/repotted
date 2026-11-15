@@ -632,7 +632,7 @@ test('one-off edits open without waiting for what the installation was given', a
   expect(pagesTurnedOff(apply)).toBe(true);
 });
 
-test('an access read that lands after its editor was left changes only that editor, never the one open now', async () => {
+test('an access read that lands after its editor was left changes neither that editor nor the one open now', async () => {
   await saved();
   const github = new GitHubWithHeldReads({ account: installedWithoutPages });
   const apply = new Apply(github, () => undefined);
@@ -686,6 +686,31 @@ test('an access read that fails turns nothing off, and one refused for a lost si
   await lostApply.pickUp('lunch/app');
   await vi.waitFor(() => {
     expect(signedOut).toHaveBeenCalledOnce();
+  });
+});
+
+test('an apply left or discarded after a review reads the access again for its next edits', async () => {
+  await saved();
+  const github = new FakeGitHub({ account: installedWithoutPages });
+  const apply = new Apply(github, () => undefined);
+  const installationReads = (): number =>
+    github.calls.filter((call) => call.path.startsWith('/user/installations?')).length;
+
+  await apply.start('lunch/app', profile);
+  await apply.review();
+  apply.close();
+  const beforePickUp = installationReads();
+  await apply.pickUp('lunch/app');
+  await vi.waitFor(() => {
+    expect(installationReads()).toBe(beforePickUp + 1);
+  });
+
+  await apply.review();
+  await apply.discard();
+  const beforeStart = installationReads();
+  await apply.start('lunch/app', profile);
+  await vi.waitFor(() => {
+    expect(installationReads()).toBe(beforeStart + 1);
   });
 });
 

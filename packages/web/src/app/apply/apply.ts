@@ -159,6 +159,7 @@ export class Apply {
     if (this.#writing()) {
       return;
     }
+    this.#lastAppAccessRead = undefined;
     const unfinished = await this.unfinished(repository);
     // Looked at again, since an apply may have begun to write while the browser's files were read.
     if (this.#writing()) {
@@ -181,6 +182,7 @@ export class Apply {
     if (this.#writing()) {
       return;
     }
+    this.#lastAppAccessRead = undefined;
     const unfinished = await this.unfinished(repository);
     if (this.#writing()) {
       return;
@@ -420,6 +422,7 @@ export class Apply {
       return;
     }
     this.#turn += 1;
+    this.#lastAppAccessRead = undefined;
     await forget(state.repository);
     this.editor.value = undefined;
     this.state.value = { kind: 'idle' };
@@ -445,11 +448,14 @@ export class Apply {
   }
 
   async #review(repository: string, notice: string | undefined): Promise<ApplyState> {
+    const turn = this.#turn;
     const [staged, access] = await Promise.all([
       planStagedApply(this.#github, stagedFile(repository)),
       readAccess(this.#github, parseRepo(repository)),
     ]);
-    this.#lastAppAccessRead = { repository, app: access.app };
+    if (turn === this.#turn) {
+      this.#lastAppAccessRead = { repository, app: access.app };
+    }
     // An apply picked up goes by the profile it started from, which may not be the one picked now.
     const profile = profileNameOfApply(staged.staged.base);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));
