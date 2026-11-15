@@ -20,8 +20,10 @@ out for the narrow screen:
 - The header is one row: **Repotted**, then your avatar with a menu icon.
   That menu holds **Repositories**, **Profiles** and **Settings**, then your
   account, **Add repositories** and **Sign out**.
-- A repository's details open as a screen of their own; the back button
-  returns to the list.
+- A repository's details open as a screen of their own; **Repositories**, at
+  its top, or the browser's back returns to the list.
+- With repositories selected, their panel follows the list rather than
+  sitting beside it.
 - The profiles list and an open profile are two screens; **All profiles**
   returns to the list.
 - A page's bar of actions, as when applying changes or editing a profile,
