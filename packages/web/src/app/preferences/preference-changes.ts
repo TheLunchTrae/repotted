@@ -75,8 +75,8 @@ function repositoryChange(action: string, nounQualifier: string, name: string): 
 
 /**
  * Pairs each folder gone with the folder made that shares the most
- * repositories with it, as a rename; a lone folder gone and a lone folder
- * made are a rename too. Changes saved together, such as a rename and a move
+ * repositories with it, as a rename; a lone empty folder gone and a lone
+ * folder made are a rename too. Changes saved together, such as a rename and a move
  * into the folder, are one commit, so the repositories need not match.
  */
 function folderRenames(gone: readonly Folder[], made: readonly Folder[]): Map<Folder, Folder> {
@@ -97,7 +97,13 @@ function folderRenames(gone: readonly Folder[], made: readonly Folder[]): Map<Fo
   }
   const [loneGone] = gone;
   const [loneMade] = made;
-  if (gone.length === 1 && made.length === 1 && loneGone !== undefined && loneMade !== undefined) {
+  if (
+    gone.length === 1 &&
+    made.length === 1 &&
+    loneGone !== undefined &&
+    loneMade !== undefined &&
+    loneGone.repositories.length === 0
+  ) {
     renamedTo.set(loneGone, loneMade);
   }
   return renamedTo;

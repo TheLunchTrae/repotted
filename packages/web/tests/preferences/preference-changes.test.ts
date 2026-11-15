@@ -132,6 +132,15 @@ test('a folder renamed into one already there is deleted, and its repositories m
   ).toBe('Delete folder: Old; move repository to folder Home: octo/app');
 });
 
+test('a folder deleted and another made in one save are not a rename', () => {
+  expect(
+    message(
+      { [repositoryFoldersKey]: [{ name: 'Old', repositories: ['octo/a', 'octo/b'] }] },
+      { [repositoryFoldersKey]: [{ name: 'New', repositories: [] }] },
+    ),
+  ).toBe('Create folder: New; delete folder: Old');
+});
+
 test('an empty folder renamed is a rename', () => {
   expect(
     message(
