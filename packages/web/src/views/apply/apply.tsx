@@ -283,7 +283,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 <p class="muted small">
                   {state.assignment.recordsVersions
                     ? 'Deselect it for a one-time apply. The repository keeps no record of the profile.'
-                    : 'Deselect it for a one-time apply. Since this apply leaves some of the profile out or edits it, the profile is added as not applied yet.'}
+                    : 'Deselect it for a one-time apply. Since this apply leaves some of the profile out, edits it, or skips a setting GitHub refused to show, the profile is added as not applied yet.'}
                 </p>
               </div>
             )}
@@ -291,7 +291,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
               <p class="muted small">
                 {state.assignment.recordsVersions
                   ? "Applying records this version of the repository's profiles as applied."
-                  : "This apply leaves some of the repository's profiles out or edits them, so it doesn't record them as applied."}
+                  : "This apply leaves some of the repository's profiles out, edits them, or skips a setting GitHub refused to show, so it doesn't record them as applied."}
               </p>
             )}
             {state.warnings.length > 0 && (

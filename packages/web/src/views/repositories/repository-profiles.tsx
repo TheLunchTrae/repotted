@@ -1,10 +1,11 @@
 import type { JSX } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useState } from 'preact/hooks';
 
 import type { ComparedProfile } from '../../app/apply/comparison.js';
 import type { Profiles } from '../../app/profiles/profiles.js';
 import type { Repository } from '../../app/repositories/repositories.js';
 import type { AssignmentStatus, RepositoryProfiles } from '../../app/repositories/repository-profiles.js';
+import { useModal } from '../layout/shell.js';
 
 /** As the list names a profile: by its path, without `.yaml`, which tells two of one name apart. */
 function shownName(profilePath: string): string {
@@ -217,7 +218,7 @@ interface EditDialogProps {
 
 /** Saving changes the list alone: nothing is applied until an apply is reviewed. */
 export function EditProfilesDialog({ repository, assignments, profiles, onClose }: EditDialogProps): JSX.Element {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const [list, setList] = useState<readonly string[]>(() => assignments.profilesOf(repository.full_name));
   const choices = profiles.listings.value
     .filter((listing) => listing.problem === null)
@@ -225,9 +226,6 @@ export function EditProfilesDialog({ repository, assignments, profiles, onClose 
     .filter((profilePath) => !list.includes(profilePath));
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const adding = choices.find((profilePath) => profilePath === picked) ?? choices[0];
-  useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
   const moved = (from: number, to: number): void => {
     const next = [...list];
     const [item] = next.splice(from, 1);

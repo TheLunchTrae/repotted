@@ -405,3 +405,18 @@ test('an apply recorded after its repository stopped using any profile adds noth
 
   expect(assignments.assignment('lunch/app')).toBeUndefined();
 });
+
+test('an apply that skips a setting GitHub refused to show records no versions, since granting access can change it', async () => {
+  const listings = await profiles({ 'base.yaml': 'actions:\n  max_cache_retention_days: 30\n' });
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['base.yaml']);
+  const refusing = new FakeGitHub().fail(
+    'GET /repos/lunch/app/actions/cache/retention-limit',
+    answered(402, 'Please ensure your account has a valid payment method on file to access this service.'),
+  );
+
+  const apply = await appliedTogether(assignments, refusing, ['base.yaml']);
+
+  expect(apply.state.value).toMatchObject({ assignment: { kind: 'own', recordsVersions: false } });
+  expect(apply.canRecordWithoutChanges.value).toBe(false);
+});

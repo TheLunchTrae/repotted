@@ -244,7 +244,8 @@ phone, tap the repository to see them in its panel.
 When you apply a profile the repository doesn't use, the review has a
 selected box to add it to the repository's profiles when it applies.
 Deselect it for a one-time apply, which leaves no record on the repository.
-An apply that leaves a change out, or has one-off edits, doesn't count as
+An apply that leaves a change out, has one-off edits, or skips a setting
+GitHub refused to show doesn't count as
 applying the profiles, so the repository still shows them as not applied or
 changed.
 

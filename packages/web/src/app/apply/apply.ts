@@ -35,8 +35,8 @@ export type AssignmentOffer =
   | { readonly kind: 'none' }
   /**
    * The apply is of the repository's own profiles, in its order. It records the
-   * versions applied only when it gives what they set, with nothing left out
-   * and no one-off edit.
+   * versions applied only when it gives what they set: nothing left out, no
+   * one-off edit, and no setting GitHub refused to show.
    */
   | { readonly kind: 'own'; readonly recordsVersions: boolean }
   /** The apply is of one profile the repository doesn't use, which it can add to the end of its list. */
@@ -514,9 +514,14 @@ export class Apply {
   async #assignmentOf(
     repository: string,
     staged: StagedApply,
+    plan: Plan,
   ): Promise<{ assignment: AssignmentOffer; appliedVersions: readonly AppliedVersion[] }> {
     const files = staged.profiles;
-    const recordsVersions = staged.exclude.length === 0 && !hasOneOffEdits(staged);
+    // A read GitHub refused, as for a missing permission, compared nothing there, and granting it can change the plan.
+    const recordsVersions =
+      staged.exclude.length === 0 &&
+      !hasOneOffEdits(staged) &&
+      !plan.warnings.some((warning) => warning.cause === 'refused');
     const paths = files.map((file) => this.#assignments.pathOf(file));
     const inFolder = paths.filter((path) => path !== undefined);
     if (inFolder.length === 0 || inFolder.length !== paths.length) {
@@ -581,7 +586,7 @@ export class Apply {
     // An apply picked up goes by the profile it started from, which may not be the one picked now.
     const profile = profileNameOfApply(staged.staged.profiles);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));
-    const { assignment, appliedVersions } = await this.#assignmentOf(repository, staged.staged);
+    const { assignment, appliedVersions } = await this.#assignmentOf(repository, staged.staged, staged.plan);
     return {
       assignment,
       appliedVersions,
