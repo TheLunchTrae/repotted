@@ -5,8 +5,9 @@ import { phoneMediaQuery } from './phone.js';
 
 /**
  * Wider than a phone, a menu panel opens from its button's start edge, so a
- * button late in a toolbar can push it past the page's end. On opening, such
- * a panel opens toward the start instead, when that keeps it on the page.
+ * button late in a toolbar can push it past the page's end. Such a panel
+ * opens toward the start instead, when that keeps it on the page, and is
+ * placed again whenever it, its button or the window changes size.
  */
 export function useMenuPanelKeptOnPage(menu: RefObject<HTMLDetailsElement | null>): void {
   useEffect(() => {
@@ -14,12 +15,12 @@ export function useMenuPanelKeptOnPage(menu: RefObject<HTMLDetailsElement | null
     if (element === null) {
       return;
     }
+    const panel = element.querySelector<HTMLElement>(':scope > .menu-panel');
+    const summary = element.querySelector<HTMLElement>(':scope > summary');
+    if (panel === null || summary === null) {
+      return;
+    }
     const place = (): void => {
-      const panel = element.querySelector<HTMLElement>(':scope > .menu-panel');
-      const summary = element.querySelector<HTMLElement>(':scope > summary');
-      if (panel === null || summary === null) {
-        return;
-      }
       delete panel.dataset['opensToward'];
       if (!element.open || matchMedia(phoneMediaQuery).matches) {
         return;
@@ -31,9 +32,18 @@ export function useMenuPanelKeptOnPage(menu: RefObject<HTMLDetailsElement | null
         panel.dataset['opensToward'] = 'start';
       }
     };
-    element.addEventListener('toggle', place);
+    // The open attribute changes within the click that opens the menu, while
+    // the toggle event comes a task later, after the panel may have shown off the page.
+    const openChanges = new MutationObserver(place);
+    openChanges.observe(element, { attributes: true, attributeFilter: ['open'] });
+    const sizeChanges = new ResizeObserver(place);
+    sizeChanges.observe(panel);
+    sizeChanges.observe(summary);
+    window.addEventListener('resize', place);
     return () => {
-      element.removeEventListener('toggle', place);
+      openChanges.disconnect();
+      sizeChanges.disconnect();
+      window.removeEventListener('resize', place);
     };
   }, [menu]);
 }
