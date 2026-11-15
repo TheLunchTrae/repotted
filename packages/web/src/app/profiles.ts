@@ -32,7 +32,6 @@ import { SerialQueue } from './serial-queue.js';
 
 export type ProfileListing = Awaited<ReturnType<typeof listProfiles>>[number];
 
-/** Where the profiles are kept: in this browser only, in a folder on this computer, or in a folder of a GitHub repository. */
 export type ProfilesSource =
   | { readonly kind: 'browser' }
   | { readonly kind: 'folder'; readonly name: string }
@@ -44,35 +43,28 @@ export type SyncState =
   | { readonly status: 'synced'; readonly pulled: number; readonly pushed: number }
   | { readonly status: 'failed'; readonly message: string };
 
-/** What a new profile starts from. */
 export type NewProfileStart =
   | { readonly kind: 'empty' }
-  /** It extends this profile, so it gets every setting that one sets. */
   | { readonly kind: 'extends'; readonly base: ProfileListing }
-  /** It describes this repository, `owner/name`, as it is on GitHub now. */
   | { readonly kind: 'repository'; readonly repository: string };
 
 export interface NewProfile {
   readonly name: string;
-  /** The folder it goes in, from the profiles folder; '' for the profiles folder itself. */
+  /** From the profiles folder; '' for the profiles folder itself. */
   readonly folder: string;
   readonly start: NewProfileStart;
-  /**
-   * What owns the repositories it is for. A capture takes the repository's
-   * owner type, and a profile that extends a typed one takes that type.
-   */
+  /** A capture takes the repository's owner type, and a profile that extends a typed one takes that type. */
   readonly ownerType: OwnerType | undefined;
 }
 
 // Names no file can have on Windows, where a config repository's profiles may also be used.
 const windowsNames = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu;
 
-/** A folder of profiles in the sidebar, with the folders and profiles in it that show. */
 export interface ProfileFolderNode {
   readonly name: string;
-  /** Its path from the profiles folder, with `/` separators; '' for the profiles folder itself. */
+  /** From the profiles folder, with `/` separators; '' for the profiles folder itself. */
   readonly path: string;
-  /** How many profiles show in it and the folders under it. */
+  /** Counts the profiles that show in it and in the folders under it. */
   readonly count: number;
   readonly open: boolean;
   readonly folders: readonly ProfileFolderNode[];
@@ -118,7 +110,7 @@ async function exists(file: string): Promise<boolean> {
   );
 }
 
-/** Every profile file under a folder, by its path from that folder. Hidden files and folders stay out, as in a sync. */
+/** Hidden files and folders stay out, as in a sync. */
 async function profileFiles(folder: string, prefix = ''): Promise<string[]> {
   const files: string[] = [];
   for (const entry of await readdir(join(folder, prefix), { withFileTypes: true })) {
@@ -135,11 +127,7 @@ async function profileFiles(folder: string, prefix = ''): Promise<string[]> {
   return files;
 }
 
-/**
- * The profiles: where they are kept, how the last sync went, with GitHub or a folder on this computer,
- * and the list the sidebar shows. Syncs and changes to the folder take
- * turns, so a sync never reads a folder that is being changed.
- */
+/** Syncs and changes to the folder take turns, so a sync never reads a folder that is being changed. */
 export class Profiles {
   readonly source = signal<ProfilesSource>({ kind: 'browser' });
   readonly sync = signal<SyncState>({ status: 'none' });
@@ -151,18 +139,14 @@ export class Profiles {
   /** Whether a sync, a listing, or a change of where profiles are kept is under way. */
   readonly busy = signal(false);
   readonly search = signal('');
-  /** Why the last try to keep profiles in a repository or a folder failed, until the next change of where they are kept. */
+  /** Until the next change of where profiles are kept. */
   readonly connectError = signal<string | undefined>(undefined);
-  /**
-   * Whether the browser wants the user's leave again before the folder on
-   * this computer can be used, as it does on each visit.
-   */
+  /** The browser wants the user's leave again on each visit before the folder on this computer can be used. */
   readonly needsFolderAccess = signal(false);
-  /** What a capture left out of the profile it made, for that profile's page. */
+  /** What a capture left out of the profile it made. */
   readonly captureWarnings = signal<{ readonly file: string; readonly warnings: readonly string[] } | undefined>(
     undefined,
   );
-  /** The open profile's file as it is saved, once read. */
   readonly opened = signal<{ readonly file: string; readonly text: string } | undefined>(undefined);
 
   readonly #github: GitHub;
@@ -171,7 +155,7 @@ export class Profiles {
   readonly #queue = new SerialQueue();
   readonly #closedFolders = signal<ReadonlySet<string>>(new Set());
   readonly #selectedFile = signal<string | undefined>(undefined);
-  /** An editor for each profile opened since profiles were last moved, so unsaved changes outlast a look at another profile. */
+  /** One for each profile opened since profiles were last moved, so unsaved changes outlast a look at another profile. */
   readonly #editors = signal<readonly ProfileEditor[]>([]);
   /** The files that captures under way will make, so no other new profile takes their names. */
   readonly #capturing = new Set<string>();
@@ -190,20 +174,16 @@ export class Profiles {
     }
   }
 
-  /** The folder that holds the profiles, in the engine's files. */
   readonly folder = computed(() => folderOf(this.source.value));
 
-  /** The open profile's editor. */
   readonly editor = computed(() => this.#editors.value.find((editor) => editor.file === this.#selectedFile.value));
 
-  /** The profiles with changes that aren't saved, by file. */
   readonly unsaved = computed<ReadonlySet<string>>(
     () => new Set(this.#editors.value.filter((editor) => editor.dirty.value).map((editor) => editor.file)),
   );
 
   readonly selected = computed(() => this.listings.value.find((listing) => listing.file === this.#selectedFile.value));
 
-  /** The profiles with changes that aren't saved, each by its path from the profiles folder without its ending. */
   readonly unsavedNames = computed(() =>
     this.listings.value
       .filter((listing) => this.unsaved.value.has(listing.file))
@@ -211,12 +191,11 @@ export class Profiles {
   );
 
   /**
-   * Saves every profile with unsaved changes, each in its own turn of the
-   * queue as a save of the open one has. It answers `unsaved` when one
-   * keeps its changes: one that can't be saved, as with a value that isn't
-   * valid, and one with a draft, which a save here would apply unseen. It
-   * answers `unsynced` when all are saved in this browser but the last sync
-   * failed or left a conflict, so where the profiles are kept lacks them.
+   * Answers `unsaved` when a profile keeps its changes: one that can't be
+   * saved, as with a value that isn't valid, and one with a draft, which a
+   * save here would apply unseen. Answers `unsynced` when all are saved in
+   * this browser but the last sync failed or left a conflict, so where the
+   * profiles are kept lacks them.
    */
   async saveAll(): Promise<'saved' | 'unsaved' | 'unsynced'> {
     for (const editor of this.#editors.value.filter((item) => item.dirty.value && item.draftCount.value === 0)) {
@@ -228,14 +207,12 @@ export class Profiles {
     return this.sync.value.status === 'failed' || this.conflicts.value.length > 0 ? 'unsynced' : 'saved';
   }
 
-  /** Drops every profile's unsaved changes. */
   async discardAll(): Promise<void> {
     for (const editor of this.#editors.value.filter((item) => item.dirty.value)) {
       await editor.resetAll();
     }
   }
 
-  /** The profiles folder as the sidebar draws it: the profiles whose name or folder holds the search, by folder. */
   readonly tree = computed<ProfileFolderNode>(() => {
     const words = this.search.value.trim().toLowerCase();
     const shown = this.listings.value.filter((listing) =>
@@ -262,12 +239,10 @@ export class Profiles {
     return build('');
   });
 
-  /** Whether this browser can keep profiles in a folder on the computer. */
   get foldersSupported(): boolean {
     return this.#folders?.supported ?? false;
   }
 
-  /** Syncs with GitHub or the folder on this computer when the profiles are kept there, then lists the folder. */
   refresh(): Promise<void> {
     return this.#work(async () => {
       await this.#sync({});
@@ -276,12 +251,11 @@ export class Profiles {
   }
 
   /**
-   * Keeps the profiles in a folder on this computer from now on, which the
-   * user picks, after a first sync with it. `addLocal` first copies the
-   * profiles kept now beside the folder's own, skipping names it already
-   * has. It answers why it couldn't, having left where profiles are kept as
-   * it was; picking no folder is no failure. It must be called from a press
-   * of a button, since the browser's picker needs one.
+   * `addLocal` first copies the profiles kept now beside the picked folder's
+   * own, skipping names it already has. It answers why it couldn't, having
+   * left where profiles are kept as it was; picking no folder is no failure.
+   * It must be called from a press of a button, since the browser's picker
+   * needs one.
    */
   async useFolder(addLocal: boolean): Promise<string | undefined> {
     if (this.unsaved.value.size > 0) {
@@ -354,10 +328,7 @@ export class Profiles {
     }
   }
 
-  /**
-   * Asks the browser to let the page use the folder on this computer again,
-   * then syncs with it. It must be called from a press of a button.
-   */
+  /** Must be called from a press of a button. */
   async allowFolder(): Promise<void> {
     let allowed = false;
     try {
@@ -376,14 +347,14 @@ export class Profiles {
     }
   }
 
-  /** Why profiles kept in a folder on this computer can't move elsewhere yet, when the folder lacks changes made here. */
+  /** Why profiles kept in a folder on this computer can't move elsewhere yet: the folder lacks changes made here. */
   async #unsynced(): Promise<string | undefined> {
     return this.source.value.kind === 'folder' && (await unsyncedFiles(this.folder.value)).size > 0
       ? unsyncedFirst
       : undefined;
   }
 
-  /** Settles every conflict for one side: `local` keeps this browser's versions, `remote` takes GitHub's or the folder's. */
+  /** `local` keeps this browser's versions, `remote` takes GitHub's or the folder's. */
   keep(prefer: 'local' | 'remote'): Promise<void> {
     return this.#work(async () => {
       await this.#sync({ prefer, only: this.conflicts.value });
@@ -392,10 +363,9 @@ export class Profiles {
   }
 
   /**
-   * Keeps the profiles in a GitHub repository from now on, after a first
-   * sync with it. `addLocal` first copies the profiles kept now into the
-   * repository's copy, skipping names it already has. It answers why it
-   * couldn't, having left where profiles are kept as it was.
+   * `addLocal` first copies the profiles kept now into the repository's
+   * copy, skipping names it already has. It answers why it couldn't, having
+   * left where profiles are kept as it was.
    */
   connect(repository: string, path: string, addLocal: boolean): Promise<string | undefined> {
     return this.#work(async () => {
@@ -466,10 +436,7 @@ export class Profiles {
     }
   }
 
-  /**
-   * Keeps the profiles in this browser only from now on. A repository keeps
-   * every profile it has. Unsaved changes hold it back, with why in `connectError`.
-   */
+  /** A repository keeps every profile it has. Unsaved changes hold it back, with why in `connectError`. */
   keepInBrowser(): Promise<void> {
     return this.#work(async () => {
       if (this.unsaved.value.size > 0) {
@@ -493,7 +460,7 @@ export class Profiles {
     });
   }
 
-  /** Every folder that holds a profile, from the profiles folder, with '' for the profiles folder itself first. */
+  /** From the profiles folder, with '' for the profiles folder itself first. */
   readonly folders = computed<readonly string[]>(() => {
     const folders = new Set(['']);
     for (const listing of this.listings.value) {
@@ -503,7 +470,6 @@ export class Profiles {
     return [...folders].sort();
   });
 
-  /** Why a new profile can't have this name in this folder, or undefined when it can. */
   nameProblem(name: string, folder: string): string | undefined {
     const trimmed = name.trim();
     if (trimmed === '') {
@@ -532,10 +498,9 @@ export class Profiles {
   }
 
   /**
-   * Makes a profile and opens it. It never replaces a file that is there. A
-   * capture reads GitHub first, outside the queue, and holds its name
-   * meanwhile; a `signal` aborted before it ends leaves nothing behind. It
-   * answers why it couldn't.
+   * Never replaces a file that is there. A capture reads GitHub first,
+   * outside the queue, and holds its name meanwhile; a `signal` aborted
+   * before it ends leaves nothing behind. It answers why it couldn't.
    */
   async create(profile: NewProfile, signal?: AbortSignal): Promise<string | undefined> {
     const problem = this.nameProblem(profile.name, profile.folder);
@@ -609,7 +574,7 @@ export class Profiles {
     });
   }
 
-  /** The listed profiles that extend this one, directly or through another, which stop loading without it. */
+  /** Directly or through another: they stop loading without this profile. */
   dependents(listing: ProfileListing): readonly ProfileListing[] {
     const found = new Set<string>([listing.file]);
     for (let grew = true; grew;) {
@@ -624,10 +589,6 @@ export class Profiles {
     return this.listings.value.filter((other) => other.file !== listing.file && found.has(other.file));
   }
 
-  /**
-   * Deletes a profile's file, after any sync under way, and commits that when
-   * profiles are kept on GitHub. It answers why it couldn't.
-   */
   remove(listing: ProfileListing): Promise<string | undefined> {
     return this.#work(async () => {
       // The list may have been read again, from another place, since the user asked.
@@ -646,7 +607,6 @@ export class Profiles {
     });
   }
 
-  /** Opens a profile from the list, or with undefined leaves none open. */
   async select(listing: ProfileListing | undefined): Promise<void> {
     this.#selectedFile.value = listing?.file;
     this.opened.value = undefined;
@@ -670,9 +630,9 @@ export class Profiles {
   }
 
   /**
-   * Saves the open profile's changes in one turn of the queue. When profiles
-   * are kept on GitHub, a sync first brings in what changed there, so the
-   * save lands on the file as it is now, and a sync after commits it.
+   * When profiles are kept on GitHub, a sync first brings in what changed
+   * there, so the save lands on the file as it is now, and a sync after
+   * commits it.
    */
   async save(mode: SaveMode = 'applies'): Promise<void> {
     await this.editor.value?.save((write) => this.#write(write), mode);
@@ -687,12 +647,10 @@ export class Profiles {
     await this.#write(work);
   }
 
-  /** Makes the open profile one for another kind of owner, in a turn of the queue as a save has. */
   async changeOwnerType(type: OwnerChoice): Promise<void> {
     await this.editor.value?.changeOwnerType((write) => this.#write(write), type);
   }
 
-  /** Takes the open profile's draft out of its file, in a turn of the queue as a save has. */
   async discardDraft(): Promise<void> {
     await this.editor.value?.discardDraft((write) => this.#write(write));
   }
@@ -706,7 +664,7 @@ export class Profiles {
     });
   }
 
-  /** What an editor asks GitHub: a sign-in GitHub refuses there goes to the sign-in page, as anywhere. */
+  /** A sign-in GitHub refuses on an editor's request goes to the sign-in page, as anywhere. */
   async #asking<Answer>(asked: Promise<Answer>): Promise<Answer> {
     try {
       return await asked;
@@ -726,7 +684,6 @@ export class Profiles {
     this.#closedFolders.value = closed;
   }
 
-  /** A profile's path from the profiles folder, as the user knows it. */
   pathOf(listing: ProfileListing): string {
     return relative(this.folder.value, listing.file);
   }

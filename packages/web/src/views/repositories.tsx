@@ -5,7 +5,7 @@ import type { AddressedRepository } from '../app/addressed-repository.js';
 import type { Apply } from '../app/apply.js';
 import type { BatchApply } from '../app/batch-apply.js';
 import type { ComparedProfile } from '../app/comparison.js';
-import { installUrl } from '../app/github-app.js';
+import { repottedAppInstallUrl } from '../app/github-app.js';
 import type { Profiles } from '../app/profiles.js';
 import { type FolderGroup, refreshPause, type Repositories, type Repository } from '../app/repositories.js';
 import { usePhone } from './phone.js';
@@ -1081,7 +1081,7 @@ export function RepositoriesPage({
           </div>
           <div class="page-actions">
             {fromApp && total > 0 && (
-              <a class="button" href={installUrl} target="_blank" rel="noreferrer">
+              <a class="button" href={repottedAppInstallUrl} target="_blank" rel="noreferrer">
                 Add repositories
               </a>
             )}
@@ -1113,7 +1113,7 @@ export function RepositoriesPage({
                 : 'Your account administers no repositories.'}
             </p>
             {fromApp && (
-              <a class="button button-primary" href={installUrl} target="_blank" rel="noreferrer">
+              <a class="button button-primary" href={repottedAppInstallUrl} target="_blank" rel="noreferrer">
                 Add repositories
               </a>
             )}

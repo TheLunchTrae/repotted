@@ -9,7 +9,7 @@ import {
   type Entry,
   hexColor,
   isEntry,
-  linesOf,
+  uniqueTrimmedNonBlankLines,
   refNames,
   ruleOf,
   statusChecks,
@@ -336,7 +336,7 @@ function RulesetForm({ entry, saved, change, pushes }: FormProps & { readonly pu
       value={refNames(entry, side).join('\n')}
       note={note}
       onText={(typed) => {
-        change(withRefNames(entry, side, linesOf(typed), saved));
+        change(withRefNames(entry, side, uniqueTrimmedNonBlankLines(typed), saved));
         return undefined;
       }}
     />
@@ -450,7 +450,7 @@ function RulesetForm({ entry, saved, change, pushes }: FormProps & { readonly pu
                   value={statusChecks(entry).join('\n')}
                   note="One check a line, by the name it reports."
                   onText={(typed) => {
-                    change(withStatusChecks(entry, linesOf(typed)));
+                    change(withStatusChecks(entry, uniqueTrimmedNonBlankLines(typed)));
                     return undefined;
                   }}
                 />
@@ -486,7 +486,7 @@ function EnvironmentForm({ entry, saved, change }: FormProps): JSX.Element {
       value={branchPolicies(entry, type).join('\n')}
       note={type === 'branch' ? 'One pattern a line, such as main or release/*.' : 'One pattern a line, such as v*.'}
       onText={(typed) => {
-        change(withBranchPolicies(entry, type, linesOf(typed)));
+        change(withBranchPolicies(entry, type, uniqueTrimmedNonBlankLines(typed)));
         return undefined;
       }}
     />
@@ -648,7 +648,7 @@ function LabelForm({ entry, change, savedName }: FormProps & { readonly savedNam
           value={renamedFrom.join('\n')}
           note="One old name a line."
           onText={(typed) => {
-            const names = linesOf(typed);
+            const names = uniqueTrimmedNonBlankLines(typed);
             change(withKey(entry, 'renamed_from', names.length > 0 ? names : undefined));
             return undefined;
           }}

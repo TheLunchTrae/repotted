@@ -85,7 +85,7 @@ test('a sign-in GitHub stops accepting returns to the sign-in page with why', as
   const account = new Account(session(), new FakeGitHub());
   await account.load();
 
-  account.refused();
+  account.gitHubRefusedSignIn();
 
   expect(account.state.value).toEqual({
     status: 'signed-out',
@@ -98,7 +98,7 @@ test('a refusal that arrives after a sign-out leaves what the sign-out said', as
   await account.load();
   await account.signOut();
 
-  account.refused();
+  account.gitHubRefusedSignIn();
 
   expect(account.state.value).toEqual({ status: 'signed-out', message: 'Signed out.' });
 });

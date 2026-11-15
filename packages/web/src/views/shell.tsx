@@ -2,7 +2,7 @@ import type { ComponentChildren, JSX, RefObject } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
-import { installUrl } from '../app/github-app.js';
+import { repottedAppInstallUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
 import { Link } from './link.js';
 import { usePhone } from './phone.js';
@@ -109,7 +109,7 @@ function AccountMenu({ account, user, router, onSignOut, pages }: AccountMenuPro
             Settings
           </Link>
         )}
-        <a class="menu-item" href={installUrl} target="_blank" rel="noreferrer">
+        <a class="menu-item" href={repottedAppInstallUrl} target="_blank" rel="noreferrer">
           Add repositories
         </a>
         <button class="menu-item" type="button" disabled={account.signingOut.value} onClick={onSignOut}>

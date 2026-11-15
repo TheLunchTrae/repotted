@@ -1,7 +1,6 @@
 import { signal } from '@preact/signals';
 
-/** A path without the slashes at its end, so `/profiles/` is the page `/profiles` is. */
-function clean(path: string): string {
+function withoutTrailingSlashes(path: string): string {
   return path.replace(/(?<=.)\/+$/u, '');
 }
 
@@ -14,15 +13,12 @@ function isQueryEntry(state: unknown): state is QueryEntry {
   return typeof state === 'object' && state !== null && typeof (state as Partial<QueryEntry>).from === 'string';
 }
 
-/** The page's address within the app, which follows the browser's history. */
 export class Router {
   readonly path = signal('/');
-  /** The address's query, such as `?repository=octo/app`, or empty. */
   readonly search = signal('');
 
   readonly #history: Pick<History, 'pushState' | 'replaceState' | 'back' | 'state'>;
-  /** Whether a back this router asked for is under way, until the browser says it arrived. */
-  #returning = false;
+  #browserBackUnderWay = false;
 
   constructor(
     location: Pick<Location, 'pathname' | 'search'>,
@@ -30,20 +26,16 @@ export class Router {
     window: { addEventListener(type: 'popstate', listener: () => void): void },
   ) {
     this.#history = history;
-    this.path.value = clean(location.pathname);
+    this.path.value = withoutTrailingSlashes(location.pathname);
     this.search.value = location.search;
     window.addEventListener('popstate', () => {
-      this.#returning = false;
-      this.path.value = clean(location.pathname);
+      this.#browserBackUnderWay = false;
+      this.path.value = withoutTrailingSlashes(location.pathname);
       this.search.value = location.search;
     });
   }
 
-  /**
-   * Goes to an address, `/path` with an optional `?query`, in a new history
-   * entry. The page shown, without a query, is the page as it was before its
-   * query: back to that entry when it is the one before, else in place.
-   */
+  /** Going to the page shown, without a query, returns to that page as it was before its query. */
   go(address: string): void {
     const at = address.indexOf('?');
     const path = at === -1 ? address : address.slice(0, at);
@@ -61,14 +53,9 @@ export class Router {
     this.search.value = search;
   }
 
-  /**
-   * Puts this query, `?…` or empty, on the page's address: in a new history
-   * entry, so the browser's back returns to the query before it, or in place
-   * of the one shown.
-   */
   query(search: string, entry: 'push' | 'replace'): void {
     // While a back is under way, the address is the browser's to set.
-    if (search === this.search.value || this.#returning) {
+    if (search === this.search.value || this.#browserBackUnderWay) {
       return;
     }
     const address = `${this.path.value}${search}`;
@@ -82,21 +69,20 @@ export class Router {
   }
 
   /**
-   * Returns to this query on the page shown: by the browser's back when the
-   * entry before this one has it, so the history doesn't grow, else in place
-   * of the one shown. Says whether a back is under way, which sets the
-   * address once it arrives.
+   * Uses the browser's back when the entry before this one has the query, so
+   * the history doesn't grow. Returns whether a back is under way, which sets
+   * the address once it arrives.
    */
   returnTo(search: string): boolean {
     const state: unknown = this.#history.state;
-    if (this.#returning) {
+    if (this.#browserBackUnderWay) {
       return true;
     }
     if (search === this.search.value) {
       return false;
     }
     if (isQueryEntry(state) && state.from === search) {
-      this.#returning = true;
+      this.#browserBackUnderWay = true;
       this.#history.back();
       return true;
     }

@@ -20,17 +20,14 @@ import { searchWords } from './setting-search.js';
 
 type Change = Plan['changes'][number];
 
-/** One difference: something the profile names, what GitHub has of it now, and what the profile wants. */
 export interface CompareRow {
-  /** Whether the profile changes what GitHub has, adds what it lacks, or removes what it has. */
   readonly kind: 'changes' | 'adds' | 'removes';
-  /** What it is, as the editor names it: a setting's label, or an entry's name. */
   readonly label: string;
   /** Its place in the profile, such as `merge.allow_squash_merge`, or what happens to a whole entry. */
   readonly key: string;
   readonly now: string;
   readonly wanted: string;
-  /** Why Repotted can't make the change, such as "Needs Actions write"; undefined when it can. */
+  /** Why Repotted can't make the change, such as "Needs Actions write". */
   readonly lock: string | undefined;
   /** In an apply, what leaves the row's change out of it, such as `repository.has_wiki` or `rulesets/Main`. */
   readonly leaveOut?: string | undefined;
@@ -41,7 +38,7 @@ export interface CompareRow {
   readonly oneOff?: boolean;
 }
 
-/** What leaves one change of an apply's plan out, or one field of it, as the engine's staged plan lists it. */
+/** `change` is the change's index in the engine's staged plan; a null `field` leaves the whole change out. */
 export interface RowExclusion {
   readonly change: number;
   readonly field: string | null;
@@ -71,26 +68,22 @@ export interface MatchRow {
   readonly value: string | undefined;
 }
 
-/** What one section of the profile sets that needs no change. */
 export interface MatchSection {
   readonly section: Change['section'];
   readonly title: string;
   readonly rows: readonly MatchRow[];
 }
 
-/** One section of a comparison as shown: its differences, then what matches. */
 export interface ShownSection extends CompareSection {
   readonly matches: readonly MatchRow[];
 }
 
-/** A comparison that was made: what the profile would change on the repository, and what it left out. */
 export interface Compared {
   readonly repository: string;
-  /** The profile's file, and its name as the list has it. */
+  /** `file` is the profile's file, and `profile` its name as the list has it. */
   readonly file: string;
   readonly profile: string;
   readonly sections: readonly CompareSection[];
-  /** What the profile sets that needs no change, by section. */
   readonly matching: readonly MatchSection[];
   /**
    * Where the Repotted App's access to the repository is reviewed on GitHub:
@@ -98,16 +91,13 @@ export interface Compared {
    * or undefined when GitHub wouldn't say.
    */
   readonly appAccess: { readonly settings: string } | 'install' | undefined;
-  /** The profile's drafts, which a comparison leaves out, each in a few words. */
+  /** The profile's drafts, which a comparison leaves out. */
   readonly skipped: readonly string[];
-  /** What the comparison couldn't read or says beside its differences. */
   readonly warnings: readonly string[];
 }
 
-/** The profile a comparison is made with. */
 export interface ComparedProfile {
   readonly file: string;
-  /** Its name as the list has it. */
   readonly name: string;
   /** The folder the profiles are kept in, which paths in a message are given from; the profile's own when left out. */
   readonly folder?: string;
@@ -140,8 +130,7 @@ const titles: Readonly<Record<Change['section'], string>> = {
   labels: 'Labels',
 };
 
-/** The sections in the order a comparison shows them. */
-const order: readonly Change['section'][] = [
+const sectionsInShownOrder: readonly Change['section'][] = [
   'repository',
   'merge',
   'security',
@@ -167,8 +156,7 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** A value in a few words, as a row shows it. */
-function say(value: unknown, missing: string): string {
+function valueInFewWords(value: unknown, missing: string): string {
   if (value === undefined) {
     return missing;
   }
@@ -190,14 +178,13 @@ function kindOf(from: unknown, to: unknown): CompareRow['kind'] {
   return from === undefined ? 'adds' : to === undefined ? 'removes' : 'changes';
 }
 
-/** A setting's label and its values by their choice labels, as the editor has them, when it has the setting. */
 function settingNames(path: string): { label: string; named: (value: unknown) => string } {
   const field = fields.find((item) => item.path.join('.') === path);
   return {
     label: field?.label ?? path.slice(path.indexOf('.') + 1),
     named: (value) =>
       field?.options.find((option) => JSON.stringify(option.value) === JSON.stringify(value))?.label ??
-      say(value, 'Not set'),
+      valueInFewWords(value, 'Not set'),
   };
 }
 
@@ -212,10 +199,10 @@ function identityOf(item: unknown): string | undefined {
     return undefined;
   }
   if (item['actor_type'] !== undefined) {
-    return `${say(item['actor_type'], '')} ${say(item['actor_id'] ?? undefined, 'any')}`.trim();
+    return `${valueInFewWords(item['actor_type'], '')} ${valueInFewWords(item['actor_id'] ?? undefined, 'any')}`.trim();
   }
   if (item['type'] !== undefined && item['id'] !== undefined) {
-    return `${say(item['type'], '')} ${say(item['id'], '')}`;
+    return `${valueInFewWords(item['type'], '')} ${valueInFewWords(item['id'], '')}`;
   }
   const known = item['type'] ?? item['context'] ?? item['name'];
   return typeof known === 'string' ? known : undefined;
@@ -249,7 +236,6 @@ function narrowed(path: string, from: unknown, to: unknown): { path: string; fro
   return [{ path, from, to }];
 }
 
-/** The rows of one change: a row a field for a setting or a changed entry, and one row for what is made or removed whole. */
 function rowsOf(change: Change, lock: string | undefined): CompareRow[] {
   if (change.entry !== undefined) {
     const policy = change.entry.branch_policy;
@@ -267,8 +253,8 @@ function rowsOf(change: Change, lock: string | undefined): CompareRow[] {
         kind: kindOf(field.from, field.to),
         label: name,
         key: field.path,
-        now: say(field.from, 'Not set'),
-        wanted: say(field.to, 'Not set'),
+        now: valueInFewWords(field.from, 'Not set'),
+        wanted: valueInFewWords(field.to, 'Not set'),
         lock,
       }));
   }
@@ -304,7 +290,6 @@ function rowsOf(change: Change, lock: string | undefined): CompareRow[] {
   ];
 }
 
-/** A plan as the sections of a comparison, in the order the plan applies them. */
 export function compareSections(
   plan: Plan,
   locks: ReadonlyMap<number, string>,
@@ -356,30 +341,29 @@ export function compareSections(
   return sections.filter((section) => section.rows.length > 0);
 }
 
-/** A settings section's values by path, with a group opened where the editor shows its parts as settings of their own. */
-function flat(path: string, values: Readonly<Record<string, unknown>>): [string, unknown][] {
+/** A group is opened where the editor shows its parts as settings of their own. */
+function settingValuesByPath(path: string, values: Readonly<Record<string, unknown>>): [string, unknown][] {
   return Object.entries(values).flatMap(([key, value]): [string, unknown][] => {
     const at = `${path}.${key}`;
     const opens =
       isRecord(value) &&
       !fields.some((field) => field.path.join('.') === at) &&
       fields.some((field) => field.path.join('.').startsWith(`${at}.`));
-    return opens ? flat(at, value) : [[at, value]];
+    return opens ? settingValuesByPath(at, value) : [[at, value]];
   });
 }
 
 /**
- * What the plan's profile sets that the plan changes nothing of. It leaves
- * out what the plan didn't read or said it skipped: a section or setting a
- * warning left out, and the settings of a section that is made or deleted
- * whole.
+ * Leaves out what the plan didn't read or said it skipped: a section or
+ * setting a warning left out, and the settings of a section that is made or
+ * deleted whole.
  */
 export function matchSections(plan: Plan): MatchSection[] {
   const desired: unknown = plan.desired;
   const wanted = isRecord(desired) ? desired : {};
   const skips = plan.warnings.filter((warning) => warning.cause !== undefined);
   const differing = compareSections(plan, new Map());
-  return order.flatMap((section): MatchSection[] => {
+  return sectionsInShownOrder.flatMap((section): MatchSection[] => {
     const title = titles[section];
     const values = wanted[section];
     const changes = plan.changes.filter((change) => change.section === section);
@@ -397,7 +381,7 @@ export function matchSections(plan: Plan): MatchSection[] {
       });
     } else if (isRecord(values) && !changes.some((change) => change.action !== 'update')) {
       const differs = (differing.find((item) => item.section === section)?.rows ?? []).map((row) => row.key);
-      rows = flat(section, values).flatMap(([path, value]): MatchRow[] => {
+      rows = settingValuesByPath(section, values).flatMap(([path, value]): MatchRow[] => {
         const rest = path.slice(section.length + 1);
         const [top = ''] = rest.split('.');
         const skipped = skips.some(
@@ -421,30 +405,26 @@ function normalize(text: string): string {
 }
 
 /**
- * A repository compared with a profile: what the profile would change
- * there. Comparing only reads from GitHub. One comparison counts at a time,
- * so a slower one never replaces a later one's result.
+ * Comparing only reads from GitHub. One comparison counts at a time, so a
+ * slower one never replaces a later one's result.
  */
 export class Comparison {
   readonly state = signal<ComparisonState>({ kind: 'idle' });
-  /** What is typed in the comparison's search. */
   readonly search = signal('');
   /** Whether only the differences Repotted can't make show. */
   readonly onlyLocked = signal(false);
-  /** Whether only what differs shows, with what matches folded away; on at first. */
   readonly onlyDifferences = signal(true);
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
-  #turn = 0;
-  #last: { readonly repository: string; readonly profile: ComparedProfile } | undefined;
+  #latestComparisonTurn = 0;
+  #lastCompared: { readonly repository: string; readonly profile: ComparedProfile } | undefined;
 
   constructor(github: GitHub, onSignedOut: () => void) {
     this.#github = github;
     this.#onSignedOut = onSignedOut;
   }
 
-  /** How many differences there are, how many of them Repotted can't make, and how much matches. */
   readonly counts = computed(() => {
     const state = this.state.value;
     const rows = state.kind === 'compared' ? state.sections.flatMap((section) => section.rows) : [];
@@ -455,11 +435,6 @@ export class Comparison {
     };
   });
 
-  /**
-   * The sections with the rows the search and the filters leave: the
-   * differences, and what matches unless only differences, or only those
-   * Repotted can't make, show.
-   */
   readonly shown = computed((): ShownSection[] => {
     const state = this.state.value;
     if (state.kind !== 'compared') {
@@ -472,7 +447,7 @@ export class Comparison {
       const text = normalize(`${title} ${row.label} ${row.key}`);
       return words.every((word) => text.includes(word));
     };
-    return order
+    return sectionsInShownOrder
       .map((section): ShownSection => {
         const title = titles[section];
         return {
@@ -487,10 +462,9 @@ export class Comparison {
       .filter((section) => section.rows.length > 0 || section.matches.length > 0);
   });
 
-  /** Compares a repository with a profile as it is saved, by the profile's file and its name in the list. */
   async compare(repository: string, profile: ComparedProfile): Promise<void> {
-    const turn = (this.#turn += 1);
-    this.#last = { repository, profile };
+    const turn = (this.#latestComparisonTurn += 1);
+    this.#lastCompared = { repository, profile };
     this.search.value = '';
     this.onlyLocked.value = false;
     this.state.value = { kind: 'comparing', repository, file: profile.file, profile: profile.name };
@@ -501,7 +475,7 @@ export class Comparison {
         createPlan(this.#github, repo, resolved.profile, skippedDrafts(resolved.drafts)),
         readAccess(this.#github, repo),
       ]);
-      if (turn !== this.#turn) {
+      if (turn !== this.#latestComparisonTurn) {
         return;
       }
       const locks = new Map(lockChanges(access, plan.changes).map((lock) => [lock.change, lock.reason]));
@@ -525,7 +499,7 @@ export class Comparison {
       if (isSignedOut(error)) {
         this.#onSignedOut();
       }
-      if (turn === this.#turn) {
+      if (turn === this.#latestComparisonTurn) {
         this.state.value = {
           kind: 'failed',
           repository,
@@ -541,16 +515,15 @@ export class Comparison {
     }
   }
 
-  /** Compares the same two again: the profile as it is saved now, and GitHub as it is now. */
   async again(): Promise<void> {
-    if (this.#last !== undefined) {
-      await this.compare(this.#last.repository, this.#last.profile);
+    if (this.#lastCompared !== undefined) {
+      await this.compare(this.#lastCompared.repository, this.#lastCompared.profile);
     }
   }
 
-  /** Puts the comparison away, and leaves behind one still being made. */
+  /** Leaves behind a comparison still being made. */
   close(): void {
-    this.#turn += 1;
+    this.#latestComparisonTurn += 1;
     this.state.value = { kind: 'idle' };
   }
 }

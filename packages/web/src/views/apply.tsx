@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { repositoryAddress } from '../app/addressed-repository.js';
 import type { Apply } from '../app/apply.js';
 import type { CompareRow } from '../app/comparison.js';
-import { installUrl } from '../app/github-app.js';
+import { repottedAppInstallUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
 import { BarActions } from './action-bar.js';
 import { Link } from './link.js';
@@ -297,7 +297,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                   <p class="notice-actions">
                     <a
                       class="button button-small"
-                      href={state.appAccess === 'install' ? installUrl : state.appAccess.settings}
+                      href={state.appAccess === 'install' ? repottedAppInstallUrl : state.appAccess.settings}
                       target="_blank"
                       rel="noreferrer"
                     >

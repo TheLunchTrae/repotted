@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import {
   branchPolicies,
   labelProblem,
-  linesOf,
+  uniqueTrimmedNonBlankLines,
   rulesetProblem,
   withBranchPolicies,
   withDeploymentBranches,
@@ -84,7 +84,7 @@ test('a rule parameter is set or left to each repository, beside the ones the fo
 });
 
 test('status checks keep what the file says of a check, once each, and none named is a problem', () => {
-  const next = withStatusChecks(saved, linesOf('quality\n build \nquality\n'));
+  const next = withStatusChecks(saved, uniqueTrimmedNonBlankLines('quality\n build \nquality\n'));
   expect(next['rules']).toContainEqual({
     type: 'required_status_checks',
     parameters: { required_status_checks: [{ context: 'quality', integration_id: 15_368 }, { context: 'build' }] },

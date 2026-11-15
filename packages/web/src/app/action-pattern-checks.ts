@@ -3,30 +3,25 @@ import { type checkActionPatterns, describeActionCheck } from '@repotted/core';
 
 export type ActionPatternCheck = Awaited<ReturnType<typeof checkActionPatterns>>[number];
 
-/** What is known of one pattern's text: a check on its way, GitHub's answer, or why none came. */
-type Known =
+type PatternCheckState =
   | { readonly kind: 'waiting' | 'checking' }
   | { readonly kind: 'checked'; readonly check: ActionPatternCheck }
   | { readonly kind: 'failed'; readonly message: string };
 
-/** One line of the list with what its pattern matches on GitHub, as far as it is known. */
 export interface PatternLine {
   readonly text: string;
   /**
-   * What the line shows: nothing for a blank line or one not asked about
-   * yet, `several` for a line with a comma, which holds several patterns
-   * and is never checked, and otherwise what is known of its pattern.
+   * Undefined for a blank line or one not asked about yet. `several` is a
+   * line with a comma, which holds several patterns and is never checked.
    */
-  readonly state: Known | { readonly kind: 'several' } | undefined;
+  readonly state: PatternCheckState | { readonly kind: 'several' } | undefined;
 }
 
-/** What a line says about its pattern, and how loudly: fine, worth a look, wrong, or nothing to judge. */
 export interface PatternNote {
   readonly tone: 'good' | 'warning' | 'bad' | 'muted';
   readonly text: string;
 }
 
-/** What a line's state reads as beside its pattern. */
 export function patternNote(state: NonNullable<PatternLine['state']>): PatternNote {
   if (state.kind === 'several') {
     return { tone: 'muted', text: "Several patterns on one line can't be checked. Put each on its own line." };
@@ -54,8 +49,7 @@ export function patternNote(state: NonNullable<PatternLine['state']>): PatternNo
   return { tone: check.status === 'unchecked' ? 'muted' : 'warning', text };
 }
 
-/** The patterns one run asks GitHub about. */
-const perRun = 100;
+const patternsPerCheckRun = 100;
 
 function patternOf(line: string): string {
   return line.trim();
@@ -70,27 +64,23 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * What each allowed action pattern of a profile matches on GitHub. A check
- * belongs to a pattern's text, trimmed, so a line shows what is known of the
- * text it holds now, and a check that lands after its line changed shows on
- * no other. The checks only inform: nothing here holds a save back.
+ * A check belongs to a pattern's text, trimmed, so a check that lands after
+ * its line changed shows on no other. The checks only inform: nothing here
+ * holds a save back.
  */
 export class ActionPatternChecks {
   readonly #check: (patterns: readonly string[]) => Promise<ActionPatternCheck[]>;
-  readonly #pause: number;
-  readonly #known = signal<ReadonlyMap<string, Known>>(new Map());
-  /** The list's lines, or undefined while its row doesn't show. */
+  readonly #typingPauseMilliseconds: number;
+  readonly #known = signal<ReadonlyMap<string, PatternCheckState>>(new Map());
   readonly #lines = signal<readonly string[] | undefined>(undefined);
-  /** Whether a run has been started, after which a new pattern waits for typing to stop. */
-  #asked = false;
+  #firstRunStarted = false;
   #timer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(check: (patterns: readonly string[]) => Promise<ActionPatternCheck[]>, pause = 600) {
+  constructor(check: (patterns: readonly string[]) => Promise<ActionPatternCheck[]>, typingPauseMilliseconds = 600) {
     this.#check = check;
-    this.#pause = pause;
+    this.#typingPauseMilliseconds = typingPauseMilliseconds;
   }
 
-  /** Each line of the list with what is known of its pattern. */
   readonly lines = computed((): PatternLine[] =>
     (this.#lines.value ?? []).map((text) => {
       const pattern = patternOf(text);
@@ -101,14 +91,12 @@ export class ActionPatternChecks {
     }),
   );
 
-  /** Whether the list can be asked about again: it has a line to check, and none is being checked. */
   readonly canCheckAgain = computed(
     () =>
-      this.#patterns().length > 0 &&
-      !this.#patterns().some((pattern) => this.#known.value.get(pattern)?.kind === 'checking'),
+      this.#checkablePatterns().length > 0 &&
+      !this.#checkablePatterns().some((pattern) => this.#known.value.get(pattern)?.kind === 'checking'),
   );
 
-  /** How the lines came out, counted, as the line under the list says it. */
   readonly summary = computed(() => {
     const states = this.lines.value.flatMap((line) => (line.state === undefined ? [] : [line.state]));
     const checks = states.flatMap((state) => (state.kind === 'checked' ? [state.check] : []));
@@ -133,11 +121,10 @@ export class ActionPatternChecks {
   });
 
   /**
-   * Takes the list as it stands, or undefined while its row doesn't show,
-   * as GitHub hides it unless selected actions are allowed. The first
-   * patterns are asked about at once; a pattern that comes later waits
-   * until the list has been still for a moment, so each key typed isn't a
-   * lookup.
+   * `lines` is undefined while the list's row doesn't show, as GitHub hides
+   * it unless selected actions are allowed. The first patterns are asked
+   * about at once; a pattern that comes later waits until the list has been
+   * still for a moment, so each key typed isn't a lookup.
    */
   follow(lines: readonly string[] | undefined): void {
     // The list is handed over after every change to the profile, and only a change to the list starts the pause again.
@@ -146,7 +133,7 @@ export class ActionPatternChecks {
       return;
     }
     this.#lines.value = lines;
-    const patterns = new Set(this.#patterns());
+    const patterns = new Set(this.#checkablePatterns());
     // A pattern that left the list before its pause ended is not asked about.
     const known = new Map(
       [...this.#known.value].filter(([pattern, state]) => state.kind !== 'waiting' || patterns.has(pattern)),
@@ -154,7 +141,7 @@ export class ActionPatternChecks {
     const fresh = [...patterns].filter((pattern) => !known.has(pattern));
     clearTimeout(this.#timer);
     this.#timer = undefined;
-    if (!this.#asked && fresh.length > 0) {
+    if (!this.#firstRunStarted && fresh.length > 0) {
       this.#known.value = known;
       this.#run();
       return;
@@ -166,31 +153,28 @@ export class ActionPatternChecks {
     if ([...known.values()].some((state) => state.kind === 'waiting')) {
       this.#timer = setTimeout(() => {
         this.#run();
-      }, this.#pause);
+      }, this.#typingPauseMilliseconds);
     }
   }
 
-  /** Forgets every pattern in the list and asks about them again, so a repository made or a tag pushed since shows. */
   checkAgain(): void {
     if (!this.canCheckAgain.value) {
       return;
     }
-    const patterns = new Set(this.#patterns());
+    const patterns = new Set(this.#checkablePatterns());
     this.#known.value = new Map([...this.#known.value].filter(([pattern]) => !patterns.has(pattern)));
     clearTimeout(this.#timer);
     this.#timer = undefined;
     this.#run();
   }
 
-  /** The patterns the list holds that can be checked, each once. */
-  #patterns(): string[] {
+  #checkablePatterns(): string[] {
     return [...new Set((this.#lines.value ?? []).map(patternOf).filter(checkable))];
   }
 
-  /** Asks about every pattern in the list that nothing is known of yet, a run for each hundred. */
   #run(): void {
-    this.#asked = true;
-    const asking = this.#patterns().filter((pattern) => {
+    this.#firstRunStarted = true;
+    const asking = this.#checkablePatterns().filter((pattern) => {
       const kind = this.#known.value.get(pattern)?.kind;
       return kind === undefined || kind === 'waiting';
     });
@@ -205,8 +189,8 @@ export class ActionPatternChecks {
    * fails the runs after it without asking.
    */
   async #ask(asking: readonly string[]): Promise<void> {
-    for (let start = 0; start < asking.length; start += perRun) {
-      const patterns = asking.slice(start, start + perRun);
+    for (let start = 0; start < asking.length; start += patternsPerCheckRun) {
+      const patterns = asking.slice(start, start + patternsPerCheckRun);
       const failed = await this.#check(patterns).then(
         (checks) => {
           const answers = new Map(checks.map((check) => [check.pattern, check]));
@@ -236,7 +220,7 @@ export class ActionPatternChecks {
     }
   }
 
-  #set(patterns: readonly string[], state: (pattern: string) => Known): void {
+  #set(patterns: readonly string[], state: (pattern: string) => PatternCheckState): void {
     const known = new Map(this.#known.value);
     for (const pattern of patterns) {
       known.set(pattern, state(pattern));

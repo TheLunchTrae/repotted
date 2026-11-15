@@ -2,7 +2,7 @@ import type { JSX } from 'preact';
 
 import { repositoryAddress } from '../app/addressed-repository.js';
 import type { CompareRow, Comparison } from '../app/comparison.js';
-import { installUrl } from '../app/github-app.js';
+import { repottedAppInstallUrl } from '../app/github-app.js';
 import type { Router } from '../app/router.js';
 import { Link } from './link.js';
 import { run } from './run.js';
@@ -130,7 +130,7 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
               <p>
                 <a
                   class="button"
-                  href={state.appAccess === 'install' ? installUrl : state.appAccess.settings}
+                  href={state.appAccess === 'install' ? repottedAppInstallUrl : state.appAccess.settings}
                   target="_blank"
                   rel="noreferrer"
                 >

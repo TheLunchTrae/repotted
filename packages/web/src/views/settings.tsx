@@ -3,7 +3,7 @@ import { useEffect, useState } from 'preact/hooks';
 
 import type { Account, User } from '../app/account.js';
 import type { ConfigProtection } from '../app/config-protection.js';
-import { installUrl } from '../app/github-app.js';
+import { repottedAppInstallUrl } from '../app/github-app.js';
 import type { Keeping } from '../app/kept-files.js';
 import type { Profiles } from '../app/profiles.js';
 import type { Repositories } from '../app/repositories.js';
@@ -343,7 +343,7 @@ export function SettingsPage({
                   </span>
                 )}
               </div>
-              <a class="button button-quiet" href={installUrl} target="_blank" rel="noreferrer">
+              <a class="button button-quiet" href={repottedAppInstallUrl} target="_blank" rel="noreferrer">
                 Add repositories
               </a>
               <button class="button button-quiet" type="button" disabled={account.signingOut.value} onClick={onSignOut}>

@@ -1,12 +1,6 @@
 import { type SettingField, settingSections } from './setting-fields.js';
 
-// Finds settings by what a person types. A setting is found by its label,
-// its key in a profile, its note, the labels of its choices, its other
-// names below, its group's title and description, its tab, and the setting
-// it sits under, so searching for that one finds its options too.
-
-/** Other words people know a setting by, by its path in a profile. */
-export const otherNames: Readonly<Record<string, readonly string[]>> = {
+export const searchSynonymsBySettingPath: Readonly<Record<string, readonly string[]>> = {
   'repository.default_branch': ['main', 'master', 'trunk'],
   'repository.visibility': ['private', 'public', 'internal'],
   'repository.is_template': ['generate from template'],
@@ -61,24 +55,23 @@ function normalize(text: string): string {
   return ` ${text.toLowerCase().replaceAll(/[^\p{L}\p{N}]+/gu, ' ')} `;
 }
 
-/** What a setting says about itself. On and Off are left out, since every switch has them. */
-function own(field: SettingField): string {
+/** On and Off are left out, since every switch has them. */
+function ownSearchText(field: SettingField): string {
   return [
     field.label,
     field.key,
     field.note ?? '',
     ...field.options.map((option) => option.label).filter((label) => label !== 'On' && label !== 'Off'),
-    ...(otherNames[field.path.join('.')] ?? []),
+    ...(searchSynonymsBySettingPath[field.path.join('.')] ?? []),
   ].join(' ');
 }
 
 interface Indexed {
   readonly terms: string;
-  /** The setting a sub-option sits under. */
   readonly parent: SettingField | undefined;
 }
 
-function build(): Map<SettingField, Indexed> {
+function buildSearchIndex(): Map<SettingField, Indexed> {
   const index = new Map<SettingField, Indexed>();
   for (const section of settingSections) {
     for (const group of section.groups) {
@@ -87,7 +80,13 @@ function build(): Map<SettingField, Indexed> {
         const owner = field.nested ? parent : undefined;
         index.set(field, {
           terms: normalize(
-            [section.name, group.title, group.description, own(field), owner === undefined ? '' : own(owner)].join(' '),
+            [
+              section.name,
+              group.title,
+              group.description,
+              ownSearchText(field),
+              owner === undefined ? '' : ownSearchText(owner),
+            ].join(' '),
           ),
           parent: owner,
         });
@@ -100,9 +99,9 @@ function build(): Map<SettingField, Indexed> {
   return index;
 }
 
-const index = build();
+const index = buildSearchIndex();
 
-/** The words of a search as they are compared, each with the space that starts a word in front; none for a blank search. */
+/** Each word keeps the space that starts a word in front, so it matches only where a word starts. */
 export function searchWords(query: string): string[] {
   return normalize(query)
     .split(' ')
@@ -111,7 +110,7 @@ export function searchWords(query: string): string[] {
 }
 
 /**
- * Whether every word starts a word of the setting's text, so `allow_squash`,
+ * Every word must start a word of the setting's text, so `allow_squash`,
  * "squash allow", and "squ" all find `allow_squash_merge`, while "on"
  * doesn't find every "configuration".
  */
@@ -120,7 +119,6 @@ export function matchesSearch(field: SettingField, words: readonly string[]): bo
   return words.every((word) => terms.includes(word));
 }
 
-/** The setting a sub-option sits under, which shows with it when it is found. */
 export function parentOf(field: SettingField): SettingField | undefined {
   return index.get(field)?.parent;
 }

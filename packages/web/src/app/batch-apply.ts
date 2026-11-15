@@ -23,27 +23,18 @@ import { basename } from '../engine/path.js';
 import { isSignedOut } from './account.js';
 import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
 
-/** Where the browser keeps the batch, and the applies its members share with applies made one at a time. */
+/** A batch's members are the same applies as those made one at a time, so they share `/staged`. */
 const batchFolder = '/batch';
 const stagedFolder = '/staged';
 
-/** One repository of a batch as reviewed. */
 export interface BatchMemberView {
   readonly repository: string;
-  /**
-   * Where it stands: it has changes to write, it already has what the
-   * profile sets, GitHub would refuse one of its changes, it couldn't be
-   * compared, or it is left out of this batch.
-   */
   readonly status: 'changes' | 'in-line' | 'needs-access' | 'failed' | 'left-out';
-  /** How many changes its plan writes. */
   readonly changes: number;
   /** Why it couldn't be compared. */
   readonly message: string | undefined;
   readonly sections: readonly CompareSection[];
-  /** What its apply leaves out of the profile. */
   readonly leftOut: readonly string[];
-  /** The drafts its plan leaves out. */
   readonly skipped: readonly string[];
   readonly warnings: readonly string[];
   /**
@@ -53,7 +44,7 @@ export interface BatchMemberView {
   readonly startNote: string | undefined;
 }
 
-/** One change the profile makes, across the batch: the key that leaves it out everywhere, and how many repositories it reaches. */
+/** `key` leaves the change out everywhere, and `repositories` is how many it reaches. */
 export interface BatchChange {
   readonly key: string;
   readonly repositories: number;
@@ -79,10 +70,7 @@ export type BatchState =
     } & Named)
   | ({
       readonly kind: 'reviewed';
-      /**
-       * The plan this review shows, which is the one an apply from it writes.
-       * It travels with the review, so no other plan can be applied in its place.
-       */
+      /** Travels with the review, so no other plan can be applied in its place. */
       readonly plan: BatchPlan;
       readonly members: readonly BatchMemberView[];
       /** What a change everywhere couldn't do in some repository, as when its own edits set the value. */
@@ -91,12 +79,10 @@ export type BatchState =
   | ({
       readonly kind: 'applying';
       readonly total: number;
-      /** How each repository written so far ended, in a few words. */
       readonly results: readonly BatchResult[];
     } & Named)
   | ({ readonly kind: 'applied'; readonly results: readonly BatchResult[]; readonly left: number } & Named);
 
-/** How applying one repository of a batch ended. */
 export interface BatchResult {
   readonly repository: string;
   /** Whether it finished: written, or already in line. */
@@ -204,13 +190,12 @@ function membersOf(plan: BatchPlan): BatchMemberView[] {
 }
 
 /**
- * One profile applied to several repositories, each reviewed on its own
- * first. It is kept as the engine's batch, a folder in the browser, whose
- * members are the same applies as those made one repository at a time.
- * Nothing is written to GitHub except by `apply`, which hands the engine
- * the plan of the review that is shown; the engine plans each repository
- * again and writes nothing to one that changed, is locked, or whose apply
- * was edited since.
+ * It is kept as the engine's batch, a folder in the browser, whose members
+ * are the same applies as those made one repository at a time. Nothing is
+ * written to GitHub except by `apply`, which hands the engine the plan of
+ * the review that is shown; the engine plans each repository again and
+ * writes nothing to one that changed, is locked, or whose apply was edited
+ * since.
  */
 export class BatchApply {
   readonly state = signal<BatchState>({ kind: 'idle' });
@@ -225,7 +210,7 @@ export class BatchApply {
     this.#onSignedOut = onSignedOut;
   }
 
-  /** The repositories an apply would write to: those with changes and none GitHub would refuse. */
+  /** Those with changes and none GitHub would refuse. */
   readonly ready = computed(() => {
     const state = this.state.value;
     return state.kind === 'reviewed' ? state.members.filter((member) => member.status === 'changes') : [];
@@ -237,7 +222,6 @@ export class BatchApply {
     return state.kind === 'reviewed' || state.kind === 'reviewing' ? state.members : [];
   });
 
-  /** Each change that can be left out, with what leaves it out everywhere and how many repositories it reaches. */
   readonly changes = computed((): BatchChange[] => {
     const found = new Map<string, number>();
     for (const member of this.members.value) {
@@ -249,17 +233,14 @@ export class BatchApply {
     return [...found].map(([key, repositories]) => ({ key, repositories }));
   });
 
-  /** What some repository's apply leaves out, each key once. */
   readonly leftOut = computed(() => [...new Set(this.members.value.flatMap((member) => member.leftOut))]);
 
-  /** Whether a batch was started and not finished. */
   async unfinished(): Promise<boolean> {
     return isBatch(batchFolder);
   }
 
   /**
-   * Starts a batch of the profile over the repositories and reviews it. A
-   * repository that has an apply in progress joins as it is, edits and all.
+   * A repository that has an apply in progress joins as it is, edits and all.
    * With a batch unfinished it starts nothing and says so under that batch's
    * own profile, which is the one a review or a discard from there acts on.
    */
@@ -302,7 +283,6 @@ export class BatchApply {
     });
   }
 
-  /** Picks up the unfinished batch as it was left. */
   async resume(): Promise<void> {
     if (this.#writing()) {
       return;
@@ -320,7 +300,6 @@ export class BatchApply {
     );
   });
 
-  /** Plans every repository again, as after access was granted or the profile saved. */
   async reviewAgain(): Promise<void> {
     const state = this.state.value;
     if (this.canReviewAgain.value && 'profile' in state) {
@@ -328,7 +307,7 @@ export class BatchApply {
     }
   }
 
-  /** Leaves a repository out of the batch, or puts it back. Its apply stays as it is. */
+  /** The repository's apply stays as it is. */
   async leaveOutRepository(repository: string, out: boolean): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'reviewed') {
@@ -340,9 +319,8 @@ export class BatchApply {
   }
 
   /**
-   * Takes a repository out of the batch for good. An apply the batch started
-   * for it is discarded; one that joined stays. The batch ends with its last
-   * repository.
+   * An apply the batch started for the repository is discarded; one that
+   * joined stays. The batch ends with its last repository.
    */
   async remove(repository: string): Promise<void> {
     const state = this.state.value;
@@ -354,7 +332,6 @@ export class BatchApply {
     }
   }
 
-  /** Leaves a change out of one repository's apply, or puts it back. */
   async leaveOut(repository: string, key: string, out: boolean): Promise<void> {
     const state = this.state.value;
     const file =
@@ -367,7 +344,6 @@ export class BatchApply {
     }
   }
 
-  /** Leaves a change out of every repository's apply, or puts it back in each. The profile keeps it. */
   async everywhere(key: string, out: boolean): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'reviewed') {
@@ -379,11 +355,10 @@ export class BatchApply {
   }
 
   /**
-   * Writes the reviewed changes, one repository at a time. The engine plans
-   * each again first and writes nothing to one that changed since the
-   * review, has a change GitHub would refuse, was left out, or whose apply
-   * was edited since. A repository that finishes leaves the batch, which
-   * ends with its last one.
+   * The engine plans each repository again first and writes nothing to one
+   * that changed since the review, has a change GitHub would refuse, was left
+   * out, or whose apply was edited since. A repository that finishes leaves
+   * the batch, which ends with its last one.
    */
   async apply(): Promise<void> {
     const state = this.state.value;
@@ -443,7 +418,7 @@ export class BatchApply {
     }
   }
 
-  /** Throws the batch away. An apply that joined it stays, to resume on its own; the profile stays as it is. */
+  /** An apply that joined the batch stays, to resume on its own. */
   async discard(): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'applying') {
@@ -480,7 +455,7 @@ export class BatchApply {
     }
   }
 
-  /** Leaves the batch's page. The batch itself is kept, to resume. */
+  /** The batch itself is kept, to resume. */
   close(): void {
     if (!this.#writing()) {
       this.#turn += 1;
@@ -496,7 +471,7 @@ export class BatchApply {
     return this.unfinished().catch(() => false);
   }
 
-  /** Plans the batch. The profile named is the batch's own, whatever was asked for. */
+  /** The profile named is the batch's own, whatever was asked for. */
   async #review(refused: readonly string[]): Promise<BatchState> {
     const plan = await planBatch(this.#github, batchFolder);
     if (plan.failures.some((failure) => failure.error.kind === 'signed_out')) {
@@ -505,7 +480,7 @@ export class BatchApply {
     return { kind: 'reviewed', profile: nameOf(plan.profile), plan, members: membersOf(plan), refused };
   }
 
-  /** Shows that it is reviewing while `work` runs, then what it gives, or why it failed. One piece of work counts at a time. */
+  /** One piece of work counts at a time. */
   async #work(profile: string, members: readonly BatchMemberView[], work: () => Promise<BatchState>): Promise<void> {
     const turn = (this.#turn += 1);
     this.state.value = { kind: 'reviewing', profile, members };

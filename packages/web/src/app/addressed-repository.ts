@@ -3,27 +3,23 @@ import type { Router } from './router.js';
 
 const key = 'repository';
 
-/** Whether two `owner/name`s, or none, are one repository, in any case, as GitHub matches them. */
-function same(left: string | undefined, right: string | undefined): boolean {
+function isSameRepositoryIgnoringCase(left: string | undefined, right: string | undefined): boolean {
   return left === right || (left !== undefined && right !== undefined && left.toLowerCase() === right.toLowerCase());
 }
 
-/** The query that names a repository, `owner/name`, or none. Its slash stays as it is, so the address reads as GitHub's. */
+/** The slash stays as it is, so the address reads as GitHub's. */
 function queryFor(name: string | undefined): string {
   return name === undefined ? '' : `?${key}=${encodeURIComponent(name).replaceAll('%2F', '/')}`;
 }
 
-/** The address of the repositories page with this repository, `owner/name`, open. */
 export function repositoryAddress(name: string): string {
   return `/${queryFor(name)}`;
 }
 
 /**
- * The repositories page's opened repository in the page's address, so a link or a
- * reload opens a repository, and the browser's back closes one that opened a
- * screen of its own, as on a phone. The opened repository stays where it is kept; the
- * address follows it, except on arrival and after a back or forward, when the
- * opened repository follows the address.
+ * The opened repository stays where it is kept; the address follows it,
+ * except on arrival and after a back or forward, when the opened repository
+ * follows the address.
  *
  * On a phone the opened repository is a screen of its own, so it is let go of once
  * its repository is out of view, as one hidden, moved into a closed folder,
@@ -32,28 +28,29 @@ export function repositoryAddress(name: string): string {
 export class AddressedRepository {
   readonly #repositories: Repositories;
   readonly #router: Router;
-  /** The opened repository and whether it had a screen of its own, as the address last took them. */
-  #last: { readonly name: string | undefined; readonly screen: boolean } = { name: undefined, screen: false };
-  /** The query this last put on the address, which `follow` leaves alone, since it is no back or forward. */
-  #written: string | undefined;
+  #openedAsAddressLastTookIt: { readonly name: string | undefined; readonly hadOwnScreen: boolean } = {
+    name: undefined,
+    hadOwnScreen: false,
+  };
+  /** `follow` leaves this query alone, since it is no back or forward. */
+  #queryThisWrote: string | undefined;
 
   constructor(repositories: Repositories, router: Router) {
     this.#repositories = repositories;
     this.#router = router;
   }
 
-  /** The repository the address names, if any. */
   get named(): string | undefined {
     return new URLSearchParams(this.#router.search.value).get(key) ?? undefined;
   }
 
   /**
-   * On arrival at the page, a repository the address names is opened. An
-   * address that names none shows the list on a phone, and elsewhere takes
-   * the repository kept open from before, which shows beside the list.
+   * An address that names no repository shows the list on a phone, and
+   * elsewhere takes the repository kept open from before, which shows beside
+   * the list.
    */
   arrive(phone: boolean): void {
-    this.#written = undefined;
+    this.#queryThisWrote = undefined;
     const named = this.named;
     if (named !== undefined) {
       this.#open(named);
@@ -62,21 +59,20 @@ export class AddressedRepository {
     } else {
       this.#write(queryFor(this.#repositories.openedName), 'replace');
     }
-    this.#last = { name: this.#repositories.openedName, screen: false };
+    this.#openedAsAddressLastTookIt = { name: this.#repositories.openedName, hadOwnScreen: false };
   }
 
   /**
-   * After a back or forward, the address's repository is opened, or none.
-   * On a phone, one the list doesn't show, as one hidden or moved into a
-   * closed folder since, is taken off the address instead; elsewhere it is
-   * kept out of view, as an opened repository is. Neither ends a hide's Undo. An
-   * address this wrote itself is no back or forward, and is left alone.
+   * On a phone, a named repository the list doesn't show, as one hidden or
+   * moved into a closed folder since, is taken off the address instead;
+   * elsewhere it is kept out of view, as an opened repository is. Neither
+   * ends a hide's Undo.
    */
   follow(phone: boolean): void {
-    if (this.#router.search.value === this.#written) {
+    if (this.#router.search.value === this.#queryThisWrote) {
       return;
     }
-    this.#written = undefined;
+    this.#queryThisWrote = undefined;
     const named = this.named;
     if (named === undefined) {
       this.#repositories.dropOpened();
@@ -86,14 +82,16 @@ export class AddressedRepository {
     } else {
       this.#open(named);
     }
-    this.#last = { name: this.#repositories.openedName, screen: this.#last.screen };
+    this.#openedAsAddressLastTookIt = {
+      name: this.#repositories.openedName,
+      hadOwnScreen: this.#openedAsAddressLastTookIt.hadOwnScreen,
+    };
   }
 
   /**
-   * Brings the address up to date with the opened repository and what shows:
-   * one that opens a screen of its own (`phone`) adds a history entry,
-   * so back returns to the list, and any other change takes the place of the
-   * entry shown.
+   * A repository that opens a screen of its own (`phone`) adds a history
+   * entry, so back returns to the list, and any other change takes the place
+   * of the entry shown.
    */
   update(phone: boolean): void {
     const repositories = this.#repositories;
@@ -102,8 +100,8 @@ export class AddressedRepository {
     if (phone && name !== undefined && shown === undefined && repositories.list.value !== undefined) {
       // Out of view: its screen closes, back to the list's entry when it led there.
       repositories.dropOpened();
-      this.#return();
-      this.#last = { name: undefined, screen: false };
+      this.#returnToAddressWithoutQuery();
+      this.#openedAsAddressLastTookIt = { name: undefined, hadOwnScreen: false };
       return;
     }
     if (shown !== undefined && shown.full_name !== name) {
@@ -111,38 +109,37 @@ export class AddressedRepository {
       repositories.open(shown);
     }
     const screen = phone && shown !== undefined;
-    if (repositories.openedName !== this.#last.name) {
+    if (repositories.openedName !== this.#openedAsAddressLastTookIt.name) {
       // Only another repository opens a screen; the same one in GitHub's case takes the entry shown.
-      const opened = screen && !this.#last.screen && !same(repositories.openedName, this.#last.name);
+      const opened =
+        screen &&
+        !this.#openedAsAddressLastTookIt.hadOwnScreen &&
+        !isSameRepositoryIgnoringCase(repositories.openedName, this.#openedAsAddressLastTookIt.name);
       this.#write(queryFor(repositories.openedName), opened ? 'push' : 'replace');
     }
-    this.#last = { name: repositories.openedName, screen };
+    this.#openedAsAddressLastTookIt = { name: repositories.openedName, hadOwnScreen: screen };
   }
 
   /**
-   * Closes the opened repository's screen: back to the list's entry when
-   * it led there, which lets go of it once the back arrives, so
-   * the list comes back where the browser puts its scroll; else in place, at
-   * once.
+   * Goes back to the list's entry when it led there, which lets go of the
+   * repository once the back arrives, so the list comes back where the
+   * browser puts its scroll; else lets go of it in place, at once.
    */
   close(): void {
-    if (!this.#return()) {
+    if (!this.#returnToAddressWithoutQuery()) {
       this.#repositories.dropOpened();
     }
   }
 
   #write(search: string, entry: 'push' | 'replace'): void {
     this.#router.query(search, entry);
-    this.#written = this.#router.search.value;
+    this.#queryThisWrote = this.#router.search.value;
   }
 
-  /**
-   * Back to the address without a query. Says whether the browser runs a
-   * back, which comes to `follow` once it arrives.
-   */
-  #return(): boolean {
+  /** Says whether the browser runs a back, which comes to `follow` once it arrives. */
+  #returnToAddressWithoutQuery(): boolean {
     const back = this.#router.returnTo(queryFor(undefined));
-    this.#written = this.#router.search.value;
+    this.#queryThisWrote = this.#router.search.value;
     return back;
   }
 

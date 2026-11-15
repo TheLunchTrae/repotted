@@ -23,8 +23,7 @@ function sameText(left: readonly unknown[], right: readonly unknown[]): boolean 
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
-/** The lines of a box, trimmed, without the empty ones or a line that repeats one above it. */
-export function linesOf(text: string): string[] {
+export function uniqueTrimmedNonBlankLines(text: string): string[] {
   return [
     ...new Set(
       text
@@ -35,24 +34,19 @@ export function linesOf(text: string): string[] {
   ];
 }
 
-/** An entry with one key set, or with undefined left out, so each repository keeps its own. */
+/** Undefined leaves the key out, so each repository keeps its own. */
 export function withKey(entry: Entry, key: string, value: unknown): Entry {
   const { [key]: _old, ...rest } = entry;
   return value === undefined ? rest : { ...rest, [key]: value };
 }
 
-/** The ref name patterns a ruleset includes or excludes. */
 export function refNames(entry: Entry, side: 'include' | 'exclude'): readonly string[] {
   const conditions = isEntry(entry['conditions']) ? entry['conditions'] : {};
   const refName = isEntry(conditions['ref_name']) ? conditions['ref_name'] : {};
   return items(refName[side]).map(String);
 }
 
-/**
- * A ruleset with the ref names of one side set. GitHub takes the two sides
- * together, so both are written, and with neither the condition goes. The
- * ruleset's other conditions stay.
- */
+/** GitHub takes the two sides together, so both are written, and with neither the condition goes. */
 export function withRefNames(
   entry: Entry,
   side: 'include' | 'exclude',
@@ -81,10 +75,10 @@ export function ruleOf(entry: Entry | undefined, type: string): Entry | undefine
 }
 
 /**
- * A ruleset with one rule on or off. A rule turned on comes back as the file
- * has it, with its parameters. A profile that sets no rules leaves each
- * repository's alone, while one that sets some removes every other on apply:
- * so when the last rule goes and the file set none, `rules` goes too.
+ * A rule turned on comes back as the file has it, with its parameters. A
+ * profile that sets no rules leaves each repository's alone, while one that
+ * sets some removes every other on apply: so when the last rule goes and the
+ * file set none, `rules` goes too.
  */
 export function withRule(entry: Entry, type: string, on: boolean, saved?: Entry): Entry {
   const rules = entries(entry['rules']);
@@ -97,7 +91,6 @@ export function withRule(entry: Entry, type: string, on: boolean, saved?: Entry)
   return withKey(entry, 'rules', left.length === 0 && saved?.['rules'] === undefined ? undefined : left);
 }
 
-/** A ruleset with one parameter of one of its rules set, or with undefined left to each repository. */
 export function withRuleParameter(entry: Entry, type: string, key: string, value: unknown): Entry {
   return withKey(
     entry,
@@ -112,7 +105,6 @@ export function withRuleParameter(entry: Entry, type: string, key: string, value
   );
 }
 
-/** The status checks a ruleset requires, by the name each reports. */
 export function statusChecks(entry: Entry): readonly string[] {
   const parameters = ruleOf(entry, 'required_status_checks')?.['parameters'];
   return entries(isEntry(parameters) ? parameters['required_status_checks'] : undefined).map((check) =>
@@ -120,7 +112,7 @@ export function statusChecks(entry: Entry): readonly string[] {
   );
 }
 
-/** A ruleset with the status checks it requires set by name. A check it already names keeps what else the file says of it. */
+/** A check the ruleset already names keeps what else the file says of it. */
 export function withStatusChecks(entry: Entry, contexts: readonly string[]): Entry {
   const parameters = ruleOf(entry, 'required_status_checks')?.['parameters'];
   const kept = entries(isEntry(parameters) ? parameters['required_status_checks'] : undefined);
@@ -154,9 +146,8 @@ export function deploymentBranches(entry: Entry): DeploymentBranches | undefined
 }
 
 /**
- * An environment with where it deploys from set. The patterns belong to
- * chosen branches and tags: they go with any other choice, and come back as
- * the file has them when it is chosen again.
+ * The patterns belong to chosen branches and tags: they go with any other
+ * choice, and come back as the file has them when it is chosen again.
  */
 export function withDeploymentBranches(entry: Entry, choice: DeploymentBranches | undefined, saved?: Entry): Entry {
   const policy =
@@ -172,14 +163,14 @@ export function withDeploymentBranches(entry: Entry, choice: DeploymentBranches 
   return entry['branch_policies'] === undefined ? withKey(next, 'branch_policies', saved?.['branch_policies']) : next;
 }
 
-/** The branch or the tag patterns that may deploy to an environment. A pattern with no type is a branch's. */
+/** A pattern with no type is a branch's. */
 export function branchPolicies(entry: Entry, type: 'branch' | 'tag'): readonly string[] {
   return entries(entry['branch_policies'])
     .filter((policy) => (policy['type'] ?? 'branch') === type)
     .map((policy) => String(policy['name']));
 }
 
-/** An environment with its branch or its tag patterns set. A pattern it already has stays as the file writes it. */
+/** A pattern the environment already has stays as the file writes it. */
 export function withBranchPolicies(entry: Entry, type: 'branch' | 'tag', names: readonly string[]): Entry {
   const all = entries(entry['branch_policies']);
   const isType = (policy: Entry): boolean => (policy['type'] ?? 'branch') === type;
@@ -192,13 +183,11 @@ export function withBranchPolicies(entry: Entry, type: 'branch' | 'tag', names: 
   return withKey(entry, 'branch_policies', type === 'branch' ? [...set, ...others] : [...others, ...set]);
 }
 
-/** A label's color as six lowercase hex digits, when it is one. */
 export function hexColor(entry: Entry): string | undefined {
   const color = typeof entry['color'] === 'string' ? entry['color'].replace(/^#/u, '').toLowerCase() : '';
   return /^[0-9a-f]{6}$/u.test(color) ? color : undefined;
 }
 
-/** What is wrong with a label's old names, as apply would find. */
 export function labelProblem(entry: Entry, others: readonly string[]): string | undefined {
   const name = typeof entry['name'] === 'string' ? entry['name'].trim().toLowerCase() : '';
   const olds = items(entry['renamed_from']).map(String);

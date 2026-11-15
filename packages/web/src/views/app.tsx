@@ -61,7 +61,7 @@ function SignedIn({
   // One of each per sign-in. The repository list is the account's; the profiles are the browser's, whoever signs in.
   const { repositories, profiles, comparison, apply, batch, protection } = useMemo(() => {
     const refused = (): void => {
-      account.refused();
+      account.gitHubRefusedSignIn();
     };
     const kept = new Profiles(github, preferences, refused, folders);
     // The hidden repositories and owners follow the profiles: to their repository, or this browser. Using

@@ -1,15 +1,8 @@
-// The settings the profile editor offers, in the order of its tabs: what each
-// is called, the choices it takes, and what it depends on. A setting's path
-// is its section and its key in a profile, as `merge.allow_squash_merge`, with
-// dots inside the key for a setting in a group.
-
-/** A value a setting can take, with what the editor calls it. */
 export interface SettingOption {
   readonly label: string;
   readonly value: unknown;
 }
 
-/** When a setting follows another: GitHub hides it, or greys it out, while the other has one of these values. */
 export interface SettingCondition {
   /** The other setting's key, in the same section. */
   readonly key: string;
@@ -26,11 +19,8 @@ interface FieldDetails {
   readonly options: readonly SettingOption[];
   /** Whether it sits indented under the setting before it, as one of that setting's own options. */
   readonly nested: boolean;
-  /** What to know about it, such as an option beside it that has no API. */
   readonly note: string | undefined;
-  /** Whether a text setting may be empty. */
   readonly allowsEmpty: boolean;
-  /** Whether an empty text setting is saved as null, which clears it on GitHub. */
   readonly emptyIsNull: boolean;
   readonly dependsOn: SettingCondition | undefined;
   /** Whether setting it takes out every other setting in its section, and setting any of them takes it out. */
@@ -64,7 +54,6 @@ export class SettingField implements FieldDetails {
     this.alone = details.alone;
   }
 
-  /** The setting's place in a profile: its section, then each key down to it. */
   get path(): readonly string[] {
     return [this.section, ...this.key.split('.')];
   }
@@ -112,7 +101,6 @@ export interface SettingGroup {
   readonly fields: readonly SettingField[];
 }
 
-/** One tab of the editor: the settings of one section of a profile. */
 export interface SettingSection {
   readonly name: string;
   readonly section: string;
@@ -166,7 +154,7 @@ function onOff(section: string, key: string, label: string): SettingField {
   ]);
 }
 
-/** A feature under `security_and_analysis`, which GitHub turns on and off by a status. */
+/** GitHub turns a feature under `security_and_analysis` on and off by a status. */
 function feature(key: string, label: string): SettingField {
   return custom('security', `security_and_analysis.${key}`, label, [
     ['On', { status: 'enabled' }],
