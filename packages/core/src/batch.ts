@@ -34,28 +34,20 @@ import {
   stagedSets,
 } from './staged.js';
 
-// A batch applies one profile to several repositories through a staged apply
-// for each, so each repository is reviewed, edited and applied as one staged
-// apply is, and still has one apply in progress at a time. The batch itself
-// is a folder holding a manifest, batch.yaml, that lists its staged applies.
 // Repositories are planned a few at a time and applied one at a time, in the
 // manifest's order, so a failure is easy to follow and a stop is clean.
 
-/** The manifest's name in a batch folder. */
 export const batchManifest = 'batch.yaml';
 
-/** How many members a batch plans at once. */
 const planningConcurrency = 4;
 
-/** How many times a change to the manifest starts over when another program changed it meanwhile. */
-const manifestAttempts = 5;
+const manifestChangeAttemptLimit = 5;
 
 const savedMember = z
   .object({
     repository: z.string().regex(repoPattern, 'Use owner/name'),
-    /** The staged apply file, relative to the batch folder unless it is elsewhere on another drive. */
+    /** Relative to the batch folder unless it is elsewhere on another drive. */
     file: z.string().min(1),
-    /** Left out of the batch's plans and applies until it is put back. */
     left_out: z.boolean().optional(),
     /** A staged apply that was in progress before the batch, which discarding the batch leaves as it is. */
     joined: z.boolean().optional(),
@@ -66,7 +58,7 @@ const savedManifest = z
   .object({
     /** Tells this batch from another started later in the same folder, so a plan of one never applies to the other. */
     id: z.string().min(1),
-    /** The profile new members start from, relative to the folder, or null for the repository as it is. */
+    /** Relative to the folder; null for the repository as it is. */
     profile: z.string().min(1).nullable(),
     members: z.array(savedMember),
   })
@@ -88,22 +80,18 @@ const savedManifest = z
 
 type SavedManifest = z.infer<typeof savedManifest>;
 
-/** One repository of a batch, and the staged apply that brings it to the batch's profile. */
 export interface BatchMember {
   readonly repository: string;
-  /** The staged apply file's absolute path. */
+  /** Absolute. */
   readonly file: string;
   readonly left_out: boolean;
   readonly joined: boolean;
 }
 
-/** A batch as its manifest lists it. */
 export interface Batch {
-  /** The batch folder's real path. */
   readonly folder: string;
-  /** Tells this batch from another started later in the same folder. */
   readonly id: string;
-  /** The absolute path of the profile new members start from, or null for the repository as it is. */
+  /** Absolute; null for the repository as it is. */
   readonly profile: string | null;
   readonly members: readonly BatchMember[];
 }
@@ -112,32 +100,24 @@ function errorCode(error: unknown): string | undefined {
   return error instanceof Error && 'code' in error ? String(error.code) : undefined;
 }
 
-/**
- * Removes `from` and the folders above it while they are empty, up to
- * `folder`, and `folder` itself too unless `keep` says to keep it.
- */
-async function removeEmptyFolders(folder: string, from: string, keep = false): Promise<void> {
-  const relative = path.relative(folder, from);
+async function removeEmptyFolders(topFolder: string, deepestFolder: string, keepTopFolder = false): Promise<void> {
+  const relative = path.relative(topFolder, deepestFolder);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
     return;
   }
-  for (let current = from; !(keep && current === folder); current = path.dirname(current)) {
+  for (let current = deepestFolder; !(keepTopFolder && current === topFolder); current = path.dirname(current)) {
     try {
       await rmdir(current);
     } catch {
       return;
     }
-    if (current === folder) {
+    if (current === topFolder) {
       return;
     }
   }
 }
 
-/**
- * Removes staged apply files, and the folders under `folder` they leave
- * empty. The batch folder itself stays, since only ending the batch, or a
- * failed start that made it, removes it.
- */
+// The batch folder itself stays, since only ending the batch, or a failed start that made it, removes it.
 async function removeFiles(folder: string, files: readonly string[]): Promise<void> {
   for (const file of files) {
     await rm(file, { force: true });
@@ -150,9 +130,8 @@ function sameRepository(left: string, right: string): boolean {
 }
 
 /**
- * Checks that a member's file is still its staged apply before a discard
- * removes it, so a manifest edited by hand never has Repotted remove another
- * file. Returns false when the file is already gone.
+ * Checked before a discard removes the file, so a manifest edited by hand
+ * never has Repotted remove another file. False when the file is already gone.
  */
 async function isMemberFile(member: BatchMember): Promise<boolean> {
   let repository: string;
@@ -172,13 +151,11 @@ async function isMemberFile(member: BatchMember): Promise<boolean> {
   return true;
 }
 
-/** Removes the manifest of an empty batch, and its folder once nothing else is in it. */
 async function endBatch(batch: Batch): Promise<void> {
   await rm(path.join(batch.folder, batchManifest), { force: true });
   await removeEmptyFolders(batch.folder, batch.folder);
 }
 
-/** `target` as the manifest in `folder` stores it: relative, with forward slashes, unless only an absolute path reaches it. */
 function storedPath(folder: string, target: string): string {
   const relative = path.relative(folder, target);
   return path.isAbsolute(relative) ? target : relative.split(path.sep).join('/');
@@ -224,7 +201,6 @@ function manifestText(batch: Batch): string {
   return `${manifestHeader}\n${stringify(toSaved(batch), { lineWidth: 0 })}`;
 }
 
-/** Whether `folder` holds a batch, as a folder with a manifest. */
 export async function isBatch(folder: string): Promise<boolean> {
   return stat(path.join(folder, batchManifest)).then(
     (found) => found.isFile(),
@@ -232,7 +208,6 @@ export async function isBatch(folder: string): Promise<boolean> {
   );
 }
 
-/** The batch in `folder`, and the manifest's text as read, which a change compares before it writes. */
 async function readManifest(folder: string): Promise<{ batch: Batch; text: string }> {
   const real = await realFolder(folder);
   const file = path.join(real, batchManifest);
@@ -254,17 +229,14 @@ async function readManifest(folder: string): Promise<{ batch: Batch; text: strin
   return { batch: fromSaved(real, result.data), text };
 }
 
-/** Reads the batch in `folder`. */
 export async function readBatch(folder: string): Promise<Batch> {
   return (await readManifest(folder)).batch;
 }
 
 /**
- * Changes the batch in `folder`: `change` gets the batch as one read finds
- * it and returns it as it should be, and the manifest is replaced whole.
- * When another program changed the manifest after the read, the change
- * starts over from the manifest as it is then, so neither change is lost.
- * `change` may run more than once.
+ * When another program changed the manifest after the read, the change starts
+ * over from the manifest as it is then, so neither change is lost. `change`
+ * may run more than once.
  */
 async function changeBatch(folder: string, change: (batch: Batch) => Batch | Promise<Batch>): Promise<Batch> {
   for (let attempt = 1; ; attempt += 1) {
@@ -276,40 +248,27 @@ async function changeBatch(folder: string, change: (batch: Batch) => Batch | Pro
       await replaceFile(file, manifestText(changed), { create: false });
       return changed;
     }
-    if (attempt === manifestAttempts) {
+    if (attempt === manifestChangeAttemptLimit) {
       throw new ProfileError(`The batch in ${folder} kept changing while Repotted changed it, so try again`);
     }
   }
 }
 
-/** What to add to a batch: new staged applies, from its profile, and staged applies already in progress. */
 export interface BatchAdditions {
-  /** Repositories to start a staged apply for, as owner/name. */
   readonly repositories?: readonly string[];
-  /** Staged apply files to add as they are. */
   readonly join?: readonly string[];
-  /**
-   * The folder new staged applies go in, as `<owner>/<name>.yaml` in lower
-   * case. The batch folder by default.
-   */
+  /** New staged applies go in as `<owner>/<name>.yaml` in lower case. The batch folder by default. */
   readonly stagedFolder?: string;
 }
 
-/**
- * Where a new member's staged apply goes. GitHub names are not case
- * sensitive, so the path is in lower case, and a repository has one staged
- * apply there however its name is written.
- */
+// GitHub names are not case sensitive, so the path is in lower case, and a
+// repository has one staged apply there however its name is written.
 function newStagedFile(folder: string, repository: string): string {
   const repo = parseRepo(repository);
   return path.join(folder, repo.owner.toLowerCase(), `${repo.name.toLowerCase()}.yaml`);
 }
 
-/**
- * The members `additions` adds to `batch`. The staged applies it starts are
- * removed again when any addition fails, so a failed addition leaves no file
- * behind.
- */
+// The staged applies it starts are removed again when any addition fails.
 async function addMembers(batch: Batch, additions: BatchAdditions): Promise<BatchMember[]> {
   const added: BatchMember[] = [];
   const started: string[] = [];
@@ -353,17 +312,11 @@ async function addMembers(batch: Batch, additions: BatchAdditions): Promise<Batc
   return added;
 }
 
-/** What starts a batch: its profile, or none to start each repository from itself, and its first members. */
 export interface BatchStart extends BatchAdditions {
   readonly profile?: string;
 }
 
-/**
- * Starts a batch in `folder`, which is made if it is missing and must hold no
- * batch yet. It starts a staged apply for each repository, from the profile,
- * and adds each staged apply in `join` as it is. Nothing is left behind when
- * any of them fails.
- */
+/** Nothing is left behind when any member fails to start. */
 export async function createBatch(folder: string, start: BatchStart): Promise<Batch> {
   if ((start.repositories ?? []).length + (start.join ?? []).length === 0) {
     throw new ProfileError('A batch needs at least one repository');
@@ -401,7 +354,6 @@ export async function createBatch(folder: string, start: BatchStart): Promise<Ba
   }
 }
 
-/** Adds members to the batch in `folder`, as `createBatch` starts them, from the batch's profile. */
 export async function addToBatch(folder: string, additions: BatchAdditions): Promise<Batch> {
   const batch = await readBatch(folder);
   const added = await addMembers(batch, additions);
@@ -432,12 +384,10 @@ function findMember(batch: Batch, repository: string): BatchMember {
   return member;
 }
 
-/** The staged apply file of `repository` in the batch in `folder`, to show or edit it as any staged apply. */
 export async function batchMemberFile(folder: string, repository: string): Promise<string> {
   return findMember(await readBatch(folder), repository).file;
 }
 
-/** Leaves repositories out of the batch's plans and applies, or puts them back. */
 export async function leaveOut(folder: string, repositories: readonly string[], leftOut: boolean): Promise<Batch> {
   return changeBatch(folder, (batch) => {
     for (const repository of repositories) {
@@ -454,22 +404,14 @@ export async function leaveOut(folder: string, repositories: readonly string[], 
   });
 }
 
-/** What excluding, or including, one key in every member did to each. */
 export interface EverywhereResult {
   readonly batch: Batch;
-  /** The members whose staged apply changed. */
   readonly changed: readonly string[];
-  /** The members it could not change, and why; a member it had nothing to do in is in neither list. */
+  /** A member it had nothing to do in is in neither list. */
   readonly refused: readonly { readonly repository: string; readonly message: string }[];
 }
 
-/**
- * Excludes `key` from every member of the batch in `folder` whose profile
- * sets what it names, or includes it again in every member that excludes
- * it. Members left out of the batch change too, so putting one back finds
- * it as the rest. A member that refuses the change, as when its own edits
- * set the value, keeps its staged apply as it is and is named in `refused`.
- */
+/** Members left out of the batch change too, so putting one back finds it as the rest. */
 export async function editEverywhere(folder: string, key: string, excluded: boolean): Promise<EverywhereResult> {
   if (!isExclusionKey(key)) {
     throw new ProfileError(
@@ -508,21 +450,14 @@ export async function editEverywhere(folder: string, key: string, excluded: bool
   return { batch, changed, refused };
 }
 
-/** What taking one member out of a batch did. */
 export interface MemberDiscard {
-  /** The member's staged apply file. */
   readonly file: string;
-  /** Whether its staged apply stays, as one that joined the batch does; otherwise it was discarded. */
+  /** A staged apply that joined the batch stays; one the batch started is discarded. */
   readonly kept: boolean;
-  /** The batch as it is now, or null when that was its last member and the batch ended. */
+  /** Null when that was its last member and the batch ended. */
   readonly batch: Batch | null;
 }
 
-/**
- * Takes `repository` out of the batch in `folder`. A staged apply the batch
- * started is discarded; one that joined the batch stays, as `discardBatch`
- * leaves it. The batch ends with its last member.
- */
 export async function discardBatchMember(folder: string, repository: string): Promise<MemberDiscard> {
   const member = findMember(await readBatch(folder), repository);
   const remove = !member.joined && (await isMemberFile(member));
@@ -540,11 +475,8 @@ export async function discardBatchMember(folder: string, repository: string): Pr
 }
 
 /**
- * Ends the batch in `folder`: discards the staged applies it started and
- * removes its manifest. A staged apply that joined the batch stays, as it
- * was before the batch, and so do the profiles. Every file is checked
- * before any is removed, so a batch whose manifest lists another file stays
- * whole.
+ * Every file is checked before any is removed, so a batch whose manifest lists
+ * another file stays whole.
  */
 export async function discardBatch(folder: string): Promise<void> {
   const batch = await readBatch(folder);
@@ -558,11 +490,10 @@ export async function discardBatch(folder: string): Promise<void> {
   await endBatch(batch);
 }
 
-/** Why a member could not be planned or applied, as `--json` reports any failure. */
 export interface MemberError {
   readonly kind: 'signed_out' | 'owner_mismatch' | 'error';
   readonly message: string;
-  /** The HTTP status GitHub answered with, or null when the failure was not GitHub's answer. */
+  /** Null when the failure was not GitHub's answer. */
   readonly status: number | null;
 }
 
@@ -579,11 +510,6 @@ function memberError(error: unknown): MemberError {
   return { kind: 'error', message, status: null };
 }
 
-/**
- * One member's plan, as `plan --staged` shows one staged apply's: the plan,
- * the access that decides its locks, the staged apply and what leaves out
- * each change, with the file and its digest.
- */
 export interface MemberPlan extends Plan {
   readonly file: string;
   /**
@@ -598,7 +524,6 @@ export interface MemberPlan extends Plan {
   readonly exclusions: readonly PlanExclusion[];
 }
 
-/** Every member of a batch, planned: each plan, the members left out, and the members that could not be planned. */
 export interface BatchPlan {
   readonly batch: string;
   readonly id: string;
@@ -630,7 +555,7 @@ async function planMember(github: GitHub, member: BatchMember): Promise<MemberPl
   };
 }
 
-/** Maps `items` with at most `limit` maps running at once, keeping their order. `map` must not throw. */
+/** `map` must not throw. */
 async function mapLimited<T, R>(items: readonly T[], limit: number, map: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = [];
   const queue = [...items.entries()];
@@ -645,10 +570,9 @@ async function mapLimited<T, R>(items: readonly T[], limit: number, map: (item: 
 }
 
 /**
- * Plans every member of the batch in `folder` that is not left out, a few at
- * a time. A member that cannot be planned, as when the App is not installed
- * on it or its staged apply no longer resolves, is a failure of its own, and
- * the rest are planned all the same.
+ * A member that cannot be planned, as when the App is not installed on it or
+ * its staged apply no longer resolves, is a failure of its own, and the rest
+ * are planned all the same.
  */
 export async function planBatch(github: GitHub, folder: string): Promise<BatchPlan> {
   const batch = await readBatch(folder);
@@ -687,7 +611,6 @@ const savedBatchPlan = z.object({
   plans: z.array(z.unknown()),
 });
 
-/** One member of a saved batch plan, as apply reads it: its reviewed plan and what it needs to end its staged apply. */
 interface ReviewedMember {
   readonly repository: string;
   readonly file: string;
@@ -696,14 +619,12 @@ interface ReviewedMember {
   readonly locks: readonly Lock[];
 }
 
-/** A saved batch plan, as apply reads it. */
 export interface ReviewedBatch {
   readonly batch: string;
   readonly id: string;
   readonly plans: readonly ReviewedMember[];
 }
 
-/** Whether a saved plan document is a batch's, which lists its members' plans. */
 export function isBatchPlan(data: unknown): boolean {
   return typeof data === 'object' && data !== null && Array.isArray((data as { plans?: unknown }).plans);
 }
@@ -717,14 +638,9 @@ export function parseBatchPlan(data: unknown): ReviewedBatch {
   };
 }
 
-/**
- * How applying one member ended. `applied` and `in_line` finish it; `stale`,
- * `apply_failed` and `failed` are failures; `locked`, `left_out`, `changed`
- * and `stopped` were not tried.
- */
 export type MemberResult = {
   readonly repository: string;
-  /** Whether the member's staged apply ended, and it left the batch, now that it is applied. */
+  /** Whether the member's staged apply ended and it left the batch. */
   readonly ended: boolean;
 } & (
   | { readonly status: 'applied'; readonly applied: readonly Change[] }
@@ -745,26 +661,21 @@ export type MemberResult = {
   | { readonly status: 'failed'; readonly error: MemberError }
 );
 
-/** Whether applying a member was tried and failed: what `stopOnFailure` stops at. */
 export function isFailure(result: MemberResult): boolean {
   return result.status === 'stale' || result.status === 'apply_failed' || result.status === 'failed';
 }
 
-/** Whether a member did not finish: it failed, or it was not tried for a reason the batch still has. */
 export function isUnfinished(result: MemberResult): boolean {
   return isFailure(result) || result.status === 'locked' || result.status === 'changed' || result.status === 'stopped';
 }
 
 export interface BatchApplyOptions {
-  /** Applies only these members; every member when undefined. */
   readonly only?: readonly string[];
-  /** Stops at the first member that fails; the rest are `stopped`. */
+  /** The members after the first failure are `stopped`. */
   readonly stopOnFailure?: boolean;
-  /** Called with each member's result as soon as it is known. */
   readonly onResult?: (result: MemberResult) => void;
 }
 
-/** Whether the batch, as it is now, is the one reviewed and lists the member with its file, not left out. */
 function listsMember(batch: Batch, reviewed: ReviewedBatch, member: ReviewedMember): boolean {
   return (
     batch.id === reviewed.id &&
@@ -775,17 +686,11 @@ function listsMember(batch: Batch, reviewed: ReviewedBatch, member: ReviewedMemb
   );
 }
 
-/** Whether the member's staged apply file is still the one reviewed. */
 async function isReviewedFile(member: ReviewedMember): Promise<boolean> {
   const content = await readFile(member.file).catch(() => undefined);
   return content !== undefined && (await hexDigest('SHA-256', content)) === member.digest;
 }
 
-/**
- * Ends an applied member's staged apply and takes it out of the batch, when
- * the batch still lists it with that file and the file is the one reviewed.
- * Returns whether it did.
- */
 async function endMember(reviewed: ReviewedBatch, member: ReviewedMember): Promise<boolean> {
   if (!(await isReviewedFile(member))) {
     return false;
@@ -807,8 +712,7 @@ async function endMember(reviewed: ReviewedBatch, member: ReviewedMember): Promi
   return outcome.ended;
 }
 
-/** Why a member is not tried, as the batch and its file are now, or undefined to apply it. */
-async function notTried(reviewed: ReviewedBatch, member: ReviewedMember): Promise<MemberResult | undefined> {
+async function reasonNotTried(reviewed: ReviewedBatch, member: ReviewedMember): Promise<MemberResult | undefined> {
   const { repository } = member;
   // A batch that ended, moved or started over no longer holds the reviewed member.
   const listed = (await isBatch(reviewed.batch)) && listsMember(await readBatch(reviewed.batch), reviewed, member);
@@ -828,7 +732,7 @@ async function applyMember(github: GitHub, reviewed: ReviewedBatch, member: Revi
   const { repository } = member;
   let applied: readonly Change[];
   try {
-    const skip = await notTried(reviewed, member);
+    const skip = await reasonNotTried(reviewed, member);
     if (skip !== undefined) {
       return skip;
     }
@@ -859,7 +763,6 @@ async function applyMember(github: GitHub, reviewed: ReviewedBatch, member: Revi
     : { repository, ended, status: 'in_line' };
 }
 
-/** The members of `reviewed` that `only` names, or all of them; throws for a name the plan does not have. */
 export function chosenMembers(reviewed: ReviewedBatch, only: readonly string[] | undefined): readonly ReviewedMember[] {
   if (only === undefined) {
     return reviewed.plans;
@@ -873,14 +776,10 @@ export function chosenMembers(reviewed: ReviewedBatch, only: readonly string[] |
 }
 
 /**
- * Applies a reviewed batch one member at a time, in its order. Each member is
- * applied as `applyPlan` applies one plan, so it is planned again and written
- * only when its changes are the reviewed ones. A member with locks is not
- * tried, and neither is one the batch no longer holds as reviewed, nor one
- * whose staged apply changed since the review. A member that fails does not
- * stop the rest unless `stopOnFailure` says so. Each member that finishes
- * ends its staged apply and leaves the batch, and the batch ends with its
- * last member.
+ * Each member is applied as `applyPlan` applies one plan, so it is planned
+ * again and written only when its changes are the reviewed ones. A member with
+ * locks is not tried, and neither is one the batch no longer holds as
+ * reviewed, nor one whose staged apply changed since the review.
  */
 export async function applyBatch(
   github: GitHub,

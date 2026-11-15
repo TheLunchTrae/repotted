@@ -4,9 +4,9 @@ import { type GitHub, GitHubError, type Method } from '../src/github.js';
 type Tree = Map<string, { id: string; mode: string }>;
 
 /**
- * SHA-1 in hex, computed at once: the fake names commits, trees, and blobs
- * as git does, inside methods that answer without waiting, which the web
- * platform's own digest can't do.
+ * Computed at once: the fake names commits, trees, and blobs as git does,
+ * inside methods that answer without waiting, which the web platform's own
+ * digest can't do.
  */
 function sha1(bytes: Uint8Array): string {
   const length = bytes.length;
@@ -55,7 +55,6 @@ function sha1(bytes: Uint8Array): string {
   return state.map((word) => (word >>> 0).toString(16).padStart(8, '0')).join('');
 }
 
-/** The id git gives a file's content. */
 function blobId(content: Uint8Array): string {
   const header = new TextEncoder().encode(`blob ${content.byteLength}\0`);
   const whole = new Uint8Array(header.length + content.byteLength);
@@ -81,38 +80,27 @@ function hash(value: string): string {
   return sha1(new TextEncoder().encode(value));
 }
 
-/**
- * One repository's git data, as the contents and git data APIs serve it, for
- * the sync tests. Its owner can write to it directly, as a push from
- * elsewhere would.
- */
 export class FakeGitRepository implements GitHub {
-  /** How many fakes exist, which numbers each one. */
-  private static made = 0;
+  private static fakesMade = 0;
   readonly blobs = new Map<string, Uint8Array>();
   readonly trees = new Map<string, Tree>();
   readonly commits = new Map<string, Commit>();
   readonly refs = new Map<string, string>();
   readonly calls: { method: Method; path: string }[] = [];
-  /** Runs just before a branch moves, as a push that lands first would. */
   beforeRefUpdate: (() => void) | undefined;
-  /** Runs just before a blob is read, as an edit made here during a sync would. */
   beforeBlobRead: (() => void) | undefined;
-  /** Runs just before a file is written through the contents API, as a push that lands first would. */
   beforeContentsWrite: (() => void) | undefined;
-  /** The error GitHub answers every write with, as a ruleset or a missing permission would. */
   refuseWrites: GitHubError | undefined;
 
   readonly fullName: string;
-  /** GitHub's id for the repository; each fake is a repository of its own. */
   readonly id: number;
   defaultBranch: string;
 
   constructor(fullName = 'lunch/config', defaultBranch = 'main') {
     this.fullName = fullName;
     this.defaultBranch = defaultBranch;
-    FakeGitRepository.made += 1;
-    this.id = FakeGitRepository.made;
+    FakeGitRepository.fakesMade += 1;
+    this.id = FakeGitRepository.fakesMade;
   }
 
   private storeTree(tree: Tree): string {
@@ -127,7 +115,6 @@ export class FakeGitRepository implements GitHub {
     return id;
   }
 
-  /** The branch's files as text, by path. */
   files(branch = this.defaultBranch): Record<string, string> {
     const head = this.refs.get(branch);
     if (head === undefined) {
@@ -139,7 +126,7 @@ export class FakeGitRepository implements GitHub {
     );
   }
 
-  /** Commits files to the branch, a string to write and null to delete, as a push from elsewhere would. */
+  /** A string writes a file and null deletes it. */
   write(changes: Record<string, string | null>, options: { mode?: string; message?: string } = {}): string {
     const head = this.refs.get(this.defaultBranch);
     const tree: Tree = new Map(head === undefined ? [] : this.trees.get(this.commits.get(head)?.tree ?? ''));
@@ -162,7 +149,6 @@ export class FakeGitRepository implements GitHub {
     return commit;
   }
 
-  /** Every commit before this one. */
   private ancestors(id: string): Set<string> {
     const found = new Set<string>();
     const queue = [...(this.commits.get(id)?.parents ?? [])];
@@ -175,7 +161,6 @@ export class FakeGitRepository implements GitHub {
     return found;
   }
 
-  /** The branch's commit messages, newest first. */
   log(branch = this.defaultBranch): string[] {
     const messages: string[] = [];
     let id = this.refs.get(branch);

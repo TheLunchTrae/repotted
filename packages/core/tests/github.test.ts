@@ -6,7 +6,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Makes Octokit's requests answer with this status, JSON body and headers. */
 function answer(status: number, body: unknown, headers: Record<string, string> = {}): void {
   vi.stubGlobal('fetch', () =>
     Promise.resolve(

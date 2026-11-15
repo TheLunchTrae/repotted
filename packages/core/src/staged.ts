@@ -26,24 +26,17 @@ import {
 } from './profile.js';
 import { environmentKey, labelKey, type Profile, profileFile, type ProfileFile } from './schema.js';
 
-// A staged apply is a profile layer of its own: a file that names the
-// repository it applies to, extends the profile it starts from, if any, and
-// sets one-off edits over it. It resolves and plans with the same engine as
-// any profile, so its plan is reviewed and applied like any other, and the
-// profile it extends never changes unless its edits are saved to it.
-
-/** The lists an exclusion can name an entry of, and the key each entry is known by. */
-const lists = {
+const entryKeyByExcludableList = {
   autolinks: (entry: Record<string, unknown>) => String(entry['key_prefix']),
   rulesets: (entry: Record<string, unknown>) => String(entry['name']),
   environments: (entry: Record<string, unknown>) => environmentKey(String(entry['name'])),
   labels: (entry: Record<string, unknown>) => labelKey(String(entry['name'])),
 } as const;
 
-type List = keyof typeof lists;
+type List = keyof typeof entryKeyByExcludableList;
 
 function isList(name: string): name is List {
-  return Object.hasOwn(lists, name);
+  return Object.hasOwn(entryKeyByExcludableList, name);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -51,10 +44,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * One thing a staged apply leaves out of the profile it starts from: a whole
- * section, as `pages`; a setting or a group of settings, as
- * `repository.has_wiki` or `actions.selected_actions`; or one entry of a
- * list, by its list and name, as `rulesets/Main`.
+ * An exclusion key names a whole section, as `pages`; a setting or a group of
+ * settings, as `repository.has_wiki` or `actions.selected_actions`; or one
+ * entry of a list, as `rulesets/Main`.
  */
 type Exclusion =
   | { readonly kind: 'section'; readonly section: string }
@@ -75,20 +67,19 @@ function parseExclusion(key: string): Exclusion | undefined {
   return settingPath(parts) === undefined ? undefined : { kind: 'setting', path: parts };
 }
 
-/** The key an exclusion is known by, so two spellings of one environment's or label's name are one exclusion. */
+/** Two spellings of one environment's or label's name are one exclusion. */
 function exclusionKey(key: string): string {
   const exclusion = parseExclusion(key);
   if (exclusion?.kind !== 'entry') {
     return key;
   }
-  return `${exclusion.list}/${lists[exclusion.list]({ name: exclusion.name, key_prefix: exclusion.name })}`;
+  return `${exclusion.list}/${entryKeyByExcludableList[exclusion.list]({ name: exclusion.name, key_prefix: exclusion.name })}`;
 }
 
 function getIn(value: unknown, keys: readonly string[]): unknown {
   return keys.reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), value);
 }
 
-/** Whether a profile, or a layer of one, sets what `exclusion` names. */
 function sets(layer: Readonly<Record<string, unknown>>, exclusion: Exclusion): boolean {
   if (exclusion.kind === 'section') {
     return getIn(layer, [exclusion.section]) !== undefined;
@@ -96,19 +87,17 @@ function sets(layer: Readonly<Record<string, unknown>>, exclusion: Exclusion): b
   if (exclusion.kind === 'setting') {
     return getIn(layer, exclusion.path) !== undefined;
   }
-  const key = lists[exclusion.list];
+  const key = entryKeyByExcludableList[exclusion.list];
   const wanted = key({ name: exclusion.name, key_prefix: exclusion.name });
   const entries: unknown = layer[exclusion.list];
   return Array.isArray(entries) && entries.some((entry) => isRecord(entry) && key(entry) === wanted);
 }
 
 const stagedFields = {
-  /** The repository the staged apply applies to. */
   apply_to: z.string().regex(repoPattern, 'Use owner/name'),
   exclude: z.array(z.string().min(1)).optional(),
 };
 
-/** A staged apply file, checked whole: its own keys, its edits, and exclusions that clash with neither. */
 const stagedFile = profileFile
   .extend(stagedFields)
   .strict()
@@ -151,8 +140,7 @@ const stagedFile = profileFile
 
 type StagedFile = z.infer<typeof stagedFile>;
 
-/** `value` without the key at `keys`; a record left empty by it goes too. */
-function without(value: unknown, keys: readonly string[]): unknown {
+function withoutKeyPruningEmptyRecords(value: unknown, keys: readonly string[]): unknown {
   const [first, ...rest] = keys;
   if (!isRecord(value) || first === undefined) {
     return value;
@@ -165,27 +153,26 @@ function without(value: unknown, keys: readonly string[]): unknown {
       if (rest.length === 0) {
         return [];
       }
-      const kept = without(inner, rest);
+      const kept = withoutKeyPruningEmptyRecords(inner, rest);
       return isRecord(kept) && Object.keys(kept).length === 0 ? [] : [[key, kept]];
     }),
   );
 }
 
-/** Whether `exclusion` names the entry `entry` of `list`. */
 function namesEntry(exclusion: Exclusion, list: string, entry: Record<string, unknown>): boolean {
   if (exclusion.kind !== 'entry' || exclusion.list !== list) {
     return false;
   }
-  const key = lists[exclusion.list];
+  const key = entryKeyByExcludableList[exclusion.list];
   return key(entry) === key({ name: exclusion.name, key_prefix: exclusion.name });
 }
 
 function withoutExclusion(data: unknown, exclusion: Exclusion): unknown {
   if (exclusion.kind === 'section') {
-    return without(data, [exclusion.section]);
+    return withoutKeyPruningEmptyRecords(data, [exclusion.section]);
   }
   if (exclusion.kind === 'setting') {
-    return without(data, exclusion.path);
+    return withoutKeyPruningEmptyRecords(data, exclusion.path);
   }
   if (!isRecord(data)) {
     return data;
@@ -201,11 +188,6 @@ function withoutExclusion(data: unknown, exclusion: Exclusion): unknown {
     : data;
 }
 
-/**
- * Leaves a staged apply's exclusions out of the merged profile it starts
- * from, before the result is checked, and names as unmatched each exclusion
- * that leaves nothing out.
- */
 function excluding(exclude: readonly string[]): Adjust {
   return (data) => {
     const unmatched: string[] = [];
@@ -221,21 +203,19 @@ function excluding(exclude: readonly string[]): Adjust {
   };
 }
 
-/** What one parse of a staged apply file yields: the file, its profile layer, and its exclusions as an adjust. */
 interface StagedRead {
   readonly own: StagedFile;
   readonly layer: ProfileFile;
   readonly adjust: Adjust;
 }
 
-/** A staged apply file as the first file of a profile chain. */
 const stagedLayer: Layer<StagedRead> = {
   noun: 'staged apply',
   schema: stagedFile.transform((own): StagedRead => {
     const { apply_to: _repository, exclude = [], ...layer } = own;
     return { own, layer, adjust: excluding(exclude) };
   }),
-  paths: new Set(['exclude']),
+  ownTopLevelKeys: new Set(['exclude']),
   check: () => undefined,
 };
 
@@ -243,7 +223,6 @@ function unmatchedWarning(key: string): string {
   return `Excluding ${key} leaves nothing out, since the profile sets nothing it names`;
 }
 
-/** Whether `exclusion` names the value that `sources` lists under `section` as `name`. */
 function namesSource(exclusion: Exclusion, section: string, name: string): boolean {
   if (exclusion.kind === 'section') {
     return exclusion.section === section;
@@ -258,7 +237,6 @@ function namesSource(exclusion: Exclusion, section: string, name: string): boole
 
 type Sources = Omit<ProfileSources, 'drafts'>;
 
-/** The sources of what the exclusions leave, so an excluded value names no file. */
 function sourcesWithoutExclusions(sources: Sources, exclusions: readonly Exclusion[]): Sources {
   const keep = (section: keyof Sources): Record<string, string> =>
     Object.fromEntries(
@@ -280,27 +258,18 @@ function sourcesWithoutExclusions(sources: Sources, exclusions: readonly Exclusi
   };
 }
 
-/** A staged apply as it resolves: what it applies to, and the profile its plan brings the repository to. */
 export interface StagedApply {
-  /** The staged apply file's real path, first in `chain`. */
   readonly file: string;
   readonly repository: string;
-  /** The real path of the profile it starts from, or null when it starts from the repository as it is. */
+  /** Null when it starts from the repository as it is. */
   readonly base: string | null;
-  /** What it leaves out of the profile it starts from, as the file lists it. */
   readonly exclude: readonly string[];
-  /** The staged file, then each profile it extends, as real paths. */
   readonly chain: readonly string[];
-  /** The profile laid under its edits, without its exclusions: what the plan brings the repository to. */
   readonly profile: Profile;
-  /**
-   * The drafts of the profile it starts from, which its plan leaves out as
-   * any plan does. The staged apply itself holds none.
-   */
+  /** The drafts of the profile it starts from. The staged apply itself holds none. */
   readonly drafts: Drafts;
   /** What stops each of those drafts from applying as it stands. */
   readonly warnings: readonly string[];
-  /** The file that sets each value of `profile` and each draft, as `resolveProfile` reports it. */
   readonly sources: ProfileSources;
 }
 
@@ -318,7 +287,6 @@ async function readStagedFile(file: string): Promise<StagedFile> {
   return result.data;
 }
 
-/** A staged apply from one read of its file and its resolved chain, whose profile already leaves its exclusions out. */
 function staged({ head: { own }, resolved, unmatched }: ResolvedLayer<StagedRead>): StagedApply {
   const exclude = own.exclude ?? [];
   const exclusions = exclude.flatMap((key) => parseExclusion(key) ?? []);
@@ -336,20 +304,12 @@ function staged({ head: { own }, resolved, unmatched }: ResolvedLayer<StagedRead
   };
 }
 
-/**
- * Reads a staged apply over the profile it starts from. A profile that
- * changes after an exclusion was added may set nothing it names, which is a
- * warning.
- */
+/** A profile that changes after an exclusion was added may set nothing it names, which is a warning. */
 export async function resolveStagedApply(file: string): Promise<StagedApply> {
   return staged(await resolveLayer(file, stagedLayer));
 }
 
-/**
- * Starts a staged apply in a new file: one apply to `repository`, from the
- * profile `from` names, or from the repository as it is when it names none.
- * The file must not exist yet, so a staged apply in progress is never lost.
- */
+/** The file must not exist yet, so a staged apply in progress is never lost. */
 export async function createStagedApply(
   file: string,
   repository: string,
@@ -380,15 +340,10 @@ function isSameList(left: readonly string[], right: readonly string[]): boolean 
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
-/** A change to a staged apply: a one-off edit, as a profile edit, or a value to exclude or stop excluding. */
 export type StagedEdit = ProfileEdit | { readonly exclude: string; readonly excluded: boolean };
 
-/**
- * Changes a staged apply's one-off edits and exclusions, as `editProfile` changes
- * a profile. The file changes only when the result is a valid staged apply.
- */
+/** The file changes only when the result is a valid staged apply. */
 export async function editStagedApply(file: string, edits: readonly StagedEdit[]): Promise<StagedApply> {
-  /** The edits to the file, with its exclusions changed from those it holds as read. */
   const fileEdits = ({ own }: StagedRead): ProfileEdit[] => {
     const exclude = [...(own.exclude ?? [])];
     const profileEdits: ProfileEdit[] = [];
@@ -431,11 +386,7 @@ export async function editStagedApply(file: string, edits: readonly StagedEdit[]
   );
 }
 
-/**
- * What a staged apply resolves to now and with these one-off edits, as
- * `editStagedApply` would leave it. Nothing is written, so an editor can
- * show what its unsaved edits give before it saves them.
- */
+/** Nothing is written, so an editor can show what its unsaved edits give before it saves them. */
 export async function previewStagedApply(
   file: string,
   edits: readonly ProfileEdit[],
@@ -444,7 +395,6 @@ export async function previewStagedApply(
   return { before: staged(before), after: staged(after) };
 }
 
-/** The edits that write a profile layer's own settings and entries into another file, or clear them. */
 function layerEdits(layer: ProfileFile, clear: boolean): ProfileEdit[] {
   const edits: ProfileEdit[] = [];
   for (const section of settingsSections) {
@@ -468,14 +418,12 @@ function layerEdits(layer: ProfileFile, clear: boolean): ProfileEdit[] {
 }
 
 /**
- * Saves a staged apply's one-off edits to the profile it starts from, then
- * clears them from the staged apply, which resolves the same afterwards.
- * Exclusions stay in the staged apply: they say what this apply leaves out, which
- * a profile cannot say. When the second write fails, the profile already
+ * Exclusions stay in the staged apply: they say what this apply leaves out,
+ * which a profile cannot say. When the second write fails, the profile already
  * holds the edits and the staged apply still sets the same values, so it
- * resolves the same either way. The second write is refused, as a failed
- * one, when another program changed the staged apply's edits after the
- * first read, since clearing them would lose a change no profile holds.
+ * resolves the same either way. The second write is refused, as a failed one,
+ * when another program changed the staged apply's edits after the first read,
+ * since clearing them would lose a change no profile holds.
  */
 export async function saveStagedEdits(file: string): Promise<StagedApply> {
   const read = await resolveLayer(file, stagedLayer);
@@ -511,25 +459,20 @@ export async function saveStagedEdits(file: string): Promise<StagedApply> {
   return staged(cleared);
 }
 
-/**
- * What leaves one change of a staged apply's plan out, or one field of it:
- * the key to exclude, as `stage --exclude` takes it.
- */
 export interface PlanExclusion {
   /** The change's index in the plan's changes. */
   readonly change: number;
-  /** The field it leaves out, or null for the whole change, as for a ruleset. */
+  /** Null for the whole change, as for a ruleset. */
   readonly field: string | null;
   readonly key: string;
   /**
-   * Whether the staged apply's own edits set what the key names. Such a
-   * value is left out by undoing the edit, since a staged apply refuses to
-   * exclude what it edits.
+   * Whether the staged apply's own edits set what the key names. Such a value
+   * is left out by undoing the edit, since a staged apply refuses to exclude
+   * what it edits.
    */
   readonly edited: boolean;
 }
 
-/** A staged apply's plan, with what leaves each of its changes out. */
 export interface StagedPlan {
   readonly staged: StagedApply;
   readonly plan: Plan;
@@ -537,17 +480,14 @@ export interface StagedPlan {
 }
 
 /**
- * The setting, or the group of settings, that a settings change's field
- * falls under, if a profile names it. A field in a group gives the whole
- * group, which GitHub writes at once and may tie together, as it ties the
- * OIDC subject's claim keys to its default.
+ * A field in a group gives the whole group, which GitHub writes at once and
+ * may tie together, as it ties the OIDC subject's claim keys to its default.
  */
 function settingKey(section: string, field: string): string | undefined {
   const [key] = field.split('.');
   return key !== undefined && settingPath([section, key]) !== undefined ? `${section}.${key}` : undefined;
 }
 
-/** What leaves each change of `plan`, or each field of a settings change, out of the staged apply `own`. */
 function planExclusions(plan: Plan, own: StagedFile): PlanExclusion[] {
   const exclusion = (change: number, field: string | null, key: string | undefined): PlanExclusion[] => {
     const parsed = key === undefined ? undefined : parseExclusion(key);
@@ -566,10 +506,8 @@ function planExclusions(plan: Plan, own: StagedFile): PlanExclusion[] {
 }
 
 /**
- * Plans a staged apply: the changes that bring its repository to its
- * profile, and what leaves each out. `accept` sees the staged apply as the
- * plan's one read of its file finds it, before GitHub is read, and throws
- * to refuse it.
+ * `accept` sees the staged apply as the plan's one read of its file finds it,
+ * before GitHub is read, and throws to refuse it.
  */
 export async function planStagedApply(
   github: GitHub,
@@ -595,32 +533,25 @@ export async function planStagedApply(
   return { staged: resolved, plan, exclusions: planExclusions(plan, read.head.own) };
 }
 
-/**
- * Whether excluding `key` would leave something out of what a staged apply
- * applies: its profile sets what the key names, and it is not excluded yet.
- */
+/** False for a key excluded already, since the profile then no longer sets what it names. */
 export function stagedSets(staged: StagedApply, key: string): boolean {
   const exclusion = parseExclusion(key);
   return exclusion !== undefined && sets(staged.profile, exclusion);
 }
 
-/** Whether a staged apply excludes what `key` names, however the key spells an environment's name. */
 export function stagedExcludes(staged: StagedApply, key: string): boolean {
   return staged.exclude.some((excluded) => exclusionKey(excluded) === exclusionKey(key));
 }
 
-/** Ends a staged apply by removing its file; the profile it starts from stays as it is. */
 export async function discardStagedApply(file: string): Promise<void> {
   await readStagedFile(file);
   await rm(file);
 }
 
-/** The repository a staged apply file applies to, as it holds it, without resolving the profile it starts from. */
 export async function stagedRepository(file: string): Promise<string> {
   return (await readStagedFile(file)).apply_to;
 }
 
-/** Whether `key` names something a staged apply can exclude, as in `repository.has_wiki` or `rulesets/Main`. */
 export function isExclusionKey(key: string): boolean {
   return parseExclusion(key) !== undefined;
 }

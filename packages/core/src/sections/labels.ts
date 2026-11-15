@@ -8,7 +8,6 @@ import { type Label, type LabelEntry, labelKey } from '../schema.js';
 
 const liveLabel = z.object({ name: z.string(), color: z.string(), description: z.string().nullish() });
 
-/** A label as GitHub stores it, with no description as an empty one. */
 export interface LiveLabel {
   readonly name: string;
   readonly color: string;
@@ -17,7 +16,6 @@ export interface LiveLabel {
 
 export type LiveLabels = { readonly available: true; readonly labels: readonly LiveLabel[] } | Unavailable;
 
-/** Reads the repository's labels. */
 export async function readLabels(github: GitHub, repo: RepoRef): Promise<LiveLabels> {
   const path = `${repoPath(repo)}/labels`;
   try {
@@ -36,7 +34,6 @@ export async function readLabels(github: GitHub, repo: RepoRef): Promise<LiveLab
   }
 }
 
-/** A color as GitHub writes it: six lowercase hex digits without `#`. */
 function normalColor(color: string): string {
   return color.replace(/^#/u, '').toLowerCase();
 }
@@ -45,10 +42,7 @@ function isAbsent(entry: LabelEntry): entry is Extract<LabelEntry, { absent: tru
   return entry.absent === true;
 }
 
-/**
- * The fields of `entry` that `current` does not hold. A name that differs
- * only in case counts, since GitHub keeps the case it is given.
- */
+// A name that differs only in case counts, since GitHub keeps the case it is given.
 function labelChanges(entry: Label, current: LiveLabel): FieldChange[] {
   const fields: FieldChange[] = [];
   if (entry.name !== current.name) {
@@ -63,8 +57,7 @@ function labelChanges(entry: Label, current: LiveLabel): FieldChange[] {
   return fields;
 }
 
-/** The write a field takes in GitHub's label body, where a new name goes as `new_name`. */
-function bodyOf(fields: readonly FieldChange[]): Record<string, unknown> {
+function labelWriteBody(fields: readonly FieldChange[]): Record<string, unknown> {
   return Object.fromEntries(fields.map(({ field, to }) => [field === 'name' ? 'new_name' : field, to]));
 }
 
@@ -153,13 +146,12 @@ export function planLabels(desired: readonly LabelEntry[], live: LiveLabels, rep
       target: entry.name,
       entry: { name: entry.name },
       fields,
-      request: { method: 'PATCH', path: labelPath(source.name), body: bodyOf(fields) },
+      request: { method: 'PATCH', path: labelPath(source.name), body: labelWriteBody(fields) },
     });
   }
   return { changes: [...deletes, ...renames, ...updates, ...creates], warnings };
 }
 
-/** A label as a profile describes it, for capture. */
 export function describeLabel(live: LiveLabel): Label {
   return { name: live.name, color: normalColor(live.color), description: live.description };
 }

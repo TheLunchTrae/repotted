@@ -3,22 +3,17 @@ import path from 'node:path';
 
 import { randomHex } from './bytes.js';
 
-// What Windows answers while another program, such as antivirus or the
-// search indexer, holds a file that was just written.
-const retriedCodes = new Set(['EPERM', 'EBUSY', 'EACCES']);
+// Antivirus or the search indexer can briefly hold a file that was just written.
+const transientWindowsFileLockErrorCodes = new Set(['EPERM', 'EBUSY', 'EACCES']);
 
 function errorCode(error: unknown): string | undefined {
   return error instanceof Error && 'code' in error ? String(error.code) : undefined;
 }
 
 /**
- * Replaces a file whole through a temporary file beside it, so a reader sees
- * the old content or the new, never part of it, and a failure leaves the old
- * one. A file that exists keeps its permissions. A move that Windows holds up
- * is tried again. The temporary file's name starts with a dot, so neither a
- * sync nor a profile listing takes it for a profile, and has a random part,
- * so two writes at once never share one. With `create: false` the file must
- * already exist, so a write never brings back a file deleted meanwhile.
+ * The temporary file's name starts with a dot, so neither a sync nor a profile
+ * listing takes it for a profile. `create: false` keeps a write from bringing
+ * back a file deleted meanwhile.
  */
 export async function replaceFile(
   file: string,
@@ -43,7 +38,7 @@ export async function replaceFile(
         await rename(temporary, file);
         return;
       } catch (error) {
-        if (attempt === 5 || !retriedCodes.has(errorCode(error) ?? '')) {
+        if (attempt === 5 || !transientWindowsFileLockErrorCodes.has(errorCode(error) ?? '')) {
           throw error;
         }
         await new Promise((done) => setTimeout(done, attempt * 50));

@@ -45,9 +45,7 @@ export interface FakeState {
   /** Labels as GitHub stores them, where an empty description is null. */
   labels: StoredLabel[];
   account: FakeAccount;
-  /** What owns the repository, as GitHub's `owner.type` says. */
   ownerType: 'User' | 'Organization';
-  /** The signed-in account's `permissions` flags on the repository. */
   viewer: { admin: boolean; maintain: boolean; push: boolean; triage: boolean; pull: boolean };
 }
 
@@ -58,7 +56,7 @@ export interface FakeRepository {
   permissions?: { admin: boolean };
 }
 
-/** The signed-in account. `installations` is undefined for a token GitHub refuses the installation list to. */
+/** `installations` is undefined for a token GitHub refuses the installation list to. */
 export interface FakeAccount {
   login: string;
   name: string | null;
@@ -67,8 +65,8 @@ export interface FakeAccount {
 }
 
 /**
- * An installation of the App. `account` defaults to the owner of its first
- * repository, `selection` to `selected`, and `permissions` to none.
+ * `account` defaults to the owner of its first repository, `selection` to
+ * `selected`, and `permissions` to none.
  */
 export interface FakeInstallation {
   id: number;
@@ -123,7 +121,6 @@ function storedRules(value: unknown): StoredRuleset['rules'] {
   });
 }
 
-/** An error as GitHub sends it, with a link to its docs, read as `createGitHub` reads one. */
 export function answered(status: number, message: string): GitHubError {
   return responseError(status, { message, documentation_url: 'https://docs.github.com/rest', status: String(status) });
 }
@@ -140,17 +137,12 @@ function paging(query: URLSearchParams): { perPage: number; page: number } {
   return { perPage: Number(query.get('per_page') ?? '30'), page: Number(query.get('page') ?? '1') };
 }
 
-/**
- * An in-memory GitHub that serves the endpoints Repotted uses for one
- * repository, `lunch/app` unless it names another, and records every write.
- */
 export class FakeGitHub implements GitHub {
   readonly state: FakeState;
   readonly calls: Call[] = [];
   private readonly failures: Failure[] = [];
   private nextId = 100;
 
-  /** The repository it serves, `lunch/app` by default. */
   readonly fullName: string;
 
   constructor(state: Partial<FakeState> = {}, fullName = 'lunch/app') {
@@ -371,7 +363,6 @@ export class FakeGitHub implements GitHub {
     }
   }
 
-  /** Serves the settings at endpoints of their own, or says the path is not one. */
   private handleSetting(method: Method, relative: string, body: unknown): unknown {
     const { settings } = this.state;
     const stored = (): unknown => {

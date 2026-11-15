@@ -6,27 +6,16 @@ import { fieldChanges } from './match.js';
 import { requiredPermission } from './permissions.js';
 
 interface EndpointBase {
-  /** The setting's key in its profile section. */
   readonly key: string;
-  /** The endpoint's path under the repository, as `/vulnerability-alerts`. */
   readonly path: string;
-  /** What the setting is called in a plan. */
   readonly target: string;
 }
 
 /**
- * A setting GitHub keeps at an endpoint of its own under the repository.
- *
- * - A `toggle` is on while a GET finds it: PUT turns it on and DELETE turns
- *   it off. `reads` says whether a found one is on (`presence`) or says so in
- *   its `enabled` field. A 404 means off for a `presence` toggle, and for an
- *   `enabled` one marked `missingIsOff`; for any other it means the
- *   repository does not have the feature.
- * - A `field` is one field of an endpoint, kept under the field's name. One
- *   GitHub leaves out of its answer is unset.
- * - An `object` is an endpoint's fields, kept together under the endpoint's
- *   name. A write sends what the profile names and the `carries` fields,
- *   taking any the profile leaves out from the live value.
+ * A `toggle` is on while a GET finds it: PUT turns it on and DELETE turns it
+ * off. A 404 means off for a `presence` toggle, and for an `enabled` one marked
+ * `missingIsOff`; for any other it means the repository does not have the
+ * feature.
  */
 export type Endpoint =
   | (EndpointBase & {
@@ -37,26 +26,21 @@ export type Endpoint =
   | (EndpointBase & { readonly kind: 'field'; readonly method: 'PUT' | 'PATCH' })
   | (EndpointBase & ObjectEndpoint);
 
-/** What GitHub ties together in an object setting, so a plan matches what GitHub keeps. */
 interface ObjectEndpoint {
   readonly kind: 'object';
   readonly method: 'PUT' | 'PATCH';
-  /** The endpoint's object in the profile schema, which names its fields. */
   readonly schema: z.ZodObject;
   /**
-   * The fields a write takes from the live value when the profile leaves
-   * them out: by default every field for a PUT, which replaces what it is
-   * sent, and none for a PATCH.
+   * The fields a write takes from the live value when the profile leaves them
+   * out. Defaults to every field for a PUT, which replaces what it is sent, and
+   * none for a PATCH.
    */
   readonly carries?: readonly string[];
-  /** Fields that describe one repository, which a capture leaves out. */
-  readonly identifying?: readonly string[];
-  /** Puts what GitHub reports in the form a profile and a write use. */
+  readonly repositorySpecificFields?: readonly string[];
   readonly fromGitHub?: (value: Record<string, unknown>) => Record<string, unknown>;
   /**
-   * Makes what the profile names into what GitHub will keep, given the live
-   * value: fills in fields GitHub ties to the ones named, and leaves out,
-   * with the reason, fields GitHub drops with the option chosen.
+   * Fills in fields GitHub ties to the ones named, and leaves out, with the
+   * reason, fields GitHub drops with the option chosen.
    */
   readonly adjust?: (
     desired: Record<string, unknown>,
@@ -65,48 +49,33 @@ interface ObjectEndpoint {
     readonly desired: Record<string, unknown>;
     readonly dropped?: { readonly fields: readonly string[]; readonly reason: string };
   };
-  /** Changes the body a write sends, as dropping fields GitHub refuses with the option chosen. */
-  readonly body?: (body: Record<string, unknown>) => Record<string, unknown>;
+  readonly adjustWriteBody?: (body: Record<string, unknown>) => Record<string, unknown>;
 }
 
-/**
- * Why a setting or a section cannot be read on the repository: `refused`
- * when GitHub hides it, as from a token without the permission or an
- * account without a payment method on file, and
- * `unavailable` when GitHub does not offer it on the repository.
- */
 export interface Unavailable {
   readonly available: false;
   readonly cause: Extract<SkipCause, 'refused' | 'unavailable'>;
   readonly reason: string;
 }
 
-/** A setting as the repository holds it, or why it cannot be read there. */
 export type EndpointValue = { readonly available: true; readonly value: unknown } | Unavailable;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Why GitHub refused a request, in words that name the permission it needs. */
 export function refusal(error: GitHubError, method: Method, path: string, what: string): string {
   const permission = requiredPermission(method, path);
   const verb = method === 'GET' ? 'read' : 'change';
   return `GitHub refused to ${verb} ${what} (${error.message}); that needs the ${permission} permission`;
 }
 
-/**
- * Reads a resource under the repository, such as `/pages`. One that GitHub
- * does not offer on the repository, or refuses to show, reads as
- * unavailable with the reason, so a capture or plan can go on without it;
- * `missing` stands in for a resource whose 404 means it is off or absent.
- */
 export async function readResource(
   github: GitHub,
   repo: RepoRef,
   relative: string,
   target: string,
-  missing?: unknown,
+  valueWhen404MeansOffOrAbsent?: unknown,
 ): Promise<EndpointValue> {
   const path = `${repoPath(repo)}${relative}`;
   try {
@@ -115,15 +84,15 @@ export async function readResource(
     if (!(error instanceof GitHubError)) {
       throw error;
     }
-    if (error.status === 404 && missing !== undefined) {
-      return { available: true, value: missing };
+    if (error.status === 404 && valueWhen404MeansOffOrAbsent !== undefined) {
+      return { available: true, value: valueWhen404MeansOffOrAbsent };
     }
     if (error.status === 403) {
       return { available: false, cause: 'refused', reason: refusal(error, 'GET', path, target) };
     }
     // 402 for a billed feature, such as the Actions cache retention limit,
     // on an account with no payment method on file. Adding one lifts it, so
-    // a capture says so, as it does for a missing permission.
+    // a capture says so, as it does for a valueWhen404MeansOffOrAbsent permission.
     if (error.status === 402) {
       return {
         available: false,
@@ -147,7 +116,6 @@ export async function readResource(
 
 const off = Symbol('off');
 
-/** Reads one setting. */
 export async function readEndpoint(github: GitHub, repo: RepoRef, endpoint: Endpoint): Promise<EndpointValue> {
   const read = await readResource(
     github,
@@ -184,7 +152,6 @@ export async function readEndpoint(github: GitHub, repo: RepoRef, endpoint: Endp
   return { available: true, value };
 }
 
-/** Reads several settings, in order, by key. */
 export async function readEndpoints(
   github: GitHub,
   repo: RepoRef,
@@ -197,7 +164,6 @@ export async function readEndpoints(
   return values;
 }
 
-/** The change that brings one setting in line, if it needs one. */
 export function planEndpoint(
   section: SettingsSection,
   endpoint: Endpoint,
@@ -262,18 +228,14 @@ export function planEndpoint(
         action: 'update',
         target: endpoint.target,
         fields: fields.map((field) => ({ ...field, field: `${endpoint.key}.${field.field}` })),
-        request: { method: endpoint.method, path, body: endpoint.body?.(body) ?? body },
+        request: { method: endpoint.method, path, body: endpoint.adjustWriteBody?.(body) ?? body },
       });
     }
   }
   return { changes, warnings };
 }
 
-/**
- * Why a profile cannot hold a value GitHub reports, naming each part that
- * fails and where it is, or undefined when it can.
- */
-export function unloadable(schema: z.ZodType, value: unknown): string | undefined {
+export function unloadableReason(schema: z.ZodType, value: unknown): string | undefined {
   const result = schema.safeParse(value);
   if (result.success) {
     return undefined;
@@ -290,11 +252,9 @@ export function unloadable(schema: z.ZodType, value: unknown): string | undefine
 }
 
 /**
- * The captured settings that a profile can hold. GitHub may report a value
- * that no profile takes, such as an option newer than the schema, so a
- * setting that fails its schema is left out with a warning, and the capture
- * still loads. The settings are a section's, or with `key`, the fields of
- * that setting.
+ * GitHub may report a value that no profile takes, such as an option newer than
+ * the schema, so a setting that fails its schema is left out with a warning,
+ * and the capture still loads.
  */
 export function loadable(
   at: { readonly section: Section; readonly key?: string },
@@ -305,7 +265,7 @@ export function loadable(
   const kept: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(settings)) {
     const field: unknown = schema.shape[key];
-    const problem = unloadable(field instanceof z.ZodType ? field : z.never(), value);
+    const problem = unloadableReason(field instanceof z.ZodType ? field : z.never(), value);
     if (problem === undefined) {
       kept[key] = value;
     } else {
@@ -320,7 +280,6 @@ export function loadable(
   return kept;
 }
 
-/** A captured section: the settings it could read, and a warning for each it could not. */
 export function captureEndpoints(
   section: Section,
   endpoints: readonly Endpoint[],
@@ -336,17 +295,18 @@ export function captureEndpoints(
     if (value.available) {
       // An object's fields are checked one by one, so one GitHub reports in a
       // form a profile cannot hold leaves out only that field.
-      const identifying = endpoint.kind === 'object' ? (endpoint.identifying ?? []) : [];
+      const repositorySpecificFields = endpoint.kind === 'object' ? (endpoint.repositorySpecificFields ?? []) : [];
       const kept =
         endpoint.kind === 'object' && isRecord(value.value)
           ? loadable(
               { section, key: endpoint.key },
               endpoint.schema,
-              Object.fromEntries(Object.entries(value.value).filter(([field]) => !identifying.includes(field))),
+              Object.fromEntries(
+                Object.entries(value.value).filter(([field]) => !repositorySpecificFields.includes(field)),
+              ),
               warnings,
             )
           : value.value;
-      // A setting GitHub reports as unset has nothing to capture.
       if (kept !== undefined && !(isRecord(kept) && Object.keys(kept).length === 0)) {
         settings[endpoint.key] = kept;
       }

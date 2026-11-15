@@ -1,19 +1,10 @@
-/**
- * What owns the repositories a profile is for, as GitHub's `owner.type`
- * says: a personal account or an organization. A profile without one is for
- * any owner.
- */
 export const ownerTypes = ['user', 'organization'] as const;
 
 export type OwnerType = (typeof ownerTypes)[number];
 
-/**
- * Who has a setting or one of its values: only personal accounts, only
- * organizations, or only organizations on GitHub Enterprise Cloud.
- */
+/** `enterprise`: only organizations on GitHub Enterprise Cloud. */
 export type OwnerNeed = 'user' | 'organization' | 'enterprise';
 
-/** A setting, or one value of it, that only some owners have. */
 interface SettingRule {
   /** The section and key, as `['pages', 'public']`, or a whole section, as `['custom_properties']`. */
   readonly path: readonly string[];
@@ -23,8 +14,7 @@ interface SettingRule {
 }
 
 /**
- * The settings, and values of settings, that GitHub has only for some
- * owners. [Settings coverage](../../../docs/developer/settings-coverage.md#owners)
+ * [Settings coverage](../../../docs/developer/settings-coverage.md#owners)
  * gives GitHub's docs for each.
  */
 export const settingRules: readonly SettingRule[] = [
@@ -45,29 +35,24 @@ export const settingRules: readonly SettingRule[] = [
   { path: ['pages', 'public'], needs: 'enterprise' },
 ];
 
-/** Ruleset targets only organizations have. */
-const organizationTargets: ReadonlySet<string> = new Set(['push']);
+const organizationOnlyRulesetTargets: ReadonlySet<string> = new Set(['push']);
 
-/** Ruleset rules only organizations have. */
-const organizationRules: ReadonlySet<string> = new Set(['merge_queue', 'code_quality']);
+const organizationOnlyRulesetRules: ReadonlySet<string> = new Set(['merge_queue', 'code_quality']);
 
-/** Bypass actors only organizations have. */
-const organizationActors: ReadonlySet<string> = new Set([
+const organizationOnlyBypassActors: ReadonlySet<string> = new Set([
   'OrganizationAdmin',
   'Team',
   'EnterpriseOwner',
   'EnterpriseRole',
 ]);
 
-/** Environment reviewers only organizations have. */
-const organizationReviewers: ReadonlySet<string> = new Set(['Team']);
+const organizationOnlyEnvironmentReviewers: ReadonlySet<string> = new Set(['Team']);
 
-/** Whether an owner of `type` has what `needs` asks for. A profile for any owner has everything. */
+/** A profile for any owner has everything. */
 export function ownerHas(type: OwnerType | undefined, needs: OwnerNeed): boolean {
   return type === undefined || (needs === 'user' ? type === 'user' : type === 'organization');
 }
 
-/** How an owner type reads in a message. */
 export function describeOwnerType(type: OwnerType): string {
   return type === 'user' ? 'personal accounts' : 'organizations';
 }
@@ -89,9 +74,8 @@ function valueAt(root: unknown, path: readonly string[]): unknown {
 }
 
 /**
- * One part of a profile that its owner type doesn't have. `path` is where it
- * is, and `edit` is what an owner type change does to it: unset a setting,
- * drop an entry, or write the entry without what it can't have.
+ * `edit` is what an owner type change does to the part: unset a setting, drop
+ * an entry, or write the entry without what it can't have.
  */
 export interface OwnerConflict {
   readonly path: readonly (string | number)[];
@@ -101,18 +85,15 @@ export interface OwnerConflict {
     | {
         readonly list: 'rulesets' | 'environments';
         readonly name: string;
-        /** Whether the entry is a draft. */
         readonly draft?: true;
         readonly entry: Readonly<Record<string, unknown>> | undefined;
       };
 }
 
-/** Whether draft rulesets and environments are checked too. */
 interface ConflictOptions {
   readonly drafts?: boolean;
 }
 
-/** Whether to check an entry, and what to call it in a message. */
 function checkedEntry(
   entry: unknown,
   kind: 'Ruleset' | 'Environment',
@@ -148,7 +129,6 @@ function settingConflicts(settings: unknown, type: OwnerType, at: readonly strin
   });
 }
 
-/** Writes `list` into `entry` without what `bad` picks, and leaves it out once nothing is left. */
 function keepList(
   entry: Record<string, unknown>,
   key: string,
@@ -181,7 +161,7 @@ function rulesetConflicts(
     }
     const { entry, name, where } = checked;
     const draft = checked.draft === undefined ? {} : { draft: checked.draft };
-    if (typeof entry['target'] === 'string' && organizationTargets.has(entry['target'])) {
+    if (typeof entry['target'] === 'string' && organizationOnlyRulesetTargets.has(entry['target'])) {
       return [
         {
           path: ['rulesets', index, 'target'],
@@ -193,9 +173,11 @@ function rulesetConflicts(
     const rules = Array.isArray(entry['rules']) ? entry['rules'] : [];
     const actors = Array.isArray(entry['bypass_actors']) ? entry['bypass_actors'] : [];
     const badRule = (rule: unknown): boolean =>
-      isRecord(rule) && typeof rule['type'] === 'string' && organizationRules.has(rule['type']);
+      isRecord(rule) && typeof rule['type'] === 'string' && organizationOnlyRulesetRules.has(rule['type']);
     const badActor = (actor: unknown): boolean =>
-      isRecord(actor) && typeof actor['actor_type'] === 'string' && organizationActors.has(actor['actor_type']);
+      isRecord(actor) &&
+      typeof actor['actor_type'] === 'string' &&
+      organizationOnlyBypassActors.has(actor['actor_type']);
     if (!rules.some(badRule) && !actors.some(badActor)) {
       return [];
     }
@@ -248,7 +230,9 @@ function environmentConflicts(
     const draft = checked.draft === undefined ? {} : { draft: checked.draft };
     const reviewers: readonly unknown[] = Array.isArray(entry['reviewers']) ? entry['reviewers'] : [];
     const bad = (reviewer: unknown): boolean =>
-      isRecord(reviewer) && typeof reviewer['type'] === 'string' && organizationReviewers.has(reviewer['type']);
+      isRecord(reviewer) &&
+      typeof reviewer['type'] === 'string' &&
+      organizationOnlyEnvironmentReviewers.has(reviewer['type']);
     const kept: Record<string, unknown> = { ...entry };
     keepList(kept, 'reviewers', reviewers, bad);
     // Self review is a setting of the reviewers, so it goes with them.
@@ -270,11 +254,7 @@ function environmentConflicts(
   });
 }
 
-/**
- * The parts of a profile that owners of `type` don't have. A profile for any
- * owner has none. Draft rulesets and environments count only with `drafts`,
- * since a draft may be unfinished.
- */
+/** Draft rulesets and environments count only with `drafts`, since a draft may be unfinished. */
 export function ownerConflicts(
   value: object,
   type: OwnerType | undefined,
@@ -294,13 +274,11 @@ export function ownerConflicts(
   ];
 }
 
-/** The draft settings that owners of `type` don't have, under `drafts`. */
 export function draftOwnerConflicts(drafts: object | undefined, type: OwnerType | undefined): OwnerConflict[] {
   return type === undefined || drafts === undefined ? [] : settingConflicts(drafts, type, ['drafts']);
 }
 
-/** Removes the value at `path`, and each object that leaves empty. */
-function removeAt(root: object, path: readonly string[]): void {
+function removeAtPathAndPruneEmptyParents(root: object, path: readonly string[]): void {
   const [key, ...rest] = path;
   if (key === undefined) {
     return;
@@ -310,7 +288,7 @@ function removeAt(root: object, path: readonly string[]): void {
     if (!isRecord(child)) {
       return;
     }
-    removeAt(child, rest);
+    removeAtPathAndPruneEmptyParents(child, rest);
     if (Object.keys(child).length > 0) {
       return;
     }
@@ -318,11 +296,6 @@ function removeAt(root: object, path: readonly string[]): void {
   Reflect.deleteProperty(root, key);
 }
 
-/**
- * `value` without the parts owners of `type` don't have: each such setting
- * removed, a push ruleset dropped, and a ruleset or environment written
- * without what only organizations have. `dropped` says what went.
- */
 export function withoutOwnerConflicts<Value extends object>(
   value: Value,
   type: OwnerType | undefined,
@@ -344,7 +317,7 @@ export function withoutOwnerConflicts<Value extends object>(
       }
       continue;
     }
-    removeAt(kept, edit.path);
+    removeAtPathAndPruneEmptyParents(kept, edit.path);
   }
   return { value: kept, dropped };
 }

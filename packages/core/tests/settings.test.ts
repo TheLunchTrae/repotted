@@ -14,8 +14,7 @@ import { answered, FakeGitHub, type FakeState } from './fake-github.js';
 
 const repo = parseRepo('lunch/app');
 
-/** A repository on a plan and owner that offer every setting, all at GitHub's defaults. */
-function offered(): Partial<FakeState> {
+function everySettingOfferedAtGitHubDefaults(): Partial<FakeState> {
   return {
     settings: {
       '/immutable-releases': { enabled: false, enforced_by_owner: false },
@@ -80,11 +79,11 @@ describe('settings at their own endpoints', () => {
   test('offers every endpoint setting in the repository the tests of every setting use', () => {
     const paths = [...repositoryEndpoints, ...securityEndpoints, ...actionsEndpoints].map((endpoint) => endpoint.path);
 
-    expect(Object.keys(offered().settings ?? {})).toEqual(expect.arrayContaining(paths));
+    expect(Object.keys(everySettingOfferedAtGitHubDefaults().settings ?? {})).toEqual(expect.arrayContaining(paths));
   });
 
   test('brings every setting in line, after which the plan is empty', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
 
     const plan = await createPlan(github, repo, everything);
     expect(plan.warnings).toEqual([]);
@@ -126,7 +125,7 @@ describe('settings at their own endpoints', () => {
   });
 
   test('turns Dependabot security updates off before the alerts they answer', async () => {
-    const state = offered();
+    const state = everySettingOfferedAtGitHubDefaults();
     const github = new FakeGitHub({
       ...state,
       settings: {
@@ -147,7 +146,7 @@ describe('settings at their own endpoints', () => {
   });
 
   test('skips security updates the profile turns on while it turns alerts off', async () => {
-    const plan = await createPlan(new FakeGitHub(offered()), repo, {
+    const plan = await createPlan(new FakeGitHub(everySettingOfferedAtGitHubDefaults()), repo, {
       security: { vulnerability_alerts: false, automated_security_fixes: true },
     });
 
@@ -163,7 +162,7 @@ describe('settings at their own endpoints', () => {
   });
 
   test('sends only the runner type for standard Dependabot runners', async () => {
-    const state = offered();
+    const state = everySettingOfferedAtGitHubDefaults();
     const github = new FakeGitHub({
       ...state,
       settings: {
@@ -256,7 +255,7 @@ describe('settings GitHub does not offer or refuses', () => {
   });
 
   test('names the permission a refused read needs', async () => {
-    const github = new FakeGitHub(offered())
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults())
       .fail('GET /repos/lunch/app/pages', answered(403, 'Resource not accessible by integration'))
       .fail(
         'GET /repos/lunch/app/actions/oidc/customization/sub',
@@ -289,7 +288,7 @@ describe('settings GitHub does not offer or refuses', () => {
   });
 
   test('names the permission a refused write needs', async () => {
-    const github = new FakeGitHub(offered()).fail(
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults()).fail(
       'PATCH /repos/lunch/app/properties/values',
       answered(403, 'Resource not accessible by integration'),
     );
@@ -361,7 +360,7 @@ describe('autolinks and Pages', () => {
 
 describe('capture of every section', () => {
   test('captures a profile the repository matches, leaving out what names it', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     await applyPlan(github, await createPlan(github, repo, everything));
 
     const { profile, warnings } = await captureProfile(github, repo);
@@ -375,7 +374,7 @@ describe('capture of every section', () => {
   });
 
   test('leaves out, with a warning, a value GitHub reports that a profile cannot hold', async () => {
-    const state = offered();
+    const state = everySettingOfferedAtGitHubDefaults();
     const github = new FakeGitHub({
       ...state,
       settings: {
@@ -443,7 +442,9 @@ describe('capture of every section', () => {
     expect(profile.actions).not.toHaveProperty('approval_policy');
     const loaded = await parseProfile(stringifyProfile(profile), tmpdir());
     // Half of a commit message pair would not pass on a repository with the other half's default.
-    await expect(createPlan(new FakeGitHub(offered()), repo, loaded.profile)).resolves.toBeDefined();
+    await expect(
+      createPlan(new FakeGitHub(everySettingOfferedAtGitHubDefaults()), repo, loaded.profile),
+    ).resolves.toBeDefined();
     // The repository it came from plans too, though its own pair is one a profile cannot hold.
     expect((await createPlan(github, repo, loaded.profile)).changes).toEqual([]);
   });
@@ -502,7 +503,7 @@ describe('capture of every section', () => {
   });
 
   test("reads GitHub's nulls for unset fields as unset, and writes no empty security_and_analysis", async () => {
-    const state = offered();
+    const state = everySettingOfferedAtGitHubDefaults();
     const github = new FakeGitHub({
       ...state,
       settings: {
@@ -643,7 +644,7 @@ describe('profiles of every section', () => {
 
 describe('settings GitHub ties together', () => {
   test('turns on immutable releases and security updates that GitHub reports as missing while off', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     const profile: Profile = {
       repository: { immutable_releases: true },
       security: { vulnerability_alerts: true, automated_security_fixes: true },
@@ -661,7 +662,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('leaves out runner labels with standard Dependabot runners, so the plan settles', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/dependabot/runner-settings'] = { runner_type: 'labeled', runner_labels: ['dependabot'] };
     const profile: Profile = {
       security: { dependabot_runner_settings: { runner_type: 'standard', runner_labels: ['x'] } },
@@ -684,7 +685,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('leaves out a runner label with standard code scanning and code quality runners, so the plan settles', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/code-scanning/default-setup'] = {
       state: 'configured',
       query_suite: 'default',
@@ -726,7 +727,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('skips labeled code scanning and code quality runners without a runner label', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/code-quality/setup'] = { state: 'configured', runner_type: 'labeled', runner_label: 'big' };
 
     const profile: Profile = {
@@ -761,7 +762,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('clears a runner label by moving to standard runners with a null label', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/code-quality/setup'] = { state: 'configured', runner_type: 'labeled', runner_label: 'big' };
     const profile: Profile = { security: { code_quality_setup: { runner_type: 'standard', runner_label: null } } };
 
@@ -775,7 +776,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('skips a runner label on a setup that runs on standard runners by default', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     const profile: Profile = {
       security: { code_scanning_default_setup: { state: 'configured', runner_label: 'big' } },
     };
@@ -797,7 +798,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('turns off a setup on labeled runners from a capture of one that is not configured', async () => {
-    const source = new FakeGitHub(offered());
+    const source = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     // As GitHub reports it while not configured.
     source.state.settings['/code-scanning/default-setup'] = {
       state: 'not-configured',
@@ -808,7 +809,7 @@ describe('settings GitHub ties together', () => {
     };
     const { profile } = await captureProfile(source, repo);
     expect(profile.security?.code_scanning_default_setup).toHaveProperty('runner_label', null);
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/code-scanning/default-setup'] = {
       state: 'configured',
       query_suite: 'default',
@@ -827,7 +828,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('plans no runner for a setup that is not configured, even one a base profile names', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     // As GitHub reports it while not configured.
     github.state.settings['/code-quality/setup'] = { state: 'not-configured', runner_type: null, runner_label: null };
     const dir = await mkdtemp(path.join(tmpdir(), 'repotted-settings-'));
@@ -848,7 +849,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('skips runner settings with a warning while the repository leaves the setup not configured', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     const plan = await createPlan(github, repo, {
       security: { code_scanning_default_setup: { runner_type: 'labeled', runner_label: 'big' } },
     });
@@ -874,7 +875,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('warns only about the label when labeled runners would lose theirs', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/code-quality/setup'] = { state: 'configured', runner_type: 'labeled', runner_label: 'big' };
 
     const plan = await createPlan(github, repo, {
@@ -893,7 +894,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('plans nothing for a captured repository on standard Dependabot runners', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
 
     const { profile: captured } = await captureProfile(github, repo);
     expect(captured.security?.dependabot_runner_settings).toEqual({
@@ -907,7 +908,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('writes no Dependabot runner group as an empty one, as GitHub reports it', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/dependabot/runner-settings'] = { runner_type: 'standard', runner_group: null };
 
     const { profile: captured } = await captureProfile(github, repo);
@@ -919,7 +920,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('skips labeled Dependabot runners without exactly one label', async () => {
-    const plan = await createPlan(new FakeGitHub(offered()), repo, {
+    const plan = await createPlan(new FakeGitHub(everySettingOfferedAtGitHubDefaults()), repo, {
       security: { dependabot_runner_settings: { runner_type: 'labeled' } },
     });
 
@@ -936,7 +937,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('sends no null a live setting holds', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/dependabot/runner-settings'] = { runner_type: 'standard', runner_group: null };
 
     const plan = await createPlan(github, repo, {
@@ -948,7 +949,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('stops using the default OIDC subject when a profile names claim keys, so the plan settles', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     const profile: Profile = { actions: { oidc_customization_sub: { include_claim_keys: ['repo'] } } };
 
     const plan = await createPlan(github, repo, profile);
@@ -976,7 +977,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('sets a limit GitHub reports as unset', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/actions/cache/storage-limit'] = {};
     const profile: Profile = { actions: { max_cache_size_gb: 5 } };
 
@@ -991,7 +992,7 @@ describe('settings GitHub ties together', () => {
   });
 
   test('reads JavaScript and TypeScript as the one language code scanning takes, and leaves languages out of capture', async () => {
-    const github = new FakeGitHub(offered());
+    const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/code-scanning/default-setup'] = {
       state: 'configured',
       query_suite: 'default',
@@ -1008,7 +1009,9 @@ describe('settings GitHub ties together', () => {
   });
 
   test('skips a new Pages site built from a branch it does not name', async () => {
-    const plan = await createPlan(new FakeGitHub(offered()), repo, { pages: { source: { path: '/docs' } } });
+    const plan = await createPlan(new FakeGitHub(everySettingOfferedAtGitHubDefaults()), repo, {
+      pages: { source: { path: '/docs' } },
+    });
 
     expect(plan.changes).toEqual([]);
     expect(plan.warnings).toEqual([

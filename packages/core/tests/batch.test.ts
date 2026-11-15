@@ -35,8 +35,7 @@ afterAll(async () => {
 
 const profileText = 'repository: { has_wiki: false, has_issues: false }\n';
 
-/** A fresh place with a profile, so tests never share files. */
-async function place(text = profileText): Promise<{ root: string; profile: string; folder: string }> {
+async function freshFolderWithProfile(text = profileText): Promise<{ root: string; profile: string; folder: string }> {
   const root = path.join(directory, randomUUID());
   await mkdir(root);
   const profile = path.join(root, 'profile.yaml');
@@ -51,8 +50,7 @@ async function exists(file: string): Promise<boolean> {
   );
 }
 
-/** A plan document as `plan --staged <folder> --out` saves it, read back as apply reads it. */
-function saved(document: unknown): ReturnType<typeof parseBatchPlan> {
+function savedBatchPlanReadBackAsApplyReadsIt(document: unknown): ReturnType<typeof parseBatchPlan> {
   const data: unknown = JSON.parse(JSON.stringify(document));
   expect(isBatchPlan(data)).toBe(true);
   return parseBatchPlan(data);
@@ -65,7 +63,7 @@ function fleet(...names: string[]): { github: FakeFleet; fakes: FakeGitHub[] } {
 
 describe('starting a batch', () => {
   test('starts a staged apply for each repository from one profile, listed in a manifest', async () => {
-    const { profile, folder } = await place();
+    const { profile, folder } = await freshFolderWithProfile();
     const batch = await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     expect(batch.id).toMatch(/^[0-9a-f-]{36}$/u);
     expect(batch).toEqual({
@@ -91,7 +89,7 @@ describe('starting a batch', () => {
   });
 
   test('refuses a repository that already has a staged apply, and leaves nothing behind', async () => {
-    const { root, profile, folder } = await place();
+    const { root, profile, folder } = await freshFolderWithProfile();
     const existing = path.join(folder, 'lunch', 'web.yaml');
     await mkdir(path.dirname(existing), { recursive: true });
     await createStagedApply(existing, 'lunch/web', undefined);
@@ -116,7 +114,7 @@ describe('starting a batch', () => {
   });
 
   test('keeps one staged apply for a repository however its name is written', async () => {
-    const { profile, folder } = await place();
+    const { profile, folder } = await freshFolderWithProfile();
     const existing = path.join(folder, 'lunch', 'web.yaml');
     await mkdir(path.dirname(existing), { recursive: true });
     await createStagedApply(existing, 'lunch/web', undefined);
@@ -128,7 +126,7 @@ describe('starting a batch', () => {
   });
 
   test('joins a staged apply in progress as it is, which discarding the batch leaves', async () => {
-    const { root, profile, folder } = await place();
+    const { root, profile, folder } = await freshFolderWithProfile();
     const existing = path.join(root, 'staged', 'lunch', 'web.yaml');
     await mkdir(path.dirname(existing), { recursive: true });
     await createStagedApply(existing, 'lunch/web', undefined);
@@ -154,7 +152,7 @@ describe('starting a batch', () => {
   });
 
   test('refuses a repository twice, a second batch in one folder, and a batch of none', async () => {
-    const { profile, folder } = await place();
+    const { profile, folder } = await freshFolderWithProfile();
     await expect(createBatch(folder, { repositories: ['lunch/app', 'Lunch/App'], profile })).rejects.toThrow(
       /already in the batch/u,
     );
@@ -167,7 +165,7 @@ describe('starting a batch', () => {
   });
 
   test('adds members from the batch profile, and takes one out with its staged apply', async () => {
-    const { profile, folder } = await place();
+    const { profile, folder } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app'], profile });
     const added = await addToBatch(folder, { repositories: ['lunch/web'] });
     expect(added.members.map((member) => member.repository)).toEqual(['lunch/app', 'lunch/web']);
@@ -183,7 +181,7 @@ describe('starting a batch', () => {
   });
 
   test('takes a joined member out and keeps its staged apply', async () => {
-    const { root, profile, folder } = await place();
+    const { root, profile, folder } = await freshFolderWithProfile();
     const existing = path.join(root, 'web.yaml');
     await createStagedApply(existing, 'lunch/web', undefined);
     await createBatch(folder, { repositories: ['lunch/app'], join: [existing], profile });
@@ -192,7 +190,7 @@ describe('starting a batch', () => {
   });
 
   test('removes no file that is not the staged apply the manifest says', async () => {
-    const { profile, folder } = await place();
+    const { profile, folder } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     const app = await batchMemberFile(folder, 'lunch/app');
     const web = await batchMemberFile(folder, 'lunch/web');
@@ -209,7 +207,7 @@ describe('starting a batch', () => {
 
 describe('editing a batch', () => {
   test('excludes a value from every member whose profile sets it, and includes it again', async () => {
-    const { profile, folder } = await place();
+    const { profile, folder } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web', 'lunch/api'], profile });
     const api = await batchMemberFile(folder, 'lunch/api');
     // An edit of the value in one member keeps that member as it is.
@@ -231,14 +229,14 @@ describe('editing a batch', () => {
   });
 
   test('says so when every member already excludes a value', async () => {
-    const { profile, folder } = await place();
+    const { profile, folder } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     await editEverywhere(folder, 'repository.has_wiki', true);
     await expect(editEverywhere(folder, 'repository.has_wiki', true)).rejects.toThrow(/already excludes/u);
   });
 
   test('leaves members out and puts them back, and plans only those in', async () => {
-    const { profile, folder } = await place();
+    const { profile, folder } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     expect((await leaveOut(folder, ['lunch/web'], true)).members[1]).toMatchObject({ left_out: true });
     await expect(leaveOut(folder, ['lunch/none'], true)).rejects.toThrow(/not in the batch/u);
@@ -255,7 +253,7 @@ describe('editing a batch', () => {
 
 describe('planning a batch', () => {
   test('plans each member with its access and locks, and reports one it cannot plan on its own', async () => {
-    const { profile, folder } = await place();
+    const { profile, folder } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/gone', 'lunch/web'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web');
     const web = fakes[1];
@@ -291,7 +289,7 @@ describe('planning a batch', () => {
   });
 
   test('reports a member whose owner is the other kind as an owner mismatch', async () => {
-    const { profile, folder } = await place(`owner_type: organization\n${profileText}`);
+    const { profile, folder } = await freshFolderWithProfile(`owner_type: organization\n${profileText}`);
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web');
     const web = fakes[1];
@@ -309,7 +307,7 @@ describe('planning a batch', () => {
   });
 
   test('reports a staged apply that no longer resolves as a failure of its member', async () => {
-    const { folder, profile } = await place();
+    const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     await writeFile(await batchMemberFile(folder, 'lunch/web'), 'apply_to: lunch/other\n');
     const { github } = fleet('lunch/app', 'lunch/web');
@@ -321,7 +319,7 @@ describe('planning a batch', () => {
 });
 
 test('plans at most four members at once', async () => {
-  const { profile, folder } = await place();
+  const { profile, folder } = await freshFolderWithProfile();
   const names = ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => `lunch/${name}`);
   await createBatch(folder, { repositories: names, profile });
   const { github } = fleet(...names);
@@ -353,10 +351,10 @@ test('plans at most four members at once', async () => {
 
 describe('applying a batch', () => {
   test('applies each member in order, ends its staged apply, and ends the batch with the last', async () => {
-    const { folder, profile } = await place();
+    const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web');
-    const reviewed = saved(await planBatch(github, folder));
+    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
     const seen: string[] = [];
 
     const results = await applyBatch(github, reviewed, { onResult: (result) => seen.push(result.repository) });
@@ -374,10 +372,10 @@ describe('applying a batch', () => {
   });
 
   test('goes on past a member that fails, and keeps the members that did not finish', async () => {
-    const { folder, profile } = await place();
+    const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web', 'lunch/api'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web', 'lunch/api');
-    const reviewed = saved(await planBatch(github, folder));
+    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
     const [app, web] = fakes;
     if (app === undefined || web === undefined) {
       throw new Error('No fakes');
@@ -405,10 +403,10 @@ describe('applying a batch', () => {
   });
 
   test('stops after a failure when asked, and applies only the members named', async () => {
-    const { folder, profile } = await place();
+    const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web', 'lunch/api'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web', 'lunch/api');
-    const reviewed = saved(await planBatch(github, folder));
+    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
     fakes[0]?.fail('PATCH /repos/lunch/app', new GitHubError(500, 'Server error'));
 
     const stopped = await applyBatch(github, reviewed, { stopOnFailure: true });
@@ -422,7 +420,7 @@ describe('applying a batch', () => {
   });
 
   test('skips a locked member, one left out since the review, and ends one already in line', async () => {
-    const { folder, profile } = await place();
+    const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web', 'lunch/api'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web', 'lunch/api');
     const [app, web, api] = fakes;
@@ -432,7 +430,7 @@ describe('applying a batch', () => {
     app.state.viewer = { admin: false, maintain: false, push: true, triage: true, pull: true };
     api.state.repository['has_wiki'] = false;
     api.state.repository['has_issues'] = false;
-    const reviewed = saved(await planBatch(github, folder));
+    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
     await leaveOut(folder, ['lunch/web'], true);
 
     const results = await applyBatch(github, reviewed);
@@ -446,10 +444,10 @@ describe('applying a batch', () => {
   });
 
   test('applies no plan reviewed before an edit to its staged apply, and keeps the edit', async () => {
-    const { folder, profile } = await place();
+    const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app'], profile });
     const { github, fakes } = fleet('lunch/app');
-    const reviewed = saved(await planBatch(github, folder));
+    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
     const file = await batchMemberFile(folder, 'lunch/app');
     await editStagedApply(file, [{ exclude: 'repository.has_wiki', excluded: true }]);
 
@@ -461,7 +459,7 @@ describe('applying a batch', () => {
   });
 
   test('plans again a member reviewed as in line, and keeps it when the repository changed since', async () => {
-    const { folder, profile } = await place();
+    const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app'], profile });
     const { github, fakes } = fleet('lunch/app');
     const [app] = fakes;
@@ -470,7 +468,7 @@ describe('applying a batch', () => {
     }
     app.state.repository['has_wiki'] = false;
     app.state.repository['has_issues'] = false;
-    const reviewed = saved(await planBatch(github, folder));
+    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
     expect(reviewed.plans[0]?.plan.changes).toEqual([]);
     app.state.repository['has_wiki'] = true;
 
@@ -480,10 +478,10 @@ describe('applying a batch', () => {
   });
 
   test('applies nothing once the batch ended, or a member left it, or the folder holds a new batch', async () => {
-    const { folder, profile } = await place();
+    const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web');
-    const reviewed = saved(await planBatch(github, folder));
+    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
     await discardBatchMember(folder, 'lunch/web');
     expect(await applyBatch(github, reviewed, { only: ['lunch/web'] })).toMatchObject([{ status: 'left_out' }]);
 
@@ -497,10 +495,10 @@ describe('applying a batch', () => {
   });
 
   test('fails one member, and keeps the results so far, when the manifest breaks partway', async () => {
-    const { folder, profile } = await place();
+    const { folder, profile } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile });
     const { github, fakes } = fleet('lunch/app', 'lunch/web');
-    const reviewed = saved(await planBatch(github, folder));
+    const reviewed = savedBatchPlanReadBackAsApplyReadsIt(await planBatch(github, folder));
     const manifest = path.join(folder, batchManifest);
 
     // Written at once, so the next member reads the broken manifest.

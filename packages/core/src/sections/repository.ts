@@ -14,7 +14,6 @@ import {
   type RepositorySettings,
 } from '../schema.js';
 
-/** Repository settings at endpoints of their own; `topics` comes with the repository instead. */
 export const repositoryEndpoints: readonly Endpoint[] = [
   {
     kind: 'toggle',
@@ -37,14 +36,11 @@ export const repositoryEndpoints: readonly Endpoint[] = [
 ];
 
 export interface LiveRepository {
-  /** The repository's own settings and its topics. */
   readonly repository: Record<string, unknown>;
   readonly merge: MergeSettings;
-  /** The repository's `security_and_analysis`, which GitHub reports only to admins. */
+  /** GitHub reports `security_and_analysis` only to admins. */
   readonly securityAndAnalysis: Record<string, unknown> | undefined;
-  /** The endpoint settings read, by key. */
   readonly endpoints: ReadonlyMap<string, EndpointValue>;
-  /** What owns the repository, or undefined when GitHub doesn't say. */
   readonly owner: OwnerType | undefined;
 }
 
@@ -52,7 +48,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** The owner type in a repository as GitHub sends it, from `owner.type`. */
 export function repositoryOwnerType(data: unknown): OwnerType | undefined {
   const owner = isRecord(data) ? data['owner'] : undefined;
   const type = isRecord(owner) ? owner['type'] : undefined;
@@ -64,10 +59,9 @@ function pick(data: Record<string, unknown>, keys: readonly string[]): Record<st
 }
 
 /**
- * Reads the repository and the endpoint settings in `endpointKeys`. Values
- * stay as GitHub sends them, such as `internal` visibility, so they differ
- * from any a profile can set; only an empty description or homepage, which
- * GitHub sends as null, reads as the empty string a profile writes.
+ * Values stay as GitHub sends them, such as `internal` visibility, so they
+ * differ from any a profile can set; only an empty description or homepage,
+ * which GitHub sends as null, reads as the empty string a profile writes.
  */
 export async function readRepository(
   github: GitHub,
@@ -135,7 +129,6 @@ function settingsChange(
   ];
 }
 
-/** Merge settings that GitHub would reject once the profile is laid over the live ones. */
 export class MergeSettingsError extends Error {
   constructor(problems: readonly string[]) {
     super(`The merge settings would be invalid on the repository:\n${problems.map((line) => `  ${line}`).join('\n')}`);
@@ -143,14 +136,12 @@ export class MergeSettingsError extends Error {
   }
 }
 
-// What a change of visibility does beyond the setting, from GitHub's docs.
 const visibilityWarnings: Readonly<Record<string, string>> = {
   public: 'Changing visibility to public shows the repository, its history and its issues to everyone',
   private:
     'Changing visibility to private detaches public forks and drops stars and watchers from people without access',
 };
 
-/** The settings the repository's own PATCH writes, without topics and endpoint settings. */
 function ownSettings(settings: RepositorySettings): Record<string, unknown> {
   const elsewhere = new Set(['topics', ...repositoryEndpoints.map((endpoint) => endpoint.key)]);
   return Object.fromEntries(Object.entries(settings).filter(([key]) => !elsewhere.has(key)));

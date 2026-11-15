@@ -10,7 +10,6 @@ const summary = z.object({ id: z.number().int(), source_type: z.string().optiona
 
 type Rule = NonNullable<Ruleset['rules']>[number];
 
-/** A ruleset with every key a write sends, as GitHub stores it. */
 export interface StoredRuleset {
   readonly name: string;
   readonly target: 'branch' | 'tag' | 'push';
@@ -74,7 +73,6 @@ function normalize(data: unknown): LiveRuleset {
   };
 }
 
-/** Reads the repository's own rulesets, not ones it inherits from an organization. */
 export async function readRulesets(github: GitHub, repo: RepoRef): Promise<LiveRulesets> {
   const base = `${repoPath(repo)}/rulesets`;
   let listed: z.infer<typeof summary>[];
@@ -115,11 +113,8 @@ const ruleDefaults: Record<string, Record<string, unknown>> = {
   update: { update_allows_fetch_and_merge: false },
 };
 
-/**
- * The rules to write. Each desired rule takes the live rule of the same type,
- * if any, and lays its parameters over that rule's, so parameters the profile
- * leaves out keep their values. Live rules the profile does not list go.
- */
+// Each desired rule lays its parameters over the live rule of the same type,
+// so parameters the profile leaves out keep their values.
 function writeRules(desired: readonly Rule[], live: readonly Rule[]): Rule[] {
   const unused = [...live];
   return desired.map((rule) => {

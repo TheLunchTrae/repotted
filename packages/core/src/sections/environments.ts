@@ -8,7 +8,6 @@ import { type Environment, type EnvironmentEntry, environmentKey } from '../sche
 
 type Reviewer = NonNullable<Environment['reviewers']>[number];
 
-/** The settings an environment write sends, as GitHub reports them. */
 interface EnvironmentSettings {
   readonly wait_timer: number;
   readonly prevent_self_review: boolean;
@@ -102,7 +101,6 @@ async function readAll(github: GitHub, repo: RepoRef): Promise<LiveEnvironment[]
   return environments;
 }
 
-/** Reads the repository's environments with the branch and tag patterns that may deploy to each. */
 export async function readEnvironments(github: GitHub, repo: RepoRef): Promise<LiveEnvironments> {
   try {
     return { available: true, environments: await readAll(github, repo) };
@@ -120,7 +118,6 @@ export async function readEnvironments(github: GitHub, repo: RepoRef): Promise<L
   }
 }
 
-/** An environment as a profile describes it, for capture. */
 export function describeEnvironment(live: LiveEnvironment): Environment {
   return {
     name: live.name,
@@ -135,11 +132,8 @@ function isAbsent(entry: EnvironmentEntry): entry is Extract<EnvironmentEntry, {
   return entry.absent === true;
 }
 
-/**
- * The settings to write. The endpoint replaces every setting, so each one the
- * profile leaves out is sent with its live value, or its default for a new
- * environment.
- */
+// The endpoint replaces every setting, so each one the profile leaves out is
+// sent with its live value, or its default for a new environment.
 function writeSettings(entry: Environment, current: EnvironmentSettings | undefined): EnvironmentSettings {
   const reviewers = entry.reviewers ?? current?.reviewers ?? [];
   return {
@@ -160,7 +154,6 @@ function desiredSettings(entry: Environment): Omit<Environment, 'name' | 'branch
   return settings;
 }
 
-/** Environment settings that GitHub would not keep once the profile is laid over the live ones. */
 export class EnvironmentSettingsError extends Error {
   constructor(name: string) {
     super(`Environment "${name}" sets prevent_self_review but would have no reviewers; add reviewers to the profile`);
