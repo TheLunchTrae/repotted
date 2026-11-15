@@ -3,13 +3,13 @@ import type { GitHub } from '@repotted/core';
 
 import { isSignedOut } from '../account/account.js';
 import type { Repository } from '../repositories/repositories.js';
-import { configTopic, type MarkedFolder, readMarkedFolder } from './config-marker.js';
+import { configTopic, hasMarker, readMarkedFolder } from './config-marker.js';
 import type { Profiles } from './profiles.js';
 
 export interface FoundRepository {
   readonly repository: string;
-  /** Undefined when its marker names no folder this browser can use, so the user names one. */
-  readonly folder: MarkedFolder;
+  /** Undefined when its marker can't be read or names no folder this browser can use, so the user names one. */
+  readonly folder: string | undefined;
 }
 
 export type DiscoveryState =
@@ -59,26 +59,14 @@ export class ConfigDiscovery {
       this.state.value = { status: 'done' };
       return;
     }
-    let found: FoundRepository[];
-    let browserProfiles: number;
-    try {
-      found = await Promise.all(
-        marked.map(async (entry) => ({
-          repository: entry.full_name,
-          folder: await readMarkedFolder(this.#github, entry.full_name),
-        })),
-      );
-      browserProfiles = await this.#profiles.readFolderWithoutSyncing(() =>
-        Promise.resolve(this.#profiles.listings.value.length),
-      );
-    } catch (error) {
-      if (isSignedOut(error)) {
-        this.#onSignedOut();
-      }
-      // Without its markers no repository can be offered rightly, and the user can still choose one in Settings.
+    const reads = await Promise.all(marked.map((entry) => this.#readFound(entry.full_name)));
+    if (reads.some((read) => read === 'signed out')) {
+      this.#onSignedOut();
       this.state.value = { status: 'done' };
       return;
     }
+    const found = reads.filter((read): read is FoundRepository => read !== 'signed out');
+    const browserProfiles = await this.#browserProfiles();
     const [only] = found;
     if (found.length === 1 && only?.folder !== undefined && browserProfiles === 0) {
       await this.#useFound(only.repository, only.folder);
@@ -87,7 +75,6 @@ export class ConfigDiscovery {
     this.state.value = { status: 'asking', found, browserProfiles, busy: false, error: undefined };
   }
 
-  /** The user's pick from what was found. */
   async use(repository: string, folder: string, addBrowserProfiles: boolean): Promise<void> {
     const asking = this.state.value;
     if (asking.status !== 'asking' || asking.busy) {
@@ -110,31 +97,70 @@ export class ConfigDiscovery {
     this.state.value = error === undefined ? { status: 'done' } : { ...asking, busy: false, error };
   }
 
+  /** Hides the notice for this visit; the next one looks again. */
   dismiss(): void {
     this.state.value = { status: 'done' };
   }
 
-  /** A repository chosen before repositories were marked gets its mark when the list shows it has none. */
+  /** A marker that can't be read, as without the Contents permission, leaves the folder for the user to name. */
+  async #readFound(repository: string): Promise<FoundRepository | 'signed out'> {
+    try {
+      return { repository, folder: await readMarkedFolder(this.#github, repository) };
+    } catch (error) {
+      return isSignedOut(error) ? 'signed out' : { repository, folder: undefined };
+    }
+  }
+
+  #browserProfiles(): Promise<number> {
+    return this.#profiles.readFolderWithoutSyncing(() => Promise.resolve(this.#profiles.listings.value.length));
+  }
+
+  /**
+   * A repository chosen before repositories were marked has no marker. One
+   * that has a marker but not the topic had it taken off, by a move in
+   * another browser or by hand, so it stays as it is.
+   */
   async #markChosen(repositories: readonly Repository[]): Promise<void> {
     const source = this.#profiles.source.value;
     if (source.kind !== 'repository') {
       return;
     }
     const listed = repositories.find((entry) => entry.full_name.toLowerCase() === source.repository.toLowerCase());
-    if (listed !== undefined && !listed.archived && !listed.topics.includes(configTopic)) {
-      await this.#profiles.markRepository();
+    if (listed === undefined || listed.archived || listed.topics.includes(configTopic)) {
+      return;
+    }
+    try {
+      if (!(await hasMarker(this.#github, listed.full_name))) {
+        await this.#profiles.markRepository();
+      }
+    } catch (error) {
+      if (isSignedOut(error)) {
+        this.#onSignedOut();
+      }
     }
   }
 
   async #useFound(repository: string, folder: string): Promise<void> {
-    const error = await this.#profiles.connect(repository, folder, false, { unlessChosen: true });
+    const error = await this.#profiles.connect(repository, folder, false, { onlyIntoEmptyUnchosenBrowser: true });
     if (error !== undefined) {
       this.state.value = { status: 'asking', found: [{ repository, folder }], browserProfiles: 0, busy: false, error };
       return;
     }
     const source = this.#profiles.source.value;
-    const usedFound = source.kind === 'repository' && source.repository.toLowerCase() === repository.toLowerCase();
-    // The user may have chosen in Settings while the markers were read; their choice stands, with nothing to tell.
-    this.state.value = usedFound ? { status: 'found', repository: source.repository } : { status: 'done' };
+    if (source.kind === 'repository' && source.repository.toLowerCase() === repository.toLowerCase()) {
+      this.state.value = { status: 'found', repository: source.repository };
+    } else if (this.#profiles.chosen.value) {
+      // Chosen in Settings while the marker was read; that choice stands, with nothing to tell.
+      this.state.value = { status: 'done' };
+    } else {
+      // A profile made here meanwhile is the user's to keep or add, so they are asked.
+      this.state.value = {
+        status: 'asking',
+        found: [{ repository, folder }],
+        browserProfiles: await this.#browserProfiles(),
+        busy: false,
+        error: undefined,
+      };
+    }
   }
 }

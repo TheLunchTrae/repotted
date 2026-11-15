@@ -25,7 +25,12 @@ export function FoundConfig({ discovery, profiles }: FoundConfigProps): JSX.Elem
   const [typedFolder, setTypedFolder] = useState('');
   const [addBrowserProfiles, setAddBrowserProfiles] = useState(false);
 
-  if (state.status === 'found') {
+  const source = profiles.source.value;
+  const stillThere =
+    state.status === 'found' &&
+    source.kind === 'repository' &&
+    source.repository.toLowerCase() === state.repository.toLowerCase();
+  if (state.status === 'found' && stillThere) {
     return (
       <div class="notice shell-notice found-config" role="status">
         <strong>
@@ -153,6 +158,16 @@ export function FoundConfig({ discovery, profiles }: FoundConfigProps): JSX.Elem
           }}
         >
           Keep profiles in this browser
+        </button>
+        <button
+          class="button button-quiet"
+          type="button"
+          disabled={state.busy}
+          onClick={() => {
+            discovery.dismiss();
+          }}
+        >
+          Not now
         </button>
         {state.busy && (
           <span class="muted small" role="status">

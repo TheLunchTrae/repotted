@@ -333,7 +333,10 @@ Each change of where profiles are kept that succeeds then moves the
 off a repository left for any other place, and a repository connected to
 gets the topic and a `.repotted.json` naming its folder, followed by one more
 sync when that file was committed. A mark GitHub refuses leaves the change
-made, with why in `markProblem` until the next change.
+made, with why in `markProblem` until the next change. A marker commit
+refused as out of date counts only when the marker GitHub now has names the
+same folder, as when another browser wrote it first. A lost sign-in while
+the topic comes off skips the mark.
 
 ## Web config repository discovery
 
@@ -341,19 +344,21 @@ made, with why in `markProblem` until the next change.
 once a visit, when the repository list first loads. A repository is marked
 when the list shows the `repotted-config` topic on it and it isn't archived.
 
-| State      | Event                                                                                          | Next                                                                                                               |
-| ---------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Waiting    | The list loads, and the browser has chosen where profiles are kept                             | Done. A chosen repository the list shows without the topic is marked first.                                        |
-| Waiting    | The list loads, and no repository is marked                                                    | Done.                                                                                                              |
-| Waiting    | The list loads with marked repositories                                                        | Looking: each one's `.repotted.json` is read, and the browser's profiles counted in a turn of the profiles' queue. |
-| Looking    | One is marked, its file names a usable folder, and the browser holds no profiles               | Connecting in a turn of the queue, unless a choice was made since, as in Settings; then Done.                      |
-| Looking    | Several are marked, a file is missing or names no usable folder, or the browser holds profiles | Asking, with each repository and its folder, or none to type.                                                      |
-| Looking    | GitHub can't be read                                                                           | Done, as with none marked. A lost sign-in also goes to the sign-in page.                                           |
-| Connecting | It connects                                                                                    | Found, with a notice until **Dismiss**.                                                                            |
-| Connecting | It fails                                                                                       | Asking, with why.                                                                                                  |
-| Asking     | **Use this repository**                                                                        | Busy, connecting as the connect form does, then Done, or Asking with why.                                          |
-| Asking     | **Keep profiles in this browser**                                                              | Busy, then Done with the browser saved as the choice, or Asking with why.                                          |
-| Asking     | A choice is made in Settings                                                                   | The notice hides.                                                                                                  |
+| State      | Event                                                                                          | Next                                                                                                                                                                                                   |
+| ---------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Waiting    | The list loads, and the browser has chosen where profiles are kept                             | Done. A chosen repository the list shows with neither the topic nor a `.repotted.json` is marked first; one with a marker had its topic taken off, by a move elsewhere or by hand, and stays unmarked. |
+| Waiting    | The list loads, and no repository is marked                                                    | Done.                                                                                                                                                                                                  |
+| Waiting    | The list loads with marked repositories                                                        | Looking: each one's `.repotted.json` is read, and the browser's profiles counted in a turn of the profiles' queue.                                                                                     |
+| Looking    | One is marked, its file names a usable folder, and the browser holds no profiles               | Connecting in a turn of the queue: Done if a choice was made since, as in Settings, or Asking if a profile was made here since.                                                                        |
+| Looking    | Several are marked, a file is missing or names no usable folder, or the browser holds profiles | Asking, with each repository and its folder, or none to type.                                                                                                                                          |
+| Looking    | A file can't be read                                                                           | That repository is offered with no folder, to type.                                                                                                                                                    |
+| Looking    | GitHub answers 401                                                                             | Done, and the account is signed out.                                                                                                                                                                   |
+| Connecting | It connects                                                                                    | Found, with a notice until **Dismiss** or until the profiles move elsewhere.                                                                                                                           |
+| Connecting | It fails                                                                                       | Asking, with why.                                                                                                                                                                                      |
+| Asking     | **Use this repository**                                                                        | Busy, connecting as the connect form does, then Done, or Asking with why.                                                                                                                              |
+| Asking     | **Keep profiles in this browser**                                                              | Busy, then Done with the browser saved as the choice, or Asking with why.                                                                                                                              |
+| Asking     | **Not now**                                                                                    | Done for this visit; the next visit looks again.                                                                                                                                                       |
+| Asking     | A choice is made in Settings                                                                   | The notice hides.                                                                                                                                                                                      |
 
 A folder is usable when, with slashes trimmed from its ends, it is empty or
 every part is neither empty nor starts with `.`, so it can't name a hidden

@@ -289,3 +289,118 @@ test('a topic GitHub refuses still connects, saying a new browser will not find 
   expect(profiles.source.value).toEqual({ kind: 'repository', repository: 'trae/config', path: '' });
   expect(profiles.markProblem.value).toMatch(/^Couldn't mark trae\/config with the repotted-config topic/u);
 });
+
+test('a marker that cannot be read leaves that folder to name, and still offers the others', async () => {
+  const readable = configRepository('trae/config', { [markerFile]: '{"folder": "profiles"}' });
+  const refused = configRepository('lunch/org-config', { [markerFile]: '{"folder": ""}' });
+  const account = new Account(readable, refused);
+  const github: GitHub = {
+    request: (method, path, body) =>
+      path.startsWith('/repos/lunch/org-config/contents/')
+        ? Promise.reject(new GitHubError(403, 'Resource not accessible by integration'))
+        : account.request(method, path, body),
+  };
+  const { discovery } = setUp(github);
+
+  await discovery.look(listed(readable, refused));
+
+  expect(discovery.state.value).toMatchObject({
+    status: 'asking',
+    found: [
+      { repository: 'trae/config', folder: 'profiles' },
+      { repository: 'lunch/org-config', folder: undefined },
+    ],
+  });
+});
+
+test('a sign-in GitHub refuses while markers are read goes to the sign-in page', async () => {
+  const config = configRepository('trae/config', { [markerFile]: '{"folder": ""}' });
+  const github: GitHub = { request: () => Promise.reject(new GitHubError(401, 'Bad credentials')) };
+  const profiles = new Profiles(github, memory(), () => undefined);
+  let signedOut = 0;
+  const discovery = new ConfigDiscovery(github, profiles, () => {
+    signedOut += 1;
+  });
+
+  await discovery.look(listed(config));
+
+  expect(signedOut).toBe(1);
+  expect(discovery.state.value).toEqual({ status: 'done' });
+  expect(profiles.source.value).toEqual({ kind: 'browser' });
+});
+
+test('a profile made here while the marker is read is asked about rather than left behind', async () => {
+  const config = configRepository('trae/config', { [markerFile]: '{"folder": ""}' });
+  let release: () => void = () => undefined;
+  const markerRead = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const github: GitHub = {
+    request: async (method, path, body) => {
+      if (path.endsWith(`/contents/${markerFile}`)) {
+        await markerRead;
+      }
+      return config.request(method, path, body);
+    },
+  };
+  const { profiles, discovery } = setUp(github);
+
+  const looking = discovery.look(listed(config));
+  await inBrowser({ 'mine.yaml': base });
+  await profiles.refresh();
+  release();
+  await looking;
+
+  expect(profiles.source.value).toEqual({ kind: 'browser' });
+  expect(discovery.state.value).toMatchObject({ status: 'asking', browserProfiles: 1 });
+});
+
+test('a repository whose topic was taken off since keeps it off', async () => {
+  const left = configRepository('trae/config', { [markerFile]: '{\n  "folder": ""\n}\n' }, []);
+  const { discovery } = setUp(
+    new Account(left),
+    memory({ 'profiles-source': { kind: 'repository', repository: 'trae/config', path: '' } }),
+  );
+
+  await discovery.look(listed(left));
+
+  expect(left.topics).toEqual([]);
+});
+
+test('a marker commit GitHub refuses says so, unless another browser wrote the same folder', async () => {
+  const config = configRepository('trae/config', {}, []);
+  let refusal: (() => void) | undefined;
+  const github: GitHub = {
+    request: (method, path, body) => {
+      if (method === 'PUT' && path.endsWith(`/contents/${markerFile}`) && refusal !== undefined) {
+        refusal();
+        return Promise.reject(new GitHubError(409, 'is at a different commit'));
+      }
+      return config.request(method, path, body);
+    },
+  };
+  const { profiles } = setUp(github);
+
+  refusal = () => undefined;
+  await profiles.connect('trae/config', 'profiles', false);
+
+  expect(profiles.markProblem.value).toMatch(/^Couldn't mark trae\/config/u);
+
+  refusal = () => {
+    config.write({ [markerFile]: '{"folder": "teams"}' });
+  };
+  await profiles.connect('trae/config', 'teams', false);
+
+  expect(profiles.markProblem.value).toBeUndefined();
+});
+
+test('profiles kept at the root of the repository leave its marker out of the list', async () => {
+  const config = configRepository('trae/config', { 'base.yaml': base }, []);
+  const { profiles } = setUp(new Account(config));
+
+  await profiles.connect('trae/config', '', false);
+
+  expect(config.files()[markerFile]).toBe('{\n  "folder": ""\n}\n');
+  expect(profiles.listings.value.map((listing) => listing.name)).toEqual(['base']);
+  expect(Object.keys(config.files()).sort()).toEqual([markerFile, 'base.yaml']);
+});

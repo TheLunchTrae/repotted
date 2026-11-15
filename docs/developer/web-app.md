@@ -264,7 +264,8 @@ succeeds, taking the topic off the repository it left, and says in
 branch on, so the working copy syncs once more after it. `ConfigDiscovery`
 (`src/app/profiles/config-discovery.ts`) runs once a visit, when the
 repository list first loads, since each listed repository carries its
-`topics`: it marks a repository chosen before marks existed, and in a
+`topics`: it marks a chosen repository that has neither the topic nor a
+marker, as one chosen before marks existed, and in a
 browser that has never chosen (`Profiles.chosen`), offers the marked
 repositories through `views/profiles/found-config.tsx`, above every page.
 [State machines](state-machines.md#web-config-repository-discovery) lists

@@ -494,9 +494,10 @@ when your repository list first loads:
   the notice asks which repository to use. Pick one, select the box to add
   the browser's profiles to it if you like, and click **Use this
   repository**. **Keep profiles in this browser** answers for good, so later
-  visits don't ask.
-- **Its `.repotted.json` is missing or names no folder Repotted can use:**
-  the notice asks for the folder, as **Use a GitHub repository…** does.
+  visits don't ask; **Not now** hides the notice until your next visit.
+- **Its `.repotted.json` is missing, can't be read, or names no folder
+  Repotted can use:** the notice asks for the folder, as **Use a GitHub
+  repository…** does.
 - **No repository has it:** nothing changes.
 
 A browser that has chosen, even to keep profiles in itself, never moves them

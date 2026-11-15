@@ -383,17 +383,18 @@ export class Profiles {
   /**
    * `addLocal` first copies the profiles kept now into the repository's
    * copy, skipping names it already has. It answers why it couldn't, having
-   * left where profiles are kept as it was. `unlessChosen` leaves a choice
-   * made before its turn, such as in Settings, as it is.
+   * left where profiles are kept as it was. `onlyIntoEmptyUnchosenBrowser`
+   * does nothing, and answers no failure, once its turn comes in a browser
+   * that has chosen, such as in Settings, or that holds profiles.
    */
   connect(
     repository: string,
     path: string,
     addLocal: boolean,
-    options: { readonly unlessChosen?: boolean } = {},
+    options: { readonly onlyIntoEmptyUnchosenBrowser?: boolean } = {},
   ): Promise<string | undefined> {
     return this.#work(async () => {
-      if (options.unlessChosen === true && this.chosen.value) {
+      if (options.onlyIntoEmptyUnchosenBrowser === true && (this.chosen.value || this.listings.value.length > 0)) {
         return undefined;
       }
       if (this.unsaved.value.size > 0) {
@@ -513,11 +514,13 @@ export class Profiles {
       previous.kind === 'repository' &&
       current.kind === 'repository' &&
       previous.repository.toLowerCase() === current.repository.toLowerCase();
+    let signedOut = false;
     if (previous.kind === 'repository' && !sameRepository) {
       try {
         await unmarkConfigRepository(this.#github, previous.repository);
       } catch (error) {
         if (isSignedOut(error)) {
+          signedOut = true;
           this.#onSignedOut();
         }
         problems.push(
@@ -525,7 +528,7 @@ export class Profiles {
         );
       }
     }
-    if (current.kind === 'repository') {
+    if (current.kind === 'repository' && !signedOut) {
       try {
         if (await markConfigRepository(this.#github, current.repository, current.path)) {
           await this.#syncPastMarker();

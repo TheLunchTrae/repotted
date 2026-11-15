@@ -12,9 +12,6 @@ const markerCommitMessage = 'Name the Repotted profiles folder';
 const topicNames = z.object({ names: z.array(z.string()) });
 const marker = z.object({ folder: z.string() });
 
-/** Undefined for a marker that is missing, isn't JSON, or names no folder a sync can use. */
-export type MarkedFolder = string | undefined;
-
 function topicsPath(repository: string): string {
   const repo = parseRepo(repository);
   return `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/topics`;
@@ -34,7 +31,8 @@ function markerText(folder: string): string {
   return `${JSON.stringify({ folder }, null, 2)}\n`;
 }
 
-function markedFolderOf(text: string): MarkedFolder {
+/** Undefined for a marker that isn't JSON or names no folder a sync can use. */
+function markedFolderOf(text: string): string | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -49,7 +47,12 @@ function markedFolderOf(text: string): MarkedFolder {
   return usableFolder(folder) ? folder : undefined;
 }
 
-export async function readMarkedFolder(github: GitHub, repository: string): Promise<MarkedFolder> {
+export async function hasMarker(github: GitHub, repository: string): Promise<boolean> {
+  return (await readRepositoryFile(github, repository, markerFile)) !== undefined;
+}
+
+/** Undefined for a marker that is missing, isn't JSON, or names no folder a sync can use. */
+export async function readMarkedFolder(github: GitHub, repository: string): Promise<string | undefined> {
   const file = await readRepositoryFile(github, repository, markerFile);
   return file === undefined ? undefined : markedFolderOf(file.text);
 }
@@ -79,8 +82,12 @@ export async function markConfigRepository(github: GitHub, repository: string, f
     });
     return true;
   } catch (error) {
-    // Another browser wrote the marker since it was read, naming the folder it just connected, which wins.
-    if (error instanceof GitHubError && (error.status === 409 || error.status === 422)) {
+    // Another browser may have written the same folder since it was read; a refused commit or another folder is a failure.
+    if (
+      error instanceof GitHubError &&
+      (error.status === 409 || error.status === 422) &&
+      (await readMarkedFolder(github, repository)) === normalFolder(folder)
+    ) {
       return false;
     }
     throw error;
