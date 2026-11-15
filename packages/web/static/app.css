@@ -272,7 +272,9 @@ input[type='checkbox']:disabled {
   }
 
   a.wordmark,
-  .nav-link {
+  .nav-link,
+  .pattern-link,
+  .found-action-link {
     display: inline-flex;
     align-items: center;
     min-height: 44px;
@@ -1009,8 +1011,13 @@ input[type='checkbox']:disabled {
 .pattern-checks li {
   display: grid;
   grid-template-columns: minmax(8rem, 2fr) 3fr;
+  align-items: baseline;
   gap: 4px 16px;
   overflow-wrap: anywhere;
+}
+
+.pattern-link {
+  justify-self: start;
 }
 
 .pattern-note::before {
