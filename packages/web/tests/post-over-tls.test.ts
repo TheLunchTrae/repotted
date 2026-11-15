@@ -77,6 +77,7 @@ describe('the request', () => {
         'Host: github.com',
         'Accept: application/json',
         'User-Agent: repotted',
+        'Accept-Encoding: identity',
         `Content-Length: ${body.length}`,
         'Connection: close',
         '',
@@ -124,16 +125,79 @@ describe('the answer', () => {
     expect(await (await post()).text()).toBe('{"a":"bc"}');
   });
 
-  test('keeps a status GitHub or Cloudflare failed with', async () => {
-    gitHubAnswers(['HTTP/1.1 525 \r\nContent-Length: 0\r\n\r\n']);
+  test('keeps a status that is not a success', async () => {
+    gitHubAnswers(['HTTP/1.1 502 \r\nContent-Length: 0\r\n\r\n']);
 
-    expect((await post()).status).toBe(525);
+    expect((await post()).status).toBe(502);
+  });
+
+  test('skips an interim 1xx answer', async () => {
+    gitHubAnswers(['HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}']);
+
+    const response = await post();
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('{}');
+  });
+
+  test('reads chunks when an answer also has a length', async () => {
+    gitHubAnswers(['HTTP/1.1 200 OK\r\nContent-Length: 99\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n\r\n']);
+
+    const response = await post();
+
+    expect(await response.text()).toBe('{}');
+    expect(response.headers.has('Content-Length')).toBe(false);
+  });
+
+  test('has no body for a status that has none', async () => {
+    gitHubAnswers(['HTTP/1.1 204 No Content\r\n\r\n']);
+
+    const response = await post();
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe('');
+  });
+
+  test.each([
+    ['in its own read', ['HTTP/1.1 503 \r\nContent-Length: 70000\r\n\r\n', 'x'.repeat(70_000)]],
+    ['in one read with its body', [`HTTP/1.1 503 \r\nContent-Length: 70000\r\n\r\n${'x'.repeat(70_000)}`]],
+  ])('past 64 KiB, keeps the status of a head that came %s and fails its body', async (_case, pieces) => {
+    gitHubAnswers(pieces, { staysOpen: true });
+
+    const response = await post();
+
+    expect(response.status).toBe(503);
+    await expect(response.text()).rejects.toThrow();
+  });
+
+  test('has a body that fails with the timeout when GitHub stops after the headers', async () => {
+    gitHubAnswers(['HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\n{"a":'], { staysOpen: true });
+    const timeout = new AbortController();
+    const answer = post(timeout.signal);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    timeout.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+
+    const response = await answer;
+    expect(response.status).toBe(200);
+    await expect(response.text()).rejects.toMatchObject({ name: 'TimeoutError' });
   });
 
   test.each([
     ['closes short of its length', ['HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\n{"a":'], {}],
     ['closes before its last chunk', ['HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\n{"a"\r\n'], {}],
     ['has a malformed chunk', ['HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n'], {}],
+    [
+      'has a chunk longer than its size',
+      ['HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\n{}\r\n0\r\n\r\n'],
+      {},
+    ],
+    [
+      'has a transfer coding other than chunked',
+      ['HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n0\r\n\r\n'],
+      {},
+    ],
+    ['has a malformed length', ['HTTP/1.1 200 OK\r\nContent-Length: -1\r\n\r\n{}'], {}],
     [
       'fails after the headers',
       ['HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\n{"a":'],

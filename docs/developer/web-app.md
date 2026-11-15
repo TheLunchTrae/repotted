@@ -134,12 +134,13 @@ The Worker sends its requests to GitHub's token endpoint over a TLS socket it
 opens with the Workers runtime's `connect()`, not with `fetch`: a Worker on a
 custom domain gets Cloudflare's 525 from `fetch` to github.com
 ([workerd issue 7042](https://github.com/cloudflare/workerd/issues/7042)).
-`src/post-over-tls.ts` writes one HTTP/1.1 `POST` that closes the connection,
-and reads the answer, whether it has a length, comes in chunks, or runs to the
-close, into a `Response`, as `fetch` would. Once Cloudflare fixes `fetch`, the
-Worker goes back to it by changing that one call and deleting the module. An
-answer over 64 KiB, or one that isn't HTTP, counts as no answer; one that
-breaks off after its headers reads as an answer that broke off.
+`src/post-over-tls.ts` writes one HTTP/1.1 `POST` that asks for an
+uncompressed answer and closes the connection, and reads the answer, whether it
+has a length, comes in chunks, or runs to the close, into a `Response`, as
+`fetch` would. Once Cloudflare fixes `fetch`, reverting the change that added
+the module takes the Worker back to it. An answer that isn't HTTP, or whose
+headers don't end within 64 KiB, counts as no answer. One whose body breaks
+off, is malformed, or runs past 64 KiB reads as an answer that broke off.
 
 The Worker names itself to GitHub with a `User-Agent` header. Neither a
 Worker's `fetch` nor its socket adds one, and GitHub may turn away a request
@@ -160,7 +161,9 @@ write, so the page shows only the error codes GitHub documents for a sign-in
 and a three-digit status.
 
 A status of 520 to 526 or 530 comes from Cloudflare, not GitHub: Cloudflare
-couldn't connect to GitHub. The logs and the page say so.
+couldn't connect to GitHub. The logs and the page say so. Only `fetch` goes
+through Cloudflare's proxy, so the socket never gets these; they stay for when
+the Worker goes back to `fetch`.
 
 `observability` in `wrangler.jsonc` keeps Workers Logs and traces on, for
 production and Previews alike: `wrangler deploy` turns observability off when

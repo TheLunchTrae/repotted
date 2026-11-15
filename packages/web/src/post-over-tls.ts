@@ -12,9 +12,12 @@ interface PostOverTlsInit {
   signal: AbortSignal;
 }
 
-// GitHub's token answers are well under a kilobyte; a longer one is not one.
+// GitHub's token answers are under a kilobyte; this bounds what the Worker holds.
 const maxAnswerBytes = 64 * 1024;
+const crlf = new Uint8Array([13, 10]);
 const headEnd = new Uint8Array([13, 10, 13, 10]);
+const headerName = /^[!#$%&'*+.^`|~\w-]+$/u;
+const nullBodyStatuses = new Set([204, 205, 304]);
 
 function concatenated(parts: readonly Uint8Array[]): Uint8Array<ArrayBuffer> {
   const joined = new Uint8Array(parts.reduce((length, part) => length + part.length, 0));
@@ -35,33 +38,56 @@ function indexOf(bytes: Uint8Array, sought: Uint8Array, from = 0): number {
   return -1;
 }
 
+// HTTP's head is bytes, not UTF-8, and Headers takes only byte strings.
+function asByteString(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+}
+
 interface AnswerHead {
   status: number;
   headers: Headers;
   bodyStart: number;
 }
 
+/** The final head, past any interim 1xx ones, or undefined while it is still coming. */
 function readHead(bytes: Uint8Array): AnswerHead | undefined {
-  const end = indexOf(bytes, headEnd);
-  if (end === -1) {
-    return undefined;
-  }
-  const [statusLine = '', ...headerLines] = new TextDecoder().decode(bytes.subarray(0, end)).split('\r\n');
-  const status = /^HTTP\/1\.[01] ([2-5]\d\d)(?: |$)/u.exec(statusLine)?.[1];
-  if (status === undefined) {
-    throw new Error('The answer was not HTTP.');
-  }
-  const headers = new Headers();
-  for (const line of headerLines) {
-    const colon = line.indexOf(':');
-    if (colon > 0) {
-      headers.append(line.slice(0, colon).trim(), line.slice(colon + 1).trim());
+  let headStart = 0;
+  for (;;) {
+    const end = indexOf(bytes, headEnd, headStart);
+    if (end === -1) {
+      return undefined;
     }
+    const [statusLine = '', ...headerLines] = asByteString(bytes.subarray(headStart, end)).split('\r\n');
+    const status = /^HTTP\/1\.[01] ([1-5]\d\d)(?: |$)/u.exec(statusLine)?.[1];
+    if (status === undefined) {
+      throw new Error('The answer was not HTTP.');
+    }
+    headStart = end + headEnd.length;
+    if (status.startsWith('1')) {
+      continue;
+    }
+    const headers = new Headers();
+    for (const line of headerLines) {
+      const colon = line.indexOf(':');
+      const name = line.slice(0, colon);
+      if (headerName.test(name)) {
+        headers.append(name, line.slice(colon + 1).trim());
+      }
+    }
+    return { status: Number(status), headers, bodyStart: headStart };
   }
-  return { status: Number(status), headers, bodyStart: end + headEnd.length };
 }
 
-const crlf = new Uint8Array([13, 10]);
+function isChunked(head: AnswerHead): boolean {
+  const transferEncoding = head.headers.get('Transfer-Encoding');
+  if (transferEncoding === null) {
+    return false;
+  }
+  if (transferEncoding.trim().toLowerCase() !== 'chunked') {
+    throw new Error('The answer used a transfer coding other than chunked.');
+  }
+  return true;
+}
 
 /** The whole body once its last chunk is in, or undefined while it isn't. */
 function dechunked(bytes: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> | undefined {
@@ -72,7 +98,7 @@ function dechunked(bytes: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> | un
     if (sizeEnd === -1) {
       return undefined;
     }
-    const sizeField = (new TextDecoder().decode(bytes.subarray(offset, sizeEnd)).split(';')[0] ?? '').trim();
+    const sizeField = (asByteString(bytes.subarray(offset, sizeEnd)).split(';')[0] ?? '').trim();
     if (!/^[\da-f]{1,8}$/iu.test(sizeField)) {
       throw new Error('The answer had a malformed chunk.');
     }
@@ -81,12 +107,39 @@ function dechunked(bytes: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> | un
     if (size === 0) {
       return concatenated(chunks);
     }
-    if (bytes.length < chunkStart + size + crlf.length) {
+    const chunkEnd = chunkStart + size;
+    if (bytes.length < chunkEnd + crlf.length) {
       return undefined;
     }
-    chunks.push(bytes.subarray(chunkStart, chunkStart + size));
-    offset = chunkStart + size + crlf.length;
+    if (bytes[chunkEnd] !== crlf[0] || bytes[chunkEnd + 1] !== crlf[1]) {
+      throw new Error('The answer had a malformed chunk.');
+    }
+    chunks.push(bytes.subarray(chunkStart, chunkEnd));
+    offset = chunkEnd + crlf.length;
   }
+}
+
+function contentLength(head: AnswerHead): number | undefined {
+  const value = head.headers.get('Content-Length');
+  if (value === null) {
+    return undefined;
+  }
+  if (!/^\d+$/u.test(value)) {
+    throw new Error('The answer had a malformed length.');
+  }
+  return Number(value);
+}
+
+/** The whole body once it is in, or undefined while more is to come. */
+function completeBody(head: AnswerHead, received: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> | undefined {
+  if (isChunked(head)) {
+    return dechunked(received);
+  }
+  const length = contentLength(head);
+  if (length === undefined) {
+    return undefined;
+  }
+  return received.length >= length ? received.subarray(0, length) : undefined;
 }
 
 function bodyThatFails(error: unknown): ReadableStream<Uint8Array> {
@@ -97,62 +150,30 @@ function bodyThatFails(error: unknown): ReadableStream<Uint8Array> {
   });
 }
 
+/** The body once the connection closed before completeBody found it whole. */
+function bodyAtClose(head: AnswerHead, received: Uint8Array<ArrayBuffer>): BodyInit {
+  // Only a body with no length and no chunks runs to the close.
+  return isChunked(head) || contentLength(head) !== undefined
+    ? bodyThatFails(new Error('The answer broke off.'))
+    : received;
+}
+
 function abortReason(signal: AbortSignal): Error {
+  // An aborted signal's reason is a DOMException, an Error, unless a caller
+  // aborts with something else; the rejection below has to be an Error.
   return signal.reason instanceof Error ? signal.reason : new Error('The request was aborted.');
-}
-
-function isChunked(head: AnswerHead): boolean {
-  return head.headers.get('Transfer-Encoding')?.toLowerCase().includes('chunked') === true;
-}
-
-/** The whole body once it is in, or undefined while more is to come. */
-function completeBody(head: AnswerHead, body: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> | undefined {
-  if (isChunked(head)) {
-    return dechunked(body);
-  }
-  const contentLength = head.headers.get('Content-Length');
-  if (contentLength !== null) {
-    const length = Number(contentLength);
-    return body.length >= length ? body.subarray(0, length) : undefined;
-  }
-  return undefined;
-}
-
-/** Whether the body is in, or is malformed so that more can't mend it. */
-function bodyIsOver(head: AnswerHead, received: Uint8Array<ArrayBuffer>): boolean {
-  try {
-    return completeBody(head, received) !== undefined;
-  } catch {
-    return true;
-  }
-}
-
-/** The body as it stands once reading stopped. */
-function bodyAtClose(
-  head: AnswerHead,
-  received: Uint8Array<ArrayBuffer>,
-): Uint8Array<ArrayBuffer> | ReadableStream<Uint8Array> {
-  try {
-    const complete = completeBody(head, received);
-    if (complete !== undefined) {
-      return complete;
-    }
-  } catch (error) {
-    return bodyThatFails(error);
-  }
-  // Without a length or chunks, the body is whatever came before the close.
-  const isDelimited = isChunked(head) || head.headers.get('Content-Length') !== null;
-  return isDelimited ? bodyThatFails(new Error('The answer broke off.')) : received;
 }
 
 export async function postOverTls(url: string, init: PostOverTlsInit): Promise<Response> {
   const target = new URL(url);
-  const body = new TextEncoder().encode(init.body.toString());
-  const head = [
+  const requestBody = new TextEncoder().encode(init.body.toString());
+  const requestHead = [
     `POST ${target.pathname}${target.search} HTTP/1.1`,
     `Host: ${target.host}`,
     ...Object.entries(init.headers).map(([name, value]) => `${name}: ${value}`),
-    `Content-Length: ${body.length}`,
+    // fetch() decodes compressed answers; this reads only plain ones.
+    'Accept-Encoding: identity',
+    `Content-Length: ${requestBody.length}`,
     'Connection: close',
     '',
     '',
@@ -160,65 +181,75 @@ export async function postOverTls(url: string, init: PostOverTlsInit): Promise<R
 
   init.signal.throwIfAborted();
   const socket = connect({ hostname: target.hostname, port: 443 }, { secureTransport: 'on' });
+  let rejectOnAbort = (): void => undefined;
   const aborted = new Promise<never>((_resolve, reject) => {
-    init.signal.addEventListener('abort', () => reject(abortReason(init.signal)), { once: true });
+    rejectOnAbort = () => {
+      reject(abortReason(init.signal));
+    };
   });
-  // The race below reads the rejection; this only stops it counting as unhandled.
-  aborted.catch(() => undefined);
+  init.signal.addEventListener('abort', rejectOnAbort, { once: true });
   const untilAborted = <T>(work: Promise<T>): Promise<T> => Promise.race([work, aborted]);
 
   try {
     const writer = socket.writable.getWriter();
-    await untilAborted(writer.write(concatenated([new TextEncoder().encode(head), body])));
+    await untilAborted(writer.write(concatenated([new TextEncoder().encode(requestHead), requestBody])));
     writer.releaseLock();
 
     const reader = socket.readable.getReader();
-    const received: Uint8Array[] = [];
-    let answerHead: AnswerHead | undefined;
-    let bodyError: unknown;
+    let bytes = new Uint8Array(0);
+    let head: AnswerHead | undefined;
+    let body: BodyInit | undefined;
     for (;;) {
       let read: ReadableStreamReadResult<Uint8Array>;
       try {
         read = await untilAborted(reader.read());
       } catch (error) {
-        if (answerHead === undefined) {
+        if (head === undefined) {
           throw error;
         }
-        bodyError = error;
+        body = bodyThatFails(error);
         break;
       }
       if (read.done) {
         break;
       }
-      received.push(read.value);
-      const bytes = concatenated(received);
-      if (bytes.length > maxAnswerBytes) {
-        if (answerHead === undefined) {
+      bytes = concatenated([bytes, read.value]);
+      head ??= readHead(bytes);
+      if (head === undefined) {
+        if (bytes.length > maxAnswerBytes) {
           throw new Error('The answer was too long.');
         }
-        bodyError = new Error('The answer was too long.');
+        continue;
+      }
+      const received = bytes.subarray(head.bodyStart);
+      if (received.length > maxAnswerBytes) {
+        body = bodyThatFails(new Error('The answer was too long.'));
         break;
       }
-      answerHead ??= readHead(bytes);
-      if (answerHead !== undefined && bodyIsOver(answerHead, bytes.subarray(answerHead.bodyStart))) {
+      try {
+        body = completeBody(head, received);
+      } catch (error) {
+        body = bodyThatFails(error);
+      }
+      if (body !== undefined) {
         break;
       }
     }
 
-    const bytes = concatenated(received);
-    answerHead ??= readHead(bytes);
-    if (answerHead === undefined) {
+    if (head === undefined) {
       throw new Error('The connection closed before an answer.');
     }
-    const answerBody =
-      bodyError === undefined
-        ? bodyAtClose(answerHead, bytes.subarray(answerHead.bodyStart))
-        : bodyThatFails(bodyError);
-    // The body is in hand, so these describe it no longer.
-    answerHead.headers.delete('Transfer-Encoding');
-    answerHead.headers.delete('Content-Length');
-    return new Response(answerBody, { status: answerHead.status, headers: answerHead.headers });
+    // completeBody already threw for any framing bodyAtClose would throw on.
+    body ??= bodyAtClose(head, bytes.subarray(head.bodyStart));
+    // The body is in hand, so its framing headers no longer apply.
+    head.headers.delete('Transfer-Encoding');
+    head.headers.delete('Content-Length');
+    return new Response(nullBodyStatuses.has(head.status) ? null : body, {
+      status: head.status,
+      headers: head.headers,
+    });
   } finally {
+    init.signal.removeEventListener('abort', rejectOnAbort);
     void socket.close().catch(() => undefined);
   }
 }
