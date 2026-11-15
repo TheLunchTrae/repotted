@@ -295,6 +295,25 @@ leave out something that each profile extending it adds.
 [`examples/base.yaml`](../../examples/base.yaml) is a base profile, and
 [`examples/repotted.yaml`](../../examples/repotted.yaml) extends it.
 
+## Apply several profiles
+
+A profile extends one base, but one apply can start from several profiles,
+such as a shared `node` profile and an `npm-package` profile. A staged apply
+lists them in `extends`, and they apply in that order, merging as a profile
+merges with its base, so later profiles override earlier ones:
+
+```yaml
+apply_to: octo-org/app
+extends: [node.yaml, npm-package.yaml]
+```
+
+Each profile brings the bases it extends with it. A base that more than one of
+them extends applies once, at its first place, so it never undoes what a
+profile after it set. Repotted refuses a profile listed twice, and profiles
+for different [owner types](#owner-type). When a later profile removes a
+ruleset, environment, label, autolink or Pages site that an earlier one adds,
+with `absent: true`, Repotted warns, since that is easy to miss.
+
 ## Owner type
 
 GitHub has some settings for repositories that organizations own and not for

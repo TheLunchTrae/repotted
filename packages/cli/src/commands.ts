@@ -116,13 +116,14 @@ Commands:
                                                  and saves nothing
   profile <file> --owner-type user|organization|any  Change who the profile is for; what that owner
                                                  doesn't have is no longer managed
-  stage <file> --new owner/repo [--profile file] Start a staged apply: one-off edits for one apply, over a
-                                                 profile or over the repository as it is
+  stage <file> --new owner/repo [--profile file]... Start a staged apply: one-off edits for one apply, over
+                                                 profiles applied in order (later ones override earlier
+                                                 ones) or over the repository as it is
   stage <file> [--set key=json] [--unset key]    Show a staged apply resolved; edit it as profile does, and
         [--exclude key] [--include key]              exclude values of its profile, as repository.has_wiki or
         [--save-to-profile] [--discard]          rulesets/Main; save its edits to its profile; or remove it
   stage <folder> --batch --new owner/repo ...    Start a batch: a staged apply for each repository, all from
-        [--profile file] [--join file]           one profile; --join adds a staged apply as it is
+        [--profile file]... [--join file]        the same profiles; --join adds a staged apply as it is
         [--staged-dir folder]                    (new ones go in folder/<owner>/<name>.yaml)
   stage <folder> [--new owner/repo] [--join file]  Add to a batch; leave a repository out of it or put it
         [--leave-out owner/repo] [--put-back owner/repo]  back; edit one with --repo and the options above;
@@ -379,7 +380,7 @@ async function plan(io: Io, args: string[]): Promise<number> {
             staged: {
               file: stagedPlan.staged.file,
               repository: stagedPlan.staged.repository,
-              base: stagedPlan.staged.base,
+              profiles: stagedPlan.staged.profiles,
               exclude: stagedPlan.staged.exclude,
             },
             exclusions: stagedPlan.exclusions,
@@ -698,16 +699,20 @@ async function profile(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
+function startsFrom(profiles: readonly string[], nothing: string): string {
+  return `from ${profiles.length === 0 ? nothing : profiles.join(', then ')}`;
+}
+
 interface StageOptions {
   readonly new?: string | undefined;
-  readonly profile?: string | undefined;
+  readonly profiles: readonly string[];
   readonly saveToProfile: boolean;
   readonly discard: boolean;
   readonly json: boolean;
 }
 
 async function stageFile(io: Io, file: string, options: StageOptions, edits: readonly StagedEdit[]): Promise<number> {
-  if (options.profile !== undefined && options.new === undefined) {
+  if (options.profiles.length > 0 && options.new === undefined) {
     throw new UsageError('--profile names what a new staged apply starts from, so it needs --new.');
   }
   if (options.discard) {
@@ -724,7 +729,7 @@ async function stageFile(io: Io, file: string, options: StageOptions, edits: rea
   }
   // Each step returns the staged apply as it leaves it, so the file is read again only when nothing else read it.
   let result: StagedApply | undefined =
-    options.new === undefined ? undefined : await createStagedApply(file, options.new, options.profile);
+    options.new === undefined ? undefined : await createStagedApply(file, options.new, options.profiles);
   try {
     if (edits.length > 0) {
       result = await editStagedApply(file, edits);
@@ -745,9 +750,7 @@ async function stageFile(io: Io, file: string, options: StageOptions, edits: rea
     json(io, result);
     return 0;
   }
-  io.err(
-    `Staged apply to ${result.repository}, ${result.base === null ? 'from the repository as it is' : `from ${result.base}`}\n`,
-  );
+  io.err(`Staged apply to ${result.repository}, ${startsFrom(result.profiles, 'the repository as it is')}\n`);
   if (result.exclude.length > 0) {
     io.err(`Exclusions: ${result.exclude.join(', ')}\n`);
   }
@@ -763,9 +766,7 @@ async function stageFile(io: Io, file: string, options: StageOptions, edits: rea
 }
 
 function printBatch(io: Io, batch: Batch): void {
-  io.err(
-    `Batch in ${batch.folder}, ${batch.profile === null ? 'from each repository as it is' : `from ${batch.profile}`}\n`,
-  );
+  io.err(`Batch in ${batch.folder}, ${startsFrom(batch.profiles, 'each repository as it is')}\n`);
   for (const member of batch.members) {
     const notes = [member.left_out ? 'left out' : '', member.joined ? 'joined' : ''].filter(Boolean);
     io.out(`${member.repository}${notes.length > 0 ? ` (${notes.join(', ')})` : ''}\n`);
@@ -797,7 +798,7 @@ async function stageBatch(
       throw new UsageError('--repo edits one repository of the batch, so it takes only the options of a staged apply.');
     }
     if (options.discard) {
-      if (edits.length > 0 || options.saveToProfile || options.profile !== undefined) {
+      if (edits.length > 0 || options.saveToProfile || options.profiles.length > 0) {
         throw new UsageError('--discard removes the staged apply, so it takes no other option.');
       }
       const result = await discardBatchMember(folder, options.repo);
@@ -826,7 +827,7 @@ async function stageBatch(
       options.everywhere ||
       edits.length > 0 ||
       options.saveToProfile ||
-      options.profile !== undefined
+      options.profiles.length > 0
     ) {
       throw new UsageError('--discard removes the batch, so it takes no other option but --repo.');
     }
@@ -847,7 +848,7 @@ async function stageBatch(
       membership ||
       leaving ||
       options.saveToProfile ||
-      options.profile !== undefined
+      options.profiles.length > 0
     ) {
       throw new UsageError('--everywhere takes one --exclude or --include, and no other option.');
     }
@@ -881,9 +882,9 @@ async function stageBatch(
   if (options.start) {
     batch = await createBatch(folder, {
       ...additions,
-      ...(options.profile === undefined ? {} : { profile: options.profile }),
+      profiles: options.profiles,
     });
-  } else if (options.profile !== undefined) {
+  } else if (options.profiles.length > 0) {
     throw new UsageError("A batch's new repositories start from its profile, so --profile needs --batch.");
   } else if (membership) {
     batch = await addToBatch(folder, additions);
@@ -914,7 +915,7 @@ async function stage(io: Io, args: string[]): Promise<number> {
     tokens: true,
     options: {
       new: { type: 'string', multiple: true },
-      profile: { type: 'string', short: 'p' },
+      profile: { type: 'string', short: 'p', multiple: true },
       set: { type: 'string', multiple: true },
       unset: { type: 'string', multiple: true },
       ruleset: { type: 'string', multiple: true },
@@ -948,7 +949,7 @@ async function stage(io: Io, args: string[]): Promise<number> {
   ];
   const repositories = values.new ?? [];
   const options = {
-    profile: values.profile,
+    profiles: values.profile ?? [],
     saveToProfile: values['save-to-profile'] === true,
     discard: values.discard === true,
     json: values.json === true,

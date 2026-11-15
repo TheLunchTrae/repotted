@@ -110,7 +110,10 @@ npx repotted apply plan.json
 
 `stage <file> --new owner/repo` starts a staged apply in a new file. With
 `--profile`, it starts from that profile; without it, from the repository as
-it is, so its plan holds only your edits. It never replaces a file that
+it is, so its plan holds only your edits. Give `--profile` more than once to
+start from several profiles, which apply in the order you give them, later
+ones overriding earlier ones, as
+[Apply several profiles](profiles.md#apply-several-profiles) describes. It never replaces a file that
 exists, and when edits given with `--new` fail, it leaves no file behind.
 
 `stage <file>` prints the profile the staged apply brings the repository to.
@@ -131,7 +134,8 @@ for this apply, so give the whole entry. It also takes:
   that only fits without an excluded value is fine.
 - `--save-to-profile` writes the one-off edits into the profile the staged
   apply starts from and clears them from the staged apply, which then
-  resolves the same. Exclusions stay, since they only say what this apply leaves
+  resolves the same. A staged apply that starts from several profiles has no
+  one profile to save to, so copy the edits into the profile they belong in. Exclusions stay, since they only say what this apply leaves
   out. It refuses, and changes neither file, when the edits hold autolinks or
   turn a Pages site into no site, or the reverse; make those changes in the
   profile file itself.
@@ -151,7 +155,7 @@ each change, as [JSON output](json-output.md) describes.
 
 ## Apply a profile to several repositories
 
-A batch applies one profile to several repositories, through a staged apply
+A batch applies profiles to several repositories, through a staged apply
 for each. You review, edit and apply each repository as you would one staged
 apply, and the profile stays as it is.
 
@@ -165,8 +169,8 @@ npx repotted apply plans.json
 
 `stage <folder> --batch` starts a batch in a folder, which it makes if it is
 missing. Each `--new owner/repo` gets a staged apply at
-`<folder>/<owner>/<name>.yaml`, or under `--staged-dir`, from `--profile`, or
-from the repository as it is without one. A repository that already has a
+`<folder>/<owner>/<name>.yaml`, or under `--staged-dir`, from `--profile`,
+given more than once for several, or from the repository as it is without one. A repository that already has a
 staged apply there is refused, so it never has two at once; `--join file` adds
 that staged apply to the batch as it is instead. The folder's `batch.yaml`
 lists the repositories. When a start fails, it leaves no file behind.

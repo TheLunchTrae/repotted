@@ -41,7 +41,7 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `Needs Pages write`. Unknown access locks nothing. `apply` ignores `access`
   and `locks`.
   With `--staged`, the document also has `staged`, as
-  `{ file, repository, base, exclude }` from `stage` below, and
+  `{ file, repository, profiles, exclude }` from `stage` below, and
   `exclusions`, which says what leaves each change out of the staged apply.
   Each exclusion is `{ change, field, key, edited }`: `change` is the
   change's index in `changes`, `field` is the field it leaves out, or
@@ -51,12 +51,14 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   value is a one-off edit, which you undo rather than exclude. The file
   `--out` saves leaves `staged` and `exclusions` out.
   With `--staged` and a batch folder, `plan` prints
-  `{ batch, id, profile, plans, left_out, failures }`, the same document
+  `{ batch, id, profiles, plans, left_out, failures }`, the same document
   `--out` saves. `batch` is the folder's real path, `id` tells the batch from
-  one started again in the same folder, and `profile` is the profile new
-  repositories start from, or null. Each of `plans` is one repository's
-  staged plan, as above, with `file`, its staged apply, and `digest`, that
-  file's SHA-256 when it was planned. `left_out` lists `{ repository, file }`
+  one started again in the same folder, and `profiles` lists the profiles new
+  repositories start from, in the order they apply, or is empty. Each of `plans` is one repository's
+  staged plan, as above, with `file`, its staged apply, `digest`, that
+  file's SHA-256 when it was planned, and `batch_profiles`, the profiles the
+  batch starts that repository from, which its `staged.profiles` differs from
+  when it joined the batch as it was. `left_out` lists `{ repository, file }`
   for each repository left out of the batch, and `failures` lists
   `{ repository, file, error }` for each one that could not be planned, where
   `error` is `{ kind, message, status }`: `kind` as for any failure below,
@@ -107,10 +109,11 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `--preview`, `profile` prints `{ before, after }` instead: what the profile
   applies before and after the edits, each as profile YAML, and saves nothing.
 - `stage` prints
-  `{ file, repository, base, exclude, chain, profile, drafts, warnings, sources }`.
+  `{ file, repository, profiles, exclude, chain, profile, drafts, warnings, sources }`.
   `file` is the staged apply's real path, first in `chain`, and `repository`
-  is the one it applies to. `base` is the real path of the profile it starts
-  from, or null when it starts from the repository as it is. `exclude` lists
+  is the one it applies to. `profiles` lists the real paths of the profiles it
+  starts from, in the order they apply, and is empty when it starts from the
+  repository as it is. `exclude` lists
   what it leaves out, as the file holds it. `profile` is what its plan brings
   the repository to: the profile with the one-off edits laid over it and the
   excluded values left out. `drafts` and `warnings` are the drafts of the
@@ -118,13 +121,17 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   staged apply holds no drafts of its own. `warnings` also names each
   exclusion that leaves nothing out, as when the profile stops setting what
   it names, and a staged plan's `warnings` do too, each with `exclusion`.
+  With several profiles, `warnings` and a staged plan's `warnings` also name
+  each later profile that removes what an earlier one adds.
   `sources` is as in `profile`, without the excluded values, so a value
   whose file is `chain[0]` is a one-off edit. With `--discard`, it prints
   `{ discarded }`, the file's path.
-  On a batch folder, `stage` prints `{ folder, id, profile, members }`:
-  `folder` is the batch's real path, `id` as in its plan, `profile` the
-  profile its new repositories start from, or null, and each member is `{ repository, file, left_out, joined }`,
-  where `joined` is true for a staged apply that joined the batch as it was.
+  On a batch folder, `stage` prints `{ folder, id, profiles, members }`:
+  `folder` is the batch's real path, `id` as in its plan, `profiles` the
+  profiles its new repositories start from, in order, or empty, and each member is `{ repository, file, left_out, joined, profiles }`,
+  where `joined` is true for a staged apply that joined the batch as it was,
+  and `profiles` lists the profiles the repository started from when they are
+  its own rather than the batch's, or is null.
   With `--everywhere`, the document also has `changed`, the repositories whose
   staged apply changed, and `refused`, as `{ repository, message }`, those
   that kept theirs. With `--repo`, it prints that repository's staged apply,

@@ -51,6 +51,8 @@ const savedMember = z
     left_out: z.boolean().optional(),
     /** A staged apply that was in progress before the batch, which discarding the batch leaves as it is. */
     joined: z.boolean().optional(),
+    /** The profiles it started from, when they are its own rather than the batch's, each stored as `profiles` is. */
+    profiles: z.array(z.string().min(1)).optional(),
   })
   .strict();
 
@@ -58,12 +60,17 @@ const savedManifest = z
   .object({
     /** Tells this batch from another started later in the same folder, so a plan of one never applies to the other. */
     id: z.string().min(1),
-    /** Relative to the folder; null for the repository as it is. */
-    profile: z.string().min(1).nullable(),
+    /** Each relative to the folder, in the order they apply; empty for the repository as it is. */
+    profiles: z.array(z.string().min(1)).optional(),
+    /** One profile, or null for none, as a batch saved before `profiles` has it. */
+    profile: z.string().min(1).nullable().optional(),
     members: z.array(savedMember),
   })
   .strict()
   .superRefine((value, context) => {
+    if (value.profiles !== undefined && value.profile !== undefined) {
+      context.addIssue({ code: 'custom', message: 'A batch has profiles or profile, not both', path: ['profile'] });
+    }
     const seen = new Set<string>();
     for (const [index, member] of value.members.entries()) {
       const key = member.repository.toLowerCase();
@@ -86,14 +93,24 @@ export interface BatchMember {
   readonly file: string;
   readonly left_out: boolean;
   readonly joined: boolean;
+  /**
+   * Absolute, in the order they apply, when the repository started from
+   * profiles of its own rather than the batch's; null otherwise.
+   */
+  readonly profiles: readonly string[] | null;
 }
 
 export interface Batch {
   readonly folder: string;
   readonly id: string;
-  /** Absolute; null for the repository as it is. */
-  readonly profile: string | null;
+  /** Absolute, in the order they apply; empty for each repository as it is. */
+  readonly profiles: readonly string[];
   readonly members: readonly BatchMember[];
+}
+
+/** What the batch starts the repository from: its own profiles, or else the batch's. */
+function memberProfiles(batch: Batch, member: BatchMember): readonly string[] {
+  return member.profiles ?? batch.profiles;
 }
 
 function errorCode(error: unknown): string | undefined {
@@ -166,15 +183,17 @@ async function realFolder(folder: string): Promise<string> {
 }
 
 function fromSaved(folder: string, saved: SavedManifest): Batch {
+  const profiles = saved.profiles ?? (saved.profile === undefined || saved.profile === null ? [] : [saved.profile]);
   return {
     folder,
     id: saved.id,
-    profile: saved.profile === null ? null : path.resolve(folder, saved.profile),
+    profiles: profiles.map((profile) => path.resolve(folder, profile)),
     members: saved.members.map((member) => ({
       repository: member.repository,
       file: path.resolve(folder, member.file),
       left_out: member.left_out === true,
       joined: member.joined === true,
+      profiles: member.profiles?.map((profile) => path.resolve(folder, profile)) ?? null,
     })),
   };
 }
@@ -182,18 +201,21 @@ function fromSaved(folder: string, saved: SavedManifest): Batch {
 function toSaved(batch: Batch): SavedManifest {
   return {
     id: batch.id,
-    profile: batch.profile === null ? null : storedPath(batch.folder, batch.profile),
+    profiles: batch.profiles.map((profile) => storedPath(batch.folder, profile)),
     members: batch.members.map((member) => ({
       repository: member.repository,
       file: storedPath(batch.folder, member.file),
       ...(member.left_out ? { left_out: true } : {}),
       ...(member.joined ? { joined: true } : {}),
+      ...(member.profiles === null
+        ? {}
+        : { profiles: member.profiles.map((profile) => storedPath(batch.folder, profile)) }),
     })),
   };
 }
 
 const manifestHeader = [
-  '# A batch: one profile applied to several repositories, each through a staged apply of its own.',
+  '# A batch: profiles applied to several repositories, each through a staged apply of its own.',
   '# Change it with repotted stage <folder>; a repository is planned and applied as its staged apply is.',
 ].join('\n');
 
@@ -254,8 +276,14 @@ async function changeBatch(folder: string, change: (batch: Batch) => Batch | Pro
   }
 }
 
+/** A repository that starts from profiles of its own, in the order they apply, rather than the batch's. */
+export interface RepositoryWithProfiles {
+  readonly repository: string;
+  readonly profiles: readonly string[];
+}
+
 export interface BatchAdditions {
-  readonly repositories?: readonly string[];
+  readonly repositories?: readonly (string | RepositoryWithProfiles)[];
   readonly join?: readonly string[];
   /** New staged applies go in as `<owner>/<name>.yaml` in lower case. The batch folder by default. */
   readonly stagedFolder?: string;
@@ -282,17 +310,18 @@ async function addMembers(batch: Batch, additions: BatchAdditions): Promise<Batc
     for (const file of additions.join ?? []) {
       const staged = await resolveStagedApply(file);
       claim(staged.repository);
-      added.push({ repository: staged.repository, file: staged.file, left_out: false, joined: true });
+      added.push({ repository: staged.repository, file: staged.file, left_out: false, joined: true, profiles: null });
     }
     const stagedFolder = path.resolve(additions.stagedFolder ?? batch.folder);
-    for (const repository of additions.repositories ?? []) {
-      const repo = parseRepo(repository);
+    for (const addition of additions.repositories ?? []) {
+      const repo = parseRepo(typeof addition === 'string' ? addition : addition.repository);
       const name = `${repo.owner}/${repo.name}`;
       claim(name);
       const file = newStagedFile(stagedFolder, name);
       await mkdir(path.dirname(file), { recursive: true });
+      let staged: StagedApply;
       try {
-        await createStagedApply(file, name, batch.profile ?? undefined);
+        staged = await createStagedApply(file, name, typeof addition === 'string' ? batch.profiles : addition.profiles);
       } catch (error) {
         if (error instanceof ProfileError && errorCode(error.cause) === 'EEXIST') {
           throw new ProfileError(
@@ -303,7 +332,13 @@ async function addMembers(batch: Batch, additions: BatchAdditions): Promise<Batc
         throw error;
       }
       started.push(file);
-      added.push({ repository: name, file: path.resolve(file), left_out: false, joined: false });
+      added.push({
+        repository: name,
+        file: path.resolve(file),
+        left_out: false,
+        joined: false,
+        profiles: typeof addition === 'string' ? null : staged.profiles,
+      });
     }
   } catch (error) {
     await removeFiles(batch.folder, started);
@@ -313,7 +348,8 @@ async function addMembers(batch: Batch, additions: BatchAdditions): Promise<Batc
 }
 
 export interface BatchStart extends BatchAdditions {
-  readonly profile?: string;
+  /** In the order they apply, later ones overriding earlier ones; none for each repository as it is. */
+  readonly profiles?: readonly string[];
 }
 
 /** Nothing is left behind when any member fails to start. */
@@ -325,14 +361,14 @@ export async function createBatch(folder: string, start: BatchStart): Promise<Ba
     throw new ProfileError(`${folder} already holds a batch`);
   }
   // Resolving first means a batch never starts from a broken profile.
-  const profile =
-    start.profile === undefined
-      ? null
-      : ((await resolveProfile(start.profile)).chain[0] ?? path.resolve(start.profile));
+  const profiles: string[] = [];
+  for (const profile of start.profiles ?? []) {
+    profiles.push((await resolveProfile(profile)).chain[0] ?? path.resolve(profile));
+  }
   // The first folder mkdir made, if any, so a failed start removes what it made and nothing more.
   const made = await mkdir(folder, { recursive: true });
   const real = await realFolder(folder);
-  const empty: Batch = { folder: real, id: crypto.randomUUID(), profile, members: [] };
+  const empty: Batch = { folder: real, id: crypto.randomUUID(), profiles, members: [] };
   try {
     const members = await addMembers(empty, start);
     const batch = { ...empty, members };
@@ -520,20 +556,25 @@ export interface MemberPlan extends Plan {
   readonly digest: string;
   readonly access: Access;
   readonly locks: readonly Lock[];
-  readonly staged: Pick<StagedApply, 'file' | 'repository' | 'base' | 'exclude'>;
+  readonly staged: Pick<StagedApply, 'file' | 'repository' | 'profiles' | 'exclude'>;
+  /**
+   * What the batch starts the repository from, which its staged apply's own
+   * profiles may differ from when it was in progress before the batch.
+   */
+  readonly batch_profiles: readonly string[];
   readonly exclusions: readonly PlanExclusion[];
 }
 
 export interface BatchPlan {
   readonly batch: string;
   readonly id: string;
-  readonly profile: string | null;
+  readonly profiles: readonly string[];
   readonly plans: readonly MemberPlan[];
   readonly left_out: readonly { readonly repository: string; readonly file: string }[];
   readonly failures: readonly { readonly repository: string; readonly file: string; readonly error: MemberError }[];
 }
 
-async function planMember(github: GitHub, member: BatchMember): Promise<MemberPlan> {
+async function planMember(github: GitHub, batch: Batch, member: BatchMember): Promise<MemberPlan> {
   // Read before the plan reads the file: an edit in between gives a digest
   // the file no longer has, so the plan is refused rather than applied.
   const digest = await hexDigest('SHA-256', await readFile(member.file));
@@ -543,14 +584,15 @@ async function planMember(github: GitHub, member: BatchMember): Promise<MemberPl
     }
   });
   const access = await readAccess(github, parseRepo(planned.staged.repository));
-  const { file, repository, base, exclude } = planned.staged;
+  const { file, repository, profiles, exclude } = planned.staged;
   return {
     ...planned.plan,
     file: member.file,
     digest,
     access,
     locks: lockChanges(access, planned.plan.changes),
-    staged: { file, repository, base, exclude },
+    staged: { file, repository, profiles, exclude },
+    batch_profiles: memberProfiles(batch, member),
     exclusions: planned.exclusions,
   };
 }
@@ -579,7 +621,7 @@ export async function planBatch(github: GitHub, folder: string): Promise<BatchPl
   const included = batch.members.filter((member) => !member.left_out);
   const planned = await mapLimited(included, planningConcurrency, async (member) => {
     try {
-      return { member, plan: await planMember(github, member) };
+      return { member, plan: await planMember(github, batch, member) };
     } catch (error) {
       return { member, error: memberError(error) };
     }
@@ -587,7 +629,7 @@ export async function planBatch(github: GitHub, folder: string): Promise<BatchPl
   return {
     batch: batch.folder,
     id: batch.id,
-    profile: batch.profile,
+    profiles: batch.profiles,
     plans: planned.flatMap((item) => ('plan' in item ? [item.plan] : [])),
     left_out: batch.members
       .filter((member) => member.left_out)

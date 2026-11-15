@@ -90,8 +90,8 @@ function cleaned(message: string, repository: string): string {
     .replaceAll(`${builtInFolder}/`, '');
 }
 
-function profileNameOfApply(base: string | null): string {
-  return base === null ? '' : basename(base).replace(/\.ya?ml$/u, '');
+function profileNameOfApply(profiles: readonly string[]): string {
+  return profiles.map((profile) => basename(profile).replace(/\.ya?ml$/u, '')).join(', ');
 }
 
 function messageOf(error: unknown): string {
@@ -173,7 +173,7 @@ export class Apply {
     }
     await this.#work(repository, profile.name, 'reviewing', async () => {
       await mkdir(dirname(stagedFile(repository)), { recursive: true });
-      await createStagedApply(stagedFile(repository), repository, profile.file);
+      await createStagedApply(stagedFile(repository), repository, [profile.file]);
       return this.#edit(repository);
     });
   }
@@ -194,7 +194,7 @@ export class Apply {
     this.#profile = undefined;
     await this.#work(repository, '', 'reviewing', async () => {
       await mkdir(dirname(stagedFile(repository)), { recursive: true });
-      await createStagedApply(stagedFile(repository), repository, undefined);
+      await createStagedApply(stagedFile(repository), repository, []);
       return this.#edit(repository);
     });
   }
@@ -282,9 +282,9 @@ export class Apply {
     return {
       kind: 'editing',
       repository,
-      profileName: profileNameOfApply(staged.base),
-      fromProfile: staged.base !== null,
-      builtIn: staged.base?.startsWith(`${builtInFolder}/`) === true,
+      profileName: profileNameOfApply(staged.profiles),
+      fromProfile: staged.profiles.length > 0,
+      builtIn: staged.profiles.some((profile) => profile.startsWith(`${builtInFolder}/`)),
       leftOut: staged.exclude,
     };
   }
@@ -457,7 +457,7 @@ export class Apply {
       this.#lastAppAccessRead = { repository, app: access.app };
     }
     // An apply picked up goes by the profile it started from, which may not be the one picked now.
-    const profile = profileNameOfApply(staged.staged.base);
+    const profile = profileNameOfApply(staged.staged.profiles);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));
     return {
       kind: 'reviewed',
@@ -466,7 +466,7 @@ export class Apply {
       plan: staged.plan,
       lockedChangeCount: locks.size,
       sections: compareSections(staged.plan, locks, staged.exclusions),
-      fromProfile: staged.staged.base !== null,
+      fromProfile: staged.staged.profiles.length > 0,
       leftOut: staged.staged.exclude,
       skippedDrafts: staged.plan.skipped.map(describeSkipped),
       warnings: staged.plan.warnings.map(describeWarning),
