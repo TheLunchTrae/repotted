@@ -24,7 +24,13 @@ describe('listRepositories', () => {
           {
             id: 2,
             repositories: [
-              { full_name: 'acme/site', private: true, archived: true, permissions: { admin: true } },
+              {
+                full_name: 'acme/site',
+                private: true,
+                archived: true,
+                topics: ['repotted-config'],
+                permissions: { admin: true },
+              },
               { full_name: 'acme/read-only', private: false, permissions: { admin: false } },
             ],
           },
@@ -37,7 +43,12 @@ describe('listRepositories', () => {
 
     expect(list.source).toBe('installations');
     expect(list.repositories).toHaveLength(102);
-    expect(list.repositories[0]).toEqual({ full_name: 'acme/site', private: true, archived: true });
+    expect(list.repositories[0]).toEqual({
+      full_name: 'acme/site',
+      private: true,
+      archived: true,
+      topics: ['repotted-config'],
+    });
     expect(list.repositories.at(-1)?.full_name).toBe('lunch/repo-100');
   });
 
@@ -86,8 +97,8 @@ describe('listRepositories', () => {
     expect(await listRepositories(github)).toEqual({
       source: 'admin',
       repositories: [
-        { full_name: 'lunch/a', private: true, archived: false },
-        { full_name: 'lunch/b', private: false, archived: false },
+        { full_name: 'lunch/a', private: true, archived: false, topics: [] },
+        { full_name: 'lunch/b', private: false, archived: false, topics: [] },
       ],
       missing_permissions: [],
     });

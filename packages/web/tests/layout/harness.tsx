@@ -4,6 +4,8 @@
 // so the layout
 // test sees full pages with no sign-in and no network. `?signed-out` starts it
 // with GitHub refusing the sign-in, which shows the sign-in page.
+// `?config-repositories` gives two repositories the repotted-config topic, which
+// asks which one holds the profiles.
 
 import type { GitHub } from '@repotted/core';
 import { render } from 'preact';
@@ -31,11 +33,15 @@ const names = [
   'lunch/mobile',
   'lunch/infra',
 ];
+const markedConfigNames = new URLSearchParams(location.search).has('config-repositories')
+  ? new Set(['lunch/a_repository_name_with_no_hyphens_in_it_at_all', 'trae/dotfiles'])
+  : new Set<string>();
 const repositories = names.map((name, index) => ({
   full_name: name,
   private: index % 2 === 0,
   archived: name === 'trae/claude-plugins',
   permissions: { admin: true },
+  topics: markedConfigNames.has(name) ? ['repotted-config'] : [],
 }));
 const account: FakeAccount = {
   login: 'trae',

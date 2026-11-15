@@ -1,10 +1,11 @@
 import { signal } from '@preact/signals';
-import { type GitHub, GitHubError, parseRepo } from '@repotted/core';
+import { type GitHub, GitHubError } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { join } from '../../engine/path.js';
 import { isSignedOut } from '../account/account.js';
 import type { ProfilesSource } from '../profiles/profiles.js';
+import { readRepositoryFile, writeRepositoryFile } from '../storage/repository-files.js';
 import { SerialQueue } from '../storage/serial-queue.js';
 import type { Preferences } from './preferences.js';
 
@@ -15,7 +16,6 @@ export const preferencesFile = '.repotted-preferences.json';
 export type Change = (current: unknown) => unknown;
 
 const commitMessage = 'Update Repotted preferences';
-const contents = z.object({ sha: z.string(), content: z.string() });
 const saved = z.record(z.string(), z.unknown());
 // A save that loses to another one, here or elsewhere, reads the file again and tries again.
 const maximumSaveAttempts = 3;
@@ -39,14 +39,6 @@ interface Remote {
 
 function samePlace(left: Place | undefined, right: Place | undefined): boolean {
   return left?.repository === right?.repository && left?.file === right?.file;
-}
-
-function decode(base64: string): string {
-  return new TextDecoder().decode(Uint8Array.from(atob(base64.replace(/\s/gu, '')), (char) => char.charCodeAt(0)));
-}
-
-function encode(text: string): string {
-  return btoa(Array.from(new TextEncoder().encode(text), (byte) => String.fromCharCode(byte)).join(''));
 }
 
 /** The values with keys in order, so the file changes only where a value does. */
@@ -200,10 +192,10 @@ export class SharedPreferences implements Preferences {
         const next = withChanges(remote.values, changes);
         try {
           if (stringify(next) !== stringify(remote.values)) {
-            await this.#github.request('PUT', this.#path(place), {
+            await writeRepositoryFile(this.#github, place.repository, place.file, {
+              text: stringify(next),
+              sha: remote.sha,
               message: commitMessage,
-              content: encode(stringify(next)),
-              ...(remote.sha === undefined ? {} : { sha: remote.sha }),
             });
           }
           merged = next;
@@ -228,31 +220,19 @@ export class SharedPreferences implements Preferences {
   }
 
   async #fetch(place: Place): Promise<Remote> {
-    let answer: unknown;
-    try {
-      answer = await this.#github.request('GET', this.#path(place));
-    } catch (error) {
-      if (error instanceof GitHubError && error.status === 404) {
-        return { sha: undefined, values: {} };
-      }
-      throw error;
+    const file = await readRepositoryFile(this.#github, place.repository, place.file);
+    if (file === undefined) {
+      return { sha: undefined, values: {} };
     }
-    const file = contents.parse(answer);
     let parsed: unknown;
     try {
-      parsed = JSON.parse(decode(file.content));
+      parsed = JSON.parse(file.text);
     } catch {
       parsed = undefined;
     }
     // A file that isn't an object of preferences is replaced by the next save.
     const values = saved.safeParse(parsed);
     return { sha: file.sha, values: values.success ? values.data : {} };
-  }
-
-  #path(place: Place): string {
-    const repo = parseRepo(place.repository);
-    const file = place.file.split('/').map(encodeURIComponent).join('/');
-    return `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/contents/${file}`;
   }
 
   #failed(place: Place, error: unknown, what: string): void {

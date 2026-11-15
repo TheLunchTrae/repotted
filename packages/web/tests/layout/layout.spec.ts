@@ -62,6 +62,15 @@ const screens: Readonly<Record<string, Screen>> = {
     visibleOnceDrawn: (page) =>
       page.getByRole('heading', { name: 'a_repository_name_with_no_hyphens_in_it_at_all', exact: true }),
   },
+  'found config repositories': {
+    path: '/?config-repositories',
+    reachFromPath: (page) =>
+      page.getByRole('radio', { name: /^lunch\/a_repository_name_with_no_hyphens_in_it_at_all/u }).check(),
+    visibleOnceDrawn: (page) =>
+      page
+        .getByRole('form', { name: 'Which config repository holds your profiles?' })
+        .getByRole('textbox', { name: 'Folder in the repository' }),
+  },
   settings: { path: '/settings', visibleOnceDrawn: (page) => page.getByRole('heading', { name: 'Account' }) },
   'settings with the protection offer': {
     path: '/settings',

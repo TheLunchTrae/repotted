@@ -473,6 +473,38 @@ Repotted on it sees them; on a shared computer, use a private window or keep
 none there. **Use this browser** in Settings goes back to profiles kept in
 the browser alone; the repository keeps every profile it has.
 
+### Find your config repository from a new browser
+
+While profiles are kept in a repository, Repotted marks it as your config
+repository: it adds the `repotted-config` topic, keeping the repository's
+other topics, and commits a `.repotted.json` file at its root that names the
+profiles folder, such as `{ "folder": "profiles" }`. Moving the profiles to
+the browser, a folder on this computer, or another repository takes the
+topic off the old one; its `.repotted.json` stays and does nothing without
+the topic. If GitHub refuses the topic or the file, Settings says why, and a
+new browser won't find the repository by itself.
+
+A browser that has never chosen where to keep profiles looks for the topic
+when your repository list first loads:
+
+- **One repository has it, and the browser holds no profiles:** Repotted
+  uses it straight away, in the folder `.repotted.json` names, and a notice
+  above the page says so.
+- **The browser already holds profiles, or several repositories have it:**
+  the notice asks which repository to use. Pick one, select the box to add
+  the browser's profiles to it if you like, and click **Use this
+  repository**. **Keep profiles in this browser** answers for good, so later
+  visits don't ask; **Not now** hides the notice until your next visit.
+- **Its `.repotted.json` is missing, can't be read, or names no folder
+  Repotted can use:** the notice asks for the folder, as **Use a GitHub
+  repository…** does.
+- **No repository has it:** nothing changes.
+
+A browser that has chosen, even to keep profiles in itself, never moves them
+by the topic. An archived repository isn't offered. A profile that sets
+`repository.topics` replaces every topic when it is applied, so a profile
+applied to your config repository should list `repotted-config` too.
+
 ### Protect the config repository
 
 Repotted has a built-in protection for a personal repository that keeps

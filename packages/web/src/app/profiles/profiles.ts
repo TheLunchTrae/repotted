@@ -22,6 +22,7 @@ import { ActionSearch } from '../profile-editor/action-search.js';
 import type { SaveMode } from '../profile-editor/entry-edits.js';
 import { type OwnerChoice, ProfileEditor } from '../profile-editor/profile-editor.js';
 import { SerialQueue } from '../storage/serial-queue.js';
+import { markConfigRepository, normalFolder, unmarkConfigRepository } from './config-marker.js';
 import {
   type LocalFolder,
   type LocalFolders,
@@ -140,6 +141,10 @@ export class Profiles {
   readonly search = signal('');
   /** Until the next change of where profiles are kept. */
   readonly connectError = signal<string | undefined>(undefined);
+  /** Whether this browser has a choice of where profiles are kept, saved now or on an earlier visit. */
+  readonly chosen = signal(false);
+  /** Why the config repository's topic or marker couldn't be set, so a new browser may not find it; until the next move. */
+  readonly markProblem = signal<string | undefined>(undefined);
   /** The browser wants the user's leave again on each visit before the folder on this computer can be used. */
   readonly needsFolderAccess = signal(false);
   readonly settingsCaptureCouldNotRead = signal<
@@ -169,6 +174,7 @@ export class Profiles {
     const saved = savedSource.safeParse(preferences.read(sourceKey));
     if (saved.success) {
       this.source.value = saved.data;
+      this.chosen.value = true;
     }
   }
 
@@ -296,6 +302,7 @@ export class Profiles {
 
   async #useFolder(folder: LocalFolder, addLocal: boolean): Promise<string | undefined> {
     const from = this.folder.value;
+    const previous = this.source.value;
     try {
       // Made ready apart, so a folder that can't be synced leaves the profiles kept now as they are.
       await rm(nextComputerFolder, { recursive: true, force: true });
@@ -331,6 +338,7 @@ export class Profiles {
       this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
       this.conflicts.value = result.conflicts;
       await this.#list();
+      await this.#moveMark(previous);
       return undefined;
     } catch (error) {
       await rm(nextComputerFolder, { recursive: true, force: true });
@@ -375,10 +383,20 @@ export class Profiles {
   /**
    * `addLocal` first copies the profiles kept now into the repository's
    * copy, skipping names it already has. It answers why it couldn't, having
-   * left where profiles are kept as it was.
+   * left where profiles are kept as it was. `onlyIntoEmptyUnchosenBrowser`
+   * does nothing, and answers no failure, once its turn comes in a browser
+   * that has chosen, such as in Settings, or that holds profiles.
    */
-  connect(repository: string, path: string, addLocal: boolean): Promise<string | undefined> {
+  connect(
+    repository: string,
+    path: string,
+    addLocal: boolean,
+    options: { readonly onlyIntoEmptyUnchosenBrowser?: boolean } = {},
+  ): Promise<string | undefined> {
     return this.#work(async () => {
+      if (options.onlyIntoEmptyUnchosenBrowser === true && (this.chosen.value || this.listings.value.length > 0)) {
+        return undefined;
+      }
       if (this.unsaved.value.size > 0) {
         this.connectError.value = unsavedFirst;
         return unsavedFirst;
@@ -404,13 +422,14 @@ export class Profiles {
       source = {
         kind: 'repository',
         repository: `${repo.owner}/${repo.name}`,
-        path: path.trim().replace(/^\/+|\/+$/gu, ''),
+        path: normalFolder(path),
       };
     } catch {
       return 'Name the repository as owner/name, such as you/repotted-config.';
     }
     const target = folderOf(source);
     const from = this.folder.value;
+    const previous = this.source.value;
     const synced = await exists(join(target, syncRecord));
     const copied: string[] = [];
     try {
@@ -429,6 +448,7 @@ export class Profiles {
       this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
       this.conflicts.value = result.conflicts;
       await this.#list();
+      await this.#moveMark(previous);
       return undefined;
     } catch (error) {
       // A copy that never synced goes whole; one that had keeps all but what this try copied in.
@@ -449,6 +469,12 @@ export class Profiles {
   /** A repository keeps every profile it has. Unsaved changes hold it back, with why in `connectError`. */
   keepInBrowser(): Promise<void> {
     return this.#work(async () => {
+      if (this.source.value.kind === 'browser') {
+        this.#preferences.write(sourceKey, this.source.value);
+        this.chosen.value = true;
+        this.connectError.value = undefined;
+        return;
+      }
       if (this.unsaved.value.size > 0) {
         this.connectError.value = unsavedFirst;
         return;
@@ -462,12 +488,61 @@ export class Profiles {
         this.connectError.value = unsynced;
         return;
       }
+      const previous = this.source.value;
       this.#use({ kind: 'browser' });
       this.connectError.value = undefined;
       this.sync.value = { status: 'none' };
       this.conflicts.value = [];
       await this.#list();
+      await this.#moveMark(previous);
     });
+  }
+
+  /**
+   * Marks the repository profiles are kept in, for one chosen before
+   * repositories were marked. A failure shows in `markProblem`.
+   */
+  markRepository(): Promise<void> {
+    return this.#work(() => this.#moveMark(this.source.value));
+  }
+
+  /** Takes the mark off the repository profiles left, if they left one, and puts it on the one they're in now. */
+  async #moveMark(previous: ProfilesSource): Promise<void> {
+    const current = this.source.value;
+    const problems: string[] = [];
+    const sameRepository =
+      previous.kind === 'repository' &&
+      current.kind === 'repository' &&
+      previous.repository.toLowerCase() === current.repository.toLowerCase();
+    let signedOut = false;
+    if (previous.kind === 'repository' && !sameRepository) {
+      try {
+        await unmarkConfigRepository(this.#github, previous.repository);
+      } catch (error) {
+        if (isSignedOut(error)) {
+          signedOut = true;
+          this.#onSignedOut();
+        }
+        problems.push(
+          `Couldn't take the repotted-config topic off ${previous.repository}, so a new browser may still offer it: ${messageOf(error)}`,
+        );
+      }
+    }
+    if (current.kind === 'repository' && !signedOut) {
+      try {
+        if (await markConfigRepository(this.#github, current.repository, current.path)) {
+          await this.#syncPastMarker();
+        }
+      } catch (error) {
+        if (isSignedOut(error)) {
+          this.#onSignedOut();
+        }
+        problems.push(
+          `Couldn't mark ${current.repository} with the repotted-config topic, so a new browser won't find it by itself: ${messageOf(error)}`,
+        );
+      }
+    }
+    this.markProblem.value = problems.length === 0 ? undefined : problems.join(' ');
   }
 
   /** From the profiles folder, with '' for the profiles folder itself first. */
@@ -732,6 +807,8 @@ export class Profiles {
     }
     this.source.value = source;
     this.#preferences.write(sourceKey, source);
+    this.chosen.value = true;
+    this.markProblem.value = undefined;
     this.#closedFolders.value = new Set();
     this.#editors.value = [];
     this.settingsCaptureCouldNotRead.value = undefined;
@@ -748,6 +825,26 @@ export class Profiles {
         this.profileWorkUnderWay.value = false;
       }
     });
+  }
+
+  /** The marker's commit moves the default branch on, so the copy here syncs to it again, adding to what was synced. */
+  async #syncPastMarker(): Promise<void> {
+    const before = this.sync.value;
+    await this.#sync({});
+    const after = this.sync.value;
+    if (after.status !== 'synced') {
+      return;
+    }
+    if (before.status === 'synced') {
+      this.sync.value = {
+        status: 'synced',
+        pulled: before.pulled + after.pulled,
+        pushed: before.pushed + after.pushed,
+      };
+    }
+    if (after.pulled > 0) {
+      await this.#list();
+    }
   }
 
   async #sync(options: { readonly prefer?: 'local' | 'remote'; readonly only?: readonly string[] }): Promise<void> {

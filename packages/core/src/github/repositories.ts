@@ -7,6 +7,7 @@ export interface Repository {
   readonly full_name: string;
   readonly private: boolean;
   readonly archived: boolean;
+  readonly topics: readonly string[];
 }
 
 /** `settings_url` is where an owner accepts them. */
@@ -27,6 +28,7 @@ const repository = z.object({
   full_name: z.string(),
   private: z.boolean(),
   archived: z.boolean().optional(),
+  topics: z.array(z.string()).optional(),
   permissions: z.object({ admin: z.boolean() }).partial().optional(),
 });
 
@@ -49,7 +51,12 @@ const installationRepositoryPage = z.object({
 });
 
 function describe(entry: z.infer<typeof repository>): Repository {
-  return { full_name: entry.full_name, private: entry.private, archived: entry.archived ?? false };
+  return {
+    full_name: entry.full_name,
+    private: entry.private,
+    archived: entry.archived ?? false,
+    topics: entry.topics ?? [],
+  };
 }
 
 function administered(entry: z.infer<typeof repository>): boolean {
