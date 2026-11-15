@@ -9,7 +9,6 @@ import type { Router } from '../app/router.js';
 import { run } from './run.js';
 import { Diff } from './save-preview.js';
 
-/** The app's address of a preview of `branch`. */
 export function previewAddress(branch: string): string {
   return `/profiles?preview=${encodeURIComponent(branch)}`;
 }
@@ -35,7 +34,6 @@ interface PickerProps {
   readonly onClose: () => void;
 }
 
-/** Asks which branch of the profiles' repository to preview: one GitHub lists, or one typed by name. */
 export function PreviewPicker({ preview, repository, onPick, onClose }: PickerProps): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   const [typed, setTyped] = useState('');
@@ -79,7 +77,8 @@ export function PreviewPicker({ preview, repository, onPick, onClose }: PickerPr
         {list.kind === 'listed' &&
           (list.branches.length === 0 ? (
             <p class="muted">
-              <span class="mono">{repository}</span> has no branch besides <span class="mono">{list.base}</span>.
+              <span class="mono">{repository}</span> has no branch besides{' '}
+              <span class="mono">{list.defaultBranch}</span>.
             </p>
           ) : (
             <ul class="rows preview-branches" role="list" aria-label="Branches">
@@ -98,7 +97,7 @@ export function PreviewPicker({ preview, repository, onPick, onClose }: PickerPr
               ))}
             </ul>
           ))}
-        {list.kind === 'listed' && list.more && (
+        {list.kind === 'listed' && list.moreBranchesThanListed && (
           <p class="muted small">GitHub lists the first 100 branches. Type the name of any other.</p>
         )}
         <label for="preview-branch">Branch name</label>
@@ -134,7 +133,7 @@ function Row({ row, base }: { readonly row: PreviewRow; readonly base: string })
       <span class="compare-what">
         <strong>{row.label}</strong>
         <span class="mono small muted">{row.key}</span>
-        {row.from !== undefined && <span class="muted small">From {row.from}</span>}
+        {row.fromExtendedProfile !== undefined && <span class="muted small">From {row.fromExtendedProfile}</span>}
       </span>
       <span class="compare-values">
         <span class="visually-hidden">
@@ -151,15 +150,19 @@ function Row({ row, base }: { readonly row: PreviewRow; readonly base: string })
 
 interface ChangedProfileProps {
   readonly profile: PreviewedProfile;
-  /** Its place in the list, which names its elements. */
-  readonly index: number;
+  readonly indexInList: number;
   readonly base: string;
   readonly repositories: readonly string[];
   readonly onCompare: (repository: string, profile: PreviewedProfile) => void;
 }
 
-/** One profile the branch changes: what applies differently, its file as a diff, and a comparison with a repository. */
-function ChangedProfile({ profile, index, base, repositories, onCompare }: ChangedProfileProps): JSX.Element {
+function ChangedProfile({
+  profile,
+  indexInList: index,
+  base,
+  repositories,
+  onCompare,
+}: ChangedProfileProps): JSX.Element {
   const [yaml, setYaml] = useState(false);
   const [picked, setPicked] = useState('');
   // The repository list can arrive after the profile shows, so the first one stands in until one is picked.
@@ -167,11 +170,11 @@ function ChangedProfile({ profile, index, base, repositories, onCompare }: Chang
   const status = statuses[profile.status];
   const rows = profile.sections.reduce((sum, section) => sum + section.rows.length, 0);
   const lines =
-    yaml && profile.text !== undefined
+    yaml && profile.changedFileText !== undefined
       ? foldUnchanged(
           diffLines(
-            profile.text.before === '' ? [] : profile.text.before.replace(/\n$/u, '').split('\n'),
-            profile.text.after === '' ? [] : profile.text.after.replace(/\n$/u, '').split('\n'),
+            profile.changedFileText.before === '' ? [] : profile.changedFileText.before.replace(/\n$/u, '').split('\n'),
+            profile.changedFileText.after === '' ? [] : profile.changedFileText.after.replace(/\n$/u, '').split('\n'),
           ),
         )
       : [];
@@ -185,19 +188,19 @@ function ChangedProfile({ profile, index, base, repositories, onCompare }: Chang
         </h2>
         <span class={status.pill}>{status.label}</span>
       </div>
-      {profile.previous !== undefined && <p class="muted small">Moved from {profile.previous}.</p>}
-      {profile.problem !== undefined && (
-        <p class="notice notice-problem">On the branch this profile doesn't load: {profile.problem}</p>
+      {profile.movedFromPath !== undefined && <p class="muted small">Moved from {profile.movedFromPath}.</p>}
+      {profile.problemOnBranch !== undefined && (
+        <p class="notice notice-problem">On the branch this profile doesn't load: {profile.problemOnBranch}</p>
       )}
-      {profile.problemBefore !== undefined && (
+      {profile.problemFixedByBranch !== undefined && (
         <p class="muted small">
-          It doesn't load here ({profile.problemBefore}), so everything it applies on the branch shows as added.
+          It doesn't load here ({profile.problemFixedByBranch}), so everything it applies on the branch shows as added.
         </p>
       )}
       {profile.status === 'removed' ? (
         <p class="muted">The branch deletes this profile.</p>
       ) : (
-        profile.problem === undefined &&
+        profile.problemOnBranch === undefined &&
         (rows === 0 ? (
           <p class="muted">
             {profile.status === 'renamed'
@@ -219,7 +222,7 @@ function ChangedProfile({ profile, index, base, repositories, onCompare }: Chang
         ))
       )}
       <div class="preview-profile-actions">
-        {profile.text !== undefined && (
+        {profile.changedFileText !== undefined && (
           <button
             class="button button-quiet button-small"
             type="button"
@@ -233,7 +236,7 @@ function ChangedProfile({ profile, index, base, repositories, onCompare }: Chang
         )}
       </div>
       {yaml && <Diff lines={lines} label={`${profile.name}: ${base} against the branch`} />}
-      {profile.file !== undefined && profile.problem === undefined && repositories.length > 0 && (
+      {profile.fileOnBranch !== undefined && profile.problemOnBranch === undefined && repositories.length > 0 && (
         <form
           class="preview-compare"
           onSubmit={(event) => {
@@ -273,12 +276,10 @@ interface PreviewPageProps {
   readonly preview: BranchPreview;
   readonly repositories: Repositories;
   readonly router: Router;
-  /** The branch the address names. */
   readonly branch: string;
   readonly onCompare: (repository: string, profile: ComparedProfile) => void;
 }
 
-/** The profiles as a branch of their repository would leave them: each one it changes, read-only. */
 export function BranchPreviewPage({ preview, repositories, router, branch, onCompare }: PreviewPageProps): JSX.Element {
   const state = preview.state.value;
   const names = (repositories.list.value?.repositories ?? []).map((repository) => repository.full_name);
@@ -294,15 +295,15 @@ export function BranchPreviewPage({ preview, repositories, router, branch, onCom
       Exit preview
     </button>
   );
-  const base = state.kind === 'ready' ? state.base : 'the default branch';
+  const base = state.kind === 'ready' ? state.defaultBranch : 'the default branch';
   return (
     <div class="page">
       <article class="page-body branch-preview" aria-labelledby="preview-heading">
         <div class="notice preview-banner">
           <p>
             Previewing <span class="mono">{branch}</span> against{' '}
-            {state.kind === 'ready' ? <span class="mono">{state.base}</span> : 'the default branch'}. Nothing here is
-            saved or synced.
+            {state.kind === 'ready' ? <span class="mono">{state.defaultBranch}</span> : 'the default branch'}. Nothing
+            here is saved or synced.
           </p>
           <div class="notice-actions">
             <button
@@ -328,10 +329,12 @@ export function BranchPreviewPage({ preview, repositories, router, branch, onCom
                 ? 'Reading the branch from GitHub…'
                 : state.kind === 'failed'
                   ? "The branch couldn't be read."
-                  : state.profiles.length === 0
+                  : state.changedProfiles.length === 0
                     ? 'The branch changes no profile.'
-                    : `${count(state.profiles.length, 'profile changes', 'profiles change')}${
-                        state.unchanged === 0 ? '' : `, ${count(state.unchanged, 'stays', 'stay')} the same`
+                    : `${count(state.changedProfiles.length, 'profile changes', 'profiles change')}${
+                        state.unchangedProfileCount === 0
+                          ? ''
+                          : `, ${count(state.unchangedProfileCount, 'stays', 'stay')} the same`
                       }.`}
             </p>
           </div>
@@ -342,44 +345,50 @@ export function BranchPreviewPage({ preview, repositories, router, branch, onCom
           </p>
         )}
         {state.kind === 'ready' &&
-          (state.local.length > 0 || state.stale || state.behind > 0 || state.truncated || state.preferences) && (
+          (state.profilesChangedSinceLastSync.length > 0 ||
+            state.localProfilesOlderThanDefaultBranch ||
+            state.commitsBehindDefaultBranch > 0 ||
+            state.changedFilesTruncated ||
+            state.changesSharedPreferences) && (
             <div class="notice notice-drift">
               <ul>
-                {state.local.length > 0 && (
+                {state.profilesChangedSinceLastSync.length > 0 && (
                   <li>
-                    {state.local.length === 1 ? (
+                    {state.profilesChangedSinceLastSync.length === 1 ? (
                       <>
-                        <span class="mono">{state.local[0]}</span> has changes here that aren't synced
+                        <span class="mono">{state.profilesChangedSinceLastSync[0]}</span> has changes here that aren't
+                        synced
                       </>
                     ) : (
                       <>
-                        {state.local.length} profiles have changes here that aren't synced:{' '}
-                        <span class="mono">{state.local.join(', ')}</span>
+                        {state.profilesChangedSinceLastSync.length} profiles have changes here that aren't synced:{' '}
+                        <span class="mono">{state.profilesChangedSinceLastSync.join(', ')}</span>
                       </>
                     )}
                     . The preview starts from the profiles here, so where the branch changes the same profiles, it shows
                     those changes as undone. Sync, then refresh, to leave them out.
                   </li>
                 )}
-                {state.stale && (
+                {state.localProfilesOlderThanDefaultBranch && (
                   <li>
-                    The profiles here are older than <span class="mono">{state.base}</span>, so the preview starts from
-                    them. Sync, then refresh, to start from <span class="mono">{state.base}</span> as it is now.
+                    The profiles here are older than <span class="mono">{state.defaultBranch}</span>, so the preview
+                    starts from them. Sync, then refresh, to start from <span class="mono">{state.defaultBranch}</span>{' '}
+                    as it is now.
                   </li>
                 )}
-                {state.behind > 0 && (
+                {state.commitsBehindDefaultBranch > 0 && (
                   <li>
-                    The branch is {count(state.behind, 'commit')} behind <span class="mono">{state.base}</span>. A
-                    profile both changed shows as the branch has it.
+                    The branch is {count(state.commitsBehindDefaultBranch, 'commit')} behind{' '}
+                    <span class="mono">{state.defaultBranch}</span>. A profile both changed shows as the branch has it.
                   </li>
                 )}
-                {state.truncated && (
+                {state.changedFilesTruncated && (
                   <li>
                     The branch changes more files than GitHub lists at once, so some profiles it changes may be missing
                     here.
                   </li>
                 )}
-                {state.preferences && (
+                {state.changesSharedPreferences && (
                   <li>The branch also changes the hidden repositories or folders, which the preview doesn't show.</li>
                 )}
               </ul>
@@ -387,20 +396,20 @@ export function BranchPreviewPage({ preview, repositories, router, branch, onCom
           )}
         {state.kind === 'ready' && (
           <div class="preview-profiles">
-            {state.profiles.map((profile, index) => (
+            {state.changedProfiles.map((profile, index) => (
               <ChangedProfile
-                key={`${state.commit}:${profile.path}`}
+                key={`${state.branchCommit}:${profile.path}`}
                 profile={profile}
-                index={index}
+                indexInList={index}
                 base={base}
                 repositories={names}
                 onCompare={(repository, changed) => {
-                  if (changed.file !== undefined) {
+                  if (changed.fileOnBranch !== undefined) {
                     onCompare(repository, {
-                      file: changed.file,
+                      file: changed.fileOnBranch,
                       name: `${changed.name} on ${branch}`,
-                      folder: state.folder,
-                      back: { to: previewAddress(branch), label: 'Back to the preview' },
+                      folder: state.branchProfilesFolder,
+                      backLink: { to: previewAddress(branch), label: 'Back to the preview' },
                     });
                   }
                 }}

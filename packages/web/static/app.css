@@ -2015,7 +2015,6 @@ select.field {
   }
 }
 
-/* A preview of a branch of the profiles' repository */
 .pill-add {
   background: var(--add-bg);
   color: var(--add);

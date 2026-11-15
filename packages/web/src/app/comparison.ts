@@ -98,12 +98,10 @@ export interface ComparedProfile {
   readonly name: string;
   /** The folder the profiles are kept in, which paths in a message are given from; the profile's own when left out. */
   readonly folder?: string;
-  /** Where the comparison's back link goes, and what it says; to the repository when left out. */
-  readonly back?: ComparisonBack;
+  readonly backLink?: ComparisonBackLink;
 }
 
-export interface ComparisonBack {
-  /** The app's address to go back to. */
+export interface ComparisonBackLink {
   readonly to: string;
   readonly label: string;
 }
@@ -121,8 +119,7 @@ export type ComparisonState =
     }
   | ({ readonly kind: 'compared' } & Compared);
 
-/** Each section's title, as a comparison shows it. */
-export const titles: Readonly<Record<Change['section'], string>> = {
+export const sectionTitles: Readonly<Record<Change['section'], string>> = {
   repository: 'Repository',
   merge: 'Merge',
   security: 'Security',
@@ -148,8 +145,7 @@ export const sectionsInShownOrder: readonly Change['section'][] = [
   'labels',
 ];
 
-/** What one entry of each list is called. */
-export const nouns: Readonly<Record<string, string>> = {
+export const entryNounByList: Readonly<Record<string, string>> = {
   autolinks: 'autolink',
   rulesets: 'ruleset',
   environments: 'environment',
@@ -245,7 +241,7 @@ export function narrowed(path: string, from: unknown, to: unknown): { path: stri
 function rowsOf(change: Change, lock: string | undefined): CompareRow[] {
   if (change.entry !== undefined) {
     const policy = change.entry.branch_policy;
-    const noun = policy === undefined ? (nouns[change.section] ?? 'entry') : `${policy.type} policy`;
+    const noun = policy === undefined ? (entryNounByList[change.section] ?? 'entry') : `${policy.type} policy`;
     const name = policy === undefined ? change.entry.name : `${change.entry.name}: ${policy.name}`;
     if (change.action === 'create') {
       return [
@@ -345,7 +341,7 @@ export function compareSections(
     if (last?.section === change.section) {
       sections[sections.length - 1] = { ...last, rows: [...last.rows, ...rows] };
     } else {
-      sections.push({ section: change.section, title: titles[change.section], rows });
+      sections.push({ section: change.section, title: sectionTitles[change.section], rows });
     }
   }
   return sections.filter((section) => section.rows.length > 0);
@@ -374,7 +370,7 @@ export function matchSections(plan: Plan): MatchSection[] {
   const skips = plan.warnings.filter((warning) => warning.cause !== undefined);
   const differing = compareSections(plan, new Map());
   return sectionsInShownOrder.flatMap((section): MatchSection[] => {
-    const title = titles[section];
+    const title = sectionTitles[section];
     const values = wanted[section];
     const changes = plan.changes.filter((change) => change.section === section);
     if (skips.some((warning) => warning.section === section && warning.key === undefined)) {
@@ -387,7 +383,7 @@ export function matchSections(plan: Plan): MatchSection[] {
         const known = isRecord(entry) ? (entry['name'] ?? entry['key_prefix']) : undefined;
         return typeof known !== 'string' || touched.has(known) || (isRecord(entry) && entry['absent'] === true)
           ? []
-          : [{ label: known, key: nouns[section] ?? 'entry', value: undefined }];
+          : [{ label: known, key: entryNounByList[section] ?? 'entry', value: undefined }];
       });
     } else if (isRecord(values) && !changes.some((change) => change.action !== 'update')) {
       const differs = (differing.find((item) => item.section === section)?.rows ?? []).map((row) => row.key);
@@ -423,8 +419,7 @@ export class Comparison {
   readonly search = signal('');
   readonly showOnlyLockedDifferences = signal(false);
   readonly showOnlyDifferences = signal(true);
-  /** Set when the comparison was started from somewhere other than the repository. */
-  readonly back = signal<ComparisonBack | undefined>(undefined);
+  readonly backLink = signal<ComparisonBackLink | undefined>(undefined);
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
@@ -460,7 +455,7 @@ export class Comparison {
     };
     return sectionsInShownOrder
       .map((section): ShownSection => {
-        const title = titles[section];
+        const title = sectionTitles[section];
         return {
           section,
           title,
@@ -476,7 +471,7 @@ export class Comparison {
   async compare(repository: string, profile: ComparedProfile): Promise<void> {
     const turn = (this.#latestComparisonTurn += 1);
     this.#lastCompared = { repository, profile };
-    this.back.value = profile.back;
+    this.backLink.value = profile.backLink;
     this.search.value = '';
     this.showOnlyLockedDifferences.value = false;
     this.state.value = { kind: 'comparing', repository, file: profile.file, profileName: profile.name };
@@ -537,6 +532,6 @@ export class Comparison {
   close(): void {
     this.#latestComparisonTurn += 1;
     this.state.value = { kind: 'idle' };
-    this.back.value = undefined;
+    this.backLink.value = undefined;
   }
 }

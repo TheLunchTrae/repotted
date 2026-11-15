@@ -153,12 +153,10 @@ export class FakeGitRepository implements GitHub {
     return commit;
   }
 
-  /** The commit a branch name or a commit id names. */
-  private commitOf(name: string): string | undefined {
+  private commitOfBranchOrCommitId(name: string): string | undefined {
     return this.refs.get(name) ?? (this.commits.has(name) ? name : undefined);
   }
 
-  /** The newest commit both reach, or undefined when they share none. */
   private mergeBase(from: string, to: string): string | undefined {
     const reached = new Set([from, ...this.ancestors(from)]);
     const queue = [to];
@@ -179,7 +177,6 @@ export class FakeGitRepository implements GitHub {
     return this.trees.get(this.commits.get(commit)?.tree ?? '') ?? new Map();
   }
 
-  /** The files that differ from one commit's tree to another's, as a comparison lists them, a moved file as renamed. */
   private changedFiles(from: string, to: string): Record<string, unknown>[] {
     const before = this.treeOf(from);
     const after = this.treeOf(to);
@@ -248,7 +245,6 @@ export class FakeGitRepository implements GitHub {
     const ref = route.startsWith(`${base}/git/refs/heads/`)
       ? decodeURIComponent(route.slice(`${base}/git/refs/heads/`.length))
       : undefined;
-    // The singular endpoint, which answers only a branch of exactly that name.
     if (method === 'GET' && route.startsWith(`${base}/git/ref/heads/`)) {
       const name = route.slice(`${base}/git/ref/heads/`.length).split('/').map(decodeURIComponent).join('/');
       const head = this.refs.get(name);
@@ -286,8 +282,8 @@ export class FakeGitRepository implements GitHub {
       : undefined;
     if (method === 'GET' && compare !== undefined) {
       const [fromName = '', toName = ''] = compare.map(decodeURIComponent);
-      const from = this.commitOf(fromName);
-      const to = this.commitOf(toName);
+      const from = this.commitOfBranchOrCommitId(fromName);
+      const to = this.commitOfBranchOrCommitId(toName);
       if (from === undefined || to === undefined) {
         throw new GitHubError(404, 'Not Found');
       }

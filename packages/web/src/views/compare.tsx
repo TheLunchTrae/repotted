@@ -35,7 +35,7 @@ interface CompareProps {
 
 export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
   const state = comparison.state.value;
-  const startedFrom = comparison.back.value;
+  const startedFrom = comparison.backLink.value;
   const back =
     startedFrom !== undefined && state.kind !== 'idle' ? (
       <Link router={router} to={startedFrom.to}>
