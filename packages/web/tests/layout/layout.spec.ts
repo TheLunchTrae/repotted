@@ -191,23 +191,22 @@ test("a repository's checkbox takes taps across a 44px target", async ({ page })
   await page.goto('/');
   const checkbox = page.getByRole('checkbox', { name: 'Select lunch/api' });
   await expect(checkbox).toBeVisible();
-  await checkbox.evaluate((element) => {
+  await page.evaluate(() => document.fonts.ready);
+  const offsetsThatMiss = await checkbox.evaluate((element) => {
     element.scrollIntoView({ block: 'center' });
+    const box = element.getBoundingClientRect();
+    const centerX = box.left + box.width / 2;
+    const centerY = box.top + box.height / 2;
+    return [
+      [-20, 0],
+      [20, 0],
+      [0, -20],
+      [0, 20],
+    ]
+      .filter(
+        ([offsetX = 0, offsetY = 0]) => document.elementFromPoint(centerX + offsetX, centerY + offsetY) !== element,
+      )
+      .map(([offsetX, offsetY]) => `${offsetX},${offsetY}`);
   });
-  const box = await checkbox.boundingBox();
-  expect(box, "the checkbox's box").not.toBeNull();
-  const centerX = (box?.x ?? 0) + (box?.width ?? 0) / 2;
-  const centerY = (box?.y ?? 0) + (box?.height ?? 0) / 2;
-  for (const [offsetX, offsetY] of [
-    [-20, 0],
-    [20, 0],
-    [0, -20],
-    [0, 20],
-  ] as const) {
-    const tapped = await page.evaluate(
-      ([x, y]) => document.elementFromPoint(x, y)?.getAttribute('aria-label') ?? null,
-      [centerX + offsetX, centerY + offsetY] as const,
-    );
-    expect(tapped, `what a tap ${offsetX},${offsetY} from the box's center reaches`).toBe('Select lunch/api');
-  }
+  expect(offsetsThatMiss, "taps 20px from the box's center that miss it").toEqual([]);
 });
