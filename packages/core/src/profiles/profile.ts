@@ -1020,12 +1020,6 @@ function removableEntries(parsed: OwnProfile): RemovableEntry[] {
   ];
 }
 
-/**
- * A listed profile that removes an entry, or the Pages site, that an earlier
- * one adds wins, since later profiles override earlier ones. A profile
- * removing what a profile in its own chain adds is how a profile drops an
- * entry, so only removals across listed profiles are named.
- */
 export interface OverrideWarning {
   readonly section: EntryList | 'pages';
   /** The entry's name; none for the Pages site. */
@@ -1033,6 +1027,12 @@ export interface OverrideWarning {
   readonly message: string;
 }
 
+/**
+ * A listed profile that removes an entry, or the Pages site, that an earlier
+ * one adds wins, since later profiles override earlier ones. A profile
+ * removing what a profile in its own chain adds is how a profile drops an
+ * entry, so only removals across listed profiles are named.
+ */
 function removalWarnings(links: readonly Link[]): OverrideWarning[] {
   const warnings: OverrideWarning[] = [];
   const appliedBaseFirst = links.filter((link) => link.listedIn.size > 0).toReversed();
