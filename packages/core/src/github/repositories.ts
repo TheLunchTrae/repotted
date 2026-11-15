@@ -8,7 +8,7 @@ export interface Repository {
   readonly private: boolean;
   readonly archived: boolean;
   readonly topics: readonly string[];
-  /** Null for a repository nothing has been pushed to. */
+  /** Null when GitHub gives no push time. */
   readonly pushed_at: string | null;
 }
 

@@ -52,7 +52,6 @@ export function filterCount(filters: ListFilters): number {
   return Number(filters.visibility !== 'any') + Number(filters.archived !== 'any') + filters.topics.length;
 }
 
-/** Undefined deletes the key, so a browser with nothing filtered keeps nothing. */
 export function filtersToSave(filters: ListFilters): ListFilters | undefined {
   return filterCount(filters) === 0 ? undefined : filters;
 }
@@ -103,7 +102,7 @@ function byFullName(left: Repository, right: Repository): number {
   return left.full_name.localeCompare(right.full_name, undefined, { sensitivity: 'base' });
 }
 
-/** A repository nothing has been pushed to goes last either way, then by name. */
+/** A repository GitHub gives no push time for goes last either way. */
 function byPush(newestFirst: boolean): (left: Repository, right: Repository) => number {
   return (left, right) => {
     if (left.pushed_at === right.pushed_at) {
@@ -149,7 +148,7 @@ const relativeTime = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 
 export function pushedLabel(pushedAt: string | null, now: number): string {
   if (pushedAt === null) {
-    return 'Never pushed';
+    return 'No push time';
   }
   const elapsed = now - Date.parse(pushedAt);
   const unit = units.find(([, length]) => elapsed >= length);

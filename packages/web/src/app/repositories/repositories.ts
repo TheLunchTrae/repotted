@@ -258,8 +258,8 @@ export class Repositories {
     this.#ownersRepositories.value.filter((repository) => this.showHidden.value || !this.isHidden(repository)),
   );
 
-  readonly filtering = computed(() => filterCount(this.filters.value) > 0);
   readonly filterCount = computed(() => filterCount(this.filters.value));
+  readonly filtering = computed(() => this.filterCount.value > 0);
   readonly filterChips = computed(() => filterChips(this.filters.value));
 
   readonly #filteredRepositories = computed<readonly Repository[]>(() =>

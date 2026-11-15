@@ -864,8 +864,12 @@ input[type='checkbox']:disabled {
   align-items: center;
   gap: 6px;
   border: 1px solid var(--border);
+  max-width: 100%;
   font-family: var(--sans);
   font-size: 13.5px;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
@@ -879,7 +883,8 @@ input[type='checkbox']:disabled {
 }
 
 .row-pushed {
-  white-space: nowrap;
+  display: block;
+  font-family: var(--sans);
 }
 
 .panel {

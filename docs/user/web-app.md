@@ -86,19 +86,21 @@ and click **Show in list** to bring it back for good. If a search matches
 only hidden repositories, or every repository is hidden, the list says so
 and offers **Show hidden**.
 
-**Sort**, beside the owners button, orders the repositories in each folder
-and under each owner by **Name, A to Z**, **Name, Z to A**, **Last pushed,
-newest first** or **Last pushed, oldest first**. The owners keep their order.
-Sorting by last push shows when each repository was last pushed to, and a
-repository nothing has been pushed to goes last either way.
+The **Sort** button, beside **Filter** and named for the order in use,
+orders the repositories in each folder and under each owner by **Name, A to
+Z**, **Name, Z to A**, **Last pushed, newest first** or **Last pushed, oldest
+first**. The owners keep their order. Sorting by last push shows when each
+repository was last pushed to, under its name, and a repository GitHub gives
+no push time for goes last either way.
 
-**Filter**, beside it, narrows the list to **Public** or **Private**
+**Filter**, beside the count, narrows the list to **Public** or **Private**
 repositories, to those that are **Archived** or **Not archived**, and to
 those with any of the topics you select. Each choice adds a chip under the
-search box; click a chip to remove that filter, or click **Clear filters**.
+search box; click a chip to remove that filter, or click **Clear filters**, in the
+menu or beside the chips.
 The button counts how many filters are on. Filters and a search work
 together, and a repository has to pass both to show. While a filter is on,
-the count beside **Refresh** counts only the repositories that pass, folders
+the count counts only the repositories that pass, folders
 with nothing in them don't show, and if nothing passes the list says so and
 offers **Clear filters**. A panel you had open closes while its repository
 is filtered out, and the selection stays as it was.

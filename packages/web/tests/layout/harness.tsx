@@ -36,13 +36,32 @@ const names = [
 const markedConfigNames = new URLSearchParams(location.search).has('config-repositories')
   ? new Set(['lunch/a_repository_name_with_no_hyphens_in_it_at_all', 'trae/dotfiles'])
   : new Set<string>();
-const repositories = names.map((name, index) => ({
-  full_name: name,
-  private: index % 2 === 0,
-  archived: name === 'trae/claude-plugins',
-  permissions: { admin: true },
-  topics: markedConfigNames.has(name) ? ['repotted-config'] : [],
-}));
+// GitHub allows a topic up to 50 characters, which a filter chip has to wrap on a phone.
+const longestTopic = 'an-unusually-long-github-topic-of-fifty-characters';
+const topicsByName: Readonly<Record<string, readonly string[]>> = {
+  'lunch/api': ['typescript', longestTopic],
+  'trae/claude-plugins': ['typescript'],
+};
+const day = 86_400_000;
+// The longest push label, on the archived row, is what sorting by last push adds to a row.
+const daysSinceLastPushByName: Readonly<Record<string, number | null>> = {
+  'trae/claude-plugins': 330,
+  'lunch/mobile': null,
+};
+const repositories = names.map((name, index) => {
+  const daysSinceLastPush = name in daysSinceLastPushByName ? daysSinceLastPushByName[name] : index + 1;
+  return {
+    full_name: name,
+    private: index % 2 === 0,
+    archived: name === 'trae/claude-plugins',
+    permissions: { admin: true },
+    topics: [...(markedConfigNames.has(name) ? ['repotted-config'] : []), ...(topicsByName[name] ?? [])],
+    pushed_at:
+      daysSinceLastPush === null || daysSinceLastPush === undefined
+        ? null
+        : new Date(Date.now() - daysSinceLastPush * day).toISOString(),
+  };
+});
 const account: FakeAccount = {
   login: 'trae',
   // One long word, as a name or login can be, which the account menu has to wrap.

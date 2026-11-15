@@ -896,7 +896,7 @@ function shown(repositories: Repositories): string[] {
   return [...folders(repositories), ...names(repositories)];
 }
 
-test('sorts each folder and owner group by name either way or by last push, with never pushed last', async () => {
+test('sorts each folder and owner group by name either way or by last push, with no push time last', async () => {
   const browser = memory({ 'repository-folders': [{ name: 'Kept', repositories: ['trae/old', 'trae/app'] }] });
   const repositories = await opened(new FakeGitHub({ account: varied }), browser);
   expect(shown(repositories)).toEqual([
@@ -1051,4 +1051,17 @@ test('a saved sort order or filters it cannot read fall back to the defaults', a
 
   expect(repositories.sortOrder.value).toBe('name-ascending');
   expect(repositories.filters.value).toEqual({ visibility: 'any', archived: 'archived', topics: [] });
+});
+
+test('a selected repository a filter takes out of view stays selected, and the selection still acts on it', async () => {
+  const browser = memory();
+  const repositories = await opened(new FakeGitHub({ account: varied }), browser);
+  repositories.select(listed(repositories, 'trae/blog'), true);
+
+  repositories.setVisibilityFilter('private');
+  expect(names(repositories)).toEqual(['trae:', 'trae/app', 'acme:', 'acme/api']);
+  expect(repositories.selected.value.map((repository) => repository.full_name)).toEqual(['trae/blog']);
+
+  repositories.hide(repositories.selected.value);
+  expect(browser.kept['hidden-repositories']).toEqual(['trae/blog']);
 });

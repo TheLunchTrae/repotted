@@ -177,6 +177,7 @@ function FilterMenu({ repositories }: { readonly repositories: Repositories }): 
             disabled={count === 0}
             onClick={() => {
               repositories.clearFilters();
+              menu.current?.querySelector<HTMLElement>('.menu-panel input:checked')?.focus();
             }}
           >
             Clear filters
@@ -230,7 +231,13 @@ function removeChip(repositories: Repositories, chip: FilterChip): void {
   }
 }
 
-/** Removing a chip takes it away, so the focus moves to the next one, or to the search after the last. */
+function chipRemovalLabel(chip: FilterChip): string {
+  return chip.kind === 'topic'
+    ? `Remove the topic filter ${chip.topic}`
+    : `Remove the ${chip.label.toLowerCase()} filter`;
+}
+
+/** Removing a chip takes it away, so the focus moves to the chip now in its place, the one before it, or the search. */
 function FilterChips({
   repositories,
   search,
@@ -256,7 +263,7 @@ function FilterChips({
           key={chip.kind === 'topic' ? `topic:${chip.topic}` : chip.kind}
           class="pill filter-chip"
           type="button"
-          aria-label={`Remove the filter ${chip.label}`}
+          aria-label={chipRemovalLabel(chip)}
           onClick={() => {
             removeChip(repositories, chip);
             focusAfterRemoving(index);
@@ -618,17 +625,17 @@ function RepositoryRow({ repository, repositories, withOwner }: RowProps): JSX.E
         <span class="row-name">
           <span class="mono">{name}</span>
           {withOwner && <span class="row-owner muted small">{owner}</span>}
+          {byPush && (
+            <span
+              class="row-pushed muted small"
+              title={repository.pushed_at === null ? undefined : new Date(repository.pushed_at).toLocaleString()}
+            >
+              {pushedLabel(repository.pushed_at, Date.now())}
+            </span>
+          )}
         </span>
         {repository.archived && <span class="pill pill-drift">Archived</span>}
         {hidden && <span class="pill">Hidden</span>}
-        {byPush && (
-          <span
-            class="muted small row-pushed"
-            title={repository.pushed_at === null ? undefined : new Date(repository.pushed_at).toLocaleString()}
-          >
-            {pushedLabel(repository.pushed_at, Date.now())}
-          </span>
-        )}
         <span class="muted small">{repository.private ? 'Private' : 'Public'}</span>
       </button>
     </li>
@@ -1485,6 +1492,9 @@ export function RepositoriesPage({
                     type="button"
                     onClick={() => {
                       repositories.clearFilters();
+                      requestAnimationFrame(() => {
+                        search.current?.focus();
+                      });
                     }}
                   >
                     Clear filters
