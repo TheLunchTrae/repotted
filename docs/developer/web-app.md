@@ -348,7 +348,7 @@ while to issue. The preview is public, as repotted.dev is, unless Cloudflare
 Access is put in front of it.
 
 The client ID is public, so it is a variable in `wrangler.jsonc`, the same ID as
-`app.clientId` in `packages/cli/src/auth.ts`; a CLI test fails when they differ.
+`app.clientId` in `packages/cli/src/auth/sign-in.ts`; a CLI test fails when they differ.
 Previews take none of the production variables, so it is set again in the
 `previews` block. The client secret is set once as the Worker secret
 `REPOTTED_APP_CLIENT_SECRET`, in the dashboard or with `wrangler secret put`,

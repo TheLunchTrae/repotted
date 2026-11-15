@@ -7,12 +7,12 @@ in [Sign in](../user/sign-in.md).
 
 ## Sign-in
 
-`packages/cli/src/device-flow.ts` runs GitHub's device flow: it requests a
+`packages/cli/src/auth/device-flow.ts` runs GitHub's device flow: it requests a
 code, polls at the interval GitHub asks for, including `slow_down`, and
 refreshes tokens. Device-flow tokens refresh without a client secret, so the
 published package holds nothing secret.
 
-`packages/cli/src/auth.ts` keeps the token in the OS keychain through
+`packages/cli/src/auth/sign-in.ts` keeps the token in the OS keychain through
 `@napi-rs/keyring`, loaded on first use so that commands given `GITHUB_TOKEN`
 still run where the native module or a keychain is missing. On Linux the token
 goes only to the Secret Service: the library's fallback, the kernel keyring,
@@ -44,7 +44,7 @@ administers, though the token itself may not be allowed to change them.
 ## Register the App
 
 The Repotted App is owned by the project's owner. Its client ID and slug are
-`app.clientId` and `app.slug` in `packages/cli/src/auth.ts`. The client ID is
+`app.clientId` and `app.slug` in `packages/cli/src/auth/sign-in.ts`. The client ID is
 public; the device flow needs no client secret or private key, so the CLI
 holds none. The gate fails if `app.clientId` is empty.
 

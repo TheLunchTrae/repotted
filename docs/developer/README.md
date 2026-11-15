@@ -39,7 +39,9 @@ use Repotted, see the [user guide](../user/README.md).
 
 - `packages/cli`: the published `repotted` package: the CLI and the MCP
   server over the engine. Its build bundles core into one file, since core is
-  never published on its own.
+  never published on its own. `src/main.ts` and `src/commands.ts` run the
+  commands, `src/auth/` signs in and keeps the token, and `src/mcp/` is the
+  MCP server. `tests/` mirrors `src/`.
 - `packages/web`: the web app at repotted.dev: a Cloudflare Worker that serves
   the site and its GitHub sign-in, and the page. Private to the workspace.
 - `examples/`: example profiles that the tests also load.
