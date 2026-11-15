@@ -130,6 +130,12 @@ response is `Cache-Control: no-store`. The Worker waits 10 seconds for GitHub's
 token endpoint and the page 20 seconds for the Worker, and either reads a
 timeout as GitHub being out of reach.
 
+When GitHub refuses a token request or fails to answer one, the Worker logs a
+warning naming the grant and what GitHub sent, such as `status 200,
+bad_refresh_token` or `status 403, text/html, not JSON`, and puts the same
+words in its answer as `gitHubAnswer`. The warning shows in the Worker's logs,
+and a failed renewal's words show on the sign-in page. Neither holds a token.
+
 A refused refresh leaves the cookies alone, since clearing them could replace
 newer tokens that another tab stored meanwhile. Sign-out ends the sign-in in
 this browser; other open tabs keep the access token they hold until it

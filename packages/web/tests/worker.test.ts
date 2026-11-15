@@ -273,25 +273,50 @@ describe('token', () => {
     expect(github).not.toHaveBeenCalled();
   });
 
-  test('answers signed out, and leaves the cookies, when GitHub refuses the refresh token', async () => {
+  test("answers signed out with GitHub's error, and leaves the cookies, when GitHub refuses the refresh token", async () => {
     github.mockResolvedValue(Response.json({ error: 'bad_refresh_token' }));
 
     const response = await askFor(fromSite);
 
     expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'signed_out', gitHubAnswer: 'status 200, bad_refresh_token' });
     expect(cookies(response)).toEqual([]);
   });
 
   test.each([
-    ['fails on its side', () => Promise.resolve(new Response('oops', { status: 503 }))],
-    ['is too slow', () => Promise.reject(new DOMException('timed out', 'TimeoutError'))],
-  ])('answers unavailable, and leaves the cookies, when GitHub %s', async (_name, answer) => {
-    github.mockImplementation(answer);
+    ['fails on its side', () => Promise.resolve(new Response('oops', { status: 503 })), 'status 503'],
+    [
+      'sends a page instead of JSON',
+      () =>
+        Promise.resolve(
+          new Response('<html>Forbidden</html>', {
+            status: 403,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+          }),
+        ),
+      'status 403, text/html, not JSON',
+    ],
+    ['is too slow', () => Promise.reject(new DOMException('timed out', 'TimeoutError')), 'no answer within 10 seconds'],
+    ['gives no answer', () => Promise.reject(new TypeError('network connection lost')), 'no answer'],
+  ])(
+    'answers unavailable with what GitHub sent, and leaves the cookies, when GitHub %s',
+    async (_name, answer, gitHubAnswer) => {
+      github.mockImplementation(answer);
 
-    const response = await askFor(fromSite);
+      const response = await askFor(fromSite);
 
-    expect(response.status).toBe(502);
-    expect(cookies(response)).toEqual([]);
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({ error: 'unavailable', gitHubAnswer });
+      expect(cookies(response)).toEqual([]);
+    },
+  );
+
+  test('names itself to GitHub', async () => {
+    github.mockResolvedValue(Response.json(tokens));
+
+    await askFor(fromSite);
+
+    expect(new Headers(github.mock.calls[0]?.[1]?.headers).get('User-Agent')).toBe('repotted');
   });
 
   test('gives up on GitHub after ten seconds', async () => {

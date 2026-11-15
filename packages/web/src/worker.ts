@@ -25,6 +25,8 @@ const signInStateLifetimeSeconds = 10 * 60;
 const refreshMarginMs = 5 * 60 * 1000;
 // Shorter than the page's wait on the Worker in session.ts.
 const gitHubTokenEndpointTimeoutMs = 10_000;
+// GitHub asks every client to name itself.
+const gitHubUserAgent = 'repotted';
 
 type SignInFailure = 'denied' | 'expired' | 'failed';
 
@@ -40,7 +42,19 @@ const tokenResponse = z.object({
 
 type GitHubTokens = z.infer<typeof tokenResponse>;
 
-type TokenResult = { kind: 'tokens'; tokens: GitHubTokens } | { kind: 'refused' } | { kind: 'unavailable' };
+/**
+ * What GitHub sent when a token request failed, in a few words for the page
+ * and the Worker's log, such as "status 403, text/html, not JSON". It never
+ * holds a token.
+ */
+type GitHubAnswer = string;
+
+type TokenResult =
+  | { kind: 'tokens'; tokens: GitHubTokens }
+  | { kind: 'refused'; gitHubAnswer: GitHubAnswer }
+  | { kind: 'unavailable'; gitHubAnswer: GitHubAnswer };
+
+const gitHubOAuthError = z.object({ error: z.string().check(z.regex(/^[a-z_]{1,64}$/u)) });
 
 interface AccessToken {
   token: string;
@@ -147,21 +161,49 @@ function fromThisSite(request: Request): boolean {
   return request.headers.get('Origin') === new URL(request.url).origin;
 }
 
+function isTimeout(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'TimeoutError';
+}
+
+function noAnswer(error: unknown): GitHubAnswer {
+  return isTimeout(error) ? `no answer within ${gitHubTokenEndpointTimeoutMs / 1000} seconds` : 'no answer';
+}
+
+function mediaType(response: Response): string {
+  const contentType = response.headers.get('Content-Type');
+  return contentType === null ? 'no content type' : (contentType.split(';')[0] ?? '').trim().slice(0, 60);
+}
+
+function refusal(response: Response, body: unknown): GitHubAnswer {
+  const oauthError = gitHubOAuthError.safeParse(body);
+  if (oauthError.success) {
+    return `status ${response.status}, ${oauthError.data.error}`;
+  }
+  return `status ${response.status}, an answer without the expected tokens`;
+}
+
+function failed(kind: 'refused' | 'unavailable', gitHubAnswer: GitHubAnswer, grantType: string): TokenResult {
+  console.warn(
+    `GitHub's token endpoint ${kind === 'refused' ? 'refused' : 'failed'} a ${grantType} grant: ${gitHubAnswer}`,
+  );
+  return { kind, gitHubAnswer };
+}
+
 /**
  * Calls GitHub's token endpoint. GitHub answers an OAuth error, such as
  * `bad_refresh_token`, with status 200 and an `error` field; that, or tokens
- * the web app can't use, is `refused`. GitHub out of reach, too slow, or
- * failing on its side is `unavailable`.
+ * the web app can't use, is `refused`. GitHub out of reach, too slow, failing
+ * on its side or sending something other than JSON is `unavailable`.
  */
-async function requestTokens(env: Env, grant: Record<string, string>): Promise<TokenResult> {
+async function requestTokens(env: Env, grant: Record<string, string> & { grant_type: string }): Promise<TokenResult> {
   let response: Response;
-  let body: unknown;
   try {
     response = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': gitHubUserAgent,
       },
       body: new URLSearchParams({
         client_id: env.REPOTTED_APP_CLIENT_ID,
@@ -170,15 +212,26 @@ async function requestTokens(env: Env, grant: Record<string, string>): Promise<T
       }),
       signal: AbortSignal.timeout(gitHubTokenEndpointTimeoutMs),
     });
-    if (response.status >= 500) {
-      return { kind: 'unavailable' };
-    }
+  } catch (error) {
+    return failed('unavailable', noAnswer(error), grant.grant_type);
+  }
+  if (response.status >= 500) {
+    return failed('unavailable', `status ${response.status}`, grant.grant_type);
+  }
+  let body: unknown;
+  try {
     body = await response.json();
-  } catch {
-    return { kind: 'unavailable' };
+  } catch (error) {
+    return failed(
+      'unavailable',
+      isTimeout(error) ? noAnswer(error) : `status ${response.status}, ${mediaType(response)}, not JSON`,
+      grant.grant_type,
+    );
   }
   const tokens = tokenResponse.safeParse(body);
-  return response.ok && tokens.success ? { kind: 'tokens', tokens: tokens.data } : { kind: 'refused' };
+  return response.ok && tokens.success
+    ? { kind: 'tokens', tokens: tokens.data }
+    : failed('refused', refusal(response, body), grant.grant_type);
 }
 
 async function signIn(request: Request, env: Env): Promise<Response> {
@@ -284,9 +337,9 @@ async function token(request: Request, env: Env): Promise<Response> {
     // no harm, while clearing it could replace a newer token that a request
     // from another tab stored meanwhile.
     case 'refused':
-      return json(401, { error: 'signed_out' });
+      return json(401, { error: 'signed_out', gitHubAnswer: result.gitHubAnswer });
     case 'unavailable':
-      return json(502, { error: 'unavailable' });
+      return json(502, { error: 'unavailable', gitHubAnswer: result.gitHubAnswer });
   }
 }
 
