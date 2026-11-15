@@ -7,89 +7,305 @@ import type { ProfileFolderNode, ProfileListing, Profiles } from '../../app/prof
 import type { Repositories } from '../../app/repositories/repositories.js';
 import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
+import { useDismissibleMenu, useModal } from '../layout/shell.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
 import { previewAddress, PreviewPicker } from './branch-preview.js';
 import { NewProfileForm } from './new-profile.js';
 import { OwnerTypeDialog } from './owner-type.js';
 import { SyncNote } from './sync-note.js';
 
-// The phone breakpoint in app.css.
-const phoneMediaQuery = '(max-width: 760px)';
+const ownerTypes = {
+  user: 'For personal accounts',
+  organization: 'For organizations',
+} as const;
 
-const ownerTypes = { user: 'For personal accounts', organization: 'For organizations' } as const;
+type ProfilesDialog =
+  | { readonly kind: 'delete'; readonly listings: readonly ProfileListing[] }
+  | {
+      readonly kind: 'new-folder';
+      readonly listings: readonly ProfileListing[];
+    }
+  | { readonly kind: 'rename'; readonly path: string; readonly name: string };
+
+/** The profile's path in the profiles folder without its extension, which tells apart two of one name. */
+function nameOf(profiles: Profiles, listing: ProfileListing): string {
+  return profiles.pathOf(listing).replace(/\.ya?ml$/iu, '');
+}
+
+/** In the order the list draws them: its folders' first, then its own. */
+function profilesIn(node: ProfileFolderNode): readonly ProfileListing[] {
+  return [...node.folders.flatMap(profilesIn), ...node.profiles];
+}
+
+function parentOf(path: string): string {
+  return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+}
+
+interface RowProps {
+  readonly listing: ProfileListing;
+  readonly profiles: Profiles;
+  readonly onOpen: (listing: ProfileListing) => void;
+}
+
+function ProfileRow({ listing, profiles, onOpen }: RowProps): JSX.Element {
+  const base = profiles.listings.value.find((item) => item.file === listing.extends);
+  return (
+    <li class="selectable-row">
+      <input
+        class="select-box"
+        type="checkbox"
+        aria-label={`Select ${nameOf(profiles, listing)}`}
+        checked={profiles.isInBatch(listing)}
+        onChange={(event) => {
+          profiles.selectForBatch([listing], event.currentTarget.checked);
+        }}
+      />
+      <button
+        class="row profile-row"
+        type="button"
+        data-profile={listing.file}
+        onClick={() => {
+          onOpen(listing);
+        }}
+      >
+        <span class="row-name">{listing.name}</span>
+        {profiles.unsaved.value.has(listing.file) && <span class="pill pill-drift">Not saved</span>}
+        {listing.problem !== null && <span class="pill pill-remove">Problem</span>}
+        <span class="profile-row-details muted small">
+          {listing.problem === null && (
+            <span>{listing.owner_type === null ? 'For any owner' : ownerTypes[listing.owner_type]}</span>
+          )}
+          {base !== undefined && <span>Extends {base.name}</span>}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function FolderMenu({
+  node,
+  onDialog,
+}: {
+  readonly node: ProfileFolderNode;
+  readonly onDialog: (dialog: ProfilesDialog) => void;
+}): JSX.Element {
+  const menu = useDismissibleMenu();
+  return (
+    <details class="menu folder-menu" ref={menu}>
+      <summary class="button button-quiet button-small" aria-label={`Edit ${node.path}`}>
+        Edit
+      </summary>
+      <div class="menu-panel menu-panel-end">
+        <button
+          class="menu-item"
+          type="button"
+          onClick={() => {
+            if (menu.current !== null) {
+              menu.current.open = false;
+            }
+            onDialog({ kind: 'rename', path: node.path, name: node.name });
+          }}
+        >
+          Rename
+        </button>
+      </div>
+    </details>
+  );
+}
 
 interface FolderProps {
   readonly node: ProfileFolderNode;
   readonly profiles: Profiles;
-  readonly onOpen: () => void;
+  readonly onOpen: (listing: ProfileListing) => void;
+  readonly onDialog: (dialog: ProfilesDialog) => void;
 }
 
-function Folder({ node, profiles, onOpen }: FolderProps): JSX.Element {
-  const selected = profiles.selected.value;
+function FolderSection({ node, profiles, onOpen, onDialog }: FolderProps): JSX.Element {
+  const searching = profiles.search.value.trim() !== '';
+  const inside = profilesIn(node);
+  const everyShownProfileSelected = inside.length > 0 && inside.every((listing) => profiles.isInBatch(listing));
+  const Title = node.path.includes('/') ? 'h3' : 'h2';
   return (
-    <ul class="tree">
-      {node.profiles.map((listing) => (
-        <li key={listing.file}>
+    <section class="folder" aria-label={node.path} data-folder={node.path}>
+      <div class="folder-heading">
+        <Title class="folder-title">
           <button
-            class="tree-item"
+            class="folder-toggle"
             type="button"
-            aria-current={selected?.file === listing.file ? 'true' : undefined}
+            aria-expanded={node.open}
+            disabled={searching}
             onClick={() => {
-              onOpen();
-              run(profiles.select(listing));
+              profiles.toggleFolder(node.path);
             }}
           >
-            <span class="tree-name">{listing.name}</span>
-            {profiles.unsaved.value.has(listing.file) && <span class="pill pill-drift">Not saved</span>}
-            {listing.problem !== null && <span class="pill pill-remove">Problem</span>}
+            <svg class="folder-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2.2h8.4A1.5 1.5 0 0 1 21 8.7v9.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z" />
+            </svg>
+            <span class="folder-name">{node.name}</span>
+            <span class="muted count">{node.count}</span>
           </button>
-        </li>
-      ))}
-      {node.folders.map((folder) => (
-        <li key={folder.path}>
+        </Title>
+        {node.open && (
           <button
-            class="tree-item tree-folder"
+            class="button button-quiet button-small folder-select"
             type="button"
-            aria-expanded={folder.open}
-            aria-label={`${folder.name}, ${folder.count} ${folder.count === 1 ? 'profile' : 'profiles'}`}
+            aria-label={`${everyShownProfileSelected ? 'Deselect all in' : 'Select all in'} ${node.path}`}
             onClick={() => {
-              profiles.toggleFolder(folder.path);
+              profiles.selectForBatch(inside, !everyShownProfileSelected);
             }}
           >
-            <span class="tree-name">{folder.name}</span>
-            <span class="muted count">{folder.count}</span>
+            {everyShownProfileSelected ? 'Deselect all' : 'Select all'}
           </button>
-          {folder.open && <Folder node={folder} profiles={profiles} onOpen={onOpen} />}
-        </li>
-      ))}
-    </ul>
+        )}
+        <FolderMenu node={node} onDialog={onDialog} />
+      </div>
+      {node.open && (
+        <div class="folder-body">
+          {node.folders.map((folder) => (
+            <FolderSection key={folder.path} node={folder} profiles={profiles} onOpen={onOpen} onDialog={onDialog} />
+          ))}
+          {node.profiles.length > 0 && (
+            <ul class="rows">
+              {node.profiles.map((listing) => (
+                <ProfileRow key={listing.file} listing={listing} profiles={profiles} onOpen={onOpen} />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
-interface ProfileProps {
-  readonly listing: ProfileListing;
+interface FolderNameProps {
   readonly profiles: Profiles;
+  readonly dialog: Extract<ProfilesDialog, { kind: 'new-folder' | 'rename' }>;
+  /** With the folder the profiles are in now, once they moved. */
+  readonly onClose: (landed: string | undefined) => void;
 }
 
-function DeleteProfile({ listing, profiles, onClose }: ProfileProps & { readonly onClose: () => void }): JSX.Element {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const [error, setError] = useState<string | undefined>(undefined);
-  const dependents = profiles.dependents(listing);
-  const onGitHub = profiles.source.value.kind === 'repository';
-  useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
+function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps): JSX.Element {
+  const dialog = useModal();
+  const renaming = asked.kind === 'rename' ? asked : undefined;
+  const [name, setName] = useState(renaming?.name ?? '');
+  const [problem, setProblem] = useState<string | undefined>(undefined);
+  const landed = useRef<string | undefined>(undefined);
+  const count = asked.kind === 'new-folder' ? asked.listings.length : 0;
   return (
-    <dialog class="dialog" ref={dialog} aria-labelledby="delete-heading" onClose={onClose}>
+    <dialog
+      class="dialog"
+      ref={dialog}
+      aria-labelledby="folder-name-heading"
+      onClose={() => {
+        onClose(landed.current);
+      }}
+    >
+      <form
+        method="dialog"
+        onSubmit={(event) => {
+          if (!(event.submitter instanceof HTMLButtonElement) || event.submitter.value !== 'save') {
+            return;
+          }
+          event.preventDefault();
+          const trimmed = name.trim();
+          if (asked.kind === 'new-folder' && trimmed === '') {
+            setProblem('Give the folder a name.');
+            return;
+          }
+          const folder =
+            renaming === undefined ? trimmed : [parentOf(renaming.path), trimmed].filter(Boolean).join('/');
+          run(
+            (renaming === undefined
+              ? profiles.move(asked.kind === 'new-folder' ? asked.listings : [], trimmed)
+              : profiles.renameFolder(renaming.path, trimmed)
+            ).then((failure) => {
+              setProblem(failure);
+              if (failure === undefined) {
+                landed.current = folder;
+                dialog.current?.close();
+              }
+            }),
+          );
+        }}
+      >
+        <h2 id="folder-name-heading">{renaming === undefined ? 'New folder' : `Rename ${renaming.path}`}</h2>
+        <p class="muted">
+          {renaming === undefined
+            ? `${count === 1 ? 'The selected profile moves' : `The ${count} selected profiles move`} into it. For a folder inside another, give both, as apps/desktop.`
+            : 'Every profile in it moves with it.'}{' '}
+          Profiles that extend them are pointed at the new place.
+        </p>
+        <div class="form-field">
+          <label for="folder-name">Name</label>
+          <input
+            id="folder-name"
+            class="field"
+            value={name}
+            autoComplete="off"
+            aria-invalid={problem !== undefined}
+            aria-describedby={problem === undefined ? undefined : 'folder-name-problem'}
+            onInput={(event) => {
+              setName(event.currentTarget.value);
+              setProblem(undefined);
+            }}
+          />
+          {problem !== undefined && (
+            <p id="folder-name-problem" class="problem small" role="alert">
+              {problem}
+            </p>
+          )}
+        </div>
+        <div class="form-actions">
+          <button
+            class="button button-primary"
+            type="submit"
+            value="save"
+            disabled={profiles.profileWorkUnderWay.value}
+          >
+            {renaming === undefined ? 'Create and move' : 'Rename folder'}
+          </button>
+          <button class="button button-quiet" type="submit" value="cancel">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+interface DeleteProps {
+  readonly listings: readonly ProfileListing[];
+  readonly profiles: Profiles;
+  /** With whether they were deleted. */
+  readonly onClose: (deleted: boolean) => void;
+}
+
+function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Element {
+  const dialog = useModal();
+  const [error, setError] = useState<string | undefined>(undefined);
+  const deleted = useRef(false);
+  const dependents = profiles.dependents(...listings);
+  const source = profiles.source.value.kind;
+  const one = listings.length === 1 ? listings[0] : undefined;
+  return (
+    <dialog
+      class="dialog"
+      ref={dialog}
+      aria-labelledby="delete-heading"
+      onClose={() => {
+        onClose(deleted.current);
+      }}
+    >
       <form
         method="dialog"
         onSubmit={(event) => {
           if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'delete') {
             event.preventDefault();
             run(
-              profiles.remove(listing).then((failure) => {
+              profiles.remove(...listings).then((failure) => {
                 setError(failure);
                 if (failure === undefined) {
+                  deleted.current = true;
                   dialog.current?.close();
                 }
               }),
@@ -97,19 +313,32 @@ function DeleteProfile({ listing, profiles, onClose }: ProfileProps & { readonly
           }
         }}
       >
-        <h2 id="delete-heading">Delete {listing.name}?</h2>
+        <h2 id="delete-heading">{one === undefined ? `Delete ${listings.length} profiles?` : `Delete ${one.name}?`}</h2>
+        {one === undefined ? (
+          <ul class="muted small selected-names">
+            {listings.map((listing) => (
+              <li key={listing.file} class="mono">
+                {profiles.pathOf(listing)}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>
+            This deletes <span class="mono">{profiles.pathOf(one)}</span>.
+          </p>
+        )}
         <p>
-          This deletes <span class="mono">{profiles.pathOf(listing)}</span>.{' '}
-          {onGitHub
-            ? "The deletion is committed to the repository, whose history keeps the file as it was at the last sync. Changes made since then can't be brought back."
-            : profiles.source.value.kind === 'folder'
-              ? "The file is deleted from the folder on this computer too. It can't be brought back from here."
-              : "It can't be brought back."}
+          {source === 'repository'
+            ? `The deletion is committed to the repository, whose history keeps ${one === undefined ? 'the files as they were' : 'the file as it was'} at the last sync. Changes made since then can't be brought back.`
+            : source === 'folder'
+              ? `${one === undefined ? 'The files are' : 'The file is'} deleted from the folder on this computer too. ${one === undefined ? 'They' : 'It'} can't be brought back from here.`
+              : `${one === undefined ? 'They' : 'It'} can't be brought back.`}
         </p>
         {dependents.length > 0 && (
           <p>
-            {dependents.map((item) => item.name).join(', ')} {dependents.length === 1 ? 'extends' : 'extend'} it and{' '}
-            {dependents.length === 1 ? 'stops' : 'stop'} loading until pointed at another profile.
+            {dependents.map((item) => item.name).join(', ')} {dependents.length === 1 ? 'extends' : 'extend'}{' '}
+            {one === undefined ? 'one of them' : 'it'} and {dependents.length === 1 ? 'stops' : 'stop'} loading until
+            pointed at another profile.
           </p>
         )}
         {error !== undefined && (
@@ -124,7 +353,7 @@ function DeleteProfile({ listing, profiles, onClose }: ProfileProps & { readonly
             value="delete"
             disabled={profiles.profileWorkUnderWay.value}
           >
-            Delete profile
+            {one === undefined ? `Delete ${listings.length} profiles` : 'Delete profile'}
           </button>
           {/* The dialog opens with the keyboard on Cancel, so Enter never deletes by itself. */}
           <button class="button button-quiet" type="submit" value="cancel" autofocus>
@@ -134,6 +363,112 @@ function DeleteProfile({ listing, profiles, onClose }: ProfileProps & { readonly
       </form>
     </dialog>
   );
+}
+
+const unchosen = '\u0000unchosen';
+const newFolderChoice = '\u0000new';
+const noFolderChoice = '';
+
+interface SelectedProps {
+  readonly profiles: Profiles;
+  readonly onDialog: (dialog: ProfilesDialog) => void;
+  readonly onMoved: (folder: string) => void;
+  readonly onDeselectAll: () => void;
+}
+
+function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedProps): JSX.Element {
+  const batch = profiles.batch.value;
+  const busy = profiles.profileWorkUnderWay.value;
+  const [target, setTarget] = useState<string | undefined>(undefined);
+  const [problem, setProblem] = useState<string | undefined>(undefined);
+  return (
+    <aside class="panel" aria-label="Selected profiles">
+      <h2>{batch.length === 1 ? '1 profile selected' : `${batch.length} profiles selected`}</h2>
+      <ul class="muted small selected-names">
+        {batch.map((listing) => (
+          <li key={listing.file} class="mono">
+            {profiles.pathOf(listing)}
+          </li>
+        ))}
+      </ul>
+      <form
+        class="panel-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (target === newFolderChoice) {
+            onDialog({ kind: 'new-folder', listings: batch });
+          } else if (target !== undefined) {
+            run(
+              profiles.move(batch, target).then((failure) => {
+                setProblem(failure);
+                if (failure === undefined) {
+                  onMoved(target);
+                }
+              }),
+            );
+          }
+        }}
+      >
+        <label for="move-folder">Move to a folder</label>
+        <div class="move-row">
+          <select
+            id="move-folder"
+            class="field"
+            value={target ?? unchosen}
+            aria-describedby={problem === undefined ? undefined : 'move-problem'}
+            onChange={(event) => {
+              setTarget(event.currentTarget.value);
+              setProblem(undefined);
+            }}
+          >
+            {target === undefined && (
+              <option value={unchosen} disabled>
+                Choose a folder
+              </option>
+            )}
+            <option value={noFolderChoice}>No folder</option>
+            {profiles.folders.value
+              .filter((folder) => folder !== '')
+              .map((folder) => (
+                <option key={folder} value={folder}>
+                  {folder}
+                </option>
+              ))}
+            <option value={newFolderChoice}>New folder…</option>
+          </select>
+          <button class="button" type="submit" disabled={target === undefined || busy}>
+            {target === newFolderChoice ? 'New folder' : 'Move'}
+          </button>
+        </div>
+        {problem !== undefined && (
+          <p id="move-problem" class="problem small" role="alert">
+            {problem}
+          </p>
+        )}
+        <p class="muted small">Profiles that extend them are pointed at the new place.</p>
+      </form>
+      <div class="panel-actions">
+        <button class="button button-quiet" type="button" onClick={onDeselectAll}>
+          Deselect all
+        </button>
+        <button
+          class="button button-quiet"
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            onDialog({ kind: 'delete', listings: batch });
+          }}
+        >
+          Delete
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+interface ProfileProps {
+  readonly listing: ProfileListing;
+  readonly profiles: Profiles;
 }
 
 function Profile({ listing, profiles }: ProfileProps): JSX.Element {
@@ -214,8 +549,8 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
         />
       )}
       {deleting && (
-        <DeleteProfile
-          listing={listing}
+        <DeleteProfiles
+          listings={[listing]}
           profiles={profiles}
           onClose={() => {
             setDeleting(false);
@@ -294,20 +629,78 @@ interface ProfilesProps {
   readonly newProfileForm: { readonly repository: string | undefined } | undefined;
 }
 
+function Banners({ profiles }: { readonly profiles: Profiles }): JSX.Element | null {
+  const source = profiles.source.value;
+  const conflicts = profiles.conflicts.value;
+  const busy = profiles.profileWorkUnderWay.value;
+  const elsewhere = source.kind === 'folder' ? 'in the folder' : 'on GitHub';
+  if (conflicts.length === 0 && profiles.sync.value.status !== 'failed' && profiles.listingError.value === undefined) {
+    return null;
+  }
+  return (
+    <>
+      {profiles.listingError.value !== undefined && (
+        <p class="notice notice-problem" role="alert">
+          Couldn't list the profiles: {profiles.listingError.value}
+        </p>
+      )}
+      {profiles.sync.value.status === 'failed' && (
+        <div class="notice notice-problem">
+          <SyncNote profiles={profiles} />
+        </div>
+      )}
+      {conflicts.length > 0 && (
+        <div class="notice notice-drift" role="alert">
+          <p>
+            {conflicts.length === 1
+              ? `${conflicts[0]} changed both here and ${elsewhere} since the last sync.`
+              : `${conflicts.length} profiles changed both here and ${elsewhere} since the last sync: ${conflicts.join(', ')}.`}{' '}
+            Which version do you want to keep?
+          </p>
+          <div class="notice-actions">
+            <button
+              class="button"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                run(profiles.keep('local'));
+              }}
+            >
+              Keep mine
+            </button>
+            <button
+              class="button"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                run(profiles.keep('remote'));
+              }}
+            >
+              {source.kind === 'folder' ? "Use the folder's" : "Use GitHub's"}
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function ProfilesPage({ profiles, repositories, router, preview, newProfileForm }: ProfilesProps): JSX.Element {
   const source = profiles.source.value;
   const tree = profiles.tree.value;
   const selected = profiles.selected.value;
-  const conflicts = profiles.conflicts.value;
+  const batch = profiles.batch.value;
   const busy = profiles.profileWorkUnderWay.value;
   const total = profiles.listings.value.length;
-  const elsewhere = source.kind === 'folder' ? 'in the folder' : 'on GitHub';
-  // On a phone the list and the open profile are two screens; app.css shows the one this names.
+  const shown = profilesIn(tree);
+  const everyShownProfileSelected = shown.length > 0 && shown.every((listing) => profiles.isInBatch(listing));
+  // The list and an open profile, or the new-profile form, are two screens.
   const showing = newProfileForm !== undefined ? '/profiles/new' : selected?.file;
   const open = showing !== undefined;
-  const sidebar = useRef<HTMLElement>(null);
   const [picking, setPicking] = useState(false);
-  const listItemToRefocus = useRef<HTMLElement | null>(null);
+  const [dialog, setDialog] = useState<ProfilesDialog | undefined>(undefined);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const listScroll = useRef(0);
   const first = useRef(true);
   const previous = useRef(showing);
   useEffect(() => {
@@ -317,60 +710,166 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
       first.current = false;
       return;
     }
-    // A new screen on a phone starts at its top, with the focus on it: the button that was pressed
-    // is gone with the screen it was on. Side by side, nothing moves.
-    if (!window.matchMedia(phoneMediaQuery).matches) {
+    // The button that was pressed is gone with the screen it was on, so the new screen takes the focus.
+    if (open) {
+      scrollTo(0, 0);
+      document.querySelector<HTMLElement>('.profiles-back')?.focus();
       return;
     }
-    window.scrollTo(0, 0);
-    if (open) {
-      document.querySelector<HTMLElement>('.profiles-back')?.focus();
-    } else {
-      // Back to the row that was open, or to New profile after its form, or else to the list itself,
-      // as when the open profile was deleted or synced away.
-      const row = listItemToRefocus.current?.isConnected === true ? listItemToRefocus.current : null;
-      const form =
-        left === '/profiles/new' ? sidebar.current?.querySelector<HTMLElement>('a[href="/profiles/new"]') : null;
-      (row ?? form ?? sidebar.current)?.focus();
-    }
-    listItemToRefocus.current = null;
+    // Back to the row that was open, where the list was left, or to New profile after its form, or else to
+    // the heading, as when the open profile was deleted or synced away.
+    const row =
+      left === undefined ? null : document.querySelector<HTMLElement>(`button.row[data-profile="${CSS.escape(left)}"]`);
+    const newProfile =
+      left === '/profiles/new' ? document.querySelector<HTMLElement>('.page-actions a[href="/profiles/new"]') : null;
+    scrollTo(0, row === null ? 0 : listScroll.current);
+    (row ?? newProfile ?? heading.current)?.focus({
+      preventScroll: row !== null,
+    });
   }, [showing]);
 
-  return (
-    <div class="page page-with-sidebar" data-screen={open ? 'profile' : 'list'}>
-      <aside class="sidebar" aria-label="Profiles" ref={sidebar} tabIndex={-1}>
-        <div class="sidebar-heading">
-          <div class="sidebar-source">
-            <strong class={source.kind === 'browser' ? undefined : 'mono'}>
-              {source.kind === 'repository'
-                ? source.repository
-                : source.kind === 'folder'
-                  ? source.name
-                  : 'This browser'}
-            </strong>
-            <span class="muted count">{total}</span>
-          </div>
+  const openProfile = (listing: ProfileListing): void => {
+    listScroll.current = scrollY;
+    router.go('/profiles');
+    run(profiles.select(listing));
+  };
+  /** Once the page has drawn it, on the folder's toggle, or on the heading for none. */
+  const focusFolder = (path: string): void => {
+    requestAnimationFrame(() => {
+      const section = [...document.querySelectorAll<HTMLElement>('section.folder')].find(
+        (found) => path !== '' && found.getAttribute('data-folder') === path,
+      );
+      (section?.querySelector<HTMLElement>('.folder-toggle:not(:disabled)') ?? heading.current)?.focus();
+    });
+  };
+  // The buttons that deselect go with the selection's panel.
+  const deselectAll = (): void => {
+    profiles.deselectBatch();
+    requestAnimationFrame(() => {
+      heading.current?.focus();
+    });
+  };
+
+  const dialogs = (
+    <>
+      {dialog?.kind === 'delete' && (
+        <DeleteProfiles
+          listings={dialog.listings}
+          profiles={profiles}
+          onClose={(deleted) => {
+            setDialog(undefined);
+            if (deleted) {
+              focusFolder('');
+            }
+          }}
+        />
+      )}
+      {(dialog?.kind === 'new-folder' || dialog?.kind === 'rename') && (
+        <FolderNameDialog
+          profiles={profiles}
+          dialog={dialog}
+          onClose={(landed) => {
+            setDialog(undefined);
+            if (landed !== undefined) {
+              focusFolder(landed);
+            }
+          }}
+        />
+      )}
+    </>
+  );
+
+  if (open) {
+    return (
+      <div class="page profiles-open">
+        <div class="profiles-open-top">
           <button
-            class="button button-quiet button-small"
+            class="link profiles-back"
             type="button"
-            disabled={busy}
             onClick={() => {
-              run(profiles.refresh());
+              // An editor keeps its unsaved changes when its profile is closed, and the list marks it Not saved.
+              run(profiles.select(undefined));
+              if (newProfileForm !== undefined) {
+                router.go('/profiles');
+              }
             }}
           >
-            {source.kind === 'browser' ? 'Refresh' : 'Sync'}
+            All profiles
           </button>
-          {source.kind === 'repository' && (
+          <Banners profiles={profiles} />
+        </div>
+        {newProfileForm !== undefined ? (
+          <NewProfileForm
+            profiles={profiles}
+            repositories={repositories}
+            router={router}
+            repositoryToCapture={newProfileForm.repository}
+          />
+        ) : (
+          selected !== undefined && <Profile key={selected.file} listing={selected} profiles={profiles} />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div class={batch.length > 0 ? 'page page-with-panel' : 'page'}>
+      <section class="page-body" aria-labelledby="profiles-heading">
+        <div class="page-heading">
+          <div>
+            <h1 id="profiles-heading" ref={heading} tabIndex={-1}>
+              Profiles
+            </h1>
+            <p class="muted">
+              {source.kind === 'repository' ? (
+                <>
+                  Kept in <span class="mono">{source.repository}</span>
+                  {source.path === '' ? (
+                    ''
+                  ) : (
+                    <>
+                      {' '}
+                      in <span class="mono">{source.path}</span>
+                    </>
+                  )}
+                  .{' '}
+                </>
+              ) : source.kind === 'folder' ? (
+                <>
+                  Kept in <span class="mono">{source.name}</span> on this computer.{' '}
+                </>
+              ) : (
+                'Kept in this browser. '
+              )}
+              A profile describes how a repository should be set up.
+            </p>
+          </div>
+          <div class="page-actions">
             <button
-              class="button button-quiet button-small"
+              class="button"
               type="button"
+              disabled={busy}
               onClick={() => {
-                setPicking(true);
+                run(profiles.refresh());
               }}
             >
-              Preview
+              {source.kind === 'browser' ? 'Refresh' : 'Sync'}
             </button>
-          )}
+            {source.kind === 'repository' && (
+              <button
+                class="button"
+                type="button"
+                onClick={() => {
+                  setPicking(true);
+                }}
+              >
+                Preview
+              </button>
+            )}
+            <Link class="button button-primary" router={router} to="/profiles/new">
+              New profile
+            </Link>
+          </div>
         </div>
         {picking && source.kind === 'repository' && (
           <PreviewPicker
@@ -384,149 +883,99 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
             }}
           />
         )}
-        <Link class="button button-primary" router={router} to="/profiles/new">
-          New profile
-        </Link>
-        {total > 0 && (
-          <input
-            class="field"
-            type="search"
-            placeholder="Find a profile"
-            aria-label="Find a profile"
-            value={profiles.search.value}
-            onInput={(event) => {
-              profiles.search.value = event.currentTarget.value;
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                profiles.search.value = '';
-              }
-            }}
-          />
-        )}
-        {total > 0 && tree.count === 0 && (
-          <p class="muted small">No profile matches "{profiles.search.value.trim()}".</p>
-        )}
-        <Folder
-          node={tree}
-          profiles={profiles}
-          onOpen={() => {
-            router.go('/profiles');
-          }}
-        />
-      </aside>
+        <Banners profiles={profiles} />
 
-      <div class="page-main">
-        {open && (
-          <button
-            class="link profiles-back"
-            type="button"
-            onClick={() => {
-              listItemToRefocus.current =
-                sidebar.current?.querySelector<HTMLElement>('.tree-item[aria-current="true"]') ?? null;
-              // An editor keeps its unsaved changes when its profile is closed, and the list marks it Not saved.
-              run(profiles.select(undefined));
-              if (newProfileForm !== undefined) {
-                router.go('/profiles');
-              }
-            }}
-          >
-            All profiles
-          </button>
-        )}
-        {(conflicts.length > 0 ||
-          profiles.sync.value.status === 'failed' ||
-          profiles.listingError.value !== undefined) && (
-          <div class="banners">
-            {profiles.listingError.value !== undefined && (
-              <p class="notice notice-problem" role="alert">
-                Couldn't list the profiles: {profiles.listingError.value}
+        {total === 0 ? (
+          <div class="empty">
+            {source.kind === 'folder' ? (
+              <p>
+                <span class="mono">{source.name}</span> has no profiles yet.
               </p>
-            )}
-            {profiles.sync.value.status === 'failed' && (
-              <div class="notice notice-problem">
-                <SyncNote profiles={profiles} />
-              </div>
-            )}
-            {conflicts.length > 0 && (
-              <div class="notice notice-drift" role="alert">
+            ) : source.kind === 'repository' ? (
+              <p>
+                <span class="mono">{source.repository}</span> has no profiles
+                {source.path === '' ? '' : ` in ${source.path}`} yet.
+              </p>
+            ) : (
+              <>
+                <p>There are no profiles in this browser yet.</p>
                 <p>
-                  {conflicts.length === 1
-                    ? `${conflicts[0]} changed both here and ${elsewhere} since the last sync.`
-                    : `${conflicts.length} profiles changed both here and ${elsewhere} since the last sync: ${conflicts.join(', ')}.`}{' '}
-                  Which version do you want to keep?
+                  If you keep profiles in a GitHub repository, choose it in{' '}
+                  <Link router={router} to="/settings">
+                    Settings
+                  </Link>
+                  .
                 </p>
-                <div class="notice-actions">
-                  <button
-                    class="button"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      run(profiles.keep('local'));
-                    }}
-                  >
-                    Keep mine
-                  </button>
-                  <button
-                    class="button"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      run(profiles.keep('remote'));
-                    }}
-                  >
-                    {source.kind === 'folder' ? "Use the folder's" : "Use GitHub's"}
-                  </button>
-                </div>
-              </div>
+              </>
             )}
           </div>
-        )}
-        {newProfileForm !== undefined ? (
-          <NewProfileForm
-            profiles={profiles}
-            repositories={repositories}
-            router={router}
-            repositoryToCapture={newProfileForm.repository}
-          />
-        ) : selected !== undefined ? (
-          <Profile key={selected.file} listing={selected} profiles={profiles} />
         ) : (
-          <div class={total > 0 ? 'page-body profiles-choose' : 'page-body'}>
-            <div class="page-heading">
-              <div>
-                <h1>Profiles</h1>
-                <p class="muted">A profile describes how a repository should be set up.</p>
-              </div>
-            </div>
-            <div class="empty">
-              {total > 0 ? (
-                <p>Choose a profile from the list.</p>
-              ) : source.kind === 'folder' ? (
-                <p>
-                  <span class="mono">{source.name}</span> has no profiles yet.
-                </p>
-              ) : source.kind === 'repository' ? (
-                <p>
-                  <span class="mono">{source.repository}</span> has no profiles
-                  {source.path === '' ? '' : ` in ${source.path}`} yet.
-                </p>
-              ) : (
-                <>
-                  <p>There are no profiles in this browser yet.</p>
-                  <p>
-                    If you keep profiles in a GitHub repository, choose it in{' '}
-                    <Link router={router} to="/settings">
-                      Settings
-                    </Link>
-                    .
-                  </p>
-                </>
+          <>
+            <div class="toolbar">
+              <input
+                class="field"
+                type="search"
+                placeholder="Find a profile"
+                aria-label="Find a profile"
+                value={profiles.search.value}
+                onInput={(event) => {
+                  profiles.search.value = event.currentTarget.value;
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    profiles.search.value = '';
+                  }
+                }}
+              />
+              <span class="muted" role="status">
+                {shown.length === total
+                  ? `${total} ${total === 1 ? 'profile' : 'profiles'}`
+                  : `${shown.length} of ${total} profiles`}
+              </span>
+              {shown.length > 0 && (
+                <button
+                  class="button button-quiet"
+                  type="button"
+                  onClick={() => {
+                    profiles.selectForBatch(shown, !everyShownProfileSelected);
+                  }}
+                >
+                  {everyShownProfileSelected ? 'Deselect all' : 'Select all'}
+                </button>
               )}
             </div>
-          </div>
+            {shown.length === 0 ? (
+              <div class="empty">
+                <p>No profile matches "{profiles.search.value.trim()}".</p>
+              </div>
+            ) : (
+              <div class="groups">
+                {tree.folders.map((folder) => (
+                  <FolderSection
+                    key={folder.path}
+                    node={folder}
+                    profiles={profiles}
+                    onOpen={openProfile}
+                    onDialog={setDialog}
+                  />
+                ))}
+                {tree.folders.length > 0 && tree.profiles.length > 0 && <p class="section-label">Not in a folder</p>}
+                {tree.profiles.length > 0 && (
+                  <ul class="rows">
+                    {tree.profiles.map((listing) => (
+                      <ProfileRow key={listing.file} listing={listing} profiles={profiles} onOpen={openProfile} />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </>
         )}
-      </div>
+      </section>
+      {batch.length > 0 && (
+        <SelectedPanel profiles={profiles} onDialog={setDialog} onMoved={focusFolder} onDeselectAll={deselectAll} />
+      )}
+      {dialogs}
     </div>
   );
 }

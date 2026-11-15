@@ -4,12 +4,14 @@ import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
 
 import {
+  declaredExtends,
   editProfile,
   listProfiles,
   parseProfile,
   ProfileError,
   resolveProfile,
   stringifyProfile,
+  withExtends,
 } from '../../src/profiles/profile.js';
 import {
   commitPairs,
@@ -1084,4 +1086,16 @@ describe('editProfile with drafts', () => {
       expect(String(await rejection(editProfile(file, [{ path: key, value: true }])))).toContain('Cannot edit');
     }
   });
+});
+
+test('a move points extends at the new place and keeps the rest of the file as written', () => {
+  const text =
+    '# Shared by the web team\r\nextends: ../base.yaml # the org default\r\nmerge:\r\n    allow_squash_merge: true\r\n';
+
+  expect(declaredExtends(text)).toBe('../base.yaml');
+  expect(withExtends(text, 'shared/base.yaml')).toBe(
+    '# Shared by the web team\r\nextends: shared/base.yaml # the org default\r\nmerge:\r\n    allow_squash_merge: true\r\n',
+  );
+  expect(declaredExtends('merge: [unclosed\n')).toBeUndefined();
+  expect(declaredExtends('extends: 3\n')).toBeUndefined();
 });

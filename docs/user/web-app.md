@@ -24,8 +24,8 @@ out for the narrow screen:
   its top, or the browser's back returns to the list.
 - With repositories selected, their panel follows the list rather than
   sitting beside it.
-- The profiles list and an open profile are two screens; **All profiles**
-  returns to the list.
+- With profiles selected, their panel follows the list rather than sitting
+  beside it.
 - A page's bar of actions, as when applying changes or editing a profile,
   keeps its main action in view and puts the rest under **More**.
 
@@ -261,14 +261,45 @@ To change one repository's one-off edits, open its own apply from the
 ## Profiles
 
 A profile is a YAML file that describes how a repository should be set up.
-The **Profiles** page lists your profiles down the side, under where they are
-kept. Type in **Find a profile** to narrow the list. Folders show with the
-number of profiles in each; click a folder to close or open it. A profile
-Repotted can't use is marked **Problem**, and opening it says why.
+The **Profiles** page lists every profile, under where they are kept, with
+what owns the repositories each is for and which profile it extends. Type in
+**Find a profile** to narrow the list. Folders show above the profiles that
+are in none, with the number of profiles in each, and a folder inside
+another shows under it; click a folder's name to close or open it. Which
+folders are closed is remembered by this browser alone. A profile Repotted
+can't use is marked **Problem**, and opening it says why. One with changes
+that aren't saved is marked **Not saved**.
 
-Click a profile to open it. The page says what owns the repositories it is
-for and which profile it extends. **Show YAML** shows the profile's file as
-it is saved; it starts hidden.
+Click a profile to open it. It takes the whole page, and **All profiles**
+above it, or the browser's back, returns to the list where you left it. The
+page says what owns the repositories it is for and which profile it extends.
+**Show YAML** shows the profile's file as it is saved; it starts hidden.
+
+### Organize profiles
+
+Select profiles with the box beside each to work on several at once. A panel
+beside the list, or under it on a phone, names them. **Select all** beside
+the count selects every profile the list shows, and each open folder has its
+own **Select all**, which takes in the folders inside it; each turns into
+**Deselect all** once everything it covers is selected. **Deselect all** in
+the panel clears the selection. The selection is this browser's alone and
+goes when you leave the page.
+
+To move the selected profiles into a folder, choose it under **Move to a
+folder** in the panel and click **Move**. **No folder** moves them to the top
+of the list, and **New folder…** asks for a name first; give a path such as
+`apps/desktop` for a folder inside another. A folder lasts only as long as a
+profile is in it, so a new folder starts with the profiles you move into it.
+To rename a folder, use its **Edit** menu; every profile in it, and in the
+folders inside it, moves with it.
+
+A move changes where the profiles' files are. Every profile that extends one
+of them, and every moved profile that extends another, is pointed at the new
+place in the same change, so nothing stops loading. When your profiles are
+kept on GitHub, the move is one commit. Repotted won't move a profile that
+doesn't load, since what it extends is unknown, or one with changes that
+aren't saved; nor will it move one onto a profile of the same name, whatever
+the case, and it says which.
 
 ### Make a profile
 
@@ -441,12 +472,13 @@ Topics, custom properties, and autolinks are not edited here yet.
 
 ### Delete a profile
 
-Open the profile and click **Delete profile**. Repotted asks first, naming
-the file. If other profiles extend it, directly or through another profile,
-the question names them: they stop loading until you point them at another
+Open the profile and click **Delete profile**, or select profiles in the list
+and click **Delete** in the panel. Repotted asks first, naming the files. If
+other profiles extend them, directly or through another profile, the
+question names those: they stop loading until you point them at another
 profile, but nothing stops you. A profile in the browser can't be brought
-back. When your profiles are kept on GitHub, the deletion is a commit, so the
-repository's history keeps the file as it was at the last sync.
+back. When your profiles are kept on GitHub, the deletion is one commit, so
+the repository's history keeps the files as they were at the last sync.
 
 ### Keep profiles on GitHub
 

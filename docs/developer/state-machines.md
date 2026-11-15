@@ -770,19 +770,56 @@ typed base, which takes the base's and writes none.
 
 ## Web deleting a profile
 
-The open profile's **Delete profile** asks in a dialog, which names the file
-and every listed profile that extends it, directly or through another. The
-question warns and doesn't block.
+The open profile's **Delete profile**, or **Delete** for the selected
+profiles, asks in a dialog, which names the files and every listed profile
+that extends one of them, directly or through another. The question warns
+and doesn't block.
 
-| State    | Event                                   | Next                                                                                                                                          |
-| -------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Idle     | Delete profile                          | Asking.                                                                                                                                       |
-| Asking   | Cancel, or Escape                       | Idle, with nothing changed.                                                                                                                   |
-| Asking   | Delete profile                          | Deleting: a turn in the queue, after any sync under way. The button is off while the queue is busy.                                           |
-| Deleting | Its turn comes                          | The file is removed, a sync commits that when profiles are kept on GitHub, and the list is read again: the profile closes and no other opens. |
-| Deleting | The list no longer has the profile      | Idle, with nothing deleted.                                                                                                                   |
-| Deleted  | The sync that follows fails             | The profile is gone here and still on GitHub; the sync state says why, and the next sync commits the delete.                                  |
-| Deleted  | The profile changed on GitHub meanwhile | A conflict: **Keep mine** commits the delete, and **Use GitHub's** brings the file back.                                                      |
+| State    | Event                                   | Next                                                                                                                                                                                                    |
+| -------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idle     | Delete profile, or Delete               | Asking.                                                                                                                                                                                                 |
+| Asking   | Cancel, or Escape                       | Idle, with nothing changed.                                                                                                                                                                             |
+| Asking   | Delete profile                          | Deleting: a turn in the queue, after any sync under way. The button is off while the queue is busy.                                                                                                     |
+| Deleting | Its turn comes                          | The files are removed in the one turn, a sync commits that as one commit when profiles are kept on GitHub, and the list is read again: they leave the selection, an open one closes and no other opens. |
+| Deleting | The list no longer has the profiles     | Idle, with nothing deleted.                                                                                                                                                                             |
+| Deleted  | The sync that follows fails             | The profile is gone here and still on GitHub; the sync state says why, and the next sync commits the delete.                                                                                            |
+| Deleted  | The profile changed on GitHub meanwhile | A conflict: **Keep mine** commits the delete, and **Use GitHub's** brings the file back.                                                                                                                |
+
+## Web profile batch actions
+
+`Profiles` (`packages/web/src/app/profiles/profiles.ts`) keeps the profiles
+selected on the Profiles page by file, in `batch`, for the visit only. A
+profile that leaves the list leaves the selection, and a change of where
+profiles are kept clears it. Opening a profile leaves the selection as it is.
+
+| Selection | Event                                              | Next                                                                                     |
+| --------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| None      | A profile's box, or a **Select all**               | Some: the panel for the selected profiles shows beside the list, or under it on a phone. |
+| Some      | **Deselect all**, or every box cleared             | None: the panel goes, and the focus moves to the page's heading.                         |
+| Some      | A move or a delete of them succeeds                | None of them; the focus moves to the folder they went to, or to the heading.             |
+| Some      | A sync or a move takes a selected one off the list | Without it.                                                                              |
+| Some      | Where profiles are kept changes                    | None.                                                                                    |
+
+A move (`move`, and `renameFolder`, which moves every profile in a folder
+and the folders inside it) takes one turn in the queue. When profiles are
+kept in a folder on this computer, it syncs first, so a file put there since
+counts.
+
+| State  | Event                                                                                 | Next                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------ | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Asked  | The folder's name is empty, has `/` in a rename, or a part no profile folder can have | Refused, with why; nothing moves.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Asked  | A rename to a name another folder beside it has, in any case                          | Refused with "There is already a folder named"; nothing moves.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Moving | Every profile is already where it would go, or none is still listed                   | Done, with nothing written.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Moving | A moving profile doesn't load                                                         | Refused: what it extends is unknown, so it can't be pointed at the new place. Nothing moves.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Moving | A moving profile, or one whose `extends` would be rewritten, has unsaved changes      | Refused with "Save or reset the changes": its editor would save the old `extends` back. Nothing moves.                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Moving | A profile would land on one that stays or another that arrives, in any case           | Refused with "is already in"; nothing moves.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Moving | Otherwise                                                                             | Each moved file is written at its new place, never over a file there, with `extends` pointed at its base from there; each listed profile that extends a moved one is rewritten in place; then the old files go. A sync commits it all as one commit when profiles are kept on GitHub, and the list is read again. The open profile follows its file, a move opens the folder they went to, a rename keeps its folders open or closed, and editors of rewritten files are dropped, so each reads its file again. |
+| Moving | A write or a removal fails partway                                                    | The error is shown, and a sync and a fresh list show what is there now: the files written so far, and the old files not yet removed.                                                                                                                                                                                                                                                                                                                                                                            |
+| Moved  | The sync that follows fails                                                           | The move is made here and not on GitHub; the sync state says why, and the next sync commits it.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+
+The rewrite reads `extends` from each file as written, so a profile that
+doesn't load, as one whose own base is gone, is still pointed at a moved
+profile it names. A file that isn't YAML is left as it is.
 
 ## Web kept files
 

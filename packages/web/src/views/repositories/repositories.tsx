@@ -16,7 +16,7 @@ import {
 } from '../../app/repositories/repositories.js';
 import { usePhone } from '../layout/phone.js';
 import { run } from '../layout/run.js';
-import { useDismissibleMenu } from '../layout/shell.js';
+import { useDismissibleMenu, useModal } from '../layout/shell.js';
 
 function OwnerFilter({ repositories }: { readonly repositories: Repositories }): JSX.Element {
   const menu = useDismissibleMenu();
@@ -149,14 +149,6 @@ function MissingPermissionsNotice({
       )}
     </div>
   );
-}
-
-function useModal(): RefObject<HTMLDialogElement | null> {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
-  return dialog;
 }
 
 interface FolderNameProps {

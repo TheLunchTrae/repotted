@@ -2,6 +2,7 @@ import { computed, signal } from '@preact/signals';
 import {
   captureProfile,
   checkActionPatterns,
+  declaredExtends,
   findActions,
   type GitHub,
   listProfiles,
@@ -10,11 +11,12 @@ import {
   readInstallationSettingsUrl,
   stringifyProfile,
   syncFolder,
+  withExtends,
 } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from '../../engine/files.js';
-import { basename, dirname, join, relative } from '../../engine/path.js';
+import { basename, dirname, join, relative, resolve } from '../../engine/path.js';
 import { isSignedOut } from '../account/account.js';
 import type { Preferences } from '../preferences/preferences.js';
 import { ActionPatternChecks } from '../profile-editor/action-pattern-checks.js';
@@ -37,12 +39,20 @@ export type ProfileListing = Awaited<ReturnType<typeof listProfiles>>[number];
 export type ProfilesSource =
   | { readonly kind: 'browser' }
   | { readonly kind: 'folder'; readonly name: string }
-  | { readonly kind: 'repository'; readonly repository: string; readonly path: string };
+  | {
+      readonly kind: 'repository';
+      readonly repository: string;
+      readonly path: string;
+    };
 
 export type SyncState =
   | { readonly status: 'none' }
   | { readonly status: 'syncing' }
-  | { readonly status: 'synced'; readonly pulled: number; readonly pushed: number }
+  | {
+      readonly status: 'synced';
+      readonly pulled: number;
+      readonly pushed: number;
+    }
   | { readonly status: 'failed'; readonly message: string };
 
 export type NewProfileStart =
@@ -62,6 +72,12 @@ export interface NewProfile {
 // Names no file can have on Windows, where a config repository's profiles may also be used.
 const windowsNames = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu;
 
+/** A folder is one that holds profiles, or a new one under the profiles folder, never a way out of it. */
+function folderProblem(folder: string): string | undefined {
+  const unusable = folder.split('/').some((part) => folder !== '' && /^\.|^$|[\\:*?"<>|\p{Cc}]|[. ]$/u.test(part));
+  return unusable ? `${folder} is not a folder a profile can go in.` : undefined;
+}
+
 export interface ProfileFolderNode {
   readonly name: string;
   /** From the profiles folder, with `/` separators; '' for the profiles folder itself. */
@@ -77,7 +93,11 @@ const sourceKey = 'profiles-source';
 const savedSource = z.union([
   z.object({ kind: z.literal('browser') }),
   z.object({ kind: z.literal('folder'), name: z.string() }),
-  z.object({ kind: z.literal('repository'), repository: z.string(), path: z.string() }),
+  z.object({
+    kind: z.literal('repository'),
+    repository: z.string(),
+    path: z.string(),
+  }),
 ]);
 
 // The engine's record of what a folder and its repository last agreed on.
@@ -115,7 +135,9 @@ async function exists(file: string): Promise<boolean> {
 /** Hidden files and folders stay out, as in a sync. */
 async function profileFiles(folder: string, prefix = ''): Promise<string[]> {
   const files: string[] = [];
-  for (const entry of await readdir(join(folder, prefix), { withFileTypes: true })) {
+  for (const entry of await readdir(join(folder, prefix), {
+    withFileTypes: true,
+  })) {
     const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
     if (entry.name.startsWith('.')) {
       continue;
@@ -313,14 +335,18 @@ export class Profiles {
       // profile that differs from the folder's is a conflict to settle, not a loss.
       const carried = from === computerFolder ? await unsyncedFiles(from) : new Map<string, string>();
       for (const [file, text] of carried) {
-        await mkdir(dirname(join(nextComputerFolder, file)), { recursive: true });
+        await mkdir(dirname(join(nextComputerFolder, file)), {
+          recursive: true,
+        });
         await writeFile(join(nextComputerFolder, file), text);
       }
       if (addLocal) {
         for (const file of await profileFiles(from)) {
           // A name the folder has in any case is skipped, since some computers take the two for one file.
           if (!taken.has(file.toLowerCase()) && !carried.has(file)) {
-            await mkdir(dirname(join(nextComputerFolder, file)), { recursive: true });
+            await mkdir(dirname(join(nextComputerFolder, file)), {
+              recursive: true,
+            });
             await writeFile(join(nextComputerFolder, file), await readFile(join(from, file)));
           }
         }
@@ -335,7 +361,11 @@ export class Profiles {
       this.#localFolder = folder;
       this.needsFolderAccess.value = false;
       this.#use({ kind: 'folder', name: folder.name });
-      this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
+      this.sync.value = {
+        status: 'synced',
+        pulled: result.pulled.length,
+        pushed: result.pushed.length,
+      };
       this.conflicts.value = result.conflicts;
       await this.#list();
       await this.#moveMark(previous);
@@ -443,9 +473,16 @@ export class Profiles {
           }
         }
       }
-      const result = await syncFolder(this.#github, target, { repository: source.repository, path: source.path });
+      const result = await syncFolder(this.#github, target, {
+        repository: source.repository,
+        path: source.path,
+      });
       this.#use(source);
-      this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
+      this.sync.value = {
+        status: 'synced',
+        pulled: result.pulled.length,
+        pushed: result.pushed.length,
+      };
       this.conflicts.value = result.conflicts;
       await this.#list();
       await this.#moveMark(previous);
@@ -650,11 +687,9 @@ export class Profiles {
       if (taken !== undefined) {
         return taken;
       }
-      // A folder is one that holds profiles, or a new one under the profiles folder, never a way out of it.
-      if (
-        profile.folder.split('/').some((part) => profile.folder !== '' && /^\.|^$|[\\:*?"<>|\p{Cc}]|[. ]$/u.test(part))
-      ) {
-        return `${profile.folder} is not a folder a profile can go in.`;
+      const unusableFolder = folderProblem(profile.folder);
+      if (unusableFolder !== undefined) {
+        return unusableFolder;
       }
       try {
         await mkdir(dirname(file), { recursive: true });
@@ -671,9 +706,10 @@ export class Profiles {
     });
   }
 
-  /** Directly or through another: they stop loading without this profile. */
-  dependents(listing: ProfileListing): readonly ProfileListing[] {
-    const found = new Set<string>([listing.file]);
+  /** Directly or through another: they stop loading without these profiles. */
+  dependents(...listings: readonly ProfileListing[]): readonly ProfileListing[] {
+    const gone = new Set(listings.map((listing) => listing.file));
+    const found = new Set<string>(gone);
     for (let grew = true; grew;) {
       grew = false;
       for (const other of this.listings.value) {
@@ -683,25 +719,218 @@ export class Profiles {
         }
       }
     }
-    return this.listings.value.filter((other) => other.file !== listing.file && found.has(other.file));
+    return this.listings.value.filter((other) => !gone.has(other.file) && found.has(other.file));
   }
 
-  remove(listing: ProfileListing): Promise<string | undefined> {
+  /** Deleted in one turn, so they leave in one commit. */
+  remove(...listings: readonly ProfileListing[]): Promise<string | undefined> {
     return this.#work(async () => {
       // The list may have been read again, from another place, since the user asked.
-      if (!this.listings.value.some((item) => item.file === listing.file)) {
+      const listed = new Set(this.listings.value.map((item) => item.file));
+      const going = new Set(listings.map((listing) => listing.file).filter((file) => listed.has(file)));
+      if (going.size === 0) {
         return undefined;
       }
-      await rm(listing.file, { force: true });
-      // Its unsaved changes go with it.
-      this.#editors.value = this.#editors.value.filter((editor) => editor.file !== listing.file);
-      if (this.settingsCaptureCouldNotRead.value?.file === listing.file) {
+      for (const file of going) {
+        await rm(file, { force: true });
+      }
+      // Their unsaved changes go with them.
+      this.#editors.value = this.#editors.value.filter((editor) => !going.has(editor.file));
+      if (going.has(this.settingsCaptureCouldNotRead.value?.file ?? '')) {
         this.settingsCaptureCouldNotRead.value = undefined;
       }
+      this.#deselect(going);
       await this.#sync({});
       await this.#list();
       return undefined;
     });
+  }
+
+  /** Into `folder`, '' for the profiles folder itself. Answers why they couldn't move. */
+  async move(listings: readonly ProfileListing[], folder: string): Promise<string | undefined> {
+    const named = folder.trim();
+    const failure = await this.#moveFiles(
+      () => folderProblem(named),
+      () => new Map(listings.map((listing) => [listing.file, this.#fileOf(listing.name, named)])),
+    );
+    // The folder they went to opens, so they stay in view, and those already there are deselected with the rest.
+    if (failure === undefined) {
+      this.#deselect(new Set(listings.map((listing) => listing.file)));
+      this.#closedFolders.value = new Set(
+        [...this.#closedFolders.value].filter((path) => path !== named && !named.startsWith(`${path}/`)),
+      );
+    }
+    return failure;
+  }
+
+  /** Moves every profile in the folder and its subfolders. Answers why it couldn't. */
+  async renameFolder(path: string, name: string): Promise<string | undefined> {
+    const trimmed = name.trim();
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    const renamed = parent === '' ? trimmed : `${parent}/${trimmed}`;
+    const failure = await this.#moveFiles(
+      () => {
+        if (trimmed === '') {
+          return 'Give the folder a name.';
+        }
+        if (trimmed.includes('/')) {
+          return 'A folder name cannot hold /.';
+        }
+        const taken = this.folders.value.find(
+          (other) => other !== path && other.toLowerCase() === renamed.toLowerCase(),
+        );
+        return taken === undefined ? folderProblem(renamed) : `There is already a folder named ${taken}.`;
+      },
+      () =>
+        new Map(
+          this.listings.value
+            .filter((listing) => listing.folder === path || listing.folder.startsWith(`${path}/`))
+            .map((listing) => [
+              listing.file,
+              join(this.folder.value, renamed + listing.folder.slice(path.length), basename(listing.file)),
+            ]),
+        ),
+    );
+    // Its folders stay open or closed as they were.
+    if (failure === undefined) {
+      this.#closedFolders.value = new Set(
+        [...this.#closedFolders.value].map((closed) =>
+          closed === path || closed.startsWith(`${path}/`) ? renamed + closed.slice(path.length) : closed,
+        ),
+      );
+    }
+    return failure;
+  }
+
+  /**
+   * Moves the files named in the plan, from their file to where they go,
+   * and points every `extends` that names a moved file at its new place, so
+   * nothing stops loading. The plan is made in the turn, from the list as
+   * the turns before this one left it.
+   */
+  #moveFiles(problem: () => string | undefined, plan: () => ReadonlyMap<string, string>): Promise<string | undefined> {
+    return this.#work(async () => {
+      const refused = problem();
+      if (refused !== undefined) {
+        return refused;
+      }
+      // A file a tool put in the folder on this computer since the last sync counts too.
+      if (this.source.value.kind === 'folder') {
+        await this.#sync({});
+        await this.#list();
+      }
+      const listed = new Map(this.listings.value.map((listing) => [listing.file, listing]));
+      const moves = new Map([...plan()].filter(([from, to]) => listed.has(from) && from !== to));
+      if (moves.size === 0) {
+        return undefined;
+      }
+      for (const from of moves.keys()) {
+        const listing = listed.get(from);
+        if (listing?.problem !== null) {
+          return `${listing?.name ?? basename(from)} doesn't load, so it can't be moved. Fix it first.`;
+        }
+        if (this.unsaved.value.has(from)) {
+          return `Save or reset the changes to ${listing.name} first.`;
+        }
+      }
+      const staying = new Set([...listed.keys()].filter((file) => !moves.has(file)).map((file) => file.toLowerCase()));
+      const arriving = new Set<string>();
+      for (const to of moves.values()) {
+        const key = to.toLowerCase();
+        if (staying.has(key) || arriving.has(key)) {
+          const place = relative(this.folder.value, dirname(to));
+          return `${basename(to)} is already in ${place === '' ? 'the profiles folder' : place}.`;
+        }
+        arriving.add(key);
+      }
+      const writes: {
+        readonly from: string;
+        readonly to: string;
+        readonly text: string;
+      }[] = [];
+      for (const from of listed.keys()) {
+        const to = moves.get(from) ?? from;
+        let text = await readFile(from, 'utf8');
+        const declared = declaredExtends(text);
+        const base = declared === undefined ? undefined : resolve(dirname(from), declared);
+        const movedBase = base === undefined ? undefined : moves.get(base);
+        if (base !== undefined && (to !== from || movedBase !== undefined)) {
+          text = withExtends(text, relative(dirname(to), movedBase ?? base));
+        } else if (to === from) {
+          continue;
+        }
+        // An open editor holds the file as it was read, so a save would put the old `extends` back.
+        if (to === from && this.unsaved.value.has(from)) {
+          return `Save or reset the changes to ${listed.get(from)?.name ?? basename(from)} first.`;
+        }
+        writes.push({ from, to, text });
+      }
+      try {
+        for (const { from, to, text } of writes) {
+          await mkdir(dirname(to), { recursive: true });
+          await writeFile(to, text, from === to ? undefined : { flag: 'wx' });
+        }
+        for (const { from, to } of writes) {
+          if (from !== to) {
+            await rm(from, { force: true });
+          }
+        }
+      } catch (error) {
+        await this.#sync({});
+        await this.#list();
+        return messageOf(error);
+      }
+      const rewritten = new Set(writes.map((write) => write.from));
+      this.#editors.value = this.#editors.value.filter((editor) => !rewritten.has(editor.file));
+      const couldNotRead = this.settingsCaptureCouldNotRead.value;
+      if (couldNotRead !== undefined && moves.has(couldNotRead.file)) {
+        this.settingsCaptureCouldNotRead.value = {
+          ...couldNotRead,
+          file: moves.get(couldNotRead.file) ?? couldNotRead.file,
+        };
+      }
+      const open = this.#selectedFile.value;
+      this.#selectedFile.value = open === undefined ? undefined : (moves.get(open) ?? open);
+      this.#deselect(new Set(moves.keys()));
+      await this.#sync({});
+      await this.#list();
+      if (open !== undefined && rewritten.has(open)) {
+        await this.select(this.selected.value);
+      }
+      return undefined;
+    });
+  }
+
+  /** For a batch action; which profile is open is `selected`. */
+  readonly #selectedForBatch = signal<ReadonlySet<string>>(new Set());
+
+  /** In list order; a profile no longer listed drops out. */
+  readonly batch = computed(() =>
+    this.listings.value.filter((listing) => this.#selectedForBatch.value.has(listing.file)),
+  );
+
+  isInBatch(listing: ProfileListing): boolean {
+    return this.#selectedForBatch.value.has(listing.file);
+  }
+
+  selectForBatch(listings: readonly ProfileListing[], selected: boolean): void {
+    const next = new Set(this.#selectedForBatch.value);
+    for (const listing of listings) {
+      if (selected) {
+        next.add(listing.file);
+      } else {
+        next.delete(listing.file);
+      }
+    }
+    this.#selectedForBatch.value = next;
+  }
+
+  deselectBatch(): void {
+    this.#selectedForBatch.value = new Set();
+  }
+
+  #deselect(files: ReadonlySet<string>): void {
+    this.#selectedForBatch.value = new Set([...this.#selectedForBatch.value].filter((file) => !files.has(file)));
   }
 
   async select(listing: ProfileListing | undefined): Promise<void> {
@@ -810,6 +1039,7 @@ export class Profiles {
     this.chosen.value = true;
     this.markProblem.value = undefined;
     this.#closedFolders.value = new Set();
+    this.#selectedForBatch.value = new Set();
     this.#editors.value = [];
     this.settingsCaptureCouldNotRead.value = undefined;
     this.#selectedFile.value = undefined;
@@ -864,7 +1094,11 @@ export class Profiles {
         path: source.path,
         ...options,
       });
-      this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
+      this.sync.value = {
+        status: 'synced',
+        pulled: result.pulled.length,
+        pushed: result.pushed.length,
+      };
       this.conflicts.value = result.conflicts;
     } catch (error) {
       if (isSignedOut(error)) {
@@ -887,7 +1121,10 @@ export class Profiles {
         }
         this.needsFolderAccess.value = !saved.allowed;
         if (!saved.allowed) {
-          this.sync.value = { status: 'failed', message: 'The browser asks before Repotted uses the folder again' };
+          this.sync.value = {
+            status: 'failed',
+            message: 'The browser asks before Repotted uses the folder again',
+          };
           return;
         }
         this.#localFolder = saved.folder;
@@ -900,7 +1137,11 @@ export class Profiles {
         throw new Error(more === 0 ? failure : `${failure}, and ${more} more ${more === 1 ? 'profile' : 'profiles'}`);
       }
       this.needsFolderAccess.value = false;
-      this.sync.value = { status: 'synced', pulled: result.pulled.length, pushed: result.pushed.length };
+      this.sync.value = {
+        status: 'synced',
+        pulled: result.pulled.length,
+        pushed: result.pushed.length,
+      };
     } catch (error) {
       // The browser may have taken its leave back, as it does when the tab was away for long,
       // so the folder is asked for afresh next time, and the user for their leave if it went.

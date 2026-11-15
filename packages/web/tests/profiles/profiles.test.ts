@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { FakeGitRepository } from '../../../core/tests/support/fake-git.js';
 import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
 import type { Preferences } from '../../src/app/preferences/preferences.js';
-import { type ProfileFolderNode, Profiles } from '../../src/app/profiles/profiles.js';
+import { type ProfileFolderNode, type ProfileListing, Profiles } from '../../src/app/profiles/profiles.js';
 import { mkdir, readdir, readFile, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
@@ -975,4 +975,115 @@ test('a sign-in refused while actions are searched for is reported as signed out
   });
 
   expect(search?.state.value).toEqual({ kind: 'message', text: 'Bad credentials' });
+});
+
+function listed(profiles: Profiles, name: string): ProfileListing {
+  const listing = profiles.listings.value.find((item) => item.name === name);
+  if (listing === undefined) {
+    throw new Error(`The list should have ${name}.`);
+  }
+  return listing;
+}
+
+test('moving profiles kept on GitHub moves their files and points what extends them at the new place', async () => {
+  const github = repository();
+  github.write({ 'profiles/mid.yaml': '# Shared by every team\nextends: base.yaml # the root\n' });
+  const profiles = await connected(github);
+  await profiles.select(listed(profiles, 'base'));
+  profiles.selectForBatch([listed(profiles, 'base'), listed(profiles, 'web')], true);
+
+  expect(await profiles.move(profiles.batch.value, 'shared')).toBeUndefined();
+
+  const files = github.files();
+  expect(files['profiles/base.yaml']).toBeUndefined();
+  expect(files['profiles/teams/web.yaml']).toBeUndefined();
+  expect(files['profiles/shared/base.yaml']).toBe(base);
+  expect(files['profiles/shared/web.yaml']).toBe('extends: base.yaml\nmerge:\n  allow_squash_merge: true\n');
+  expect(files['profiles/mid.yaml']).toBe('# Shared by every team\nextends: shared/base.yaml # the root\n');
+  expect(profiles.listings.value.every((listing) => listing.problem === null)).toBe(true);
+  expect(drawn(profiles.tree.value)).toEqual(['mid', 'shared/ 2', '  base', '  web']);
+  expect(profiles.selected.value?.file).toBe(`${copy}/shared/base.yaml`);
+  expect(profiles.opened.value?.file).toBe(`${copy}/shared/base.yaml`);
+  expect(profiles.batch.value).toEqual([]);
+});
+
+test('a move that would replace a profile, would rewrite or move one with unsaved changes, or holds one that does not load, moves nothing', async () => {
+  await inBrowser({
+    'base.yaml': base,
+    'teams/base.yaml': base,
+    'teams/web.yaml': web,
+    'broken.yaml': 'extends: gone.yaml\n',
+  });
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  await profiles.refresh();
+  const before = drawn(profiles.tree.value);
+
+  expect(await profiles.move([listed(profiles, 'base')], 'teams')).toBe('base.yaml is already in teams.');
+  expect(await profiles.move([listed(profiles, 'broken')], 'teams')).toBe(
+    "broken doesn't load, so it can't be moved. Fix it first.",
+  );
+  expect(await profiles.move([listed(profiles, 'web')], '../out')).toBe('../out is not a folder a profile can go in.');
+
+  await profiles.select(profiles.listings.value.find((listing) => listing.file.endsWith('/teams/web.yaml')));
+  const editor = profiles.editor.value;
+  const squash = editor?.sections.value
+    .flatMap((section) => section.groups.flatMap((group) => group.rows))
+    .find((row) => row.field.key === 'allow_squash_merge')?.field;
+  if (editor === undefined || squash === undefined) {
+    throw new Error('The open profile should have an editor with a squash merge setting.');
+  }
+  await editor.set(squash, false);
+  expect(await profiles.move([listed(profiles, 'web')], '')).toBe('Save or reset the changes to web first.');
+  // Moving what it extends would rewrite it under its open editor.
+  expect(await profiles.move([listed(profiles, 'base')], 'shared')).toBe('Save or reset the changes to web first.');
+
+  expect(drawn(profiles.tree.value)).toEqual(before);
+  expect(await readFile('/profiles/browser/teams/web.yaml', 'utf8')).toBe(web);
+});
+
+test('renaming a folder moves the profiles in it and under it, and refuses a name another folder has', async () => {
+  await inBrowser({
+    'base.yaml': base,
+    'teams/web.yaml': web,
+    'teams/ios/app.yaml': 'extends: ../web.yaml\n',
+    'apps/site.yaml': 'extends: ../teams/ios/app.yaml\n',
+  });
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  await profiles.refresh();
+
+  expect(await profiles.renameFolder('teams', 'Apps')).toBe('There is already a folder named apps.');
+  expect(await profiles.renameFolder('teams', 'squads')).toBeUndefined();
+
+  expect(drawn(profiles.tree.value)).toEqual([
+    'base',
+    'apps/ 1',
+    '  site',
+    'squads/ 2',
+    '  web',
+    '  ios/ 1',
+    '    app',
+  ]);
+  expect(await readFile('/profiles/browser/squads/web.yaml', 'utf8')).toBe(web);
+  expect(await readFile('/profiles/browser/squads/ios/app.yaml', 'utf8')).toBe('extends: ../web.yaml\n');
+  expect(await readFile('/profiles/browser/apps/site.yaml', 'utf8')).toBe('extends: ../squads/ios/app.yaml\n');
+  expect(profiles.listings.value.every((listing) => listing.problem === null)).toBe(true);
+});
+
+test('deleting the selected profiles together names what extends any of them and commits once', async () => {
+  const github = repository();
+  github.write({ 'profiles/teams/ios.yaml': base, 'profiles/leaf.yaml': 'extends: teams/web.yaml\n' });
+  const profiles = await connected(github);
+  profiles.selectForBatch([listed(profiles, 'base'), listed(profiles, 'ios')], true);
+  const commits = github.commits.size;
+
+  expect(profiles.dependents(...profiles.batch.value).map((listing) => listing.name)).toEqual(['leaf', 'web']);
+  expect(await profiles.remove(...profiles.batch.value)).toBeUndefined();
+
+  expect(github.commits.size).toBe(commits + 1);
+  expect(
+    Object.keys(github.files())
+      .filter((file) => file.startsWith('profiles/'))
+      .sort(),
+  ).toEqual(['profiles/leaf.yaml', 'profiles/teams/web.yaml']);
+  expect(profiles.batch.value).toEqual([]);
 });

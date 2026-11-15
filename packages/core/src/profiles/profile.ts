@@ -1451,6 +1451,25 @@ export async function changeOwnerType(file: string, type: OwnerType | undefined)
   }
 }
 
+/** As written, whether or not the file it names reads; undefined for none, or for text that isn't YAML. */
+export function declaredExtends(text: string): string | undefined {
+  const document = parseDocument(text);
+  const base: unknown = document.errors.length > 0 ? undefined : document.get('extends');
+  return typeof base === 'string' ? base : undefined;
+}
+
+/**
+ * Points `extends` at `base`, as a move of the profile or of its base needs,
+ * keeping the file's comments, line endings and indent width.
+ */
+export function withExtends(text: string, base: string): string {
+  const document = parseDocument(text);
+  document.set('extends', base);
+  const indent = /^( +)\S/mu.exec(text)?.[1]?.length ?? 2;
+  const edited = document.toString({ lineWidth: 0, indent });
+  return text.includes('\r\n') ? edited.replaceAll('\n', '\r\n') : edited;
+}
+
 export function stringifyProfile(value: Profile): string {
   return stringify(value, { lineWidth: 0 });
 }

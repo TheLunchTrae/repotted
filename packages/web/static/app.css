@@ -872,14 +872,6 @@ input[type='checkbox']:disabled {
   max-width: 760px;
 }
 
-.page-with-sidebar {
-  grid-template-columns: 280px minmax(0, 1fr);
-}
-
-.page-main {
-  min-width: 0;
-}
-
 .problem {
   color: var(--remove);
 }
@@ -1058,14 +1050,6 @@ input[type='checkbox']:disabled {
   margin-top: 10px;
 }
 
-.banners {
-  display: grid;
-  gap: 10px;
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 20px 24px 0;
-}
-
 .button-small {
   min-height: 30px;
   padding: 0 10px;
@@ -1120,50 +1104,6 @@ input[type='checkbox']:disabled {
   tab-size: 2;
 }
 
-.sidebar {
-  display: grid;
-  gap: 12px;
-  align-content: start;
-  min-height: calc(100dvh - 57px);
-  padding: 20px 12px;
-  border-inline-end: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.sidebar-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-}
-
-.sidebar-source {
-  display: flex;
-  flex: 1;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  font-size: 13.5px;
-  overflow-wrap: anywhere;
-}
-
-.sidebar .small {
-  padding: 0 8px;
-}
-
-.tree {
-  display: grid;
-  gap: 1px;
-  padding: 0;
-  list-style: none;
-}
-
-.tree .tree {
-  margin-inline-start: 14px;
-  padding-inline-start: 6px;
-  border-inline-start: 1px solid var(--border);
-}
-
 .tree-item {
   display: flex;
   align-items: center;
@@ -1198,69 +1138,60 @@ input[type='checkbox']:disabled {
   overflow-wrap: anywhere;
 }
 
-.tree-folder {
-  color: var(--muted);
-  font-weight: 500;
+/* The way back from an open profile, or the new-profile form, to the list. */
+.profiles-open-top {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 16px 24px 0;
 }
 
-.tree-folder::before {
+.profiles-open-top > .notice {
+  justify-self: stretch;
+}
+
+.profiles-open > .page-body {
+  padding-top: 16px;
+}
+
+/* button.link, so it keeps its own spacing over the touch screen's link target. */
+button.link.profiles-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 4px;
+  text-underline-offset: 3px;
+}
+
+.profiles-back::before {
   content: '';
-  width: 6px;
-  height: 6px;
-  margin-inline: 2px 2px;
+  width: 7px;
+  height: 7px;
   border: solid currentColor;
-  border-width: 0 1.5px 1.5px 0;
-  rotate: -45deg;
-  transition: rotate 120ms;
-}
-
-.tree-folder[aria-expanded='true']::before {
+  border-width: 0 0 1.5px 1.5px;
   rotate: 45deg;
 }
 
-.profiles-back {
-  display: none;
+.profile-row-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
 }
 
-@media (max-width: 760px) {
-  .page-with-sidebar[data-screen='profile'] > .sidebar {
-    display: none;
-  }
+/* A folder inside another sits under its parent's heading, on a line that shows where the parent ends. */
+.folder-body {
+  display: grid;
+  gap: 12px;
+}
 
-  /* The list screen keeps the page's heading for screen readers, without the prompt to choose. */
-  .page-with-sidebar .profiles-choose {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .profiles-choose .empty {
-    display: none;
-  }
-
-  /* button.link, so it keeps its own spacing over the touch screen's link target. */
-  button.link.profiles-back {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 44px;
-    margin: 4px 8px -12px;
-    padding: 0 8px;
-    text-underline-offset: 3px;
-  }
-
-  .profiles-back::before {
-    content: '';
-    width: 7px;
-    height: 7px;
-    border: solid currentColor;
-    border-width: 0 0 1.5px 1.5px;
-    rotate: 45deg;
-  }
+.folder .folder {
+  margin-inline-start: 12px;
+  padding-inline-start: 10px;
+  border-inline-start: 1px solid var(--border);
 }
 
 .settings-group {
@@ -2047,8 +1978,7 @@ select.field {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .folder-toggle::before,
-  .tree-folder::before {
+  .folder-toggle::before {
     transition: none;
   }
 }
@@ -2081,15 +2011,22 @@ select.field {
     padding-inline-end: 4px;
   }
 
-  .page-with-panel,
-  .page-with-sidebar {
+  .page-with-panel {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .sidebar {
-    min-height: 0;
-    border-inline-end: 0;
-    border-bottom: 1px solid var(--border);
+  .profiles-open-top {
+    padding: 12px 16px 0;
+  }
+
+  /* The name and its marks on one line, the details under them. */
+  .profile-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .profile-row .profile-row-details {
+    flex-basis: 100%;
   }
 
   .page-body {
