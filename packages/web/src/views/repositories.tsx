@@ -1026,13 +1026,6 @@ export function RepositoriesPage({
       (toggle ?? section?.querySelector<HTMLElement>('.folder-menu > summary') ?? newFolderButton.current)?.focus();
     });
   };
-  /**
-   * After a rename or delete the menu that opened the dialog is gone, so the
-   * focus goes to the folder's menu under its name now, or to New folder
-   * once it is deleted. A new folder made with the selected repositories takes
-   * the focus, since deselecting them closes the selection's panel; otherwise the
-   * browser puts the focus back itself.
-   */
   /** Deselects every repository; the buttons that do it go with the selection, so the focus moves to New folder. */
   const deselectAll = (): void => {
     repositories.deselectAll();
@@ -1040,6 +1033,13 @@ export function RepositoriesPage({
       newFolderButton.current?.focus();
     });
   };
+  /**
+   * After a rename or delete the menu that opened the dialog is gone, so the
+   * focus goes to the folder's menu under its name now, or to New folder
+   * once it is deleted. A new folder made with the selected repositories takes
+   * the focus, since deselecting them closes the selection's panel; otherwise the
+   * browser puts the focus back itself.
+   */
   const closeDialog = (focus: string | undefined): void => {
     const opened = dialog?.kind;
     setDialog(undefined);

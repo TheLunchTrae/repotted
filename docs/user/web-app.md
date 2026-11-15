@@ -59,18 +59,19 @@ and offers **Show hidden**.
 To keep repositories together, put them in folders. Click **New folder**
 beside the count, name it, and leave the box that puts the selected
 repositories in it checked to fill it at once. To move repositories later,
-select them, choose a folder under **Move to a folder** in the panel and click
-**Move**, or open one repository and pick its **Folder**. Selected
+select them, choose a folder under **Move to a folder** in the panel and
+click **Move**, or open one repository and pick its **Folder**. Selected
 repositories are deselected once they are in the folder; a repository's own
-**Folder** leaves the selection as it is. Each open folder with repositories in it has **Select all**
-beside its name, which turns into **Deselect all** once everything in it is
-selected, and **Deselect all**, beside **New folder** and in the panel,
-clears the whole selection. A repository is in one folder at most, and **No
-folder** takes it out. Folders show above the owners, in name order;
-click a folder's name to close or open it, and use its **Edit** menu to
-rename or delete it. Deleting a folder puts its repositories back under their
-owners, and nothing changes on GitHub. A search looks in folders too, and a
-folder whose name matches shows everything in it.
+**Folder** leaves the selection as it is. Each open folder with repositories
+in it has **Select all** beside its name, which turns into **Deselect all**
+once everything in it is selected, and **Deselect all**, beside **New
+folder** and in the panel, clears the whole selection. A repository is in
+one folder at most, and **No folder** takes it out. Folders show above the
+owners, in name order; click a folder's name to close or open it, and use
+its **Edit** menu to rename or delete it. Deleting a folder puts its
+repositories back under their owners, and nothing changes on GitHub. A
+search looks in folders too, and a folder whose name matches shows
+everything in it.
 
 When your profiles are kept in a GitHub repository, the owners and
 repositories you hid, and your folders, are kept there too, in
