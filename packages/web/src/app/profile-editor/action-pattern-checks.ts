@@ -49,7 +49,6 @@ export function patternNote(state: NonNullable<PatternLine['state']>): PatternNo
   return { tone: check.status === 'unchecked' ? 'muted' : 'warning', text };
 }
 
-/** The repository a checked pattern names, or the owner for a pattern such as `octo-org/*`. */
 export function gitHubPageOf(state: PatternLine['state']): string | undefined {
   if (state?.kind !== 'checked') {
     return undefined;

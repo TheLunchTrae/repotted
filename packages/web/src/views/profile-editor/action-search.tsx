@@ -40,6 +40,7 @@ export function ActionSearchBox({ editor, search }: ActionSearchProps): JSX.Elem
           // A search box empties itself on Escape; this one puts its results away first and keeps the text.
           event.preventDefault();
           event.stopPropagation();
+          box.current?.focus();
           search.close();
         }
       }}

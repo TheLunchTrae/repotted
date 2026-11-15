@@ -371,19 +371,20 @@ typing: the repository, with the folder and the tag, branch, or commit the
 pattern names, or the owner for a pattern such as `octo-org/*`. A line is
 marked when the repository has no such tag or branch, has no such folder, or
 isn't one you can see, which is how a misspelled name shows. A pattern with a
-wildcard in the owner can't be checked. A pattern whose repository or owner
-GitHub found links to it, in a new tab. The line under them counts how they
-came out. The checks only inform: a profile saves and applies with any
-pattern GitHub accepts. When GitHub can't be reached, or its limit is
-reached, the line says so. **Check again** asks GitHub about every line
+wildcard in the owner can't be checked. Each pattern whose repository or
+owner GitHub found is a link to it, which opens in a new tab. The line under
+them counts how they came out. The checks only inform: a profile saves and
+applies with any pattern GitHub accepts. When GitHub can't be reached, or its
+limit is reached, the line says so. **Check again** asks GitHub about every line
 again, such as after you make the repository or push the tag.
 
 **Find an action on GitHub**, under the patterns, searches GitHub for
 repositories by name or description, a moment after you stop typing or when
-you press Enter. Each one found links to its repository, and says how many
-stars it has and whether it has an action file at its top. **Add** puts
-`owner/name@*` on a new line of the list, which allows every action in that
-repository at any version; edit the line to narrow it. Escape puts the results away.
+you press Enter. Each one found is a link to its repository, which opens in a
+new tab, and says how many stars it has and whether it has an action file at
+its top. **Add** puts `owner/name@*` on a new line of the list, which allows
+every action in that repository at any version; edit the line to narrow it.
+Escape puts the results away.
 
 On the **Pages** tab, **Take the site down** deletes the Pages site on each
 repository that follows the profile. Choosing it takes out the profile's
