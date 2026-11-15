@@ -179,13 +179,42 @@ test('a setting GitHub hides goes with the one it follows, and that one counts w
   expect(await readFile('/profiles/web.yaml', 'utf8')).toContain('allowed_actions: selected');
 });
 
-test('a setting GitHub greys out stays in place and is marked off', async () => {
+test('a setting under one GitHub hides is hidden too, and the highest one counts what the profile still names', async () => {
+  const editor = await opened({
+    'web.yaml':
+      'actions:\n  enabled: true\n  allowed_actions: selected\n  selected_actions:\n    github_owned_allowed: true\n',
+  });
+  expect(row(editor, 'actions.selected_actions.github_owned_allowed')).toBeDefined();
+
+  await editor.set(field('actions.enabled'), false);
+
+  expect(row(editor, 'actions.allowed_actions')).toBeUndefined();
+  expect(row(editor, 'actions.selected_actions.github_owned_allowed')).toBeUndefined();
+  expect(row(editor, 'actions.selected_actions.verified_allowed')).toBeUndefined();
+  expect(row(editor, 'actions.selected_actions.patterns_allowed')).toBeUndefined();
+  expect(row(editor, 'actions.enabled')?.hiddenNamed).toBe(2);
+});
+
+test('a setting GitHub greys out stays in place, off, with the setting that turns it off', async () => {
   const editor = await opened({ 'web.yaml': 'security:\n  vulnerability_alerts: false\n' });
 
-  expect(row(editor, 'security.automated_security_fixes')).toMatchObject({ greyedOutOnGitHub: true });
+  expect(row(editor, 'security.automated_security_fixes')?.greyedOutOnGitHubWhile).toMatchObject({
+    field: field('security.vulnerability_alerts'),
+    value: false,
+  });
 
   await editor.set(field('security.vulnerability_alerts'), true);
-  expect(row(editor, 'security.automated_security_fixes')).toMatchObject({ greyedOutOnGitHub: false });
+  expect(row(editor, 'security.automated_security_fixes')?.greyedOutOnGitHubWhile).toBeUndefined();
+});
+
+test('a setting under one GitHub hides is hidden, though its own setting would only grey it out', async () => {
+  const editor = await opened({
+    'web.yaml': 'security:\n  code_scanning_default_setup:\n    state: not-configured\n    runner_type: standard\n',
+  });
+
+  expect(row(editor, 'security.code_scanning_default_setup.runner_type')).toBeUndefined();
+  expect(row(editor, 'security.code_scanning_default_setup.runner_label')).toBeUndefined();
+  expect(row(editor, 'security.code_scanning_default_setup.state')?.hiddenNamed).toBe(1);
 });
 
 test('taking the Pages site down and describing one take each other out', async () => {

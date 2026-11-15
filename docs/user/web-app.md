@@ -337,10 +337,12 @@ the base profile. To stop setting a value in this profile, click **Remove**
 beside it; if a base profile sets it, the base's value applies again.
 
 Options that GitHub only offers with a certain value of the setting above
-them follow that setting. Where GitHub hides them, the tab does too, and the
-setting above says how many hidden ones the profile still names. Where GitHub
-greys them out, they stay in place and are off. Either way the profile keeps
-their values.
+them follow that setting, and so do the options under them. Where GitHub
+hides them, the tab does too, and the setting that hides them says how many
+hidden ones the profile still names. With **Actions** set to **Off**, for
+example, **Allowed actions** and the options under it are hidden. Where
+GitHub greys them out, they stay in place, can't be changed, and say which
+setting turns them off. Either way the profile keeps their values.
 
 On the **Actions** tab, with **Allowed actions** set to **Selected**,
 **Allowed action patterns** takes one pattern a line, such as `octo-org/*`,
