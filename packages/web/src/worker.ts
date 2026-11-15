@@ -312,13 +312,31 @@ async function signIn(request: Request, env: Env): Promise<Response> {
   ]);
 }
 
+/**
+ * Only GitHub's status and its checked error code go in the address, so a
+ * crafted link can't put words of its own into the page's message.
+ */
+function signInFailureQuery(reason: SignInFailure, gitHubAnswer: GitHubAnswer | undefined): string {
+  const query = new URLSearchParams({ 'sign-in': reason });
+  if (reason !== 'failed') {
+    return query.toString();
+  }
+  if (gitHubAnswer?.status !== undefined) {
+    query.set('github-status', String(gitHubAnswer.status));
+  }
+  if (gitHubAnswer?.oauthError !== undefined) {
+    query.set('github-error', gitHubAnswer.oauthError);
+  }
+  return query.toString();
+}
+
 async function callback(request: Request, env: Env): Promise<Response> {
   const params = new URL(request.url).searchParams;
   // The started sign-in is spent whatever happens next, so its state is single-use.
   const clearedSignInCookie = cookie(signInCookie, '', 0, 'Lax');
   const failed = (reason: SignInFailure, gitHubAnswer?: GitHubAnswer): Response => {
     logAuthOutcome('callback', reason, { failure: true, gitHubAnswer });
-    return redirect(`/?sign-in=${reason}`, [clearedSignInCookie]);
+    return redirect(`/?${signInFailureQuery(reason, gitHubAnswer)}`, [clearedSignInCookie]);
   };
 
   // GitHub reports other errors, such as a callback URL the App doesn't list,
@@ -329,7 +347,7 @@ async function callback(request: Request, env: Env): Promise<Response> {
     return failed(error === 'access_denied' ? 'denied' : 'failed', {
       status: undefined,
       oauthError: code.success ? code.data : undefined,
-      description: `sent back an error${code.success ? `, ${code.data}` : ''}`,
+      description: `an error${code.success ? `, ${code.data}` : ''}`,
     });
   }
   const [state = '', verifier = ''] = (readCookie(request, signInCookie) ?? '').split('.');

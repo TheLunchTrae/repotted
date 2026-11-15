@@ -165,15 +165,28 @@ describe('callback', () => {
       headers: { Cookie: cookie.split(';')[0] ?? '' },
     });
 
-    expect(response.headers.get('Location')).toBe('/?sign-in=failed');
+    expect(response.headers.get('Location')).toBe('/?sign-in=failed&github-error=redirect_uri_mismatch');
     expect(github).not.toHaveBeenCalled();
   });
 
   test.each([
-    ['refuses the code', () => Promise.resolve(Response.json({ error: 'bad_verification_code' }))],
-    ['issues a token that never expires', () => Promise.resolve(Response.json({ access_token: 'ghu_x' }))],
-    ['is out of reach', () => Promise.reject(new TypeError('network'))],
-  ])('fails the sign-in and keeps no token when GitHub %s', async (_name, answer) => {
+    [
+      'refuses the code',
+      () => Promise.resolve(Response.json({ error: 'bad_verification_code' })),
+      '/?sign-in=failed&github-status=200&github-error=bad_verification_code',
+    ],
+    [
+      'issues a token that never expires',
+      () => Promise.resolve(Response.json({ access_token: 'ghu_x' })),
+      '/?sign-in=failed&github-status=200',
+    ],
+    [
+      'fails on its side',
+      () => Promise.resolve(new Response('', { status: 525 })),
+      '/?sign-in=failed&github-status=525',
+    ],
+    ['is out of reach', () => Promise.reject(new TypeError('network')), '/?sign-in=failed'],
+  ])('fails the sign-in and keeps no token when GitHub %s', async (_name, answer, location) => {
     const { state, cookie } = await startedSignIn();
     github.mockImplementation(answer);
 
@@ -181,8 +194,14 @@ describe('callback', () => {
       headers: { Cookie: cookie.split(';')[0] ?? '' },
     });
 
-    expect(response.headers.get('Location')).toBe('/?sign-in=failed');
+    expect(response.headers.get('Location')).toBe(location);
     expect(cookies(response)).toEqual(['__Host-repotted-sign-in=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax']);
+  });
+
+  test('sends back only a well-formed error code from GitHub', async () => {
+    const response = await call('/api/auth/callback?error=%3Cscript%3E&state=x');
+
+    expect(response.headers.get('Location')).toBe('/?sign-in=failed');
   });
 });
 
@@ -233,7 +252,7 @@ describe('logs', () => {
         route: 'callback',
         outcome: 'failed',
         gitHubOAuthError: undefined,
-        gitHubAnswer: 'sent back an error',
+        gitHubAnswer: 'an error',
       }),
     );
     expect(everythingLogged()).not.toContain('ghr_leak');
