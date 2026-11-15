@@ -66,6 +66,18 @@ const screens: Readonly<Record<string, Screen>> = {
     ready: (page) => page.getByRole('heading', { name: 'a_repository_name_with_no_hyphens_in_it_at_all', exact: true }),
   },
   settings: { path: '/settings', ready: (page) => page.getByRole('heading', { name: 'Account' }) },
+  'settings with the protection offer': {
+    path: '/settings',
+    open: async (page) => {
+      await page.getByRole('button', { name: 'Use a GitHub repository…' }).click();
+      await page.getByRole('combobox', { name: 'Repository' }).fill('trae/repotted-config');
+      await page.getByRole('button', { name: 'Use this repository' }).click();
+    },
+    ready: (page) =>
+      page
+        .getByRole('region', { name: 'Protect trae/repotted-config?' })
+        .getByRole('button', { name: 'Review protection…' }),
+  },
   profiles: { path: '/profiles', ready: (page) => page.getByText('website', { exact: true }) },
 };
 

@@ -24,6 +24,7 @@ import { mkdir, rm, stat } from '../engine/files.js';
 import { basename, dirname } from '../engine/path.js';
 import { isSignedOut } from './account.js';
 import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
+import { builtInFolder } from './config-protection.js';
 import { type EditorStore, ProfileEditor } from './profile-editor.js';
 
 /** An apply as reviewed: the changes it would write, what was left out of it, and what stops it. */
@@ -73,6 +74,8 @@ export type ApplyState =
   | ({
       readonly kind: 'editing';
       readonly fromProfile: boolean;
+      /** Whether that profile is built into Repotted, which edits can't be saved to. */
+      readonly builtIn: boolean;
       /** What this apply leaves out, which can't be edited here until it is put back. */
       readonly leftOut: readonly string[];
     } & Target)
@@ -98,7 +101,8 @@ async function forget(repository: string): Promise<void> {
 function cleaned(message: string, repository: string): string {
   return message
     .replaceAll(stagedFile(repository), 'this apply')
-    .replaceAll(/\/profiles\/(?:browser\/|github\/[^/]+\/[^/]+\/@[^/]+\/)?/gu, '');
+    .replaceAll(/\/profiles\/(?:browser\/|github\/[^/]+\/[^/]+\/@[^/]+\/)?/gu, '')
+    .replaceAll(`${builtInFolder}/`, '');
 }
 
 /** The name an apply goes by: the profile it starts from, or none for one that starts from the repository as it is. */
@@ -254,7 +258,13 @@ export class Apply {
   async saveToProfile(): Promise<void> {
     const state = this.state.value;
     this.editError.value = undefined;
-    if (state.kind !== 'editing' || !state.fromProfile || !(await this.#saveEdits()) || this.state.value !== state) {
+    if (
+      state.kind !== 'editing' ||
+      !state.fromProfile ||
+      state.builtIn ||
+      !(await this.#saveEdits()) ||
+      this.state.value !== state
+    ) {
       return;
     }
     try {
@@ -299,6 +309,7 @@ export class Apply {
       repository,
       profile: nameOf(staged.base),
       fromProfile: staged.base !== null,
+      builtIn: staged.base?.startsWith(`${builtInFolder}/`) === true,
       leftOut: staged.exclude,
     };
   }
