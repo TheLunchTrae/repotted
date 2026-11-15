@@ -6,6 +6,8 @@ export {
 } from './profiles/action-patterns.js';
 export { createGitHub, GitHubError, parseRepo } from './github/client.js';
 export type { GitHub } from './github/client.js';
+export { findGitHubApp, gitHubAppSlug } from './github/apps.js';
+export type { FoundGitHubApp } from './github/apps.js';
 export {
   applyPlan,
   ApplyError,

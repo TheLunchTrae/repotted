@@ -47,6 +47,8 @@ export interface FakeState {
   account: FakeAccount;
   ownerType: 'User' | 'Organization';
   viewer: { admin: boolean; maintain: boolean; push: boolean; triage: boolean; pull: boolean };
+  /** GitHub Apps anyone can look up by slug. */
+  apps: { id: number; slug: string; name: string }[];
 }
 
 export interface FakeRepository {
@@ -179,6 +181,7 @@ export class FakeGitHub implements GitHub {
       account: { login: 'lunch', name: null, repositories: [] },
       ownerType: 'Organization',
       viewer: { admin: true, maintain: true, push: true, triage: true, pull: true },
+      apps: [],
       ...state,
     };
   }
@@ -351,6 +354,11 @@ export class FakeGitHub implements GitHub {
         return this.state.account.repositories.slice((page - 1) * perPage, page * perPage);
       }
       default: {
+        const appSlug = /^\/apps\/([^/]+)$/u.exec(route)?.[1];
+        const app = this.state.apps.find((item) => item.slug === appSlug);
+        if (method === 'GET' && app !== undefined) {
+          return { ...app, owner: { login: 'someone' } };
+        }
         const installation = /^\/user\/installations\/(\d+)\/repositories$/u.exec(route)?.[1];
         const found = this.state.account.installations?.find((item) => String(item.id) === installation);
         if (method === 'GET' && found !== undefined) {

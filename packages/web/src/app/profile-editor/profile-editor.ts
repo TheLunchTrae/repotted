@@ -18,6 +18,7 @@ import {
 import { basename } from '../../engine/path.js';
 import type { ActionPatternChecks } from './action-pattern-checks.js';
 import type { ActionSearch } from './action-search.js';
+import type { GitHubAppLookup } from './bypass-actors.js';
 import { EntryEdits, type EntryList, type EntryRow, type SaveMode } from './entry-edits.js';
 import type { Entry } from './entry-forms.js';
 import { type DiffFold, type DiffLine, diffLines, foldUnchanged } from './line-diff.js';
@@ -283,12 +284,18 @@ export class ProfileEditor {
   readonly patterns: ActionPatternChecks | undefined;
   readonly actionSearch: ActionSearch | undefined;
 
+  readonly appLookup: GitHubAppLookup | undefined;
+
   readonly canHoldDrafts: boolean;
   readonly #store: EditorStore;
 
   constructor(
     file: string,
-    github?: { readonly patterns: ActionPatternChecks; readonly search: ActionSearch },
+    github?: {
+      readonly patterns: ActionPatternChecks;
+      readonly search: ActionSearch;
+      readonly appLookup: GitHubAppLookup;
+    },
     store: EditorStore = profileStore,
   ) {
     this.file = file;
@@ -296,6 +303,7 @@ export class ProfileEditor {
     this.canHoldDrafts = store.canHoldDrafts;
     this.patterns = github?.patterns;
     this.actionSearch = github?.search;
+    this.appLookup = github?.appLookup;
   }
 
   readonly loaded = computed(() => this.#saved.value !== undefined);

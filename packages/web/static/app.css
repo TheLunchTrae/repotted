@@ -2073,6 +2073,108 @@ select.field {
   gap: 2px;
 }
 
+.menu-section {
+  padding: 8px 10px 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.bypass-row,
+.bypass-tools,
+.bypass-selection,
+.bypass-select-all,
+.bypass-add {
+  padding: 12px 18px;
+}
+
+.bypass-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.bypass-row,
+.bypass-tools,
+.bypass-add {
+  border-top: 1px solid var(--border);
+}
+
+.bypass-select-all {
+  padding-block: 10px 6px;
+}
+
+.bypass-who {
+  display: grid;
+  flex: 1 1 14rem;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bypass-who strong {
+  font-weight: 500;
+}
+
+.bypass-row select.field {
+  width: auto;
+  min-width: 11rem;
+}
+
+.bypass-tools,
+.bypass-selection,
+.bypass-add-row,
+.bypass-found {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.bypass-tools:first-child {
+  border-top: 0;
+}
+
+.bypass-leave {
+  margin-inline-start: auto;
+}
+
+.bypass-selection {
+  border-bottom: 1px solid var(--border);
+  background: var(--tint);
+}
+
+.bypass-selection strong {
+  margin-inline-end: auto;
+  font-weight: 500;
+}
+
+.bypass-selection select.field {
+  width: auto;
+}
+
+.bypass-add {
+  display: grid;
+  gap: 6px;
+  background: var(--sunken);
+}
+
+.bypass-add-row .field {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.bypass-found {
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+}
+
 .rule-options {
   display: grid;
   gap: 10px;
@@ -2140,6 +2242,20 @@ select.field {
 
 /* The phone layout. phone.ts's usePhone matches this width; change both together. */
 @media (max-width: 760px) {
+  .bypass-row,
+  .bypass-tools,
+  .bypass-selection,
+  .bypass-select-all,
+  .bypass-add {
+    padding-inline: 14px;
+  }
+
+  /* The mode takes the row's width under the name, beside Remove. */
+  .bypass-row select.field {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   .shell-bar {
     gap: 12px;
     padding: 10px 16px;

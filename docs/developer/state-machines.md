@@ -573,6 +573,23 @@ the one before it behind, so an older answer never replaces a newer one.
 | Any                | The search's row goes, as when the list is hidden or another profile is opened           | Closed, with any pause dropped and any search left behind.                                             |
 | Open, in any state | Escape, the pointer pressed outside the search, or the keyboard moved to another control | Closed, with any search left behind. The text stays, and Enter searches again.                         |
 
+### GitHub App lookup
+
+`GitHubAppLookup` (`packages/web/src/app/profile-editor/bypass-actors.ts`)
+finds a GitHub App by its slug for a ruleset's bypass list, with the engine's
+`findGitHubApp`. One lookup counts at a time: a newer one, or a reset, leaves
+the one before it behind. The names of the apps it finds stay for the
+editor's life, so the list names those apps in place of their IDs.
+
+| State   | Event                                                   | Next                                                                  |
+| ------- | ------------------------------------------------------- | --------------------------------------------------------------------- |
+| Idle    | **Find**, with a slug or an app's address               | Finding.                                                              |
+| Finding | GitHub answers with the app                             | Found, with its name and ID, and its name kept.                       |
+| Finding | GitHub answers that it has no such app                  | Missing, with the slug.                                               |
+| Finding | The lookup fails                                        | Failed, with the error. A lost sign-in also goes to the sign-in page. |
+| Finding | **Find** again                                          | Finding, with the lookup before it left behind.                       |
+| Any     | The text changes, the form closes, or an actor is added | Idle, with any lookup under way left behind.                          |
+
 ### Search and filters
 
 The search and the **Managed**, **Not saved yet**, and **Drafts** filters
@@ -607,6 +624,7 @@ number for one that is new, so its row is found whatever its name becomes.
 | Unsaved       | Its name is the saved name of one renamed or taken out             | Held back until that change is saved, since the file still has the name.                                                                                                      |
 | Unsaved       | A ruleset requires status checks and names none                    | Held back with why.                                                                                                                                                           |
 | Unsaved       | A label's old names include its own, one twice, or another label's | Held back with why.                                                                                                                                                           |
+| Unsaved       | A ruleset sets Pull requests only where GitHub refuses it          | Held back with why: for a deploy key, or in a tag or push ruleset.                                                                                                            |
 | Unsaved       | The engine refuses it, such as a color that isn't one              | Unsaved, with why above **Save**, which is off.                                                                                                                               |
 | Any held back | Another setting or entry changes                                   | The entries that can be saved as they stand are still previewed; **Save** stays off.                                                                                          |
 | Managed       | Remove it from the repository                                      | Unsaved: only its name and `absent: true` are written. What it had is kept with the change.                                                                                   |
