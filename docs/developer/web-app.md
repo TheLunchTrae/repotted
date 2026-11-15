@@ -215,8 +215,12 @@ closed (`closed-repository-folders`), the list's sort order
 straight to the browser's `Preferences` instead, so it never makes a commit.
 Each commit's message comes from comparing the file as read with the file
 about to be written, in `src/app/preferences/preference-changes.ts`, which
-owns the shared keys; a key it has no wording for is named as
-`Update preference: <key>`, so a new shared key adds its wording there.
+owns the shared keys and how their values are read. A folder gone and one
+made that share repositories, or are the only ones, count as a rename, so
+changes saved together still read as what was done. A change it has no line
+for, such as a list put in another order or a key it doesn't know, is named
+as `Update preference: <label or key>`, so a new shared key adds its wording
+there.
 Each of those keys is removed when its choice is back at the default, so a
 browser that never changed it keeps nothing. Sorting and filtering live in
 `src/app/repositories/sort-and-filters.ts`; `Repositories` applies them to

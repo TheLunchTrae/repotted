@@ -28,8 +28,20 @@ describe('configCommitMessage', () => {
   test('puts the part after the noun before the names', () => {
     expect(
       configCommitMessage([
-        { action: 'Move', noun: 'repository', nouns: 'repositories', after: 'to folder Work', name: 'octo/app' },
-        { action: 'Move', noun: 'repository', nouns: 'repositories', after: 'to folder Work', name: 'octo/api' },
+        {
+          action: 'Move',
+          noun: 'repository',
+          nouns: 'repositories',
+          nounQualifier: 'to folder Work',
+          name: 'octo/app',
+        },
+        {
+          action: 'Move',
+          noun: 'repository',
+          nouns: 'repositories',
+          nounQualifier: 'to folder Work',
+          name: 'octo/api',
+        },
       ]),
     ).toBe('Move repositories to folder Work: octo/app, octo/api');
   });
@@ -59,20 +71,24 @@ describe('configCommitMessage', () => {
     expect(message.split('\n').slice(2)).toEqual(names.map((name) => `- Hide repository: ${name}`));
   });
 
-  test('counts each kind when the names of several kinds do not fit', () => {
+  test('names each kind that fits in the room the kinds after it leave, and counts the rest', () => {
+    const repositories = Array.from({ length: 10 }, (_, index) => `octo/repository-${index}`);
+    const message = configCommitMessage([createProfile('base'), ...repositories.map(hide)]);
+
+    expect(subjectOf(message)).toBe('Create profile: base; hide repositories: octo/repository-0 and 9 more');
+    expect(message.split('\n').slice(2)).toEqual([
+      '- Create profile: base',
+      ...repositories.map((name) => `- Hide repository: ${name}`),
+    ]);
+  });
+
+  test('counts a kind whose first name does not fit beside the others', () => {
     const message = configCommitMessage([
-      ...['web/base', 'web/strict', 'api/base'].map(createProfile),
-      ...['octo/first-repository', 'octo/second-repository'].map(hide),
+      createProfile('lunchbox-labs/a-profile-with-a-name-long-enough-to-crowd-the-subject'),
+      ...['octo/a', 'octo/b'].map(hide),
     ]);
 
-    expect(subjectOf(message)).toBe('Create 3 profiles; hide 2 repositories');
-    expect(message.split('\n').slice(2)).toEqual([
-      '- Create profile: web/base',
-      '- Create profile: web/strict',
-      '- Create profile: api/base',
-      '- Hide repository: octo/first-repository',
-      '- Hide repository: octo/second-repository',
-    ]);
+    expect(subjectOf(message)).toBe('Create 1 profile; hide repositories: octo/a, octo/b');
   });
 
   test('counts the kinds that fit and the changes after them', () => {
@@ -89,6 +105,34 @@ describe('configCommitMessage', () => {
 
     expect(subject).toHaveLength(longestCommitSubject);
     expect(subject.endsWith('…')).toBe(true);
+  });
+
+  test('clips by character, never splitting an emoji', () => {
+    const subject = subjectOf(configCommitMessage([createProfile('😀'.repeat(100))]));
+
+    expect(Array.from(subject)).toHaveLength(longestCommitSubject);
+    expect(subject).toBe(`Create profile: ${'😀'.repeat(longestCommitSubject - 17)}…`);
+    expect(subject.isWellFormed()).toBe(true);
+  });
+
+  test('clips a counted clause whose qualifier alone is too long', () => {
+    const folder = 'f'.repeat(80);
+    const message = configCommitMessage(
+      ['octo/a', 'octo/b'].map((name) => ({
+        action: 'Move',
+        noun: 'repository',
+        nouns: 'repositories',
+        nounQualifier: `to folder ${folder}`,
+        name,
+      })),
+    );
+
+    expect(subjectOf(message)).toHaveLength(longestCommitSubject);
+    expect(subjectOf(message).startsWith('Move 2 repositories to folder ff')).toBe(true);
+    expect(message.split('\n').slice(2)).toEqual([
+      `- Move repository to folder ${folder}: octo/a`,
+      `- Move repository to folder ${folder}: octo/b`,
+    ]);
   });
 
   test('stops the body at its longest and counts the rest', () => {

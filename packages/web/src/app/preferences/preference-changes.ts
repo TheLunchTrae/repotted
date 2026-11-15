@@ -5,135 +5,181 @@ export const hiddenOwnersKey = 'hidden-repository-owners';
 export const hiddenRepositoriesKey = 'hidden-repositories';
 export const repositoryFoldersKey = 'repository-folders';
 
-const names = z.array(z.string());
-const savedFolders = z.array(z.object({ name: z.string(), repositories: z.array(z.string()) }));
-
-interface SavedFolder {
+/** Its repositories are by `owner/name`, in the order they were put in. */
+export interface Folder {
   readonly name: string;
   readonly repositories: readonly string[];
 }
 
-function namesIn(value: unknown): readonly string[] {
+const names = z.array(z.string());
+const savedFolders = z.array(z.object({ name: z.string(), repositories: z.array(z.string()) }));
+
+/** GitHub names are case-insensitive, and so are folder names. */
+export function sameName(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase();
+}
+
+export function byFolderName(left: Folder, right: Folder): number {
+  return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
+}
+
+export function namesIn(value: unknown): readonly string[] {
   const parsed = names.safeParse(value);
   return parsed.success ? parsed.data : [];
 }
 
-function foldersIn(value: unknown): readonly SavedFolder[] {
+/** A file edited by hand may name a folder twice or a repository in two folders: the first of each counts. */
+export function foldersIn(value: unknown): readonly Folder[] {
   const parsed = savedFolders.safeParse(value);
-  return parsed.success ? parsed.data : [];
-}
-
-function lower(name: string): string {
-  return name.toLowerCase();
-}
-
-function namesAddedAndRemoved(
-  before: readonly string[],
-  after: readonly string[],
-): { readonly added: readonly string[]; readonly removed: readonly string[] } {
-  const beforeNames = new Set(before.map(lower));
-  const afterNames = new Set(after.map(lower));
-  return {
-    added: after.filter((name) => !beforeNames.has(lower(name))),
-    removed: before.filter((name) => !afterNames.has(lower(name))),
-  };
+  if (!parsed.success) {
+    return [];
+  }
+  const folders: Folder[] = [];
+  const filed: string[] = [];
+  for (const folder of parsed.data) {
+    if (folders.some((earlier) => sameName(earlier.name, folder.name))) {
+      continue;
+    }
+    const repositories = folder.repositories.filter(
+      (name, index) =>
+        !filed.some((other) => sameName(other, name)) &&
+        folder.repositories.findIndex((other) => sameName(other, name)) === index,
+    );
+    filed.push(...repositories);
+    folders.push({ name: folder.name, repositories });
+  }
+  return folders.toSorted(byFolderName);
 }
 
 function hiddenChanges(before: unknown, after: unknown, noun: string, nouns: string): ConfigChange[] {
-  const { added, removed } = namesAddedAndRemoved(namesIn(before), namesIn(after));
+  const hiddenBefore = namesIn(before);
+  const hiddenAfter = namesIn(after);
+  const isIn = (list: readonly string[], name: string): boolean => list.some((other) => sameName(other, name));
   return [
-    ...added.map((name) => ({ action: 'Hide', noun, nouns, name })),
-    ...removed.map((name) => ({ action: 'Show', noun, nouns, name })),
+    ...hiddenAfter.filter((name) => !isIn(hiddenBefore, name)).map((name) => ({ action: 'Hide', noun, nouns, name })),
+    ...hiddenBefore.filter((name) => !isIn(hiddenAfter, name)).map((name) => ({ action: 'Show', noun, nouns, name })),
   ];
 }
 
-function sameRepositories(left: SavedFolder, right: SavedFolder): boolean {
-  const leftNames = new Set(left.repositories.map(lower));
-  return (
-    leftNames.size === new Set(right.repositories.map(lower)).size &&
-    right.repositories.every((name) => leftNames.has(lower(name)))
-  );
+function sharedRepositoryCount(left: Folder, right: Folder): number {
+  return left.repositories.filter((name) => right.repositories.some((other) => sameName(other, name))).length;
 }
 
-function folderOfEachRepository(folders: readonly SavedFolder[]): Map<string, { repository: string; folder: string }> {
+function folderChange(action: string, name: string): ConfigChange {
+  return { action, noun: 'folder', nouns: 'folders', name };
+}
+
+function repositoryChange(action: string, nounQualifier: string, name: string): ConfigChange {
+  return { action, noun: 'repository', nouns: 'repositories', nounQualifier, name };
+}
+
+/**
+ * Pairs each folder gone with the folder made that shares the most
+ * repositories with it, as a rename; a lone folder gone and a lone folder
+ * made are a rename too. Changes saved together, such as a rename and a move
+ * into the folder, are one commit, so the repositories need not match.
+ */
+function folderRenames(gone: readonly Folder[], made: readonly Folder[]): Map<Folder, Folder> {
+  const renamedTo = new Map<Folder, Folder>();
+  const taken = new Set<Folder>();
+  for (const folderGone of gone) {
+    let best: { folder: Folder; shared: number } | undefined;
+    for (const folderMade of made) {
+      const shared = sharedRepositoryCount(folderGone, folderMade);
+      if (!taken.has(folderMade) && shared > 0 && (best === undefined || shared > best.shared)) {
+        best = { folder: folderMade, shared };
+      }
+    }
+    if (best !== undefined) {
+      renamedTo.set(folderGone, best.folder);
+      taken.add(best.folder);
+    }
+  }
+  const [loneGone] = gone;
+  const [loneMade] = made;
+  if (gone.length === 1 && made.length === 1 && loneGone !== undefined && loneMade !== undefined) {
+    renamedTo.set(loneGone, loneMade);
+  }
+  return renamedTo;
+}
+
+function folderOfEachRepository(folders: readonly Folder[]): Map<string, { repository: string; folder: string }> {
   const filed = new Map<string, { repository: string; folder: string }>();
   for (const folder of folders) {
     for (const repository of folder.repositories) {
-      if (!filed.has(lower(repository))) {
-        filed.set(lower(repository), { repository, folder: folder.name });
-      }
+      filed.set(repository.toLowerCase(), { repository, folder: folder.name });
     }
   }
   return filed;
 }
 
-function folder(action: string, name: string): ConfigChange {
-  return { action, noun: 'folder', nouns: 'folders', name };
-}
-
 /**
- * A folder gone and one made with the same repositories is a rename, and so is
- * a folder whose name changed only in case. A deleted folder's repositories
- * leave it with the folder, so they get no line of their own.
+ * A folder whose name changed only in case is renamed too. A deleted
+ * folder's repositories leave it with the folder, so they get no line of
+ * their own.
  */
 function folderChanges(beforeValue: unknown, afterValue: unknown): ConfigChange[] {
   const before = foldersIn(beforeValue);
   const after = foldersIn(afterValue);
-  const findIn = (folders: readonly SavedFolder[], name: string): SavedFolder | undefined =>
-    folders.find((other) => lower(other.name) === lower(name));
-  const renamedTo = new Map<string, string>();
-  for (const kept of before) {
-    const same = findIn(after, kept.name);
-    if (same !== undefined && same.name !== kept.name) {
-      renamedTo.set(lower(kept.name), same.name);
+  const findIn = (folders: readonly Folder[], name: string): Folder | undefined =>
+    folders.find((other) => sameName(other.name, name));
+  const gone = before.filter((folderBefore) => findIn(after, folderBefore.name) === undefined);
+  const made = after.filter((folderAfter) => findIn(before, folderAfter.name) === undefined);
+  const renamedTo = folderRenames(gone, made);
+  const newNameByOldName = new Map<string, string>();
+  for (const folderBefore of before) {
+    const folderAfter = renamedTo.get(folderBefore) ?? findIn(after, folderBefore.name);
+    if (folderAfter !== undefined && folderAfter.name !== folderBefore.name) {
+      newNameByOldName.set(folderBefore.name.toLowerCase(), folderAfter.name);
     }
   }
-  const gone = before.filter((kept) => findIn(after, kept.name) === undefined);
-  const made = after.filter((kept) => findIn(before, kept.name) === undefined);
-  const madeByRename = new Set<SavedFolder>();
-  for (const old of gone) {
-    const renamed = made.find((candidate) => !madeByRename.has(candidate) && sameRepositories(old, candidate));
-    if (renamed !== undefined) {
-      madeByRename.add(renamed);
-      renamedTo.set(lower(old.name), renamed.name);
-    }
-  }
-  const deleted = gone.filter((old) => !renamedTo.has(lower(old.name)));
+  const madeByRename = new Set(renamedTo.values());
+  const deleted = gone.filter((folderGone) => !renamedTo.has(folderGone));
   const changes: ConfigChange[] = [
-    ...made.filter((created) => !madeByRename.has(created)).map((created) => folder('Create', created.name)),
-    ...[...renamedTo].map(([old, renamed]) =>
-      folder('Rename', `${before.find((kept) => lower(kept.name) === old)?.name ?? old} to ${renamed}`),
-    ),
-    ...deleted.map((old) => folder('Delete', old.name)),
+    ...made
+      .filter((folderMade) => !madeByRename.has(folderMade))
+      .map((folderMade) => folderChange('Create', folderMade.name)),
+    ...before.flatMap((folderBefore) => {
+      const newName = newNameByOldName.get(folderBefore.name.toLowerCase());
+      return newName === undefined ? [] : [folderChange('Rename', `${folderBefore.name} to ${newName}`)];
+    }),
+    ...deleted.map((folderGone) => folderChange('Delete', folderGone.name)),
   ];
-  const deletedNames = new Set(deleted.map((old) => lower(old.name)));
+  const currentName = (name: string): string => newNameByOldName.get(name.toLowerCase()) ?? name;
   const filedBefore = folderOfEachRepository(before);
   const filedAfter = folderOfEachRepository(after);
   for (const [key, { repository, folder: folderBefore }] of filedBefore) {
-    if (!filedAfter.has(key) && !deletedNames.has(lower(folderBefore))) {
-      changes.push({
-        action: 'Take',
-        noun: 'repository',
-        nouns: 'repositories',
-        after: `out of folder ${folderBefore}`,
-        name: repository,
-      });
+    const folderWasDeleted = deleted.some((folderGone) => sameName(folderGone.name, folderBefore));
+    if (!filedAfter.has(key) && !folderWasDeleted) {
+      changes.push(repositoryChange('Take', `out of folder ${currentName(folderBefore)}`, repository));
     }
   }
   for (const [key, { repository, folder: folderAfter }] of filedAfter) {
-    const was = filedBefore.get(key)?.folder;
-    const wasAfterRename = was === undefined ? undefined : (renamedTo.get(lower(was)) ?? was);
-    if (wasAfterRename === undefined || lower(wasAfterRename) !== lower(folderAfter)) {
-      changes.push({
-        action: 'Move',
-        noun: 'repository',
-        nouns: 'repositories',
-        after: `to folder ${folderAfter}`,
-        name: repository,
-      });
+    const folderBefore = filedBefore.get(key)?.folder;
+    if (folderBefore === undefined || !sameName(currentName(folderBefore), folderAfter)) {
+      changes.push(repositoryChange('Move', `to folder ${folderAfter}`, repository));
     }
   }
   return changes;
+}
+
+const preferenceLabels: Readonly<Record<string, string>> = {
+  [hiddenRepositoriesKey]: 'hidden repositories',
+  [hiddenOwnersKey]: 'hidden owners',
+  [repositoryFoldersKey]: 'folders',
+};
+
+function changesOf(key: string, before: unknown, after: unknown): ConfigChange[] {
+  if (key === hiddenRepositoriesKey) {
+    return hiddenChanges(before, after, 'repository', 'repositories');
+  }
+  if (key === hiddenOwnersKey) {
+    return hiddenChanges(before, after, 'owner', 'owners');
+  }
+  if (key === repositoryFoldersKey) {
+    return folderChanges(before, after);
+  }
+  return [];
 }
 
 function sameValue(left: unknown, right: unknown): boolean {
@@ -150,17 +196,10 @@ export function preferenceChanges(
     if (sameValue(before[key], after[key])) {
       return [];
     }
-    const described =
-      key === hiddenRepositoriesKey
-        ? hiddenChanges(before[key], after[key], 'repository', 'repositories')
-        : key === hiddenOwnersKey
-          ? hiddenChanges(before[key], after[key], 'owner', 'owners')
-          : key === repositoryFoldersKey
-            ? folderChanges(before[key], after[key])
-            : [];
+    const described = changesOf(key, before[key], after[key]);
     // Such as a list put in another order, or a key this version doesn't know.
     return described.length > 0
       ? described
-      : [{ action: 'Update', noun: 'preference', nouns: 'preferences', name: key }];
+      : [{ action: 'Update', noun: 'preference', nouns: 'preferences', name: preferenceLabels[key] ?? key }];
   });
 }

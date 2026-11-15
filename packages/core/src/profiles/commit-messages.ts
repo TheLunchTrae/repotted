@@ -1,16 +1,17 @@
 /**
  * One change a commit to a config repository makes, as the line
- * `${action} ${noun}${after}: ${name}`, such as `Create profile: web/base`
- * or `Move repository to folder Work: octo/app`.
+ * `${action} ${noun} ${nounQualifier}: ${name}`, such as
+ * `Create profile: web/base` or `Move repository to folder Work: octo/app`.
  */
 export interface ConfigChange {
   readonly action: string;
   readonly noun: string;
   readonly nouns: string;
-  /** Follows the noun, such as `to folder Work`. */
-  readonly after?: string;
+  readonly nounQualifier?: string;
   readonly name: string;
 }
+
+type ChangeKind = Omit<ConfigChange, 'name'>;
 
 export interface ProfileFileChange {
   /** By its path in the profiles folder. */
@@ -24,14 +25,30 @@ export const longestCommitSubject = 72;
 export const mostCommitBodyLines = 50;
 
 const fallbackSubject = 'Update Repotted files';
+const clauseSeparator = '; ';
 
 interface ChangeGroup {
-  readonly kind: ConfigChange;
+  readonly kind: ChangeKind;
   readonly names: string[];
 }
 
+/** In code points, so a clipped name never splits an emoji or another character outside the BMP. */
+function lengthOf(text: string): number {
+  return Array.from(text).length;
+}
+
+function clipped(text: string, limit: number): string {
+  const characters = Array.from(text);
+  return characters.length <= limit
+    ? text
+    : `${characters
+        .slice(0, limit - 1)
+        .join('')
+        .trimEnd()}…`;
+}
+
 function groupKey(change: ConfigChange): string {
-  return JSON.stringify([change.action, change.noun, change.nouns, change.after ?? '']);
+  return JSON.stringify([change.action, change.noun, change.nouns, change.nounQualifier ?? '']);
 }
 
 function groupsOf(changes: readonly ConfigChange[]): ChangeGroup[] {
@@ -47,27 +64,27 @@ function groupsOf(changes: readonly ConfigChange[]): ChangeGroup[] {
   return [...groups.values()];
 }
 
-function afterNoun(kind: ConfigChange): string {
-  return kind.after === undefined ? '' : ` ${kind.after}`;
+function qualifierOf(kind: ChangeKind): string {
+  return kind.nounQualifier === undefined ? '' : ` ${kind.nounQualifier}`;
 }
 
 function namedClause(group: ChangeGroup, shownNames: readonly string[]): string {
   const { kind, names } = group;
   const omitted = names.length - shownNames.length;
   const noun = names.length === 1 ? kind.noun : kind.nouns;
-  return `${kind.action} ${noun}${afterNoun(kind)}: ${shownNames.join(', ')}${omitted > 0 ? ` and ${omitted} more` : ''}`;
+  return `${kind.action} ${noun}${qualifierOf(kind)}: ${shownNames.join(', ')}${omitted > 0 ? ` and ${omitted} more` : ''}`;
 }
 
 function countedClause(group: ChangeGroup): string {
   const { kind, names } = group;
-  return `${kind.action} ${names.length} ${names.length === 1 ? kind.noun : kind.nouns}${afterNoun(kind)}`;
+  return `${kind.action} ${names.length} ${names.length === 1 ? kind.noun : kind.nouns}${qualifierOf(kind)}`;
 }
 
-/** Names as many as fit, and at least one. */
+/** Names as many as fit, and at least one; undefined when not even one does. */
 function namedClauseWithin(group: ChangeGroup, limit: number): string | undefined {
   for (let shown = group.names.length; shown >= 1; shown -= 1) {
     const clause = namedClause(group, group.names.slice(0, shown));
-    if (clause.length <= limit) {
+    if (lengthOf(clause) <= limit) {
       return clause;
     }
   }
@@ -79,23 +96,40 @@ function lowerFirst(text: string): string {
 }
 
 function joinedClauses(clauses: readonly string[]): string {
-  return clauses.map((clause, index) => (index === 0 ? clause : lowerFirst(clause))).join('; ');
+  return clauses.map((clause, index) => (index === 0 ? clause : lowerFirst(clause))).join(clauseSeparator);
 }
 
-function clipped(text: string, limit: number): string {
-  return text.length <= limit ? text : `${text.slice(0, limit - 1).trimEnd()}…`;
+/**
+ * Each kind takes, in order, the clause that names the most of it in the
+ * room the kinds after it leave when counted, so names come first wherever
+ * they fit. Undefined when even every kind counted is too long.
+ */
+function clausesNamingWhatFits(groups: readonly ChangeGroup[], limit: number): string | undefined {
+  const counted = groups.map(countedClause);
+  if (lengthOf(joinedClauses(counted)) > limit) {
+    return undefined;
+  }
+  const chosen: string[] = [];
+  for (const [index, group] of groups.entries()) {
+    const roomForTheRest = lengthOf(joinedClauses(['x', ...counted.slice(index + 1)])) - 1;
+    const used = chosen.length === 0 ? 0 : lengthOf(joinedClauses(chosen)) + clauseSeparator.length;
+    const room = limit - used - roomForTheRest;
+    chosen.push(namedClauseWithin(group, room) ?? countedClause(group));
+  }
+  return joinedClauses(chosen);
 }
 
+/** As many kinds counted as fit, then how many changes are left. */
 function countedClausesWithin(groups: readonly ChangeGroup[], limit: number): string {
-  const subjectNaming = (shown: number): string => {
+  const subjectCounting = (shown: number): string => {
     const rest = groups.slice(shown).reduce((total, group) => total + group.names.length, 0);
     return `${joinedClauses(groups.slice(0, shown).map(countedClause))} and ${rest} more ${rest === 1 ? 'change' : 'changes'}`;
   };
   let shown = groups.length - 1;
-  while (shown > 1 && subjectNaming(shown).length > limit) {
+  while (shown > 1 && lengthOf(subjectCounting(shown)) > limit) {
     shown -= 1;
   }
-  return clipped(subjectNaming(shown), limit);
+  return clipped(subjectCounting(shown), limit);
 }
 
 /** Every change on its own line, when the subject leaves some out. */
@@ -122,7 +156,7 @@ export function configCommitMessage(changes: readonly ConfigChange[]): string {
     return fallbackSubject;
   }
   const everyName = joinedClauses(groups.map((group) => namedClause(group, group.names)));
-  if (everyName.length <= longestCommitSubject) {
+  if (lengthOf(everyName) <= longestCommitSubject) {
     return everyName;
   }
   let subject: string;
@@ -130,9 +164,7 @@ export function configCommitMessage(changes: readonly ConfigChange[]): string {
     const fallback = first.names.length === 1 ? namedClause(first, first.names) : countedClause(first);
     subject = namedClauseWithin(first, longestCommitSubject) ?? clipped(fallback, longestCommitSubject);
   } else {
-    const everyCount = joinedClauses(groups.map(countedClause));
-    subject =
-      everyCount.length <= longestCommitSubject ? everyCount : countedClausesWithin(groups, longestCommitSubject);
+    subject = clausesNamingWhatFits(groups, longestCommitSubject) ?? countedClausesWithin(groups, longestCommitSubject);
   }
   return `${subject}\n\n${bodyLines(groups).join('\n')}`;
 }

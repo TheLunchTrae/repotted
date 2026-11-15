@@ -113,15 +113,17 @@ Sync moves profile files as they are, drafts included, so a draft follows its
 profile to every computer that syncs it.
 
 Every commit Repotted makes to a config repository gets its message from
-`configCommitMessage` in `packages/core/src/profiles/commit-messages.ts`: a list of
-changes, each an action, a noun and a name, such as `Create profile:
-web/base`. Changes of one kind share a clause (`Hide repositories: a, b`)
-and kinds join with semicolons. A subject keeps to 72 characters by naming
-as many as fit and then `and N more`, or counting each kind; when the
-subject leaves any out, the body lists every change, up to 50 lines. Sync
-describes its files with `profileFileChanges`, which reads a delete and a
-create of the same blob as a rename, or a move into another folder. The web
-app's preferences and marker commits use the same function.
+`configCommitMessage` in `packages/core/src/profiles/commit-messages.ts`,
+from a list of changes, each an action, a noun and a name, such as
+`Create profile: web/base`. Changes of one kind share a clause
+(`Hide repositories: a, b`) and kinds join with semicolons. The subject keeps
+within `longestCommitSubject` characters: each kind names as many as fit in
+the room the kinds after it need when counted, then `and N more`, and counts
+itself when not even one name fits. When the subject leaves any change out,
+the body lists every one, up to `mostCommitBodyLines` lines. Sync describes
+its files with `profileFileChanges`, which reads a delete and a create of the
+same blob as a rename, or a move into another folder. The web app's
+preferences and marker commits use the same function.
 
 `editProfile` in the same file edits a profile in place for
 `repotted profile --set`, `--unset`, `--ruleset`, `--environment`, and the

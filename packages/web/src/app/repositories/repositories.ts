@@ -1,9 +1,17 @@
 import { computed, signal } from '@preact/signals';
 import { type GitHub, GitHubError, listRepositories } from '@repotted/core';
-import * as z from 'zod/mini';
 
 import { isSignedOut, type User } from '../account/account.js';
-import { hiddenOwnersKey, hiddenRepositoriesKey, repositoryFoldersKey } from '../preferences/preference-changes.js';
+import {
+  byFolderName,
+  type Folder,
+  foldersIn,
+  hiddenOwnersKey,
+  hiddenRepositoriesKey,
+  namesIn,
+  repositoryFoldersKey,
+  sameName,
+} from '../preferences/preference-changes.js';
 import type { Preferences } from '../preferences/preferences.js';
 import type { SharedPreferences } from '../preferences/shared-preferences.js';
 import {
@@ -35,12 +43,6 @@ export interface OwnerGroup {
   readonly owner: string;
   readonly personal: boolean;
   readonly repositories: readonly Repository[];
-}
-
-/** Its repositories are by `owner/name`, in the order they were put in. */
-export interface Folder {
-  readonly name: string;
-  readonly repositories: readonly string[];
 }
 
 export interface FolderGroup {
@@ -81,51 +83,12 @@ export interface FolderMoveOptions {
 const closedFoldersKey = 'closed-repository-folders';
 const sortOrderKey = 'repository-sort-order';
 const filtersKey = 'repository-filters';
-const names = z.array(z.string());
-const savedFolders = z.array(z.object({ name: z.string(), repositories: z.array(z.string()) }));
 
 function ownerOf(repository: Repository): string {
   return repository.full_name.split('/')[0] ?? repository.full_name;
 }
 
-function sameOwner(left: string, right: string): boolean {
-  return left.toLowerCase() === right.toLowerCase();
-}
-
-/** GitHub names are case-insensitive, and so are folder names. */
-const sameName = sameOwner;
-
-function byName(left: Folder, right: Folder): number {
-  return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
-}
-
-/** A file edited by hand may name a folder twice or a repository in two folders: the first of each counts. */
-function foldersIn(value: unknown): readonly Folder[] {
-  const parsed = savedFolders.safeParse(value);
-  if (!parsed.success) {
-    return [];
-  }
-  const folders: Folder[] = [];
-  const filed: string[] = [];
-  for (const folder of parsed.data) {
-    if (folders.some((kept) => sameName(kept.name, folder.name))) {
-      continue;
-    }
-    const repositories = folder.repositories.filter(
-      (name, index) =>
-        !filed.some((other) => sameName(other, name)) &&
-        folder.repositories.findIndex((other) => sameName(other, name)) === index,
-    );
-    filed.push(...repositories);
-    folders.push({ name: folder.name, repositories });
-  }
-  return folders.toSorted(byName);
-}
-
-function namesIn(value: unknown): readonly string[] {
-  const parsed = names.safeParse(value);
-  return parsed.success ? parsed.data : [];
-}
+const sameOwner = sameName;
 
 /**
  * The repositories go to the end of the named folder, or out of every folder
@@ -556,11 +519,11 @@ export class Repositories {
   /** A hidden repository stays hidden when the list no longer has it, so it is still hidden if it returns. */
   hide(repositories: readonly Repository[]): void {
     const hiding = repositories.filter((repository) => !this.isHidden(repository));
-    const adding = hiding.map((repository) => repository.full_name.toLowerCase());
+    const adding = hiding.map((repository) => repository.full_name);
     this.preferences.update(hiddenRepositoriesKey, (current) => {
       const hidden = namesIn(current);
       const have = new Set(hidden.map((name) => name.toLowerCase()));
-      return kept([...hidden, ...adding.filter((name) => !have.has(name))]);
+      return kept([...hidden, ...adding.filter((name) => !have.has(name.toLowerCase()))]);
     });
     const selected = new Set(this.#selectedNames.value);
     for (const repository of repositories) {
@@ -779,7 +742,7 @@ export class Repositories {
   #updateFolders(change: (folders: readonly Folder[]) => readonly Folder[]): void {
     this.preferences.update(repositoryFoldersKey, (current) => {
       const next = change(foldersIn(current));
-      return next.length > 0 ? next.toSorted(byName) : undefined;
+      return next.length > 0 ? next.toSorted(byFolderName) : undefined;
     });
   }
 

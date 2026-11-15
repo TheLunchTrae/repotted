@@ -69,20 +69,21 @@ export async function markConfigRepository(github: GitHub, repository: string, f
   if (!topics.includes(configTopic)) {
     await github.request('PUT', topicsPath(repository), { names: [...topics, configTopic] });
   }
+  const profilesFolder = normalFolder(folder);
   const current = await readRepositoryFile(github, repository, markerFile);
-  if (current !== undefined && markedFolderOf(current.text) === normalFolder(folder)) {
+  if (current !== undefined && markedFolderOf(current.text) === profilesFolder) {
     return false;
   }
   try {
     await writeRepositoryFile(github, repository, markerFile, {
-      text: markerText(normalFolder(folder)),
+      text: markerText(profilesFolder),
       sha: current?.sha,
       message: configCommitMessage([
         {
           action: 'Set',
           noun: 'profiles folder',
           nouns: 'profiles folders',
-          name: normalFolder(folder) === '' ? 'repository root' : normalFolder(folder),
+          name: profilesFolder === '' ? 'repository root' : profilesFolder,
         },
       ]),
     });
@@ -92,7 +93,7 @@ export async function markConfigRepository(github: GitHub, repository: string, f
     if (
       error instanceof GitHubError &&
       (error.status === 409 || error.status === 422) &&
-      (await readMarkedFolder(github, repository)) === normalFolder(folder)
+      (await readMarkedFolder(github, repository)) === profilesFolder
     ) {
       return false;
     }

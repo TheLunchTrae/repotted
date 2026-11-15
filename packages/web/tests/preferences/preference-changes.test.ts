@@ -90,11 +90,55 @@ test('a move between folders names where each repository went', () => {
   ).toBe('Move repository to folder Home: octo/app');
 });
 
-test('names a preference by its key when nothing more is known', () => {
+test('names a preference when no line names its change, by its key when this version has no words for it', () => {
   expect(message({ other: 1 }, { other: 2 })).toBe('Update preference: other');
   expect(
     message({ [hiddenRepositoriesKey]: ['octo/a', 'octo/b'] }, { [hiddenRepositoriesKey]: ['octo/b', 'octo/a'] }),
-  ).toBe(`Update preference: ${hiddenRepositoriesKey}`);
+  ).toBe('Update preference: hidden repositories');
+  expect(message({ [hiddenOwnersKey]: ['b', 'a'] }, { [hiddenOwnersKey]: ['a', 'b'] })).toBe(
+    'Update preference: hidden owners',
+  );
+});
+
+test('a rename saved with a move into the folder names both, and not the repositories already there', () => {
+  expect(
+    message(
+      { [repositoryFoldersKey]: [{ name: 'Work', repositories: ['octo/app', 'octo/api'] }] },
+      { [repositoryFoldersKey]: [{ name: 'Team', repositories: ['octo/app', 'octo/api', 'octo/new'] }] },
+    ),
+  ).toBe('Rename folder: Work to Team; move repository to folder Team: octo/new');
+});
+
+test('a repository taken out of a folder renamed in case is named with the new name', () => {
+  expect(
+    message(
+      { [repositoryFoldersKey]: [{ name: 'work', repositories: ['octo/a', 'octo/b'] }] },
+      { [repositoryFoldersKey]: [{ name: 'Work', repositories: ['octo/b'] }] },
+    ),
+  ).toBe('Rename folder: work to Work; take repository out of folder Work: octo/a');
+});
+
+test('a folder renamed into one already there is deleted, and its repositories move', () => {
+  expect(
+    message(
+      {
+        [repositoryFoldersKey]: [
+          { name: 'Home', repositories: ['octo/site'] },
+          { name: 'Old', repositories: ['octo/app'] },
+        ],
+      },
+      { [repositoryFoldersKey]: [{ name: 'Home', repositories: ['octo/site', 'octo/app'] }] },
+    ),
+  ).toBe('Delete folder: Old; move repository to folder Home: octo/app');
+});
+
+test('an empty folder renamed is a rename', () => {
+  expect(
+    message(
+      { [repositoryFoldersKey]: [{ name: 'Later', repositories: [] }] },
+      { [repositoryFoldersKey]: [{ name: 'Someday', repositories: [] }] },
+    ),
+  ).toBe('Rename folder: Later to Someday');
 });
 
 test('a batch too long for the subject counts each kind and lists every change', () => {
