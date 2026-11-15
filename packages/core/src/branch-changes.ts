@@ -119,7 +119,7 @@ export async function listBranches(
   };
 }
 
-function pathInsideFolder(file: string, folder: string): string | undefined {
+function pathRelativeToFolder(file: string, folder: string): string | undefined {
   if (folder === '') {
     return file;
   }
@@ -190,8 +190,9 @@ export async function readBranchChanges(
   const changesAwaitingContent: ProfileChangeAwaitingContent[] = [];
   const otherChangedFiles: string[] = [];
   for (const entry of compared.files) {
-    const file = pathInsideFolder(entry.filename, folder);
-    const was = entry.previous_filename === undefined ? undefined : pathInsideFolder(entry.previous_filename, folder);
+    const file = pathRelativeToFolder(entry.filename, folder);
+    const was =
+      entry.previous_filename === undefined ? undefined : pathRelativeToFolder(entry.previous_filename, folder);
     const profile = file !== undefined && isProfilePath(file) ? file : undefined;
     const wasProfile = was !== undefined && isProfilePath(was) ? was : undefined;
     if (file !== undefined && profile === undefined) {
@@ -221,6 +222,7 @@ export async function readBranchChanges(
     }
   }
   const changedProfiles: BranchProfileChange[] = [];
+  // Batched, so a branch that changes many profiles stays quick without a burst of requests.
   for (let start = 0; start < changesAwaitingContent.length; start += concurrentBlobReads) {
     changedProfiles.push(
       ...(await Promise.all(

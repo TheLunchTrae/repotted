@@ -34,7 +34,7 @@ export { lockChanges } from './permissions.js';
 export { profileFileJsonSchema } from './schema.js';
 export { currentUser, listRepositories, readAccess } from './repositories.js';
 export { listBranches, readBranchChanges } from './branch-changes.js';
-export type { BranchChanges, BranchProfileChange as BranchFileChange } from './branch-changes.js';
+export type { BranchChanges, BranchProfileChange } from './branch-changes.js';
 export { syncFolder } from './sync.js';
 export {
   createStagedApply,

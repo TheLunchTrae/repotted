@@ -48,6 +48,7 @@ export interface PreviewSection {
 export type PreviewStatus = 'added' | 'removed' | 'changed' | 'renamed' | 'through-base';
 
 export interface PreviewedProfile {
+  /** On the default branch for a removed profile. */
   readonly path: string;
   readonly name: string;
   readonly folder: string;
@@ -443,6 +444,7 @@ async function compareSides(
   return { changedProfiles, unchangedProfileCount };
 }
 
+// Only reads from GitHub.
 export class BranchPreview {
   readonly state = signal<PreviewState>({ kind: 'idle' });
   readonly branches = signal<BranchList>({ kind: 'idle' });
