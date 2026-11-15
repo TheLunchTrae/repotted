@@ -126,7 +126,8 @@ When your profiles are kept in a GitHub repository, the owners and
 repositories you hid, and your folders, are kept there too, in
 `.repotted-preferences.json` beside the profiles, so they follow you to any
 browser you sign in on. Each change is committed straight to the repository,
-and **Refresh** picks up changes made in another browser. When your profiles
+with a message that says what changed, such as `Hide repository: octo/app`
+or `Move repositories to folder Work: octo/app, octo/api`, and **Refresh** picks up changes made in another browser. When your profiles
 are kept in this browser or a folder on this computer, this browser remembers
 them instead. Choices made in one place don't move to the other. Which
 folders are closed, the sort order and the filters are always remembered by

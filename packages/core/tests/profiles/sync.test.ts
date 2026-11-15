@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
@@ -106,7 +106,7 @@ describe('syncFolder', () => {
     expect(result.pulled).toEqual(['added.yaml', 'app.yaml', 'gone.yaml']);
     expect(result.pushed).toEqual(['base.yaml', 'new.yaml', 'old.yaml']);
     expect(github.log().length).toBe(before + 1);
-    expect(github.log()[0]).toBe('Update 3 profiles\n\n- update base.yaml\n- add new.yaml\n- delete old.yaml');
+    expect(github.log()[0]).toBe('Update profile: base; create profile: new; delete profile: old');
     const expected = {
       'base.yaml': 'repository:\n  has_wiki: true\n',
       'app.yaml': `${app}# edited on GitHub\n`,
@@ -175,6 +175,20 @@ describe('syncFolder', () => {
     expect(await profileTextsByPath(local)).toEqual(github.files());
   });
 
+  test('commits a profile moved to another name or folder as a rename or a move', async () => {
+    const github = new FakeGitRepository();
+    github.write({ 'base.yaml': base, 'app.yaml': app });
+    const local = await folder();
+    await syncFolder(github, local, { repository: 'lunch/config' });
+
+    await rename(path.join(local, 'app.yaml'), path.join(local, 'web.yaml'));
+    await mkdir(path.join(local, 'shared'));
+    await rename(path.join(local, 'base.yaml'), path.join(local, 'shared', 'base.yaml'));
+    await syncFolder(github, local);
+
+    expect(github.log()[0]).toBe('Rename profile: app to web; move profile: base to shared/base');
+  });
+
   test('starts an empty repository with the folder it is given', async () => {
     const github = new FakeGitRepository();
     const local = await folder();
@@ -185,7 +199,7 @@ describe('syncFolder', () => {
 
     expect(result).toMatchObject({ pushed: ['app.yaml', 'base.yaml'], conflicts: [] });
     expect(github.files()).toEqual({ 'profiles/app.yaml': app, 'profiles/base.yaml': base });
-    expect(github.log()).toEqual(['Add base.yaml', 'Add app.yaml']);
+    expect(github.log()).toEqual(['Create profile: base', 'Create profile: app']);
     expect(await syncFolder(github, local)).toMatchObject({ pushed: [], pulled: [] });
   });
 

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { type GitHub, GitHubError, parseRepo, type RepoRef, repoPath } from '../github/client.js';
 import { fromBase64, hexDigest, toBase64 } from '../shared/bytes.js';
 import { replaceFile } from '../shared/files.js';
+import { configCommitMessage, type ProfileFileChange, profileFileChanges } from './commit-messages.js';
 
 // JSON, so profile listings skip it.
 export const syncStateFile = '.repotted-sync.json';
@@ -306,14 +307,6 @@ async function readBlob(github: GitHub, repo: RepoRef, id: string): Promise<Uint
   return fromBase64(blob.content);
 }
 
-function commitMessage(changes: readonly { file: string; verb: 'Add' | 'Update' | 'Delete' }[]): string {
-  const [only] = changes;
-  if (changes.length === 1 && only !== undefined) {
-    return `${only.verb} ${only.file}`;
-  }
-  return `Update ${changes.length} profiles\n\n${changes.map((change) => `- ${change.verb.toLowerCase()} ${change.file}`).join('\n')}`;
-}
-
 type Action = 'pull' | 'push' | 'conflict' | 'same';
 
 // Each id is the file's blob id on that side; undefined is a file that does not exist there.
@@ -493,15 +486,15 @@ export async function syncFolder(github: GitHub, directory: string, options: Syn
     let commit = remote.head?.commit ?? null;
     try {
       if (toPush.length > 0) {
-        const changes = toPush.map((file) => ({
-          file,
-          verb: !localIds.has(file)
-            ? ('Delete' as const)
-            : remote.files.has(file)
-              ? ('Update' as const)
-              : ('Add' as const),
-        }));
-        const message = (subset: typeof changes): string => options.message ?? commitMessage(subset);
+        const changes: ProfileFileChange[] = toPush.map((file) => {
+          const localId = localIds.get(file);
+          if (localId === undefined) {
+            return { file, kind: 'delete', contentId: remote.files.get(file)?.id };
+          }
+          return { file, kind: remote.files.has(file) ? 'update' : 'create', contentId: localId };
+        });
+        const message = (subset: readonly ProfileFileChange[]): string =>
+          options.message ?? configCommitMessage(profileFileChanges(subset));
         const remotePath = (file: string): string => (prefix === '' ? file : `${prefix}/${file}`);
         if (remote.head === null) {
           // The git data API refuses a repository with no commits, so the

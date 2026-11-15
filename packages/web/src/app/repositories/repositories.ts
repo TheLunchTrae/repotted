@@ -3,6 +3,7 @@ import { type GitHub, GitHubError, listRepositories } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { isSignedOut, type User } from '../account/account.js';
+import { hiddenOwnersKey, hiddenRepositoriesKey, repositoryFoldersKey } from '../preferences/preference-changes.js';
 import type { Preferences } from '../preferences/preferences.js';
 import type { SharedPreferences } from '../preferences/shared-preferences.js';
 import {
@@ -77,9 +78,6 @@ export interface FolderMoveOptions {
   readonly deselect?: boolean;
 }
 
-const hiddenOwnersKey = 'hidden-repository-owners';
-const hiddenRepositoriesKey = 'hidden-repositories';
-const foldersKey = 'repository-folders';
 const closedFoldersKey = 'closed-repository-folders';
 const sortOrderKey = 'repository-sort-order';
 const filtersKey = 'repository-filters';
@@ -176,7 +174,7 @@ export class Repositories {
   readonly #hiddenNames = computed<ReadonlySet<string>>(
     () => new Set(namesIn(this.preferences.read(hiddenRepositoriesKey)).map((name) => name.toLowerCase())),
   );
-  readonly #folders = computed<readonly Folder[]>(() => foldersIn(this.preferences.read(foldersKey)));
+  readonly #folders = computed<readonly Folder[]>(() => foldersIn(this.preferences.read(repositoryFoldersKey)));
   /** Kept in this browser alone, so opening or closing a folder commits nothing. */
   readonly #closedFolders = signal<readonly string[]>([]);
   /** Kept in this browser alone, as how the list is viewed rather than how it is organized. */
@@ -779,7 +777,7 @@ export class Repositories {
 
   /** Changes the folders as they are when saved, so folders saved elsewhere, or not yet read, are kept. */
   #updateFolders(change: (folders: readonly Folder[]) => readonly Folder[]): void {
-    this.preferences.update(foldersKey, (current) => {
+    this.preferences.update(repositoryFoldersKey, (current) => {
       const next = change(foldersIn(current));
       return next.length > 0 ? next.toSorted(byName) : undefined;
     });

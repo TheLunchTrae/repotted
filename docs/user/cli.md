@@ -349,7 +349,9 @@ need only the folder.
   version, deletes included.
 - Local changes go to the branch as one commit, which only fast-forwards it.
   When another commit lands first, the sync reads the branch again and builds
-  on it. `--message` sets the commit message. A ruleset or branch protection
+  on it. The commit message names what changed, such as
+  `Create profile: web/base` or `Rename profile: app to web`; `--message`
+  sets your own instead. A ruleset or branch protection
   that requires pull requests on that branch refuses the commit unless you or
   the Repotted App can bypass it, and the sync says so.
 - A file that changed on both sides is left as it is on each and reported as

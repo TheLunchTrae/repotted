@@ -1,4 +1,4 @@
-import { type GitHub, GitHubError, parseRepo } from '@repotted/core';
+import { configCommitMessage, type GitHub, GitHubError, parseRepo } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { readRepositoryFile, writeRepositoryFile } from '../storage/repository-files.js';
@@ -8,7 +8,6 @@ export const configTopic = 'repotted-config';
 /** At the repository's root, naming the folder that holds the profiles. Hidden, so a sync leaves it out. */
 export const markerFile = '.repotted.json';
 
-const markerCommitMessage = 'Name the Repotted profiles folder';
 const topicNames = z.object({ names: z.array(z.string()) });
 const marker = z.object({ folder: z.string() });
 
@@ -78,7 +77,14 @@ export async function markConfigRepository(github: GitHub, repository: string, f
     await writeRepositoryFile(github, repository, markerFile, {
       text: markerText(normalFolder(folder)),
       sha: current?.sha,
-      message: markerCommitMessage,
+      message: configCommitMessage([
+        {
+          action: 'Set',
+          noun: 'profiles folder',
+          nouns: 'profiles folders',
+          name: normalFolder(folder) === '' ? 'repository root' : normalFolder(folder),
+        },
+      ]),
     });
     return true;
   } catch (error) {

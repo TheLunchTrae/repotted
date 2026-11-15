@@ -236,6 +236,7 @@ test('connecting marks the repository and moving away unmarks it, keeping its ot
 
   expect(first.topics).toEqual(['infra', configTopic]);
   expect(first.files()[markerFile]).toBe('{\n  "folder": "profiles"\n}\n');
+  expect(first.log()).toContain('Set profiles folder: profiles');
   expect(profiles.markProblem.value).toBeUndefined();
   // The marker's commit is synced past, so the copy here is not behind the default branch.
   expect(profiles.sync.value).toMatchObject({ status: 'synced' });
@@ -244,6 +245,7 @@ test('connecting marks the repository and moving away unmarks it, keeping its ot
 
   expect(first.topics).toEqual(['infra']);
   expect(second.topics).toEqual([configTopic]);
+  expect(second.log()).toContain('Set profiles folder: repository root');
 
   await profiles.keepInBrowser();
 
