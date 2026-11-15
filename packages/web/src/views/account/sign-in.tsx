@@ -7,7 +7,7 @@ function clockTime(time: Date): string {
   return time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function checkFailureMessage(failure: SignInCheckFailure): string {
+export function checkFailureMessage(failure: SignInCheckFailure): string {
   switch (failure.kind) {
     case 'sign-in-service-unreachable':
       return "Repotted's sign-in service didn't answer. Check your connection and try again.";

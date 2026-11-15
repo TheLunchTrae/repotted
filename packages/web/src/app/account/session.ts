@@ -55,7 +55,7 @@ export class GitHubApiUnreachableError extends Error {
 
 const workerErrorAnswer = z.object({
   error: z.string(),
-  gitHubAnswer: z.optional(z.string().check(z.maxLength(200))),
+  gitHubAnswer: z.catch(z.optional(z.string().check(z.maxLength(200))), undefined),
 });
 
 async function tokenRefreshFailure(response: Response): Promise<SessionUnavailableReason> {

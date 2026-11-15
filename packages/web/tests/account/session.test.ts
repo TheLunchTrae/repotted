@@ -57,6 +57,13 @@ test('reads as signed out when the Worker answers 401, and throws when it is una
     reason: { kind: 'github-sign-in-renewal-unavailable', gitHubAnswer: 'status 503' },
   });
 
+  for (const unusable of [null, 7, 'x'.repeat(201)]) {
+    worker.mockResolvedValueOnce(Response.json({ error: 'unavailable', gitHubAnswer: unusable }, { status: 502 }));
+    await expect(session.accessToken()).rejects.toMatchObject({
+      reason: { kind: 'github-sign-in-renewal-unavailable', gitHubAnswer: undefined },
+    });
+  }
+
   worker.mockResolvedValueOnce(Response.json({ error: 'forbidden' }, { status: 403 }));
   await expect(session.accessToken()).rejects.toMatchObject({
     reason: { kind: 'sign-in-service-failed', status: 403 },

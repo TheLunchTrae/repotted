@@ -30,4 +30,9 @@
   // URLs stay off; Wrangler leaves preview_urls as it was when it's unset.
   "workers_dev": false,
   "preview_urls": false,
+  // A deploy turns off any observability its config leaves out.
+  "observability": {
+    "logs": { "enabled": true },
+    "traces": { "enabled": true },
+  },
 }

@@ -43,18 +43,54 @@ const tokenResponse = z.object({
 type GitHubTokens = z.infer<typeof tokenResponse>;
 
 /**
- * What GitHub sent when a token request failed, in a few words for the page
- * and the Worker's log, such as "status 403, text/html, not JSON". It never
- * holds a token.
+ * What GitHub sent when a token request failed. The description, such as
+ * "status 403, text/html, not JSON", goes to the page; all of it goes to the
+ * Worker's log. None of it holds a token.
  */
-type GitHubAnswer = string;
+interface GitHubAnswer {
+  status: number | undefined;
+  oauthError: string | undefined;
+  description: string;
+}
 
 type TokenResult =
   | { kind: 'tokens'; tokens: GitHubTokens }
   | { kind: 'refused'; gitHubAnswer: GitHubAnswer }
   | { kind: 'unavailable'; gitHubAnswer: GitHubAnswer };
 
-const gitHubOAuthError = z.object({ error: z.string().check(z.regex(/^[a-z_]{1,64}$/u)) });
+const oauthErrorCode = z.string().check(z.regex(/^[a-z_]{1,64}$/u));
+const gitHubOAuthError = z.object({ error: oauthErrorCode });
+
+type AuthRoute = 'sign-in' | 'callback' | 'token' | 'sign-out';
+
+/**
+ * One structured line per auth request for Workers Logs, naming what happened
+ * and, where GitHub's token endpoint was asked, what it sent. It never holds a
+ * token, code, verifier, cookie or the client secret.
+ */
+function logAuthOutcome(
+  route: AuthRoute,
+  outcome: string,
+  { failure = false, gitHubAnswer }: { failure?: boolean; gitHubAnswer?: GitHubAnswer | undefined } = {},
+): void {
+  const entry = {
+    message: `auth ${route}: ${outcome}`,
+    route,
+    outcome,
+    ...(gitHubAnswer === undefined
+      ? {}
+      : {
+          gitHubStatus: gitHubAnswer.status,
+          gitHubOAuthError: gitHubAnswer.oauthError,
+          gitHubAnswer: gitHubAnswer.description,
+        }),
+  };
+  if (failure) {
+    console.warn(entry);
+  } else {
+    console.log(entry);
+  }
+}
 
 interface AccessToken {
   token: string;
@@ -166,27 +202,37 @@ function isTimeout(error: unknown): boolean {
 }
 
 function noAnswer(error: unknown): GitHubAnswer {
-  return isTimeout(error) ? `no answer within ${gitHubTokenEndpointTimeoutMs / 1000} seconds` : 'no answer';
+  return {
+    status: undefined,
+    oauthError: undefined,
+    description: isTimeout(error) ? `no answer within ${gitHubTokenEndpointTimeoutMs / 1000} seconds` : 'no answer',
+  };
 }
+
+const plainMediaType = /^[\w.+-]{1,40}\/[\w.+-]{1,40}$/u;
 
 function mediaType(response: Response): string {
   const contentType = response.headers.get('Content-Type');
-  return contentType === null ? 'no content type' : (contentType.split(';')[0] ?? '').trim().slice(0, 60);
+  if (contentType === null) {
+    return 'no content type';
+  }
+  const type = (contentType.split(';')[0] ?? '').trim().toLowerCase();
+  return plainMediaType.test(type) ? type : 'an unusual content type';
+}
+
+function answerWithStatus(response: Response, detail?: string): GitHubAnswer {
+  return {
+    status: response.status,
+    oauthError: undefined,
+    description: detail === undefined ? `status ${response.status}` : `status ${response.status}, ${detail}`,
+  };
 }
 
 function refusal(response: Response, body: unknown): GitHubAnswer {
   const oauthError = gitHubOAuthError.safeParse(body);
-  if (oauthError.success) {
-    return `status ${response.status}, ${oauthError.data.error}`;
-  }
-  return `status ${response.status}, an answer without the expected tokens`;
-}
-
-function failed(kind: 'refused' | 'unavailable', gitHubAnswer: GitHubAnswer, grantType: string): TokenResult {
-  console.warn(
-    `GitHub's token endpoint ${kind === 'refused' ? 'refused' : 'failed'} a ${grantType} grant: ${gitHubAnswer}`,
-  );
-  return { kind, gitHubAnswer };
+  return oauthError.success
+    ? { ...answerWithStatus(response, oauthError.data.error), oauthError: oauthError.data.error }
+    : answerWithStatus(response, 'an answer without the expected tokens');
 }
 
 /**
@@ -195,7 +241,7 @@ function failed(kind: 'refused' | 'unavailable', gitHubAnswer: GitHubAnswer, gra
  * the web app can't use, is `refused`. GitHub out of reach, too slow, failing
  * on its side or sending something other than JSON is `unavailable`.
  */
-async function requestTokens(env: Env, grant: Record<string, string> & { grant_type: string }): Promise<TokenResult> {
+async function requestTokens(env: Env, grant: Record<string, string>): Promise<TokenResult> {
   let response: Response;
   try {
     response = await fetch(tokenUrl, {
@@ -213,25 +259,35 @@ async function requestTokens(env: Env, grant: Record<string, string> & { grant_t
       signal: AbortSignal.timeout(gitHubTokenEndpointTimeoutMs),
     });
   } catch (error) {
-    return failed('unavailable', noAnswer(error), grant.grant_type);
+    return { kind: 'unavailable', gitHubAnswer: noAnswer(error) };
   }
   if (response.status >= 500) {
-    return failed('unavailable', `status ${response.status}`, grant.grant_type);
+    return { kind: 'unavailable', gitHubAnswer: answerWithStatus(response) };
+  }
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (error) {
+    return {
+      kind: 'unavailable',
+      gitHubAnswer: answerWithStatus(
+        response,
+        isTimeout(error)
+          ? `the rest of the answer took over ${gitHubTokenEndpointTimeoutMs / 1000} seconds`
+          : 'the answer broke off',
+      ),
+    };
   }
   let body: unknown;
   try {
-    body = await response.json();
-  } catch (error) {
-    return failed(
-      'unavailable',
-      isTimeout(error) ? noAnswer(error) : `status ${response.status}, ${mediaType(response)}, not JSON`,
-      grant.grant_type,
-    );
+    body = JSON.parse(text);
+  } catch {
+    return { kind: 'unavailable', gitHubAnswer: answerWithStatus(response, `${mediaType(response)}, not JSON`) };
   }
   const tokens = tokenResponse.safeParse(body);
   return response.ok && tokens.success
     ? { kind: 'tokens', tokens: tokens.data }
-    : failed('refused', refusal(response, body), grant.grant_type);
+    : { kind: 'refused', gitHubAnswer: refusal(response, body) };
 }
 
 async function signIn(request: Request, env: Env): Promise<Response> {
@@ -248,6 +304,7 @@ async function signIn(request: Request, env: Env): Promise<Response> {
     code_challenge: challenge,
     code_challenge_method: 'S256',
   }).toString();
+  logAuthOutcome('sign-in', 'sent to GitHub');
   // Lax, not Strict: the browser comes back from GitHub on a cross-site
   // navigation, and only a Lax cookie goes with it.
   return redirect(location.toString(), [
@@ -259,13 +316,21 @@ async function callback(request: Request, env: Env): Promise<Response> {
   const params = new URL(request.url).searchParams;
   // The started sign-in is spent whatever happens next, so its state is single-use.
   const clearedSignInCookie = cookie(signInCookie, '', 0, 'Lax');
-  const failed = (reason: SignInFailure): Response => redirect(`/?sign-in=${reason}`, [clearedSignInCookie]);
+  const failed = (reason: SignInFailure, gitHubAnswer?: GitHubAnswer): Response => {
+    logAuthOutcome('callback', reason, { failure: true, gitHubAnswer });
+    return redirect(`/?sign-in=${reason}`, [clearedSignInCookie]);
+  };
 
   // GitHub reports other errors, such as a callback URL the App doesn't list,
   // the same way; signing in again won't fix those, so they aren't "expired".
   const error = params.get('error');
   if (error !== null) {
-    return failed(error === 'access_denied' ? 'denied' : 'failed');
+    const code = oauthErrorCode.safeParse(error);
+    return failed(error === 'access_denied' ? 'denied' : 'failed', {
+      status: undefined,
+      oauthError: code.success ? code.data : undefined,
+      description: `sent back an error${code.success ? `, ${code.data}` : ''}`,
+    });
   }
   const [state = '', verifier = ''] = (readCookie(request, signInCookie) ?? '').split('.');
   const code = params.get('code') ?? '';
@@ -282,8 +347,9 @@ async function callback(request: Request, env: Env): Promise<Response> {
     code_verifier: verifier,
   });
   if (result.kind !== 'tokens') {
-    return failed('failed');
+    return failed('failed', result.gitHubAnswer);
   }
+  logAuthOutcome('callback', 'signed in');
   return redirect('/', [clearedSignInCookie, ...tokenCookies(result.tokens, issuedAccessToken(result.tokens))]);
 }
 
@@ -306,18 +372,22 @@ async function readJson(request: Request): Promise<unknown> {
  */
 async function token(request: Request, env: Env): Promise<Response> {
   if (!fromThisSite(request)) {
+    logAuthOutcome('token', 'refused another origin', { failure: true });
     return json(403, { error: 'forbidden' });
   }
   const asked = tokenRequest.safeParse(await readJson(request));
   if (!asked.success) {
+    logAuthOutcome('token', 'unreadable request', { failure: true });
     return json(400, { error: 'bad_request' });
   }
   const access = readAccessToken(request);
   if (access !== undefined && access.token !== asked.data.replace && access.expiresAt - Date.now() > refreshMarginMs) {
+    logAuthOutcome('token', 'kept access token');
     return accessAnswer(access);
   }
   const refreshToken = readCookie(request, refreshCookie);
   if (refreshToken === undefined) {
+    logAuthOutcome('token', 'signed out, no refresh token');
     return json(401, { error: 'signed_out' });
   }
   const result = await requestTokens(env, {
@@ -326,6 +396,7 @@ async function token(request: Request, env: Env): Promise<Response> {
   });
   switch (result.kind) {
     case 'tokens': {
+      logAuthOutcome('token', 'refreshed');
       const issued = issuedAccessToken(result.tokens);
       const response = accessAnswer(issued);
       for (const value of tokenCookies(result.tokens, issued)) {
@@ -337,16 +408,20 @@ async function token(request: Request, env: Env): Promise<Response> {
     // no harm, while clearing it could replace a newer token that a request
     // from another tab stored meanwhile.
     case 'refused':
-      return json(401, { error: 'signed_out', gitHubAnswer: result.gitHubAnswer });
+      logAuthOutcome('token', 'refresh refused', { failure: true, gitHubAnswer: result.gitHubAnswer });
+      return json(401, { error: 'signed_out', gitHubAnswer: result.gitHubAnswer.description });
     case 'unavailable':
-      return json(502, { error: 'unavailable', gitHubAnswer: result.gitHubAnswer });
+      logAuthOutcome('token', 'refresh failed', { failure: true, gitHubAnswer: result.gitHubAnswer });
+      return json(502, { error: 'unavailable', gitHubAnswer: result.gitHubAnswer.description });
   }
 }
 
 function signOut(request: Request): Promise<Response> {
   if (!fromThisSite(request)) {
+    logAuthOutcome('sign-out', 'refused another origin', { failure: true });
     return Promise.resolve(json(403, { error: 'forbidden' }));
   }
+  logAuthOutcome('sign-out', 'signed out');
   const headers = apiHeaders();
   headers.append('Set-Cookie', cookie(refreshCookie, '', 0, 'Strict'));
   headers.append('Set-Cookie', cookie(accessCookie, '', 0, 'Strict'));
