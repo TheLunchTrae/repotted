@@ -8,7 +8,7 @@ job, so the rules about what Repotted may write live in one place.
 
 ## Profiles
 
-`packages/core/src/schema.ts` defines a profile with zod. Its keys are the
+`packages/core/src/profiles/schema.ts` defines a profile with zod. Its keys are the
 fields that the GitHub REST API's write endpoints take, so GitHub's REST docs
 describe each key. A setting at an endpoint of its own is kept under that
 endpoint's key, with the endpoint's fields inside it when there are several;
@@ -16,7 +16,7 @@ endpoint's key, with the endpoint's fields inside it when there are several;
 [Settings coverage](settings-coverage.md) says where each section's
 endpoints are listed and what they need. Most
 sections capture the API's response as it is.
-Environments are the exception: `sections/environments.ts` turns GitHub's
+Environments are the exception: `plan/sections/environments.ts` turns GitHub's
 protection rules into `wait_timer`, `reviewers`, and `prevent_self_review`,
 and reads `branch_policies` from a separate endpoint. The schema's objects are
 strict, so an unknown key is an error, except inside a rule's `parameters` and
@@ -38,7 +38,7 @@ branch rules out; any other type JSON Schema can't hold still throws. The
 refinements that span keys, such as `mergeSettingsProblems` and repeated
 names, have no JSON Schema form and stay out of it.
 
-`packages/core/src/profile.ts` loads a profile and the chain of profiles it
+`packages/core/src/profiles/profile.ts` loads a profile and the chain of profiles it
 `extends`, merges them, and only then validates the result. Validating after
 the merge lets a base profile rely on what the profiles that extend it add.
 Settings merge key by key, and so do the keys inside an object of settings,
@@ -126,8 +126,8 @@ and aliases, which an edit could leave dangling or expand.
 
 ## Plans
 
-`createPlan` in `packages/core/src/plan.ts` reads only the sections a profile
-names. Each section has an adapter in `packages/core/src/sections/` that reads
+`createPlan` in `packages/core/src/plan/plan.ts` reads only the sections a profile
+names. Each section has an adapter in `packages/core/src/plan/sections/` that reads
 the repository's live state and returns the changes that bring it in line. A
 change, defined in `change.ts`, is one create, update, or delete of one
 target, with the fields it changes and the request that makes it. A change to
@@ -156,7 +156,7 @@ an environment or a label needs an explicit `absent: true` entry. As a result, a
 cover a repository one setting at a time, and every delete a plan makes
 appears in the profile as an `absent: true` entry.
 
-`packages/core/src/match.ts` decides what counts as drift. A desired value
+`packages/core/src/plan/match.ts` decides what counts as drift. A desired value
 only needs to be present in the live value, so defaults that GitHub fills in
 are not drift. Lists match as a whole, in any order. `overlay` lays a desired
 value over the live one where GitHub needs the whole object: the rulesets
@@ -247,7 +247,7 @@ Apply checks neither: GitHub decides at the write, and `failureReason` in
 `plan.ts` turns a lasting `402`, `403` or `422` into a short reason.
 
 The engine reaches GitHub only through the `GitHub` interface in
-`github.ts`. `createGitHub` turns a refused request into a `GitHubError` read
+`github/client.ts`. `createGitHub` turns a refused request into a `GitHubError` read
 from GitHub's response rather than from Octokit's message: GitHub's own
 message followed by the details it lists in `errors`, the link to its docs
 apart in `documentationUrl`, and `rateLimited` from the status and the
@@ -275,7 +275,7 @@ Safety section of [AGENTS.md](../../AGENTS.md).
 
 ## Staged applies
 
-A staged apply (`packages/core/src/staged.ts`) is a profile layer in a file of
+A staged apply (`packages/core/src/staging/staged.ts`) is a profile layer in a file of
 its own. The file names the repository in `apply_to`, extends the profile it
 starts from with `extends`, and holds one-off edits as profile keys, so
 `resolveProfile` lays it over the profile the way an override lays over a
@@ -315,7 +315,7 @@ every key a wide plan names and checks that its change leaves the plan.
 
 ## Batches
 
-A batch (`packages/core/src/batch.ts`) is a folder whose `batch.yaml` lists
+A batch (`packages/core/src/staging/batch.ts`) is a folder whose `batch.yaml` lists
 staged applies, one for each repository, with paths relative to the folder.
 It adds no engine of its own: each member is planned with `planStagedApply`
 and applied with `applyPlan`, so it keeps every property of a staged apply,
@@ -337,7 +337,7 @@ listed file is its member's staged apply before it removes any.
 `packages/cli/src/commands.ts` holds the commands behind a small `Io`
 interface: the GitHub client, the output streams, the prompt, and the sign-in.
 Tests run the real commands against the in-memory GitHub in
-`packages/core/tests/fake-github.ts`, and `main.ts` only wires in the token,
+`packages/core/tests/support/fake-github.ts`, and `main.ts` only wires in the token,
 the terminal, and the version. With `--json`, each command prints the
 documents described in [JSON output](../user/json-output.md).
 `commands.test.ts` holds each document to a fixture in
@@ -354,7 +354,7 @@ each plan applies once. `--read-only` leaves out `apply`. The server looks up
 the token on every tool call, since a user token expires and refreshing it
 ends the old one; [The GitHub App](github-app.md) describes the sign-in.
 
-`packages/core/src/action-patterns.ts` checks allowed action patterns and
+`packages/core/src/profiles/action-patterns.ts` checks allowed action patterns and
 searches for actions, for `check-actions`, `find-actions` and the MCP tools
 of the same names. Both only read. GitHub saves any pattern, so a check
 parses each one as GitHub documents them and looks up only the parts it

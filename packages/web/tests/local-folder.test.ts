@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
 
-import { FakeGitRepository } from '../../core/tests/fake-git.js';
+import { FakeGitRepository } from '../../core/tests/support/fake-git.js';
 import { type LocalFolder, type LocalFolders, replaceWorkingCopy, syncLocalFolder } from '../src/app/local-folder.js';
 import type { Preferences } from '../src/app/preferences.js';
 import { Profiles } from '../src/app/profiles.js';

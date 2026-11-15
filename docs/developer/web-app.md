@@ -199,7 +199,7 @@ changed elsewhere. `views/entries.tsx` only draws them.
 `lockChanges` marking what the account's access can't change.
 
 `branch-preview.ts` previews a branch of the config repository. The engine's
-`readBranchChanges` (`packages/core/src/branch-changes.ts`) asks GitHub's
+`readBranchChanges` (`packages/core/src/profiles/branch-changes.ts`) asks GitHub's
 compare API what the branch changes since it left the default branch, then
 reads only the blobs of the profiles it adds or changes. The preview copies
 the working copy, in a turn of the profiles' queue so no sync changes it

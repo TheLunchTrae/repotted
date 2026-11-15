@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
 
-import { FakeGitRepository } from '../../core/tests/fake-git.js';
+import { FakeGitRepository } from '../../core/tests/support/fake-git.js';
 import { BranchPreview, type PreviewState } from '../src/app/branch-preview.js';
 import type { Preferences } from '../src/app/preferences.js';
 import { Profiles } from '../src/app/profiles.js';

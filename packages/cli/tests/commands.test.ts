@@ -7,9 +7,9 @@ import { parse } from 'yaml';
 
 import { parsePlan, profileFileJsonSchema } from '@repotted/core';
 
-import { type GitHub, GitHubError, responseError } from '../../core/src/github.js';
-import { FakeGitRepository } from '../../core/tests/fake-git.js';
-import { answered, FakeFleet, FakeGitHub } from '../../core/tests/fake-github.js';
+import { type GitHub, GitHubError, responseError } from '../../core/src/github/client.js';
+import { FakeGitRepository } from '../../core/tests/support/fake-git.js';
+import { answered, FakeFleet, FakeGitHub } from '../../core/tests/support/fake-github.js';
 import { installUrl, NotSignedInError } from '../src/auth.js';
 import { type Io, run } from '../src/commands.js';
 

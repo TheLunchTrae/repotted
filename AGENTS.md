@@ -45,7 +45,7 @@ under [Text in the web app](#text-in-the-web-app).
 - A profile manages only what it names. Settings, rulesets, environments, and
   labels it leaves out stay as they are; a ruleset, environment, or label is
   deleted only by an `absent: true` entry.
-- Tests use the in-memory GitHub in `packages/core/tests/fake-github.ts`.
+- Tests use the in-memory GitHub in `packages/core/tests/support/fake-github.ts`.
   Never run `apply` against a real repository, and never change a real
   repository's settings, rulesets, or branch protection, without the owner's
   explicit yes for that repository and that plan.

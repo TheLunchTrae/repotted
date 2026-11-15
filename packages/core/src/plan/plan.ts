@@ -1,0 +1,591 @@
+import { z } from 'zod';
+
+import { type GitHub, GitHubError, parseRepo, repoPath, repoPattern, type RepoRef } from '../github/client.js';
+import { type Lock, requiredPermission } from '../github/permissions.js';
+import { describeOwnerType, type OwnerConflict, type OwnerType, withoutOwnerConflicts } from '../profiles/owner.js';
+import type { Drafts } from '../profiles/profile.js';
+import {
+  actionsSettings,
+  commitPairs,
+  environment,
+  identifyingRepositoryFields,
+  label,
+  labelKey,
+  mergeSettings,
+  profile,
+  type Profile,
+  repositorySettings,
+  ruleset,
+  securityAndAnalysis,
+  securitySettings,
+} from '../profiles/schema.js';
+import { isDeepEqual } from '../shared/equal.js';
+import {
+  type Change,
+  isListSection,
+  listSections,
+  type Section,
+  sections,
+  skipCauses,
+  type Warning,
+} from './change.js';
+import { captureEndpoints, loadable, planEndpoint, readEndpoints, unloadableReason } from './endpoints.js';
+import { actionsEndpoints, planActions, readActions } from './sections/actions.js';
+import { describeAutolink, planAutolinks, readAutolinks } from './sections/autolinks.js';
+import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';
+import { describeLabel, planLabels, readLabels } from './sections/labels.js';
+import { describePages, planPages, readPages } from './sections/pages.js';
+import { captureCustomProperties, planCustomProperties, readCustomProperties } from './sections/properties.js';
+import { planRepository, readRepository, repositoryEndpoints, repositoryOwnerType } from './sections/repository.js';
+import { planRulesets, readRulesets } from './sections/rulesets.js';
+import { liveSecurityAndAnalysis, planSecurity, securityEndpoints } from './sections/security.js';
+
+export interface Skipped {
+  readonly section: Section;
+  readonly target: string;
+  /** From `drafts.unset`: the draft stops managing the target rather than changing it. */
+  readonly unset?: true | undefined;
+}
+
+export interface Plan {
+  readonly repository: string;
+  readonly desired: Profile;
+  readonly changes: readonly Change[];
+  /** The profile's drafts, which the plan leaves out. */
+  readonly skipped: readonly Skipped[];
+  readonly warnings: readonly Warning[];
+}
+
+function draftTargets(drafts: Drafts, section: Section): string[] {
+  if (section === 'autolinks') {
+    return (drafts.autolinks ?? []).map((entry) => entry.key_prefix);
+  }
+  if (section === 'rulesets' || section === 'environments' || section === 'labels') {
+    return (drafts[section] ?? []).map((entry) => entry.name);
+  }
+  return Object.keys(drafts[section] ?? {});
+}
+
+/** A key of `drafts.unset` reads as `repository.has_wiki` or `rulesets/Legacy`. */
+function unsetTarget(key: string): { section: Section; target: string } | undefined {
+  const at = key.includes('/') ? key.indexOf('/') : key.indexOf('.');
+  const section = sections.find((name) => name === key.slice(0, at));
+  return section === undefined ? undefined : { section, target: key.slice(at + 1) };
+}
+
+export function skippedDrafts(drafts: Drafts): Skipped[] {
+  const unset = (drafts.unset ?? []).flatMap((key) => {
+    const target = unsetTarget(key);
+    return target === undefined ? [] : [{ ...target, unset: true as const }];
+  });
+  return sections.flatMap((section) => [
+    ...draftTargets(drafts, section).map((target) => ({ section, target })),
+    ...unset.filter((item) => item.section === section),
+  ]);
+}
+
+export class OwnerMismatchError extends Error {
+  readonly profile: OwnerType;
+  readonly repository: OwnerType;
+
+  constructor(repo: RepoRef, profile: OwnerType, repository: OwnerType) {
+    super(
+      `This profile is for ${describeOwnerType(profile)}, and ${repo.owner}/${repo.name} belongs to ${repository === 'user' ? 'a personal account' : 'an organization'}. To use its settings there, make a copy of the profile and change the copy's type to ${describeOwnerType(repository)}.`,
+    );
+    this.name = 'OwnerMismatchError';
+    this.profile = profile;
+    this.repository = repository;
+  }
+}
+
+/** `skipped` lists the profile's drafts, which `desired` never holds, so the plan can say what it left out. */
+export async function createPlan(
+  github: GitHub,
+  repo: RepoRef,
+  desired: Profile,
+  skipped: readonly Skipped[] = [],
+): Promise<Plan> {
+  if (desired.owner_type !== undefined) {
+    const owner = repositoryOwnerType(await github.request('GET', repoPath(repo)));
+    if (owner !== undefined && owner !== desired.owner_type) {
+      throw new OwnerMismatchError(repo, desired.owner_type, owner);
+    }
+  }
+  const changes: Change[] = [];
+  const warnings: Warning[] = [];
+  const add = (plan: { changes: readonly Change[]; warnings: readonly Warning[] }): void => {
+    changes.push(...plan.changes);
+    warnings.push(...plan.warnings);
+  };
+
+  const security = desired.security;
+  if (
+    desired.repository !== undefined ||
+    desired.merge !== undefined ||
+    security?.security_and_analysis !== undefined
+  ) {
+    const live = await readRepository(github, repo, Object.keys(desired.repository ?? {}));
+    add(planRepository(desired, live, repo));
+    if (security !== undefined) {
+      const named = securityEndpoints.filter((endpoint) => Object.hasOwn(security, endpoint.key));
+      add(
+        planSecurity(
+          security,
+          liveSecurityAndAnalysis(live.securityAndAnalysis),
+          await readEndpoints(github, repo, named),
+          repo,
+        ),
+      );
+    }
+  } else if (security !== undefined) {
+    const named = securityEndpoints.filter((endpoint) => Object.hasOwn(security, endpoint.key));
+    add(planSecurity(security, undefined, await readEndpoints(github, repo, named), repo));
+  }
+  if (desired.actions !== undefined) {
+    const { actions } = desired;
+    add(planActions(actions, await readActions(github, repo), repo));
+    const named = actionsEndpoints.filter((endpoint) => Object.hasOwn(actions, endpoint.key));
+    const live = await readEndpoints(github, repo, named);
+    for (const endpoint of named) {
+      const value = live.get(endpoint.key);
+      if (value !== undefined) {
+        add(planEndpoint('actions', endpoint, Reflect.get(actions, endpoint.key), value, repo));
+      }
+    }
+  }
+  if (desired.custom_properties !== undefined) {
+    add(planCustomProperties(desired.custom_properties, await readCustomProperties(github, repo), repo));
+  }
+  if (desired.pages !== undefined) {
+    add(planPages(desired.pages, await readPages(github, repo), repo));
+  }
+  if (desired.autolinks !== undefined) {
+    add(planAutolinks(desired.autolinks, await readAutolinks(github, repo), repo));
+  }
+  if (desired.rulesets !== undefined) {
+    add(planRulesets(desired.rulesets, await readRulesets(github, repo), repo));
+  }
+  if (desired.environments !== undefined) {
+    add(planEnvironments(desired.environments, await readEnvironments(github, repo), repo));
+  }
+  if (desired.labels !== undefined) {
+    const labels = planLabels(desired.labels, await readLabels(github, repo), repo);
+    add(labels);
+    // A rename applies even when a draft names the old label, so say so beside the skipped draft.
+    for (const draft of skipped.filter((item) => item.section === 'labels')) {
+      const rename = labels.changes.find((change) =>
+        change.fields.some(
+          (field) => field.field === 'name' && labelKey(String(field.from)) === labelKey(draft.target),
+        ),
+      );
+      if (rename !== undefined) {
+        warnings.push({
+          section: 'labels',
+          key: draft.target,
+          message: `Label "${rename.target}" renames "${draft.target}", which the profile skips as a draft`,
+        });
+      }
+    }
+  }
+
+  return { repository: `${repo.owner}/${repo.name}`, desired, changes, skipped, warnings };
+}
+
+/**
+ * An entry that fails its schema is left out whole, with a warning: a ruleset
+ * without one of its rules would have that rule removed on apply, while a
+ * profile leaves a ruleset it does not name alone.
+ */
+function loadableEntries<Entry extends { readonly name: string }>(
+  section: 'rulesets' | 'environments' | 'labels',
+  schema: z.ZodType,
+  entries: readonly Entry[],
+  warnings: Warning[],
+): Entry[] {
+  const kept: Entry[] = [];
+  for (const entry of entries) {
+    const problem = unloadableReason(schema, entry);
+    if (problem === undefined) {
+      kept.push(entry);
+    } else {
+      warnings.push({ section, key: entry.name, cause: 'unloadable', message: problem });
+    }
+  }
+  return kept;
+}
+
+function conflictWarning({ edit }: OwnerConflict): Pick<Warning, 'section' | 'key' | 'field'> {
+  if ('list' in edit) {
+    return { section: edit.list, key: edit.name };
+  }
+  const [section, key, field] = edit.path;
+  const known = sections.find((each) => each === section);
+  return {
+    ...(known === undefined ? {} : { section: known }),
+    ...(key === undefined ? {} : { key }),
+    ...(field === undefined ? {} : { field }),
+  };
+}
+
+/**
+ * Settings that name the repository, such as its description, stay out, so the
+ * profile can describe other repositories too.
+ */
+export async function captureProfile(
+  github: GitHub,
+  repo: RepoRef,
+): Promise<{ profile: Profile; warnings: Warning[] }> {
+  const warnings: Warning[] = [];
+  const live = await readRepository(github, repo);
+  const repositoryEndpointSettings = captureEndpoints('repository', repositoryEndpoints, live.endpoints);
+  warnings.push(...repositoryEndpointSettings.warnings);
+  const repository = loadable(
+    { section: 'repository' },
+    repositorySettings,
+    Object.fromEntries(
+      Object.entries({ ...live.repository, ...repositoryEndpointSettings.settings }).filter(
+        ([key]) => !identifyingRepositoryFields.has(key),
+      ),
+    ),
+    warnings,
+  );
+  const loadableMerge = loadable({ section: 'merge' }, mergeSettings, live.merge, warnings);
+  // GitHub takes a commit message setting only with its title setting, so
+  // when one of a pair is left out, the other goes too.
+  const merge: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(loadableMerge)) {
+    const pair = commitPairs.find(({ title, message }) => key === title || key === message);
+    const other = pair === undefined ? undefined : key === pair.title ? pair.message : pair.title;
+    if (other !== undefined && other in live.merge && !(other in loadableMerge)) {
+      warnings.push({
+        section: 'merge',
+        key,
+        cause: 'unloadable',
+        message: `GitHub takes it only with ${other}, which is left out`,
+      });
+    } else {
+      merge[key] = value;
+    }
+  }
+
+  const securityEndpointSettings = captureEndpoints(
+    'security',
+    securityEndpoints,
+    await readEndpoints(github, repo, securityEndpoints),
+  );
+  warnings.push(...securityEndpointSettings.warnings);
+  const reported = liveSecurityAndAnalysis(live.securityAndAnalysis);
+  const securityAndAnalysisSettings =
+    reported === undefined
+      ? {}
+      : loadable({ section: 'security', key: 'security_and_analysis' }, securityAndAnalysis, reported, warnings);
+  const security = loadable(
+    { section: 'security' },
+    securitySettings,
+    {
+      ...(Object.keys(securityAndAnalysisSettings).length === 0
+        ? {}
+        : { security_and_analysis: securityAndAnalysisSettings }),
+      ...securityEndpointSettings.settings,
+    },
+    warnings,
+  );
+
+  const actionsEndpointSettings = captureEndpoints(
+    'actions',
+    actionsEndpoints,
+    await readEndpoints(github, repo, actionsEndpoints),
+  );
+  warnings.push(...actionsEndpointSettings.warnings);
+  const actions = loadable(
+    { section: 'actions' },
+    actionsSettings,
+    { ...(await readActions(github, repo)), ...actionsEndpointSettings.settings },
+    warnings,
+  );
+
+  const properties = await readCustomProperties(github, repo);
+  const pages = await readPages(github, repo);
+  const autolinks = await readAutolinks(github, repo);
+  const rulesets = await readRulesets(github, repo);
+  const environments = await readEnvironments(github, repo);
+  const labels = await readLabels(github, repo);
+  // A section the repository does not have is no news; one GitHub hides is.
+  for (const [section, read] of [
+    ['custom_properties', properties],
+    ['pages', pages],
+    ['autolinks', autolinks],
+    ['rulesets', rulesets],
+    ['environments', environments],
+    ['labels', labels],
+  ] as const) {
+    if (!read.available && read.cause === 'refused') {
+      warnings.push({ section, cause: read.cause, message: read.reason });
+    }
+  }
+  const customProperties = properties.available ? captureCustomProperties(properties.values) : {};
+  const capturedRulesets = rulesets.available
+    ? loadableEntries(
+        'rulesets',
+        ruleset,
+        rulesets.rulesets.map((entry) => entry.ruleset),
+        warnings,
+      )
+    : undefined;
+  const capturedEnvironments = environments.available
+    ? loadableEntries('environments', environment, environments.environments.map(describeEnvironment), warnings)
+    : undefined;
+  const capturedLabels = labels.available
+    ? loadableEntries('labels', label, labels.labels.map(describeLabel), warnings)
+    : undefined;
+  const captured: Profile = {
+    ...(live.owner === undefined ? {} : { owner_type: live.owner }),
+    repository,
+    merge,
+    actions,
+    ...(Object.keys(security).length > 0 ? { security } : {}),
+    ...(Object.keys(customProperties).length > 0 ? { custom_properties: customProperties } : {}),
+    ...(pages.available && pages.site !== null ? { pages: describePages(pages.site) } : {}),
+    ...(autolinks.available && autolinks.autolinks.length > 0
+      ? { autolinks: autolinks.autolinks.map(describeAutolink) }
+      : {}),
+    ...(capturedRulesets === undefined ? {} : { rulesets: capturedRulesets }),
+    ...(capturedEnvironments === undefined ? {} : { environments: capturedEnvironments }),
+    ...(capturedLabels === undefined || capturedLabels.length === 0 ? {} : { labels: capturedLabels }),
+  };
+  // GitHub may report what the owner doesn't have, such as allow_forking for a personal account.
+  const { value: profile, dropped } = withoutOwnerConflicts(captured, live.owner);
+  for (const conflict of dropped) {
+    warnings.push({
+      ...conflictWarning(conflict),
+      cause: 'unloadable',
+      message: `${conflict.message}, so it is left out`,
+    });
+  }
+  return {
+    profile,
+    warnings,
+  };
+}
+
+// A saved plan's changes are never executed: apply re-plans from `desired`
+// and only compares, so a hand-edited file cannot smuggle in other requests.
+// It compares each change whole, and an object drops keys it doesn't name,
+// so every member of a change must be named here.
+const savedWrite = {
+  action: z.enum(['create', 'update', 'delete']),
+  target: z.string(),
+  fields: z.array(z.object({ field: z.string(), from: z.unknown().optional(), to: z.unknown().optional() })),
+  request: z.object({
+    method: z.enum(['GET', 'PATCH', 'POST', 'PUT', 'DELETE']),
+    path: z.string(),
+    body: z.unknown().optional(),
+  }),
+};
+
+const savedChange = z.union([
+  z.object({
+    section: z.enum(sections).extract(listSections),
+    // Plans saved before changes named their entry have none. No entry has
+    // an empty name, so such a plan never matches a new one and reads as stale.
+    entry: z
+      .object({
+        name: z.string(),
+        branch_policy: z.object({ name: z.string(), type: z.enum(['branch', 'tag']) }).exactOptional(),
+      })
+      .default({ name: '' }),
+    ...savedWrite,
+  }),
+  z.object({ section: z.enum(sections).exclude(listSections), ...savedWrite }),
+]);
+
+const savedPlan = z.object({
+  repository: z.string().regex(repoPattern),
+  desired: profile,
+  changes: z.array(savedChange),
+  // Plans saved before drafts existed have none.
+  skipped: z
+    .array(z.object({ section: z.enum(sections), target: z.string(), unset: z.literal(true).optional() }))
+    .default([]),
+  warnings: z.array(
+    z.union([
+      z.object({
+        section: z.enum(sections).exactOptional(),
+        key: z.string().exactOptional(),
+        field: z.string().exactOptional(),
+        cause: z.enum(skipCauses).exactOptional(),
+        exclusion: z.string().exactOptional(),
+        message: z.string(),
+      }),
+      // Plans saved before warnings were data give each as text. Apply
+      // compares only changes, so such a warning is kept as its message.
+      z.string().transform((message): Warning => ({ message })),
+    ]),
+  ),
+});
+
+export function parsePlan(data: unknown): Plan {
+  return savedPlan.parse(data);
+}
+
+export class StalePlanError extends Error {
+  readonly current: Plan;
+
+  constructor(current: Plan) {
+    super(`${current.repository} changed since this plan was made. Run plan again and review the new changes.`);
+    this.name = 'StalePlanError';
+    this.current = current;
+  }
+}
+
+export class ApplyError extends Error {
+  readonly applied: readonly Change[];
+  readonly failed: Change;
+
+  constructor(applied: readonly Change[], failed: Change, cause: unknown) {
+    super(`Failed to ${failed.action} ${failed.target} after ${applied.length} of the plan's changes`, { cause });
+    this.name = 'ApplyError';
+    this.applied = applied;
+    this.failed = failed;
+  }
+}
+
+function jsonValue(value: unknown): unknown {
+  const copy: unknown = JSON.parse(JSON.stringify(value));
+  return copy;
+}
+
+/**
+ * Applies a reviewed plan. The repository is planned again first, and the
+ * plan only runs when that yields exactly the reviewed changes.
+ */
+export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonly Change[]> {
+  const current = await createPlan(github, parseRepo(reviewed.repository), reviewed.desired, reviewed.skipped);
+  if (!isDeepEqual(jsonValue(current.changes), jsonValue(reviewed.changes))) {
+    throw new StalePlanError(current);
+  }
+  const applied: Change[] = [];
+  for (const change of current.changes) {
+    try {
+      await github.request(change.request.method, change.request.path, change.request.body);
+    } catch (error) {
+      throw new ApplyError(applied, change, error);
+    }
+    applied.push(change);
+  }
+  return applied;
+}
+
+function show(value: unknown): string {
+  return value === undefined ? 'unset' : JSON.stringify(value);
+}
+
+const symbols = { create: '+', update: '~', delete: '-' } as const;
+
+function describeTarget(section: Section, target: string): string {
+  switch (section) {
+    case 'rulesets':
+      return `ruleset "${target}"`;
+    case 'environments':
+      return `environment ${target}`;
+    case 'autolinks':
+      return `autolink ${target}`;
+    case 'labels':
+      return `label "${target}"`;
+    case 'repository':
+    case 'merge':
+    case 'actions':
+    case 'security':
+    case 'custom_properties':
+    case 'pages':
+      return target;
+  }
+}
+
+export function describeSkipped({ section, target, unset }: Skipped): string {
+  const named = isListSection(section) ? describeTarget(section, target) : `${section}.${target}`;
+  if (unset === true) {
+    return `${named} (stops managing it)`;
+  }
+  return section === 'pages' && target === 'absent' ? 'pages.absent (turns the Pages site off)' : named;
+}
+
+const entryNouns: Partial<Record<Section, string>> = {
+  autolinks: 'autolink',
+  rulesets: 'ruleset',
+  environments: 'environment',
+  labels: 'label',
+};
+
+export function describeWarning({ section, key, field, cause, message }: Warning): string {
+  if (cause === undefined || section === undefined) {
+    return message;
+  }
+  const noun = entryNouns[section];
+  const where =
+    noun !== undefined && key !== undefined
+      ? `${noun} "${key}"`
+      : [section, key, field].filter((part) => part !== undefined).join('.');
+  return `Skipped ${where}: ${message}`;
+}
+
+export function formatPlan(plan: Plan, locks: readonly Lock[] = []): string {
+  const lines = [
+    plan.changes.length === 0
+      ? `${plan.repository} matches the profile.`
+      : `${plan.repository}: ${plan.changes.length} ${plan.changes.length === 1 ? 'change' : 'changes'}`,
+  ];
+  for (const [index, change] of plan.changes.entries()) {
+    const lock = locks.find((item) => item.change === index);
+    lines.push(
+      `  ${symbols[change.action]} ${change.action} ${describeTarget(change.section, change.target)}${lock === undefined ? '' : ` (locked: ${lock.reason})`}`,
+    );
+    for (const field of change.fields) {
+      lines.push(`      ${field.field}: ${show(field.from)} -> ${show(field.to)}`);
+    }
+  }
+  for (const draft of plan.skipped) {
+    lines.push(`  · skip draft ${describeSkipped(draft)}`);
+  }
+  for (const warning of plan.warnings) {
+    lines.push(`  ! ${describeWarning(warning)}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Only a `402`, `403` or `422` says something lasting about the repository, the
+ * token or the App. A refusal for want of a permission names the permission;
+ * any other gives GitHub's reason. Null for anything else, a rate limit
+ * included.
+ */
+export function failureReason(error: ApplyError): string | null {
+  const cause = error.cause;
+  if (!(cause instanceof GitHubError) || ![402, 403, 422].includes(cause.status) || cause.rateLimited) {
+    return null;
+  }
+  if (cause.status === 403 && /not accessible by/iu.test(cause.message)) {
+    const { method, path } = error.failed.request;
+    return `Needs ${requiredPermission(method, path)}`;
+  }
+  return cause.message;
+}
+
+export function describeFailure(error: ApplyError): string {
+  const cause = error.cause instanceof Error ? error.cause.message : String(error.cause);
+  const { method, path } = error.failed.request;
+  const lines = [
+    `${error.message}: ${cause}`,
+    ...(error.cause instanceof GitHubError && error.cause.status === 403
+      ? [`That change needs the ${requiredPermission(method, path)} permission.`]
+      : []),
+  ];
+  if (error.applied.length > 0) {
+    lines.push(
+      'Already applied:',
+      ...error.applied.map((change) => `  ${symbols[change.action]} ${change.action} ${change.target}`),
+    );
+  }
+  lines.push('Nothing after the failed change was written. Plan again to see where the repository stands.');
+  return lines.join('\n');
+}

@@ -4,8 +4,8 @@ import { describe, expect, test } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
-import { type GitHub, GitHubError } from '../../core/src/github.js';
-import { FakeGitHub } from '../../core/tests/fake-github.js';
+import { type GitHub, GitHubError } from '../../core/src/github/client.js';
+import { FakeGitHub } from '../../core/tests/support/fake-github.js';
 import { createServer } from '../src/mcp.js';
 
 const examples = path.join(import.meta.dirname, '../../../examples');

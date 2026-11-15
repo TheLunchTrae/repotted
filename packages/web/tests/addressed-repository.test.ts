@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { FakeGitHub } from '../../core/tests/fake-github.js';
+import { FakeGitHub } from '../../core/tests/support/fake-github.js';
 import { AddressedRepository } from '../src/app/addressed-repository.js';
 import type { Preferences } from '../src/app/preferences.js';
 import { Repositories } from '../src/app/repositories.js';
