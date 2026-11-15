@@ -2,16 +2,18 @@ import { permissionsInProse } from '@repotted/core';
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { entryLists, type SaveMode } from '../../app/profile-editor/entry-edits.js';
-import type { ProfileEditor, SettingFilter, SettingRow } from '../../app/profile-editor/profile-editor.js';
+import { entryListTitles, entryLists, type SaveMode } from '../../app/profile-editor/entry-edits.js';
+import type { ProfileEditor, SaveProblem, SettingFilter, SettingRow } from '../../app/profile-editor/profile-editor.js';
 import { sameValue } from '../../app/profile-editor/same-value.js';
 import { BarActions } from '../layout/action-bar.js';
 import { run } from '../layout/run.js';
 import { ActionSearchBox } from './action-search.js';
-import { Entries } from './entries.js';
+import { describeValue } from './describe-value.js';
+import { Entries, type EntryGoTo } from './entries.js';
 import { MissingPermissionsNote } from './missing-permissions-note.js';
 import { PatternChecks } from './pattern-checks.js';
 import { SavePreviewDialog } from './save-preview.js';
+import { SaveProblems } from './save-problems.js';
 
 function Control({ row, editor }: { readonly row: SettingRow; readonly editor: ProfileEditor }): JSX.Element {
   const { field, value, typedTextProblem: invalid, textBeingTyped: text } = row;
@@ -78,20 +80,6 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
   );
 }
 
-function describe(field: SettingRow['field'], value: unknown): string {
-  if (value === undefined) {
-    return 'not managed';
-  }
-  const option = field.options.find((item) => sameValue(item.value, value));
-  if (option !== undefined) {
-    return option.label;
-  }
-  if (Array.isArray(value)) {
-    return value.length === 0 ? 'none' : value.join(', ');
-  }
-  return value === null || value === '' ? 'empty' : typeof value === 'string' ? value : JSON.stringify(value);
-}
-
 function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: ProfileEditor }): JSX.Element {
   const { field } = row;
   const id = `setting-${field.path.join('-')}`;
@@ -100,7 +88,7 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
   const here = editor.canHoldDrafts ? 'profile' : 'apply';
   return (
     <div
-      class={`setting${field.indentedUnderPreviousSetting ? ' setting-nested' : ''}${row.unsaved ? ' setting-unsaved' : ''}`}
+      class={`setting${field.indentedUnderPreviousSetting ? ' setting-nested' : ''}${row.typedTextProblem !== undefined ? ' setting-problem' : row.unsaved ? ' setting-unsaved' : ''}`}
     >
       <div class="setting-head">
         <div class="setting-text">
@@ -111,7 +99,7 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
           </span>
           <span class="muted small">
             {row.valueShownIsFromDraft
-              ? `In the draft${managed ? '' : ': not managed'}. Applies now: ${describe(field, row.applied)}.`
+              ? `In the draft${managed ? '' : ': not managed'}. Applies now: ${describeValue(field, row.applied)}.`
               : !managed
                 ? 'Not managed: each repository keeps its own.'
                 : row.source === 'here'
@@ -121,7 +109,7 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
                     : `From ${row.source}.`}
             {row.unsaved && managed && row.source !== undefined && ' Not saved yet.'}
             {row.greyedOutOnGitHubWhile !== undefined &&
-              ` Off on GitHub with ${row.greyedOutOnGitHubWhile.field.label} set to ${describe(row.greyedOutOnGitHubWhile.field, row.greyedOutOnGitHubWhile.value)}.`}
+              ` Off on GitHub with ${row.greyedOutOnGitHubWhile.field.label} set to ${describeValue(row.greyedOutOnGitHubWhile.field, row.greyedOutOnGitHubWhile.value)}.`}
             {row.missingPermissionsItsGroupAndSectionDoNotName.length > 0 &&
               ` Needs the ${permissionsInProse(row.missingPermissionsItsGroupAndSectionDoNotName)}.`}
           </span>
@@ -160,6 +148,21 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
           {row.typedTextProblem}
         </p>
       )}
+      {row.hiddenWithTextThatCannotBeSaved.map((hidden) => (
+        <p key={hidden.key} class="small hidden-note">
+          {hidden.label}, hidden while this is {describeValue(field, row.value)}, has text that can't be saved.{' '}
+          <button
+            class="link"
+            type="button"
+            aria-label={`Reset ${hidden.label}`}
+            onClick={() => {
+              run(editor.reset(hidden));
+            }}
+          >
+            Reset it
+          </button>
+        </p>
+      ))}
       {row.hiddenNamed > 0 && (
         <p class="muted small">
           The profile still names {row.hiddenNamed} {row.hiddenNamed === 1 ? 'setting' : 'settings'} that GitHub hides
@@ -283,8 +286,6 @@ const filterNames: readonly { readonly id: SettingFilter; readonly name: string 
   { id: 'drafts', name: 'Drafts' },
 ];
 
-const entryTitles = { rulesets: 'Rulesets', environments: 'Environments', labels: 'Labels' } as const;
-
 interface ProfileSettingsProps {
   readonly name: string;
   readonly editor: ProfileEditor;
@@ -298,6 +299,7 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
   const entries = editor.entries.value;
   const list = entryLists.find((item) => item === tab);
   const shown = list === undefined ? (sections.find((item) => item.section.section === tab) ?? sections[0]) : undefined;
+  const problemCounts = editor.problemCountByTab.value;
   const tabNames = [
     ...sections.map(({ section, groups }) => ({
       id: section.section,
@@ -307,17 +309,43 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
     })),
     ...entryLists.map((item) => ({
       id: item,
-      name: entryTitles[item],
+      name: entryListTitles[item],
       unsaved: entries[item].some((row) => row.unsaved),
       drafted: entries[item].some((row) => row.inDraft !== undefined),
     })),
   ];
   const current = list ?? shown?.section.section ?? '';
+  const [entryGoTo, setEntryGoTo] = useState<EntryGoTo | undefined>(undefined);
+  const [settingToFocus, setSettingToFocus] = useState<{ readonly id: string } | undefined>(undefined);
+  // The setting shows once its tab does, so it takes the keyboard after that render.
+  useEffect(() => {
+    if (settingToFocus === undefined) {
+      return;
+    }
+    const target = document.getElementById(settingToFocus.id);
+    target?.scrollIntoView({ block: 'center' });
+    target?.focus();
+    setSettingToFocus(undefined);
+  }, [settingToFocus]);
+  const goTo = (problem: SaveProblem): void => {
+    const { place } = problem;
+    if (place.kind === 'profile') {
+      return;
+    }
+    editor.clearFilters();
+    setTab(problem.tab);
+    if (place.kind === 'setting') {
+      setSettingToFocus({ id: `setting-${place.field.path.join('-')}` });
+    } else {
+      setEntryGoTo({ list: place.row.list, rowKey: place.row.key, field: place.field });
+    }
+  };
   const settingsUrl = editor.installationSettingsUrl.value;
   const filtering = editor.filtering.value;
   const preview = editor.preview.value;
   const search = useRef<HTMLInputElement>(null);
-  const problem = editor.unsavedChangesProblem.value ?? editor.saveError.value;
+  const saveError = editor.saveError.value;
+  const blocking = editor.problemsBlockingSave.value.length > 0;
   const tabs = useRef<HTMLDivElement>(null);
   // The arrow keys move between tabs, as in a tab list, and only the shown tab is a Tab stop.
   const move = (event: KeyboardEvent, index: number): void => {
@@ -430,33 +458,45 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
       {!filtering && (
         <>
           <div class="tabs" role="tablist" aria-label="Settings" ref={tabs}>
-            {tabNames.map(({ id, name, unsaved, drafted }, index) => (
-              <button
-                key={id}
-                class="tab"
-                type="button"
-                role="tab"
-                id={`tab-${id}`}
-                aria-selected={current === id}
-                aria-controls="settings-panel"
-                tabIndex={current === id ? 0 : -1}
-                onClick={() => {
-                  setTab(id);
-                }}
-                onKeyDown={(event) => {
-                  move(event, index);
-                }}
-              >
-                {name}
-                {drafted && <span class="pill pill-draft">Draft</span>}
-                {unsaved && (
-                  <>
-                    <span class="dot" aria-hidden="true" />
-                    <span class="visually-hidden">, not saved yet</span>
-                  </>
-                )}
-              </button>
-            ))}
+            {tabNames.map(({ id, name, unsaved, drafted }, index) => {
+              const problemCount = problemCounts.get(id) ?? 0;
+              return (
+                <button
+                  key={id}
+                  class="tab"
+                  type="button"
+                  role="tab"
+                  id={`tab-${id}`}
+                  aria-selected={current === id}
+                  aria-controls="settings-panel"
+                  tabIndex={current === id ? 0 : -1}
+                  onClick={() => {
+                    setTab(id);
+                  }}
+                  onKeyDown={(event) => {
+                    move(event, index);
+                  }}
+                >
+                  {name}
+                  {drafted && <span class="pill pill-draft">Draft</span>}
+                  {problemCount > 0 ? (
+                    <>
+                      <span class="tab-problems" aria-hidden="true">
+                        {problemCount}
+                      </span>
+                      <span class="visually-hidden">, {problemCount} to fix</span>
+                    </>
+                  ) : (
+                    unsaved && (
+                      <>
+                        <span class="dot" aria-hidden="true" />
+                        <span class="visually-hidden">, not saved yet</span>
+                      </>
+                    )
+                  )}
+                </button>
+              );
+            })}
           </div>
           {shown !== undefined && (
             <div id="settings-panel" class="groups" role="tabpanel" aria-labelledby={`tab-${shown.section.section}`}>
@@ -486,30 +526,35 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
           )}
           {list !== undefined && (
             <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${list}`}>
-              <Entries key={list} editor={editor} list={list} ownerTypeHasPushRulesets={ownerTypeHasPushRulesets} />
+              <Entries
+                key={list}
+                editor={editor}
+                list={list}
+                ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
+                goTo={entryGoTo?.list === list ? entryGoTo : undefined}
+              />
             </div>
           )}
         </>
       )}
       {preview !== undefined && <SavePreviewDialog name={name} editor={editor} saving={saving} preview={preview} />}
       <div class="save-bar">
-        {problem !== undefined && (
+        {saveError !== undefined && (
           <p class="problem" role="alert">
-            {problem}
+            {saveError}
           </p>
         )}
-        <span class="muted small" role="status">
+        <SaveProblems editor={editor} onGoTo={goTo} />
+        <span class={blocking ? 'visually-hidden' : 'muted small'} role="status">
           {editor.saving.value
             ? 'Saving…'
             : !editor.dirty.value
               ? editor.draftCount.value > 0
                 ? 'Everything is saved, some of it as a draft. Save applies the draft.'
                 : 'Everything is saved.'
-              : editor.canSave.value || problem !== undefined
-                ? (editor.draftProblem.value ?? 'You have changes that are not saved.')
-                : editor.canSaveAsDraft.value
-                  ? 'Correct what is marked to save, or keep it as a draft.'
-                  : 'Correct what is marked, or reset it, to save.'}
+              : blocking
+                ? `${editor.problemsBlockingSave.value.length === 1 ? 'One thing holds' : `${editor.problemsBlockingSave.value.length} things hold`} the save back.`
+                : (editor.draftProblem.value ?? 'You have changes that are not saved.')}
         </span>
         <BarActions
           mainAction={saving.primaryActionInsteadOfSave ?? save}

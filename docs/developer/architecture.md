@@ -21,7 +21,12 @@ protection rules into `wait_timer`, `reviewers`, and `prevent_self_review`,
 and reads `branch_policies` from a separate endpoint. The schema's objects are
 strict, so an unknown key is an error, except inside a rule's `parameters` and
 a ruleset's `conditions`, which are open records passed to GitHub as they
-are. `ruleParameters` checks the parameters of the rule types whose values
+are. A branch name, as `default_branch` or a Pages site's branch, and an
+environment's deployment pattern are checked by git's rules for a ref name in
+`ref-names.ts`, in words the web app shows as they are; a pattern may also
+hold fnmatch's `*`, `?`, and `[`. `settingValueProblems` and
+`entryValueProblems` in `profile.ts` check one setting or entry by the same
+schema, so a caller can check a value before it is written. `ruleParameters` checks the parameters of the rule types whose values
 GitHub's REST description constrains, such as a `pull_request` rule's
 `allowed_merge_methods`, so a profile GitHub would refuse partway through an
 apply fails when it loads. Each parameter there is optional, because a rule

@@ -529,10 +529,13 @@ test('an entry the engine refuses says why and holds the save back', async () =>
   const editor = await opened({ 'web.yaml': entries });
   const bug = entry(editor, 'labels', 'bug');
 
-  await editor.changeEntry(bug, { ...bug.entry, color: 'not-a-color' });
+  await editor.changeEntry(bug, { ...bug.entry, description: 5 });
 
-  expect(editor.unsavedChangesProblem.value).toMatch(/color/iu);
+  expect(editor.unsavedChangesProblem.value).toMatch(/description/iu);
   expect(editor.canSave.value).toBe(false);
+  expect(editor.problemsBlockingSave.value).toEqual([
+    expect.objectContaining({ key: 'profile', name: 'The profile', where: 'web.yaml', place: { kind: 'profile' } }),
+  ]);
   await editor.changeEntry(entry(editor, 'labels', 'bug'), { ...bug.entry });
   expect(editor.dirty.value).toBe(false);
 });
@@ -912,4 +915,121 @@ test('an editor with no installation to go by turns nothing off', async () => {
   expect(editor.sections.value.every((item) => item.missingPermissionsEverySettingShares.length === 0)).toBe(true);
   expect(row(editor, 'pages.build_type')?.missingPermissions).toEqual([]);
   expect(editor.installationSettingsUrl.value).toBeNull();
+});
+
+test('lists each thing that holds the save back, by tab, with where it is', async () => {
+  const editor = await opened({ 'web.yaml': `${base}${entries}` });
+  const bug = entry(editor, 'labels', 'bug');
+
+  await editor.type(field('repository.default_branch'), 'main dev');
+  await editor.changeEntry(bug, { ...bug.entry, color: 'not-a-color' });
+
+  expect(editor.canSave.value).toBe(false);
+  expect(
+    editor.problemsBlockingSave.value.map(({ name, where, tab, message, place }) => ({
+      name,
+      where,
+      tab,
+      message,
+      kind: place.kind,
+    })),
+  ).toEqual([
+    {
+      name: 'Default branch',
+      where: 'Repository › About',
+      tab: 'repository',
+      message: "A branch name can't have spaces.",
+      kind: 'setting',
+    },
+    {
+      name: 'bug',
+      where: 'Labels',
+      tab: 'labels',
+      message: 'The color is six hex digits, such as a2eeef, with or without #.',
+      kind: 'entry',
+    },
+  ]);
+  expect(editor.problemCountByTab.value).toEqual(
+    new Map([
+      ['repository', 1],
+      ['labels', 1],
+    ]),
+  );
+  expect(entry(editor, 'labels', 'bug').applyProblemField).toBe('color');
+
+  await editor.resetEverythingBlockingSave();
+
+  expect(editor.problemsBlockingSave.value).toEqual([]);
+  expect(editor.dirty.value).toBe(false);
+});
+
+test("text that can't be saved in a setting GitHub hides is listed, and named under the one that hides it", async () => {
+  const editor = await opened({ 'web.yaml': 'repository:\n  has_pull_requests: true\n' });
+  const cap = field('repository.pull_request_creation_cap.max_open_pull_requests');
+
+  await editor.type(cap, 'abc');
+  await editor.set(field('repository.has_pull_requests'), false);
+
+  const [problem] = editor.problemsBlockingSave.value;
+  expect(problem?.place).toMatchObject({
+    kind: 'setting',
+    field: cap,
+    hiddenWhile: { field: field('repository.has_pull_requests'), value: false },
+  });
+  expect(row(editor, 'repository.has_pull_requests')?.hiddenWithTextThatCannotBeSaved).toEqual([cap]);
+  expect(editor.canSave.value).toBe(false);
+
+  await editor.reset(cap);
+
+  expect(row(editor, 'repository.has_pull_requests')?.hiddenWithTextThatCannotBeSaved).toEqual([]);
+  expect(editor.canSave.value).toBe(true);
+});
+
+test("typed text is checked by the engine's own rule, in its words", async () => {
+  const editor = await opened({ 'web.yaml': base });
+
+  await editor.type(field('repository.default_branch'), 'main');
+  expect(row(editor, 'repository.default_branch')?.typedTextProblem).toBeUndefined();
+  await editor.type(field('repository.default_branch'), 'release..1');
+  expect(row(editor, 'repository.default_branch')?.typedTextProblem).toBe(
+    "A branch name can't have two dots in a row.",
+  );
+});
+
+test("an entry's problem names the field of its form it is in", async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const key = await editor.addEntry('environments', { name: 'production' });
+  const production = (): EntryRow => {
+    const found = editor.entries.value.environments.find((item) => item.key === key);
+    if (found === undefined) {
+      throw new Error('The new environment is gone.');
+    }
+    return found;
+  };
+
+  await editor.changeEntry(production(), {
+    name: 'production',
+    deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+    branch_policies: [{ name: 'main' }, { name: 'v 1', type: 'tag' }],
+  });
+  expect(production()).toMatchObject({
+    applyProblem: "v 1: a pattern can't have spaces.",
+    applyProblemField: 'tag-patterns',
+  });
+
+  await editor.changeEntry(production(), { ...production().entry, name: '' });
+  expect(production()).toMatchObject({ applyProblem: 'Give it a name.', applyProblemField: 'name' });
+
+  const main = entry(editor, 'rulesets', 'Main');
+  await editor.changeEntry(main, {
+    ...main.entry,
+    rules: [{ type: 'required_status_checks', parameters: { required_status_checks: [] } }],
+  });
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ applyProblemField: 'status-checks' });
+  expect(editor.problemCountByTab.value).toEqual(
+    new Map([
+      ['rulesets', 1],
+      ['environments', 1],
+    ]),
+  );
 });

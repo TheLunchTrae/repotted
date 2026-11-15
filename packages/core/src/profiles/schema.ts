@@ -1,6 +1,19 @@
 import { z } from 'zod';
 
 import { ownerConflicts, ownerTypes, settingRules } from './owner.js';
+import { branchNameProblem, branchPatternProblem } from './ref-names.js';
+
+/** Refuses a string the check has a problem with, in the check's own words. */
+function checkedWith(check: (text: string) => string | undefined): (text: string, context: z.RefinementCtx) => void {
+  return (text, context) => {
+    const problem = check(text);
+    if (problem !== undefined) {
+      context.addIssue({ code: 'custom', message: problem });
+    }
+  };
+}
+
+const branchName = z.string().min(1).superRefine(checkedWith(branchNameProblem));
 
 // Field names are the GitHub REST API's own, so a profile maps onto requests
 // without translation and the REST docs describe every key.
@@ -9,7 +22,7 @@ export const repositoryFields = {
   description: z.string(),
   homepage: z.string(),
   visibility: z.enum(['public', 'private']),
-  default_branch: z.string().min(1),
+  default_branch: branchName,
   is_template: z.boolean(),
   allow_forking: z.boolean(),
   has_issues: z.boolean(),
@@ -330,7 +343,7 @@ export const pagesSite = z
     build_type: z.enum(['legacy', 'workflow']),
     source: z
       .object({
-        branch: z.string().min(1),
+        branch: branchName,
         path: z.enum(['/', '/docs']),
       })
       .partial()
@@ -458,7 +471,7 @@ export const deploymentBranchPolicy = z
 
 export const branchPolicy = z
   .object({
-    name: z.string().min(1),
+    name: z.string().superRefine(checkedWith(branchPatternProblem)),
     type: z.enum(['branch', 'tag']).optional(),
   })
   .strict();

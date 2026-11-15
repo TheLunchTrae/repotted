@@ -630,6 +630,46 @@ function entryProblems(schema: z.ZodType, { draft: _draft, ...entry }: Readonly<
   return result.success ? [] : issueLines(result.error);
 }
 
+/** What the profile's schema refuses in one value, and where in that value: an empty path is the value itself. */
+export interface ValueProblem {
+  readonly path: readonly PropertyKey[];
+  readonly message: string;
+}
+
+/**
+ * `path` is the setting's own under its section, as
+ * `['pull_request_creation_cap', 'max_open_pull_requests']`; a problem's path
+ * is under the value, so an item of a list has its index.
+ */
+export function settingValueProblems(section: string, path: readonly string[], value: unknown): ValueProblem[] {
+  const [key, ...under] = path;
+  const schema = isSettingsSection(section) ? sectionSchemas[section] : undefined;
+  if (key === undefined || schema === undefined) {
+    return [];
+  }
+  const field: unknown = schema.shape[key];
+  if (!(field instanceof z.ZodType)) {
+    return [{ path: [], message: `${section} has no setting ${path.join('.')}` }];
+  }
+  const nested = under.reduceRight<unknown>((inner, name) => ({ [name]: inner }), value);
+  const result = field.safeParse(nested);
+  return (result.error?.issues ?? []).map((issue) => ({
+    path: issue.path.slice(under.length),
+    message: issue.message,
+  }));
+}
+
+const entrySchemas = { rulesets: rulesetEntry, environments: environmentEntry, labels: labelEntry } as const;
+
+/** A draft is checked as the entry it would be once finished. */
+export function entryValueProblems(
+  list: keyof typeof entrySchemas,
+  { draft: _draft, ...entry }: Readonly<Record<string, unknown>>,
+): ValueProblem[] {
+  const result = entrySchemas[list].safeParse(entry);
+  return (result.error?.issues ?? []).map((issue) => ({ path: issue.path, message: issue.message }));
+}
+
 /**
  * A draft label that a label of the profile renames from: the rename applies,
  * since drafts never change what applies, so the draft's label is renamed
