@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import type { postOverTls } from '../src/post-over-tls.js';
 import worker from '../src/worker.js';
 
 const origin = 'https://repotted.dev';
@@ -18,7 +19,9 @@ const tokens = {
   token_type: 'bearer',
 };
 
-const github = vi.fn<typeof fetch>();
+const github = vi.hoisted(() => vi.fn<typeof postOverTls>());
+
+vi.mock('../src/post-over-tls.js', () => ({ postOverTls: github }));
 const logged = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
@@ -26,11 +29,6 @@ beforeEach(() => {
   github.mockReset();
   logged.mockClear();
   warned.mockClear();
-  vi.stubGlobal('fetch', github);
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 function call(path: string, init: RequestInit = {}): Promise<Response> {
@@ -57,9 +55,7 @@ function sentGrant(): URLSearchParams {
   expect(github).toHaveBeenCalledTimes(1);
   const [url, init] = github.mock.calls[0] ?? [];
   expect(url).toBe('https://github.com/login/oauth/access_token');
-  const body = init?.body;
-  expect(body).toBeInstanceOf(URLSearchParams);
-  return new URLSearchParams(body instanceof URLSearchParams ? body : undefined);
+  return new URLSearchParams(init?.body);
 }
 
 async function startedSignIn(): Promise<{

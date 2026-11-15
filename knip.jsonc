@@ -23,6 +23,8 @@
       "entry": ["src/worker.ts", "src/main.tsx", "build.ts", "tests/**/*.test.ts", "tests/layout/harness.tsx"],
       "project": ["*.ts", "src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
       "playwright": { "config": ["tests/layout/playwright.config.ts"] },
+      // cloudflare:sockets is a module of the Workers runtime, not a package.
+      "ignoreDependencies": ["cloudflare"],
     },
   },
 }
