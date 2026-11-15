@@ -195,3 +195,27 @@ test('the header keeps to one row', async ({ page }) => {
     expect(Math.abs(middle - (middles[0] ?? 0)), "distance from the first part's line").toBeLessThanOrEqual(2);
   }
 });
+
+test("a repository's checkbox takes taps across a 44px target", async ({ page }) => {
+  await page.goto('/');
+  const checkbox = page.getByRole('checkbox', { name: 'Select lunch/api' });
+  await expect(checkbox).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const offsetsThatMiss = await checkbox.evaluate((element) => {
+    element.scrollIntoView({ block: 'center' });
+    const box = element.getBoundingClientRect();
+    const centerX = box.left + box.width / 2;
+    const centerY = box.top + box.height / 2;
+    return [
+      [-20, 0],
+      [20, 0],
+      [0, -20],
+      [0, 20],
+    ]
+      .filter(
+        ([offsetX = 0, offsetY = 0]) => document.elementFromPoint(centerX + offsetX, centerY + offsetY) !== element,
+      )
+      .map(([offsetX, offsetY]) => `${offsetX},${offsetY}`);
+  });
+  expect(offsetsThatMiss, "taps 20px from the box's center that miss it").toEqual([]);
+});
