@@ -393,6 +393,17 @@ each setting says which profile it comes from, and setting it here overrides
 the base profile. To stop setting a value in this profile, click **Remove**
 beside it; if a base profile sets it, the base's value applies again.
 
+Each group of settings, such as **Code scanning**, has **Reset all** beside
+its heading while any of its settings has a change you haven't saved, and
+**Remove all** while the profile itself sets any of them. Each says how many
+settings it changes. **Remove all** also counts the settings GitHub hides
+for the value of one above them, which have no **Remove** of their own;
+settings a base profile sets aren't counted. Neither saves anything, and
+**Undo** under the heading brings back exactly what was there, until you
+change anything else, save, or reset. On a phone the actions sit under the
+group's heading. They don't show among the settings **Find a setting**
+finds.
+
 Options that GitHub only offers with a certain value of the setting above
 them follow that setting, and so do the options under them. Where GitHub
 hides them, the tab does too, and the setting that hides them says how many
@@ -469,6 +480,12 @@ repository** to delete it from each repository that follows the profile.
 Removing keeps what the entry had, in case you choose **Manage it** again
 before saving. **Take out of profile** stops the profile from managing it at
 all; **Put it back** in the list undoes that before you save.
+
+Beside **New ruleset**, **New environment**, or **New label**, **Reset all**
+puts every entry in the list with a change you haven't saved back as it was,
+and **Take out all** takes out every entry the profile names, along with
+new ones; one from a base profile stays. As with a group of settings, each
+says how many it changes, and **Undo** brings the list back as it was.
 
 A ruleset with no rule selected leaves each repository's rules as they are.
 Once any rule is selected, the ruleset has exactly the selected rules, and
