@@ -1,5 +1,5 @@
 import type { JSX, RefObject } from 'preact';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import type { AddressSelection } from '../app/address-selection.js';
 import type { Apply } from '../app/apply.js';
@@ -7,7 +7,7 @@ import type { BatchApply } from '../app/batch-apply.js';
 import type { ComparedProfile } from '../app/comparison.js';
 import { installUrl } from '../app/github-app.js';
 import type { Profiles } from '../app/profiles.js';
-import type { FolderGroup, Repositories, Repository } from '../app/repositories.js';
+import { type FolderGroup, refreshPause, type Repositories, type Repository } from '../app/repositories.js';
 import { run } from './run.js';
 import { useDismiss } from './shell.js';
 
@@ -75,6 +75,46 @@ const newFolderChoice = '\u0000new';
 const noFolderChoice = '';
 
 /** Opens the dialog when it mounts, and calls `onClose` when it closes, by its buttons or Escape. */
+/** Seconds as the countdown on Refresh shows them: by the second under a minute, else by the minute. */
+function countdown(seconds: number): string {
+  return seconds < 60 ? `${seconds}s` : `${Math.ceil(seconds / 60)} min`;
+}
+
+/**
+ * Refresh, off while a read runs and while it waits after one, with the wait
+ * counting down on it. It stays focusable while off, so the focus a press
+ * gave it isn't lost. The countdown isn't part of its name, so a screen
+ * reader isn't told each second; its description says why it waits, once.
+ */
+function RefreshButton({ repositories }: { readonly repositories: Repositories }): JSX.Element {
+  const wait = repositories.refreshWait.value;
+  const off = repositories.loading.value || wait !== undefined;
+  const why = useId();
+  return (
+    <>
+      <button
+        class="button refresh"
+        type="button"
+        aria-disabled={off ? 'true' : undefined}
+        aria-describedby={wait === undefined ? undefined : why}
+        onClick={() => {
+          run(repositories.refresh());
+        }}
+      >
+        Refresh
+        {wait !== undefined && <span aria-hidden="true">&nbsp;in {countdown(repositories.refreshIn.value)}</span>}
+      </button>
+      {wait !== undefined && (
+        <span id={why} class="visually-hidden">
+          {wait.rateLimited
+            ? `GitHub's rate limit holds the next refresh until ${wait.until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
+            : `Refresh waits ${refreshPause / 1000} seconds between reads.`}
+        </span>
+      )}
+    </>
+  );
+}
+
 function useModal(): RefObject<HTMLDialogElement | null> {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -984,16 +1024,7 @@ export function RepositoriesPage({
                 Add repositories
               </a>
             )}
-            <button
-              class="button"
-              type="button"
-              disabled={loading}
-              onClick={() => {
-                run(repositories.refresh());
-              }}
-            >
-              Refresh
-            </button>
+            <RefreshButton repositories={repositories} />
           </div>
         </div>
 

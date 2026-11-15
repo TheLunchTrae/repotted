@@ -79,7 +79,7 @@ function SignedIn({
   }, [account, github, preferences, folders, user]);
   const address = useMemo(() => new AddressSelection(repositories, router), [repositories, router]);
   useEffect(() => {
-    run(repositories.refresh());
+    run(repositories.load());
     run(profiles.refresh());
   }, [repositories, profiles]);
   const source = profiles.source.value;

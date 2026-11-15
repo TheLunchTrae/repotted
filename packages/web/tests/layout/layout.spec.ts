@@ -34,6 +34,14 @@ const screens: Readonly<Record<string, Screen>> = {
     path: '/',
     ready: (page) => page.getByRole('checkbox', { name: 'Tick lunch/a_repository_name_with_no_hyphens_in_it_at_all' }),
   },
+  'repositories after a refresh': {
+    path: '/',
+    open: async (page) => {
+      await page.getByRole('checkbox', { name: 'Tick lunch/a_repository_name_with_no_hyphens_in_it_at_all' }).waitFor();
+      await page.getByRole('button', { name: 'Refresh' }).click();
+    },
+    ready: (page) => page.getByText(/^\s*in \d+s$/u),
+  },
   'owner menu': {
     path: '/',
     open: (page) => page.getByText('All owners').click(),

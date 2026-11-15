@@ -30,6 +30,12 @@ installed on and that you administer. To add repositories to the list, click
 **Add repositories**, which opens the Repotted App's install page on GitHub,
 then **Refresh**.
 
+After a refresh, **Refresh** waits 15 seconds before it can read the list
+again, and counts down on the button while it waits, so that pressing it
+repeatedly doesn't use up your GitHub requests. When GitHub answers with its
+rate limit, the button waits until GitHub says the next request can go
+through, or a minute when GitHub doesn't say.
+
 To find a repository, type in **Find a repository**, or press <kbd>/</kbd> to
 go to it. Escape clears it.
 

@@ -1,13 +1,17 @@
-import type { GitHub } from '@repotted/core';
-import { expect, test, vi } from 'vitest';
+import { type GitHub, GitHubError } from '@repotted/core';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import { FakeGitRepository } from '../../core/tests/fake-git.js';
 import { answered, type FakeAccount, FakeGitHub } from '../../core/tests/fake-github.js';
 import type { Preferences } from '../src/app/preferences.js';
-import { Repositories, type Repository } from '../src/app/repositories.js';
+import { refreshPause, Repositories, type Repository } from '../src/app/repositories.js';
 import { preferencesFile, SharedPreferences } from '../src/app/shared-preferences.js';
 
 const user = { login: 'Trae', name: null };
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function account(names: readonly string[]): FakeAccount {
   return {
@@ -50,7 +54,7 @@ function inBrowser(github: GitHub, preferences: Preferences = memory()): SharedP
 
 async function opened(github: FakeGitHub, preferences: Preferences = memory()): Promise<Repositories> {
   const repositories = new Repositories(github, user, inBrowser(github, preferences), preferences, () => undefined);
-  await repositories.refresh();
+  await repositories.load();
   return repositories;
 }
 
@@ -144,8 +148,64 @@ test('a refresh that fails keeps the list it had and says why', async () => {
   expect(repositories.list.value?.repositories).toHaveLength(4);
   expect(repositories.loading.value).toBe(false);
 
-  await repositories.refresh();
+  await repositories.load();
   expect(repositories.error.value).toBeUndefined();
+});
+
+test('Refresh waits a while after the read it started, counting down, while the opening read starts no wait', async () => {
+  vi.useFakeTimers();
+  const github = new FakeGitHub({ account: account(everyone) });
+  const repositories = await opened(github);
+  expect(repositories.refreshWait.value).toBeUndefined();
+
+  github.state.account = account(['Acme/api']);
+  await repositories.refresh();
+  expect(repositories.list.value?.repositories).toHaveLength(1);
+  expect(repositories.refreshWait.value?.rateLimited).toBe(false);
+  expect(repositories.refreshIn.value).toBe(refreshPause / 1000);
+
+  github.state.account = account(everyone);
+  await repositories.refresh();
+  expect(repositories.list.value?.repositories).toHaveLength(1);
+
+  vi.advanceTimersByTime(refreshPause - 1000);
+  expect(repositories.refreshIn.value).toBe(1);
+  vi.advanceTimersByTime(1000);
+  expect(repositories.refreshIn.value).toBe(0);
+  expect(repositories.refreshWait.value).toBeUndefined();
+
+  await repositories.refresh();
+  expect(repositories.list.value?.repositories).toHaveLength(4);
+});
+
+test("a rate limit holds Refresh until GitHub's time, or a minute when GitHub gives none", async () => {
+  vi.useFakeTimers();
+  const github = new FakeGitHub({ account: account(everyone) });
+  const limited = (retryAt?: Date): GitHubError =>
+    new GitHubError(403, 'API rate limit exceeded', {
+      rateLimited: true,
+      ...(retryAt === undefined ? {} : { retryAt }),
+    });
+  github.fail('GET /user/installations', limited(new Date(Date.now() + 120_000)), 1);
+  const repositories = await opened(github);
+
+  expect(repositories.error.value).toBe('API rate limit exceeded');
+  expect(repositories.refreshWait.value?.rateLimited).toBe(true);
+  expect(repositories.refreshIn.value).toBe(120);
+  vi.advanceTimersByTime(refreshPause);
+  await repositories.refresh();
+  expect(repositories.list.value).toBeUndefined();
+
+  vi.advanceTimersByTime(120_000 - refreshPause);
+  github.fail('GET /user/installations', limited(), 1);
+  await repositories.refresh();
+  expect(repositories.refreshWait.value?.rateLimited).toBe(true);
+  expect(repositories.refreshIn.value).toBe(60);
+
+  vi.advanceTimersByTime(60_000);
+  await repositories.refresh();
+  expect(repositories.list.value?.repositories).toHaveLength(4);
+  expect(repositories.refreshWait.value?.rateLimited).toBe(false);
 });
 
 test('a refused sign-in is reported as signed out, not as an error on the page', async () => {
@@ -194,7 +254,7 @@ test('a refresh keeps the list in use while it reads, and the selection when the
 test('ticked repositories stay ticked through a search, and one the account no longer lists drops out', async () => {
   const github = new FakeGitHub({ account: account(everyone) });
   const repositories = new Repositories(github, user, inBrowser(github), memory(), () => undefined);
-  await repositories.refresh();
+  await repositories.load();
   const all = repositories.list.value?.repositories ?? [];
   const named = (name: string): (typeof all)[number] => {
     const found = all.find((repository) => repository.full_name === name);
@@ -326,7 +386,7 @@ test('with profiles in a repository, the list hides what its file holds and a hi
   const reading = preferences.use({ kind: 'repository', repository: 'lunch/config', path: 'profiles' });
   const repositories = new Repositories(github, user, preferences, browser, () => undefined);
 
-  await repositories.refresh();
+  await repositories.load();
   await reading;
   expect(names(repositories)).toEqual(['trae:', 'trae/dotfiles', 'Acme:', 'Acme/api']);
 

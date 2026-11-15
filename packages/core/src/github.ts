@@ -18,11 +18,13 @@ export class GitHubError extends Error {
   readonly documentationUrl: string | undefined;
   /** Whether GitHub refused the request for a rate limit, which a later try may pass. */
   readonly rateLimited: boolean;
+  /** When GitHub says a rate-limited request may be tried again, if it says. */
+  readonly retryAt: Date | undefined;
 
   constructor(
     status: number,
     message: string,
-    details: { readonly documentationUrl?: string; readonly rateLimited?: boolean } = {},
+    details: { readonly documentationUrl?: string; readonly rateLimited?: boolean; readonly retryAt?: Date } = {},
     options?: ErrorOptions,
   ) {
     super(message, options);
@@ -30,6 +32,7 @@ export class GitHubError extends Error {
     this.status = status;
     this.documentationUrl = details.documentationUrl;
     this.rateLimited = details.rateLimited ?? false;
+    this.retryAt = details.retryAt;
   }
 }
 
@@ -63,6 +66,24 @@ function errorDetail(item: unknown): string[] {
 }
 
 /**
+ * When a rate-limited request may be tried again: `retry-after` seconds from
+ * now, or else the `x-ratelimit-reset` time, in seconds since the epoch, of a
+ * limit with no requests remaining.
+ */
+function retryTime(headers: Readonly<Record<string, unknown>>, now: number): Date | undefined {
+  const after = Number(headers['retry-after']);
+  if (headers['retry-after'] !== undefined && Number.isFinite(after) && after >= 0) {
+    return new Date(now + after * 1000);
+  }
+  const reset = Number(headers['x-ratelimit-reset']);
+  return String(headers['x-ratelimit-remaining']) === '0' &&
+    headers['x-ratelimit-reset'] !== undefined &&
+    Number.isFinite(reset)
+    ? new Date(reset * 1000)
+    : undefined;
+}
+
+/**
  * The error for a response GitHub sent with an error status, from its body
  * and headers. GitHub answers a rate limit with a 429, or a 403 with no
  * requests remaining or a `retry-after`; a secondary limit can come with
@@ -87,10 +108,15 @@ export function responseError(
       (String(headers['x-ratelimit-remaining']) === '0' ||
         headers['retry-after'] !== undefined ||
         /rate limit/iu.test(message)));
+  const retryAt = rateLimited ? retryTime(headers, Date.now()) : undefined;
   return new GitHubError(
     status,
     message,
-    { ...(documentationUrl === undefined ? {} : { documentationUrl }), rateLimited },
+    {
+      ...(documentationUrl === undefined ? {} : { documentationUrl }),
+      rateLimited,
+      ...(retryAt === undefined ? {} : { retryAt }),
+    },
     options,
   );
 }
