@@ -137,8 +137,8 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
             <p class="muted" role="status">
               {state.kind === 'editing'
                 ? state.fromProfile
-                  ? 'One-off edits apply on top of the profile for this apply only.'
-                  : 'The settings to change, this once. Nothing else on the repository is touched.'
+                  ? 'Step 1 of 2: one-off edits. They apply on top of the profile for this apply only.'
+                  : 'Step 1 of 2: the settings to change, this once. Nothing else on the repository is touched.'
                 : state.kind === 'reviewing'
                   ? 'One moment…'
                   : state.kind === 'applying'
@@ -150,8 +150,8 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                           ? 'Nothing needed writing to GitHub. Its profiles are recorded as applied.'
                           : `${state.changes === 1 ? '1 change was' : `${state.changes} changes were`} written to GitHub.`
                         : counts.changes === 0
-                          ? 'Nothing to apply. The repository already has what this apply sets.'
-                          : `${counts.changes === 1 ? '1 change' : `${counts.changes} changes`}${
+                          ? 'Step 2 of 2: nothing to apply. The repository already has what this apply sets.'
+                          : `Step 2 of 2: ${counts.changes === 1 ? '1 change' : `${counts.changes} changes`}${
                               counts.locked === 0 ? '' : `, ${counts.locked} that GitHub would refuse`
                             }. Nothing is written until you apply.`}
             </p>
@@ -398,7 +398,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                       run(apply.backToEdits());
                     }}
                   >
-                    Edit for this apply
+                    Back to edits
                   </button>
                   <button
                     class="button"

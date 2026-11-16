@@ -72,7 +72,6 @@ test("one-off edits to an apply of the protection can't be saved to it", async (
   const before = await readFile(profile.file, 'utf8');
   const apply = new Apply(github, () => undefined);
   await apply.start('lunch/app', profile);
-  await apply.backToEdits();
   expect(apply.state.value).toMatchObject({ kind: 'editing', fromProfile: true, builtIn: true });
 
   const wiki = settingSections

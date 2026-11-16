@@ -347,15 +347,14 @@ one request for the repository, one for the branch, one comparison, and one
 for each changed profile.
 
 `apply.ts` applies a profile through the engine's staged apply, in temporary
-files under `/apply/<id>/apply.yaml`. Starting from profiles opens the review
-directly; **Change settings once** opens the one-off editor. **Edit for this
-apply** opens that editor from a review. An `EditorStore` gives
+files under `/apply/<id>/apply.yaml`. Its first step is the profile editor
+over that file, followed by the review. An `EditorStore` gives
 `ProfileEditor` the engine functions that read, preview, and write a profile
 or a staged apply. It reviews with `planStagedApply` and writes with
 `applyPlan`, which plans again and refuses when the repository has changed.
 
-Pending applies belong to their pages. Leaving discards their files and
-edits; a write already under way finishes. Each start has its own folder, so
+Pending applies belong to their pages, in the client's in-memory filesystem.
+Leaving discards their files and edits; a write already under way finishes. Each start has its own folder, so
 cleanup and late work from an apply left behind cannot remove or replace a
 later one. A late file creation is cleaned up when its work settles. Drafts
 belong to profiles and never form an apply state.
@@ -395,9 +394,8 @@ visits: it loads what IndexedDB holds into memory before the app draws, then
 writes each change there in order, by the file's path. So a working copy,
 with saves that haven't reached GitHub, is there on the next visit. The
 engine's temporary files, pending applies and batches, and branch previews
-are not kept or restored. In a
-browser that gives the site no storage, the files last for the visit, and
-Settings says so.
+are not kept or restored. In a browser that gives the site no storage, the
+files last for the visit, and Settings says so.
 
 What is kept must be the files as they were at one moment, or a later sync
 can take a profile the browser lost for one the user deleted. So one tab

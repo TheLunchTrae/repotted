@@ -179,7 +179,7 @@ test('a browser that has no locks, or refuses them, loads and keeps nothing, and
   expect(put).not.toHaveBeenCalled();
 });
 
-test('profile drafts survive a reload, while single and batch applies do not', async () => {
+test('profile drafts survive a reload, while profile applies, one-time changes, and batches do not', async () => {
   const browser = new IDBFactory();
   const keeper = browserFiles(() => browser);
   const profile = { file: '/profiles/base.yaml', name: 'base', folder: '/profiles' };
@@ -191,6 +191,10 @@ test('profile drafts survive a reload, while single and batch applies do not', a
   const apply = new Apply(github, () => undefined);
   const batch = new BatchApply(github, () => undefined);
   await apply.start('lunch/app', profile);
+  const once = new Apply(github, () => undefined);
+  await once.startWithoutProfile('lunch/app');
+  await once.editor.value?.addEntry('labels', { name: 'once-only', color: 'ffffff' });
+  await once.review();
   await batch.start(['lunch/api'], profile);
 
   await vi.waitFor(async () => {

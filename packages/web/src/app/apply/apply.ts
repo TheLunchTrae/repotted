@@ -230,7 +230,7 @@ export class Apply {
         await rm(dirname(file), { recursive: true, force: true });
         throw error;
       }
-      return profiles.length === 0 ? this.#edit(repository, file, current) : this.#review(repository, file, undefined);
+      return this.#edit(repository, file, current);
     });
   }
 

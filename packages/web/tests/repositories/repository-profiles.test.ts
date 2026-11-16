@@ -342,7 +342,6 @@ test('an apply with a one-off edit records no versions', async () => {
     assignments,
   );
   await apply.startFromProfiles('lunch/app', [{ file: `${folder}/base.yaml`, name: 'base', folder }]);
-  await apply.backToEdits();
 
   await apply.editor.value?.addEntry('labels', { name: 'docs', color: '0075ca' });
   await apply.review();

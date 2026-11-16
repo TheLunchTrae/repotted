@@ -180,28 +180,20 @@ To start one, open a repository and either:
   profile
 - click **Change settings once**, to change settings without a profile
 
-Applying a profile opens the review directly. It shows each change by
-section, with what GitHub has now and what it will have after the apply.
+An apply has two steps, and opens on the first.
+
+The first step shows the one-off edits, in the same editor as a profile.
+They apply on top of the profile for this apply only, and can't be drafts.
 From there you can:
 
-- **Leave out** a change, for this apply only. The profile keeps it, and it
-  shows under **Left out of this apply** with **Put back**.
-- Click **Edit for this apply** to make one-off edits in the same editor as
-  a profile. They apply on top of the profile for this apply only.
-- Click **Review again** to read the profile and GitHub again.
-- Click **Discard apply** to cancel. The profile stays as it is.
-
-**Change settings once** opens the editor with no profile. Click **Review
-changes** when the edits are ready. From either editor, **Review changes**
-includes edits you haven't saved and waits while an edit isn't valid.
-A change that comes from a one-off edit is marked **One-off edit** in the
-review; change or undo it with **Edit for this apply**.
-
-**Save edits to profile** writes the one-off edits into the profile, which
-then sets them itself. An apply of the
-[built-in protection](#protect-the-config-repository) has no profile to
-save to, so it doesn't offer this. One-off edits can't be saved as drafts;
-use the profile editor to stage changes in a [profile draft](profiles.md#drafts).
+- Click **Review changes** to review the current one-off edits without
+  changing the profile. It waits while an edit isn't valid.
+- Click **Save edits to profile** to write the one-off edits into the
+  profile, which then sets them itself. An apply of the
+  [built-in protection](#protect-the-config-repository) has no profile to
+  save to, so it doesn't offer this.
+- Click **Discard apply** to throw the apply away. The profile stays as it
+  is.
 
 What the apply leaves out is listed above the edits with **Put back**, since
 a change can't be both left out and edited.
@@ -212,9 +204,18 @@ A permission every setting on a tab needs is named once at the top of the
 tab, one every setting in a group needs under the group's heading, and any
 other on the setting itself. A list of rulesets, environments or labels that
 needs one can't take a new entry, and its entries open read-only, though
-**Put it back**, **Reset** and **Take out of profile** still work. When you
-start with **Change settings once**, the editor opens before Repotted has
-read the installation, so they turn off a moment later.
+**Put it back**, **Reset** and **Take out of profile** still work. The
+editor opens before Repotted has read the installation, so they turn off a
+moment later.
+
+The second step shows each change by section, with what GitHub has now and
+what it will have after the apply. From there you can:
+
+- **Leave out** a change, for this apply only. The profile keeps it, and it
+  shows under **Left out of this apply** with **Put back**.
+- Click **Back to edits** to change the edits again. A change that comes from
+  a one-off edit is marked **One-off edit**; change or undo it there.
+- Click **Review again** to read the profile and GitHub again.
 
 A change GitHub would refuse says what it needs, as on a comparison.
 **Apply** waits until no such change is left: leave it out, or click
@@ -228,9 +229,10 @@ written, and the page shows what the apply needs now. If GitHub refuses a
 change partway, the changes before it stay written and nothing after it is,
 and the page shows what is left.
 
-Leaving the page or reloading discards the pending apply and its one-off
-edits and exclusions. Start another apply to review the profile again.
-Changes already being written to GitHub finish even if you leave the page.
+An in-progress apply lasts only while this flow is open. Leaving the page
+or reloading discards its one-off edits and exclusions; starting again
+opens a fresh apply. Profile changes you explicitly saved to the profile
+stay saved. Writes already under way finish even if you leave the page.
 
 ### Keep a repository's profiles
 
