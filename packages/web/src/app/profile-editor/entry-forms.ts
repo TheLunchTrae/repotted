@@ -5,6 +5,8 @@
 // has one: a change back to what is saved gives the saved shape again, so an
 // entry typed in and put back is no change.
 
+import { entryValueProblems } from '@repotted/core';
+
 export type Entry = Readonly<Record<string, unknown>>;
 
 export function isEntry(value: unknown): value is Entry {
@@ -311,6 +313,43 @@ export function withBranchPolicies(entry: Entry, type: 'branch' | 'tag', names: 
   const others = all.filter((policy) => !isType(policy));
   // Branches first, as GitHub lists them.
   return withKey(entry, 'branch_policies', type === 'branch' ? [...set, ...others] : [...others, ...set]);
+}
+
+function lowercaseFirst(text: string): string {
+  return `${text.charAt(0).toLowerCase()}${text.slice(1)}`;
+}
+
+/**
+ * Why GitHub would refuse one of the environment's branch or tag patterns, by
+ * the engine's own rule for a deployment pattern, with the pattern first.
+ */
+export function branchPolicyProblem(entry: Entry, type: 'branch' | 'tag'): string | undefined {
+  const policies = entries(entry['branch_policies']);
+  const found = entryValueProblems('environments', entry).find(({ path: [listName, index, key] }) => {
+    const policy = typeof index === 'number' ? policies[index] : undefined;
+    return listName === 'branch_policies' && key === 'name' && (policy?.['type'] ?? 'branch') === type;
+  });
+  if (found === undefined) {
+    return undefined;
+  }
+  const [, index] = found.path;
+  const name = typeof index === 'number' ? policies[index]?.['name'] : undefined;
+  return typeof name === 'string' && name !== '' ? `${name}: ${lowercaseFirst(found.message)}` : found.message;
+}
+
+/** A string answer is why the text isn't a whole number from 0 up to `most`; an empty text leaves it to each repository. */
+export function parseWholeNumberUpTo(
+  typed: string,
+  most: number,
+  what: string,
+): { readonly value: number | undefined } | string {
+  const digits = typed.trim();
+  if (digits === '') {
+    return { value: undefined };
+  }
+  return /^\d+$/u.test(digits) && Number(digits) <= most
+    ? { value: Number(digits) }
+    : `${what} is a whole number, from 0 to ${most}.`;
 }
 
 export function hexColor(entry: Entry): string | undefined {

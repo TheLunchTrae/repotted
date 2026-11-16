@@ -12,6 +12,7 @@ import {
   resolveProfile,
   settingPath,
   settingRules,
+  settingValueProblems,
   stringifyProfile,
 } from '@repotted/core';
 
@@ -23,7 +24,10 @@ import {
   canBeTakenOut,
   type EntryChanges,
   EntryEdits,
+  type EntryField,
   type EntryList,
+  entryListTitles,
+  entryLists,
   type EntryRow,
   type SaveMode,
 } from './entry-edits.js';
@@ -102,6 +106,8 @@ export interface SettingRow {
   readonly typedTextProblem: string | undefined;
   /** How many settings under it GitHub hides for its value while a profile still names them. */
   readonly hiddenNamed: number;
+  /** The settings its value hides whose typed text can't be a value, which holds the save back. */
+  readonly hiddenWithTextThatCannotBeSaved: readonly SettingField[];
   /** What the repository's installation of the Repotted App lacks to change the setting, which turns it off. */
   readonly missingPermissions: readonly string[];
   readonly missingPermissionsItsGroupAndSectionDoNotName: readonly string[];
@@ -162,6 +168,32 @@ function permissionsEveryRowLacks(rows: readonly SettingRow[]): readonly string[
 
 function without(permissions: readonly string[], named: readonly string[]): readonly string[] {
   return permissions.filter((permission) => !named.includes(permission));
+}
+
+/** Where a problem that holds the save back is, and so what can take the editor to it or reset it. */
+export type SaveProblemPlace =
+  | {
+      readonly kind: 'setting';
+      readonly field: SettingField;
+      /** The setting whose value hides this one, while it does, and that value: then the problem can be reset, but not gone to. */
+      readonly hiddenWhile: SettingWithValue | undefined;
+    }
+  | { readonly kind: 'entry'; readonly row: EntryRow; readonly field: EntryField }
+  /** The engine refused the changes together, so no one setting or entry can be reset for it. */
+  | { readonly kind: 'profile' };
+
+export interface SaveProblem {
+  /** Stable while the problem lasts. */
+  readonly key: string;
+  /** What has the problem: a setting's label, an entry's name, or the profile. */
+  readonly name: string;
+  /** Where it is in the editor, as `Repository › About`. */
+  readonly where: string;
+  /** The tab it is on: a section, such as `repository`, or a list, such as `rulesets`. */
+  readonly tab: string;
+  readonly message: string;
+  readonly canReset: boolean;
+  readonly place: SaveProblemPlace;
 }
 
 /** What a save that applies would change: the profile that applies now against the one that would, as a diff of YAML. */
@@ -225,12 +257,20 @@ function keyOf(path: readonly string[]): string {
 
 type SourceSection = keyof ResolvedProfile['sources'];
 
+const entryNouns: Readonly<Record<EntryList, string>> = {
+  rulesets: 'ruleset',
+  environments: 'environment',
+  labels: 'label',
+};
+
 function sectionOf(field: SettingField): Exclude<SourceSection, 'drafts'> {
   // eslint-disable-next-line typescript/no-unsafe-type-assertion -- setting-fields.ts names only sections the engine has, which its test holds to the schema
   return field.section as Exclude<SourceSection, 'drafts'>;
 }
 
-function parse(field: SettingField, text: string): { readonly value: unknown } | { readonly problem: string } {
+type Parsed = { readonly value: unknown } | { readonly problem: string };
+
+function parseKind(field: SettingField, text: string): Parsed {
   const trimmed = text.trim();
   if (field.kind === 'list') {
     return {
@@ -252,6 +292,16 @@ function parse(field: SettingField, text: string): { readonly value: unknown } |
       : { problem: `${field.label} can't be empty. Remove it to stop setting it.` };
   }
   return { value: trimmed };
+}
+
+function parse(field: SettingField, text: string): Parsed {
+  const parsed = parseKind(field, text);
+  if ('problem' in parsed) {
+    return parsed;
+  }
+  // The engine's own rule for the value, so the editor refuses what a profile file would, in the same words.
+  const [problem] = settingValueProblems(field.section, field.key.split('.'), parsed.value);
+  return problem === undefined ? parsed : { problem: problem.message };
 }
 
 const allFields: readonly SettingField[] = settingSections.flatMap((section) =>
@@ -409,6 +459,95 @@ export class ProfileEditor {
       this.unsavedChangesProblem.value === undefined &&
       !this.saving.value,
   );
+
+  /**
+   * Each thing that holds Save back, in the order the tabs show them: text
+   * typed in a setting that can't be a value, hidden settings' included; an
+   * entry that can't be saved to apply; and the engine's refusal of the
+   * changes together.
+   */
+  readonly problemsBlockingSave = computed((): SaveProblem[] => {
+    if (!this.loaded.value) {
+      return [];
+    }
+    const typed = this.#typed.value;
+    const edits = this.#edits.value;
+    const settings = settingSections.flatMap((section) =>
+      section.groups.flatMap((group) =>
+        group.fields.flatMap((field): SaveProblem[] => {
+          const problem = typed.get(keyOf(field.path))?.problem;
+          if (problem === undefined) {
+            return [];
+          }
+          const turnedOff = this.#turnedOffOnGitHub(field, edits);
+          return [
+            {
+              key: `setting ${keyOf(field.path)}`,
+              name: field.label,
+              where: `${section.name} › ${group.title}`,
+              tab: section.section,
+              message: problem,
+              canReset: true,
+              place: {
+                kind: 'setting',
+                field,
+                hiddenWhile:
+                  turnedOff?.hidden === true ? { field: turnedOff.field, value: turnedOff.value } : undefined,
+              },
+            },
+          ];
+        }),
+      ),
+    );
+    const rows = this.entries.value;
+    const entries = entryLists.flatMap((list) =>
+      rows[list].flatMap((row): SaveProblem[] => {
+        if (row.applyProblem === undefined) {
+          return [];
+        }
+        const name =
+          typeof row.entry?.['name'] === 'string' && row.entry['name'].trim() !== ''
+            ? row.entry['name'].trim()
+            : undefined;
+        return [
+          {
+            key: `entry ${row.key}`,
+            name: name ?? row.savedName ?? `A new ${entryNouns[list]}`,
+            where: entryListTitles[list],
+            tab: list,
+            message: row.applyProblem,
+            canReset: row.unsaved,
+            place: { kind: 'entry', row, field: row.applyProblemField ?? 'entry' },
+          },
+        ];
+      }),
+    );
+    const refused = this.unsavedChangesProblem.value;
+    const profile: SaveProblem[] =
+      refused === undefined
+        ? []
+        : [
+            {
+              key: 'profile',
+              name: 'The profile',
+              where: basename(this.file),
+              tab: '',
+              message: refused,
+              canReset: false,
+              place: { kind: 'profile' },
+            },
+          ];
+    return [...settings, ...entries, ...profile];
+  });
+
+  /** How many problems hold Save back on each tab. */
+  readonly problemCountByTab = computed((): ReadonlyMap<string, number> => {
+    const counts = new Map<string, number>();
+    for (const problem of this.problemsBlockingSave.value) {
+      counts.set(problem.tab, (counts.get(problem.tab) ?? 0) + 1);
+    }
+    return counts;
+  });
 
   /**
    * Why the unsaved changes can't be kept as a draft, when nothing typed is
@@ -609,6 +748,7 @@ export class ProfileEditor {
    * value says why and holds the save back.
    */
   async type(field: SettingField, text: string): Promise<void> {
+    this.closePreview();
     this.#batchUndo.value = undefined;
     const parsed = parse(field, text);
     const typed = new Map(this.#typed.value);
@@ -781,6 +921,30 @@ export class ProfileEditor {
     edits.delete(keyOf(field.path));
     this.#forget(field);
     this.#edits.value = edits;
+    this.saveError.value = undefined;
+    await this.#previewEdits();
+  }
+
+  /** Resets each setting and entry the problems are in, so a refusal of the changes together is left as it is. */
+  async resetEverythingBlockingSave(): Promise<void> {
+    const problems = this.problemsBlockingSave.value.filter((problem) => problem.canReset);
+    const fields = problems.flatMap((problem) => (problem.place.kind === 'setting' ? [problem.place.field] : []));
+    const rows = problems.flatMap((problem) => (problem.place.kind === 'entry' ? [problem.place.row] : []));
+    if (fields.length === 0 && rows.length === 0) {
+      return;
+    }
+    this.#batchUndo.value = undefined;
+    const edits = new Map(this.#edits.value);
+    const typed = new Map(this.#typed.value);
+    for (const field of fields) {
+      edits.delete(keyOf(field.path));
+      typed.delete(keyOf(field.path));
+    }
+    this.#edits.value = edits;
+    this.#typed.value = typed;
+    for (const row of rows) {
+      this.#entryEdits.reset(row);
+    }
     this.saveError.value = undefined;
     await this.#previewEdits();
   }
@@ -1200,25 +1364,6 @@ export class ProfileEditor {
     };
   }
 
-  /** The highest setting whose value turns this one off on GitHub, hiding it when any setting on the way hides it. */
-  #turnedOffOnGitHub(field: SettingField): TurnedOffOnGitHub | undefined {
-    const condition = field.dependsOn;
-    const above = fieldsOf(field.section).find((item) => item.key === condition?.otherSettingKeyInSameSection);
-    if (condition === undefined || above === undefined) {
-      return undefined;
-    }
-    const aboveTurnedOff = this.#turnedOffOnGitHub(above);
-    if (aboveTurnedOff?.hidden === true) {
-      return aboveTurnedOff;
-    }
-    const aboveValue = this.#valueOf(above, this.#edits.value);
-    const own =
-      aboveValue !== undefined && condition.values.some((item) => sameValue(item, aboveValue))
-        ? { field: above, value: aboveValue, hidden: condition.hiddenRatherThanGreyedOut }
-        : undefined;
-    return own?.hidden === true ? own : (aboveTurnedOff ?? own);
-  }
-
   #forget(field: SettingField): void {
     if (this.#typed.value.has(keyOf(field.path))) {
       const typed = new Map(this.#typed.value);
@@ -1296,6 +1441,28 @@ export class ProfileEditor {
     }
   }
 
+  /** The highest setting above `field` whose value hides it or greys it out on GitHub, a hiding one first. */
+  #turnedOffOnGitHub(
+    field: SettingField,
+    edits: ReadonlyMap<string, SettingEdit> = this.#edits.value,
+  ): TurnedOffOnGitHub | undefined {
+    const condition = field.dependsOn;
+    const above = fieldsOf(field.section).find((item) => item.key === condition?.otherSettingKeyInSameSection);
+    if (condition === undefined || above === undefined) {
+      return undefined;
+    }
+    const aboveTurnedOff = this.#turnedOffOnGitHub(above, edits);
+    if (aboveTurnedOff?.hidden === true) {
+      return aboveTurnedOff;
+    }
+    const aboveValue = this.#valueOf(above, edits);
+    const own =
+      aboveValue !== undefined && condition.values.some((item) => sameValue(item, aboveValue))
+        ? { field: above, value: aboveValue, hidden: condition.hiddenRatherThanGreyedOut }
+        : undefined;
+    return own?.hidden === true ? own : (aboveTurnedOff ?? own);
+  }
+
   #rows(group: SettingGroup): SettingRow[] {
     const shown = this.#profileAsSaveWouldLeaveIt.value ?? this.#saved.value;
     if (shown === undefined) {
@@ -1334,6 +1501,11 @@ export class ProfileEditor {
               turnedOff === undefined ? undefined : { field: turnedOff.field, value: turnedOff.value },
             textBeingTyped: typed?.text,
             typedTextProblem: typed?.problem,
+            hiddenWithTextThatCannotBeSaved: section.filter(
+              (other) =>
+                this.#turnedOffOnGitHub(other)?.field === field &&
+                this.#typed.value.get(keyOf(other.path))?.problem !== undefined,
+            ),
             hiddenNamed: section.filter((other) => {
               const otherTurnedOff = this.#turnedOffOnGitHub(other);
               return (

@@ -501,6 +501,13 @@ and "what the file has" for a setting is its draft's value when it has one.
 | Saving           | The write ends                                                                 | Saved, then a sync when profiles are kept on GitHub. A change made while it ran stays unsaved.                                                                                                   |
 | Saving           | The write fails                                                                | Unsaved, with why, and **Save** on to try again. A setting changed back meanwhile to what the save was writing keeps its change.                                                                 |
 
+The save problems list takes the keyboard to a setting or an entry's own
+field. Ordinary tab navigation clears that destination. **Reset** clears
+unsaved edits; a saved draft's problem instead offers **Go to it** and says
+to edit or discard the draft. Resetting save problems also clears batch
+Undo. Every typed change closes any pending or open save preview, including
+text that cannot become a value.
+
 ### The draft
 
 **Save** and **Save as draft** are the two ways out of Unsaved above, and
@@ -668,9 +675,9 @@ number for one that is new, so its row is found whatever its name becomes.
 | Unsaved          | Its name is empty, or another entry's                              | Held back with why. A ruleset is known by its name as written, an environment or a label by its name in any case.                                                                                                                                        |
 | Unsaved          | Its name is the saved name of one renamed or taken out             | Held back until that change is saved, since the file still has the name.                                                                                                                                                                                 |
 | Unsaved          | A ruleset requires status checks and names none                    | Held back with why.                                                                                                                                                                                                                                      |
-| Unsaved          | A ruleset's targets GitHub would refuse, or that match nothing     | Held back with why, under **Include** or **Exclude**.                                                                                                                                                                                                    |
+| Unsaved          | A ruleset's targets GitHub would refuse, or that match nothing     | Held back under its options or patterns, with its own destination in the save problems list.                                                                                                                                                             |
 | Unsaved          | A label's old names include its own, one twice, or another label's | Held back with why.                                                                                                                                                                                                                                      |
-| Unsaved          | A ruleset sets Pull requests only where GitHub refuses it          | Held back with why: for a deploy key, or in a tag or push ruleset.                                                                                                                                                                                       |
+| Unsaved          | A ruleset sets Pull requests only where GitHub refuses it          | Held back in the bypass list: for a deploy key, or in a tag or push ruleset. **Go to it** focuses that list.                                                                                                                                             |
 | Unsaved          | The engine refuses it, such as a color that isn't one              | Unsaved, with why above **Save**, which is off.                                                                                                                                                                                                          |
 | Any held back    | Another setting or entry changes                                   | The entries that can be saved as they stand are still previewed; **Save** stays off.                                                                                                                                                                     |
 | Managed          | Remove it from the repository                                      | Unsaved: only its name and `absent: true` are written. What it had is kept with the change.                                                                                                                                                              |

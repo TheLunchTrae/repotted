@@ -2,7 +2,7 @@ import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
 
 import type { GitHubAppLookup } from '../../app/profile-editor/bypass-actors.js';
-import type { EntryList, EntryRow } from '../../app/profile-editor/entry-edits.js';
+import type { EntryField, EntryList, EntryRow } from '../../app/profile-editor/entry-edits.js';
 import {
   branchPolicies,
   deploymentBranches,
@@ -10,6 +10,7 @@ import {
   type Entry,
   hexColor,
   isEntry,
+  parseWholeNumberUpTo,
   uniqueTrimmedNonBlankLines,
   allRefsTarget,
   defaultBranchTarget,
@@ -18,7 +19,6 @@ import {
   refPatterns,
   refPatternsProblem,
   type RefSide,
-  refTargetsProblem,
   ruleOf,
   rulesetTarget,
   statusChecks,
@@ -108,6 +108,15 @@ interface FormProps {
   readonly entry: Entry;
   readonly saved: Entry | undefined;
   readonly change: (entry: Entry) => void;
+  /** Why the field can't be saved, when the entry's problem is in it. */
+  readonly problemIn: (field: EntryField) => string | undefined;
+}
+
+/** Asks the entries list to open an entry and put the keyboard in one of its fields. */
+export interface EntryGoTo {
+  readonly list: EntryList;
+  readonly rowKey: string;
+  readonly field: EntryField;
 }
 
 interface ChoiceProps {
@@ -172,6 +181,8 @@ interface TextProps {
   readonly note?: string | undefined;
   readonly problem?: string | undefined;
   readonly disabled?: boolean;
+  /** The field of the entry it edits, so going to a problem in it can find it. */
+  readonly field?: EntryField;
   readonly nested?: boolean;
 }
 
@@ -190,6 +201,7 @@ function TextBox({
   note,
   problem,
   disabled,
+  field,
   nested,
 }: TextProps): JSX.Element {
   const id = useId();
@@ -201,6 +213,7 @@ function TextBox({
     class: `field${mono === true ? ' mono' : ''}${multiline === true ? ' field-lines' : ''}`,
     'aria-invalid': wrong !== undefined,
     'aria-describedby': `${id}-help`,
+    'data-entry-field': field,
     placeholder,
     disabled,
     value: typed ?? value,
@@ -289,7 +302,7 @@ function Group({ title, description, children }: GroupProps): JSX.Element {
   );
 }
 
-interface KeptProps extends FormProps {
+interface KeptProps extends Omit<FormProps, 'problemIn'> {
   readonly name: string;
   readonly label: string;
   readonly none: string;
@@ -319,22 +332,7 @@ function Kept({ entry, saved, change, name, label, none, noun }: KeptProps): JSX
   );
 }
 
-/** A string answer is why the text isn't a whole number from 0 up to `most`. */
-function parseWholeNumberUpTo(
-  typed: string,
-  most: number,
-  what: string,
-): { readonly value: number | undefined } | string {
-  const digits = typed.trim();
-  if (digits === '') {
-    return { value: undefined };
-  }
-  return /^\d+$/u.test(digits) && Number(digits) <= most
-    ? { value: Number(digits) }
-    : `${what} is a whole number, from 0 to ${most}.`;
-}
-
-interface RefTargetsProps extends FormProps {
+interface RefTargetsProps extends Omit<FormProps, 'problemIn'> {
   readonly side: RefSide;
 }
 
@@ -373,7 +371,7 @@ function RefTargets({ entry, saved, change, side }: RefTargetsProps): JSX.Elemen
   const targetsProblem = namedRefTargetsProblem(entry, side);
   return (
     <>
-      <div class="setting" role="group" aria-labelledby={id}>
+      <div class="setting" role="group" aria-labelledby={id} data-entry-field={`${side}-targets`} tabIndex={-1}>
         <div class="setting-text">
           <strong id={id}>{label}</strong>
           <span class="muted small">
@@ -412,6 +410,7 @@ function RefTargets({ entry, saved, change, side }: RefTargetsProps): JSX.Elemen
       {patternsSelected && (
         <TextBox
           nested
+          field={`${side}-patterns`}
           label={tags ? 'Tag patterns' : 'Branch patterns'}
           mono
           multiline
@@ -434,6 +433,7 @@ function RulesetForm({
   entry,
   saved,
   change,
+  problemIn,
   ownerTypeHasPushRulesets,
   appLookup,
 }: FormProps & {
@@ -555,6 +555,8 @@ function RulesetForm({
                 />
                 <TextBox
                   label="Status checks"
+                  field="status-checks"
+                  problem={problemIn('status-checks')}
                   mono
                   multiline
                   value={statusChecks(entry).join('\n')}
@@ -586,11 +588,13 @@ function isDeploymentBranches(value: unknown): value is DeploymentBranches | und
   return value === undefined || branchChoices.some(([, choice]) => choice === value);
 }
 
-function EnvironmentForm({ entry, saved, change }: FormProps): JSX.Element {
+function EnvironmentForm({ entry, saved, change, problemIn }: FormProps): JSX.Element {
   const branches = deploymentBranches(entry);
   const patterns = (type: 'branch' | 'tag'): JSX.Element => (
     <TextBox
       label={type === 'branch' ? 'Branch patterns' : 'Tag patterns'}
+      field={`${type}-patterns`}
+      problem={problemIn(`${type}-patterns`)}
       mono
       multiline
       value={branchPolicies(entry, type).join('\n')}
@@ -656,7 +660,12 @@ function EnvironmentForm({ entry, saved, change }: FormProps): JSX.Element {
   );
 }
 
-function LabelForm({ entry, change, savedName }: FormProps & { readonly savedName: string | undefined }): JSX.Element {
+function LabelForm({
+  entry,
+  change,
+  problemIn,
+  savedName,
+}: FormProps & { readonly savedName: string | undefined }): JSX.Element {
   const id = useId();
   const color = hexColor(entry);
   const typedColor = typeof entry['color'] === 'string' ? entry['color'] : '';
@@ -708,14 +717,11 @@ function LabelForm({ entry, change, savedName }: FormProps & { readonly savedNam
         </div>
         <TextBox
           label="Hex color"
+          field="color"
           mono
           value={typedColor}
           placeholder="Each repository's own"
-          problem={
-            typedColor !== '' && color === undefined
-              ? 'The color is six hex digits, such as a2eeef, with or without #.'
-              : undefined
-          }
+          problem={problemIn('color')}
           onText={(typed) => {
             change(withKey(entry, 'color', typed.trim() === '' ? undefined : typed.trim()));
             return undefined;
@@ -754,6 +760,8 @@ function LabelForm({ entry, change, savedName }: FormProps & { readonly savedNam
       >
         <TextBox
           label="Renamed from"
+          field="renamed-from"
+          problem={problemIn('renamed-from')}
           multiline
           value={renamedFrom.join('\n')}
           note="One old name a line."
@@ -814,15 +822,26 @@ interface EntryFormProps {
   readonly entry: Entry;
   readonly ownerTypeHasPushRulesets: boolean;
   readonly onBack: () => void;
+  /** Set when the form opened to go to a problem in it. */
+  readonly goTo: EntryGoTo | undefined;
 }
 
-function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: EntryFormProps): JSX.Element {
+function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack, goTo }: EntryFormProps): JSX.Element {
   const noun = nouns[row.list];
   const back = useRef<HTMLButtonElement>(null);
-  // The form takes the keyboard when it opens, since the row that opened it is gone.
+  const form = useRef<HTMLDivElement>(null);
+  // The form takes the keyboard when it opens, since the row that opened it is gone, or the field it opened to go to.
   useEffect(() => {
-    back.current?.focus();
-  }, []);
+    const field =
+      goTo === undefined
+        ? undefined
+        : (form.current?.querySelector<HTMLElement>(`[data-entry-field="${goTo.field}"]`) ??
+          form.current?.querySelector<HTMLElement>('[aria-invalid="true"]'));
+    field?.scrollIntoView({ block: 'center' });
+    (field ?? back.current)?.focus();
+  }, [goTo]);
+  const problemIn = (field: EntryField): string | undefined =>
+    row.applyProblemField === field ? row.applyProblem : undefined;
   const change = (next: Entry): void => {
     run(editor.changeEntry(row, next));
   };
@@ -830,7 +849,6 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
   const absent = entry['absent'] === true;
   const renamable = row.source === 'here' || row.source === undefined;
   const name = typeof entry['name'] === 'string' ? entry['name'] : '';
-  const problemTheTargetsShow = row.list === 'rulesets' ? refTargetsProblem(entry) : undefined;
   // GitHub knows an environment by its name in any case, and a ruleset by its name as written.
   // A name only this profile's draft has is on no repository yet, so changing it leaves nothing behind.
   const appliedName = typeof row.applied?.['name'] === 'string' ? row.applied['name'] : undefined;
@@ -839,7 +857,7 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
     name.trim() !== '' &&
     (row.list === 'rulesets' ? name.trim() !== appliedName : name.trim().toLowerCase() !== appliedName.toLowerCase());
   return (
-    <div class="groups">
+    <div class="groups" ref={form}>
       <div class="entry-bar">
         <button class="button button-quiet" type="button" ref={back} onClick={onBack}>
           Back to {noun.many}
@@ -913,9 +931,10 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
         <Group title={noun.title}>
           <TextBox
             label="Name"
+            field="name"
             value={name}
             disabled={!renamable}
-            problem={row.outOfDate || row.applyProblem === problemTheTargetsShow ? undefined : row.applyProblem}
+            problem={problemIn('name')}
             note={
               !renamable
                 ? `It comes from ${row.source}, so it keeps its name.`
@@ -961,13 +980,16 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
             entry={entry}
             saved={row.saved}
             change={change}
+            problemIn={problemIn}
             ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
             appLookup={editor.appLookup}
           />
         )}
-        {!absent && row.list === 'environments' && <EnvironmentForm entry={entry} saved={row.saved} change={change} />}
+        {!absent && row.list === 'environments' && (
+          <EnvironmentForm entry={entry} saved={row.saved} change={change} problemIn={problemIn} />
+        )}
         {!absent && row.list === 'labels' && (
-          <LabelForm entry={entry} saved={row.saved} change={change} savedName={appliedName} />
+          <LabelForm entry={entry} saved={row.saved} change={change} problemIn={problemIn} savedName={appliedName} />
         )}
       </fieldset>
     </div>
@@ -978,10 +1000,19 @@ interface EntriesProps {
   readonly editor: ProfileEditor;
   readonly list: EntryList;
   readonly ownerTypeHasPushRulesets: boolean;
+  readonly goTo?: EntryGoTo | undefined;
 }
 
-export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: EntriesProps): JSX.Element {
-  const [openKey, setOpenKey] = useState<string | undefined>(undefined);
+export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo }: EntriesProps): JSX.Element {
+  const [openKey, setOpenKey] = useState<string | undefined>(goTo?.rowKey);
+  // Only the form a go-to opened puts the keyboard in its field; one opened from the list again starts at the top.
+  const [goingTo, setGoingTo] = useState<EntryGoTo | undefined>(goTo);
+  useEffect(() => {
+    if (goTo !== undefined) {
+      setOpenKey(goTo.rowKey);
+      setGoingTo(goTo);
+    }
+  }, [goTo]);
   const rows = editor.entries.value[kind];
   const noun = nouns[kind];
   const batch = editor.entryListBatches.value[kind];
@@ -1025,8 +1056,10 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
         row={shown}
         entry={shown.entry}
         ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
+        goTo={goingTo?.rowKey === shown.key ? goingTo : undefined}
         onBack={() => {
           setOpenKey(undefined);
+          setGoingTo(undefined);
         }}
       />
     );

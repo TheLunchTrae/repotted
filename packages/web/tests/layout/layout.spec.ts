@@ -139,6 +139,15 @@ const screens: Readonly<Record<string, Screen>> = {
         .getByRole('button', { name: 'Review protection…' }),
   },
   profiles: { path: '/profiles', visibleOnceDrawn: (page) => page.getByText('website', { exact: true }) },
+  'profile editor with save problems': {
+    path: '/profiles',
+    reachFromPath: async (page) => {
+      await page.getByText('website', { exact: true }).click();
+      await page.getByRole('textbox', { name: 'Default branch', exact: true }).fill('main dev');
+      await page.getByRole('button', { name: '1 thing to fix', exact: true }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('heading', { name: '1 thing to fix before you save' }),
+  },
   'profile editor after a batch action': {
     path: '/profiles',
     reachFromPath: async (page) => {
@@ -280,4 +289,62 @@ test("a repository's checkbox takes taps across a 44px target", async ({ page })
       .map(([offsetX, offsetY]) => `${offsetX},${offsetY}`);
   });
   expect(offsetsThatMiss, "taps 20px from the box's center that miss it").toEqual([]);
+});
+
+test('Go to it focuses the ruleset pattern that holds Save back', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('website', { exact: true }).click();
+  await page.getByRole('tab', { name: /^Rulesets/u }).click();
+  await page.getByRole('button', { name: 'New ruleset', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Main');
+  await page
+    .getByRole('group', { name: 'Include', exact: true })
+    .getByRole('checkbox', { name: 'Branches by pattern' })
+    .check();
+  const pattern = page.getByRole('textbox', { name: 'Branch patterns', exact: true });
+  await pattern.fill('release/*');
+
+  await page.getByRole('button', { name: '1 thing to fix', exact: true }).click();
+  await page.getByRole('button', { name: 'Go to it', exact: true }).click();
+
+  await expect(pattern).toBeFocused();
+  await page.getByRole('button', { name: 'Back to rulesets', exact: true }).click();
+  await page.getByRole('tab', { name: /^Repository/u }).click();
+  await page.getByRole('tab', { name: /^Rulesets/u }).click();
+  await expect(page.getByRole('button', { name: 'New ruleset', exact: true })).toBeVisible();
+});
+
+test('Go to it focuses a bypass list whose mode no longer fits its target', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('website', { exact: true }).click();
+  await page.getByRole('tab', { name: /^Rulesets/u }).click();
+  await page.getByRole('button', { name: 'New ruleset', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Main');
+  await page.getByRole('button', { name: 'Manage the bypass list', exact: true }).click();
+  await page.getByText('Add bypass', { exact: true }).click();
+  await page.getByRole('button', { name: 'Repository admin', exact: true }).click();
+  await page.getByRole('combobox', { name: 'When Repository admin can bypass' }).selectOption('pull_request');
+  await page
+    .getByRole('radiogroup', { name: 'Applies to', exact: true })
+    .getByRole('radio', { name: 'Tags', exact: true })
+    .check();
+
+  await page.getByRole('button', { name: '1 thing to fix', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '1 thing to fix before you save' })).toBeVisible();
+  expect(await page.evaluate(elementsPastViewportEdges), 'bypass list and save problems fit').toEqual([]);
+  await page.getByRole('button', { name: 'Go to it', exact: true }).click();
+
+  await expect(page.getByRole('region', { name: 'Bypass list', exact: true })).toBeFocused();
+});
+
+test('saved draft problems offer navigation without an ineffective Reset', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('unfinished', { exact: true }).click();
+  await page.getByRole('button', { name: '1 thing to fix', exact: true }).click();
+  const problems = page.getByRole('region', { name: '1 thing to fix before you save', exact: true });
+
+  await expect(problems.getByRole('button', { name: /^Reset/u })).toHaveCount(0);
+  await expect(problems.getByText('Saved in a draft. Edit it or discard the draft.')).toBeVisible();
+  await problems.getByRole('button', { name: 'Go to it', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Hex color', exact: true })).toBeFocused();
 });

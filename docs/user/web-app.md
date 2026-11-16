@@ -395,7 +395,21 @@ setup: **Repository**, **Merge**, **Actions**, **Security**, **Pages**,
 **Rulesets**, **Environments**, and **Labels**. A
 setting's own options sit indented under it. Names and numbers are typed in a
 box; until what you type is valid, the page says what's wrong and won't save,
-and **Reset** beside the setting puts it back.
+and **Reset** beside the setting puts it back. A box checks what you type by
+the same rules a profile file follows, so a branch name with a space in it, or
+two dots in a row, is refused as you type, as are an environment's branch and
+tag patterns that git wouldn't take.
+
+While something holds Save back, the bar says how many things, as **2 things
+to fix**, and each tab with one shows a count. The count opens a list of each
+thing, with where it is and why. **Go to it** opens its tab, or its ruleset,
+environment, or label, and puts you in the box. **Reset** puts that one back,
+and **Reset all**, with more than one, puts them all back. A setting hidden
+because of the one above it, such as **Open pull requests allowed** with
+**Pull requests** set to **Off**, can't be gone to, so the list offers only
+**Reset** for it, and the setting that hides it says so too. When the changes
+together can't make a valid profile, the list says why, and **Reset** in the
+bar puts the profile back as it was saved.
 
 Under the profile's name, the page says who it is for: personal accounts,
 organizations, or any owner. A profile for personal accounts hides the
@@ -477,7 +491,7 @@ The bar under the settings saves them. **Save** writes your changes to the
 profile. When profiles are kept on GitHub, it first brings in what changed
 there and then commits yours; only the settings you changed are written, so
 a change made elsewhere to another setting stays. If the changes can't make a valid profile, such as one with every
-merge method off, the bar says why and **Save** waits. **Reset** in the bar
+merge method off, the bar's list of things to fix says why and **Save** waits. **Reset** in the bar
 puts the whole profile back as it was saved.
 
 **Save as draft** keeps your changes in the profile without applying them:
@@ -577,6 +591,9 @@ adds its old name there. See [Labels](profiles.md#labels) for what apply does
 with renames.
 
 Topics, custom properties, and autolinks are not edited here yet.
+
+A problem already saved in a draft offers **Go to it**. **Reset** only
+resets unsaved edits; edit that draft entry or use **Discard draft**.
 
 ### Delete a profile
 

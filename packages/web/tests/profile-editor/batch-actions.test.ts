@@ -342,3 +342,21 @@ test('a batch made while a fresh read waits loses its undo when the read finishe
 
   expect(editor.batchDone.value).toBeUndefined();
 });
+
+test('resetting every save problem clears a batch undo snapshot', async () => {
+  const editor = await opened({ 'web.yaml': 'repository:\n  has_wiki: false\n' });
+  await editor.type(field('repository.default_branch'), 'main dev');
+  const features = settingSections
+    .flatMap((section) => section.groups)
+    .find((item) => item.fields.includes(field('repository.has_wiki')));
+  if (features === undefined) {
+    throw new Error('The wiki setting has no group.');
+  }
+  await editor.removeAllIn(features);
+  expect(editor.batchDone.value).toBeDefined();
+
+  await editor.resetEverythingBlockingSave();
+
+  expect(editor.problemsBlockingSave.value).toEqual([]);
+  expect(editor.batchDone.value).toBeUndefined();
+});

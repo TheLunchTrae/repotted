@@ -302,7 +302,7 @@ export function BypassList({
     change(withBypassActorsRemoved(entry, keys));
   };
   return (
-    <section class="settings-group" aria-label="Bypass list">
+    <section class="settings-group" aria-label="Bypass list" data-entry-field="bypass-list" tabIndex={-1}>
       <div>
         <h2>Bypass list</h2>
         <p class="muted small">

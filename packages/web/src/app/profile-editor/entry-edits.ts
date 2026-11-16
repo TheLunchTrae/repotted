@@ -2,14 +2,49 @@ import { computed, signal } from '@preact/signals';
 
 import { basename } from '../../engine/path.js';
 import { bypassListProblem } from './bypass-actors.js';
-import { type Entry, isEntry, labelProblem, rulesetProblem } from './entry-forms.js';
+import {
+  branchPolicyProblem,
+  type Entry,
+  hexColor,
+  isEntry,
+  labelProblem,
+  namedRefTargetsProblem,
+  refPatternsProblem,
+  rulesetProblem,
+} from './entry-forms.js';
 import { ownUnsets, type ResolvedProfile } from './own-drafts.js';
 import { sameValue } from './same-value.js';
 
 export const entryLists = ['rulesets', 'environments', 'labels'] as const;
 export type EntryList = (typeof entryLists)[number];
 
+export const entryListTitles: Readonly<Record<EntryList, string>> = {
+  rulesets: 'Rulesets',
+  environments: 'Environments',
+  labels: 'Labels',
+};
+
 export type SaveMode = 'applies' | 'draft';
+
+/** The field of the entry's form a problem shows under; `entry` is the entry as a whole, shown above its fields. */
+export type EntryField =
+  | 'name'
+  | 'include-targets'
+  | 'exclude-targets'
+  | 'include-patterns'
+  | 'exclude-patterns'
+  | 'bypass-list'
+  | 'status-checks'
+  | 'branch-patterns'
+  | 'tag-patterns'
+  | 'color'
+  | 'renamed-from'
+  | 'entry';
+
+interface EntryProblem {
+  readonly message: string;
+  readonly field: EntryField;
+}
 
 export interface EntryRow {
   readonly list: EntryList;
@@ -42,11 +77,13 @@ export interface EntryRow {
    */
   readonly outOfDate: boolean;
   readonly applyProblem: string | undefined;
+  /** Undefined while there is no `applyProblem`. */
+  readonly applyProblemField: EntryField | undefined;
   /** A draft may be unfinished, so this is only what is wrong with its name. */
   readonly draftProblem: string | undefined;
 }
 
-type Row = Omit<EntryRow, 'applyProblem' | 'draftProblem'>;
+type Row = Omit<EntryRow, 'applyProblem' | 'applyProblemField' | 'draftProblem'>;
 
 /** A base profile's entry can only be overridden here, so taking it out is for one this profile names, or a new one. */
 export function canBeTakenOut(row: EntryRow): boolean {
@@ -101,6 +138,34 @@ function withTrimmedNameFirst(entry: Entry): Entry {
 /** What GitHub knows an entry by: a ruleset by its name as written, an environment or a label by its name in any case. */
 function identity(list: EntryList, name: string): string {
   return list === 'rulesets' ? name : name.toLowerCase();
+}
+
+const colorProblem = 'The color is six hex digits, such as a2eeef, with or without #.';
+
+/** What GitHub would refuse in one of the entry's own fields, past its name. `otherNames` are the list's other names, as GitHub knows them. */
+function fieldProblem(list: EntryList, entry: Entry, otherNames: readonly string[]): EntryProblem | undefined {
+  const problemIn = (field: EntryField, message: string | undefined): EntryProblem | undefined =>
+    message === undefined ? undefined : { field, message };
+  if (list === 'rulesets') {
+    return (
+      problemIn('include-targets', namedRefTargetsProblem(entry, 'include')) ??
+      problemIn('include-patterns', refPatternsProblem(entry, 'include')) ??
+      problemIn('exclude-targets', namedRefTargetsProblem(entry, 'exclude')) ??
+      problemIn('exclude-patterns', refPatternsProblem(entry, 'exclude')) ??
+      problemIn('status-checks', rulesetProblem(entry)) ??
+      problemIn('bypass-list', bypassListProblem(entry))
+    );
+  }
+  if (list === 'environments') {
+    return (
+      problemIn('branch-patterns', branchPolicyProblem(entry, 'branch')) ??
+      problemIn('tag-patterns', branchPolicyProblem(entry, 'tag'))
+    );
+  }
+  return (
+    problemIn('color', entry['color'] !== undefined && hexColor(entry) === undefined ? colorProblem : undefined) ??
+    problemIn('renamed-from', labelProblem(entry, otherNames))
+  );
 }
 
 function entryRowStartsFrom(slot: Slot): Entry | undefined {
@@ -607,57 +672,66 @@ export class EntryEdits {
         outOfDate: change.name !== undefined,
       }));
     const all = [...listed, ...others];
-    return all.map((row) => ({
-      ...row,
+    return all.map((row) => {
       // A draft is checked as its change is, since a save that applies finishes it.
-      applyProblem: row.unsaved || row.inDraft !== undefined ? this.#problem(row, all, true) : undefined,
-      draftProblem: row.unsaved ? this.#problem(row, all, false) : undefined,
-    }));
+      const applyProblem = row.unsaved || row.inDraft !== undefined ? this.#problem(row, all, true) : undefined;
+      return {
+        ...row,
+        applyProblem: applyProblem?.message,
+        applyProblemField: applyProblem?.field,
+        draftProblem: row.unsaved ? this.#problem(row, all, false)?.message : undefined,
+      };
+    });
   }
 
   /** Why a row can't be saved: for one that applies, anything; for a draft, which may be unfinished, only its name. */
-  #problem(row: Row, all: readonly Row[], applies: boolean): string | undefined {
+  #problem(row: Row, all: readonly Row[], applies: boolean): EntryProblem | undefined {
     const { list, entry } = row;
     const name = nameOf(entry);
     if (row.outOfDate) {
       const known = row.savedName ?? name;
-      return row.saved === undefined && row.applied === undefined
-        ? `${known} was removed elsewhere since you changed it. Keep yours to add it again, or reset it.`
-        : `${known} changed elsewhere since you changed it. Keep yours over that change, or reset it to see it.`;
+      return {
+        field: 'entry',
+        message:
+          row.saved === undefined && row.applied === undefined
+            ? `${known} was removed elsewhere since you changed it. Keep yours to add it again, or reset it.`
+            : `${known} changed elsewhere since you changed it. Keep yours over that change, or reset it to see it.`,
+      };
     }
     if (entry === undefined) {
       return undefined;
     }
     if (name === '') {
-      return 'Give it a name.';
+      return { field: 'name', message: 'Give it a name.' };
     }
     const id = identity(list, name);
     const others = all.filter((other) => other !== row);
     if (others.some((other) => other.entry !== undefined && identity(list, nameOf(other.entry)) === id)) {
-      return `The profile already has ${nouns[list]} named ${name}.`;
+      return { field: 'name', message: `The profile already has ${nouns[list]} named ${name}.` };
     }
     // An entry the draft takes out keeps its name in the file, and the draft can't both take it out and change it.
     if (others.some((other) => other.inDraft === 'taken-out' && identity(list, other.savedName ?? '') === id)) {
-      return `The draft takes ${name} out of the profile. Put that one back to change it, or choose another name.`;
+      return {
+        field: 'name',
+        message: `The draft takes ${name} out of the profile. Put that one back to change it, or choose another name.`,
+      };
     }
     // The file still has that name for an entry whose change renames it or takes it out, until a save.
     if (
       others.some((other) => other.unsaved && other.savedName !== undefined && identity(list, other.savedName) === id)
     ) {
-      return `${name} is the saved name of one you renamed or took out. Save that first, or choose another name.`;
+      return {
+        field: 'name',
+        message: `${name} is the saved name of one you renamed or took out. Save that first, or choose another name.`,
+      };
     }
     if (!applies) {
       return undefined;
     }
-    if (list === 'rulesets') {
-      return rulesetProblem(entry) ?? bypassListProblem(entry);
-    }
-    if (list === 'labels') {
-      return labelProblem(
-        entry,
-        others.map((other) => identity(list, nameOf(other.entry))).filter((other) => other !== ''),
-      );
-    }
-    return undefined;
+    return fieldProblem(
+      list,
+      entry,
+      others.map((other) => identity(list, nameOf(other.entry))).filter((other) => other !== ''),
+    );
   }
 }
