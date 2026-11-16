@@ -148,7 +148,9 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                       : state.kind === 'failed'
                         ? "The apply couldn't be reviewed. Review again once that is put right, or discard the apply."
                         : state.kind === 'applied'
-                          ? `${state.changes === 1 ? '1 change was' : `${state.changes} changes were`} written to GitHub.`
+                          ? state.changes === 0
+                            ? 'Nothing needed writing to GitHub. Its profiles are recorded as applied.'
+                            : `${state.changes === 1 ? '1 change was' : `${state.changes} changes were`} written to GitHub.`
                           : counts.changes === 0
                             ? 'Step 2 of 2: nothing to apply. The repository already has what this apply sets.'
                             : `Step 2 of 2: ${counts.changes === 1 ? '1 change' : `${counts.changes} changes`}${
@@ -263,6 +265,35 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 {state.notice}
               </p>
             )}
+            {state.assignment.kind === 'add' && (
+              <div class="assign-choice">
+                <label class="check">
+                  <input
+                    type="checkbox"
+                    checked={apply.addToRepositoryProfiles.value}
+                    onChange={(event) => {
+                      apply.addToRepositoryProfiles.value = event.currentTarget.checked;
+                    }}
+                  />
+                  <span>
+                    Add <span class="mono">{state.assignment.profileName}</span> to this repository's profiles when it
+                    applies
+                  </span>
+                </label>
+                <p class="muted small">
+                  {state.assignment.recordsVersions
+                    ? 'Deselect it for a one-time apply. The repository keeps no record of the profile.'
+                    : 'Deselect it for a one-time apply. Since this apply leaves some of the profile out, edits it, or skips a setting GitHub refused to show, the profile is added as not applied yet.'}
+                </p>
+              </div>
+            )}
+            {state.assignment.kind === 'own' && (
+              <p class="muted small">
+                {state.assignment.recordsVersions
+                  ? "Applying records this version of the repository's profiles as applied."
+                  : "This apply leaves some of the repository's profiles out, edits them, or skips a setting GitHub refused to show, so it doesn't record them as applied."}
+              </p>
+            )}
             {state.warnings.length > 0 && (
               <div class="notice notice-drift">
                 <p>The review left some things out:</p>
@@ -357,16 +388,28 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
           <div class="save-bar">
             <BarActions
               mainAction={
-                <button
-                  class="button button-primary"
-                  type="button"
-                  disabled={!apply.canApply.value}
-                  onClick={() => {
-                    setConfirming(true);
-                  }}
-                >
-                  Apply
-                </button>
+                apply.canRecordWithoutChanges.value ? (
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    onClick={() => {
+                      run(apply.recordWithoutChanges());
+                    }}
+                  >
+                    Record as applied
+                  </button>
+                ) : (
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    disabled={!apply.canApply.value}
+                    onClick={() => {
+                      setConfirming(true);
+                    }}
+                  >
+                    Apply
+                  </button>
+                )
               }
               otherActions={
                 <>

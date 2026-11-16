@@ -757,6 +757,21 @@ input[type='checkbox']:disabled {
   border-top: 1px solid var(--border);
 }
 
+/* Not clipped, so a row's list of profiles can show past the last row; its first and last rows take the corners instead. */
+.repository-rows {
+  overflow: visible;
+}
+
+.repository-rows > li:first-child {
+  border-start-start-radius: calc(var(--panel-radius) - 1px);
+  border-start-end-radius: calc(var(--panel-radius) - 1px);
+}
+
+.repository-rows > li:last-child {
+  border-end-start-radius: calc(var(--panel-radius) - 1px);
+  border-end-end-radius: calc(var(--panel-radius) - 1px);
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -2223,4 +2238,156 @@ select.field {
 .preview-branches {
   max-height: 40vh;
   overflow-y: auto;
+}
+
+.panel-profiles {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  width: 100%;
+}
+
+.panel-profiles-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.panel-profiles-heading h3 {
+  font-size: 15px;
+}
+
+.panel-profiles .notice {
+  width: 100%;
+}
+
+.layers {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: layer;
+}
+
+.layers li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  background: var(--bg);
+  counter-increment: layer;
+}
+
+.layers li::before {
+  content: counter(layer);
+  width: 1.4em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.layer-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.layers .layer-missing {
+  border-color: var(--remove);
+  background: var(--remove-bg);
+}
+
+.tags {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tag {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--sunken);
+  font: 500 12px/1.5 var(--mono);
+  white-space: nowrap;
+}
+
+.tag-count {
+  position: relative;
+}
+
+.tag-list {
+  display: none;
+  position: absolute;
+  inset-inline-end: 0;
+  top: calc(100% + 6px);
+  z-index: 2;
+  min-width: 14rem;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--panel-radius);
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(20 40 26 / 0.18);
+  font-family: var(--sans);
+  text-align: start;
+  white-space: normal;
+}
+
+.tag-list ol {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding-inline-start: 20px;
+}
+
+/* Only where a pointer can hover: on a phone the row opens the details, which list the profiles. */
+@media (hover: hover) {
+  .row:hover .tag-count .tag-list {
+    display: grid;
+  }
+}
+
+.dialog-profiles {
+  width: min(32rem, calc(100vw - 32px));
+}
+
+.add-profile {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.add-profile .field {
+  flex: 1;
+  min-width: 10rem;
+}
+
+.assign-choice {
+  display: grid;
+  gap: 4px;
+}
+
+.assign-choice .check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* On a phone a row with profiles puts its name on a line of its own, with the tags and pills under it. */
+@media (max-width: 760px) {
+  .repository-rows .row:has(.tags) {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .repository-rows .row:has(.tags) .row-name {
+    flex-basis: 100%;
+  }
 }

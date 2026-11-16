@@ -1,7 +1,7 @@
 // The web app as src/main.tsx starts it, against an in-memory GitHub with a
 // signed-in account, eight repositories, one of which GitHub won't show every
-// setting of, an empty repository to keep profiles in, and two kept profiles,
-// so the layout
+// setting of, an empty repository to keep profiles in, and two kept profiles
+// that two repositories use, so the layout
 // test sees full pages with no sign-in and no network. `?signed-out` starts it
 // with GitHub refusing the sign-in, which shows the sign-in page.
 // `?config-repositories` gives two repositories the repotted-config topic, which
@@ -159,6 +159,14 @@ await writeFile('/profiles/browser/base.yaml', 'repository:\n  has_wiki: false\n
 await writeFile(
   '/profiles/browser/teams/website.yaml',
   'extends: ../base.yaml\n\nrepository:\n  has_projects: false\n',
+);
+// Two profiles on the long name, the most a phone shows as tags, and four on another, one of them gone.
+localStorage.setItem(
+  'repotted:repository-profiles',
+  JSON.stringify({
+    'lunch/a_repository_name_with_no_hyphens_in_it_at_all': { profiles: ['base.yaml', 'teams/website.yaml'] },
+    'lunch/app': { profiles: ['base.yaml', 'teams/website.yaml', 'teams/mobile.yaml', 'archived.yaml'] },
+  }),
 );
 
 render(
