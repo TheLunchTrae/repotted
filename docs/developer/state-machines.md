@@ -1016,6 +1016,7 @@ the file, so the state is whatever the file says when it's read.
 | Draft   | Finished while the file has an entry of the same name     | Draft: `editProfile` refuses. Replacing the entry and dropping the draft, in one edit, finishes it.           |
 | Draft   | Planned or applied                                        | Draft: left out of the changes and listed in `skipped`.                                                       |
 | Draft   | A second draft of the same name in the same list          | The profile is invalid, as a duplicate entry makes it.                                                        |
+| Applies | A second entry of the same name in the same file's list   | The file is invalid before merging its bases; the error names the file and duplicate entry.                   |
 | Applies | Saved with the marker                                     | Draft, unless the file already has a draft of that name. The profile stops naming it, as the note below says. |
 
 Turning an entry into a draft doesn't delete it from GitHub. Like any entry a

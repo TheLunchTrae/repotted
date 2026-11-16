@@ -117,6 +117,61 @@ rulesets:
     expect(String(await rejection(loadProfile(file)))).toContain('Ruleset "Same" appears more than once');
   });
 
+  test.each([
+    {
+      section: 'autolinks',
+      base: '[{ key_prefix: TASK-, url_template: "https://old/<num>" }]',
+      override: '[{ key_prefix: TASK-, url_template: "https://new/<num>" }, { key_prefix: TASK-, absent: true }]',
+      duplicate: 'Autolink "TASK-"',
+    },
+    {
+      section: 'rulesets',
+      base: '[{ name: Main, target: branch }]',
+      override: '[{ name: Main, target: tag }, { name: Main, target: push }]',
+      duplicate: 'Ruleset "Main"',
+    },
+    {
+      section: 'environments',
+      base: '[{ name: npm }]',
+      override: '[{ name: npm, wait_timer: 5 }, { name: NPM, wait_timer: 10 }]',
+      duplicate: 'Environment "NPM"',
+    },
+    {
+      section: 'labels',
+      base: '[{ name: bug }]',
+      override: '[{ name: bug, color: d73a4a }, { name: BUG, absent: true }]',
+      duplicate: 'Label "BUG"',
+    },
+  ])('rejects duplicate $section in an override before merging', async ({ section, base, override, duplicate }) => {
+    const baseName = `${section}-duplicate-base.yaml`;
+    await write(baseName, `${section}: ${base}\n`);
+    const file = await write(`${section}-duplicate-own.yaml`, `extends: ${baseName}\n${section}: ${override}\n`);
+
+    const error = await rejection(loadProfile(file));
+
+    expect(error).toBeInstanceOf(ProfileError);
+    expect(String(error)).toContain(`${file} is not a valid profile:`);
+    expect(String(error)).toContain(`${duplicate} appears more than once`);
+  });
+
+  test('names the file with duplicate entries when another profile extends it', async () => {
+    await write('duplicate-root.yaml', 'rulesets: [{ name: Main }]\n');
+    const invalid = await write(
+      'duplicate-middle.yaml',
+      'extends: duplicate-root.yaml\nrulesets: [{ name: Main, target: tag }, { name: Main, target: push }]\n',
+    );
+    const file = await write(
+      'duplicate-leaf.yaml',
+      'extends: duplicate-middle.yaml\nrulesets: [{ name: Main, target: branch }]\n',
+    );
+
+    const error = await rejection(loadProfile(file));
+
+    expect(error).toBeInstanceOf(ProfileError);
+    expect(String(error)).toContain(`${invalid} is not a valid profile:`);
+    expect(String(error)).toContain('Ruleset "Main" appears more than once');
+  });
+
   test('rejects deployment patterns without custom branch policies', async () => {
     const file = await write(
       'patterns.yaml',
