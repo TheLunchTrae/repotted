@@ -878,6 +878,7 @@ input[type='checkbox']:disabled {
 }
 
 .sort-order {
+  margin-inline-start: 0.25em;
   color: var(--muted);
   font-weight: 400;
 }
