@@ -233,6 +233,37 @@ edits that could be saved. The repository's panel says **An apply here is
 not finished** with **Resume**. Starting another apply there offers to pick
 the unfinished one up or start over.
 
+### Keep a repository's profiles
+
+A repository can keep a list of the profiles it uses, applied in order, with
+later profiles overriding earlier ones. Each one shows as a short tag on the
+repository's row. With more than three, or two on a phone, the row says how
+many, such as **5 profiles**, and lists them when you hover over it; on a
+phone, tap the repository to see them in its panel.
+
+When you apply a profile the repository doesn't use, the review has a
+selected box to add it to the repository's profiles when it applies.
+Deselect it for a one-time apply, which leaves no record on the repository.
+An apply that leaves a change out, has one-off edits, or skips a setting
+GitHub refused to show doesn't count as
+applying the profiles, so the repository still shows them as not applied or
+changed.
+
+The repository's panel lists its profiles under **Profiles**. Click
+**Edit** to reorder them, remove one or add one, then **Save**. Saving
+changes only the list: nothing is applied until you review an apply. Click
+**Review apply** to apply them all together, in their order.
+
+Repotted remembers which version of each profile was last applied. When a
+profile changes, or one is added, removed or moved, the row says
+**Profile changed** and the panel says what changed, with **Review apply**.
+When a review finds nothing to write, click **Record as applied** to mark the
+current versions as applied. A profile that was deleted or can't be read
+shows as **Missing profile**; remove it or put it back before applying.
+
+The list is kept with your hidden repositories and folders, so it follows
+your profiles to their GitHub repository.
+
 ### Apply a profile to several repositories
 
 A batch apply applies one profile to several repositories, with each
@@ -492,6 +523,19 @@ A ruleset with no rule selected leaves each repository's rules as they are.
 Once any rule is selected, the ruleset has exactly the selected rules, and
 applying removes every other rule it has on a repository; the form says
 which holds. **Leave its rules to GitHub** goes back to leaving them alone.
+
+A ruleset's **Include** and **Exclude** are options you can select together.
+**Include** offers **Default branch** (each repository's own default),
+**All branches** (or **All tags** in a tag ruleset), and **Branches by
+pattern** (or **Tags by pattern**), which shows a box for the patterns, one a
+line. **Exclude** offers **Default branch** and the patterns. A pattern
+starts with `refs/heads/` for a branch or `refs/tags/` for a tag, as in
+`refs/heads/release/*`. When GitHub would refuse a pattern or it would match
+nothing, the form says why, and the ruleset can't be saved until you correct
+it. Deselecting the pattern option clears its patterns. A push ruleset has no
+branch or tag targets, so its form shows none. An option the ruleset doesn't
+offer, such as the default branch in a tag ruleset, still shows while the
+ruleset names it, so you can deselect it.
 
 An environment that deploys from **Chosen branches and tags** takes
 **Branch patterns** and **Tag patterns**, one a line.

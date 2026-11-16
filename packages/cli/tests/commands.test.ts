@@ -336,10 +336,22 @@ describe('batch', () => {
     expect(document(started)).toEqual({
       folder,
       id,
-      profile,
+      profiles: [profile],
       members: [
-        { repository: 'lunch/app', file: path.join(folder, 'lunch', 'app.yaml'), left_out: false, joined: false },
-        { repository: 'lunch/web', file: path.join(folder, 'lunch', 'web.yaml'), left_out: false, joined: false },
+        {
+          repository: 'lunch/app',
+          file: path.join(folder, 'lunch', 'app.yaml'),
+          left_out: false,
+          joined: false,
+          profiles: null,
+        },
+        {
+          repository: 'lunch/web',
+          file: path.join(folder, 'lunch', 'web.yaml'),
+          left_out: false,
+          joined: false,
+          profiles: null,
+        },
       ],
     });
     const names = { [path.dirname(folder)]: '<batch>', [id ?? '']: '<id>' };
@@ -379,7 +391,7 @@ describe('batch', () => {
     expect(document(planned)).toMatchObject({
       batch: folder,
       id,
-      profile,
+      profiles: [profile],
       plans: [
         { repository: 'lunch/app', changes: [], locks: [], staged: { exclude: ['repository.has_wiki'] } },
         { repository: 'lunch/web', changes: [{ fields: [{ field: 'has_projects' }] }], locks: [] },
@@ -1353,7 +1365,7 @@ describe('stage', () => {
     expect(planned.code).toBe(0);
     // The document says what the plan applies and what leaves each change out; the plan file is the plan alone.
     expect(document(planned)).toMatchObject({
-      staged: { repository: 'lunch/app', base: profile, exclude: ['repository.has_issues'] },
+      staged: { repository: 'lunch/app', profiles: [profile], exclude: ['repository.has_issues'] },
       exclusions: [
         { change: 0, field: 'has_projects', key: 'repository.has_projects', edited: true },
         { change: 0, field: 'has_wiki', key: 'repository.has_wiki', edited: false },
@@ -1421,5 +1433,43 @@ describe('stage', () => {
     const planned = await cli(new FakeGitHub(), 'plan', '--staged', file, '--json');
     expect(JSON.parse(planned.out)).toMatchObject({ skipped: [{ section: 'repository', target: 'has_projects' }] });
     await fixture('staged-plan-skipped', planned);
+  });
+
+  test('starts a batch from several profiles, given in the order they apply', async () => {
+    const node = path.join(directory, 'batch-layer-node.yaml');
+    const docs = path.join(directory, 'batch-layer-docs.yaml');
+    await writeFile(node, 'repository: { has_wiki: false }\n');
+    await writeFile(docs, 'repository: { has_issues: false }\n');
+    const folder = path.join(directory, 'batch-layers');
+
+    const started = await cli(
+      new FakeGitHub({}, 'lunch/app'),
+      'stage',
+      folder,
+      '--batch',
+      '--new',
+      'lunch/app',
+      '-p',
+      node,
+      '-p',
+      docs,
+    );
+
+    expect(started.code).toBe(0);
+    expect(started.err).toContain(`from ${node}, then ${docs}`);
+  });
+
+  test('starts from several profiles, given in the order they apply', async () => {
+    const node = path.join(directory, 'staged-layer-node.yaml');
+    const docs = path.join(directory, 'staged-layer-docs.yaml');
+    await writeFile(node, 'repository: { has_wiki: false, has_issues: false }\n');
+    await writeFile(docs, 'repository: { has_wiki: true }\n');
+    const file = path.join(directory, 'staged-layers.yaml');
+
+    const started = await cli(new FakeGitHub(), 'stage', file, '--new', 'lunch/app', '--profile', node, '-p', docs);
+
+    expect(started.code).toBe(0);
+    expect(started.err).toContain(`from ${node}, then ${docs}`);
+    expect(started.out).toBe('repository:\n  has_issues: false\n  has_wiki: true\n');
   });
 });

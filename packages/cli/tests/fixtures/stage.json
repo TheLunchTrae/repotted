@@ -1,7 +1,9 @@
 {
   "file": "<tests>/staged.yaml",
   "repository": "lunch/app",
-  "base": "<tests>/staged-base.yaml",
+  "profiles": [
+    "<tests>/staged-base.yaml"
+  ],
   "exclude": [],
   "chain": [
     "<tests>/staged.yaml",

@@ -3,11 +3,15 @@ import { expect, test } from 'vitest';
 import {
   branchPolicies,
   labelProblem,
+  refPatternProblem,
+  refPatterns,
   uniqueTrimmedNonBlankLines,
   rulesetProblem,
   withBranchPolicies,
   withDeploymentBranches,
+  withNamedRefTarget,
   withRefNames,
+  withRefPatterns,
   withRule,
   withRuleParameter,
   withStatusChecks,
@@ -41,6 +45,114 @@ test('ref names are written as a pair, keep the other conditions, and typed then
 
   const none = withRefNames(withRefNames({ name: 'New' }, 'include', ['~ALL']), 'include', []);
   expect(none).toEqual({ name: 'New' });
+});
+
+test('named targets are selected and deselected in the ref names, and the names as saved in any order are as saved', () => {
+  const mixed = {
+    name: 'Release',
+    target: 'branch',
+    conditions: { ref_name: { include: ['refs/heads/release/*', '~DEFAULT_BRANCH', 'refs/heads/hotfix/*'] } },
+  };
+  const all = withNamedRefTarget(mixed, 'include', '~ALL', true, mixed);
+  expect(all['conditions']).toEqual({
+    ref_name: {
+      include: ['refs/heads/release/*', '~DEFAULT_BRANCH', 'refs/heads/hotfix/*', '~ALL'],
+      exclude: [],
+    },
+  });
+  expect(withNamedRefTarget(all, 'include', '~ALL', false, mixed)).toEqual(mixed);
+
+  const added = withRefPatterns(mixed, 'include', ['refs/heads/release/*', 'refs/heads/hotfix/*', 'refs/heads/next']);
+  expect(added['conditions']).toEqual({
+    ref_name: {
+      include: ['refs/heads/release/*', '~DEFAULT_BRANCH', 'refs/heads/hotfix/*', 'refs/heads/next'],
+      exclude: [],
+    },
+  });
+
+  const retyped = withRefPatterns(mixed, 'include', ['refs/heads/next'], mixed);
+  expect(retyped['conditions']).toEqual({ ref_name: { include: ['~DEFAULT_BRANCH', 'refs/heads/next'], exclude: [] } });
+  expect(withRefPatterns(retyped, 'include', ['refs/heads/release/*', 'refs/heads/hotfix/*'], mixed)).toEqual(mixed);
+
+  const typedNamed = withRefPatterns(mixed, 'include', ['~ALL', 'refs/heads/release/*'], mixed);
+  expect(refPatterns(typedNamed, 'include')).toEqual(['refs/heads/release/*']);
+  expect(withNamedRefTarget(typedNamed, 'include', '~ALL', false, mixed)['conditions']).toEqual({
+    ref_name: { include: ['refs/heads/release/*', '~DEFAULT_BRANCH'], exclude: [] },
+  });
+
+  const deselected = withRefPatterns(mixed, 'include', [], mixed);
+  expect(deselected['conditions']).toEqual({ ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } });
+});
+
+test('names as saved come back only when each is there as many times as saved', () => {
+  const twice = {
+    name: 'Twice',
+    conditions: { ref_name: { include: ['refs/heads/a', 'refs/heads/a', 'refs/heads/b'] } },
+  };
+  const other = withRefNames(twice, 'include', ['refs/heads/a', 'refs/heads/b', 'refs/heads/b'], twice);
+  expect(other['conditions']).toEqual({
+    ref_name: { include: ['refs/heads/a', 'refs/heads/b', 'refs/heads/b'], exclude: [] },
+  });
+  expect(withRefNames(other, 'include', ['refs/heads/b', 'refs/heads/a', 'refs/heads/a'], twice)).toEqual(twice);
+});
+
+test.each([
+  ['refs/heads/release/*', 'branch', undefined],
+  ['refs/heads/**/*', 'branch', undefined],
+  ['refs/heads/[0-9]*.x', 'branch', undefined],
+  ['refs/tags/v*', 'tag', undefined],
+  ['refs/tags/v*', 'unset', undefined],
+  ['refs/heads/[^_]*', 'branch', undefined],
+  ['release/*', 'branch', 'Start each branch pattern with refs/heads/, as in refs/heads/release/*.'],
+  ['refs/heads/v*', 'tag', 'Start each tag pattern with refs/tags/, as in refs/tags/v*.'],
+  ['v*', 'unset', 'Start each pattern with refs/heads/ for branches or refs/tags/ for tags.'],
+  ['~MAIN', 'branch', "~MAIN isn't a target GitHub knows."],
+  ['refs/heads/', 'branch', 'refs/heads/ needs a branch name or pattern after it.'],
+  ['refs/heads/my branch', 'branch', "refs/heads/my branch: a branch name can't have spaces."],
+  ['refs/heads/a..b', 'branch', "refs/heads/a..b: a branch name can't have ..."],
+  ['refs/heads/a:b', 'branch', "refs/heads/a:b: a branch name can't have :."],
+  ['refs/tags/v1.lock', 'tag', 'refs/tags/v1.lock: no part of a tag name can end with .lock.'],
+  ['refs/heads/release/', 'branch', "refs/heads/release/: a branch name can't end with /."],
+  ['refs/heads/.hidden', 'branch', 'refs/heads/.hidden: no part of a branch name can start with a dot.'],
+  ['refs/heads/a\tb', 'branch', "refs/heads/a\tb: a branch name can't have spaces."],
+  ['refs/heads/a\u0007b', 'branch', "refs/heads/a\u0007b: a branch name can't have control characters."],
+  ['refs/heads/a.lock/b', 'branch', 'refs/heads/a.lock/b: no part of a branch name can end with .lock.'],
+  ['refs/heads/v1.', 'branch', "refs/heads/v1.: a branch name can't end with a dot."],
+  ['refs/heads/a~1', 'branch', "refs/heads/a~1: a branch name can't have ~."],
+] as const)('the ref pattern %s with the target %s', (pattern, target, problem) => {
+  expect(refPatternProblem(pattern, target === 'unset' ? undefined : target)).toBe(problem);
+});
+
+test("a ruleset's targets are refused where GitHub would refuse them or match nothing", () => {
+  const branches = { name: 'Main', target: 'branch' };
+  const typo = withRefPatterns(branches, 'exclude', ['refs/heads/tmp/*', 'tmp/*']);
+  expect(rulesetProblem(typo)).toBe('Start each branch pattern with refs/heads/, as in refs/heads/release/*.');
+  expect(rulesetProblem(withRefPatterns(typo, 'exclude', ['refs/heads/tmp/*']))).toBeUndefined();
+
+  const defaultBranch = withNamedRefTarget(branches, 'include', '~DEFAULT_BRANCH', true);
+  expect(rulesetProblem(defaultBranch)).toBeUndefined();
+  expect(rulesetProblem({ ...defaultBranch, target: 'tag' })).toBe(
+    "A tag ruleset can't target the default branch. Deselect it.",
+  );
+  expect(rulesetProblem({ ...defaultBranch, target: 'push' })).toBe(
+    'A push ruleset has no branch or tag targets. Deselect them.',
+  );
+  expect(rulesetProblem({ name: 'Pushes', target: 'push' })).toBeUndefined();
+  expect(rulesetProblem(withRefPatterns({ name: 'Pushes', target: 'push' }, 'include', ['refs/heads/a']))).toBe(
+    'A push ruleset has no branch or tag targets. Deselect them.',
+  );
+
+  expect(rulesetProblem(withNamedRefTarget(branches, 'exclude', '~ALL', true))).toBe(
+    'Excluding all branches leaves the ruleset nothing to cover. Deselect it.',
+  );
+  expect(rulesetProblem({ ...typo, absent: true })).toBeUndefined();
+
+  const noChecks = {
+    ...typo,
+    rules: [{ type: 'required_status_checks', parameters: { required_status_checks: [] } }],
+  };
+  expect(rulesetProblem(noChecks)).not.toBe(rulesetProblem(typo));
+  expect(rulesetProblem(noChecks)).toBeDefined();
 });
 
 test('a rule turned off and on again comes back as saved, and rules the form has no box for stay', () => {

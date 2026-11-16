@@ -43,7 +43,9 @@
   "staged": {
     "file": "<tests>/staged-drafts.yaml",
     "repository": "lunch/app",
-    "base": "<tests>/staged-drafts-base.yaml",
+    "profiles": [
+      "<tests>/staged-drafts-base.yaml"
+    ],
     "exclude": []
   },
   "exclusions": [
