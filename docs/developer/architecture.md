@@ -42,6 +42,11 @@ there a marking key that a branch leaves out becomes `not: {}`, a key the
 branch rules out; any other type JSON Schema can't hold still throws. The
 refinements that span keys, such as `mergeSettingsProblems` and repeated
 names, have no JSON Schema form and stay out of it.
+The resolved profile rejects commit message settings for a disabled merge
+method and configured code scanning default setup with Actions disabled.
+The editor previews through this validation, so conflicts block saving to
+apply while remaining available as drafts. Captures omit stored commit
+message settings for disabled methods and warn about each omission.
 
 `packages/core/src/profiles/profile.ts` loads a profile and the chain of profiles it
 `extends`, merges them, and only then validates the result. Validating after

@@ -269,7 +269,14 @@ export async function captureProfile(
   for (const [key, value] of Object.entries(loadableMerge)) {
     const pair = commitPairs.find(({ title, message }) => key === title || key === message);
     const other = pair === undefined ? undefined : key === pair.title ? pair.message : pair.title;
-    if (other !== undefined && other in live.merge && !(other in loadableMerge)) {
+    if (pair !== undefined && loadableMerge[pair.enabled] === false) {
+      warnings.push({
+        section: 'merge',
+        key,
+        cause: 'unloadable',
+        message: `GitHub takes it only when ${pair.enabled} is enabled, so it is left out`,
+      });
+    } else if (other !== undefined && other in live.merge && !(other in loadableMerge)) {
       warnings.push({
         section: 'merge',
         key,

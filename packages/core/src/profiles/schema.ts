@@ -84,11 +84,13 @@ export const mergeFields = {
 // offers, and rejects any other pair with a 422.
 export const commitPairs = [
   {
+    enabled: 'allow_merge_commit',
     title: 'merge_commit_title',
     message: 'merge_commit_message',
     allowed: ['MERGE_MESSAGE PR_TITLE', 'PR_TITLE BLANK', 'PR_TITLE PR_BODY'],
   },
   {
+    enabled: 'allow_squash_merge',
     title: 'squash_merge_commit_title',
     message: 'squash_merge_commit_message',
     allowed: ['COMMIT_OR_PR_TITLE COMMIT_MESSAGES', 'PR_TITLE BLANK', 'PR_TITLE COMMIT_MESSAGES', 'PR_TITLE PR_BODY'],
@@ -104,6 +106,9 @@ export function mergeSettingsProblems(merge: MergeSettings): string[] {
   for (const pair of commitPairs) {
     const title = merge[pair.title];
     const message = merge[pair.message];
+    if (merge[pair.enabled] === false && (title !== undefined || message !== undefined)) {
+      problems.push(`Enable ${pair.enabled} or remove ${pair.title} and ${pair.message}`);
+    }
     if (
       title !== undefined &&
       message !== undefined &&
@@ -652,6 +657,13 @@ export const profile = z
   .superRefine((value, context) => {
     for (const message of mergeSettingsProblems(value.merge ?? {})) {
       context.addIssue({ code: 'custom', message, path: ['merge'] });
+    }
+    if (value.actions?.enabled === false && value.security?.code_scanning_default_setup?.state === 'configured') {
+      context.addIssue({
+        code: 'custom',
+        message: 'Enable Actions or turn off code scanning default setup',
+        path: ['security', 'code_scanning_default_setup', 'state'],
+      });
     }
     addDuplicateNameIssues(
       (value.autolinks ?? []).map((entry) => ({ name: entry.key_prefix })),

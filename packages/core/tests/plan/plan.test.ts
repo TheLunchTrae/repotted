@@ -871,7 +871,16 @@ describe('capture', () => {
 
     const { profile, warnings } = await captureProfile(github, repo);
 
-    expect(warnings).toEqual([]);
+    expect(warnings).toEqual([
+      expect.objectContaining({ section: 'merge', key: 'merge_commit_title', cause: 'unloadable' }),
+      expect.objectContaining({ section: 'merge', key: 'merge_commit_message', cause: 'unloadable' }),
+      expect.objectContaining({ section: 'merge', key: 'squash_merge_commit_title', cause: 'unloadable' }),
+      expect.objectContaining({ section: 'merge', key: 'squash_merge_commit_message', cause: 'unloadable' }),
+    ]);
+    expect(profile.merge).not.toHaveProperty('merge_commit_title');
+    expect(profile.merge).not.toHaveProperty('merge_commit_message');
+    expect(profile.merge).not.toHaveProperty('squash_merge_commit_title');
+    expect(profile.merge).not.toHaveProperty('squash_merge_commit_message');
     expect(profile.rulesets).toHaveLength(6);
     expect(profile.environments).toEqual([
       expect.objectContaining({ name: 'release-cli', branch_policies: [{ name: 'main', type: 'branch' }] }),
