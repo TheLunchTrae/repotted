@@ -1,9 +1,8 @@
 import { afterEach, expect, test } from 'vitest';
 
 import { answered, FakeFleet, FakeGitHub } from '../../../core/tests/support/fake-github.js';
-import { Apply } from '../../src/app/apply/apply.js';
 import { BatchApply } from '../../src/app/apply/batch-apply.js';
-import { mkdir, readFile, rm, writeFile } from '../../src/engine/files.js';
+import { mkdir, readFile, readdir, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
   await rm('/', { recursive: true });
@@ -36,6 +35,23 @@ function statuses(batch: BatchApply): string[] {
     : [`not reviewed: ${state.kind}`];
 }
 
+async function pending(): Promise<string[]> {
+  return readdir('/apply', { withFileTypes: true }).then(
+    (entries) => entries.map((entry) => entry.name),
+    () => [],
+  );
+}
+
+function memberFile(batch: BatchApply, repository: string): string {
+  const state = batch.state.value;
+  const file =
+    state.kind === 'reviewed' ? state.plan.plans.find((member) => member.repository === repository)?.file : undefined;
+  if (file === undefined) {
+    throw new Error('The repository has a reviewed apply.');
+  }
+  return file;
+}
+
 test('a batch reviews each repository, writes nothing until asked, and then writes each one', async () => {
   await saved();
   const { github, of } = fleet('lunch/app', 'lunch/api');
@@ -51,7 +67,7 @@ test('a batch reviews each repository, writes nothing until asked, and then writ
     { key: 'repository.has_wiki', repositories: 1 },
   ]);
   expect(writes(of('lunch/app'))).toEqual([]);
-  expect(await batch.unfinished()).toBe(true);
+  expect(await pending()).toHaveLength(1);
 
   await batch.apply();
 
@@ -66,7 +82,7 @@ test('a batch reviews each repository, writes nothing until asked, and then writ
   expect(writes(of('lunch/app'))).toEqual(['PATCH /repos/lunch/app']);
   expect(writes(of('lunch/api'))).toEqual([]);
   expect(of('lunch/app').state.repository).toMatchObject({ has_wiki: false, has_projects: false });
-  expect(await batch.unfinished()).toBe(false);
+  expect(await pending()).toEqual([]);
 });
 
 test('a change left out everywhere, in one repository, or a repository left out, stays unwritten', async () => {
@@ -132,32 +148,6 @@ test('a repository that could not be compared is its own failure, and the rest a
   expect(batch.ready.value.map((member) => member.repository)).toEqual(['lunch/app']);
 });
 
-test('an apply in progress joins a batch as it is, and stays when the batch is discarded', async () => {
-  await saved();
-  const { github } = fleet('lunch/app', 'lunch/api');
-  const apply = new Apply(github, () => undefined);
-  await apply.start('lunch/app', profile);
-  await apply.review();
-  await apply.leaveOut('repository.has_wiki', true);
-  apply.close();
-  const batch = new BatchApply(github, () => undefined);
-
-  await batch.start(['lunch/app', 'lunch/api'], profile);
-  expect(statuses(batch)).toEqual(['lunch/app changes 1', 'lunch/api changes 1']);
-  const state = batch.state.value;
-  expect(state.kind === 'reviewed' ? state.members[0]?.leftOut : []).toEqual(['repository.has_wiki']);
-
-  batch.close();
-  expect(batch.state.value).toEqual({ kind: 'idle' });
-  await batch.resume();
-  expect(batch.state.value).toMatchObject({ kind: 'reviewed', profileName: 'web' });
-
-  await batch.discard();
-  expect(await batch.unfinished()).toBe(false);
-  expect(await apply.unfinished('lunch/app')).toBe(true);
-  expect(await apply.unfinished('lunch/api')).toBe(false);
-});
-
 test('a batch that cannot start says why and leaves nothing behind', async () => {
   await saved('repository:\n  has_wikis: 5\n');
   const { github } = fleet('lunch/app');
@@ -167,45 +157,7 @@ test('a batch that cannot start says why and leaves nothing behind', async () =>
 
   const state = batch.state.value;
   expect(state.kind === 'failed' ? state.message : '').toContain('web.yaml is not a valid profile');
-  expect(await batch.unfinished()).toBe(false);
-});
-
-test('a batch started while another is unfinished starts nothing, and names the one that is there', async () => {
-  await saved();
-  await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
-  const { github, of } = fleet('lunch/app', 'lunch/new');
-  const batch = new BatchApply(github, () => undefined);
-  await batch.start(['lunch/app'], profile);
-  batch.close();
-
-  await batch.start(['lunch/new'], { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
-
-  // What a review or a discard from here acts on is the batch of web, so that is the one named.
-  expect(batch.state.value).toMatchObject({ kind: 'failed', profileName: 'web', hasBatchToReviewAgain: true });
-  expect(await new Apply(github, () => undefined).unfinished('lunch/new')).toBe(false);
-
-  await batch.reviewAgain();
-  expect(batch.state.value).toMatchObject({ kind: 'reviewed', profileName: 'web' });
-  expect(statuses(batch)).toEqual(['lunch/app changes 1']);
-  await batch.apply();
-  expect(writes(of('lunch/new'))).toEqual([]);
-});
-
-test('an apply that joined from another profile is marked as starting from it', async () => {
-  await saved();
-  await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
-  const { github } = fleet('lunch/app', 'lunch/api');
-  const apply = new Apply(github, () => undefined);
-  await apply.start('lunch/app', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
-  apply.close();
-  const batch = new BatchApply(github, () => undefined);
-
-  await batch.start(['lunch/app', 'lunch/api'], profile);
-
-  const state = batch.state.value;
-  const notes = state.kind === 'reviewed' ? state.members.map((member) => member.startNote) : [];
-  expect(notes[0]).toContain('starts from other');
-  expect(notes[1]).toBeUndefined();
+  expect(await pending()).toEqual([]);
 });
 
 test('a repository GitHub would refuse a change in needs access, and is not written', async () => {
@@ -239,8 +191,7 @@ test('a repository GitHub would refuse a change in needs access, and is not writ
   // The batch ends with its last repository, and the apply it started goes with it.
   await batch.remove('lunch/app');
   expect(batch.state.value).toEqual({ kind: 'idle' });
-  expect(await batch.unfinished()).toBe(false);
-  expect(await new Apply(new FakeFleet([app]), () => undefined).unfinished('lunch/app')).toBe(false);
+  expect(await pending()).toEqual([]);
 });
 
 test('a sign-in lost while writing signs out once, and a batch that ended has nothing to review again', async () => {
@@ -271,8 +222,8 @@ test('a repository whose apply is gone or unreadable is named, and one that is g
   const { github } = fleet('lunch/app', 'lunch/api', 'lunch/web');
   const batch = new BatchApply(github, () => undefined);
   await batch.start(['lunch/app', 'lunch/api', 'lunch/web'], profile);
-  await rm('/staged/lunch/app.yaml');
-  await writeFile('/staged/lunch/api.yaml', 'not: [a staged apply');
+  await rm(memberFile(batch, 'lunch/app'));
+  await writeFile(memberFile(batch, 'lunch/api'), 'not: [a staged apply');
 
   await batch.everywhere('repository.has_wiki', true);
 
@@ -292,29 +243,13 @@ test('a repository whose apply is gone or unreadable is named, and one that is g
   expect(statuses(batch)).toEqual(['lunch/web changes 1', 'lunch/api failed 0']);
 });
 
-test('a batch that cannot be read fails on resume, and discarding it clears it', async () => {
-  await mkdir('/batch', { recursive: true });
-  await writeFile('/batch/batch.yaml', 'members: 5\n');
-  const { github } = fleet('lunch/app');
-  const batch = new BatchApply(github, () => undefined);
-
-  await batch.resume();
-  const state = batch.state.value;
-  expect(state).toMatchObject({ kind: 'failed', hasBatchToReviewAgain: true });
-  expect(state.kind === 'failed' ? state.message : '').toContain('the batch is not a valid batch');
-
-  await batch.discard();
-  expect(batch.state.value).toEqual({ kind: 'idle' });
-  expect(await batch.unfinished()).toBe(false);
-});
-
 test('nothing is applied from a batch that is being discarded', async () => {
   await saved();
   const { github, of } = fleet('lunch/app');
   const batch = new BatchApply(github, () => undefined);
   await batch.start(['lunch/app'], profile);
 
-  const discarding = batch.discard();
+  const discarding = batch.close();
   await batch.apply();
   await discarding;
 
@@ -348,7 +283,7 @@ class GitHubWithHeldRequests extends FakeGitHub {
   }
 }
 
-test('a batch that is writing is neither replaced, resumed, nor discarded, and a late review changes nothing', async () => {
+test('a batch that is writing is neither replaced nor discarded, and a late review changes nothing', async () => {
   await saved();
   const app = new GitHubWithHeldRequests({}, 'lunch/app');
   const api = new FakeGitHub({}, 'lunch/api');
@@ -361,19 +296,18 @@ test('a batch that is writing is neither replaced, resumed, nor discarded, and a
   await new Promise((resolve) => {
     setTimeout(resolve, 0);
   });
-  batch.close();
-  const resumed = batch.resume();
+  await batch.close();
+  const restarted = batch.start(['lunch/app', 'lunch/api'], profile);
   await app.release();
-  await Promise.all([late, resumed]);
+  await Promise.all([late, restarted]);
   await batch.everywhere('repository.has_wiki', true);
   expect(batch.leftOut.value).toEqual(['repository.has_wiki']);
 
   app.hold();
   const writing = batch.apply();
-  batch.close();
+  await batch.close();
   await batch.start(['lunch/app'], profile);
-  await batch.resume();
-  await batch.discard();
+  await batch.close();
   expect(batch.state.value).toMatchObject({ kind: 'applying' });
   await app.release();
   await writing;
@@ -382,4 +316,36 @@ test('a batch that is writing is neither replaced, resumed, nor discarded, and a
   // What was left out everywhere was written nowhere.
   expect(app.state.repository).toMatchObject({ has_wiki: true, has_projects: false });
   expect(api.state.repository).toMatchObject({ has_wiki: true, has_projects: false });
+});
+
+test('leaving discards the batch and its exclusions, so another batch starts fresh', async () => {
+  await saved();
+  const { github, of } = fleet('lunch/app', 'lunch/api');
+  const batch = new BatchApply(github, () => undefined);
+  await batch.start(['lunch/app', 'lunch/api'], profile);
+  await batch.everywhere('repository.has_wiki', true);
+  await batch.leaveOutRepository('lunch/api', true);
+
+  await batch.close();
+
+  expect(batch.state.value).toEqual({ kind: 'idle' });
+  expect(await pending()).toEqual([]);
+  expect(writes(of('lunch/app'))).toEqual([]);
+  expect(writes(of('lunch/api'))).toEqual([]);
+  await batch.start(['lunch/app', 'lunch/api'], profile);
+  expect(statuses(batch)).toEqual(['lunch/app changes 1', 'lunch/api changes 1']);
+  expect(batch.leftOut.value).toEqual([]);
+});
+
+test('leaving while a batch starts cleans up even when its files are created later', async () => {
+  await saved();
+  const { github, of } = fleet('lunch/app');
+  const batch = new BatchApply(github, () => undefined);
+  const starting = batch.start(['lunch/app'], profile);
+  await batch.close();
+  await starting;
+
+  expect(batch.state.value).toEqual({ kind: 'idle' });
+  expect(await pending()).toEqual([]);
+  expect(writes(of('lunch/app'))).toEqual([]);
 });

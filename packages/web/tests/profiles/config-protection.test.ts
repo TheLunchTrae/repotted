@@ -72,6 +72,7 @@ test("one-off edits to an apply of the protection can't be saved to it", async (
   const before = await readFile(profile.file, 'utf8');
   const apply = new Apply(github, () => undefined);
   await apply.start('lunch/app', profile);
+  await apply.backToEdits();
   expect(apply.state.value).toMatchObject({ kind: 'editing', fromProfile: true, builtIn: true });
 
   const wiki = settingSections
@@ -84,22 +85,6 @@ test("one-off edits to an apply of the protection can't be saved to it", async (
   await apply.saveToProfile();
 
   expect(await readFile(profile.file, 'utf8')).toBe(before);
-});
-
-test('an apply of the protection that is picked up later still saves nothing to it', async () => {
-  const github = personal();
-  const protection = new ConfigProtection(github, () => undefined);
-  await protection.check('lunch/app');
-  const profile = await protection.writeProfileForApply();
-  if (profile === undefined) {
-    throw new Error('The protection fits a personal repository.');
-  }
-  await new Apply(github, () => undefined).start('lunch/app', profile);
-
-  const later = new Apply(github, () => undefined);
-  await later.pickUp('lunch/app');
-
-  expect(later.state.value).toMatchObject({ kind: 'editing', fromProfile: true, builtIn: true });
 });
 
 test("a personal repository the account can't administer is offered no protection", async () => {

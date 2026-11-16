@@ -130,8 +130,6 @@ export function RowProfileTags({ repository, assignments, phone }: RowTagsProps)
 interface PanelProfilesProps {
   readonly repository: Repository;
   readonly assignments: RepositoryProfiles;
-  /** An unfinished apply is resumed or discarded first, so none starts. */
-  readonly unfinished: boolean;
   readonly folder: string;
   readonly onApplyProfiles: (repository: string, profiles: readonly ComparedProfile[]) => void;
   readonly onEdit: () => void;
@@ -140,7 +138,6 @@ interface PanelProfilesProps {
 export function PanelProfiles({
   repository,
   assignments,
-  unfinished,
   folder,
   onApplyProfiles,
   onEdit,
@@ -148,7 +145,7 @@ export function PanelProfiles({
   const profiles = assignments.profilesOf(repository.full_name);
   const status = assignments.status(repository.full_name);
   const sentence = statusSentence(status);
-  const canApply = profiles.length > 0 && status.kind !== 'missing' && status.kind !== 'checking' && !unfinished;
+  const canApply = profiles.length > 0 && status.kind !== 'missing' && status.kind !== 'checking';
   const reviewApply = (
     <button
       class={status.kind === 'current' ? 'button' : 'button button-small'}
@@ -202,7 +199,6 @@ export function PanelProfiles({
               {status.kind !== 'missing' && <p class="notice-actions">{reviewApply}</p>}
             </div>
           )}
-          {unfinished && <p class="muted small">Finish or discard the apply here first.</p>}
         </>
       )}
     </section>

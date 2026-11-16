@@ -342,6 +342,7 @@ test('an apply with a one-off edit records no versions', async () => {
     assignments,
   );
   await apply.startFromProfiles('lunch/app', [{ file: `${folder}/base.yaml`, name: 'base', folder }]);
+  await apply.backToEdits();
 
   await apply.editor.value?.addEntry('labels', { name: 'docs', color: '0075ca' });
   await apply.review();
@@ -383,7 +384,7 @@ test('an apply GitHub refuses partway, or one of a repository that changed since
   const refused = await appliedTogether(assignments, refusing, ['base.yaml', 'node.yaml']);
   await refused.apply();
   expect(refused.state.value).toMatchObject({ kind: 'reviewed' });
-  await refused.discard();
+  await refused.close();
 
   const changing = new FakeGitHub();
   const stale = await appliedTogether(assignments, changing, ['base.yaml', 'node.yaml']);

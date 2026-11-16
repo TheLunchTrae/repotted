@@ -116,6 +116,32 @@ const screens: Readonly<Record<string, Screen>> = {
         .click(),
     visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Move teams/website down' }),
   },
+  'apply review': {
+    path: '/?repository=lunch/api',
+    reachFromPath: (page) => page.getByRole('button', { name: 'Apply', exact: true }).click(),
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Leave out Wiki, repository.has_wiki', exact: true }),
+  },
+  'one-off apply edits': {
+    path: '/?repository=lunch/api',
+    reachFromPath: async (page) => {
+      await page.getByRole('button', { name: 'Apply', exact: true }).click();
+      await page.getByRole('button', { name: 'Leave out Wiki, repository.has_wiki', exact: true }).waitFor();
+      const more = page.locator('.bar-more > summary');
+      if (await more.isVisible()) {
+        await more.click();
+      }
+      await page.getByRole('button', { name: 'Edit for this apply', exact: true }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Review changes', exact: true }),
+  },
+  'batch apply review': {
+    path: '/',
+    reachFromPath: async (page) => {
+      await page.getByRole('checkbox', { name: 'Select lunch/api' }).check();
+      await page.getByRole('button', { name: 'Review apply', exact: true }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('heading', { name: 'All repositories', exact: true }),
+  },
   'found config repositories': {
     path: '/?config-repositories',
     reachFromPath: (page) =>

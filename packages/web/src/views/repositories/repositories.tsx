@@ -3,8 +3,6 @@ import type { JSX, RefObject } from 'preact';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
-import type { Apply } from '../../app/apply/apply.js';
-import type { BatchApply } from '../../app/apply/batch-apply.js';
 import type { ComparedProfile } from '../../app/apply/comparison.js';
 import type { AddressedRepository } from '../../app/navigation/addressed-repository.js';
 import type { Profiles } from '../../app/profiles/profiles.js';
@@ -727,13 +725,8 @@ interface PanelProps {
   readonly profiles: Profiles;
   readonly onCapture: (repository: string) => void;
   readonly onCompare: (repository: string, profile: ComparedProfile) => void;
-  readonly apply: Apply;
-  /**
-   * Starts an apply of the profile to the repository, picks up the
-   * unfinished one when no profile is given, or with `once` starts one that
-   * changes settings without a profile.
-   */
-  readonly onApply: (repository: string, profile: ComparedProfile | 'once' | undefined) => void;
+  /** With `once`, starts an apply that changes settings without a profile. */
+  readonly onApply: (repository: string, profile: ComparedProfile | 'once') => void;
   readonly onApplyProfiles: (repository: string, profiles: readonly ComparedProfile[]) => void;
   readonly assignments: RepositoryProfiles;
   /** Goes back to the list, given when the panel is a screen of its own, as on a phone. */
@@ -745,7 +738,6 @@ function RepositoryPanel({
   repositories,
   onDialog,
   profiles,
-  apply,
   onCapture,
   onCompare,
   onApply,
@@ -753,25 +745,8 @@ function RepositoryPanel({
   assignments,
   onBack,
 }: PanelProps): JSX.Element {
-  const [unfinished, setUnfinished] = useState(false);
   const [editingProfiles, setEditingProfiles] = useState(false);
   const usesProfiles = assignments.profilesOf(repository.full_name).length > 0;
-  // Looked up again whenever the apply moves on, since one that ends or is discarded is no longer there.
-  const moved = apply.state.value.kind;
-  useEffect(() => {
-    let current = true;
-    setUnfinished(false);
-    run(
-      apply.unfinished(repository.full_name).then((found) => {
-        if (current) {
-          setUnfinished(found);
-        }
-      }),
-    );
-    return () => {
-      current = false;
-    };
-  }, [apply, repository.full_name, moved]);
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const profile = listings.find((listing) => listing.file === picked) ?? listings[0];
@@ -820,7 +795,6 @@ function RepositoryPanel({
       <PanelProfiles
         repository={repository}
         assignments={assignments}
-        unfinished={unfinished}
         folder={profiles.folder.value}
         onApplyProfiles={onApplyProfiles}
         onEdit={() => {
@@ -849,34 +823,15 @@ function RepositoryPanel({
       >
         Capture as a new profile
       </button>
-      {/* One apply a repository at a time: an unfinished one is resumed or discarded first. */}
-      {!unfinished && (
-        <button
-          class="button"
-          type="button"
-          onClick={() => {
-            onApply(repository.full_name, 'once');
-          }}
-        >
-          Change settings once
-        </button>
-      )}
-      {unfinished && (
-        <div class="notice notice-drift">
-          <p>An apply here is not finished.</p>
-          <p class="notice-actions">
-            <button
-              class="button button-small"
-              type="button"
-              onClick={() => {
-                onApply(repository.full_name, undefined);
-              }}
-            >
-              Resume
-            </button>
-          </p>
-        </div>
-      )}
+      <button
+        class="button"
+        type="button"
+        onClick={() => {
+          onApply(repository.full_name, 'once');
+        }}
+      >
+        Change settings once
+      </button>
       <form
         class="panel-form"
         onSubmit={(event) => {
@@ -1070,19 +1025,15 @@ interface RepositoriesProps {
   readonly profiles: Profiles;
   readonly onCapture: (repository: string) => void;
   readonly onCompare: PanelProps['onCompare'];
-  readonly apply: Apply;
   readonly onApply: PanelProps['onApply'];
   readonly onApplyProfiles: PanelProps['onApplyProfiles'];
   readonly assignments: RepositoryProfiles;
-  readonly batch: BatchApply;
-  /** With no profile, resumes the unfinished batch. */
-  readonly onBatch: (repositories: readonly string[], profile: ComparedProfile | undefined) => void;
+  readonly onBatch: (repositories: readonly string[], profile: ComparedProfile) => void;
 }
 
 interface SelectedProps {
   readonly repositories: Repositories;
   readonly onDialog: (dialog: FolderDialog) => void;
-  readonly unfinished: boolean;
   readonly profiles: Profiles;
   readonly onBatch: RepositoriesProps['onBatch'];
   readonly onMoved: (folder: string | undefined) => void;
@@ -1093,7 +1044,6 @@ function SelectedPanel({
   repositories,
   onDialog,
   profiles,
-  unfinished,
   onBatch,
   onMoved,
   onDeselectAll,
@@ -1163,7 +1113,7 @@ function SelectedPanel({
         class="panel-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (profile !== undefined && !unfinished) {
+          if (profile !== undefined) {
             onBatch(
               selected.map((repository) => repository.full_name),
               { file: profile.file, name: nameOf(profile), folder: profiles.folder.value },
@@ -1193,14 +1143,10 @@ function SelectedPanel({
                 </option>
               ))}
             </select>
-            <button class="button button-primary" type="submit" disabled={unfinished}>
+            <button class="button button-primary" type="submit">
               Review apply
             </button>
-            <p class="muted small">
-              {unfinished
-                ? 'A batch apply is not finished. Resume it, then apply or discard it, before starting another.'
-                : 'Each repository is reviewed first, and one with an apply in progress joins as it is. Nothing is written until you apply.'}
-            </p>
+            <p class="muted small">Each repository is reviewed first. Nothing is written until you apply.</p>
           </>
         )}
       </form>
@@ -1235,8 +1181,6 @@ export function RepositoriesPage({
   repositories,
   address,
   profiles,
-  apply,
-  batch,
   onCapture,
   onCompare,
   onApply,
@@ -1245,21 +1189,6 @@ export function RepositoriesPage({
   onBatch,
 }: RepositoriesProps): JSX.Element {
   const selected = repositories.selected.value;
-  const [unfinished, setUnfinished] = useState(false);
-  const moved = batch.state.value.kind;
-  useEffect(() => {
-    let current = true;
-    run(
-      batch.unfinished().then((found) => {
-        if (current) {
-          setUnfinished(found);
-        }
-      }),
-    );
-    return () => {
-      current = false;
-    };
-  }, [batch, moved]);
   const search = useSlashKeyToFocusSearch();
   const list = repositories.list.value;
   const loading = repositories.loading.value;
@@ -1337,22 +1266,6 @@ export function RepositoriesPage({
       }
     >
       <section class="page-body" aria-labelledby="repositories-heading">
-        {unfinished && (
-          <div class="notice notice-drift">
-            <p>A batch apply is not finished.</p>
-            <p class="notice-actions">
-              <button
-                class="button button-small"
-                type="button"
-                onClick={() => {
-                  onBatch([], undefined);
-                }}
-              >
-                Resume
-              </button>
-            </p>
-          </div>
-        )}
         <div class="page-heading">
           <div>
             <h1 id="repositories-heading" ref={heading} tabIndex={-1}>
@@ -1602,7 +1515,6 @@ export function RepositoriesPage({
           repositories={repositories}
           onDialog={setDialog}
           profiles={profiles}
-          unfinished={unfinished}
           onBatch={onBatch}
           onMoved={(folder) => {
             focusFolder(folder, 'toggle');
@@ -1616,7 +1528,6 @@ export function RepositoriesPage({
             repositories={repositories}
             onDialog={setDialog}
             profiles={profiles}
-            apply={apply}
             onCapture={onCapture}
             onCompare={onCompare}
             onApply={onApply}

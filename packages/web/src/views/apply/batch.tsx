@@ -75,11 +75,6 @@ function Member({ member, batch, reviewingOrApplying: working }: MemberProps): J
           {member.comparisonFailureMessage}
         </p>
       )}
-      {member.startNote !== undefined && (
-        <p class="notice notice-drift" role="note">
-          {member.startNote}
-        </p>
-      )}
       {(member.warnings.length > 0 || member.skippedDrafts.length > 0) && (
         <ul class="muted small">
           {member.warnings.map((warning) => (
@@ -363,7 +358,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                   disabled={reviewingOrApplying}
                   onClick={() => {
                     run(
-                      batch.discard().then(() => {
+                      batch.close().then(() => {
                         if (batch.state.value.kind === 'idle') {
                           router.go('/');
                         }

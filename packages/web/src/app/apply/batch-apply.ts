@@ -5,7 +5,6 @@ import {
   createBatch,
   describeSkipped,
   describeWarning,
-  discardBatch,
   discardBatchMember,
   editEverywhere,
   editStagedApply,
@@ -13,19 +12,14 @@ import {
   isBatch,
   leaveOut,
   type MemberResult,
-  parseRepo,
   planBatch,
   readBatch,
 } from '@repotted/core';
 
-import { rm, stat } from '../../engine/files.js';
-import { basename } from '../../engine/path.js';
+import { rm } from '../../engine/files.js';
+import { basename, dirname } from '../../engine/path.js';
 import { isSignedOut } from '../account/account.js';
 import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
-
-/** A batch's members are the same applies as those made one at a time, so they share `/staged`. */
-const batchFolder = '/batch';
-const stagedFolder = '/staged';
 
 export interface BatchMemberView {
   readonly repository: string;
@@ -36,11 +30,6 @@ export interface BatchMemberView {
   readonly leftOut: readonly string[];
   readonly skippedDrafts: readonly string[];
   readonly warnings: readonly string[];
-  /**
-   * Said of an apply that doesn't start from the batch's profile, as one in
-   * progress before the batch may not: what it starts from instead.
-   */
-  readonly startNote: string | undefined;
 }
 
 /** `key` leaves the change out everywhere, and `repositories` is how many it reaches. */
@@ -50,7 +39,6 @@ export interface BatchChange {
 }
 
 interface Named {
-  /** '' for a batch picked up without a profile picked. */
   readonly profileName: string;
 }
 
@@ -96,15 +84,10 @@ function nameOf(profiles: readonly string[]): string {
   return profiles.map((profile) => basename(profile).replace(/\.ya?ml$/u, '')).join(', ');
 }
 
-function isSameList(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((item, index) => item === right[index]);
-}
-
 /** A message with its files by their names, not by where the browser keeps them. */
 function cleaned(message: string): string {
   return message
-    .replaceAll(/\/staged\/([^/\s]+)\/([^/\s]+)\.yaml/gu, 'the apply to $1/$2')
-    .replaceAll(/(?<![\w./-])\/batch(?:\/batch\.yaml)?(?![\w/-])/gu, 'the batch')
+    .replaceAll(/\/apply\/[^/\s]+\/batch/gu, 'the batch')
     .replaceAll(/\/profiles\/(?:browser\/|github\/[^/]+\/[^/]+\/@[^/]+\/)?/gu, '');
 }
 
@@ -157,11 +140,6 @@ function membersOf(plan: BatchPlan): BatchMemberView[] {
       leftOut: member.staged.exclude,
       skippedDrafts: member.skipped.map(describeSkipped),
       warnings: member.warnings.map(describeWarning),
-      startNote: isSameList(member.staged.profiles, member.batch_profiles)
-        ? undefined
-        : member.staged.profiles.length === 0
-          ? 'This apply starts from the repository as it is, not from the profile of this batch. It was in progress before the batch.'
-          : `This apply starts from ${nameOf(member.staged.profiles)}, not from the profile of this batch. It was in progress before the batch.`,
     };
   });
   const rest = (repository: string, status: 'failed' | 'left-out', message: string | undefined): BatchMemberView => ({
@@ -173,7 +151,6 @@ function membersOf(plan: BatchPlan): BatchMemberView[] {
     leftOut: [],
     skippedDrafts: [],
     warnings: [],
-    startNote: undefined,
   });
   return [
     ...planned,
@@ -191,8 +168,8 @@ function membersOf(plan: BatchPlan): BatchMemberView[] {
 }
 
 /**
- * It is kept as the engine's batch, a folder in the browser, whose members
- * are the same applies as those made one repository at a time. Nothing is
+ * The engine's batch holds this page's review in temporary files, discarded
+ * when the page is left. Nothing is
  * written to GitHub except by `apply`, which hands the engine the plan of
  * the review that is shown; the engine plans each repository again and
  * writes nothing to one that changed, is locked, or whose apply was edited
@@ -205,6 +182,7 @@ export class BatchApply {
   readonly #onSignedOut: () => void;
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
+  #folder: string | undefined;
 
   constructor(github: GitHub, onSignedOut: () => void) {
     this.#github = github;
@@ -236,59 +214,17 @@ export class BatchApply {
 
   readonly leftOut = computed(() => [...new Set(this.members.value.flatMap((member) => member.leftOut))]);
 
-  async unfinished(): Promise<boolean> {
-    return isBatch(batchFolder);
-  }
-
-  /**
-   * A repository that has an apply in progress joins as it is, edits and all.
-   * With a batch unfinished it starts nothing and says so under that batch's
-   * own profile, which is the one a review or a discard from there acts on.
-   */
   async start(repositories: readonly string[], profile: ComparedProfile): Promise<void> {
-    if (this.#writing()) {
+    if (this.#writing() || repositories.length === 0) {
       return;
     }
-    await this.#work(profile.name, [], async () => {
-      if (await isBatch(batchFolder)) {
-        const held = await readBatch(batchFolder).then(
-          (batch) => nameOf(batch.profiles),
-          () => '',
-        );
-        return {
-          kind: 'failed',
-          profileName: held,
-          hasBatchToReviewAgain: true,
-          message: `A batch apply${held === '' ? '' : ` of ${held}`} is not finished. Review it again to pick it up, or discard it, before starting another.`,
-        };
-      }
-      const files = repositories.map((repository) => {
-        const repo = parseRepo(repository);
-        return { repository, file: `${stagedFolder}/${repo.owner.toLowerCase()}/${repo.name.toLowerCase()}.yaml` };
-      });
-      const existing = await Promise.all(
-        files.map(({ file }) =>
-          stat(file).then(
-            () => true,
-            () => false,
-          ),
-        ),
-      );
-      await createBatch(batchFolder, {
-        profiles: [profile.file],
-        repositories: files.filter((_, index) => existing[index] !== true).map(({ repository }) => repository),
-        join: files.filter((_, index) => existing[index] === true).map(({ file }) => file),
-        stagedFolder,
-      });
-      return this.#review([]);
+    const closing = this.close();
+    this.#folder = `/apply/${crypto.randomUUID()}/batch`;
+    await this.#work(profile.name, [], async (folder) => {
+      await closing;
+      await createBatch(folder, { profiles: [profile.file], repositories });
+      return this.#review(folder, []);
     });
-  }
-
-  async resume(): Promise<void> {
-    if (this.#writing()) {
-      return;
-    }
-    await this.#work('', [], () => this.#review([]));
   }
 
   /** Not after a batch that ended, or that never started. */
@@ -304,7 +240,7 @@ export class BatchApply {
   async reviewAgain(): Promise<void> {
     const state = this.state.value;
     if (this.canReviewAgain.value && 'profileName' in state) {
-      await this.#work(state.profileName, this.members.value, () => this.#review([]));
+      await this.#work(state.profileName, this.members.value, (folder) => this.#review(folder, []));
     }
   }
 
@@ -312,23 +248,24 @@ export class BatchApply {
   async leaveOutRepository(repository: string, out: boolean): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'reviewed') {
-      await this.#work(state.profileName, state.members, async () => {
-        await leaveOut(batchFolder, [repository], out);
-        return this.#review([]);
+      await this.#work(state.profileName, state.members, async (folder) => {
+        await leaveOut(folder, [repository], out);
+        return this.#review(folder, []);
       });
     }
   }
 
-  /**
-   * An apply the batch started for the repository is discarded; one that
-   * joined stays. The batch ends with its last repository.
-   */
+  /** The batch ends with its last repository. */
   async remove(repository: string): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'reviewed') {
-      await this.#work(state.profileName, state.members, async () => {
-        const { batch } = await discardBatchMember(batchFolder, repository);
-        return batch === null ? { kind: 'idle' } : this.#review([]);
+      await this.#work(state.profileName, state.members, async (folder) => {
+        const { batch } = await discardBatchMember(folder, repository);
+        if (batch === null) {
+          await rm(dirname(folder), { recursive: true, force: true });
+          return { kind: 'idle' };
+        }
+        return this.#review(folder, []);
       });
     }
   }
@@ -338,9 +275,9 @@ export class BatchApply {
     const file =
       state.kind === 'reviewed' ? state.plan.plans.find((member) => member.repository === repository)?.file : undefined;
     if (state.kind === 'reviewed' && file !== undefined) {
-      await this.#work(state.profileName, state.members, async () => {
+      await this.#work(state.profileName, state.members, async (folder) => {
         await editStagedApply(file, [{ exclude: key, excluded: out }]);
-        return this.#review([]);
+        return this.#review(folder, []);
       });
     }
   }
@@ -348,9 +285,12 @@ export class BatchApply {
   async everywhere(key: string, out: boolean): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'reviewed') {
-      await this.#work(state.profileName, state.members, async () => {
-        const { refused } = await editEverywhere(batchFolder, key, out);
-        return this.#review(refused.map((item) => `${item.repository}: ${cleaned(item.message)}`));
+      await this.#work(state.profileName, state.members, async (folder) => {
+        const { refused } = await editEverywhere(folder, key, out);
+        return this.#review(
+          folder,
+          refused.map((item) => `${item.repository}: ${cleaned(item.message)}`),
+        );
       });
     }
   }
@@ -367,6 +307,10 @@ export class BatchApply {
       return;
     }
     const { plan, profileName: profile } = state;
+    const folder = this.#folder;
+    if (folder === undefined) {
+      return;
+    }
     const turn = (this.#turn += 1);
     const results: BatchResult[] = [];
     let signedOut = false;
@@ -412,7 +356,10 @@ export class BatchApply {
           },
         },
       );
-      const left = (await this.unfinished()) ? (await readBatch(batchFolder)).members.length : 0;
+      const left = (await this.#held(folder)) ? (await readBatch(folder)).members.length : 0;
+      if (left === 0) {
+        await rm(dirname(folder), { recursive: true, force: true });
+      }
       // Those that didn't finish come first, since they are what is left to do.
       const ordered = [...results.filter((result) => !result.finished), ...results.filter((result) => result.finished)];
       this.state.value = { kind: 'applied', profileName: profile, results: ordered, left };
@@ -423,59 +370,23 @@ export class BatchApply {
       this.state.value = {
         kind: 'failed',
         profileName: profile,
-        hasBatchToReviewAgain: await this.#held(),
+        hasBatchToReviewAgain: await this.#held(folder),
         message: cleaned(messageOf(error)),
       };
     }
   }
 
-  /** An apply that joined the batch stays, to resume on its own. */
-  async discard(): Promise<void> {
-    const state = this.state.value;
-    if (state.kind === 'applying') {
+  /** Leaving discards the pending batch, but a write already under way finishes. */
+  async close(): Promise<void> {
+    if (this.#writing()) {
       return;
     }
-    // Nothing is reviewed while it goes, so nothing can be applied from a batch being thrown away.
-    const turn = (this.#turn += 1);
-    const profile = state.kind === 'idle' ? '' : state.profileName;
-    this.state.value = { kind: 'reviewing', profileName: profile, members: [] };
-    try {
-      if (await this.unfinished()) {
-        await discardBatch(batchFolder).catch(async (error: unknown) => {
-          // A batch that can't be read can't be resumed either, so its list
-          // goes and its applies stay, each to resume on its own.
-          if (
-            await readBatch(batchFolder).then(
-              () => true,
-              () => false,
-            )
-          ) {
-            throw error;
-          }
-          await rm(`${batchFolder}/batch.yaml`);
-        });
-      }
-    } catch (error) {
-      if (turn === this.#turn) {
-        this.state.value = {
-          kind: 'failed',
-          profileName: profile,
-          hasBatchToReviewAgain: await this.#held(),
-          message: cleaned(messageOf(error)),
-        };
-      }
-      return;
-    }
-    if (turn === this.#turn) {
-      this.state.value = { kind: 'idle' };
-    }
-  }
-
-  /** The batch itself is kept, to resume. */
-  close(): void {
-    if (!this.#writing()) {
-      this.#turn += 1;
-      this.state.value = { kind: 'idle' };
+    this.#turn += 1;
+    const folder = this.#folder;
+    this.#folder = undefined;
+    this.state.value = { kind: 'idle' };
+    if (folder !== undefined) {
+      await rm(dirname(folder), { recursive: true, force: true });
     }
   }
 
@@ -483,13 +394,12 @@ export class BatchApply {
     return this.state.value.kind === 'applying';
   }
 
-  async #held(): Promise<boolean> {
-    return this.unfinished().catch(() => false);
+  async #held(folder: string): Promise<boolean> {
+    return isBatch(folder).catch(() => false);
   }
 
-  /** The profile named is the batch's own, whatever was asked for. */
-  async #review(refused: readonly string[]): Promise<BatchState> {
-    const plan = await planBatch(this.#github, batchFolder);
+  async #review(folder: string, refused: readonly string[]): Promise<BatchState> {
+    const plan = await planBatch(this.#github, folder);
     if (plan.failures.some((failure) => failure.error.kind === 'signed_out')) {
       this.#onSignedOut();
     }
@@ -497,11 +407,19 @@ export class BatchApply {
   }
 
   /** One piece of work counts at a time. */
-  async #work(profile: string, members: readonly BatchMemberView[], work: () => Promise<BatchState>): Promise<void> {
+  async #work(
+    profile: string,
+    members: readonly BatchMemberView[],
+    work: (folder: string) => Promise<BatchState>,
+  ): Promise<void> {
+    const folder = this.#folder;
+    if (folder === undefined) {
+      return;
+    }
     const turn = (this.#turn += 1);
     this.state.value = { kind: 'reviewing', profileName: profile, members };
     try {
-      const next = await work();
+      const next = await work(folder);
       if (turn === this.#turn) {
         this.state.value = next;
       }
@@ -509,7 +427,7 @@ export class BatchApply {
       if (isSignedOut(error)) {
         this.#onSignedOut();
       }
-      const batch = await this.#held();
+      const batch = await this.#held(folder);
       if (turn === this.#turn) {
         this.state.value = {
           kind: 'failed',
@@ -517,6 +435,10 @@ export class BatchApply {
           hasBatchToReviewAgain: batch,
           message: cleaned(messageOf(error)),
         };
+      }
+    } finally {
+      if (folder !== this.#folder) {
+        await rm(dirname(folder), { recursive: true, force: true });
       }
     }
   }
