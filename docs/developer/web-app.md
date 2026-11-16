@@ -371,6 +371,11 @@ the states.
 `batch-apply.ts` reviews several repositories through the engine's batch in
 `/apply/<id>/batch`. Each member starts from the selected profile, and the
 batch has the same page-scoped lifetime as a single apply.
+Its change summary groups exclusion keys into readable
+labels using the comparison's setting fields, and retains each affected
+repository once per key. That summary includes repositories with locked
+changes, marked as needing access; the heading and confirmation list only
+the ready repositories with changes and no locks.
 
 `action-pattern-checks.ts` asks GitHub what each allowed action pattern
 matches, with the engine's `checkActionPatterns`, and keeps the answers by

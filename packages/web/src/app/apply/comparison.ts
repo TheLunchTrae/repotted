@@ -190,6 +190,29 @@ export function settingNames(path: string): { label: string; named: (value: unkn
   };
 }
 
+export function exclusionLabel(key: string): string {
+  const slash = key.indexOf('/');
+  if (slash !== -1) {
+    const noun = entryNounByList[key.slice(0, slash)] ?? 'entry';
+    return `${noun.charAt(0).toUpperCase()}${noun.slice(1)}: ${key.slice(slash + 1)}`;
+  }
+  if (key === 'pages') {
+    return 'GitHub Pages site';
+  }
+  const section = sectionsInShownOrder.find((name) => name === key);
+  if (section !== undefined) {
+    return sectionTitles[section];
+  }
+  const labels = fields
+    .filter((field) => field.path.join('.') === key || field.path.join('.').startsWith(`${key}.`))
+    .map((field) => field.label);
+  if (labels.length > 0) {
+    return labels.join(', ');
+  }
+  const label = settingNames(key).label.replaceAll('_', ' ');
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+}
+
 function settingRow(path: string, from: unknown, to: unknown, lock: string | undefined): CompareRow {
   const { label, named } = settingNames(path);
   return { kind: kindOf(from, to), label, key: path, now: named(from), wanted: named(to), lockReason: lock };
