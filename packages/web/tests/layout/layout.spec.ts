@@ -139,6 +139,14 @@ const screens: Readonly<Record<string, Screen>> = {
         .getByRole('button', { name: 'Review protection…' }),
   },
   profiles: { path: '/profiles', visibleOnceDrawn: (page) => page.getByText('website', { exact: true }) },
+  'profile editor after a batch action': {
+    path: '/profiles',
+    reachFromPath: async (page) => {
+      await page.getByText('website', { exact: true }).click();
+      await page.getByRole('button', { name: 'Remove all: 1 setting in Features' }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Undo' }),
+  },
   'settings a capture could not read': {
     path: '/profiles/new',
     reachFromPath: async (page) => {

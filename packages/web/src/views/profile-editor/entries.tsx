@@ -33,6 +33,7 @@ import {
 import type { ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import { sameValue } from '../../app/profile-editor/same-value.js';
 import { run } from '../layout/run.js';
+import { BatchActions, describeEntriesDone } from './batch-actions.js';
 import { MissingPermissionsNote } from './missing-permissions-note.js';
 
 const nouns: Readonly<Record<EntryList, { readonly one: string; readonly many: string; readonly title: string }>> = {
@@ -978,6 +979,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
   const [openKey, setOpenKey] = useState<string | undefined>(undefined);
   const rows = editor.entries.value[kind];
   const noun = nouns[kind];
+  const batch = editor.entryListBatches.value[kind];
   const missingPermissions = editor.entryListMissingPermissions.value[kind];
   const turnedOff = missingPermissions.length > 0;
   // A save gives a new or renamed entry the key of its saved name, so the open one is found by that name then.
@@ -1047,6 +1049,25 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
         >
           New {noun.one}
         </button>
+        <BatchActions
+          editor={editor}
+          scope={kind}
+          describeDone={describeEntriesDone(noun.one, noun.many)}
+          actions={[
+            {
+              label: 'Reset all',
+              count: batch.unsaved,
+              counted: batch.unsaved === 1 ? noun.one : noun.many,
+              act: () => editor.resetAllEntriesIn(kind),
+            },
+            {
+              label: 'Take out all',
+              count: batch.canBeTakenOut,
+              counted: batch.canBeTakenOut === 1 ? noun.one : noun.many,
+              act: () => editor.takeOutAllIn(kind),
+            },
+          ]}
+        />
       </div>
       {rows.length > 0 && (
         <ul class="rows" ref={list}>
