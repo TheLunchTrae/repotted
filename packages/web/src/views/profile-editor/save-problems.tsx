@@ -44,7 +44,7 @@ export function SaveProblems({ editor, onGoTo }: SaveProblemsProps): JSX.Element
     setOpen(false);
     toggle.current?.focus();
   };
-  const resettable = problems.filter((problem) => problem.place.kind !== 'profile').length;
+  const resettable = problems.filter((problem) => problem.canReset).length;
   return (
     <>
       {open && (
@@ -85,6 +85,9 @@ export function SaveProblems({ editor, onGoTo }: SaveProblemsProps): JSX.Element
                     <strong>{problem.name}</strong>
                     <span>{problem.message}</span>
                     <span class="fix-where">{where(problem)}</span>
+                    {problem.place.kind === 'entry' && !problem.canReset && (
+                      <span class="muted small">Saved in a draft. Edit it or discard the draft.</span>
+                    )}
                   </div>
                   {problem.place.kind !== 'profile' && (
                     <div class="fix-actions">
@@ -100,16 +103,18 @@ export function SaveProblems({ editor, onGoTo }: SaveProblemsProps): JSX.Element
                           Go to it
                         </button>
                       )}
-                      <button
-                        class={hidden ? 'button button-small' : 'button button-quiet button-small'}
-                        type="button"
-                        aria-label={`Reset ${problem.name}`}
-                        onClick={() => {
-                          run(resetOne(editor, problem));
-                        }}
-                      >
-                        Reset
-                      </button>
+                      {problem.canReset && (
+                        <button
+                          class={hidden ? 'button button-small' : 'button button-quiet button-small'}
+                          type="button"
+                          aria-label={`Reset ${problem.name}`}
+                          onClick={() => {
+                            run(resetOne(editor, problem));
+                          }}
+                        >
+                          Reset
+                        </button>
+                      )}
                     </div>
                   )}
                 </li>

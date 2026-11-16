@@ -320,7 +320,10 @@ holds Save back, in tab order: typed text that can't be a value, a setting
 GitHub hides included; an entry that can't be saved to apply; and the engine's
 refusal of the changes together. `views/profile-editor/save-problems.tsx`
 draws it as the save bar's count and list, and `resetEverythingBlockingSave`
-resets each setting and entry in it.
+resets each setting and unsaved entry in it. A saved draft entry offers
+navigation but no reset until it has an unsaved change. Ordinary tab
+navigation clears a previous destination, so returning to a tab does not
+reopen a form the user closed.
 
 `comparison.ts` compares a repository with a profile: the engine's
 `createPlan` over the resolved profile, shown as rows by section, with

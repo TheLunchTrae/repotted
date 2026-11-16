@@ -308,6 +308,10 @@ test('Go to it focuses the ruleset pattern that holds Save back', async ({ page 
   await page.getByRole('button', { name: 'Go to it', exact: true }).click();
 
   await expect(pattern).toBeFocused();
+  await page.getByRole('button', { name: 'Back to rulesets', exact: true }).click();
+  await page.getByRole('tab', { name: /^Repository/u }).click();
+  await page.getByRole('tab', { name: /^Rulesets/u }).click();
+  await expect(page.getByRole('button', { name: 'New ruleset', exact: true })).toBeVisible();
 });
 
 test('Go to it focuses a bypass list whose mode no longer fits its target', async ({ page }) => {
@@ -331,4 +335,16 @@ test('Go to it focuses a bypass list whose mode no longer fits its target', asyn
   await page.getByRole('button', { name: 'Go to it', exact: true }).click();
 
   await expect(page.getByRole('region', { name: 'Bypass list', exact: true })).toBeFocused();
+});
+
+test('saved draft problems offer navigation without an ineffective Reset', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('unfinished', { exact: true }).click();
+  await page.getByRole('button', { name: '1 thing to fix', exact: true }).click();
+  const problems = page.getByRole('region', { name: '1 thing to fix before you save', exact: true });
+
+  await expect(problems.getByRole('button', { name: /^Reset/u })).toHaveCount(0);
+  await expect(problems.getByText('Saved in a draft. Edit it or discard the draft.')).toBeVisible();
+  await problems.getByRole('button', { name: 'Go to it', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Hex color', exact: true })).toBeFocused();
 });

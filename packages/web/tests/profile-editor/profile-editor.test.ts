@@ -1,4 +1,4 @@
-import { profileFileJsonSchema } from '@repotted/core';
+import { editProfile, previewProfile, profileFileJsonSchema, resolveProfile } from '@repotted/core';
 import { afterEach, expect, test } from 'vitest';
 
 import {
@@ -1081,4 +1081,47 @@ test.each([
   expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ applyProblemField: expectedField });
   expect(editor.problemsBlockingSave.value[0]?.place).toMatchObject({ kind: 'entry', field: expectedField });
   expect(editor.canSave.value).toBe(false);
+});
+
+test('invalid typed text leaves a pending save preview behind', async () => {
+  await mkdir('/profiles', { recursive: true });
+  await writeFile('/profiles/web.yaml', 'repository:\n  default_branch: main\n');
+  const held = Promise.withResolvers<undefined>();
+  let holdPreview = false;
+  const editor = new ProfileEditor('/profiles/web.yaml', undefined, {
+    canHoldDrafts: true,
+    resolve: resolveProfile,
+    edit: editProfile,
+    preview: async (file, changes) => {
+      const result = await previewProfile(file, changes);
+      if (holdPreview) {
+        await held.promise;
+      }
+      return result;
+    },
+  });
+  await editor.load();
+  await editor.type(field('repository.default_branch'), 'develop');
+  holdPreview = true;
+  const opening = editor.openPreview();
+
+  await editor.type(field('repository.default_branch'), 'main dev');
+  held.resolve(undefined);
+  await opening;
+
+  expect(editor.canSave.value).toBe(false);
+  expect(editor.preview.value).toBeUndefined();
+});
+
+test('a saved invalid draft offers no reset until it has an unsaved change', async () => {
+  const editor = await opened({ 'web.yaml': 'labels:\n  - name: unfinished\n    draft: true\n    color: invalid\n' });
+  expect(editor.problemsBlockingSave.value[0]).toMatchObject({ canReset: false });
+
+  const label = entry(editor, 'labels', 'unfinished');
+  await editor.changeEntry(label, { ...label.entry, color: 'still-invalid' });
+  expect(editor.problemsBlockingSave.value[0]).toMatchObject({ canReset: true });
+
+  await editor.resetEverythingBlockingSave();
+  expect(editor.problemsBlockingSave.value[0]).toMatchObject({ canReset: false });
+  expect(entry(editor, 'labels', 'unfinished').entry?.['color']).toBe('invalid');
 });

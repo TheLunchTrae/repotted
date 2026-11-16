@@ -160,6 +160,10 @@ await writeFile(
   '/profiles/browser/teams/website.yaml',
   'extends: ../base.yaml\n\nrepository:\n  has_projects: false\n',
 );
+await writeFile(
+  '/profiles/browser/unfinished.yaml',
+  'labels:\n  - name: unfinished\n    draft: true\n    color: invalid\n',
+);
 // Two profiles on the long name, the most a phone shows as tags, and four on another, one of them gone.
 localStorage.setItem(
   'repotted:repository-profiles',

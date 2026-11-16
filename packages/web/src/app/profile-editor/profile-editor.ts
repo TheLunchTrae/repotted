@@ -192,6 +192,7 @@ export interface SaveProblem {
   /** The tab it is on: a section, such as `repository`, or a list, such as `rulesets`. */
   readonly tab: string;
   readonly message: string;
+  readonly canReset: boolean;
   readonly place: SaveProblemPlace;
 }
 
@@ -486,6 +487,7 @@ export class ProfileEditor {
               where: `${section.name} › ${group.title}`,
               tab: section.section,
               message: problem,
+              canReset: true,
               place: {
                 kind: 'setting',
                 field,
@@ -514,6 +516,7 @@ export class ProfileEditor {
             where: entryListTitles[list],
             tab: list,
             message: row.applyProblem,
+            canReset: row.unsaved,
             place: { kind: 'entry', row, field: row.applyProblemField ?? 'entry' },
           },
         ];
@@ -530,6 +533,7 @@ export class ProfileEditor {
               where: basename(this.file),
               tab: '',
               message: refused,
+              canReset: false,
               place: { kind: 'profile' },
             },
           ];
@@ -744,6 +748,7 @@ export class ProfileEditor {
    * value says why and holds the save back.
    */
   async type(field: SettingField, text: string): Promise<void> {
+    this.closePreview();
     this.#batchUndo.value = undefined;
     const parsed = parse(field, text);
     const typed = new Map(this.#typed.value);
@@ -922,12 +927,13 @@ export class ProfileEditor {
 
   /** Resets each setting and entry the problems are in, so a refusal of the changes together is left as it is. */
   async resetEverythingBlockingSave(): Promise<void> {
-    const problems = this.problemsBlockingSave.value;
+    const problems = this.problemsBlockingSave.value.filter((problem) => problem.canReset);
     const fields = problems.flatMap((problem) => (problem.place.kind === 'setting' ? [problem.place.field] : []));
     const rows = problems.flatMap((problem) => (problem.place.kind === 'entry' ? [problem.place.row] : []));
     if (fields.length === 0 && rows.length === 0) {
       return;
     }
+    this.#batchUndo.value = undefined;
     const edits = new Map(this.#edits.value);
     const typed = new Map(this.#typed.value);
     for (const field of fields) {

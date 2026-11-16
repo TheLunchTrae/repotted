@@ -5,8 +5,9 @@ import { branchNameProblem, branchPatternProblem } from '../../src/profiles/ref-
 import { profile } from '../../src/profiles/schema.js';
 
 describe('a branch name', () => {
-  test.each(['main', 'release/1.2', 'feature/a-b_c', 'v1.0'])('takes %s', (name) => {
+  test.each(['main', 'release/1.2', 'feature/a-b_c', 'v1.0', '@', 'main\u00a0dev'])('takes %s', (name) => {
     expect(branchNameProblem(name)).toBeUndefined();
+    expect(profile.safeParse({ repository: { default_branch: name } }).success).toBe(true);
   });
 
   test.each([
@@ -14,8 +15,7 @@ describe('a branch name', () => {
     ['HEAD', "A branch name can't be HEAD."],
     ['main dev', "A branch name can't have spaces."],
     ['release..1', "A branch name can't have two dots in a row."],
-    ['a@{1}', "A branch name can't be @ or have @{ in it."],
-    ['@', "A branch name can't be @ or have @{ in it."],
+    ['a@{1}', "A branch name can't have @{ in it."],
     ['feature*', "A branch name can't have ~ ^ : ? * [ or \\."],
     ['a:b', "A branch name can't have ~ ^ : ? * [ or \\."],
     ['/main', "A branch name can't start or end with /, or have two in a row."],
@@ -36,14 +36,28 @@ describe('a branch name', () => {
 });
 
 describe('a deployment pattern', () => {
-  test.each(['main', 'release/*', 'v[0-9]*', 'feature/?'])('takes %s, wildcards and all', (pattern) => {
-    expect(branchPatternProblem(pattern)).toBeUndefined();
-  });
+  test.each(['main', 'release/*', 'v[0-9]*', 'feature/?', 'release/[^_]*'])(
+    'takes %s, wildcards and all',
+    (pattern) => {
+      expect(branchPatternProblem(pattern)).toBeUndefined();
+      expect(
+        profile.safeParse({
+          environments: [
+            {
+              name: 'production',
+              deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+              branch_policies: [{ name: pattern }],
+            },
+          ],
+        }).success,
+      ).toBe(true);
+    },
+  );
 
   test.each([
     ['', "A pattern can't be empty."],
     ['release/ *', "A pattern can't have spaces."],
-    ['~main', "A pattern can't have ~ ^ : or \\."],
+    ['~main', "A pattern can't have ~ : or \\."],
     ['feature/**/', "A pattern can't start or end with /, or have two in a row."],
   ])('refuses %j', (pattern, problem) => {
     expect(branchPatternProblem(pattern)).toBe(problem);

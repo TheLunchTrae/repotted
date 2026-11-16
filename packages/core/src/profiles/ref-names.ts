@@ -4,7 +4,7 @@
 
 function refNameProblem(name: string, noun: 'branch name' | 'pattern'): string | undefined {
   const wildcardsAllowed = noun === 'pattern';
-  if (/\s/u.test(name)) {
+  if (/[ \t\r\n\f\v]/u.test(name)) {
     return `A ${noun} can't have spaces.`;
   }
   // eslint-disable-next-line no-control-regex -- Git refuses control characters in a ref name
@@ -14,12 +14,12 @@ function refNameProblem(name: string, noun: 'branch name' | 'pattern'): string |
   if (name.includes('..')) {
     return `A ${noun} can't have two dots in a row.`;
   }
-  if (name.includes('@{') || name === '@') {
-    return `A ${noun} can't be @ or have @{ in it.`;
+  if (name.includes('@{')) {
+    return `A ${noun} can't have @{ in it.`;
   }
-  const refused = wildcardsAllowed ? /[~^:\\]/u : /[~^:?*[\\]/u;
+  const refused = wildcardsAllowed ? /[~:\\]/u : /[~^:?*[\\]/u;
   if (refused.test(name)) {
-    return wildcardsAllowed ? `A ${noun} can't have ~ ^ : or \\.` : `A ${noun} can't have ~ ^ : ? * [ or \\.`;
+    return wildcardsAllowed ? `A ${noun} can't have ~ : or \\.` : `A ${noun} can't have ~ ^ : ? * [ or \\.`;
   }
   if (name.startsWith('/') || name.endsWith('/') || name.includes('//')) {
     return `A ${noun} can't start or end with /, or have two in a row.`;

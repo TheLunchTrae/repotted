@@ -354,6 +354,7 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
     const next = tabNames[(index + step + tabNames.length) % tabNames.length];
     if (step !== 0 && next !== undefined) {
       event.preventDefault();
+      setEntryGoTo(undefined);
       setTab(next.id);
       tabs.current?.querySelector<HTMLElement>(`#tab-${next.id}`)?.focus();
     }
@@ -472,6 +473,7 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
                   aria-controls="settings-panel"
                   tabIndex={current === id ? 0 : -1}
                   onClick={() => {
+                    setEntryGoTo(undefined);
                     setTab(id);
                   }}
                   onKeyDown={(event) => {

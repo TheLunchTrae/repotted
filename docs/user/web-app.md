@@ -592,6 +592,9 @@ with renames.
 
 Topics, custom properties, and autolinks are not edited here yet.
 
+A problem already saved in a draft offers **Go to it**. **Reset** only
+resets unsaved edits; edit that draft entry or use **Discard draft**.
+
 ### Delete a profile
 
 Open the profile and click **Delete profile**, or select profiles in the list
