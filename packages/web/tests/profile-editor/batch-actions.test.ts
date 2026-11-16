@@ -1,3 +1,4 @@
+import { editProfile, previewProfile, resolveProfile } from '@repotted/core';
 import { afterEach, expect, test } from 'vitest';
 
 import type { EntryList, EntryRow } from '../../src/app/profile-editor/entry-edits.js';
@@ -302,4 +303,42 @@ test('Take out all drops a change to an entry a sync took away, so the save can 
 
   expect(editor.entries.value.labels).toEqual([]);
   expect(editor.dirty.value).toBe(false);
+});
+
+test('a batch made while a fresh read waits loses its undo when the read finishes', async () => {
+  await mkdir('/profiles', { recursive: true });
+  await writeFile('/profiles/web.yaml', 'repository:\n  has_wiki: false\n');
+  let holdRead = false;
+  let finishRead = (): void => undefined;
+  const reading = new Promise<void>((resolve) => {
+    finishRead = resolve;
+  });
+  const editor = new ProfileEditor('/profiles/web.yaml', undefined, {
+    canHoldDrafts: true,
+    resolve: async (file) => {
+      if (holdRead) {
+        await reading;
+      }
+      return resolveProfile(file);
+    },
+    preview: previewProfile,
+    edit: editProfile,
+  });
+  await editor.load();
+  await editor.set(field('repository.has_wiki'), true);
+  holdRead = true;
+  const loading = editor.load();
+  const features = settingSections
+    .flatMap((section) => section.groups)
+    .find((item) => item.fields.includes(field('repository.has_wiki')));
+  if (features === undefined) {
+    throw new Error('The wiki setting has no group.');
+  }
+  await editor.removeAllIn(features);
+  expect(editor.batchDone.value).toBeDefined();
+
+  finishRead();
+  await loading;
+
+  expect(editor.batchDone.value).toBeUndefined();
 });
