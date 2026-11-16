@@ -186,6 +186,9 @@ export function PanelProfiles({
             {profiles.map((profilePath) => (
               <li key={profilePath} class={assignments.isListed(profilePath) ? undefined : 'layer-missing'}>
                 <span class="layer-name mono">{shownName(profilePath)}</span>
+                {assignments.inheritedProfilesOf(repository.full_name).includes(profilePath) && (
+                  <span class="muted small">From folder</span>
+                )}
                 <span class="tag">{assignments.tagOf(profilePath)}</span>
               </li>
             ))}
@@ -205,17 +208,17 @@ export function PanelProfiles({
   );
 }
 
-interface EditDialogProps {
-  readonly repository: Repository;
-  readonly assignments: RepositoryProfiles;
+export function ProfileLayers({
+  profiles,
+  assignments,
+  list,
+  onChange,
+}: {
   readonly profiles: Profiles;
-  readonly onClose: () => void;
-}
-
-/** Saving changes the list alone: nothing is applied until an apply is reviewed. */
-export function EditProfilesDialog({ repository, assignments, profiles, onClose }: EditDialogProps): JSX.Element {
-  const dialog = useModal();
-  const [list, setList] = useState<readonly string[]>(() => assignments.profilesOf(repository.full_name));
+  readonly assignments: RepositoryProfiles;
+  readonly list: readonly string[];
+  readonly onChange: (list: readonly string[]) => void;
+}): JSX.Element {
   const choices = profiles.listings.value
     .filter((listing) => listing.problem === null)
     .map((listing) => profiles.pathOf(listing))
@@ -227,9 +230,110 @@ export function EditProfilesDialog({ repository, assignments, profiles, onClose 
     const [item] = next.splice(from, 1);
     if (item !== undefined) {
       next.splice(to, 0, item);
-      setList(next);
+      onChange(next);
     }
   };
+  return (
+    <>
+      {list.length === 0 ? (
+        <p class="muted">No profiles. Add one below.</p>
+      ) : (
+        <ol class="layers">
+          {list.map((profilePath, index) => {
+            const name = shownName(profilePath);
+            const listed = assignments.isListed(profilePath);
+            return (
+              <li key={profilePath} class={listed ? undefined : 'layer-missing'}>
+                <span class="layer-name">
+                  <span class="mono">{name}</span>
+                  {!listed && <span class="muted small"> Missing</span>}
+                </span>
+                <button
+                  class="button button-quiet button-small"
+                  type="button"
+                  aria-label={`Move ${name} up`}
+                  disabled={index === 0}
+                  onClick={() => {
+                    moved(index, index - 1);
+                  }}
+                >
+                  ↑
+                </button>
+                <button
+                  class="button button-quiet button-small"
+                  type="button"
+                  aria-label={`Move ${name} down`}
+                  disabled={index === list.length - 1}
+                  onClick={() => {
+                    moved(index, index + 1);
+                  }}
+                >
+                  ↓
+                </button>
+                <button
+                  class="button button-quiet button-small"
+                  type="button"
+                  aria-label={`Remove ${name}`}
+                  onClick={() => {
+                    onChange(list.filter((other) => other !== profilePath));
+                  }}
+                >
+                  Remove
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {choices.length > 0 && (
+        <div class="panel-form">
+          <label for="add-profile">Add a profile</label>
+          <div class="add-profile">
+            <select
+              id="add-profile"
+              class="field"
+              value={adding}
+              onChange={(event) => {
+                setPicked(event.currentTarget.value);
+              }}
+            >
+              {choices.map((profilePath) => (
+                <option key={profilePath} value={profilePath}>
+                  {shownName(profilePath)}
+                </option>
+              ))}
+            </select>
+            <button
+              class="button"
+              type="button"
+              onClick={() => {
+                if (adding !== undefined) {
+                  onChange([...list, adding]);
+                  setPicked(undefined);
+                }
+              }}
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+interface EditDialogProps {
+  readonly repository: Repository;
+  readonly assignments: RepositoryProfiles;
+  readonly profiles: Profiles;
+  readonly onClose: () => void;
+}
+
+/** Saving changes the list alone: nothing is applied until an apply is reviewed. */
+export function EditProfilesDialog({ repository, assignments, profiles, onClose }: EditDialogProps): JSX.Element {
+  const dialog = useModal();
+  const [list, setList] = useState<readonly string[]>(() => assignments.ownProfilesOf(repository.full_name));
+  const inherited = assignments.inheritedProfilesOf(repository.full_name);
   return (
     <dialog class="dialog dialog-profiles" ref={dialog} aria-labelledby="edit-profiles-heading" onClose={onClose}>
       <form
@@ -246,89 +350,21 @@ export function EditProfilesDialog({ repository, assignments, profiles, onClose 
           </h2>
           <p class="muted small">They apply in this order. A later profile overrides what an earlier one sets.</p>
         </div>
-        {list.length === 0 ? (
-          <p class="muted">No profiles. Add one below.</p>
-        ) : (
-          <ol class="layers">
-            {list.map((profilePath, index) => {
-              const name = shownName(profilePath);
-              const listed = assignments.isListed(profilePath);
-              return (
-                <li key={profilePath} class={listed ? undefined : 'layer-missing'}>
-                  <span class="layer-name">
-                    <span class="mono">{name}</span>
-                    {!listed && <span class="muted small"> Missing</span>}
-                  </span>
-                  <button
-                    class="button button-quiet button-small"
-                    type="button"
-                    aria-label={`Move ${name} up`}
-                    disabled={index === 0}
-                    onClick={() => {
-                      moved(index, index - 1);
-                    }}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    class="button button-quiet button-small"
-                    type="button"
-                    aria-label={`Move ${name} down`}
-                    disabled={index === list.length - 1}
-                    onClick={() => {
-                      moved(index, index + 1);
-                    }}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    class="button button-quiet button-small"
-                    type="button"
-                    aria-label={`Remove ${name}`}
-                    onClick={() => {
-                      setList(list.filter((other) => other !== profilePath));
-                    }}
-                  >
-                    Remove
-                  </button>
+        {inherited.length > 0 && (
+          <div>
+            <h3>From its folder</h3>
+            <ol class="layers">
+              {inherited.map((path) => (
+                <li key={path} class="mono">
+                  {shownName(path)}
                 </li>
-              );
-            })}
-          </ol>
-        )}
-        {choices.length > 0 && (
-          <div class="panel-form">
-            <label for="add-profile">Add a profile</label>
-            <div class="add-profile">
-              <select
-                id="add-profile"
-                class="field"
-                value={adding}
-                onChange={(event) => {
-                  setPicked(event.currentTarget.value);
-                }}
-              >
-                {choices.map((profilePath) => (
-                  <option key={profilePath} value={profilePath}>
-                    {shownName(profilePath)}
-                  </option>
-                ))}
-              </select>
-              <button
-                class="button"
-                type="button"
-                onClick={() => {
-                  if (adding !== undefined) {
-                    setList([...list, adding]);
-                    setPicked(undefined);
-                  }
-                }}
-              >
-                Add
-              </button>
-            </div>
+              ))}
+            </ol>
+            <p class="muted small">These apply first. Edit the folder's settings to change them.</p>
           </div>
         )}
+        {inherited.length > 0 && <h3>Own profiles</h3>}
+        <ProfileLayers profiles={profiles} assignments={assignments} list={list} onChange={setList} />
         <p class="muted small">
           Saving changes which profiles this repository uses. Nothing is applied until you review an apply.
         </p>

@@ -21,6 +21,17 @@ interface Screen {
   readonly overflowsAt?: readonly string[];
 }
 
+async function newRepositoryFolder(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'New folder', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Work');
+  await page.getByRole('button', { name: 'Create folder', exact: true }).click();
+}
+
+async function openFolderSettings(page: Page): Promise<void> {
+  await page.getByLabel('Edit Work', { exact: true }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+}
+
 const screens: Readonly<Record<string, Screen>> = {
   'sign-in': {
     path: '/?signed-out',
@@ -115,6 +126,18 @@ const screens: Readonly<Record<string, Screen>> = {
         .getByRole('button', { name: 'Edit the profiles of lunch/a_repository_name_with_no_hyphens_in_it_at_all' })
         .click(),
     visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Move teams/website down' }),
+  },
+  'folder settings': {
+    path: '/',
+    reachFromPath: async (page) => {
+      await newRepositoryFolder(page);
+      await openFolderSettings(page);
+      await page.getByRole('combobox', { name: 'Add a profile' }).selectOption('base.yaml');
+      await page.getByRole('button', { name: 'Add', exact: true }).click();
+      await page.getByRole('combobox', { name: 'Add a profile' }).selectOption('teams/website.yaml');
+      await page.getByRole('button', { name: 'Add', exact: true }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('checkbox', { name: 'Apply profiles to repositories moved here' }),
   },
   'apply edits': {
     path: '/?repository=lunch/api',
@@ -323,6 +346,43 @@ test('group actions sit beside the heading and above the description on phones',
     expect(description.x, `${name}: description aligned with heading`).toBe(heading.x);
     expect(action.height, `${name}: touch target`).toBeGreaterThanOrEqual(44);
   }
+});
+
+test('folder settings default off, and enabling them opens single and bulk move reviews', async ({ page }) => {
+  await page.goto('/');
+  await newRepositoryFolder(page);
+  await openFolderSettings(page);
+  const onMove = page.getByRole('checkbox', { name: 'Apply profiles to repositories moved here' });
+  await expect(onMove).not.toBeChecked();
+  await page.getByRole('combobox', { name: 'Add a profile' }).selectOption('base.yaml');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Select lunch/api', exact: true }).check();
+  await page.getByRole('combobox', { name: 'Move to a folder' }).selectOption('Work');
+  await page.getByRole('button', { name: 'Move', exact: true }).click();
+  await expect(page).toHaveURL(/repotted\.test\/$/u);
+
+  await openFolderSettings(page);
+  await onMove.check();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page).toHaveURL(/repotted\.test\/$/u);
+  await page.getByRole('button', { name: /^infra /u }).click();
+  await page.getByRole('combobox', { name: 'Folder', exact: true }).selectOption('Work');
+  await expect(page.getByRole('button', { name: 'Leave out Wiki, repository.has_wiki', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/apply$/u);
+
+  await page.getByRole('link', { name: 'Repotted', exact: true }).click();
+  // Only new arrivals are reviewed, even with an existing member selected.
+  for (const name of ['lunch/api', 'lunch/docs', 'lunch/mobile']) {
+    await page.getByRole('checkbox', { name: `Select ${name}`, exact: true }).check();
+  }
+  await page.getByRole('combobox', { name: 'Move to a folder' }).selectOption('Work');
+  await page.getByRole('button', { name: 'Move', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'All repositories', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/batch$/u);
+  await expect(page.getByRole('region', { name: 'lunch/docs', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'lunch/mobile', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'lunch/api', exact: true })).toHaveCount(0);
 });
 
 test('the header keeps to one row', async ({ page }) => {

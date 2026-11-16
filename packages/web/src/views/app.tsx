@@ -9,6 +9,7 @@ import { BatchApply } from '../app/apply/batch-apply.js';
 import { Comparison } from '../app/apply/comparison.js';
 import { AddressedRepository } from '../app/navigation/addressed-repository.js';
 import type { Router } from '../app/navigation/router.js';
+import { repositoryFoldersKey } from '../app/preferences/preference-changes.js';
 import type { Preferences } from '../app/preferences/preferences.js';
 import { SharedPreferences } from '../app/preferences/shared-preferences.js';
 import { BranchPreview } from '../app/profiles/branch-preview.js';
@@ -16,6 +17,7 @@ import { ConfigDiscovery } from '../app/profiles/config-discovery.js';
 import { ConfigProtection } from '../app/profiles/config-protection.js';
 import type { LocalFolders } from '../app/profiles/local-folder.js';
 import { Profiles } from '../app/profiles/profiles.js';
+import { reviewMovedProfiles } from '../app/repositories/folder-moves.js';
 import { Repositories } from '../app/repositories/repositories.js';
 import { RepositoryProfiles, repositoryProfilesKey } from '../app/repositories/repository-profiles.js';
 import type { Keeping } from '../app/storage/kept-files.js';
@@ -74,19 +76,30 @@ function SignedIn({
       run(shared.use(kept.source.value));
       // Which profiles each repository uses follows the profiles too, since it names them by their paths.
       const assigned = new RepositoryProfiles(shared, kept);
+      const applying = new Apply(github, refused, (work) => kept.write(work), assigned);
+      const batching = new BatchApply(github, refused, assigned);
+      const reviewMoved = (names: readonly string[]): boolean => {
+        const review = reviewMovedProfiles(names, assigned, kept.folder.value, applying, batching);
+        if (review === undefined) {
+          return false;
+        }
+        run(review.work);
+        router.go(review.path);
+        return true;
+      };
       return {
-        repositories: new Repositories(github, user, shared, preferences, refused),
+        repositories: new Repositories(github, user, shared, preferences, refused, reviewMoved),
         profiles: kept,
         assignments: assigned,
         discovery: new ConfigDiscovery(github, kept, refused),
         comparison: new Comparison(github, refused),
         // An apply's edits saved to a profile take their turn among the profiles' syncs.
-        apply: new Apply(github, refused, (work) => kept.write(work), assigned),
-        batch: new BatchApply(github, refused),
+        apply: applying,
+        batch: batching,
         protection: new ConfigProtection(github, refused),
         preview: new BranchPreview(github, kept, refused),
       };
-    }, [account, github, preferences, folders, user]);
+    }, [account, github, preferences, folders, user, router]);
   const address = useMemo(() => new AddressedRepository(repositories, router), [repositories, router]);
   useEffect(() => {
     run(repositories.load());
@@ -106,9 +119,10 @@ function SignedIn({
   // Each profile a repository uses is read again whenever the profiles or the lists change.
   const listings = profiles.listings.value;
   const savedAssignments = repositories.preferences.read(repositoryProfilesKey);
+  const savedFolders = repositories.preferences.read(repositoryFoldersKey);
   useEffect(() => {
     run(assignments.check());
-  }, [assignments, listings, savedAssignments]);
+  }, [assignments, listings, savedAssignments, savedFolders]);
   const [repositoryToCapture, setRepositoryToCapture] = useState<string | undefined>(undefined);
   const openingProtection = useRef(false);
   useEffect(() => {
@@ -192,6 +206,20 @@ function SignedIn({
         </p>
       )}
       <FoundConfig discovery={discovery} profiles={profiles} />
+      {repositories.moveReviewNotice.value !== undefined && (
+        <div class="notice notice-drift shell-notice" role="status">
+          <p>{repositories.moveReviewNotice.value}</p>
+          <button
+            class="button button-quiet button-small"
+            type="button"
+            onClick={() => {
+              repositories.moveReviewNotice.value = undefined;
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       {leaving && (
         <SignOutQuestion
           profiles={profiles}

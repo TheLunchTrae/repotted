@@ -1,8 +1,9 @@
 import { computed, signal } from '@preact/signals';
-import { resolveProfile, stringifyProfile } from '@repotted/core';
+import { type Plan, resolveProfile, type StagedApply, stringifyProfile } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { basename, join, relative } from '../../engine/path.js';
+import { foldersIn, repositoryFoldersKey, sameName } from '../preferences/preference-changes.js';
 import type { Change } from '../preferences/shared-preferences.js';
 import type { ProfileListing } from '../profiles/profiles.js';
 
@@ -133,6 +134,15 @@ export async function profileVersion(file: string): Promise<string> {
   return sha256(stringifyProfile((await resolveProfile(file)).profile));
 }
 
+export function profilesApplyFully(staged: StagedApply, plan: Plan): boolean {
+  const { drafts: _drafts, ...settled } = staged.sources;
+  return (
+    staged.exclude.length === 0 &&
+    !Object.values(settled).some((setBy) => Object.values(setBy).includes(staged.file)) &&
+    !plan.warnings.some((warning) => warning.cause === 'refused')
+  );
+}
+
 function isSameList(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
@@ -159,6 +169,7 @@ export class RepositoryProfiles {
 
   readonly #assignments = computed(() => assignmentsIn(this.#preferences.read(repositoryProfilesKey)));
   readonly #tagOverrides = computed(() => tagOverridesIn(this.#preferences.read(profileTagsKey)));
+  readonly #folders = computed(() => foldersIn(this.#preferences.read(repositoryFoldersKey)));
 
   /** By path in the profiles folder, the profiles that can be read. */
   readonly #listed = computed<ReadonlyMap<string, ProfileListing>>(
@@ -170,23 +181,43 @@ export class RepositoryProfiles {
 
   readonly tags = computed(() =>
     tagsFor(
-      [...this.#listed.value.keys(), ...Object.values(this.#assignments.value).flatMap((item) => item.profiles)],
+      [
+        ...this.#listed.value.keys(),
+        ...Object.values(this.#assignments.value).flatMap((item) => item.profiles),
+        ...this.#folders.value.flatMap((folder) => folder.profiles ?? []),
+      ],
       this.#tagOverrides.value,
     ),
   );
 
   /** The repositories, in lower case, that use any profile. */
-  readonly repositoriesWithProfiles = computed(() =>
-    Object.entries(this.#assignments.value).flatMap(([repository, item]) =>
-      item.profiles.length > 0 ? [repository] : [],
-    ),
-  );
+  readonly repositoriesWithProfiles = computed(() => [
+    ...new Set([
+      ...Object.entries(this.#assignments.value).flatMap(([repository, item]) =>
+        item.profiles.length > 0 ? [repository] : [],
+      ),
+      ...this.#folders.value.flatMap((folder) =>
+        (folder.profiles ?? []).length > 0 ? folder.repositories.map(keyOf) : [],
+      ),
+    ]),
+  ]);
 
   assignment(repository: string): Assignment | undefined {
     return this.#assignments.value[keyOf(repository)];
   }
 
   profilesOf(repository: string): readonly string[] {
+    return [...new Set([...this.inheritedProfilesOf(repository), ...this.ownProfilesOf(repository)])];
+  }
+
+  inheritedProfilesOf(repository: string): readonly string[] {
+    return (
+      this.#folders.value.find((folder) => folder.repositories.some((name) => sameName(name, repository)))?.profiles ??
+      []
+    );
+  }
+
+  ownProfilesOf(repository: string): readonly string[] {
     return this.assignment(repository)?.profiles ?? [];
   }
 
@@ -212,7 +243,10 @@ export class RepositoryProfiles {
   /** Reads the version of every profile a repository uses, so each repository's status can be told. */
   async check(): Promise<void> {
     const turn = (this.#checkTurn += 1);
-    const used = new Set(Object.values(this.#assignments.peek()).flatMap((item) => item.profiles));
+    const used = new Set([
+      ...Object.values(this.#assignments.peek()).flatMap((item) => item.profiles),
+      ...this.#folders.peek().flatMap((folder) => folder.profiles ?? []),
+    ]);
     const versions = new Map<string, string>();
     const unresolvable = new Set<string>();
     for (const profilePath of used) {
@@ -232,8 +266,8 @@ export class RepositoryProfiles {
   }
 
   status(repository: string): AssignmentStatus {
-    const assignment = this.assignment(repository);
-    if (assignment === undefined || assignment.profiles.length === 0) {
+    const assignment = { profiles: this.profilesOf(repository), applied: this.assignment(repository)?.applied };
+    if (assignment.profiles.length === 0) {
       return { kind: 'none' };
     }
     const missing = assignment.profiles.filter((profilePath) => !this.#listed.value.has(profilePath));
@@ -270,18 +304,21 @@ export class RepositoryProfiles {
       : { kind: 'changed', changed, notApplied, removed, reordered };
   }
 
-  /** Saving the same list again changes nothing; an empty one forgets the repository. */
+  /** Keep the applied baseline with inherited layers, so removing own layers still reports drift. */
   setProfiles(repository: string, profiles: readonly string[]): void {
     const unique = [...new Set(profiles)];
     this.#change(repository, (current) =>
-      unique.length === 0 ? undefined : { ...current, profiles: unique, applied: current?.applied },
+      unique.length === 0 && this.inheritedProfilesOf(repository).length === 0
+        ? undefined
+        : { profiles: unique, applied: current?.applied },
     );
   }
 
-  /** The profiles applied are the repository's own, in its order. */
+  /** Records the effective layers without copying inherited ones into the repository's own list. */
   recordApplied(repository: string, applied: readonly AppliedVersion[]): void {
+    const inherits = this.inheritedProfilesOf(repository).length > 0;
     this.#change(repository, (current) =>
-      current === undefined ? undefined : { profiles: current.profiles, applied: [...applied] },
+      current === undefined && !inherits ? undefined : { profiles: current?.profiles ?? [], applied: [...applied] },
     );
   }
 

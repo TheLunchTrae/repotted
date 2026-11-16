@@ -75,6 +75,7 @@ function Member({ member, batch, reviewingOrApplying: working }: MemberProps): J
           {member.comparisonFailureMessage}
         </p>
       )}
+      {member.profiles.length > 0 && <p class="muted small">Profiles, in order: {member.profiles.join(', ')}</p>}
       {(member.warnings.length > 0 || member.skippedDrafts.length > 0) && (
         <ul class="muted small">
           {member.warnings.map((warning) => (
@@ -369,12 +370,20 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
               <button
                 class="button button-primary"
                 type="button"
-                disabled={state.kind !== 'reviewed' || ready.length === 0}
+                disabled={state.kind !== 'reviewed' || (ready.length === 0 && !batch.canRecordWithoutChanges.value)}
                 onClick={() => {
-                  setConfirming(true);
+                  if (batch.canRecordWithoutChanges.value) {
+                    run(batch.apply());
+                  } else {
+                    setConfirming(true);
+                  }
                 }}
               >
-                {ready.length === 0 ? 'Apply' : `Apply to ${repositories(ready.length)}`}
+                {batch.canRecordWithoutChanges.value
+                  ? 'Mark as applied'
+                  : ready.length === 0
+                    ? 'Apply'
+                    : `Apply to ${repositories(ready.length)}`}
               </button>
             }
             otherActions={
