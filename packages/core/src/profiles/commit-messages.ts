@@ -1,3 +1,9 @@
+import path from 'node:path';
+
+import { parse } from 'yaml';
+
+import { isDeepEqual } from '../shared/equal.js';
+
 /**
  * One change a commit to a config repository makes, as the line
  * `${action} ${noun} ${nounQualifier}: ${name}`, such as
@@ -19,6 +25,7 @@ export interface ProfileFileChange {
   readonly kind: 'create' | 'update' | 'delete';
   /** The git blob id of what it holds after the change, or before it for a delete; it pairs a delete with a create as a rename. */
   readonly contentId?: string | undefined;
+  readonly content?: string | undefined;
 }
 
 export const longestCommitSubject = 72;
@@ -183,6 +190,31 @@ function profileChange(action: string, name: string): ConfigChange {
   return { action, noun: 'profile', nouns: 'profiles', name };
 }
 
+function withResolvedBase(
+  change: ProfileFileChange,
+  moves: ReadonlyMap<ProfileFileChange, ProfileFileChange>,
+): unknown {
+  if (change.content === undefined) {
+    return undefined;
+  }
+  try {
+    const profile: unknown = parse(change.content, { maxAliasCount: 0 });
+    if (
+      typeof profile !== 'object' ||
+      profile === null ||
+      !('extends' in profile) ||
+      typeof profile.extends !== 'string'
+    ) {
+      return undefined;
+    }
+    const base = path.resolve('/', path.dirname(change.file), profile.extends);
+    const moved = [...moves].find(([from]) => path.resolve('/', from.file) === base)?.[1];
+    return { ...profile, extends: moved === undefined ? base : path.resolve('/', moved.file) };
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * A delete and a create of the same content are one rename, or a move when
  * the profile changes folder.
@@ -199,6 +231,25 @@ export function profileFileChanges(changes: readonly ProfileFileChange[]): Confi
     if (match !== undefined) {
       pairedCreates.add(match);
       renamedTo.set(deleted, match);
+    }
+  }
+  // Moving an override rewrites its relative extends. Match those after
+  // exact blobs, translating bases that moved in the same sync too.
+  for (let paired = true; paired;) {
+    paired = false;
+    for (const deleted of changes.filter((change) => change.kind === 'delete' && !renamedTo.has(change))) {
+      const before = withResolvedBase(deleted, renamedTo);
+      const match =
+        before === undefined
+          ? undefined
+          : created.find(
+              (change) => !pairedCreates.has(change) && isDeepEqual(before, withResolvedBase(change, new Map())),
+            );
+      if (match !== undefined) {
+        pairedCreates.add(match);
+        renamedTo.set(deleted, match);
+        paired = true;
+      }
     }
   }
   const described: ConfigChange[] = [];

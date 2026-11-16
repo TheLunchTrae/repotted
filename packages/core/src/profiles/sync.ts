@@ -486,13 +486,30 @@ export async function syncFolder(github: GitHub, directory: string, options: Syn
     let commit = remote.head?.commit ?? null;
     try {
       if (toPush.length > 0) {
-        const changes: ProfileFileChange[] = toPush.map((file) => {
-          const localId = localIds.get(file);
-          if (localId === undefined) {
-            return { file, kind: 'delete', contentId: remote.files.get(file)?.id };
-          }
-          return { file, kind: remote.files.has(file) ? 'update' : 'create', contentId: localId };
-        });
+        const creates = toPush.filter((file) => localIds.has(file) && !remote.files.has(file));
+        const createdIds = new Set(creates.map((file) => localIds.get(file)));
+        const changes: ProfileFileChange[] = await Promise.all(
+          toPush.map(async (file) => {
+            const localId = localIds.get(file);
+            if (localId === undefined) {
+              const contentId = remote.files.get(file)?.id;
+              const content =
+                options.message === undefined &&
+                creates.length > 0 &&
+                contentId !== undefined &&
+                !createdIds.has(contentId)
+                  ? new TextDecoder().decode(await readBlob(github, repo, contentId))
+                  : undefined;
+              return { file, kind: 'delete', contentId, content };
+            }
+            return {
+              file,
+              kind: remote.files.has(file) ? 'update' : 'create',
+              contentId: localId,
+              content: creates.includes(file) ? new TextDecoder().decode(local.get(file)) : undefined,
+            };
+          }),
+        );
         const message = (subset: readonly ProfileFileChange[]): string =>
           options.message ?? configCommitMessage(profileFileChanges(subset));
         const remotePath = (file: string): string => (prefix === '' ? file : `${prefix}/${file}`);
