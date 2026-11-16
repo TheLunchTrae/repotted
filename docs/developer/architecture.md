@@ -42,11 +42,10 @@ there a marking key that a branch leaves out becomes `not: {}`, a key the
 branch rules out; any other type JSON Schema can't hold still throws. The
 refinements that span keys, such as `mergeSettingsProblems` and repeated
 names, have no JSON Schema form and stay out of it.
-The resolved profile rejects commit message settings for a disabled merge
-method and configured code scanning default setup with Actions disabled.
-The editor previews through this validation, so conflicts block saving to
-apply while remaining available as drafts. Captures omit stored commit
-message settings for disabled methods and warn about each omission.
+The resolved profile rejects configured code scanning default setup with
+Actions disabled. The editor previews through this validation, so conflicts
+block saving to apply while remaining available as drafts. Inactive settings
+are handled by [setting dependencies](#setting-dependencies).
 
 `packages/core/src/profiles/profile.ts` loads a profile and the chain of profiles it
 `extends`, merges them, and only then validates the result. Validating after
@@ -60,6 +59,25 @@ ruleset, environment, label, or autolink replaces the base's entry of the same
 name or prefix whole, and `pages: { absent: true }` replaces a base's site. The
 resolved profile records which file sets each value, which
 `repotted profile --json` reports and the web app shows.
+
+### Setting dependencies
+
+`profiles/setting-dependencies.ts` owns the conditions that make a setting
+inactive. The web editor uses `settingCondition` to hide or disable its
+controls. `activeSettings` follows dependency chains and filters nested
+settings, using desired values before live values. Section planners use it
+before diffing; object endpoints also filter the complete write body after
+carrying live fields, so an inactive value cannot return through a PUT.
+Planning reports each ignored setting as `not_applicable`.
+
+`captureProfile` and `stringifyProfile` omit inactive settings. `editChain`
+resolves the edited profile, removes inactive settings from that file's YAML
+document, then resolves it again. It preserves comments on remaining settings,
+never edits a base file, and leaves drafts alone. Resolved profiles keep
+inherited settings so an override can enable their dependency; planning checks
+the resolved values against live state. The security planner also reads
+Dependabot alerts when only security updates are named, to check that
+dependency without managing the alerts.
 
 ### Owner types
 

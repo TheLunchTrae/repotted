@@ -122,9 +122,9 @@ to admins only. Its `secret_scanning_validity_checks` exists on GitHub
 Enterprise Cloud only. GitHub reports
 `security_and_analysis.dependabot_security_updates` too, but sets it only
 through `automated_security_fixes`, so the profile has only the latter.
-Security updates need Dependabot alerts: a plan turns the updates off before
-the alerts, and skips turning the updates on while the profile turns the
-alerts off. In `code_scanning_default_setup` and `code_quality_setup`,
+Security updates need Dependabot alerts: a plan skips the updates setting
+while the alerts are off, including when the profile turns them off. In
+`code_scanning_default_setup` and `code_quality_setup`,
 `runner_label` goes with labeled runners, and `null` is no label, as GitHub
 reports it; the schema takes no empty label. Dependabot's `runner_group` is a
 string, and GitHub's `null` group reads as `""`.
@@ -157,20 +157,20 @@ an old one, the plan leaves the old one and warns.
 
 On GitHub's settings pages some options only show, or only take a change,
 while the setting above them has a certain value. The web app's editor
-does the same, so a profile reads like the page it sets. In
-`setting-fields.ts` a field says which setting it depends on, in the same
-section and group, with `hiddenWhile` or `offWhile`:
+does the same, so a profile reads like the page it sets. Core's
+`profiles/setting-dependencies.ts` owns these conditions, which
+`setting-fields.ts` uses for each field:
 
 - **Hidden**: GitHub leaves the option off the page. The tab leaves the row
   out, and search and the filters don't find it.
 - **Off**: GitHub shows the option greyed out. The row stays in place and
   can't be changed, and it names the setting and the value that turn it off.
 
-Either way the value stays in the profile, and a setting that hides others
-says how many of them the profile still names. The editor only shows what
-the profile resolves to; a plan decides what applies, and core already warns
-`not_applicable` for the Actions options and Dependabot security updates
-while the setting above them is off.
+A setting that hides others says how many of them the profile still names.
+The engine uses the same conditions to omit inactive settings from captures
+and saved edits, and to ignore them with a `not_applicable` warning during
+planning. [Setting dependencies](architecture.md#setting-dependencies) explains
+how it resolves the conditions against profiles and live state.
 
 | Setting                                                                                                                          | Depends on                              | While               | Shown  |
 | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | ------------------- | ------ |

@@ -11,7 +11,7 @@ import {
   type RepositorySettings,
 } from '../../profiles/schema.js';
 import type { Change, SectionPlan, Warning } from '../change.js';
-import { type Endpoint, type EndpointValue, planEndpoint, readEndpoints } from '../endpoints.js';
+import { activeSettingsForPlan, type Endpoint, type EndpointValue, planEndpoint, readEndpoints } from '../endpoints.js';
 import { fieldChanges, matches } from '../match.js';
 
 export const repositoryEndpoints: readonly Endpoint[] = [
@@ -148,10 +148,22 @@ function ownSettings(settings: RepositorySettings): Record<string, unknown> {
 }
 
 export function planRepository(
-  desired: Pick<Profile, 'repository' | 'merge'>,
+  input: Pick<Profile, 'repository' | 'merge'>,
   live: LiveRepository,
   repo: RepoRef,
 ): SectionPlan {
+  const warnings: Warning[] = [];
+  const liveRepository = {
+    ...live.repository,
+    ...Object.fromEntries([...live.endpoints].flatMap(([key, value]) => (value.available ? [[key, value.value]] : []))),
+  };
+  const desired = {
+    repository:
+      input.repository === undefined
+        ? undefined
+        : activeSettingsForPlan('repository', input.repository, liveRepository, warnings),
+    merge: input.merge === undefined ? undefined : activeSettingsForPlan('merge', input.merge, live.merge, warnings),
+  };
   if (desired.merge !== undefined) {
     // A commit message pair the profile leaves out is never sent, so the
     // live pair is checked only beside a profile that names half of it.
@@ -168,7 +180,6 @@ export function planRepository(
     }
   }
   const changes: Change[] = [];
-  const warnings: Warning[] = [];
   if (desired.repository !== undefined) {
     const own = settingsChange(
       'repository',

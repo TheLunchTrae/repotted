@@ -124,7 +124,7 @@ describe('settings at their own endpoints', () => {
     expect((await createPlan(github, repo, everything)).changes).toEqual([]);
   });
 
-  test('turns Dependabot security updates off before the alerts they answer', async () => {
+  test('ignores security updates when the profile turns off the alerts they answer', async () => {
     const state = everySettingOfferedAtGitHubDefaults();
     const github = new FakeGitHub({
       ...state,
@@ -138,7 +138,6 @@ describe('settings at their own endpoints', () => {
 
     const plan = await createPlan(github, repo, desired);
     expect(plan.changes.map((change) => `${change.request.method} ${change.target}`)).toEqual([
-      'DELETE Dependabot security updates',
       'DELETE Dependabot alerts',
     ]);
     await applyPlan(github, plan);
@@ -548,11 +547,8 @@ describe('capture of every section', () => {
     expect(profile.security).not.toHaveProperty('security_and_analysis');
     expect(profile.security?.code_scanning_default_setup).toEqual({
       state: 'not-configured',
-      runner_label: null,
-      query_suite: 'default',
-      threat_model: 'remote',
     });
-    expect(profile.security?.code_quality_setup).toEqual({ state: 'not-configured', runner_label: null });
+    expect(profile.security?.code_quality_setup).toEqual({ state: 'not-configured' });
     expect((await createPlan(github, repo, profile)).changes).toEqual([]);
   });
 });
@@ -764,16 +760,14 @@ describe('settings GitHub ties together', () => {
     expect(next.warnings).toEqual(plan.warnings);
   });
 
-  test('clears a runner label by moving to standard runners with a null label', async () => {
+  test('ignores a null runner label when moving to standard runners', async () => {
     const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/code-quality/setup'] = { state: 'configured', runner_type: 'labeled', runner_label: 'big' };
     const profile: Profile = { security: { code_quality_setup: { runner_type: 'standard', runner_label: null } } };
 
     const plan = await createPlan(github, repo, profile);
-    expect(plan.warnings).toEqual([]);
-    expect(plan.changes.map((change) => change.request.body)).toEqual([
-      { runner_type: 'standard', runner_label: null },
-    ]);
+    expect(plan.warnings).toEqual([expect.objectContaining({ field: 'runner_label', cause: 'not_applicable' })]);
+    expect(plan.changes.map((change) => change.request.body)).toEqual([{ runner_type: 'standard' }]);
     await applyPlan(github, plan);
     expect((await createPlan(github, repo, profile)).changes).toEqual([]);
   });
@@ -811,7 +805,7 @@ describe('settings GitHub ties together', () => {
       runner_label: null,
     };
     const { profile } = await captureProfile(source, repo);
-    expect(profile.security?.code_scanning_default_setup).toHaveProperty('runner_label', null);
+    expect(profile.security?.code_scanning_default_setup).toEqual({ state: 'not-configured' });
     const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     github.state.settings['/code-scanning/default-setup'] = {
       state: 'configured',
@@ -848,7 +842,9 @@ describe('settings GitHub ties together', () => {
 
     const plan = await createPlan(github, repo, profile);
     expect(plan.changes).toEqual([]);
-    expect(plan.warnings).toEqual([]);
+    expect(plan.warnings).toEqual([
+      expect.objectContaining({ key: 'code_quality_setup', field: 'runner_type', cause: 'not_applicable' }),
+    ]);
   });
 
   test('skips runner settings with a warning while the repository leaves the setup not configured', async () => {
@@ -856,7 +852,7 @@ describe('settings GitHub ties together', () => {
     const plan = await createPlan(github, repo, {
       security: { code_scanning_default_setup: { runner_type: 'labeled', runner_label: 'big' } },
     });
-    const reason = 'GitHub keeps no runner while the setup is not configured';
+    const reason = 'GitHub keeps no setup options while the setup is not configured';
     expect(plan.changes).toEqual([]);
     // GitHub's reason, though the setting is the profile's to fix.
     expect(plan.warnings).toEqual([
@@ -902,8 +898,6 @@ describe('settings GitHub ties together', () => {
     const { profile: captured } = await captureProfile(github, repo);
     expect(captured.security?.dependabot_runner_settings).toEqual({
       runner_type: 'standard',
-      runner_labels: [],
-      runner_group: '',
     });
     const plan = await createPlan(github, repo, captured);
     expect(plan.changes).toEqual([]);
@@ -915,7 +909,7 @@ describe('settings GitHub ties together', () => {
     github.state.settings['/dependabot/runner-settings'] = { runner_type: 'standard', runner_group: null };
 
     const { profile: captured } = await captureProfile(github, repo);
-    expect(captured.security?.dependabot_runner_settings).toEqual({ runner_type: 'standard', runner_group: '' });
+    expect(captured.security?.dependabot_runner_settings).toEqual({ runner_type: 'standard' });
     expect(profileSchema.safeParse(captured).success).toBe(true);
     expect(profileSchema.safeParse({ security: { dependabot_runner_settings: { runner_group: null } } }).success).toBe(
       false,
@@ -974,9 +968,7 @@ describe('settings GitHub ties together', () => {
         message: 'GitHub ignores claim keys while use_default is true',
       },
     ]);
-    expect(ignored.changes.map((change) => change.request.body)).toEqual([
-      { use_default: true, include_claim_keys: ['repo'] },
-    ]);
+    expect(ignored.changes.map((change) => change.request.body)).toEqual([{ use_default: true }]);
   });
 
   test('sets a limit GitHub reports as unset', async () => {

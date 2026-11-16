@@ -167,7 +167,7 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
       {row.hiddenNamed > 0 && (
         <p class="muted small">
           The profile still names {row.hiddenNamed} {row.hiddenNamed === 1 ? 'setting' : 'settings'} that GitHub hides
-          for this value.
+          for this value. They are ignored when applying and removed from this file when saving.
         </p>
       )}
       {field.note !== undefined && <p class="muted small">{field.note}</p>}

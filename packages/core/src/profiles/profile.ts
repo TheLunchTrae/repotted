@@ -46,6 +46,7 @@ import {
   type RulesetEntry,
   securitySettings,
 } from './schema.js';
+import { activeProfileSettings, activeSettings } from './setting-dependencies.js';
 
 export class ProfileError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -1591,15 +1592,45 @@ async function editChain<Read extends LayerRead>(
     }
   }
   const indent = /^( +)\S/mu.exec(original)?.[1]?.length ?? 2;
-  const text = document.toString({ lineWidth: 0, indent });
-  const edited = parseLayer(text, own.file, layer);
-  const editedLinks = [{ file: own.file, parsed: edited.own, drafts: edited.drafts, listedIn: own.listedIn }, ...base];
-  const result = {
-    head: edited.read,
-    ...resolveChain(editedLinks, own.file, edited.read.adjust),
-    listedProfiles,
-    overrideWarnings: removalWarnings(editedLinks),
+  const resolveEdited = () => {
+    const edited = parseLayer(document.toString({ lineWidth: 0, indent }), own.file, layer);
+    const editedLinks = [
+      { file: own.file, parsed: edited.own, drafts: edited.drafts, listedIn: own.listedIn },
+      ...base,
+    ];
+    return {
+      head: edited.read,
+      ...resolveChain(editedLinks, own.file, edited.read.adjust),
+      listedProfiles,
+      overrideWarnings: removalWarnings(editedLinks),
+    };
   };
+  let result = resolveEdited();
+  let removed = false;
+  for (const section of settingsSections) {
+    const settings = result.resolved.profile[section];
+    if (settings === undefined) {
+      continue;
+    }
+    for (const { key } of activeSettings(section, settings).inactive) {
+      const at = [section, ...key.split('.')];
+      if (!document.hasIn(at)) {
+        continue;
+      }
+      document.deleteIn(at);
+      for (let depth = at.length - 1; depth > 0; depth -= 1) {
+        const parent = document.getIn(at.slice(0, depth));
+        if (isMap(parent) && parent.items.length === 0) {
+          document.deleteIn(at.slice(0, depth));
+        }
+      }
+      removed = true;
+    }
+  }
+  if (removed) {
+    result = resolveEdited();
+  }
+  const text = document.toString({ lineWidth: 0, indent });
   layer.check(result);
   return { before: () => resolveChain(links, own.file, head.adjust).resolved, result, file: own.file, original, text };
 }
@@ -1742,5 +1773,5 @@ export function withExtends(text: string, base: string): string {
 }
 
 export function stringifyProfile(value: Profile): string {
-  return stringify(value, { lineWidth: 0 });
+  return stringify(activeProfileSettings(value), { lineWidth: 0 });
 }

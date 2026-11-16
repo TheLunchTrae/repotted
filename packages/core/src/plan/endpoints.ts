@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { type GitHub, GitHubError, repoPath, type RepoRef } from '../github/client.js';
 import { requiredPermission } from '../github/permissions.js';
+import { activeSettings } from '../profiles/setting-dependencies.js';
 import type { Change, RefusalRemedy, Section, SectionPlan, SettingsSection, Warning } from './change.js';
 import { fieldChanges } from './match.js';
 
@@ -179,6 +180,26 @@ export async function readEndpoints(
   return values;
 }
 
+export function activeSettingsForPlan<T extends object>(
+  section: SettingsSection,
+  desired: T,
+  live: object,
+  warnings: Warning[],
+): T {
+  const { settings, inactive } = activeSettings(section, desired, live);
+  for (const { key: path, reason } of inactive) {
+    const [key, ...field] = path.split('.');
+    warnings.push({
+      section,
+      ...(key === undefined ? {} : { key }),
+      ...(field.length === 0 ? {} : { field: field.join('.') }),
+      cause: 'not_applicable',
+      message: reason,
+    });
+  }
+  return settings;
+}
+
 export function planEndpoint(
   section: SettingsSection,
   endpoint: Endpoint,
@@ -227,7 +248,16 @@ export function planEndpoint(
         });
       }
     }
-    const wanted = adjusted.desired;
+    const active = activeSettingsForPlan(
+      section,
+      { [endpoint.key]: adjusted.desired },
+      { [endpoint.key]: current },
+      warnings,
+    );
+    const wanted = active[endpoint.key];
+    if (!isRecord(wanted)) {
+      return { changes, warnings };
+    }
     const fields = fieldChanges(wanted, current);
     if (fields.length > 0) {
       // GitHub takes no null for a field it leaves unset, so one stays out.
@@ -237,7 +267,10 @@ export function planEndpoint(
           .filter((field) => current[field] !== undefined && current[field] !== null)
           .map((field) => [field, current[field]]),
       );
-      const body = { ...carried, ...wanted };
+      const body =
+        activeSettings(section, { [endpoint.key]: { ...carried, ...wanted } }, { [endpoint.key]: current }).settings[
+          endpoint.key
+        ] ?? {};
       changes.push({
         section,
         action: 'update',
