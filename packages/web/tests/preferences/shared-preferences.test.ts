@@ -64,7 +64,7 @@ test('a write commits the file beside the profiles, keeping keys saved elsewhere
   preferences.write('hidden-repositories', ['lunch/old']);
   await settled(preferences);
   expect(saved(repository)).toEqual({ 'hidden-repositories': ['lunch/old'] });
-  expect(repository.log()[0]).toBe('Update Repotted preferences');
+  expect(repository.log()[0]).toBe('Hide repository: lunch/old');
 
   // Another browser saves its own choice meanwhile.
   repository.write({ [file]: '{ "hidden-repositories": ["lunch/old"], "other": 1 }' });

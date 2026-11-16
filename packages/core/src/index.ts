@@ -26,6 +26,7 @@ export {
 export type { Plan } from './plan/plan.js';
 export {
   changeOwnerType,
+  declaredExtends,
   editProfile,
   listProfiles,
   parseProfile,
@@ -33,6 +34,7 @@ export {
   resolveProfile,
   settingPath,
   stringifyProfile,
+  withExtends,
 } from './profiles/profile.js';
 export { ownerHas, ownerTypes, partOwnerTypeCannotHold, settingRules } from './profiles/owner.js';
 export type { OwnerNeed, OwnerType } from './profiles/owner.js';
@@ -45,6 +47,8 @@ export { currentUser, listRepositories, readAccess, readInstallationSettingsUrl 
 export type { InstallationMissingPermissions } from './github/repositories.js';
 export { listBranches, readBranchChanges } from './profiles/branch-changes.js';
 export type { BranchChanges, BranchProfileChange } from './profiles/branch-changes.js';
+export { configCommitMessage } from './profiles/commit-messages.js';
+export type { ConfigChange } from './profiles/commit-messages.js';
 export { syncFolder } from './profiles/sync.js';
 export {
   createStagedApply,

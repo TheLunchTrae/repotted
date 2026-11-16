@@ -108,6 +108,14 @@ const screens: Readonly<Record<string, Screen>> = {
     visibleOnceDrawn: (page) =>
       page.getByRole('heading', { name: 'a_repository_name_with_no_hyphens_in_it_at_all', exact: true }),
   },
+  "a repository's profiles": {
+    path: '/?repository=lunch/a_repository_name_with_no_hyphens_in_it_at_all',
+    reachFromPath: (page) =>
+      page
+        .getByRole('button', { name: 'Edit the profiles of lunch/a_repository_name_with_no_hyphens_in_it_at_all' })
+        .click(),
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Move teams/website down' }),
+  },
   'found config repositories': {
     path: '/?config-repositories',
     reachFromPath: (page) =>
@@ -131,6 +139,14 @@ const screens: Readonly<Record<string, Screen>> = {
         .getByRole('button', { name: 'Review protection…' }),
   },
   profiles: { path: '/profiles', visibleOnceDrawn: (page) => page.getByText('website', { exact: true }) },
+  'profile editor after a batch action': {
+    path: '/profiles',
+    reachFromPath: async (page) => {
+      await page.getByText('website', { exact: true }).click();
+      await page.getByRole('button', { name: 'Remove all: 1 setting in Features' }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Undo' }),
+  },
   'settings a capture could not read': {
     path: '/profiles/new',
     reachFromPath: async (page) => {

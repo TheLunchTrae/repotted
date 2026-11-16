@@ -11,13 +11,22 @@ import {
   hexColor,
   isEntry,
   uniqueTrimmedNonBlankLines,
+  allRefsTarget,
+  defaultBranchTarget,
+  namedRefTargetsProblem,
   refNames,
+  refPatterns,
+  refPatternsProblem,
+  type RefSide,
+  refTargetsProblem,
   ruleOf,
+  rulesetTarget,
   statusChecks,
   withBranchPolicies,
   withDeploymentBranches,
   withKey,
-  withRefNames,
+  withNamedRefTarget,
+  withRefPatterns,
   withRule,
   withRuleParameter,
   withStatusChecks,
@@ -25,6 +34,7 @@ import {
 import type { ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import { sameValue } from '../../app/profile-editor/same-value.js';
 import { run } from '../layout/run.js';
+import { BatchActions, describeEntriesDone } from './batch-actions.js';
 import { BypassList } from './bypass-list.js';
 import { MissingPermissionsNote } from './missing-permissions-note.js';
 
@@ -162,6 +172,7 @@ interface TextProps {
   readonly note?: string | undefined;
   readonly problem?: string | undefined;
   readonly disabled?: boolean;
+  readonly nested?: boolean;
 }
 
 /**
@@ -179,6 +190,7 @@ function TextBox({
   note,
   problem,
   disabled,
+  nested,
 }: TextProps): JSX.Element {
   const id = useId();
   const [typed, setTyped] = useState<string | undefined>(undefined);
@@ -202,7 +214,7 @@ function TextBox({
     setRefused(onText(next));
   };
   return (
-    <div class="setting">
+    <div class={nested === true ? 'setting setting-nested' : 'setting'}>
       <div class="setting-head">
         <div class="setting-text">
           <label for={id}>
@@ -238,7 +250,7 @@ interface CheckProps {
   readonly label: string;
   readonly checked: boolean;
   readonly onCheck: (checked: boolean) => void;
-  readonly note?: string;
+  readonly note?: string | undefined;
 }
 
 function Check({ label, checked, onCheck, note }: CheckProps): JSX.Element {
@@ -322,6 +334,102 @@ function parseWholeNumberUpTo(
     : `${what} is a whole number, from 0 to ${most}.`;
 }
 
+interface RefTargetsProps extends FormProps {
+  readonly side: RefSide;
+}
+
+/**
+ * The named targets are options, and the patterns are typed only once their
+ * option is selected. An option the target doesn't offer still shows while
+ * the entry names it, so it can be deselected.
+ */
+function RefTargets({ entry, saved, change, side }: RefTargetsProps): JSX.Element | null {
+  const target = rulesetTarget(entry);
+  const names = refNames(entry, side);
+  const patterns = refPatterns(entry, side);
+  const [patternsOpened, setPatternsOpened] = useState(patterns.length > 0);
+  const id = useId();
+  const tags = target === 'tag';
+  const offered = target !== 'push';
+  const options: (readonly [string, string, string | undefined])[] = [];
+  if ((offered && !tags) || names.includes(defaultBranchTarget)) {
+    options.push([defaultBranchTarget, 'Default branch', "Each repository's own default, such as main."]);
+  }
+  if ((offered && side === 'include') || names.includes(allRefsTarget)) {
+    options.push([allRefsTarget, tags ? 'All tags' : 'All branches', undefined]);
+  }
+  const patternsSelected = (offered && patternsOpened) || patterns.length > 0;
+  if (options.length === 0 && !offered && !patternsSelected) {
+    return side === 'include' ? (
+      <div class="setting">
+        <span class="muted small">
+          A push ruleset covers every push to the repository, so it has no branch or tag targets.
+        </span>
+      </div>
+    ) : null;
+  }
+  const label = side === 'include' ? 'Include' : 'Exclude';
+  const noun = tags ? 'tags' : 'branches';
+  const targetsProblem = namedRefTargetsProblem(entry, side);
+  return (
+    <>
+      <div class="setting" role="group" aria-labelledby={id}>
+        <div class="setting-text">
+          <strong id={id}>{label}</strong>
+          <span class="muted small">
+            {side === 'include' ? `The ${noun} the ruleset covers.` : `The ${noun} it skips, even when included.`}
+          </span>
+        </div>
+        {options.map(([name, optionLabel, note]) => (
+          <Check
+            key={name}
+            label={optionLabel}
+            note={note}
+            checked={names.includes(name)}
+            onCheck={(checked) => {
+              change(withNamedRefTarget(entry, side, name, checked, saved));
+            }}
+          />
+        ))}
+        {(offered || patterns.length > 0) && (
+          <Check
+            label={tags ? 'Tags by pattern' : 'Branches by pattern'}
+            checked={patternsSelected}
+            onCheck={(checked) => {
+              setPatternsOpened(checked);
+              if (!checked) {
+                change(withRefPatterns(entry, side, [], saved));
+              }
+            }}
+          />
+        )}
+        {targetsProblem !== undefined && (
+          <p class="problem small" role="alert">
+            {targetsProblem}
+          </p>
+        )}
+      </div>
+      {patternsSelected && (
+        <TextBox
+          nested
+          label={tags ? 'Tag patterns' : 'Branch patterns'}
+          mono
+          multiline
+          value={patterns.join('\n')}
+          placeholder={tags ? 'refs/tags/v*' : 'refs/heads/release/*'}
+          note={`One a line, such as ${tags ? 'refs/tags/v*' : 'refs/heads/release/*'}.`}
+          problem={refPatternsProblem(entry, side)}
+          onText={(typed) => {
+            setPatternsOpened(true);
+            change(withRefPatterns(entry, side, uniqueTrimmedNonBlankLines(typed), saved));
+            return undefined;
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 function RulesetForm({
   entry,
   saved,
@@ -341,19 +449,6 @@ function RulesetForm({
   const pullParameters = isEntry(pullRequest?.['parameters']) ? pullRequest['parameters'] : {};
   const checks = ruleOf(entry, 'required_status_checks');
   const checkParameters = isEntry(checks?.['parameters']) ? checks['parameters'] : {};
-  const refs = (side: 'include' | 'exclude', note?: string): JSX.Element => (
-    <TextBox
-      label={side === 'include' ? 'Include' : 'Exclude'}
-      mono
-      multiline
-      value={refNames(entry, side).join('\n')}
-      note={note}
-      onText={(typed) => {
-        change(withRefNames(entry, side, uniqueTrimmedNonBlankLines(typed), saved));
-        return undefined;
-      }}
-    />
-  );
   return (
     <>
       <Group title="Target">
@@ -381,8 +476,8 @@ function RulesetForm({
             change(withKey(entry, 'enforcement', value));
           }}
         />
-        {refs('include', 'One pattern a line, such as ~DEFAULT_BRANCH, ~ALL, or refs/heads/release/*.')}
-        {refs('exclude')}
+        <RefTargets entry={entry} saved={saved} change={change} side="include" />
+        <RefTargets entry={entry} saved={saved} change={change} side="exclude" />
       </Group>
       <BypassList
         entry={entry}
@@ -735,6 +830,7 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
   const absent = entry['absent'] === true;
   const renamable = row.source === 'here' || row.source === undefined;
   const name = typeof entry['name'] === 'string' ? entry['name'] : '';
+  const problemTheTargetsShow = row.list === 'rulesets' ? refTargetsProblem(entry) : undefined;
   // GitHub knows an environment by its name in any case, and a ruleset by its name as written.
   // A name only this profile's draft has is on no repository yet, so changing it leaves nothing behind.
   const appliedName = typeof row.applied?.['name'] === 'string' ? row.applied['name'] : undefined;
@@ -819,7 +915,7 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
             label="Name"
             value={name}
             disabled={!renamable}
-            problem={row.outOfDate ? undefined : row.applyProblem}
+            problem={row.outOfDate || row.applyProblem === problemTheTargetsShow ? undefined : row.applyProblem}
             note={
               !renamable
                 ? `It comes from ${row.source}, so it keeps its name.`
@@ -888,6 +984,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
   const [openKey, setOpenKey] = useState<string | undefined>(undefined);
   const rows = editor.entries.value[kind];
   const noun = nouns[kind];
+  const batch = editor.entryListBatches.value[kind];
   const missingPermissions = editor.entryListMissingPermissions.value[kind];
   const turnedOff = missingPermissions.length > 0;
   // A save gives a new or renamed entry the key of its saved name, so the open one is found by that name then.
@@ -957,6 +1054,25 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets }: Entrie
         >
           New {noun.one}
         </button>
+        <BatchActions
+          editor={editor}
+          scope={kind}
+          describeDone={describeEntriesDone(noun.one, noun.many)}
+          actions={[
+            {
+              label: 'Reset all',
+              count: batch.unsaved,
+              counted: batch.unsaved === 1 ? noun.one : noun.many,
+              act: () => editor.resetAllEntriesIn(kind),
+            },
+            {
+              label: 'Take out all',
+              count: batch.canBeTakenOut,
+              counted: batch.canBeTakenOut === 1 ? noun.one : noun.many,
+              act: () => editor.takeOutAllIn(kind),
+            },
+          ]}
+        />
       </div>
       {rows.length > 0 && (
         <ul class="rows" ref={list}>

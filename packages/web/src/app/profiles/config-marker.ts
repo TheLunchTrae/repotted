@@ -1,4 +1,4 @@
-import { type GitHub, GitHubError, parseRepo } from '@repotted/core';
+import { configCommitMessage, type GitHub, GitHubError, parseRepo } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { readRepositoryFile, writeRepositoryFile } from '../storage/repository-files.js';
@@ -8,7 +8,6 @@ export const configTopic = 'repotted-config';
 /** At the repository's root, naming the folder that holds the profiles. Hidden, so a sync leaves it out. */
 export const markerFile = '.repotted.json';
 
-const markerCommitMessage = 'Name the Repotted profiles folder';
 const topicNames = z.object({ names: z.array(z.string()) });
 const marker = z.object({ folder: z.string() });
 
@@ -70,15 +69,23 @@ export async function markConfigRepository(github: GitHub, repository: string, f
   if (!topics.includes(configTopic)) {
     await github.request('PUT', topicsPath(repository), { names: [...topics, configTopic] });
   }
+  const profilesFolder = normalFolder(folder);
   const current = await readRepositoryFile(github, repository, markerFile);
-  if (current !== undefined && markedFolderOf(current.text) === normalFolder(folder)) {
+  if (current !== undefined && markedFolderOf(current.text) === profilesFolder) {
     return false;
   }
   try {
     await writeRepositoryFile(github, repository, markerFile, {
-      text: markerText(normalFolder(folder)),
+      text: markerText(profilesFolder),
       sha: current?.sha,
-      message: markerCommitMessage,
+      message: configCommitMessage([
+        {
+          action: 'Set',
+          noun: 'profiles folder',
+          nouns: 'profiles folders',
+          name: profilesFolder === '' ? 'repository root' : profilesFolder,
+        },
+      ]),
     });
     return true;
   } catch (error) {
@@ -86,7 +93,7 @@ export async function markConfigRepository(github: GitHub, repository: string, f
     if (
       error instanceof GitHubError &&
       (error.status === 409 || error.status === 422) &&
-      (await readMarkedFolder(github, repository)) === normalFolder(folder)
+      (await readMarkedFolder(github, repository)) === profilesFolder
     ) {
       return false;
     }

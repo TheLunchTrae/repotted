@@ -1,19 +1,23 @@
 {
   "folder": "<batch>/batch",
   "id": "<id>",
-  "profile": "<batch>/profile.yaml",
+  "profiles": [
+    "<batch>/profile.yaml"
+  ],
   "members": [
     {
       "repository": "lunch/app",
       "file": "<batch>/batch/lunch/app.yaml",
       "left_out": false,
-      "joined": false
+      "joined": false,
+      "profiles": null
     },
     {
       "repository": "lunch/web",
       "file": "<batch>/batch/lunch/web.yaml",
       "left_out": false,
-      "joined": false
+      "joined": false,
+      "profiles": null
     }
   ]
 }

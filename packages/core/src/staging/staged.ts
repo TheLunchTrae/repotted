@@ -20,6 +20,7 @@ import {
   type ResolvedLayer,
   resolveLayer,
   resolveProfile,
+  resolveProfilesTogether,
   settingPath,
   settingsSections,
 } from '../profiles/profile.js';
@@ -96,6 +97,8 @@ function sets(layer: Readonly<Record<string, unknown>>, exclusion: Exclusion): b
 const stagedFields = {
   apply_to: z.string().regex(repoPattern, 'Use owner/name'),
   exclude: z.array(z.string().min(1)).optional(),
+  /** One profile, or several applied in order, later ones overriding earlier ones. */
+  extends: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]).optional(),
 };
 
 const stagedFile = profileFile
@@ -207,13 +210,19 @@ interface StagedRead {
   readonly own: StagedFile;
   readonly layer: ProfileFile;
   readonly adjust: Adjust;
+  readonly listedProfiles: readonly string[];
 }
 
 const stagedLayer: Layer<StagedRead> = {
   noun: 'staged apply',
   schema: stagedFile.transform((own): StagedRead => {
-    const { apply_to: _repository, exclude = [], ...layer } = own;
-    return { own, layer, adjust: excluding(exclude) };
+    const { apply_to: _repository, exclude = [], extends: listed, ...layer } = own;
+    return {
+      own,
+      layer,
+      adjust: excluding(exclude),
+      listedProfiles: listed === undefined ? [] : typeof listed === 'string' ? [listed] : listed,
+    };
   }),
   ownTopLevelKeys: new Set(['exclude']),
   check: () => undefined,
@@ -261,8 +270,11 @@ function sourcesWithoutExclusions(sources: Sources, exclusions: readonly Exclusi
 export interface StagedApply {
   readonly file: string;
   readonly repository: string;
-  /** Null when it starts from the repository as it is. */
-  readonly base: string | null;
+  /**
+   * The profiles it starts from, as real paths, in the order they apply; later
+   * ones override earlier ones. Empty when it starts from the repository as it is.
+   */
+  readonly profiles: readonly string[];
   readonly exclude: readonly string[];
   readonly chain: readonly string[];
   readonly profile: Profile;
@@ -287,19 +299,29 @@ async function readStagedFile(file: string): Promise<StagedFile> {
   return result.data;
 }
 
-function staged({ head: { own }, resolved, unmatched }: ResolvedLayer<StagedRead>): StagedApply {
+function staged({
+  head: { own },
+  resolved,
+  unmatched,
+  listedProfiles,
+  overrideWarnings,
+}: ResolvedLayer<StagedRead>): StagedApply {
   const exclude = own.exclude ?? [];
   const exclusions = exclude.flatMap((key) => parseExclusion(key) ?? []);
   const { drafts, ...settled } = resolved.sources;
   return {
     file: resolved.chain[0] ?? '',
     repository: own.apply_to,
-    base: resolved.chain[1] ?? null,
+    profiles: listedProfiles,
     exclude,
     chain: resolved.chain,
     profile: resolved.profile,
     drafts: resolved.drafts,
-    warnings: [...resolved.warnings, ...unmatched.map(unmatchedWarning)],
+    warnings: [
+      ...resolved.warnings,
+      ...overrideWarnings.map((warning) => warning.message),
+      ...unmatched.map(unmatchedWarning),
+    ],
     sources: { ...sourcesWithoutExclusions(settled, exclusions), drafts },
   };
 }
@@ -309,31 +331,50 @@ export async function resolveStagedApply(file: string): Promise<StagedApply> {
   return staged(await resolveLayer(file, stagedLayer));
 }
 
-/** The file must not exist yet, so a staged apply in progress is never lost. */
+/**
+ * `profiles` apply in order, later ones overriding earlier ones; none starts
+ * from the repository as it is. The file must not exist yet, so a staged apply
+ * in progress is never lost, and nothing is written when the profiles don't
+ * resolve, alone or together.
+ */
 export async function createStagedApply(
   file: string,
   repository: string,
-  from: string | undefined,
+  profiles: readonly string[],
 ): Promise<StagedApply> {
   const repo = parseRepo(repository);
   const lines = [
     '# A staged apply: one-off edits for one apply to one repository.',
-    '# The profile it extends stays as it is unless these edits are saved to it.',
+    profiles.length > 1
+      ? '# The profiles it extends apply in order and stay as they are.'
+      : '# The profile it extends stays as it is unless these edits are saved to it.',
   ];
   const data: Record<string, unknown> = { apply_to: `${repo.owner}/${repo.name}` };
-  if (from !== undefined) {
-    // Resolving first means a staged apply never starts from a broken profile.
-    const base = (await resolveProfile(from)).chain[0] ?? path.resolve(from);
+  if (profiles.length > 1) {
+    await resolveProfilesTogether(profiles);
+  }
+  if (profiles.length > 0) {
     const folder = await realpath(path.dirname(path.resolve(file))).catch(() => path.dirname(path.resolve(file)));
-    const relative = path.relative(folder, base);
-    data['extends'] = path.isAbsolute(relative) ? base : relative.split(path.sep).join('/');
+    const relativePaths: string[] = [];
+    for (const profile of profiles) {
+      // Resolving first means a staged apply never starts from a broken profile.
+      const base = (await resolveProfile(profile)).chain[0] ?? path.resolve(profile);
+      const relative = path.relative(folder, base);
+      relativePaths.push(path.isAbsolute(relative) ? base : relative.split(path.sep).join('/'));
+    }
+    data['extends'] = relativePaths.length === 1 ? relativePaths[0] : relativePaths;
   }
   try {
     await writeFile(file, `${lines.join('\n')}\n${stringify(data, { lineWidth: 0 })}`, { flag: 'wx' });
   } catch (error) {
     throw new ProfileError(`Cannot start a staged apply in ${file}`, { cause: error });
   }
-  return resolveStagedApply(file);
+  try {
+    return await resolveStagedApply(file);
+  } catch (error) {
+    await rm(file, { force: true });
+    throw error;
+  }
 }
 
 function isSameList(left: readonly string[], right: readonly string[]): boolean {
@@ -428,28 +469,34 @@ function layerEdits(layer: ProfileFile, clear: boolean): ProfileEdit[] {
 export async function saveStagedEdits(file: string): Promise<StagedApply> {
   const read = await resolveLayer(file, stagedLayer);
   const before = staged(read);
-  if (before.base === null) {
+  const [base, ...more] = before.profiles;
+  if (base === undefined) {
     throw new ProfileError(`${file} starts from the repository as it is, so it has no profile to save edits to`);
   }
-  const { extends: _base, ...layer } = read.head.layer;
+  if (more.length > 0) {
+    throw new ProfileError(
+      `${file} starts from ${before.profiles.length} profiles, so it has no one profile to save edits to; copy them into the profile they belong in`,
+    );
+  }
+  const layer = read.head.layer;
   const edits = layerEdits(layer, false);
   if (edits.length === 0) {
     return before;
   }
   // `absent` replaces a whole Pages site when files merge, but an edit sets one key of the profile.
-  const pages = (await resolveProfile(before.base)).profile.pages;
+  const pages = (await resolveProfile(base)).profile.pages;
   if (layer.pages !== undefined && pages !== undefined && (layer.pages.absent === true) !== (pages.absent === true)) {
     throw new ProfileError(
       'Cannot save a change between a Pages site and no Pages site to a profile; change pages in the profile file',
     );
   }
-  await editProfile(before.base, edits);
+  await editProfile(base, edits);
   const cleared = await editLayer(
     file,
     (head) => {
       if (!isDeepEqual(head.layer, read.head.layer)) {
         throw new ProfileError(
-          `${file} changed after its edits were read, so they are saved to ${before.base} but not cleared from ${file}`,
+          `${file} changed after its edits were read, so they are saved to ${base} but not cleared from ${file}`,
         );
       }
       return layerEdits(layer, true);
@@ -527,6 +574,7 @@ export async function planStagedApply(
     ...created,
     warnings: [
       ...created.warnings,
+      ...read.overrideWarnings,
       ...read.unmatched.map((exclusion) => ({ exclusion, message: unmatchedWarning(exclusion) })),
     ],
   };

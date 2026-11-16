@@ -7,6 +7,15 @@ import type { Router } from '../../app/navigation/router.js';
 import { Link } from './link.js';
 import { usePhone } from './phone.js';
 
+/** A dialog that opens as a modal as soon as it is drawn. */
+export function useModal(): RefObject<HTMLDialogElement | null> {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  return dialog;
+}
+
 export function useDismissibleMenu(): RefObject<HTMLDetailsElement | null> {
   const menu = useRef<HTMLDetailsElement>(null);
   useEffect(() => {

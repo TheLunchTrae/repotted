@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type * as FileSystem from 'node:fs/promises';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { afterAll, describe, expect, test, vi } from 'vitest';
-import { stringify } from 'yaml';
+import { parse, stringify } from 'yaml';
 
 import { ApplyError, applyPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
 import { ProfileError } from '../../src/profiles/profile.js';
@@ -122,10 +122,10 @@ async function replacedAfterNextRead(file: string, next: string): Promise<void> 
 describe('staged apply', () => {
   test('starts from a profile and resolves to it until edited', async () => {
     const files = await freshFolderWithProfile(base);
-    const staged = await createStagedApply(files.staged, 'lunch/app', files.profile);
+    const staged = await createStagedApply(files.staged, 'lunch/app', [files.profile]);
 
     expect(staged.repository).toBe('lunch/app');
-    expect(staged.base).toBe(files.profile);
+    expect(staged.profiles).toEqual([files.profile]);
     expect(staged.chain).toEqual([files.staged, files.profile]);
     expect(staged.profile.repository).toEqual({ has_wiki: false, delete_branch_on_merge: true });
     expect(staged.sources['repository']).toEqual({ has_wiki: files.profile, delete_branch_on_merge: files.profile });
@@ -133,36 +133,36 @@ describe('staged apply', () => {
 
   test('never replaces a staged apply that already exists', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
 
-    expect(await rejection(createStagedApply(files.staged, 'lunch/app', undefined))).toBeInstanceOf(ProfileError);
+    expect(await rejection(createStagedApply(files.staged, 'lunch/app', []))).toBeInstanceOf(ProfileError);
     expect((await resolveStagedApply(files.staged)).profile.repository?.has_wiki).toBe(true);
   });
 
   test('writes nothing when the profile it would start from does not resolve', async () => {
     const files = await freshFolderWithProfile('repository: { no_such_setting: true }\n');
 
-    expect(await rejection(createStagedApply(files.staged, 'lunch/app', files.profile))).toBeInstanceOf(ProfileError);
+    expect(await rejection(createStagedApply(files.staged, 'lunch/app', [files.profile]))).toBeInstanceOf(ProfileError);
     expect(await rejection(readFile(files.staged))).toBeInstanceOf(Error);
   });
 
   test('starts from the repository as it is when it names no profile', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', undefined);
+    await createStagedApply(files.staged, 'lunch/app', []);
     const github = new FakeGitHub();
 
     expect((await planStagedApply(github, files.staged)).plan.changes).toEqual([]);
 
     await editStagedApply(files.staged, [{ path: ['repository', 'has_issues'], value: false }]);
     const { staged, plan } = await planStagedApply(github, files.staged);
-    expect(staged.base).toBeNull();
+    expect(staged.profiles).toEqual([]);
     expect(plan.changes.flatMap((change) => change.fields)).toEqual([{ field: 'has_issues', from: true, to: false }]);
   });
 
   test('lays one-off edits over the profile and leaves the profile file as it is', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     await editStagedApply(files.staged, [
       {
         list: 'rulesets',
@@ -191,7 +191,7 @@ describe('staged apply', () => {
 
   test('previews one-off edits without writing them, and refuses what an edit would', async () => {
     const { profile, staged } = await freshFolderWithProfile('repository:\n  has_wiki: true\n');
-    await createStagedApply(staged, 'lunch/app', profile);
+    await createStagedApply(staged, 'lunch/app', [profile]);
     const text = await readFile(staged, 'utf8');
 
     const preview = await previewStagedApply(staged, [{ path: ['repository', 'has_wiki'], value: false }]);
@@ -207,7 +207,7 @@ describe('staged apply', () => {
 
   test('leaves out what it excludes, and stops excluding it again', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const excluded = await editStagedApply(files.staged, [
       { exclude: 'repository.has_wiki', excluded: true },
       { exclude: 'rulesets/Main', excluded: true },
@@ -232,7 +232,7 @@ actions: { allowed_actions: selected, selected_actions: { github_owned_allowed: 
 environments: [{ name: Production }]
 merge: { allow_rebase_merge: false }
 `);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const staged = await editStagedApply(files.staged, [
       { exclude: 'merge', excluded: true },
       { exclude: 'actions.selected_actions', excluded: true },
@@ -246,7 +246,7 @@ merge: { allow_rebase_merge: false }
 
   test('refuses an exclusion that names nothing, or that clashes with an edit, and keeps the file', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
     const before = await readFile(files.staged, 'utf8');
 
@@ -261,7 +261,7 @@ merge: { allow_rebase_merge: false }
     const files = await freshFolderWithProfile(
       'merge: { squash_merge_commit_title: PR_TITLE, squash_merge_commit_message: PR_BODY }\n',
     );
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const before = await readFile(files.staged, 'utf8');
 
     // COMMIT_OR_PR_TITLE goes only with COMMIT_MESSAGES, which the profile does not set.
@@ -274,7 +274,7 @@ merge: { allow_rebase_merge: false }
 
   test('refuses its plan when the repository changed after review', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const github = new FakeGitHub();
     const { plan } = await planStagedApply(github, files.staged);
     github.state.repository['has_wiki'] = false;
@@ -286,7 +286,7 @@ merge: { allow_rebase_merge: false }
 
   test('applies what was reviewed even when the profile changes after review', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const github = new FakeGitHub();
     const { plan } = await planStagedApply(github, files.staged);
     await writeFile(files.profile, 'repository: { has_issues: false }\n');
@@ -298,7 +298,7 @@ merge: { allow_rebase_merge: false }
 
   test('reports what was applied when a write fails partway', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const github = new FakeGitHub();
     const { plan } = await planStagedApply(github, files.staged);
     github.fail(/^POST /u, new Error('boom'), 1);
@@ -313,7 +313,7 @@ merge: { allow_rebase_merge: false }
 
   test('saves its edits to the profile and then resolves the same', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const edited = await editStagedApply(files.staged, [
       { path: ['repository', 'has_wiki'], value: true },
       { exclude: 'repository.delete_branch_on_merge', excluded: true },
@@ -330,7 +330,7 @@ merge: { allow_rebase_merge: false }
 
   test('keeps a change made while its edits are saved, and says the edits were not cleared', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
     const changed = `apply_to: lunch/app\nextends: ${path.basename(files.profile)}\nrepository: { has_wiki: false }\n`;
     await replacedAfterNextRead(files.staged, changed);
@@ -345,7 +345,7 @@ merge: { allow_rebase_merge: false }
 
   test('has no profile to save edits to when it starts from the repository', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', undefined);
+    await createStagedApply(files.staged, 'lunch/app', []);
     await editStagedApply(files.staged, [{ path: ['repository', 'has_wiki'], value: true }]);
 
     const before = await readFile(files.staged, 'utf8');
@@ -359,7 +359,7 @@ merge: { allow_rebase_merge: false }
     const files =
       await freshFolderWithProfile(`${base}actions: { allowed_actions: selected, selected_actions: { github_owned_allowed: true } }
 `);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const release = { name: 'Release', target: 'tag', enforcement: 'active', bypass_actors: [], rules: [] };
     const edited = await editStagedApply(files.staged, [
       { path: ['actions', 'selected_actions', 'verified_allowed'], value: true },
@@ -377,7 +377,7 @@ merge: { allow_rebase_merge: false }
     const files = await freshFolderWithProfile(`${base}pages: { build_type: workflow }
 `);
     const profileText = await readFile(files.profile, 'utf8');
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     await editStagedApply(files.staged, [{ path: ['pages', 'absent'], value: true }]);
     const withoutPages = await readFile(files.staged, 'utf8');
 
@@ -403,7 +403,7 @@ merge: { allow_rebase_merge: false }
     const files = await freshFolderWithProfile(
       'security: { vulnerability_alerts: true, automated_security_fixes: true }\n',
     );
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
 
     const staged = await editStagedApply(files.staged, [
       { path: ['security', 'vulnerability_alerts'], value: false },
@@ -416,7 +416,7 @@ merge: { allow_rebase_merge: false }
   test('refuses an exclusion that leaves nothing out, and knows an environment by any case', async () => {
     const files = await freshFolderWithProfile(`${base}environments: [{ name: Prod }]
 `);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const before = await readFile(files.staged, 'utf8');
 
     // Ruleset names keep their case, so this names no ruleset of the profile.
@@ -440,7 +440,7 @@ merge: { allow_rebase_merge: false }
     branch_policies: [{ name: main }]
   - name: 'Prod: branch main'
 `);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const { plan, exclusions } = await planStagedApply(new FakeGitHub(), files.staged);
 
     expect(plan.changes.map((change) => `${change.action} ${change.target}`)).toEqual([
@@ -457,7 +457,7 @@ merge: { allow_rebase_merge: false }
 
   test('warns when its profile changes so that an exclusion leaves nothing out', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     await editStagedApply(files.staged, [{ exclude: 'rulesets/Main', excluded: true }]);
     await writeFile(files.profile, 'repository: { has_wiki: false }\n');
 
@@ -471,7 +471,7 @@ merge: { allow_rebase_merge: false }
 
   test('names what leaves out every change and field of its plan, each of which then leaves the plan', async () => {
     const files = await freshFolderWithProfile(stringify(profileChangingEverySection));
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     await editStagedApply(files.staged, [{ path: ['merge', 'allow_squash_merge'], value: false }]);
     const { plan, exclusions } = await planStagedApply(
       new FakeGitHub(everyWideProfileSettingOfferedAtGitHubDefaults),
@@ -512,7 +512,7 @@ merge: { allow_rebase_merge: false }
     ['plans', async (file: string) => (await planStagedApply(new FakeGitHub(), file)).staged],
   ])('%s its file as one read found it, though the file changes meanwhile', async (_, read) => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     await editStagedApply(files.staged, [
       { path: ['repository', 'has_wiki'], value: true },
       { exclude: 'repository.delete_branch_on_merge', excluded: true },
@@ -530,7 +530,7 @@ merge: { allow_rebase_merge: false }
 
   test('edits its file as one read found it, though the file changes meanwhile', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     await editStagedApply(files.staged, [{ exclude: 'repository.delete_branch_on_merge', excluded: true }]);
     await replacedAfterNextRead(
       files.staged,
@@ -546,7 +546,7 @@ merge: { allow_rebase_merge: false }
 
   test('discards only a staged apply file', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
 
     expect(await rejection(discardStagedApply(files.profile))).toBeInstanceOf(ProfileError);
     expect(await readFile(files.profile, 'utf8')).toBe(base);
@@ -561,7 +561,7 @@ merge: { allow_rebase_merge: false }
 drafts:
   repository: { has_projects: false }
 `);
-    const staged = await createStagedApply(files.staged, 'lunch/app', files.profile);
+    const staged = await createStagedApply(files.staged, 'lunch/app', [files.profile]);
 
     expect(staged.drafts).toEqual({
       repository: { has_projects: false },
@@ -578,7 +578,7 @@ drafts:
 
   test('holds no drafts of its own, and cannot exclude the drafts of its profile', async () => {
     const files = await freshFolderWithProfile(base);
-    await createStagedApply(files.staged, 'lunch/app', files.profile);
+    await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const before = await readFile(files.staged, 'utf8');
 
     const setting = await rejection(
@@ -595,5 +595,222 @@ drafts:
       ProfileError,
     );
     expect(await readFile(files.staged, 'utf8')).toBe(before);
+  });
+});
+
+async function freshFolderWithProfiles(
+  profiles: Readonly<Record<string, string>>,
+): Promise<{ folder: string; profiles: Record<string, string>; staged: string }> {
+  const folder = path.join(directory, randomUUID());
+  await mkdir(folder);
+  const written: Record<string, string> = {};
+  for (const [name, text] of Object.entries(profiles)) {
+    written[name] = path.join(folder, `${name}.yaml`);
+    await writeFile(written[name], text);
+  }
+  return { folder, profiles: written, staged: path.join(folder, 'staged.yaml') };
+}
+
+function only(profiles: Record<string, string>, name: string): string {
+  const file = profiles[name];
+  if (file === undefined) {
+    throw new Error(`No profile named ${name}`);
+  }
+  return file;
+}
+
+const mainRuleset = `
+rulesets:
+  - name: Main
+    target: branch
+    enforcement: active
+    bypass_actors: []
+    rules: [{ type: deletion }]
+`;
+
+describe('staged apply from several profiles', () => {
+  test('applies them in order, later ones overriding earlier ones, and lists them in extends', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      node: 'repository: { has_wiki: false, has_issues: true }\n',
+      'npm-package': 'repository: { has_issues: false, delete_branch_on_merge: true }\n',
+    });
+    const node = only(profiles, 'node');
+    const npmPackage = only(profiles, 'npm-package');
+
+    const staged = await createStagedApply(file, 'lunch/app', [node, npmPackage]);
+
+    expect(parse(await readFile(file, 'utf8'))).toEqual({
+      apply_to: 'lunch/app',
+      extends: ['node.yaml', 'npm-package.yaml'],
+    });
+    expect(staged.profiles).toEqual([node, npmPackage]);
+    expect(staged.chain).toEqual([file, npmPackage, node]);
+    expect(staged.profile.repository).toEqual({ has_wiki: false, has_issues: false, delete_branch_on_merge: true });
+    expect(staged.sources['repository']).toEqual({
+      has_wiki: node,
+      has_issues: npmPackage,
+      delete_branch_on_merge: npmPackage,
+    });
+    expect(staged.warnings).toEqual([]);
+  });
+
+  test('applies a profile that more than one of them extends once, at its first place', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      shared: 'repository: { has_wiki: true, has_projects: false }\n',
+      node: 'extends: shared.yaml\nrepository: { has_wiki: false }\n',
+      docs: 'extends: shared.yaml\nrepository: { has_projects: true }\n',
+    });
+    const shared = only(profiles, 'shared');
+    const node = only(profiles, 'node');
+    const docs = only(profiles, 'docs');
+
+    const staged = await createStagedApply(file, 'lunch/app', [node, docs]);
+
+    // Were shared applied again with docs, it would set has_wiki back to true over node.
+    expect(staged.chain).toEqual([file, docs, node, shared]);
+    expect(staged.profile.repository).toEqual({ has_wiki: false, has_projects: true });
+    expect(staged.sources['repository']).toEqual({ has_wiki: node, has_projects: docs });
+  });
+
+  test('refuses a profile given twice, under any spelling or through a link, and writes no file', async () => {
+    const {
+      folder,
+      profiles,
+      staged: file,
+    } = await freshFolderWithProfiles({
+      node: 'repository: { has_wiki: false }\n',
+    });
+    const node = only(profiles, 'node');
+    const linked = path.join(folder, 'linked.yaml');
+    await symlink(node, linked);
+
+    for (const again of [node, path.join(folder, 'sub', '..', 'node.yaml'), linked]) {
+      const error = await rejection(createStagedApply(file, 'lunch/app', [node, again]));
+      expect(error).toBeInstanceOf(ProfileError);
+      expect(String(error)).toContain(`${await realpath(node)} is given more than once`);
+      expect(await rejection(readFile(file))).toBeInstanceOf(Error);
+    }
+  });
+
+  test('refuses a hand-written list that names a profile twice', async () => {
+    const { staged: file } = await freshFolderWithProfiles({ node: 'repository: { has_wiki: false }\n' });
+    await writeFile(file, 'apply_to: lunch/app\nextends: [node.yaml, ./node.yaml]\n');
+
+    const error = await rejection(resolveStagedApply(file));
+
+    expect(String(error)).toContain('more than once in extends');
+  });
+
+  test('refuses a profile listed after one that already builds on it', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      shared: 'repository: { has_wiki: true }\n',
+      node: 'extends: shared.yaml\nrepository: { has_wiki: false }\n',
+    });
+    const shared = only(profiles, 'shared');
+    const node = only(profiles, 'node');
+
+    const error = await rejection(createStagedApply(file, 'lunch/app', [node, shared]));
+
+    expect(error).toBeInstanceOf(ProfileError);
+    expect(String(error)).toContain(
+      `${shared} is already applied through ${node}, so listing it after that changes nothing`,
+    );
+    expect(await rejection(readFile(file))).toBeInstanceOf(Error);
+    // Listed first, the shared profile is the starting point the other builds on.
+    const staged = await createStagedApply(file, 'lunch/app', [shared, node]);
+    expect(staged.profile.repository).toEqual({ has_wiki: false });
+  });
+
+  test('refuses profiles for different owner types', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      personal: 'owner_type: user\nrepository: { has_wiki: false }\n',
+      team: 'owner_type: organization\nrepository: { has_issues: false }\n',
+    });
+
+    const error = await rejection(
+      createStagedApply(file, 'lunch/app', [only(profiles, 'personal'), only(profiles, 'team')]),
+    );
+
+    expect(error).toBeInstanceOf(ProfileError);
+    expect(String(error)).toContain(`${only(profiles, 'personal')}, applied with it, is for personal accounts`);
+    expect(await rejection(readFile(file))).toBeInstanceOf(Error);
+  });
+
+  test('says a listed profile builds on one for another owner type, rather than that it is applied with it', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      plain: 'repository: { has_wiki: false }\n',
+      team: 'owner_type: organization\nrepository: { has_issues: false }\n',
+      personal: 'owner_type: user\nextends: team.yaml\nrepository: { has_projects: false }\n',
+    });
+
+    const error = await rejection(
+      createStagedApply(file, 'lunch/app', [only(profiles, 'plain'), only(profiles, 'personal')]),
+    );
+
+    expect(String(error)).toContain(`but it builds on ${only(profiles, 'team')}`);
+  });
+
+  test('warns when a later profile removes what an earlier one adds, but not when a profile drops what it extends', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      protected: `${mainRuleset}pages: { build_type: workflow }\n`,
+      loose: 'rulesets: [{ name: Main, absent: true }]\npages: { absent: true }\n',
+      child: 'extends: protected.yaml\nrulesets: [{ name: Main, absent: true }]\n',
+    });
+
+    const layered = await createStagedApply(file, 'lunch/app', [only(profiles, 'protected'), only(profiles, 'loose')]);
+    const warning =
+      'loose.yaml removes the ruleset "Main" that protected.yaml adds, since later profiles override earlier ones';
+    const pagesWarning =
+      'loose.yaml removes the Pages site that protected.yaml sets up, since later profiles override earlier ones';
+    expect(layered.warnings).toEqual([warning, pagesWarning]);
+    const { plan } = await planStagedApply(new FakeGitHub(), file);
+    expect(plan.warnings).toContainEqual({ section: 'rulesets', key: 'Main', message: warning });
+    expect(plan.warnings).toContainEqual({ section: 'pages', message: pagesWarning });
+
+    await discardStagedApply(file);
+    const extended = await createStagedApply(file, 'lunch/app', [only(profiles, 'child')]);
+    expect(extended.warnings).toEqual([]);
+  });
+
+  test('says nothing when a listed profile drops what its own base adds, though an earlier one shares that base', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      shared: mainRuleset,
+      first: 'extends: shared.yaml\nrepository: { has_wiki: false }\n',
+      second: 'extends: shared.yaml\nrulesets: [{ name: Main, absent: true }]\n',
+    });
+
+    const staged = await createStagedApply(file, 'lunch/app', [only(profiles, 'first'), only(profiles, 'second')]);
+
+    expect(staged.warnings).toEqual([]);
+  });
+
+  test('reads a staged apply whose extends lists its profiles by hand', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      node: 'repository: { has_wiki: false }\n',
+      docs: 'repository: { has_wiki: true }\n',
+    });
+    await writeFile(file, 'apply_to: lunch/app\nextends: [docs.yaml, node.yaml]\n');
+
+    const staged = await resolveStagedApply(file);
+
+    expect(staged.profiles).toEqual([only(profiles, 'docs'), only(profiles, 'node')]);
+    expect(staged.profile.repository).toEqual({ has_wiki: false });
+  });
+
+  test('has no one profile to save edits to', async () => {
+    const { profiles, staged: file } = await freshFolderWithProfiles({
+      node: 'repository: { has_wiki: false }\n',
+      docs: 'repository: { has_issues: true }\n',
+    });
+    await createStagedApply(file, 'lunch/app', [only(profiles, 'node'), only(profiles, 'docs')]);
+    await editStagedApply(file, [{ path: ['repository', 'has_projects'], value: false }]);
+    const before = await readFile(file, 'utf8');
+
+    const error = await rejection(saveStagedEdits(file));
+
+    expect(error).toBeInstanceOf(ProfileError);
+    expect(String(error)).toContain('starts from 2 profiles');
+    expect(await readFile(file, 'utf8')).toBe(before);
+    expect(await readFile(only(profiles, 'node'), 'utf8')).toBe('repository: { has_wiki: false }\n');
   });
 });

@@ -1,5 +1,5 @@
 import { signal } from '@preact/signals';
-import { type GitHub, GitHubError } from '@repotted/core';
+import { configCommitMessage, type GitHub, GitHubError } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { join } from '../../engine/path.js';
@@ -7,6 +7,7 @@ import { isSignedOut } from '../account/account.js';
 import type { ProfilesSource } from '../profiles/profiles.js';
 import { readRepositoryFile, writeRepositoryFile } from '../storage/repository-files.js';
 import { SerialQueue } from '../storage/serial-queue.js';
+import { preferenceChanges } from './preference-changes.js';
 import type { Preferences } from './preferences.js';
 
 /** Hidden, so a profile sync and the profile list leave it out. */
@@ -15,7 +16,6 @@ export const preferencesFile = '.repotted-preferences.json';
 /** Returning undefined deletes the preference. */
 export type Change = (current: unknown) => unknown;
 
-const commitMessage = 'Update Repotted preferences';
 const saved = z.record(z.string(), z.unknown());
 // A save that loses to another one, here or elsewhere, reads the file again and tries again.
 const maximumSaveAttempts = 3;
@@ -195,7 +195,7 @@ export class SharedPreferences implements Preferences {
             await writeRepositoryFile(this.#github, place.repository, place.file, {
               text: stringify(next),
               sha: remote.sha,
-              message: commitMessage,
+              message: configCommitMessage(preferenceChanges(remote.values, next)),
             });
           }
           merged = next;

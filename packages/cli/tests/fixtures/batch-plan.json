@@ -1,7 +1,9 @@
 {
   "batch": "<batch>/batch",
   "id": "<id>",
-  "profile": "<batch>/profile.yaml",
+  "profiles": [
+    "<batch>/profile.yaml"
+  ],
   "plans": [
     {
       "repository": "lunch/app",
@@ -21,11 +23,16 @@
       "staged": {
         "file": "<batch>/batch/lunch/app.yaml",
         "repository": "lunch/app",
-        "base": "<batch>/profile.yaml",
+        "profiles": [
+          "<batch>/profile.yaml"
+        ],
         "exclude": [
           "repository.has_wiki"
         ]
       },
+      "batch_profiles": [
+        "<batch>/profile.yaml"
+      ],
       "exclusions": []
     },
     {
@@ -70,11 +77,16 @@
       "staged": {
         "file": "<batch>/batch/lunch/web.yaml",
         "repository": "lunch/web",
-        "base": "<batch>/profile.yaml",
+        "profiles": [
+          "<batch>/profile.yaml"
+        ],
         "exclude": [
           "repository.has_wiki"
         ]
       },
+      "batch_profiles": [
+        "<batch>/profile.yaml"
+      ],
       "exclusions": [
         {
           "change": 0,

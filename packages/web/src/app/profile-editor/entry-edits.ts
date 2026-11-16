@@ -48,6 +48,13 @@ export interface EntryRow {
 
 type Row = Omit<EntryRow, 'applyProblem' | 'draftProblem'>;
 
+/** A base profile's entry can only be overridden here, so taking it out is for one this profile names, or a new one. */
+export function canBeTakenOut(row: EntryRow): boolean {
+  return row.entry !== undefined && (row.source === 'here' || row.source === undefined);
+}
+
+export type EntryChanges = ReadonlyMap<string, EntryChange>;
+
 export interface EntryWrite {
   readonly list: EntryList;
   readonly name: string;
@@ -250,7 +257,8 @@ export class EntryEdits {
   }
 
   takeOut(row: EntryRow): void {
-    if (row.savedName === undefined && !this.#changesSaveIsWriting.has(row.key)) {
+    const newOrGoneElsewhere = row.savedName === undefined || this.#slot(row.list, row.key) === undefined;
+    if (newOrGoneElsewhere && !this.#changesSaveIsWriting.has(row.key)) {
       this.#set(row.key, undefined);
     } else {
       this.#put(row, { entry: undefined });
@@ -312,6 +320,27 @@ export class EntryEdits {
 
   resetAll(): void {
     this.#changes.value = new Map();
+  }
+
+  /** Every change to the list's entries goes, as Reset does on each; not while a save is writing, which the editor waits for. */
+  resetAllIn(list: EntryList): void {
+    this.#changes.value = new Map([...this.#changes.value].filter(([, change]) => change.list !== list));
+  }
+
+  /** Each entry the list can take out of the profile, as Take out of profile does: one this profile names, or one that is new. */
+  takeOutAllIn(list: EntryList): void {
+    for (const row of this.rows.value[list].filter(canBeTakenOut)) {
+      this.takeOut(row);
+    }
+  }
+
+  /** What `restore` puts back exactly, for an undo of a change to many entries at once. */
+  snapshot(): EntryChanges {
+    return this.#changes.value;
+  }
+
+  restore(changes: EntryChanges): void {
+    this.#changes.value = changes;
   }
 
   /** Marks the changes a save writes, which stay as they are until `saved` says how it went. */

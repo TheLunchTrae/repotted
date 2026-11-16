@@ -49,6 +49,26 @@ export function patternNote(state: NonNullable<PatternLine['state']>): PatternNo
   return { tone: check.status === 'unchecked' ? 'muted' : 'warning', text };
 }
 
+export function gitHubPageOf(state: PatternLine['state']): string | undefined {
+  if (state?.kind !== 'checked') {
+    return undefined;
+  }
+  const { check } = state;
+  switch (check.status) {
+    case 'match':
+    case 'missing_ref':
+    case 'missing_path':
+      return `https://github.com/${check.repository}`;
+    case 'owner':
+      return `https://github.com/${check.owner}`;
+    case 'unchecked':
+    case 'not_found':
+    case 'invalid':
+    case 'error':
+      return undefined;
+  }
+}
+
 const patternsPerCheckRun = 100;
 
 function patternOf(line: string): string {

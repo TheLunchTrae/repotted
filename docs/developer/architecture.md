@@ -112,6 +112,23 @@ state that apply writes, and a draft is never sent.
 Sync moves profile files as they are, drafts included, so a draft follows its
 profile to every computer that syncs it.
 
+Every commit Repotted makes to a config repository gets its message from
+`configCommitMessage` in `packages/core/src/profiles/commit-messages.ts`,
+from a list of changes, each an action, a noun and a name, such as
+`Create profile: web/base`. Changes of one kind share a clause
+(`Hide repositories: a, b`) and kinds join with semicolons. The subject keeps
+within `longestCommitSubject` characters: each kind names as many as fit in
+the room the kinds after it need when counted, then `and N more`, and counts
+itself when not even one name fits. When the subject leaves any change out,
+the body lists every one, up to `mostCommitBodyLines` lines. Sync describes
+its files with `profileFileChanges`, which reads a delete and a create of the
+same blob as a rename, or a move into another folder. An override whose
+relative `extends` changes during a move also pairs when its other values
+and resolved base match. Bases moved in the same sync are followed to their
+new paths. Only unmatched deletes need their old blobs read for this check.
+The web app's
+preferences and marker commits use the same function.
+
 `editProfile` in the same file edits a profile in place for
 `repotted profile --set`, `--unset`, `--ruleset`, `--environment`, and the
 `--drop-` options. It works on the YAML document rather than the parsed value,
@@ -312,7 +329,21 @@ two writes, both files set the same values, so the staged apply resolves the
 same whichever write fails. The clear refuses, as a failed write, when another
 program changed the staged file's edits after the save read them, since
 clearing them would lose a change no profile holds. A staged apply that
-starts from the repository has no profile to save to.
+starts from the repository has no profile to save to, and one that starts
+from several has no one profile to save to.
+
+A staged apply's `extends` can also list several profiles, which apply in
+order, later ones overriding earlier ones. `LayerRead.bases` carries the list,
+and `readChain` reads each one's own chain and lays them end to end, base
+first. A file that more than one of them builds on, such as a shared starting
+point, applies once, at its first place, so it never undoes what a profile
+after it set. A profile named twice is refused, and so are profiles for
+different owner types, as `chainOwnerType` refuses any chain that mixes them.
+Each link records which listed profile it came in through, so
+`removalWarnings` can name a later profile whose `absent: true` removes what
+an earlier one adds; within one chain that is how a profile drops an entry,
+so it is not named. This is how a repository's ordered list of profiles is
+planned and applied.
 
 `planStagedApply` also names the exclusion that leaves out each change of the
 plan, so a program can offer to leave out a row without knowing how plan
@@ -339,6 +370,15 @@ a member left out or taken out after the review, or a batch that ended or
 started again, is not applied. A member with no changes is planned again too,
 so it ends only when the repository still matches. Discarding checks that each
 listed file is its member's staged apply before it removes any.
+
+The manifest lists the profiles new members start from. A member can instead
+start from profiles of its own, which the manifest records with it, so one
+batch can re-apply each repository's own list of profiles. Each member's plan
+says, in `batch_profiles`, what the batch starts it from, so a program can
+tell a staged apply that was in progress before the batch from one the batch
+started. A manifest that names one `profile`, or null, reads as a list of one,
+or of none, and is saved as `profiles`. Published versions of the CLI write
+that form, and the web app keeps batches in the browser, so it is still read.
 
 ## The CLI and the MCP server
 

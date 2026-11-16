@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import {
   type ActionPatternCheck,
   ActionPatternChecks,
+  gitHubPageOf,
   patternNote,
 } from '../../src/app/profile-editor/action-pattern-checks.js';
 import { ActionSearch } from '../../src/app/profile-editor/action-search.js';
@@ -222,6 +223,35 @@ test('a note starts with a capital, but for a repository, which keeps its name',
   expect(patternNote({ kind: 'failed', message: 'Failed to fetch' }).text).toBe(
     'Could not be checked: Failed to fetch',
   );
+});
+
+test('a checked pattern links to the repository it names, or to the owner of a wildcard', () => {
+  const page = (check: ActionPatternCheck): string | undefined => gitHubPageOf({ kind: 'checked', check });
+
+  expect(page(match('Actions/Checkout@v4'))).toBe('https://github.com/Actions/Checkout');
+  expect(
+    page({ pattern: 'octo/tools/lint@v1', blocks: false, status: 'missing_ref', repository: 'octo/tools', ref: 'v1' }),
+  ).toBe('https://github.com/octo/tools');
+  expect(
+    page({ pattern: 'octo/tools/lint', blocks: false, status: 'missing_path', repository: 'octo/tools', path: 'lint' }),
+  ).toBe('https://github.com/octo/tools');
+  expect(
+    page({
+      pattern: '!octo-org/*',
+      blocks: true,
+      status: 'owner',
+      owner: 'octo-org',
+      owner_type: 'organization',
+      all_repositories: true,
+    }),
+  ).toBe('https://github.com/octo-org');
+  expect(page({ pattern: '*/*', blocks: false, status: 'unchecked', why: 'wildcard_owner' })).toBeUndefined();
+  expect(
+    page({ pattern: 'x/y', blocks: false, status: 'not_found', missing: 'repository', name: 'x/y' }),
+  ).toBeUndefined();
+  expect(gitHubPageOf({ kind: 'checking' })).toBeUndefined();
+  expect(gitHubPageOf({ kind: 'several' })).toBeUndefined();
+  expect(gitHubPageOf(undefined)).toBeUndefined();
 });
 
 test("an editor's list is followed as it is typed, and only while GitHub shows it", async () => {

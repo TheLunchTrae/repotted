@@ -204,8 +204,8 @@ rather than the value. While profiles are kept in a config repository, it
 keeps them in `.repotted-preferences.json` beside the profiles and commits
 each change there through the contents API; otherwise it passes them to the
 browser's `Preferences`. The file is a JSON object keyed by preference key,
-such as `hidden-repositories`, `hidden-repository-owners` and
-`repository-folders`, with keys in order so a commit changes only the values
+such as `hidden-repositories`, `hidden-repository-owners`,
+`repository-folders`, `repository-profiles` and `profile-tags`, with keys in order so a commit changes only the values
 that did. It is a hidden file, so a profile sync and the profile list leave
 it alone. Another list setting that should follow the user takes its own key
 in the same file, and changes it through `update`, as folders do. A choice
@@ -213,6 +213,15 @@ that changes often and matters to one browser, such as which folders are
 closed (`closed-repository-folders`), the list's sort order
 (`repository-sort-order`) and its filters (`repository-filters`), goes
 straight to the browser's `Preferences` instead, so it never makes a commit.
+Each commit's message comes from comparing the file as read with the file
+about to be written, in `src/app/preferences/preference-changes.ts`, which
+owns the shared keys and how their values are read. A folder gone and one
+made that share repositories, or are the only ones and the old one was
+empty, count as a rename, so
+changes saved together still read as what was done. A change it has no line
+for, such as a list put in another order or a key it doesn't know, is named
+as `Update preference: <label or key>`, so a new shared key adds its wording
+there.
 Each of those keys is removed when its choice is back at the default, so a
 browser that never changed it keeps nothing. Sorting and filtering live in
 `src/app/repositories/sort-and-filters.ts`; `Repositories` applies them to
@@ -228,7 +237,7 @@ so an address works when opened directly.
 ## Profiles
 
 `Profiles` (`src/app/profiles/profiles.ts`) holds where the profiles are kept, how the
-last sync went, and the list the sidebar draws. Profiles are files in the
+last sync went, and the list the Profiles page draws. Profiles are files in the
 engine's in-memory files, in one of three folders:
 
 - `/profiles/browser`, for profiles kept in this browser only.
@@ -244,9 +253,9 @@ engine's in-memory files, in one of three folders:
   folder on disk for the CLI, so conflicts and first syncs follow
   [the same rules](state-machines.md#config-repository-sync).
 
-Syncs, new profiles, deletions, and changes of where profiles are kept take
-turns in one queue, so a sync never reads a folder that is being changed. A
-capture reads GitHub with the engine's `captureProfile` before it takes its
+Syncs, new profiles, deletions, moves, and changes of where profiles are kept
+take turns in one queue, so a sync never reads a folder that is being
+changed. A capture reads GitHub with the engine's `captureProfile` before it takes its
 turn, so a slow read holds nothing up. Of the capture's warnings, the new
 profile's page shows only the `refused` ones, which someone can act on:
 `uncaptured-settings.ts` names each by its label in `setting-fields.ts` and
@@ -256,6 +265,18 @@ profile's owner type can't hold. What a profile of its owner type
 can't hold, what the repository doesn't offer, and a value a profile can't
 parse go unmentioned there.
 [State machines](state-machines.md#web-profiles-source) lists the
+transitions.
+
+A profile folder is a real subfolder of the profiles folder, which the list
+shows only while a profile is in it, and `extends` is a path from the
+profile's own folder. `Profiles.move` and `Profiles.renameFolder` move files,
+and in the same turn rewrite `extends` in every listed profile whose path to
+its base changes, with core's `withExtends`, which replaces only the value's
+text. A write that fails takes back the writes before it, so a move is made
+whole or not at all. The batch selection, `Profiles.batch`, and which folders
+are closed are kept for the visit only, never in shared preferences, so
+opening a folder or selecting a profile commits nothing.
+[State machines](state-machines.md#web-profile-batch-actions) lists the
 transitions.
 
 A config repository is marked so a new browser can find it

@@ -369,6 +369,16 @@ export function SettingsPage({
                     )}
                     <SyncNote profiles={profiles} />
                   </div>
+                  {onGitHub && (
+                    <a
+                      class="button button-quiet"
+                      href={`https://github.com/${source.repository}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open on GitHub
+                    </a>
+                  )}
                   <button
                     class="button button-quiet"
                     type="button"

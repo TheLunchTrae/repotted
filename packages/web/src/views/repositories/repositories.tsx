@@ -14,6 +14,7 @@ import {
   type Repositories,
   type Repository,
 } from '../../app/repositories/repositories.js';
+import type { RepositoryProfiles } from '../../app/repositories/repository-profiles.js';
 import {
   archivedFilters,
   archivedLabels,
@@ -27,7 +28,8 @@ import {
 import { useMenuPanelKeptOnPage } from '../layout/menu-placement.js';
 import { usePhone } from '../layout/phone.js';
 import { run } from '../layout/run.js';
-import { useDismissibleMenu } from '../layout/shell.js';
+import { useDismissibleMenu, useModal } from '../layout/shell.js';
+import { EditProfilesDialog, PanelProfiles, RowProfileTags } from './repository-profiles.js';
 
 function OwnerFilter({ repositories }: { readonly repositories: Repositories }): JSX.Element {
   const menu = useDismissibleMenu();
@@ -376,14 +378,6 @@ function MissingPermissionsNotice({
   );
 }
 
-function useModal(): RefObject<HTMLDialogElement | null> {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
-  return dialog;
-}
-
 interface FolderNameProps {
   readonly repositories: Repositories;
   readonly dialog: Extract<FolderDialog, { kind: 'new' | 'rename' }>;
@@ -599,10 +593,12 @@ function FolderMenu({
 interface RowProps {
   readonly repository: Repository;
   readonly repositories: Repositories;
+  readonly assignments: RepositoryProfiles;
+  readonly phone: boolean;
   readonly withOwner: boolean;
 }
 
-function RepositoryRow({ repository, repositories, withOwner }: RowProps): JSX.Element {
+function RepositoryRow({ repository, repositories, assignments, phone, withOwner }: RowProps): JSX.Element {
   const opened = repositories.opened.value;
   const [owner = '', name = repository.full_name] = repository.full_name.split('/');
   const hidden = repositories.isHidden(repository);
@@ -640,6 +636,7 @@ function RepositoryRow({ repository, repositories, withOwner }: RowProps): JSX.E
             </span>
           )}
         </span>
+        <RowProfileTags repository={repository} assignments={assignments} phone={phone} />
         {repository.archived && <span class="pill pill-drift">Archived</span>}
         {hidden && <span class="pill">Hidden</span>}
         <span class="muted small">{repository.private ? 'Private' : 'Public'}</span>
@@ -651,10 +648,14 @@ function RepositoryRow({ repository, repositories, withOwner }: RowProps): JSX.E
 function FolderSection({
   folder,
   repositories,
+  assignments,
+  phone,
   onDialog,
 }: {
   readonly folder: FolderGroup;
   readonly repositories: Repositories;
+  readonly assignments: RepositoryProfiles;
+  readonly phone: boolean;
   readonly onDialog: (dialog: FolderDialog) => void;
 }): JSX.Element {
   const searching = repositories.search.value.trim() !== '';
@@ -702,9 +703,16 @@ function FolderSection({
             <strong>Move to a folder</strong>.
           </p>
         ) : (
-          <ul class="rows">
+          <ul class="rows repository-rows">
             {folder.repositories.map((repository) => (
-              <RepositoryRow key={repository.full_name} repository={repository} repositories={repositories} withOwner />
+              <RepositoryRow
+                key={repository.full_name}
+                repository={repository}
+                repositories={repositories}
+                assignments={assignments}
+                phone={phone}
+                withOwner
+              />
             ))}
           </ul>
         ))}
@@ -726,6 +734,8 @@ interface PanelProps {
    * changes settings without a profile.
    */
   readonly onApply: (repository: string, profile: ComparedProfile | 'once' | undefined) => void;
+  readonly onApplyProfiles: (repository: string, profiles: readonly ComparedProfile[]) => void;
+  readonly assignments: RepositoryProfiles;
   /** Goes back to the list, given when the panel is a screen of its own, as on a phone. */
   readonly onBack?: (() => void) | undefined;
 }
@@ -739,9 +749,13 @@ function RepositoryPanel({
   onCapture,
   onCompare,
   onApply,
+  onApplyProfiles,
+  assignments,
   onBack,
 }: PanelProps): JSX.Element {
   const [unfinished, setUnfinished] = useState(false);
+  const [editingProfiles, setEditingProfiles] = useState(false);
+  const usesProfiles = assignments.profilesOf(repository.full_name).length > 0;
   // Looked up again whenever the apply moves on, since one that ends or is discarded is no longer there.
   const moved = apply.state.value.kind;
   useEffect(() => {
@@ -803,6 +817,26 @@ function RepositoryPanel({
           }}
         />
       </div>
+      <PanelProfiles
+        repository={repository}
+        assignments={assignments}
+        unfinished={unfinished}
+        folder={profiles.folder.value}
+        onApplyProfiles={onApplyProfiles}
+        onEdit={() => {
+          setEditingProfiles(true);
+        }}
+      />
+      {editingProfiles && (
+        <EditProfilesDialog
+          repository={repository}
+          assignments={assignments}
+          profiles={profiles}
+          onClose={() => {
+            setEditingProfiles(false);
+          }}
+        />
+      )}
       <a class="button" href={`https://github.com/${repository.full_name}`} target="_blank" rel="noreferrer">
         Open on GitHub
       </a>
@@ -859,12 +893,14 @@ function RepositoryPanel({
       >
         {listings.length === 0 ? (
           <>
-            <strong>Compare with a profile</strong>
+            <strong>{usesProfiles ? 'Compare with another profile' : 'Compare with a profile'}</strong>
             <p class="muted small">Make a profile first, on the Profiles page.</p>
           </>
         ) : (
           <>
-            <label for="compare-profile">Compare with a profile</label>
+            <label for="compare-profile">
+              {usesProfiles ? 'Compare with another profile' : 'Compare with a profile'}
+            </label>
             <select
               id="compare-profile"
               class="field"
@@ -1036,6 +1072,8 @@ interface RepositoriesProps {
   readonly onCompare: PanelProps['onCompare'];
   readonly apply: Apply;
   readonly onApply: PanelProps['onApply'];
+  readonly onApplyProfiles: PanelProps['onApplyProfiles'];
+  readonly assignments: RepositoryProfiles;
   readonly batch: BatchApply;
   /** With no profile, resumes the unfinished batch. */
   readonly onBatch: (repositories: readonly string[], profile: ComparedProfile | undefined) => void;
@@ -1202,6 +1240,8 @@ export function RepositoriesPage({
   onCapture,
   onCompare,
   onApply,
+  onApplyProfiles,
+  assignments,
   onBatch,
 }: RepositoriesProps): JSX.Element {
   const selected = repositories.selected.value;
@@ -1521,7 +1561,14 @@ export function RepositoriesPage({
             ) : (
               <div class={loading ? 'groups groups-stale' : 'groups'}>
                 {folders.map((folder) => (
-                  <FolderSection key={folder.name} folder={folder} repositories={repositories} onDialog={setDialog} />
+                  <FolderSection
+                    key={folder.name}
+                    folder={folder}
+                    repositories={repositories}
+                    assignments={assignments}
+                    phone={phone}
+                    onDialog={setDialog}
+                  />
                 ))}
                 {folders.length > 0 && groups.length > 0 && <p class="section-label">Not in a folder</p>}
                 {groups.map((group) => (
@@ -1531,12 +1578,14 @@ export function RepositoriesPage({
                       {group.personal && <span class="pill">You</span>}
                       <span class="muted count">{group.repositories.length}</span>
                     </h2>
-                    <ul class="rows">
+                    <ul class="rows repository-rows">
                       {group.repositories.map((repository) => (
                         <RepositoryRow
                           key={repository.full_name}
                           repository={repository}
                           repositories={repositories}
+                          assignments={assignments}
+                          phone={phone}
                           withOwner={false}
                         />
                       ))}
@@ -1571,6 +1620,8 @@ export function RepositoriesPage({
             onCapture={onCapture}
             onCompare={onCompare}
             onApply={onApply}
+            onApplyProfiles={onApplyProfiles}
+            assignments={assignments}
             onBack={
               details
                 ? () => {

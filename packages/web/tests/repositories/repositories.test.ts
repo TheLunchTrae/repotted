@@ -328,6 +328,20 @@ function listed(repositories: Repositories, name: string): Repository {
   return found;
 }
 
+test('a hidden repository is saved by its name as GitHub gives it, and matched in any case', async () => {
+  const preferences = memory();
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
+  const api = listed(repositories, 'Acme/api');
+
+  repositories.hide([api]);
+  repositories.hide([api]);
+
+  expect(preferences.kept['hidden-repositories']).toEqual(['Acme/api']);
+  expect(repositories.isHidden({ ...api, full_name: 'acme/API' })).toBe(true);
+  repositories.unhide([{ full_name: 'acme/api' }]);
+  expect(preferences.kept['hidden-repositories']).toBeUndefined();
+});
+
 test('a hidden repository leaves the list, deselected and closed, until Undo or Show hidden', async () => {
   const preferences = memory();
   const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);

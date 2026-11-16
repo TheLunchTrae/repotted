@@ -92,8 +92,12 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function nameOf(profile: string | null): string {
-  return profile === null ? '' : basename(profile).replace(/\.ya?ml$/u, '');
+function nameOf(profiles: readonly string[]): string {
+  return profiles.map((profile) => basename(profile).replace(/\.ya?ml$/u, '')).join(', ');
+}
+
+function isSameList(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
 /** A message with its files by their names, not by where the browser keeps them. */
@@ -153,12 +157,11 @@ function membersOf(plan: BatchPlan): BatchMemberView[] {
       leftOut: member.staged.exclude,
       skippedDrafts: member.skipped.map(describeSkipped),
       warnings: member.warnings.map(describeWarning),
-      startNote:
-        member.staged.base === plan.profile
-          ? undefined
-          : member.staged.base === null
-            ? 'This apply starts from the repository as it is, not from the profile of this batch. It was in progress before the batch.'
-            : `This apply starts from ${nameOf(member.staged.base)}, not from the profile of this batch. It was in progress before the batch.`,
+      startNote: isSameList(member.staged.profiles, member.batch_profiles)
+        ? undefined
+        : member.staged.profiles.length === 0
+          ? 'This apply starts from the repository as it is, not from the profile of this batch. It was in progress before the batch.'
+          : `This apply starts from ${nameOf(member.staged.profiles)}, not from the profile of this batch. It was in progress before the batch.`,
     };
   });
   const rest = (repository: string, status: 'failed' | 'left-out', message: string | undefined): BatchMemberView => ({
@@ -249,7 +252,7 @@ export class BatchApply {
     await this.#work(profile.name, [], async () => {
       if (await isBatch(batchFolder)) {
         const held = await readBatch(batchFolder).then(
-          (batch) => nameOf(batch.profile),
+          (batch) => nameOf(batch.profiles),
           () => '',
         );
         return {
@@ -272,7 +275,7 @@ export class BatchApply {
         ),
       );
       await createBatch(batchFolder, {
-        profile: profile.file,
+        profiles: [profile.file],
         repositories: files.filter((_, index) => existing[index] !== true).map(({ repository }) => repository),
         join: files.filter((_, index) => existing[index] === true).map(({ file }) => file),
         stagedFolder,
@@ -490,7 +493,7 @@ export class BatchApply {
     if (plan.failures.some((failure) => failure.error.kind === 'signed_out')) {
       this.#onSignedOut();
     }
-    return { kind: 'reviewed', profileName: nameOf(plan.profile), plan, members: membersOf(plan), refused };
+    return { kind: 'reviewed', profileName: nameOf(plan.profiles), plan, members: membersOf(plan), refused };
   }
 
   /** One piece of work counts at a time. */
