@@ -2173,6 +2173,20 @@ select.field {
   gap: 2px;
 }
 
+.check-list {
+  display: grid;
+}
+
+.check-list .check-row {
+  gap: 12px;
+  min-height: 44px;
+  padding-block: 10px;
+}
+
+.check-list .check-row > span {
+  gap: 4px;
+}
+
 .menu-section {
   padding: 8px 10px 2px;
   color: var(--muted);

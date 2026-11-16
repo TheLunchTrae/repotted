@@ -378,29 +378,31 @@ function RefTargets({ entry, saved, change, side }: RefTargetsProps): JSX.Elemen
             {side === 'include' ? `The ${noun} the ruleset covers.` : `The ${noun} it skips, even when included.`}
           </span>
         </div>
-        {options.map(([name, optionLabel, note]) => (
-          <Check
-            key={name}
-            label={optionLabel}
-            note={note}
-            checked={names.includes(name)}
-            onCheck={(checked) => {
-              change(withNamedRefTarget(entry, side, name, checked, saved));
-            }}
-          />
-        ))}
-        {(offered || patterns.length > 0) && (
-          <Check
-            label={tags ? 'Tags by pattern' : 'Branches by pattern'}
-            checked={patternsSelected}
-            onCheck={(checked) => {
-              setPatternsOpened(checked);
-              if (!checked) {
-                change(withRefPatterns(entry, side, [], saved));
-              }
-            }}
-          />
-        )}
+        <div class="check-list">
+          {options.map(([name, optionLabel, note]) => (
+            <Check
+              key={name}
+              label={optionLabel}
+              note={note}
+              checked={names.includes(name)}
+              onCheck={(checked) => {
+                change(withNamedRefTarget(entry, side, name, checked, saved));
+              }}
+            />
+          ))}
+          {(offered || patterns.length > 0) && (
+            <Check
+              label={tags ? 'Tags by pattern' : 'Branches by pattern'}
+              checked={patternsSelected}
+              onCheck={(checked) => {
+                setPatternsOpened(checked);
+                if (!checked) {
+                  change(withRefPatterns(entry, side, [], saved));
+                }
+              }}
+            />
+          )}
+        </div>
         {targetsProblem !== undefined && (
           <p class="problem small" role="alert">
             {targetsProblem}
