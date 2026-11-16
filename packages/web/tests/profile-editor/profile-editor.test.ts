@@ -1125,3 +1125,36 @@ test('a saved invalid draft offers no reset until it has an unsaved change', asy
   expect(editor.problemsBlockingSave.value[0]).toMatchObject({ canReset: false });
   expect(entry(editor, 'labels', 'unfinished').entry?.['color']).toBe('invalid');
 });
+
+test.each([
+  ['merge', 'merge: { allow_merge_commit: false }', 'merge.merge_commit_title', 'PR_TITLE', 'allow_merge_commit'],
+  [
+    'squash',
+    'merge: { allow_squash_merge: false }',
+    'merge.squash_merge_commit_message',
+    'PR_BODY',
+    'allow_squash_merge',
+  ],
+  [
+    'code scanning',
+    'actions: { enabled: false }',
+    'security.code_scanning_default_setup.state',
+    'configured',
+    'Actions',
+  ],
+])('validates %s dependencies inherited from a base before saving', async (_name, baseText, key, value, message) => {
+  const original = 'extends: base.yaml\n';
+  const editor = await opened({ 'base.yaml': baseText, 'web.yaml': original });
+
+  await editor.set(field(key), value);
+
+  expect(editor.unsavedChangesProblem.value).toContain(message);
+  expect(editor.problemsBlockingSave.value.some((problem) => problem.message.includes(message))).toBe(true);
+  expect(editor.canSave.value).toBe(false);
+  expect(editor.canSaveAsDraft.value).toBe(true);
+  await editor.save(write);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(original);
+
+  await editor.reset(field(key));
+  expect(editor.unsavedChangesProblem.value).toBeUndefined();
+});

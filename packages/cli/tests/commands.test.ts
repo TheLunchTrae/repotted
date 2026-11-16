@@ -965,6 +965,8 @@ describe('profile commands', () => {
       '--set',
       'repository.has_wiki=true',
       '--set',
+      'merge.allow_squash_merge=true',
+      '--set',
       'merge.squash_merge_commit_title=PR_TITLE',
       '--set',
       'merge.squash_merge_commit_message=PR_BODY',

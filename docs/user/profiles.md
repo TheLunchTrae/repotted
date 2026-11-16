@@ -42,6 +42,13 @@ the error names the permission. When GitHub withholds a billed setting, such
 as an Actions cache limit, because the account has no payment method on file,
 a capture leaves it out and its warning says so.
 
+The profile editor checks conflicting settings before **Save**. Commit title
+and message settings require their merge method to be enabled, and code
+scanning default setup cannot be configured while the profile disables
+Actions. These checks include inherited settings. Fix the conflict or use
+**Save as draft** to keep unfinished changes out of plans. A setting the
+profile leaves unmanaged still depends on the target repository's setup.
+
 A few options on GitHub's settings pages have no API, such as wiki's
 **Restrict editing to collaborators only**, so no profile can set them.
 [Settings coverage](../developer/settings-coverage.md#settings-with-no-api)

@@ -475,7 +475,9 @@ whenever the list is read.
 ### Unsaved changes
 
 Each change is previewed through the engine's `previewProfile`, so the
-editor shows what a save would give, base profiles included.
+editor shows what a save would give, base profiles included. Conflicting
+merge message settings or code scanning with Actions disabled follow the
+refused preview transition below.
 
 A profile with a [draft](#drafts) of its own opens on it: each setting,
 ruleset, environment, and label in the draft starts from the draft, and from
