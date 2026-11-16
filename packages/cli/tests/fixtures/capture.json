@@ -30,8 +30,7 @@
       "can_approve_pull_request_reviews": false
     },
     "security": {
-      "vulnerability_alerts": false,
-      "automated_security_fixes": false
+      "vulnerability_alerts": false
     },
     "rulesets": []
   },

@@ -42,10 +42,17 @@ the error names the permission. When GitHub withholds a billed setting, such
 as an Actions cache limit, because the account has no payment method on file,
 a capture leaves it out and its warning says so.
 
-The profile editor checks conflicting settings before **Save**. Commit title
-and message settings require their merge method to be enabled, and code
+A setting hidden or disabled by another setting is ignored when applying a
+profile. For example, `allow_merge_commit: false` makes the merge commit title
+and message settings inactive. Dependencies use the profile's values first,
+then the repository's current values for settings the profile leaves out.
+Captures leave inactive settings out. Saving edits removes them from the
+edited YAML file, including settings disabled by a base profile; it leaves
+base files and drafts unchanged.
+
+The profile editor checks conflicting active settings before **Save**. Code
 scanning default setup cannot be configured while the profile disables
-Actions. These checks include inherited settings. Fix the conflict or use
+Actions, including through inherited settings. Fix the conflict or use
 **Save as draft** to keep unfinished changes out of plans. A setting the
 profile leaves unmanaged still depends on the target repository's setup.
 
@@ -205,9 +212,8 @@ each as `{ status: enabled }` or `{ status: disabled }`. GitHub reports it only
 to repository admins, so a plan skips it with a warning otherwise.
 
 `vulnerability_alerts` is Dependabot alerts, and `automated_security_fixes` is
-Dependabot security updates, which need the alerts. A plan that turns the
-alerts off turns the updates off first, and skips a profile that turns the
-updates on with the alerts off.
+Dependabot security updates, which need the alerts. A plan skips the updates
+setting while the alerts are off, including when the profile turns them off.
 
 Some settings only hold together. With standard Dependabot runners, GitHub
 keeps no runner labels or group, so a plan skips them with a warning. Code
@@ -216,10 +222,9 @@ scanning and code quality use a `runner_label` only with labeled runners, and
 runners unless the profile names another type, so a label there is skipped
 with a warning, as is a labeled runner type, or a `null` label, that would
 leave labeled runners without a label. A setup that is not configured keeps no
-runner at all. To move a base profile's labeled runners to standard ones, set
-`runner_label: null` next to `runner_type: standard`, since the base's label
-is kept otherwise. Naming OIDC `include_claim_keys` stops using the default
-subject, and claim keys next to `use_default: true` are skipped, since GitHub
+runner or setup options. To move a base profile's labeled runners to standard
+ones, set `runner_type: standard`; the base's label is ignored. Naming OIDC
+`include_claim_keys` stops using the default subject, and claim keys next to `use_default: true` are skipped, since GitHub
 ignores them.
 
 ## Labels

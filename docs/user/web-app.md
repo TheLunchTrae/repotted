@@ -449,7 +449,8 @@ hides them, the tab does too, and the setting that hides them says how many
 hidden ones the profile still names. With **Actions** set to **Off**, for
 example, **Allowed actions** and the options under it are hidden. Where
 GitHub greys them out, they stay in place, can't be changed, and say which
-setting turns them off. Either way the profile keeps their values.
+setting turns them off. Applying ignores these settings, and saving removes
+them from the edited file.
 
 On the **Actions** tab, with **Allowed actions** set to **Selected**,
 **Allowed action patterns** takes one pattern a line, such as `octo-org/*`,

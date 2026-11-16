@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { type GitHub, repoPath, type RepoRef } from '../../github/client.js';
 import { actionsEndpointFields, type ActionsSettings } from '../../profiles/schema.js';
 import type { Change, SectionPlan, Warning } from '../change.js';
-import type { Endpoint } from '../endpoints.js';
+import { activeSettingsForPlan, type Endpoint } from '../endpoints.js';
 import { fieldChanges } from '../match.js';
 
 // These apply after the policy.
@@ -124,23 +124,26 @@ function only<T extends object, K extends keyof T>(source: T, keys: readonly K[]
  * list, then workflow token permissions. Each write is a PUT, so its body
  * carries live values for the keys the profile omits.
  */
-export function planActions(desired: ActionsSettings, live: ActionsSettings, repo: RepoRef): SectionPlan {
+export function planActions(input: ActionsSettings, live: ActionsSettings, repo: RepoRef): SectionPlan {
   const base = `${repoPath(repo)}/actions/permissions`;
   const changes: Change[] = [];
   const warnings: Warning[] = [];
+  const desired = activeSettingsForPlan(
+    'actions',
+    only(input, [
+      'enabled',
+      'allowed_actions',
+      'selected_actions',
+      'sha_pinning_required',
+      'default_workflow_permissions',
+      'can_approve_pull_request_reviews',
+    ]),
+    live,
+    warnings,
+  );
 
   const enabled = desired.enabled ?? live.enabled ?? true;
   const allowed = desired.allowed_actions ?? live.allowed_actions;
-  for (const key of ['allowed_actions', 'sha_pinning_required'] as const) {
-    if (!enabled && desired[key] !== undefined) {
-      warnings.push({
-        section: 'actions',
-        key,
-        cause: 'not_applicable',
-        message: 'it only applies while Actions is enabled',
-      });
-    }
-  }
   const shaPinning = desired.sha_pinning_required ?? live.sha_pinning_required;
   const policy = only(desired, enabled ? ['enabled', 'allowed_actions', 'sha_pinning_required'] : ['enabled']);
   const policyFields = fieldChanges(policy, live);

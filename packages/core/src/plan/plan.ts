@@ -25,6 +25,7 @@ import {
   securityAndAnalysis,
   securitySettings,
 } from '../profiles/schema.js';
+import { activeProfileSettings } from '../profiles/setting-dependencies.js';
 import { isDeepEqual } from '../shared/equal.js';
 import {
   type Change,
@@ -140,7 +141,11 @@ export async function createPlan(
     const live = await readRepository(github, repo, Object.keys(desired.repository ?? {}));
     add(planRepository(desired, live, repo));
     if (security !== undefined) {
-      const named = securityEndpoints.filter((endpoint) => Object.hasOwn(security, endpoint.key));
+      const named = securityEndpoints.filter(
+        (endpoint) =>
+          Object.hasOwn(security, endpoint.key) ||
+          (endpoint.key === 'vulnerability_alerts' && security.automated_security_fixes !== undefined),
+      );
       add(
         planSecurity(
           security,
@@ -151,7 +156,11 @@ export async function createPlan(
       );
     }
   } else if (security !== undefined) {
-    const named = securityEndpoints.filter((endpoint) => Object.hasOwn(security, endpoint.key));
+    const named = securityEndpoints.filter(
+      (endpoint) =>
+        Object.hasOwn(security, endpoint.key) ||
+        (endpoint.key === 'vulnerability_alerts' && security.automated_security_fixes !== undefined),
+    );
     add(planSecurity(security, undefined, await readEndpoints(github, repo, named), repo));
   }
   if (desired.actions !== undefined) {
@@ -269,14 +278,7 @@ export async function captureProfile(
   for (const [key, value] of Object.entries(loadableMerge)) {
     const pair = commitPairs.find(({ title, message }) => key === title || key === message);
     const other = pair === undefined ? undefined : key === pair.title ? pair.message : pair.title;
-    if (pair !== undefined && loadableMerge[pair.enabled] === false) {
-      warnings.push({
-        section: 'merge',
-        key,
-        cause: 'unloadable',
-        message: `GitHub takes it only when ${pair.enabled} is enabled, so it is left out`,
-      });
-    } else if (other !== undefined && other in live.merge && !(other in loadableMerge)) {
+    if (other !== undefined && other in live.merge && !(other in loadableMerge)) {
       warnings.push({
         section: 'merge',
         key,
@@ -374,7 +376,7 @@ export async function captureProfile(
     ...(capturedLabels === undefined || capturedLabels.length === 0 ? {} : { labels: capturedLabels }),
   };
   // GitHub may report what the owner doesn't have, such as allow_forking for a personal account.
-  const { value: profile, dropped } = withoutOwnerConflicts(captured, live.owner);
+  const { value: profile, dropped } = withoutOwnerConflicts(activeProfileSettings(captured), live.owner);
   for (const conflict of dropped) {
     warnings.push({
       ...conflictWarning(conflict),

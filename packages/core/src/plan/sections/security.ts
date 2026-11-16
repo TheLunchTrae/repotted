@@ -1,7 +1,7 @@
 import { repoPath, type RepoRef } from '../../github/client.js';
 import { securityAndAnalysis, securityFields, type SecuritySettings } from '../../profiles/schema.js';
 import type { Change, SectionPlan, Warning } from '../change.js';
-import { type Endpoint, type EndpointValue, planEndpoint } from '../endpoints.js';
+import { activeSettingsForPlan, type Endpoint, type EndpointValue, planEndpoint } from '../endpoints.js';
 import { fieldChanges } from '../match.js';
 
 /**
@@ -42,14 +42,6 @@ function without(desired: Record<string, unknown>, fields: string[], reason: str
  */
 function keepRunnerLabel(desired: Record<string, unknown>, live: Record<string, unknown>): Adjusted {
   const named = (field: string) => desired[field] !== undefined;
-  if (desired['state'] === 'not-configured') {
-    // GitHub keeps no runner then, and a runner a base profile names isn't a mistake, so it goes quietly.
-    return { desired: Object.fromEntries(Object.entries(desired).filter(([field]) => !field.startsWith('runner_'))) };
-  }
-  if (desired['state'] === undefined && live['state'] === 'not-configured') {
-    const set = ['runner_type', 'runner_label'].filter((field) => named(field) && desired[field] !== null);
-    return without(desired, set, 'GitHub keeps no runner while the setup is not configured');
-  }
   const type = desired['runner_type'] ?? live['runner_type'] ?? 'standard';
   const label = named('runner_label') ? desired['runner_label'] : live['runner_label'];
   if (type === 'standard' && typeof label === 'string' && named('runner_label')) {
@@ -136,19 +128,8 @@ export const securityEndpoints: readonly Endpoint[] = [
     // GitHub keeps no runner labels or group with standard runners, and
     // refuses them in the write; labeled runners take exactly one label.
     adjust: (desired, live) => {
-      const { runner_labels: labels, runner_group: group } = desired;
+      const { runner_labels: labels } = desired;
       const type = desired['runner_type'] ?? live['runner_type'];
-      if (type === 'standard') {
-        // GitHub reports an empty list and group with standard runners, which already match.
-        const dropped = [
-          ...(Array.isArray(labels) && labels.length > 0 ? ['runner_labels'] : []),
-          ...(typeof group === 'string' && group !== '' ? ['runner_group'] : []),
-        ];
-        const kept = Object.fromEntries(Object.entries(desired).filter(([field]) => !dropped.includes(field)));
-        return dropped.length > 0
-          ? { desired: kept, dropped: { fields: dropped, reason: 'GitHub keeps none with standard runners' } }
-          : { desired };
-      }
       const inEffect = labels ?? live['runner_labels'];
       if (type === 'labeled' && !(Array.isArray(inEffect) && inEffect.length === 1)) {
         return {
@@ -186,13 +167,18 @@ export function liveSecurityAndAnalysis(
  * view of the repository, which reports it.
  */
 export function planSecurity(
-  desired: SecuritySettings,
+  input: SecuritySettings,
   securityAndAnalysisLive: Record<string, unknown> | undefined,
   endpoints: ReadonlyMap<string, EndpointValue>,
   repo: RepoRef,
 ): SectionPlan {
   const changes: Change[] = [];
   const warnings: Warning[] = [];
+  const liveSettings = {
+    security_and_analysis: securityAndAnalysisLive,
+    ...Object.fromEntries([...endpoints].flatMap(([key, value]) => (value.available ? [[key, value.value]] : []))),
+  };
+  const desired = activeSettingsForPlan('security', input, liveSettings, warnings);
   if (desired.security_and_analysis !== undefined) {
     if (securityAndAnalysisLive === undefined) {
       warnings.push({
@@ -219,32 +205,15 @@ export function planSecurity(
       }
     }
   }
-  const alerts = endpoints.get('vulnerability_alerts');
-  const alertsOn = desired.vulnerability_alerts ?? (alerts?.available === true ? alerts.value : undefined);
-  const planned: Change[] = [];
   for (const endpoint of securityEndpoints) {
     const value: unknown = Reflect.get(desired, endpoint.key);
     const live = endpoints.get(endpoint.key);
     if (value === undefined || live === undefined) {
       continue;
     }
-    if (endpoint.key === 'automated_security_fixes' && value === true && alertsOn === false) {
-      warnings.push({
-        section: 'security',
-        key: 'automated_security_fixes',
-        cause: 'not_applicable',
-        message: 'it needs Dependabot alerts, which are off',
-      });
-      continue;
-    }
     const plan = planEndpoint('security', endpoint, value, live, repo);
-    planned.push(...plan.changes);
+    changes.push(...plan.changes);
     warnings.push(...plan.warnings);
   }
-  // Security updates go off before the alerts they answer.
-  const fixesOff = planned.filter(
-    (change) => change.target === 'Dependabot security updates' && change.request.method === 'DELETE',
-  );
-  changes.push(...fixesOff, ...planned.filter((change) => !fixesOff.includes(change)));
   return { changes, warnings };
 }

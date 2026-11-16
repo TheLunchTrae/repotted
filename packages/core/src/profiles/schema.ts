@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { ownerConflicts, ownerTypes, settingRules } from './owner.js';
 import { branchNameProblem, branchPatternProblem } from './ref-names.js';
+import { activeSettings } from './setting-dependencies.js';
 
 /** Refuses a string the check has a problem with, in the check's own words. */
 function checkedWith(check: (text: string) => string | undefined): (text: string, context: z.RefinementCtx) => void {
@@ -84,13 +85,11 @@ export const mergeFields = {
 // offers, and rejects any other pair with a 422.
 export const commitPairs = [
   {
-    enabled: 'allow_merge_commit',
     title: 'merge_commit_title',
     message: 'merge_commit_message',
     allowed: ['MERGE_MESSAGE PR_TITLE', 'PR_TITLE BLANK', 'PR_TITLE PR_BODY'],
   },
   {
-    enabled: 'allow_squash_merge',
     title: 'squash_merge_commit_title',
     message: 'squash_merge_commit_message',
     allowed: ['COMMIT_OR_PR_TITLE COMMIT_MESSAGES', 'PR_TITLE BLANK', 'PR_TITLE COMMIT_MESSAGES', 'PR_TITLE PR_BODY'],
@@ -103,12 +102,10 @@ export const commitPairs = [
  */
 export function mergeSettingsProblems(merge: MergeSettings): string[] {
   const problems: string[] = [];
+  const { settings } = activeSettings('merge', merge);
   for (const pair of commitPairs) {
-    const title = merge[pair.title];
-    const message = merge[pair.message];
-    if (merge[pair.enabled] === false && (title !== undefined || message !== undefined)) {
-      problems.push(`Enable ${pair.enabled} or remove ${pair.title} and ${pair.message}`);
-    }
+    const title = settings[pair.title];
+    const message = settings[pair.message];
     if (
       title !== undefined &&
       message !== undefined &&
@@ -277,20 +274,7 @@ export const securityFields = {
     .strict(),
 };
 
-export const securitySettings = z
-  .object(securityFields)
-  .partial()
-  .strict()
-  .superRefine((value, context) => {
-    // GitHub opens security update pull requests only for the alerts it raises.
-    if (value.automated_security_fixes === true && value.vulnerability_alerts === false) {
-      context.addIssue({
-        code: 'custom',
-        message: 'automated_security_fixes needs vulnerability_alerts',
-        path: ['automated_security_fixes'],
-      });
-    }
-  });
+export const securitySettings = z.object(securityFields).partial().strict();
 
 /**
  * Null clears a value. GitHub documents a property name as 1 to 75 of `a-z`,

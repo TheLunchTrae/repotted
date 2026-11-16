@@ -593,7 +593,7 @@ drafts:
         section: 'actions',
         key: 'selected_actions',
         cause: 'not_applicable',
-        message: 'it only applies while Actions is enabled with allowed_actions: selected',
+        message: 'it only applies while Actions is enabled',
       },
     ]);
   });
@@ -871,12 +871,7 @@ describe('capture', () => {
 
     const { profile, warnings } = await captureProfile(github, repo);
 
-    expect(warnings).toEqual([
-      expect.objectContaining({ section: 'merge', key: 'merge_commit_title', cause: 'unloadable' }),
-      expect.objectContaining({ section: 'merge', key: 'merge_commit_message', cause: 'unloadable' }),
-      expect.objectContaining({ section: 'merge', key: 'squash_merge_commit_title', cause: 'unloadable' }),
-      expect.objectContaining({ section: 'merge', key: 'squash_merge_commit_message', cause: 'unloadable' }),
-    ]);
+    expect(warnings).toEqual([]);
     expect(profile.merge).not.toHaveProperty('merge_commit_title');
     expect(profile.merge).not.toHaveProperty('merge_commit_message');
     expect(profile.merge).not.toHaveProperty('squash_merge_commit_title');

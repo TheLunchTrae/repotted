@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 import { type GitHub, repoPath, type RepoRef } from '../../github/client.js';
 import type { PagesEntry } from '../../profiles/schema.js';
-import type { Change, SectionPlan } from '../change.js';
-import { readResource, type Unavailable, warningForUnavailable } from '../endpoints.js';
+import type { Change, SectionPlan, Warning } from '../change.js';
+import { activeSettingsForPlan, readResource, type Unavailable, warningForUnavailable } from '../endpoints.js';
 import { fieldChanges } from '../match.js';
 
 const liveSite = z.object({
@@ -55,14 +55,14 @@ function isAbsent(entry: PagesEntry): entry is Extract<PagesEntry, { absent: tru
   return entry.absent === true;
 }
 
-export function planPages(desired: PagesEntry, live: LivePages, repo: RepoRef): SectionPlan {
+export function planPages(input: PagesEntry, live: LivePages, repo: RepoRef): SectionPlan {
   if (!live.available) {
     return { changes: [], warnings: [{ section: 'pages', ...warningForUnavailable(live) }] };
   }
   const path = `${repoPath(repo)}/pages`;
   const target = 'GitHub Pages site';
   const { site } = live;
-  if (isAbsent(desired)) {
+  if (isAbsent(input)) {
     return {
       changes:
         site === null
@@ -72,6 +72,8 @@ export function planPages(desired: PagesEntry, live: LivePages, repo: RepoRef): 
     };
   }
   const changes: Change[] = [];
+  const warnings: Warning[] = [];
+  const desired = activeSettingsForPlan('pages', input, site ?? {}, warnings);
   const { cname, https_enforced: httpsEnforced, public: isPublic, ...created } = desired;
   if (site === null) {
     // GitHub builds a new site from a branch unless a workflow builds it.
@@ -108,7 +110,7 @@ export function planPages(desired: PagesEntry, live: LivePages, repo: RepoRef): 
         request: { method: 'PUT', path, body: later },
       });
     }
-    return { changes, warnings: [] };
+    return { changes, warnings };
   }
   const fields = fieldChanges(desired, { ...site });
   if (fields.length > 0) {
@@ -119,7 +121,7 @@ export function planPages(desired: PagesEntry, live: LivePages, repo: RepoRef): 
     }
     changes.push({ section: 'pages', action: 'update', target, fields, request: { method: 'PUT', path, body } });
   }
-  return { changes, warnings: [] };
+  return { changes, warnings };
 }
 
 /**

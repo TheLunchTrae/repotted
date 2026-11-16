@@ -182,7 +182,8 @@ test('a setting GitHub hides goes with the one it follows, and that one counts w
   expect(row(editor, 'actions.enabled')?.hiddenNamed).toBe(2);
 
   await editor.save(write);
-  expect(await readFile('/profiles/web.yaml', 'utf8')).toContain('allowed_actions: selected');
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toBe('actions:\n  enabled: false\n');
+  expect(row(editor, 'actions.enabled')?.hiddenNamed).toBe(0);
 });
 
 test('a setting under one GitHub hides is hidden too, and the highest one counts what the profile still names', async () => {
@@ -1127,34 +1128,36 @@ test('a saved invalid draft offers no reset until it has an unsaved change', asy
 });
 
 test.each([
-  ['merge', 'merge: { allow_merge_commit: false }', 'merge.merge_commit_title', 'PR_TITLE', 'allow_merge_commit'],
-  [
-    'squash',
-    'merge: { allow_squash_merge: false }',
-    'merge.squash_merge_commit_message',
-    'PR_BODY',
-    'allow_squash_merge',
-  ],
-  [
-    'code scanning',
-    'actions: { enabled: false }',
-    'security.code_scanning_default_setup.state',
-    'configured',
-    'Actions',
-  ],
-])('validates %s dependencies inherited from a base before saving', async (_name, baseText, key, value, message) => {
+  ['merge', 'merge: { allow_merge_commit: false }', 'merge.merge_commit_title', 'PR_TITLE'],
+  ['squash', 'merge: { allow_squash_merge: false }', 'merge.squash_merge_commit_message', 'PR_BODY'],
+])('omits %s settings disabled by a base when saving', async (_name, baseText, key, value) => {
   const original = 'extends: base.yaml\n';
   const editor = await opened({ 'base.yaml': baseText, 'web.yaml': original });
 
   await editor.set(field(key), value);
 
-  expect(editor.unsavedChangesProblem.value).toContain(message);
-  expect(editor.problemsBlockingSave.value.some((problem) => problem.message.includes(message))).toBe(true);
+  expect(editor.unsavedChangesProblem.value).toBeUndefined();
+  expect(editor.canSave.value).toBe(true);
+  await editor.save(write);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(original);
+  expect(await readFile('/profiles/base.yaml', 'utf8')).toBe(baseText);
+  expect(editor.dirty.value).toBe(false);
+});
+
+test('validates configured code scanning with Actions disabled by a base before saving', async () => {
+  const original = 'extends: base.yaml\n';
+  const editor = await opened({ 'base.yaml': 'actions: { enabled: false }', 'web.yaml': original });
+  const setup = field('security.code_scanning_default_setup.state');
+
+  await editor.set(setup, 'configured');
+
+  expect(editor.unsavedChangesProblem.value).toContain('Actions');
+  expect(editor.problemsBlockingSave.value.some((problem) => problem.message.includes('Actions'))).toBe(true);
   expect(editor.canSave.value).toBe(false);
   expect(editor.canSaveAsDraft.value).toBe(true);
   await editor.save(write);
   expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(original);
 
-  await editor.reset(field(key));
+  await editor.reset(setup);
   expect(editor.unsavedChangesProblem.value).toBeUndefined();
 });
