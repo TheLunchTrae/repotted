@@ -582,6 +582,8 @@ export class ProfileEditor {
       this.patterns?.follow(undefined);
       this.loadError.value = reasonOf(error, this.file);
       return;
+    } finally {
+      this.#batchUndo.value = undefined;
     }
     await this.#previewEdits();
     this.#findAgain();
