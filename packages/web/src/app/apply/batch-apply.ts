@@ -19,7 +19,7 @@ import {
 import { rm } from '../../engine/files.js';
 import { basename, dirname } from '../../engine/path.js';
 import { isSignedOut } from '../account/account.js';
-import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
+import { type ComparedProfile, type CompareSection, compareSections, exclusionLabel } from './comparison.js';
 
 export interface BatchMemberView {
   readonly repository: string;
@@ -32,10 +32,11 @@ export interface BatchMemberView {
   readonly warnings: readonly string[];
 }
 
-/** `key` leaves the change out everywhere, and `repositories` is how many it reaches. */
+/** `key` leaves the change out everywhere; `repositories` names those whose plans include it. */
 export interface BatchChange {
   readonly key: string;
-  readonly repositories: number;
+  readonly label: string;
+  readonly repositories: readonly string[];
 }
 
 interface Named {
@@ -202,14 +203,14 @@ export class BatchApply {
   });
 
   readonly changes = computed((): BatchChange[] => {
-    const found = new Map<string, number>();
+    const found = new Map<string, string[]>();
     for (const member of this.members.value) {
       const keys = new Set(member.sections.flatMap((section) => section.rows.flatMap((row) => row.leaveOut ?? [])));
       for (const key of keys) {
-        found.set(key, (found.get(key) ?? 0) + 1);
+        found.set(key, [...(found.get(key) ?? []), member.repository]);
       }
     }
-    return [...found].map(([key, repositories]) => ({ key, repositories }));
+    return [...found].map(([key, repositories]) => ({ key, label: exclusionLabel(key), repositories }));
   });
 
   readonly leftOut = computed(() => [...new Set(this.members.value.flatMap((member) => member.leftOut))]);

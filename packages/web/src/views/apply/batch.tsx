@@ -2,7 +2,7 @@ import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { BatchApply, BatchMemberView } from '../../app/apply/batch-apply.js';
-import type { CompareRow } from '../../app/apply/comparison.js';
+import { type CompareRow, exclusionLabel } from '../../app/apply/comparison.js';
 import type { Router } from '../../app/navigation/router.js';
 import { BarActions } from '../layout/action-bar.js';
 import { Link } from '../layout/link.js';
@@ -126,12 +126,12 @@ function Member({ member, batch, reviewingOrApplying: working }: MemberProps): J
           Left out here:{' '}
           {member.leftOut.map((key) => (
             <span key={key} class="left-out-key">
-              <span class="mono">{key}</span>{' '}
+              <span>{exclusionLabel(key)}</span>{' '}
               <button
                 class="link"
                 type="button"
                 disabled={working}
-                aria-label={`Put back ${key} for ${member.repository}`}
+                aria-label={`Put back ${exclusionLabel(key)} for ${member.repository}`}
                 onClick={() => {
                   run(batch.leaveOut(member.repository, key, false));
                 }}
@@ -148,7 +148,7 @@ function Member({ member, batch, reviewingOrApplying: working }: MemberProps): J
 
 function Confirm({ batch, onClose }: { readonly batch: BatchApply; readonly onClose: () => void }): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
-  const ready = batch.ready.value.length;
+  const ready = batch.ready.value;
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -162,11 +162,18 @@ function Confirm({ batch, onClose }: { readonly batch: BatchApply; readonly onCl
           }
         }}
       >
-        <h2 id="batch-confirm">Apply to {ready === 1 ? '1 repository' : `${ready} repositories`}?</h2>
+        <h2 id="batch-confirm">Apply to {ready.length === 1 ? '1 repository' : `${ready.length} repositories`}?</h2>
         <p>
           This writes the changes you reviewed, one repository at a time. Repotted checks each on GitHub first, and
           writes nothing to one that changed since the review.
         </p>
+        <ul class="batch-repositories" aria-label="Repositories to change">
+          {ready.map((member) => (
+            <li key={member.repository} class="mono">
+              {member.repository}
+            </li>
+          ))}
+        </ul>
         <div class="form-actions">
           <button class="button button-primary" type="submit" value="apply">
             Apply now
@@ -205,7 +212,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
       </div>
     );
   }
-  const ready = batch.ready.value.length;
+  const ready = batch.ready.value;
   const reviewingOrApplying = state.kind === 'reviewing' || state.kind === 'applying';
   const members = batch.members.value;
   const refused = state.kind === 'reviewed' ? state.refused : [];
@@ -231,10 +238,19 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                       ? state.left === 0
                         ? 'Every repository is finished, and the batch has ended.'
                         : `${repositories(state.left)} didn't finish and ${state.left === 1 ? 'is' : 'are'} still in the batch.`
-                      : ready === 0
+                      : ready.length === 0
                         ? 'No repository has changes that can be written.'
-                        : `${repositories(ready)} with changes to write. Nothing is written until you apply.`}
+                        : `${repositories(ready.length)} with changes to write. Nothing is written until you apply.`}
             </p>
+            {ready.length > 0 && (
+              <ul class="batch-repositories muted" aria-label="Repositories to change">
+                {ready.map((member) => (
+                  <li key={member.repository} class="mono">
+                    {member.repository}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
         {state.kind === 'failed' && (
@@ -268,21 +284,32 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
               <div>
                 <h2>All repositories</h2>
                 <p class="muted small">
-                  Each change that can be left out, and how many repositories it reaches. Leaving one out everywhere
-                  leaves it out of every repository's apply; the profile keeps it.
+                  Each change that can be left out, and the repositories it affects. Repositories that need access wait
+                  until access is granted. Leaving a change out everywhere leaves it out of every repository's apply;
+                  the profile keeps it.
                 </p>
               </div>
               {batch.changes.value.length > 0 && (
                 <ul class="rows" role="list">
                   {batch.changes.value.map((change) => (
                     <li key={change.key} class="compare-row">
-                      <span class="compare-what mono">{change.key}</span>
-                      <span class="compare-values muted">{repositories(change.repositories)}</span>
+                      <strong class="compare-what">{change.label}</strong>
+                      <div class="compare-values muted">
+                        <ul class="batch-repositories small" aria-label={`Repositories affected by ${change.label}`}>
+                          {change.repositories.map((repository) => (
+                            <li key={repository}>
+                              <span class="mono">{repository}</span>
+                              {members.find((member) => member.repository === repository)?.status === 'needs-access' &&
+                                ' (needs access)'}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                       <button
                         class="button button-quiet button-small"
                         type="button"
                         disabled={reviewingOrApplying}
-                        aria-label={`Leave out ${change.key} everywhere`}
+                        aria-label={`Leave out ${change.label} everywhere`}
                         onClick={() => {
                           run(batch.everywhere(change.key, true));
                         }}
@@ -297,13 +324,13 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                 <ul class="rows" role="list" aria-label="Left out">
                   {batch.leftOut.value.map((key) => (
                     <li key={key} class="compare-row">
-                      <span class="compare-what mono">{key}</span>
+                      <strong class="compare-what">{exclusionLabel(key)}</strong>
                       <span class="compare-values muted">Left out</span>
                       <button
                         class="button button-quiet button-small"
                         type="button"
                         disabled={reviewingOrApplying}
-                        aria-label={`Put back ${key} everywhere`}
+                        aria-label={`Put back ${exclusionLabel(key)} everywhere`}
                         onClick={() => {
                           run(batch.everywhere(key, false));
                         }}
@@ -342,12 +369,12 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
               <button
                 class="button button-primary"
                 type="button"
-                disabled={state.kind !== 'reviewed' || ready === 0}
+                disabled={state.kind !== 'reviewed' || ready.length === 0}
                 onClick={() => {
                   setConfirming(true);
                 }}
               >
-                {ready === 0 ? 'Apply' : `Apply to ${repositories(ready)}`}
+                {ready.length === 0 ? 'Apply' : `Apply to ${repositories(ready.length)}`}
               </button>
             }
             otherActions={

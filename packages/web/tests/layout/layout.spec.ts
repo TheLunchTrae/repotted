@@ -365,6 +365,48 @@ test("a repository's checkbox takes taps across a 44px target", async ({ page })
   expect(offsetsThatMiss, "taps 20px from the box's center that miss it").toEqual([]);
 });
 
+test('a batch shows labels and the affected repositories, keeping the confirmation in step with exclusions', async ({
+  page,
+}) => {
+  const longName = 'lunch/a_repository_name_with_no_hyphens_in_it_at_all';
+  await page.goto('/');
+  for (const name of ['lunch/app', longName, 'lunch/api']) {
+    await page.getByRole('checkbox', { name: `Select ${name}`, exact: true }).check();
+  }
+  const selected = page.getByRole('complementary', { name: 'Selected repositories' });
+  await selected.getByRole('combobox', { name: 'Apply a profile to them' }).selectOption({ label: 'base' });
+  await selected.getByRole('button', { name: 'Review apply' }).click();
+
+  const all = page.getByRole('region', { name: 'All repositories', exact: true });
+  const wiki = all.getByRole('list', { name: 'Repositories affected by Wiki', exact: true });
+  await expect(all.getByText('Wiki', { exact: true })).toBeVisible();
+  await expect(all).not.toContainText('repository.has_wiki');
+  await expect(wiki.getByRole('listitem')).toHaveText([longName, 'lunch/api', 'lunch/app']);
+  expect(await page.evaluate(elementsPastViewportEdges), 'the batch and repository lists fit').toEqual([]);
+
+  await page
+    .getByRole('region', { name: 'lunch/app', exact: true })
+    .getByRole('button', { name: 'Leave out Wiki, repository.has_wiki, for lunch/app', exact: true })
+    .click();
+  await expect(wiki.getByRole('listitem')).toHaveText([longName, 'lunch/api']);
+  await page.getByRole('checkbox', { name: `Apply to ${longName} in this batch`, exact: true }).uncheck();
+  await expect(wiki.getByRole('listitem')).toHaveText(['lunch/api']);
+  await expect(
+    page.getByRole('list', { name: 'Repositories to change', exact: true }).getByRole('listitem'),
+  ).toHaveText(['lunch/api', 'lunch/app']);
+
+  await all.getByRole('button', { name: 'Leave out Wiki everywhere', exact: true }).click();
+  await expect(wiki).toHaveCount(0);
+  await all.getByRole('button', { name: 'Put back Wiki everywhere', exact: true }).click();
+  await expect(wiki.getByRole('listitem')).toHaveText(['lunch/api', 'lunch/app']);
+  await page.getByRole('button', { name: 'Apply to 2 repositories', exact: true }).click();
+
+  const confirmation = page.getByRole('dialog', { name: 'Apply to 2 repositories?' });
+  await expect(confirmation.getByRole('listitem')).toHaveText(['lunch/api', 'lunch/app']);
+  await expect(confirmation.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  expect(await page.evaluate(elementsPastViewportEdges), 'the confirmation fits').toEqual([]);
+});
+
 test('Go to it focuses the ruleset pattern that holds Save back', async ({ page }) => {
   await page.goto('/profiles');
   await page.getByText('website', { exact: true }).click();

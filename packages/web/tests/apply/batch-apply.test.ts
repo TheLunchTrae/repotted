@@ -63,8 +63,8 @@ test('a batch reviews each repository, writes nothing until asked, and then writ
 
   expect(statuses(batch)).toEqual(['lunch/app changes 1', 'lunch/api in-line 0']);
   expect(batch.changes.value).toEqual([
-    { key: 'repository.has_projects', repositories: 1 },
-    { key: 'repository.has_wiki', repositories: 1 },
+    { key: 'repository.has_projects', label: 'Projects', repositories: ['lunch/app'] },
+    { key: 'repository.has_wiki', label: 'Wiki', repositories: ['lunch/app'] },
   ]);
   expect(writes(of('lunch/app'))).toEqual([]);
   expect(await pending()).toHaveLength(1);
@@ -96,6 +96,9 @@ test('a change left out everywhere, in one repository, or a repository left out,
   await batch.leaveOutRepository('lunch/web', true);
 
   expect(statuses(batch)).toEqual(['lunch/app changes 1', 'lunch/api in-line 0', 'lunch/web left-out 0']);
+  expect(batch.changes.value).toEqual([
+    { key: 'repository.has_projects', label: 'Projects', repositories: ['lunch/app'] },
+  ]);
   expect(batch.leftOut.value).toEqual(['repository.has_wiki', 'repository.has_projects']);
   expect(await readFile(profile.file, 'utf8')).toBe(text);
 
@@ -111,6 +114,38 @@ test('a change left out everywhere, in one repository, or a repository left out,
   await batch.leaveOutRepository('lunch/web', false);
   await batch.everywhere('repository.has_wiki', false);
   expect(statuses(batch)).toEqual(['lunch/web changes 1']);
+});
+
+test('a batch names every repository affected by a change once, including those that need access', async () => {
+  await saved(`pages:
+  build_type: workflow
+  https_enforced: true
+labels:
+  - name: bug
+    color: d73a4a
+`);
+  const { github, of } = fleet('lunch/app', 'lunch/api');
+  of('lunch/app').state.account = {
+    login: 'lunch',
+    name: null,
+    repositories: [],
+    installations: [
+      {
+        id: 1,
+        permissions: { administration: 'write', pages: 'write', issues: 'write' },
+        repositories: [{ full_name: 'lunch/app', private: true }],
+      },
+    ],
+  };
+  const batch = new BatchApply(github, () => undefined);
+
+  await batch.start(['lunch/app', 'lunch/api'], profile);
+
+  expect(batch.changes.value).toEqual([
+    { key: 'pages', label: 'GitHub Pages site', repositories: ['lunch/app', 'lunch/api'] },
+    { key: 'labels/bug', label: 'Label: bug', repositories: ['lunch/app', 'lunch/api'] },
+  ]);
+  expect(batch.ready.value.map((member) => member.repository)).toEqual(['lunch/app']);
 });
 
 test('a repository that changed since the review, or that GitHub refuses, is not written and stays in the batch', async () => {

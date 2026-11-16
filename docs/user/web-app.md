@@ -276,8 +276,9 @@ profile in the panel, and click **Review apply**. The selection stays while you
 search, so you can find repositories one search at a time. Each repository
 starts from the selected profile.
 
-The page starts with **All repositories**, which lists each change that can
-be left out with how many repositories it reaches. **Leave out
+The page names the repositories with changes that can be written. **All
+repositories** lists each change by its label and names the repositories it
+affects, marking those that need access and must wait. **Leave out
 everywhere** leaves a change out of every repository's apply; the profile
 keeps it, and **Put back everywhere** undoes it.
 
@@ -288,9 +289,10 @@ compare** with why, and then its changes, each with **Leave out**. Deselect
 puts it back. **Remove from batch**, on a repository that is left out or
 couldn't be compared, takes it and its pending apply out of the batch.
 
-Click **Apply to N repositories** and then **Apply now** to write them, one
-repository at a time. Repotted checks each on GitHub first, and writes
-nothing to one that changed since you reviewed it. A repository with a
+Click **Apply to N repositories** to confirm the list of repositories that
+will change, and then **Apply now** to write them, one repository at a time.
+Repotted checks each on GitHub first, and writes nothing to one that changed
+since you reviewed it. A repository with a
 change GitHub would refuse waits, as do those you left out.
 
 Then the page lists the repositories that didn't finish first, with why, and

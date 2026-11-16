@@ -757,7 +757,7 @@ input[type='checkbox']:disabled {
   list-style: none;
 }
 
-.rows li + li {
+.rows > li + li {
   border-top: 1px solid var(--border);
 }
 
@@ -1822,6 +1822,13 @@ select.field {
   gap: 4px 8px;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.batch-repositories {
+  margin: 0;
+  padding: 0;
+  overflow-wrap: anywhere;
+  list-style: none;
 }
 
 .compare-now {
