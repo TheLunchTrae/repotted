@@ -1,6 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
 
+import type { GitHubAppLookup } from '../../app/profile-editor/bypass-actors.js';
 import type { EntryList, EntryRow } from '../../app/profile-editor/entry-edits.js';
 import {
   branchPolicies,
@@ -34,6 +35,7 @@ import type { ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import { sameValue } from '../../app/profile-editor/same-value.js';
 import { run } from '../layout/run.js';
 import { BatchActions, describeEntriesDone } from './batch-actions.js';
+import { BypassList } from './bypass-list.js';
 import { MissingPermissionsNote } from './missing-permissions-note.js';
 
 const nouns: Readonly<Record<EntryList, { readonly one: string; readonly many: string; readonly title: string }>> = {
@@ -433,7 +435,11 @@ function RulesetForm({
   saved,
   change,
   ownerTypeHasPushRulesets,
-}: FormProps & { readonly ownerTypeHasPushRulesets: boolean }): JSX.Element {
+  appLookup,
+}: FormProps & {
+  readonly ownerTypeHasPushRulesets: boolean;
+  readonly appLookup: GitHubAppLookup | undefined;
+}): JSX.Element {
   const known = new Set(ruleKinds.map(([type]) => type));
   const others = items(entry['rules'])
     .filter(isEntry)
@@ -470,18 +476,16 @@ function RulesetForm({
             change(withKey(entry, 'enforcement', value));
           }}
         />
-        <Kept
-          entry={entry}
-          saved={saved}
-          change={change}
-          name="bypass_actors"
-          label="Bypass"
-          none="Nobody"
-          noun="actor"
-        />
         <RefTargets entry={entry} saved={saved} change={change} side="include" />
         <RefTargets entry={entry} saved={saved} change={change} side="exclude" />
       </Group>
+      <BypassList
+        entry={entry}
+        saved={saved}
+        change={change}
+        appLookup={appLookup}
+        organizationActorsOffered={ownerTypeHasPushRulesets}
+      />
       <Group
         title="Rules"
         description={
@@ -958,6 +962,7 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack }: Ent
             saved={row.saved}
             change={change}
             ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
+            appLookup={editor.appLookup}
           />
         )}
         {!absent && row.list === 'environments' && <EnvironmentForm entry={entry} saved={row.saved} change={change} />}

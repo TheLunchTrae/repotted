@@ -1,6 +1,12 @@
 import { profileFileJsonSchema } from '@repotted/core';
 import { afterEach, expect, test } from 'vitest';
 
+import {
+  deployKeysBypassActor,
+  withBypassActorAdded,
+  withBypassListManaged,
+  withBypassMode,
+} from '../../src/app/profile-editor/bypass-actors.js';
 import type { EntryList, EntryRow } from '../../src/app/profile-editor/entry-edits.js';
 import { ProfileEditor, type SettingRow } from '../../src/app/profile-editor/profile-editor.js';
 import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
@@ -480,6 +486,29 @@ test('an entry is written whole, keeps what the editor did not touch, and rename
   expect(text).not.toContain('name: Main');
   expect(editor.dirty.value).toBe(false);
   expect(entry(editor, 'rulesets', 'Default')).toMatchObject({ savedName: 'Default', unsaved: false });
+});
+
+test('a bypass list is written as set, and a mode GitHub would refuse holds the save', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  const main = entry(editor, 'rulesets', 'Main');
+  const listed = withBypassActorAdded(withBypassListManaged(main.entry ?? {}, true, main.saved), deployKeysBypassActor);
+
+  await editor.changeEntry(main, withBypassMode(listed, new Set(['DeployKey']), 'exempt'));
+  expect(entry(editor, 'rulesets', 'Main').applyProblem).toBeUndefined();
+  await editor.save(write);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toMatch(
+    /bypass_actors:\n\s+- actor_id: null\n\s+actor_type: DeployKey\n\s+bypass_mode: exempt/u,
+  );
+
+  const saved = entry(editor, 'rulesets', 'Main');
+  await editor.changeEntry(saved, {
+    ...saved.entry,
+    bypass_actors: [{ actor_id: null, actor_type: 'DeployKey', bypass_mode: 'pull_request' }],
+  });
+  expect(entry(editor, 'rulesets', 'Main').applyProblem).toBe(
+    'A bypass is set to Pull requests only where GitHub doesn’t allow it.',
+  );
+  expect(editor.canSave.value).toBe(false);
 });
 
 test('a new entry needs a name no other has, in any case, before it can be saved', async () => {

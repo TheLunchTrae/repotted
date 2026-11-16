@@ -7,6 +7,7 @@ import {
   patternNote,
 } from '../../src/app/profile-editor/action-pattern-checks.js';
 import { ActionSearch } from '../../src/app/profile-editor/action-search.js';
+import { GitHubAppLookup } from '../../src/app/profile-editor/bypass-actors.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -275,6 +276,7 @@ test("an editor's list is followed as it is typed, and only while GitHub shows i
   const editor = new ProfileEditor('/profiles/web.yaml', {
     patterns: new ActionPatternChecks(github.check),
     search: new ActionSearch(() => Promise.resolve([])),
+    appLookup: new GitHubAppLookup(() => Promise.resolve(undefined)),
   });
 
   await editor.load();

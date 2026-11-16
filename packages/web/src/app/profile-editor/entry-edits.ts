@@ -1,6 +1,7 @@
 import { computed, signal } from '@preact/signals';
 
 import { basename } from '../../engine/path.js';
+import { bypassListProblem } from './bypass-actors.js';
 import { type Entry, isEntry, labelProblem, rulesetProblem } from './entry-forms.js';
 import { ownUnsets, type ResolvedProfile } from './own-drafts.js';
 import { sameValue } from './same-value.js';
@@ -649,7 +650,7 @@ export class EntryEdits {
       return undefined;
     }
     if (list === 'rulesets') {
-      return rulesetProblem(entry);
+      return rulesetProblem(entry) ?? bypassListProblem(entry);
     }
     if (list === 'labels') {
       return labelProblem(

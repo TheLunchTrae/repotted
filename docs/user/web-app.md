@@ -507,8 +507,8 @@ and so does a sync that finds the profile deleted or renamed on GitHub.
 names, with **New ruleset**, **New environment**, or **New label**. Click
 one to open it. Its form changes only what you edit, so anything it doesn't
 show, such as the merge methods a pull request rule allows or a rule the form
-has no box for, stays as the profile's file has it. Bypass actors and
-required reviewers can be kept as the file has them or cleared. **Leave it to GitHub** clears a choice, so each
+has no box for, stays as the profile's file has it. Required reviewers can
+be kept as the file has them or cleared. **Leave it to GitHub** clears a choice, so each
 repository keeps its own. Choose **Manage it**, or **Remove it from the
 repository** to delete it from each repository that follows the profile.
 Removing keeps what the entry had, in case you choose **Manage it** again
@@ -520,6 +520,20 @@ puts every entry in the list with a change you haven't saved back as it was,
 and **Take out all** takes out every entry the profile names, along with
 new ones; one from a base profile stays. As with a group of settings, each
 says how many it changes, and **Undo** brings the list back as it was.
+
+A ruleset's **Bypass list** says who can skip its rules. Until you choose
+**Manage the bypass list**, each repository keeps its own. Once it is
+managed, each repository has exactly the listed ones, and an empty list means
+nobody bypasses. **Add bypass** adds the **Repository admin**, **Maintain**,
+or **Write** role, **Deploy keys**, or a **GitHub App** by the name in its
+address, such as `dependabot` for `github.com/apps/dependabot`, or by its ID.
+A profile for organizations also offers **Organization admin**, and a team
+or a custom role by its ID. Each one bypasses **Always**, on **Pull requests
+only**, or is **Exempt**, which skips the rules without asking. Pull requests
+only works in a branch ruleset and not for deploy keys, and a profile that
+sets it there can't be saved until you choose another mode. Select several
+to set their mode or remove them together, or choose **Remove all**.
+**Leave it to GitHub** stops managing the list.
 
 A ruleset with no rule selected leaves each repository's rules as they are.
 Once any rule is selected, the ruleset has exactly the selected rules, and
