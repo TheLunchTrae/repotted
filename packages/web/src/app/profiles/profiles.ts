@@ -2,6 +2,7 @@ import { computed, signal } from '@preact/signals';
 import {
   captureProfile,
   checkActionPatterns,
+  declaredExtends,
   findActions,
   type GitHub,
   listProfiles,
@@ -10,11 +11,12 @@ import {
   readInstallationSettingsUrl,
   stringifyProfile,
   syncFolder,
+  withExtends,
 } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from '../../engine/files.js';
-import { basename, dirname, join, relative } from '../../engine/path.js';
+import { basename, dirname, join, relative, resolve } from '../../engine/path.js';
 import { isSignedOut } from '../account/account.js';
 import type { Preferences } from '../preferences/preferences.js';
 import { ActionPatternChecks } from '../profile-editor/action-pattern-checks.js';
@@ -61,6 +63,12 @@ export interface NewProfile {
 
 // Names no file can have on Windows, where a config repository's profiles may also be used.
 const windowsNames = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu;
+
+/** A folder is one that holds profiles, or a new one under the profiles folder, never a way out of it. */
+function folderProblem(folder: string): string | undefined {
+  const unusable = folder.split('/').some((part) => folder !== '' && /^\.|^$|[\\:*?"<>|\p{Cc}]|[. ]$/u.test(part));
+  return unusable ? `${folder} is not a folder a profile can go in.` : undefined;
+}
 
 export interface ProfileFolderNode {
   readonly name: string;
@@ -650,11 +658,9 @@ export class Profiles {
       if (taken !== undefined) {
         return taken;
       }
-      // A folder is one that holds profiles, or a new one under the profiles folder, never a way out of it.
-      if (
-        profile.folder.split('/').some((part) => profile.folder !== '' && /^\.|^$|[\\:*?"<>|\p{Cc}]|[. ]$/u.test(part))
-      ) {
-        return `${profile.folder} is not a folder a profile can go in.`;
+      const unusableFolder = folderProblem(profile.folder);
+      if (unusableFolder !== undefined) {
+        return unusableFolder;
       }
       try {
         await mkdir(dirname(file), { recursive: true });
@@ -671,9 +677,10 @@ export class Profiles {
     });
   }
 
-  /** Directly or through another: they stop loading without this profile. */
-  dependents(listing: ProfileListing): readonly ProfileListing[] {
-    const found = new Set<string>([listing.file]);
+  /** Directly or through another: they stop loading without these profiles. */
+  dependents(...listings: readonly ProfileListing[]): readonly ProfileListing[] {
+    const gone = new Set(listings.map((listing) => listing.file));
+    const found = new Set<string>(gone);
     for (let grew = true; grew;) {
       grew = false;
       for (const other of this.listings.value) {
@@ -683,25 +690,274 @@ export class Profiles {
         }
       }
     }
-    return this.listings.value.filter((other) => other.file !== listing.file && found.has(other.file));
+    return this.listings.value.filter((other) => !gone.has(other.file) && found.has(other.file));
   }
 
-  remove(listing: ProfileListing): Promise<string | undefined> {
+  /** Deleted in one turn, so they leave in one commit. */
+  remove(...listings: readonly ProfileListing[]): Promise<string | undefined> {
     return this.#work(async () => {
       // The list may have been read again, from another place, since the user asked.
-      if (!this.listings.value.some((item) => item.file === listing.file)) {
+      const listed = new Set(this.listings.value.map((item) => item.file));
+      const going = new Set(listings.map((listing) => listing.file).filter((file) => listed.has(file)));
+      if (going.size === 0) {
         return undefined;
       }
-      await rm(listing.file, { force: true });
-      // Its unsaved changes go with it.
-      this.#editors.value = this.#editors.value.filter((editor) => editor.file !== listing.file);
-      if (this.settingsCaptureCouldNotRead.value?.file === listing.file) {
+      for (const file of going) {
+        await rm(file, { force: true });
+      }
+      // Their unsaved changes go with them.
+      this.#editors.value = this.#editors.value.filter((editor) => !going.has(editor.file));
+      if (going.has(this.settingsCaptureCouldNotRead.value?.file ?? '')) {
         this.settingsCaptureCouldNotRead.value = undefined;
       }
+      this.#deselect(going);
       await this.#sync({});
       await this.#list();
       return undefined;
     });
+  }
+
+  /** Into `folder`, '' for the profiles folder itself. Answers why they couldn't move. */
+  async move(listings: readonly ProfileListing[], folder: string): Promise<string | undefined> {
+    const named = folder.trim();
+    const failure = await this.#moveFiles(
+      () => {
+        const inAnotherCase = this.#folderInAnotherCase(named, undefined);
+        return inAnotherCase === undefined ? folderProblem(named) : `There is already a folder named ${inAnotherCase}.`;
+      },
+      () => new Map(listings.map((listing) => [listing.file, join(this.folder.value, named, basename(listing.file))])),
+    );
+    if (failure === undefined) {
+      // Those already there are deselected with the rest, and the folder they went to opens, so they stay in view.
+      this.#deselect(new Set(listings.map((listing) => listing.file)));
+      this.#closedFolders.value = new Set(
+        [...this.#closedFolders.value].filter((path) => path !== named && !named.startsWith(`${path}/`)),
+      );
+    }
+    return failure;
+  }
+
+  /** Moves every profile in the folder and its subfolders. Answers why it couldn't. */
+  async renameFolder(path: string, name: string): Promise<string | undefined> {
+    const trimmed = name.trim();
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    const renamed = parent === '' ? trimmed : `${parent}/${trimmed}`;
+    const failure = await this.#moveFiles(
+      () => {
+        if (trimmed === '') {
+          return 'Give the folder a name.';
+        }
+        if (trimmed.includes('/')) {
+          return 'A folder name cannot hold /.';
+        }
+        if (renamed !== path && renamed.toLowerCase() === path.toLowerCase()) {
+          return `${trimmed} differs from ${path.slice(parent === '' ? 0 : parent.length + 1)} only in case, which some computers take for the same folder. Give it another name.`;
+        }
+        if (renamed !== path && this.folders.value.includes(renamed)) {
+          return `There is already a folder named ${renamed}.`;
+        }
+        const inAnotherCase = this.#folderInAnotherCase(renamed, path);
+        return inAnotherCase === undefined
+          ? folderProblem(renamed)
+          : `There is already a folder named ${inAnotherCase}.`;
+      },
+      () =>
+        new Map(
+          this.listings.value
+            .filter((listing) => listing.folder === path || listing.folder.startsWith(`${path}/`))
+            .map((listing) => [
+              listing.file,
+              join(this.folder.value, renamed + listing.folder.slice(path.length), basename(listing.file)),
+            ]),
+        ),
+    );
+    if (failure === undefined) {
+      this.#closedFolders.value = new Set(
+        [...this.#closedFolders.value].map((closed) =>
+          closed === path || closed.startsWith(`${path}/`) ? renamed + closed.slice(path.length) : closed,
+        ),
+      );
+    }
+    return failure;
+  }
+
+  /**
+   * A folder there is already whose name matches `folder`, or a folder over
+   * it, in another case, leaving out `renaming` and the folders in it. Some
+   * computers take the two for one folder.
+   */
+  #folderInAnotherCase(folder: string, renaming: string | undefined): string | undefined {
+    const parts = folder === '' ? [] : folder.split('/');
+    for (let depth = 1; depth <= parts.length; depth += 1) {
+      const over = parts.slice(0, depth).join('/');
+      const other = this.folders.value.find(
+        (existing) =>
+          existing !== over &&
+          existing.toLowerCase() === over.toLowerCase() &&
+          (renaming === undefined || (existing !== renaming && !existing.startsWith(`${renaming}/`))),
+      );
+      if (other !== undefined) {
+        return other;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Moves the files named in the plan, from their file to where they go,
+   * and points every `extends` that names a moved file at its new place, so
+   * nothing stops loading. The plan is made in the turn, from the list as
+   * the turns before this one left it. A write that fails takes back those
+   * before it, so nothing is half moved.
+   */
+  #moveFiles(problem: () => string | undefined, plan: () => ReadonlyMap<string, string>): Promise<string | undefined> {
+    return this.#work(async () => {
+      // A file a tool put in the folder on this computer since the last sync counts too.
+      if (this.source.value.kind === 'folder') {
+        await this.#sync({});
+        await this.#list();
+      }
+      const refused = problem();
+      if (refused !== undefined) {
+        return refused;
+      }
+      const listed = new Map(this.listings.value.map((listing) => [listing.file, listing]));
+      const moves = new Map([...plan()].filter(([from, to]) => listed.has(from) && from !== to));
+      if (moves.size === 0) {
+        return undefined;
+      }
+      for (const from of moves.keys()) {
+        const listing = listed.get(from);
+        if (listing?.problem !== null) {
+          return `${listing?.name ?? basename(from)} doesn't load, so it can't be moved. Fix it first.`;
+        }
+        if (this.unsaved.value.has(from)) {
+          return `Save or reset the changes to ${listing.name} first.`;
+        }
+      }
+      const listedInAnyCase = new Set([...listed.keys()].map((file) => file.toLowerCase()));
+      const staying = new Set([...listed.keys()].filter((file) => !moves.has(file)).map((file) => file.toLowerCase()));
+      const arriving = new Set<string>();
+      for (const to of moves.values()) {
+        const place = relative(this.folder.value, dirname(to));
+        const parts = place === '' ? [] : place.split('/');
+        const profileInTheWay = parts
+          .map((_part, index) => parts.slice(0, index + 1).join('/'))
+          .find((over) => listedInAnyCase.has(join(this.folder.value, over).toLowerCase()));
+        if (profileInTheWay !== undefined) {
+          return `${profileInTheWay} is a profile, so it can't be a folder.`;
+        }
+        const key = to.toLowerCase();
+        if (staying.has(key) || arriving.has(key)) {
+          return `${basename(to)} is already in ${place === '' ? 'the profiles folder' : place}.`;
+        }
+        arriving.add(key);
+      }
+      const moved: { readonly from: string; readonly to: string; readonly text: string }[] = [];
+      const repointed: { readonly file: string; readonly text: string; readonly before: string }[] = [];
+      for (const from of listed.keys()) {
+        const to = moves.get(from) ?? from;
+        const before = await readFile(from, 'utf8');
+        const declared = declaredExtends(before);
+        const base = declared === undefined ? undefined : resolve(dirname(from), declared);
+        const baseNow = base === undefined ? undefined : (moves.get(base) ?? base);
+        const stillPointed = declared === undefined || resolve(dirname(to), declared) === baseNow;
+        const text =
+          stillPointed || baseNow === undefined ? before : withExtends(before, relative(dirname(to), baseNow));
+        if (to !== from) {
+          moved.push({ from, to, text });
+        } else if (text !== before) {
+          // An open editor holds the file as it was read, so a save would put the old `extends` back.
+          if (this.unsaved.value.has(from)) {
+            return `Save or reset the changes to ${listed.get(from)?.name ?? basename(from)} first.`;
+          }
+          repointed.push({ file: from, text, before });
+        }
+      }
+      const written: (() => Promise<void>)[] = [];
+      let writing = moved[0]?.to ?? '';
+      try {
+        for (const { to, text } of moved) {
+          writing = to;
+          await mkdir(dirname(to), { recursive: true });
+          await writeFile(to, text, { flag: 'wx' });
+          written.push(() => rm(to, { force: true }));
+        }
+        for (const { file, text, before } of repointed) {
+          writing = file;
+          await writeFile(file, text);
+          written.push(() => writeFile(file, before));
+        }
+      } catch (error) {
+        for (const takeBack of written.reverse()) {
+          await takeBack().catch(() => undefined);
+        }
+        await this.#list();
+        const place = relative(this.folder.value, dirname(writing));
+        return error instanceof Error && 'code' in error && error.code === 'EEXIST'
+          ? `${basename(writing)} is already in ${place === '' ? 'the profiles folder' : place}.`
+          : `Couldn't move the profiles, so nothing moved: ${messageOf(error)}`;
+      }
+      try {
+        for (const { from } of moved) {
+          writing = from;
+          await rm(from, { force: true });
+        }
+      } catch (error) {
+        await this.#sync({});
+        await this.#list();
+        return `The profiles are at the new place, but ${relative(this.folder.value, writing)} couldn't be removed from the old one: ${messageOf(error)}`;
+      }
+      const rewritten = new Set([...moves.keys(), ...repointed.map((write) => write.file)]);
+      this.#editors.value = this.#editors.value.filter((editor) => !rewritten.has(editor.file));
+      const couldNotRead = this.settingsCaptureCouldNotRead.value;
+      if (couldNotRead !== undefined && moves.has(couldNotRead.file)) {
+        this.settingsCaptureCouldNotRead.value = {
+          ...couldNotRead,
+          file: moves.get(couldNotRead.file) ?? couldNotRead.file,
+        };
+      }
+      const open = this.#selectedFile.value;
+      this.#selectedFile.value = open === undefined ? undefined : (moves.get(open) ?? open);
+      this.#deselect(new Set(moves.keys()));
+      await this.#sync({});
+      await this.#list();
+      if (open !== undefined && rewritten.has(open)) {
+        await this.select(this.selected.value);
+      }
+      return undefined;
+    });
+  }
+
+  /** For a batch action; which profile is open is `selected`. */
+  readonly #selectedForBatch = signal<ReadonlySet<string>>(new Set());
+
+  readonly batch = computed(() =>
+    this.listings.value.filter((listing) => this.#selectedForBatch.value.has(listing.file)),
+  );
+
+  isInBatch(listing: ProfileListing): boolean {
+    return this.#selectedForBatch.value.has(listing.file);
+  }
+
+  selectForBatch(listings: readonly ProfileListing[], selected: boolean): void {
+    const next = new Set(this.#selectedForBatch.value);
+    for (const listing of listings) {
+      if (selected) {
+        next.add(listing.file);
+      } else {
+        next.delete(listing.file);
+      }
+    }
+    this.#selectedForBatch.value = next;
+  }
+
+  deselectBatch(): void {
+    this.#selectedForBatch.value = new Set();
+  }
+
+  #deselect(files: ReadonlySet<string>): void {
+    this.#selectedForBatch.value = new Set([...this.#selectedForBatch.value].filter((file) => !files.has(file)));
   }
 
   async select(listing: ProfileListing | undefined): Promise<void> {
@@ -810,6 +1066,7 @@ export class Profiles {
     this.chosen.value = true;
     this.markProblem.value = undefined;
     this.#closedFolders.value = new Set();
+    this.#selectedForBatch.value = new Set();
     this.#editors.value = [];
     this.settingsCaptureCouldNotRead.value = undefined;
     this.#selectedFile.value = undefined;

@@ -17,6 +17,7 @@ import { ConfigProtection } from '../app/profiles/config-protection.js';
 import type { LocalFolders } from '../app/profiles/local-folder.js';
 import { Profiles } from '../app/profiles/profiles.js';
 import { Repositories } from '../app/repositories/repositories.js';
+import { RepositoryProfiles, repositoryProfilesKey } from '../app/repositories/repository-profiles.js';
 import type { Keeping } from '../app/storage/kept-files.js';
 import { SignIn } from './account/sign-in.js';
 import { ApplyPage } from './apply/apply.js';
@@ -60,28 +61,32 @@ function SignedIn({
   folders,
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
-  const { repositories, profiles, discovery, comparison, apply, batch, protection, preview } = useMemo(() => {
-    const refused = (): void => {
-      account.gitHubRefusedSignIn();
-    };
-    const kept = new Profiles(github, preferences, refused, folders);
-    // The hidden repositories and owners follow the profiles: to their repository, or this browser. Using
-    // the profiles' place from the start means the first list shows what that place hides. Folders follow them
-    // too, but which folders are closed stays in this browser, so opening one commits nothing.
-    const shared = new SharedPreferences(github, preferences, refused);
-    run(shared.use(kept.source.value));
-    return {
-      repositories: new Repositories(github, user, shared, preferences, refused),
-      profiles: kept,
-      discovery: new ConfigDiscovery(github, kept, refused),
-      comparison: new Comparison(github, refused),
-      // An apply's edits saved to a profile take their turn among the profiles' syncs.
-      apply: new Apply(github, refused, (work) => kept.write(work)),
-      batch: new BatchApply(github, refused),
-      protection: new ConfigProtection(github, refused),
-      preview: new BranchPreview(github, kept, refused),
-    };
-  }, [account, github, preferences, folders, user]);
+  const { repositories, profiles, assignments, discovery, comparison, apply, batch, protection, preview } =
+    useMemo(() => {
+      const refused = (): void => {
+        account.gitHubRefusedSignIn();
+      };
+      const kept = new Profiles(github, preferences, refused, folders);
+      // The hidden repositories and owners follow the profiles: to their repository, or this browser. Using
+      // the profiles' place from the start means the first list shows what that place hides. Folders follow them
+      // too, but which folders are closed stays in this browser, so opening one commits nothing.
+      const shared = new SharedPreferences(github, preferences, refused);
+      run(shared.use(kept.source.value));
+      // Which profiles each repository uses follows the profiles too, since it names them by their paths.
+      const assigned = new RepositoryProfiles(shared, kept);
+      return {
+        repositories: new Repositories(github, user, shared, preferences, refused),
+        profiles: kept,
+        assignments: assigned,
+        discovery: new ConfigDiscovery(github, kept, refused),
+        comparison: new Comparison(github, refused),
+        // An apply's edits saved to a profile take their turn among the profiles' syncs.
+        apply: new Apply(github, refused, (work) => kept.write(work), assigned),
+        batch: new BatchApply(github, refused),
+        protection: new ConfigProtection(github, refused),
+        preview: new BranchPreview(github, kept, refused),
+      };
+    }, [account, github, preferences, folders, user]);
   const address = useMemo(() => new AddressedRepository(repositories, router), [repositories, router]);
   useEffect(() => {
     run(repositories.load());
@@ -98,6 +103,12 @@ function SignedIn({
   useEffect(() => {
     run(repositories.preferences.use(source));
   }, [repositories, source]);
+  // Each profile a repository uses is read again whenever the profiles or the lists change.
+  const listings = profiles.listings.value;
+  const savedAssignments = repositories.preferences.read(repositoryProfilesKey);
+  useEffect(() => {
+    run(assignments.check());
+  }, [assignments, listings, savedAssignments]);
   const [repositoryToCapture, setRepositoryToCapture] = useState<string | undefined>(undefined);
   const openingProtection = useRef(false);
   useEffect(() => {
@@ -230,6 +241,11 @@ function SignedIn({
             );
             router.go('/apply');
           }}
+          onApplyProfiles={(repository, assigned) => {
+            run(apply.startFromProfiles(repository, assigned));
+            router.go('/apply');
+          }}
+          assignments={assignments}
           onCompare={(repository, profile) => {
             run(comparison.compare(repository, profile));
             router.go('/compare');

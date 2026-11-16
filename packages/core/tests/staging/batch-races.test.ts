@@ -57,9 +57,9 @@ describe('a batch changed by another program', () => {
       await writeFile(manifest, 'made elsewhere\n', { flag: 'w' });
     };
 
-    await expect(createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profile })).rejects.toThrow(
-      `Cannot start a batch in ${folder}`,
-    );
+    await expect(
+      createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profiles: [profile] }),
+    ).rejects.toThrow(`Cannot start a batch in ${folder}`);
     expect(await exists(path.join(folder, 'lunch', 'app.yaml'))).toBe(false);
     expect(await exists(path.join(folder, 'lunch', 'web.yaml'))).toBe(false);
     // The other program's manifest stays.
@@ -68,9 +68,9 @@ describe('a batch changed by another program', () => {
 
   test('an addition that another program made first removes the staged apply it made', async () => {
     const { root, profile, folder } = await place();
-    await createBatch(folder, { repositories: ['lunch/app'], profile });
+    await createBatch(folder, { repositories: ['lunch/app'], profiles: [profile] });
     const elsewhere = path.join(root, 'web.yaml');
-    await createStagedApply(elsewhere, 'lunch/web', profile);
+    await createStagedApply(elsewhere, 'lunch/web', [profile]);
     hook.afterCreate = async () => {
       hook.afterCreate = undefined;
       await addToBatch(folder, { join: [elsewhere] });
