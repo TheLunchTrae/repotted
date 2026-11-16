@@ -1326,6 +1326,10 @@ button.link.profiles-back {
   gap: 6px;
 }
 
+.batch-actions .button {
+  gap: 4px;
+}
+
 /* What a batch action did, with Undo, takes a line of its own in the row of the heading or the list's bar. */
 .batch-done {
   display: flex;
@@ -1339,10 +1343,37 @@ button.link.profiles-back {
   flex: 1 1 16rem;
 }
 
-/* On a phone the actions go under the heading, where they have the width for their counts. */
+/* Keep the description below the heading and actions, even when the actions wrap. */
 @media (max-width: 760px) {
+  .group-head {
+    align-items: center;
+  }
+
   .group-head > div:first-child {
+    display: contents;
+  }
+
+  .group-head h2 {
+    flex: 1 1 min-content;
+  }
+
+  .group-head > div:first-child > p {
     flex-basis: 100%;
+    order: 1;
+  }
+
+  .group-head .batch-actions {
+    justify-content: flex-end;
+    margin-inline-start: auto;
+  }
+
+  .group-head .batch-actions .button {
+    padding-inline: 6px;
+    border-color: transparent;
+  }
+
+  .group-head .batch-done {
+    order: 2;
   }
 }
 
