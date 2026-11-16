@@ -1,7 +1,17 @@
 import { computed, signal } from '@preact/signals';
 
 import { basename } from '../../engine/path.js';
-import { branchPolicyProblem, type Entry, hexColor, isEntry, labelProblem, rulesetProblem } from './entry-forms.js';
+import { bypassListProblem } from './bypass-actors.js';
+import {
+  branchPolicyProblem,
+  type Entry,
+  hexColor,
+  isEntry,
+  labelProblem,
+  namedRefTargetsProblem,
+  refPatternsProblem,
+  rulesetProblem,
+} from './entry-forms.js';
 import { ownUnsets, type ResolvedProfile } from './own-drafts.js';
 import { sameValue } from './same-value.js';
 
@@ -19,6 +29,11 @@ export type SaveMode = 'applies' | 'draft';
 /** The field of the entry's form a problem shows under; `entry` is the entry as a whole, shown above its fields. */
 export type EntryField =
   | 'name'
+  | 'include-targets'
+  | 'exclude-targets'
+  | 'include-patterns'
+  | 'exclude-patterns'
+  | 'bypass-list'
   | 'status-checks'
   | 'branch-patterns'
   | 'tag-patterns'
@@ -69,6 +84,13 @@ export interface EntryRow {
 }
 
 type Row = Omit<EntryRow, 'applyProblem' | 'applyProblemField' | 'draftProblem'>;
+
+/** A base profile's entry can only be overridden here, so taking it out is for one this profile names, or a new one. */
+export function canBeTakenOut(row: EntryRow): boolean {
+  return row.entry !== undefined && (row.source === 'here' || row.source === undefined);
+}
+
+export type EntryChanges = ReadonlyMap<string, EntryChange>;
 
 export interface EntryWrite {
   readonly list: EntryList;
@@ -125,7 +147,14 @@ function fieldProblem(list: EntryList, entry: Entry, otherNames: readonly string
   const problemIn = (field: EntryField, message: string | undefined): EntryProblem | undefined =>
     message === undefined ? undefined : { field, message };
   if (list === 'rulesets') {
-    return problemIn('status-checks', rulesetProblem(entry));
+    return (
+      problemIn('include-targets', namedRefTargetsProblem(entry, 'include')) ??
+      problemIn('include-patterns', refPatternsProblem(entry, 'include')) ??
+      problemIn('exclude-targets', namedRefTargetsProblem(entry, 'exclude')) ??
+      problemIn('exclude-patterns', refPatternsProblem(entry, 'exclude')) ??
+      problemIn('status-checks', rulesetProblem(entry)) ??
+      problemIn('bypass-list', bypassListProblem(entry))
+    );
   }
   if (list === 'environments') {
     return (
@@ -293,7 +322,8 @@ export class EntryEdits {
   }
 
   takeOut(row: EntryRow): void {
-    if (row.savedName === undefined && !this.#changesSaveIsWriting.has(row.key)) {
+    const newOrGoneElsewhere = row.savedName === undefined || this.#slot(row.list, row.key) === undefined;
+    if (newOrGoneElsewhere && !this.#changesSaveIsWriting.has(row.key)) {
       this.#set(row.key, undefined);
     } else {
       this.#put(row, { entry: undefined });
@@ -355,6 +385,27 @@ export class EntryEdits {
 
   resetAll(): void {
     this.#changes.value = new Map();
+  }
+
+  /** Every change to the list's entries goes, as Reset does on each; not while a save is writing, which the editor waits for. */
+  resetAllIn(list: EntryList): void {
+    this.#changes.value = new Map([...this.#changes.value].filter(([, change]) => change.list !== list));
+  }
+
+  /** Each entry the list can take out of the profile, as Take out of profile does: one this profile names, or one that is new. */
+  takeOutAllIn(list: EntryList): void {
+    for (const row of this.rows.value[list].filter(canBeTakenOut)) {
+      this.takeOut(row);
+    }
+  }
+
+  /** What `restore` puts back exactly, for an undo of a change to many entries at once. */
+  snapshot(): EntryChanges {
+    return this.#changes.value;
+  }
+
+  restore(changes: EntryChanges): void {
+    this.#changes.value = changes;
   }
 
   /** Marks the changes a save writes, which stay as they are until `saved` says how it went. */

@@ -19,7 +19,10 @@ import {
 import { basename } from '../../engine/path.js';
 import type { ActionPatternChecks } from './action-pattern-checks.js';
 import type { ActionSearch } from './action-search.js';
+import type { GitHubAppLookup } from './bypass-actors.js';
 import {
+  canBeTakenOut,
+  type EntryChanges,
   EntryEdits,
   type EntryField,
   type EntryList,
@@ -117,9 +120,43 @@ export interface GroupRows {
   readonly missingPermissions: readonly string[];
 }
 
+/** What a group's Remove all and Reset all would change, counting the settings GitHub hides, which have no row. */
+export interface GroupBatch {
+  readonly namedHere: number;
+  readonly namedHereThatGitHubHides: number;
+  readonly unsaved: number;
+}
+
+export interface EntryListBatch {
+  readonly unsaved: number;
+  readonly canBeTakenOut: number;
+}
+
+export type BatchScope = SettingGroup | EntryList;
+
+/** What the last Remove all, Reset all, or Take out all did, which Undo takes back. */
+export interface BatchDone {
+  readonly scope: BatchScope;
+  readonly action: 'removed' | 'reset' | 'taken-out';
+  readonly count: number;
+  readonly hiddenByGitHub: number;
+}
+
+interface BatchUndo {
+  readonly done: BatchDone;
+  readonly edits: ReadonlyMap<string, SettingEdit>;
+  readonly typed: ReadonlyMap<string, TypedText>;
+  readonly entries: EntryChanges;
+}
+
+interface TypedText {
+  readonly text: string;
+  readonly problem: string | undefined;
+}
+
 export interface SectionRows {
   readonly section: SettingSection;
-  readonly groups: readonly GroupRows[];
+  readonly groups: readonly (GroupRows & { readonly batch: GroupBatch })[];
   readonly missingPermissionsEverySettingShares: readonly string[];
 }
 
@@ -325,9 +362,8 @@ export class ProfileEditor {
   /** Undefined unless there are unsaved changes the engine accepts. */
   readonly #profileAsSaveWouldLeaveIt = signal<ResolvedProfile | undefined>(undefined);
   readonly #edits = signal<ReadonlyMap<string, SettingEdit>>(new Map());
-  readonly #typed = signal<ReadonlyMap<string, { readonly text: string; readonly problem: string | undefined }>>(
-    new Map(),
-  );
+  readonly #typed = signal<ReadonlyMap<string, TypedText>>(new Map());
+  readonly #batchUndo = signal<BatchUndo | undefined>(undefined);
   readonly #entryEdits = new EntryEdits();
   #settingEditsSaveIsWriting: ReadonlyMap<string, SettingEdit> = new Map();
   #latestPreviewNumber = 0;
@@ -337,12 +373,18 @@ export class ProfileEditor {
   readonly patterns: ActionPatternChecks | undefined;
   readonly actionSearch: ActionSearch | undefined;
 
+  readonly appLookup: GitHubAppLookup | undefined;
+
   readonly canHoldDrafts: boolean;
   readonly #store: EditorStore;
 
   constructor(
     file: string,
-    github?: { readonly patterns: ActionPatternChecks; readonly search: ActionSearch },
+    github?: {
+      readonly patterns: ActionPatternChecks;
+      readonly search: ActionSearch;
+      readonly appLookup: GitHubAppLookup;
+    },
     store: EditorStore = profileStore,
   ) {
     this.file = file;
@@ -350,6 +392,7 @@ export class ProfileEditor {
     this.canHoldDrafts = store.canHoldDrafts;
     this.patterns = github?.patterns;
     this.actionSearch = github?.search;
+    this.appLookup = github?.appLookup;
   }
 
   readonly loaded = computed(() => this.#saved.value !== undefined);
@@ -554,10 +597,11 @@ export class ProfileEditor {
       return {
         section,
         missingPermissionsEverySettingShares: sectionLacks,
-        groups: groups.map(({ group, rows }): GroupRows => {
+        groups: groups.map(({ group, rows }) => {
           const groupLacks = without(permissionsEveryRowLacks(rows), sectionLacks);
           return {
             group,
+            batch: this.#batchOf(group),
             missingPermissions: groupLacks,
             rows: rows.map((row) => ({
               ...row,
@@ -571,6 +615,16 @@ export class ProfileEditor {
       };
     }),
   );
+
+  readonly entryListBatches = computed((): Readonly<Record<EntryList, EntryListBatch>> => {
+    const batch = (list: EntryList): EntryListBatch => {
+      const rows = this.#entryEdits.rows.value[list];
+      return { unsaved: rows.filter((row) => row.unsaved).length, canBeTakenOut: rows.filter(canBeTakenOut).length };
+    };
+    return { rulesets: batch('rulesets'), environments: batch('environments'), labels: batch('labels') };
+  });
+
+  readonly batchDone = computed(() => this.#batchUndo.value?.done);
 
   /** What the installation lacks to change a list's entries, which turns the list off. */
   readonly entryListMissingPermissions = computed((): Readonly<Record<EntryList, readonly string[]>> => {
@@ -657,6 +711,7 @@ export class ProfileEditor {
 
   /** Lays the unsaved changes over the profile as it is saved now. */
   async load(): Promise<void> {
+    this.#batchUndo.value = undefined;
     try {
       this.#saved.value = await this.#store.resolve(this.file);
       this.#entryEdits.setSaved(this.#saved.value);
@@ -670,6 +725,8 @@ export class ProfileEditor {
       this.patterns?.follow(undefined);
       this.loadError.value = reasonOf(error, this.file);
       return;
+    } finally {
+      this.#batchUndo.value = undefined;
     }
     await this.#previewEdits();
     this.#findAgain();
@@ -677,6 +734,7 @@ export class ProfileEditor {
 
   /** An undefined value stops setting it here, so a base profile's value applies. */
   async set(field: SettingField, value: unknown): Promise<void> {
+    this.#batchUndo.value = undefined;
     this.#forget(field);
     await this.#change(field, value);
   }
@@ -686,6 +744,7 @@ export class ProfileEditor {
    * value says why and holds the save back.
    */
   async type(field: SettingField, text: string): Promise<void> {
+    this.#batchUndo.value = undefined;
     const parsed = parse(field, text);
     const typed = new Map(this.#typed.value);
     typed.set(keyOf(field.path), { text, problem: 'problem' in parsed ? parsed.problem : undefined });
@@ -852,6 +911,7 @@ export class ProfileEditor {
   }
 
   async reset(field: SettingField): Promise<void> {
+    this.#batchUndo.value = undefined;
     const edits = new Map(this.#edits.value);
     edits.delete(keyOf(field.path));
     this.#forget(field);
@@ -884,9 +944,97 @@ export class ProfileEditor {
   }
 
   async resetAll(): Promise<void> {
+    this.#batchUndo.value = undefined;
     this.#edits.value = new Map();
     this.#entryEdits.resetAll();
     this.#typed.value = new Map();
+    this.saveError.value = undefined;
+    await this.#previewEdits();
+  }
+
+  /**
+   * Stops this profile naming each setting in the group that it names, those
+   * GitHub hides included, as Remove does on each. Like every change, it is
+   * unsaved until a save, and Undo takes it back.
+   */
+  async removeAllIn(group: SettingGroup): Promise<void> {
+    const named = this.#namedHere(group);
+    if (named.length === 0 || this.saving.value) {
+      return;
+    }
+    const hiddenByGitHub = named.filter((field) => this.#turnedOffOnGitHub(field)?.hidden === true).length;
+    this.#holdUndo({ scope: group, action: 'removed', count: named.length, hiddenByGitHub });
+    const edits = new Map(this.#edits.value);
+    const typed = new Map(this.#typed.value);
+    for (const field of named) {
+      typed.delete(keyOf(field.path));
+      this.#changeIn(edits, field, undefined);
+    }
+    await this.#replaceChanges(edits, typed);
+  }
+
+  /** Puts each setting in the group back as saved, as Reset does on each, those GitHub hides included. */
+  async resetAllIn(group: SettingGroup): Promise<void> {
+    const keys = new Set(this.#fieldsOwnerTypeHas(group).map((field) => keyOf(field.path)));
+    const count = [...keys].filter((key) => this.#edits.value.has(key) || this.#typed.value.has(key)).length;
+    if (count === 0 || this.saving.value) {
+      return;
+    }
+    this.#holdUndo({ scope: group, action: 'reset', count, hiddenByGitHub: 0 });
+    await this.#replaceChanges(
+      new Map([...this.#edits.value].filter(([key]) => !keys.has(key))),
+      new Map([...this.#typed.value].filter(([key]) => !keys.has(key))),
+    );
+  }
+
+  async resetAllEntriesIn(list: EntryList): Promise<void> {
+    const count = this.entryListBatches.value[list].unsaved;
+    if (count === 0 || this.saving.value) {
+      return;
+    }
+    this.#holdUndo({ scope: list, action: 'reset', count, hiddenByGitHub: 0 });
+    this.#entryEdits.resetAllIn(list);
+    await this.#previewChanges();
+  }
+
+  async takeOutAllIn(list: EntryList): Promise<void> {
+    const count = this.entryListBatches.value[list].canBeTakenOut;
+    if (count === 0 || this.saving.value) {
+      return;
+    }
+    this.#holdUndo({ scope: list, action: 'taken-out', count, hiddenByGitHub: 0 });
+    this.#entryEdits.takeOutAllIn(list);
+    await this.#previewChanges();
+  }
+
+  /** Brings back every unsaved change, typed text included, exactly as it was before the last Remove all, Reset all, or Take out all. */
+  async undoBatch(): Promise<void> {
+    const undo = this.#batchUndo.value;
+    if (undo === undefined || this.saving.value) {
+      return;
+    }
+    this.#batchUndo.value = undefined;
+    this.#entryEdits.restore(undo.entries);
+    await this.#replaceChanges(undo.edits, undo.typed);
+  }
+
+  /** Set before the change, so a change made while its preview runs clears it, as any other change does. */
+  #holdUndo(done: BatchDone): void {
+    this.#batchUndo.value = {
+      done,
+      edits: this.#edits.value,
+      typed: this.#typed.value,
+      entries: this.#entryEdits.snapshot(),
+    };
+  }
+
+  async #replaceChanges(edits: ReadonlyMap<string, SettingEdit>, typed: ReadonlyMap<string, TypedText>): Promise<void> {
+    this.#edits.value = edits;
+    this.#typed.value = typed;
+    await this.#previewChanges();
+  }
+
+  async #previewChanges(): Promise<void> {
     this.saveError.value = undefined;
     await this.#previewEdits();
   }
@@ -992,6 +1140,7 @@ export class ProfileEditor {
   ): Promise<void> {
     this.saving.value = true;
     this.saveError.value = undefined;
+    this.#batchUndo.value = undefined;
     this.closePreview();
     this.#settingEditsSaveIsWriting = writing;
     this.#entryEdits.begin();
@@ -1148,6 +1297,13 @@ export class ProfileEditor {
 
   async #change(field: SettingField, value: unknown): Promise<void> {
     const edits = new Map(this.#edits.value);
+    this.#changeIn(edits, field, value);
+    this.#edits.value = edits;
+    this.saveError.value = undefined;
+    await this.#previewEdits();
+  }
+
+  #changeIn(edits: Map<string, SettingEdit>, field: SettingField, value: unknown): void {
     const change = (target: SettingField, next: unknown): void => {
       const key = keyOf(target.path);
       // A change back to what the file has, or will have once a save under way ends, is no change.
@@ -1171,9 +1327,35 @@ export class ProfileEditor {
         }
       }
     }
-    this.#edits.value = edits;
-    this.saveError.value = undefined;
-    await this.#previewEdits();
+  }
+
+  /** The group's settings that owners of the profile's type have, those GitHub hides for a value above them included. */
+  #fieldsOwnerTypeHas(group: SettingGroup): readonly SettingField[] {
+    const owner = this.ownerType.value;
+    return group.fields.filter((field) => fits(owner, needOf(field.path)));
+  }
+
+  /** Those whose value comes from this profile's own file, its draft, or an unsaved change, and not from a base profile. */
+  #namedHere(group: SettingGroup): readonly SettingField[] {
+    return this.#fieldsOwnerTypeHas(group).filter((field) => {
+      const edit = this.#edits.value.get(keyOf(field.path));
+      const own = edit === undefined ? this.#valueRowStartsFrom(field) : edit.value;
+      return own !== undefined;
+    });
+  }
+
+  #batchOf(group: SettingGroup): GroupBatch {
+    if (this.#saved.value === undefined) {
+      return { namedHere: 0, namedHereThatGitHubHides: 0, unsaved: 0 };
+    }
+    const named = this.#namedHere(group);
+    return {
+      namedHere: named.length,
+      namedHereThatGitHubHides: named.filter((field) => this.#turnedOffOnGitHub(field)?.hidden === true).length,
+      unsaved: this.#fieldsOwnerTypeHas(group).filter(
+        (field) => this.#edits.value.has(keyOf(field.path)) || this.#typed.value.has(keyOf(field.path)),
+      ).length,
+    };
   }
 
   #forget(field: SettingField): void {
@@ -1206,8 +1388,8 @@ export class ProfileEditor {
   }
 
   async #entriesChanged(): Promise<void> {
-    this.saveError.value = undefined;
-    await this.#previewEdits();
+    this.#batchUndo.value = undefined;
+    await this.#previewChanges();
   }
 
   /** Every change, save, and fresh read comes through here: each previews what a save would give, and what follows from it. */
@@ -1254,7 +1436,10 @@ export class ProfileEditor {
   }
 
   /** The highest setting above `field` whose value hides it or greys it out on GitHub, a hiding one first. */
-  #turnedOffOnGitHub(field: SettingField, edits: ReadonlyMap<string, SettingEdit>): TurnedOffOnGitHub | undefined {
+  #turnedOffOnGitHub(
+    field: SettingField,
+    edits: ReadonlyMap<string, SettingEdit> = this.#edits.value,
+  ): TurnedOffOnGitHub | undefined {
     const condition = field.dependsOn;
     const above = fieldsOf(field.section).find((item) => item.key === condition?.otherSettingKeyInSameSection);
     if (condition === undefined || above === undefined) {
@@ -1279,16 +1464,14 @@ export class ProfileEditor {
     }
     const edits = this.#edits.value;
     const section = fieldsOf(group.fields[0]?.section ?? '');
-    const turnedOffOnGitHub = (field: SettingField): TurnedOffOnGitHub | undefined =>
-      this.#turnedOffOnGitHub(field, edits);
     const owner = this.ownerType.value;
     const installation = this.#installation.value;
     return (
       group.fields
         // What owners of the profile's type don't have is left out, settings and choices, so it is never part of a save.
-        .filter((field) => fits(owner, needOf(field.path)) && turnedOffOnGitHub(field)?.hidden !== true)
+        .filter((field) => fits(owner, needOf(field.path)) && this.#turnedOffOnGitHub(field)?.hidden !== true)
         .map((field) => {
-          const turnedOff = turnedOffOnGitHub(field);
+          const turnedOff = this.#turnedOffOnGitHub(field);
           const key = keyOf(field.path);
           const source = shown.sources[sectionOf(field)][field.key];
           const typed = this.#typed.value.get(key);
@@ -1314,11 +1497,11 @@ export class ProfileEditor {
             typedTextProblem: typed?.problem,
             hiddenWithTextThatCannotBeSaved: section.filter(
               (other) =>
-                turnedOffOnGitHub(other)?.field === field &&
+                this.#turnedOffOnGitHub(other)?.field === field &&
                 this.#typed.value.get(keyOf(other.path))?.problem !== undefined,
             ),
             hiddenNamed: section.filter((other) => {
-              const otherTurnedOff = turnedOffOnGitHub(other);
+              const otherTurnedOff = this.#turnedOffOnGitHub(other);
               return (
                 otherTurnedOff?.hidden === true &&
                 otherTurnedOff.field === field &&

@@ -379,7 +379,7 @@ describe('labels in profile files', () => {
   test('leave a label out of a staged apply by its name in any case', async () => {
     const profile = await write("labels: [{ name: Bug, color: 'd73a4a' }, { name: docs }]\n");
     const staged = path.join(directory, `staged-${randomUUID()}.yaml`);
-    await createStagedApply(staged, 'lunch/app', profile);
+    await createStagedApply(staged, 'lunch/app', [profile]);
 
     const { exclusions } = await planStagedApply(new FakeGitHub(), staged);
     expect(exclusions.map((exclusion) => exclusion.key)).toEqual(['labels/Bug', 'labels/docs']);
@@ -395,7 +395,7 @@ describe('labels in profile files', () => {
   test('refuse a draft label in a staged apply', async () => {
     const profile = await write('labels: [{ name: bug }]\n');
     const staged = path.join(directory, `staged-${randomUUID()}.yaml`);
-    await createStagedApply(staged, 'lunch/app', profile);
+    await createStagedApply(staged, 'lunch/app', [profile]);
 
     expect(
       await rejection(

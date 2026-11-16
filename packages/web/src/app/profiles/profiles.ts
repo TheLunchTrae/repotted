@@ -4,6 +4,7 @@ import {
   checkActionPatterns,
   declaredExtends,
   findActions,
+  findGitHubApp,
   type GitHub,
   listProfiles,
   type OwnerType,
@@ -21,6 +22,7 @@ import { isSignedOut } from '../account/account.js';
 import type { Preferences } from '../preferences/preferences.js';
 import { ActionPatternChecks } from '../profile-editor/action-pattern-checks.js';
 import { ActionSearch } from '../profile-editor/action-search.js';
+import { GitHubAppLookup } from '../profile-editor/bypass-actors.js';
 import type { SaveMode } from '../profile-editor/entry-edits.js';
 import { type OwnerChoice, ProfileEditor } from '../profile-editor/profile-editor.js';
 import { SerialQueue } from '../storage/serial-queue.js';
@@ -971,6 +973,7 @@ export class Profiles {
       editor = new ProfileEditor(listing.file, {
         patterns: new ActionPatternChecks((patterns) => this.#asking(checkActionPatterns(this.#github, patterns))),
         search: new ActionSearch((words) => this.#asking(findActions(this.#github, words))),
+        appLookup: new GitHubAppLookup((slug) => this.#asking(findGitHubApp(this.#github, slug))),
       });
       this.#editors.value = [...this.#editors.value, editor];
       await editor.load();

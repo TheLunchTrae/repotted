@@ -6,6 +6,8 @@ export {
 } from './profiles/action-patterns.js';
 export { createGitHub, GitHubError, parseRepo } from './github/client.js';
 export type { GitHub } from './github/client.js';
+export { findGitHubApp, gitHubAppSlug } from './github/apps.js';
+export type { FoundGitHubApp } from './github/apps.js';
 export {
   applyPlan,
   ApplyError,
@@ -47,6 +49,8 @@ export { currentUser, listRepositories, readAccess, readInstallationSettingsUrl 
 export type { InstallationMissingPermissions } from './github/repositories.js';
 export { listBranches, readBranchChanges } from './profiles/branch-changes.js';
 export type { BranchChanges, BranchProfileChange } from './profiles/branch-changes.js';
+export { configCommitMessage } from './profiles/commit-messages.js';
+export type { ConfigChange } from './profiles/commit-messages.js';
 export { syncFolder } from './profiles/sync.js';
 export {
   createStagedApply,

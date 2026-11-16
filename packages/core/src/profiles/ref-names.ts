@@ -39,6 +39,12 @@ function refNameProblem(name: string, noun: 'branch name' | 'pattern'): string |
 
 /** Undefined for an empty name, which a field's own rule answers. */
 export function branchNameProblem(name: string): string | undefined {
+  if (name.startsWith('-')) {
+    return "A branch name can't start with a dash.";
+  }
+  if (name === 'HEAD') {
+    return "A branch name can't be HEAD.";
+  }
   return name === '' ? undefined : refNameProblem(name, 'branch name');
 }
 

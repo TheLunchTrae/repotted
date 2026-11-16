@@ -126,9 +126,11 @@ When your profiles are kept in a GitHub repository, the owners and
 repositories you hid, and your folders, are kept there too, in
 `.repotted-preferences.json` beside the profiles, so they follow you to any
 browser you sign in on. Each change is committed straight to the repository,
-and **Refresh** picks up changes made in another browser. When your profiles
-are kept in this browser or a folder on this computer, this browser remembers
-them instead. Choices made in one place don't move to the other. Which
+with a message that says what changed, such as `Hide repository: octo/app`
+or `Move repositories to folder Work: octo/app, octo/api`, and **Refresh**
+picks up changes made in another browser. When your profiles are kept in
+this browser or a folder on this computer, this browser remembers them
+instead. Choices made in one place don't move to the other. Which
 folders are closed, the sort order and the filters are always remembered by
 this browser alone, so changing them commits nothing.
 
@@ -232,6 +234,37 @@ An apply you leave before it finishes is kept in this browser, with the
 edits that could be saved. The repository's panel says **An apply here is
 not finished** with **Resume**. Starting another apply there offers to pick
 the unfinished one up or start over.
+
+### Keep a repository's profiles
+
+A repository can keep a list of the profiles it uses, applied in order, with
+later profiles overriding earlier ones. Each one shows as a short tag on the
+repository's row. With more than three, or two on a phone, the row says how
+many, such as **5 profiles**, and lists them when you hover over it; on a
+phone, tap the repository to see them in its panel.
+
+When you apply a profile the repository doesn't use, the review has a
+selected box to add it to the repository's profiles when it applies.
+Deselect it for a one-time apply, which leaves no record on the repository.
+An apply that leaves a change out, has one-off edits, or skips a setting
+GitHub refused to show doesn't count as
+applying the profiles, so the repository still shows them as not applied or
+changed.
+
+The repository's panel lists its profiles under **Profiles**. Click
+**Edit** to reorder them, remove one or add one, then **Save**. Saving
+changes only the list: nothing is applied until you review an apply. Click
+**Review apply** to apply them all together, in their order.
+
+Repotted remembers which version of each profile was last applied. When a
+profile changes, or one is added, removed or moved, the row says
+**Profile changed** and the panel says what changed, with **Review apply**.
+When a review finds nothing to write, click **Record as applied** to mark the
+current versions as applied. A profile that was deleted or can't be read
+shows as **Missing profile**; remove it or put it back before applying.
+
+The list is kept with your hidden repositories and folders, so it follows
+your profiles to their GitHub repository.
 
 ### Apply a profile to several repositories
 
@@ -407,6 +440,18 @@ each setting says which profile it comes from, and setting it here overrides
 the base profile. To stop setting a value in this profile, click **Remove**
 beside it; if a base profile sets it, the base's value applies again.
 
+Each group of settings, such as **Code scanning**, has **Reset all** beside
+its heading while any of its settings has a change you haven't saved, and
+**Remove all** while the profile itself sets any of them. Each says how many
+settings it changes. **Remove all** also counts the settings GitHub hides
+for the value of one above them, which have no **Remove** of their own;
+settings a base profile sets aren't counted. Neither saves anything, and
+**Undo** under the heading brings back exactly what was there, until you
+change anything else, save, reset, or the profile is read again after a
+sync. On a phone the actions sit under the
+group's heading. They don't show among the settings **Find a setting**
+finds.
+
 Options that GitHub only offers with a certain value of the setting above
 them follow that setting, and so do the options under them. Where GitHub
 hides them, the tab does too, and the setting that hides them says how many
@@ -476,18 +521,51 @@ and so does a sync that finds the profile deleted or renamed on GitHub.
 names, with **New ruleset**, **New environment**, or **New label**. Click
 one to open it. Its form changes only what you edit, so anything it doesn't
 show, such as the merge methods a pull request rule allows or a rule the form
-has no box for, stays as the profile's file has it. Bypass actors and
-required reviewers can be kept as the file has them or cleared. **Leave it to GitHub** clears a choice, so each
+has no box for, stays as the profile's file has it. Required reviewers can
+be kept as the file has them or cleared. **Leave it to GitHub** clears a choice, so each
 repository keeps its own. Choose **Manage it**, or **Remove it from the
 repository** to delete it from each repository that follows the profile.
 Removing keeps what the entry had, in case you choose **Manage it** again
 before saving. **Take out of profile** stops the profile from managing it at
 all; **Put it back** in the list undoes that before you save.
 
+Beside **New ruleset**, **New environment**, or **New label**, **Reset all**
+puts every entry in the list with a change you haven't saved back as it was,
+and **Take out all** takes out every entry the profile names, along with
+new ones; one from a base profile stays. As with a group of settings, each
+says how many it changes, and **Undo** brings the list back as it was.
+
+A ruleset's **Bypass list** says who can skip its rules. Until you choose
+**Manage the bypass list**, each repository keeps its own. Once it is
+managed, each repository has exactly the listed ones, and an empty list means
+nobody bypasses. **Add bypass** adds the **Repository admin**, **Maintain**,
+or **Write** role, **Deploy keys**, or a **GitHub App** by the name in its
+address, such as `dependabot` for `github.com/apps/dependabot`, or by its ID.
+A profile for organizations also offers **Organization admin**, and a team
+or a custom role by its ID. Each one bypasses **Always**, on **Pull requests
+only**, or is **Exempt**, which skips the rules without asking. Pull requests
+only works in a branch ruleset and not for deploy keys, and a profile that
+sets it there can't be saved until you choose another mode. Select several
+to set their mode or remove them together, or choose **Remove all**.
+**Leave it to GitHub** stops managing the list.
+
 A ruleset with no rule selected leaves each repository's rules as they are.
 Once any rule is selected, the ruleset has exactly the selected rules, and
 applying removes every other rule it has on a repository; the form says
 which holds. **Leave its rules to GitHub** goes back to leaving them alone.
+
+A ruleset's **Include** and **Exclude** are options you can select together.
+**Include** offers **Default branch** (each repository's own default),
+**All branches** (or **All tags** in a tag ruleset), and **Branches by
+pattern** (or **Tags by pattern**), which shows a box for the patterns, one a
+line. **Exclude** offers **Default branch** and the patterns. A pattern
+starts with `refs/heads/` for a branch or `refs/tags/` for a tag, as in
+`refs/heads/release/*`. When GitHub would refuse a pattern or it would match
+nothing, the form says why, and the ruleset can't be saved until you correct
+it. Deselecting the pattern option clears its patterns. A push ruleset has no
+branch or tag targets, so its form shows none. An option the ruleset doesn't
+offer, such as the default branch in a tag ruleset, still shows while the
+ruleset names it, so you can deselect it.
 
 An environment that deploys from **Chosen branches and tags** takes
 **Branch patterns** and **Tag patterns**, one a line.

@@ -10,6 +10,8 @@ describe('a branch name', () => {
   });
 
   test.each([
+    ['-main', "A branch name can't start with a dash."],
+    ['HEAD', "A branch name can't be HEAD."],
     ['main dev', "A branch name can't have spaces."],
     ['release..1', "A branch name can't have two dots in a row."],
     ['a@{1}', "A branch name can't be @ or have @{ in it."],

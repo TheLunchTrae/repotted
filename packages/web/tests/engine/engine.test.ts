@@ -52,7 +52,7 @@ test('stages an apply over a profile, plans it and refuses to stage over a file 
   await writeFile('/profiles/base.yaml', 'repository: { has_wiki: false }\n');
   const github = new FakeGitHub({ repository: { has_wiki: true, has_issues: true } });
 
-  await createStagedApply('/staged/app.yaml', 'lunch/app', '/profiles/base.yaml');
+  await createStagedApply('/staged/app.yaml', 'lunch/app', ['/profiles/base.yaml']);
   await editStagedApply('/staged/app.yaml', [{ path: ['repository', 'has_issues'], value: false }]);
   const { plan } = await planStagedApply(github, '/staged/app.yaml');
 
@@ -60,7 +60,7 @@ test('stages an apply over a profile, plans it and refuses to stage over a file 
     'has_issues',
     'has_wiki',
   ]);
-  await expect(createStagedApply('/staged/app.yaml', 'lunch/app', '/profiles/base.yaml')).rejects.toMatchObject({
+  await expect(createStagedApply('/staged/app.yaml', 'lunch/app', ['/profiles/base.yaml'])).rejects.toMatchObject({
     cause: { code: 'EEXIST' },
   });
 });
@@ -73,7 +73,7 @@ test('plans and applies a batch, then leaves no file or folder of it behind', as
     new FakeGitHub({ repository: { has_wiki: true } }, 'lunch/site'),
   ]);
 
-  await createBatch('/batch', { profile: '/profiles/base.yaml', repositories: ['lunch/app', 'lunch/site'] });
+  await createBatch('/batch', { profiles: ['/profiles/base.yaml'], repositories: ['lunch/app', 'lunch/site'] });
   expect(await names('/batch')).toEqual(['batch.yaml', 'lunch']);
   const plan = await planBatch(fleet, '/batch');
   const results = await applyBatch(fleet, parseBatchPlan(JSON.parse(JSON.stringify(plan))));
@@ -82,7 +82,7 @@ test('plans and applies a batch, then leaves no file or folder of it behind', as
   // Each applied member's staged apply goes, then its owner's folder, then the batch itself.
   await expect(readdir('/batch', { withFileTypes: true })).rejects.toMatchObject({ code: 'ENOENT' });
 
-  await createBatch('/batch', { profile: '/profiles/base.yaml', repositories: ['lunch/app'] });
+  await createBatch('/batch', { profiles: ['/profiles/base.yaml'], repositories: ['lunch/app'] });
   await discardBatch('/batch');
   await expect(readdir('/batch', { withFileTypes: true })).rejects.toMatchObject({ code: 'ENOENT' });
 });

@@ -204,8 +204,8 @@ rather than the value. While profiles are kept in a config repository, it
 keeps them in `.repotted-preferences.json` beside the profiles and commits
 each change there through the contents API; otherwise it passes them to the
 browser's `Preferences`. The file is a JSON object keyed by preference key,
-such as `hidden-repositories`, `hidden-repository-owners` and
-`repository-folders`, with keys in order so a commit changes only the values
+such as `hidden-repositories`, `hidden-repository-owners`,
+`repository-folders`, `repository-profiles` and `profile-tags`, with keys in order so a commit changes only the values
 that did. It is a hidden file, so a profile sync and the profile list leave
 it alone. Another list setting that should follow the user takes its own key
 in the same file, and changes it through `update`, as folders do. A choice
@@ -213,6 +213,15 @@ that changes often and matters to one browser, such as which folders are
 closed (`closed-repository-folders`), the list's sort order
 (`repository-sort-order`) and its filters (`repository-filters`), goes
 straight to the browser's `Preferences` instead, so it never makes a commit.
+Each commit's message comes from comparing the file as read with the file
+about to be written, in `src/app/preferences/preference-changes.ts`, which
+owns the shared keys and how their values are read. A folder gone and one
+made that share repositories, or are the only ones and the old one was
+empty, count as a rename, so
+changes saved together still read as what was done. A change it has no line
+for, such as a list put in another order or a key it doesn't know, is named
+as `Update preference: <label or key>`, so a new shared key adds its wording
+there.
 Each of those keys is removed when its choice is back at the default, so a
 browser that never changed it keeps nothing. Sorting and filtering live in
 `src/app/repositories/sort-and-filters.ts`; `Repositories` applies them to

@@ -8,6 +8,7 @@ import { sameValue } from '../../app/profile-editor/same-value.js';
 import { BarActions } from '../layout/action-bar.js';
 import { run } from '../layout/run.js';
 import { ActionSearchBox } from './action-search.js';
+import { BatchActions, describeSettingsDone } from './batch-actions.js';
 import { describeValue } from './describe-value.js';
 import { Entries, type EntryGoTo } from './entries.js';
 import { MissingPermissionsNote } from './missing-permissions-note.js';
@@ -506,11 +507,37 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
                   settingsUrl={settingsUrl}
                 />
               )}
-              {shown.groups.map(({ group, rows, missingPermissions }) => (
+              {shown.groups.map(({ group, rows, missingPermissions, batch }) => (
                 <section key={group.title} class="settings-group" aria-label={group.title}>
-                  <div>
-                    <h2>{group.title}</h2>
-                    <p class="muted small">{group.description}</p>
+                  <div class="group-head">
+                    <div>
+                      <h2>{group.title}</h2>
+                      <p class="muted small">{group.description}</p>
+                    </div>
+                    <BatchActions
+                      editor={editor}
+                      scope={group}
+                      name={group.title}
+                      describeDone={describeSettingsDone}
+                      actions={[
+                        {
+                          label: 'Reset all',
+                          count: batch.unsaved,
+                          counted: batch.unsaved === 1 ? 'setting' : 'settings',
+                          act: () => editor.resetAllIn(group),
+                        },
+                        {
+                          label: 'Remove all',
+                          count: batch.namedHere,
+                          counted:
+                            (batch.namedHere === 1 ? 'setting' : 'settings') +
+                            (batch.namedHereThatGitHubHides > 0
+                              ? `, ${batch.namedHereThatGitHubHides} hidden by GitHub,`
+                              : ''),
+                          act: () => editor.removeAllIn(group),
+                        },
+                      ]}
+                    />
                   </div>
                   {missingPermissions.length > 0 && (
                     <MissingPermissionsNote permissions={missingPermissions} settingsUrl={settingsUrl} />

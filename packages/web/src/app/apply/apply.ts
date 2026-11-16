@@ -18,6 +18,7 @@ import {
   readAccess,
   resolveStagedApply,
   saveStagedEdits,
+  type StagedApply,
   StalePlanError,
 } from '@repotted/core';
 
@@ -26,7 +27,40 @@ import { basename, dirname } from '../../engine/path.js';
 import { isSignedOut } from '../account/account.js';
 import { type EditorStore, ProfileEditor } from '../profile-editor/profile-editor.js';
 import { builtInFolder } from '../profiles/config-protection.js';
+import { type AppliedVersion, profileName, profileVersion } from '../repositories/repository-profiles.js';
 import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
+
+/** What applying does to the profiles the repository uses. */
+export type AssignmentOffer =
+  | { readonly kind: 'none' }
+  /**
+   * The apply is of the repository's own profiles, in its order. It records the
+   * versions applied only when it gives what they set: nothing left out, no
+   * one-off edit, and no setting GitHub refused to show.
+   */
+  | { readonly kind: 'own'; readonly recordsVersions: boolean }
+  /** The apply is of one profile the repository doesn't use, which it can add to the end of its list. */
+  | { readonly kind: 'add'; readonly profileName: string; readonly recordsVersions: boolean };
+
+export interface ProfileAssignments {
+  profilesOf(repository: string): readonly string[];
+  /** Undefined for a profile kept outside the profiles folder. */
+  pathOf(file: string): string | undefined;
+  recordApplied(repository: string, applied: readonly AppliedVersion[]): void;
+  recordAdded(repository: string, profilePath: string, version: string | undefined): void;
+}
+
+function hasOneOffEdits(staged: StagedApply): boolean {
+  const { drafts: _drafts, ...settled } = staged.sources;
+  return Object.values(settled).some((setBy) => Object.values(setBy).includes(staged.file));
+}
+
+const noAssignments: ProfileAssignments = {
+  profilesOf: () => [],
+  pathOf: () => undefined,
+  recordApplied: () => undefined,
+  recordAdded: () => undefined,
+};
 
 export interface Reviewed {
   /** Travels with the review, so no other plan can be applied in its place. */
@@ -41,6 +75,9 @@ export interface Reviewed {
   /** Why the last try to apply wrote nothing, or stopped partway, with what this review then shows. */
   readonly notice: string | undefined;
   readonly fromProfile: boolean;
+  readonly assignment: AssignmentOffer;
+  /** Of the profiles reviewed, each by its path in the profiles folder. */
+  readonly appliedVersions: readonly AppliedVersion[];
 }
 
 interface Target {
@@ -90,12 +127,16 @@ function cleaned(message: string, repository: string): string {
     .replaceAll(`${builtInFolder}/`, '');
 }
 
-function profileNameOfApply(base: string | null): string {
-  return base === null ? '' : basename(base).replace(/\.ya?ml$/u, '');
+function profileNameOfApply(profiles: readonly string[]): string {
+  return profiles.map((profile) => basename(profile).replace(/\.ya?ml$/u, '')).join(', ');
 }
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isSameList(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
 /**
@@ -108,15 +149,18 @@ export class Apply {
   readonly state = signal<ApplyState>({ kind: 'idle' });
   readonly editor = signal<ProfileEditor | undefined>(undefined);
   readonly editError = signal<string | undefined>(undefined);
+  /** For an apply of a profile the repository doesn't use: whether applying adds it to the repository's profiles. */
+  readonly addToRepositoryProfiles = signal(true);
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
   #lastAppAccessRead: { readonly repository: string; readonly app: AppAccess } | undefined;
-  #profile: ComparedProfile | undefined;
+  #profiles: readonly ComparedProfile[] = [];
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
 
   readonly #writeProfile: (work: () => Promise<void>) => Promise<void>;
+  readonly #assignments: ProfileAssignments;
 
   /**
    * `writeProfile` gives a write to a profile's file its turn among the
@@ -126,10 +170,12 @@ export class Apply {
     github: GitHub,
     onSignedOut: () => void,
     writeProfile: (work: () => Promise<void>) => Promise<void> = (work) => work(),
+    assignments: ProfileAssignments = noAssignments,
   ) {
     this.#github = github;
     this.#onSignedOut = onSignedOut;
     this.#writeProfile = writeProfile;
+    this.#assignments = assignments;
   }
 
   readonly counts = computed(() => {
@@ -147,6 +193,16 @@ export class Apply {
     () => this.state.value.kind === 'reviewed' && this.counts.value.changes > 0 && this.counts.value.locked === 0,
   );
 
+  readonly canRecordWithoutChanges = computed(() => {
+    const state = this.state.value;
+    return (
+      state.kind === 'reviewed' &&
+      this.counts.value.changes === 0 &&
+      ((state.assignment.kind === 'own' && state.assignment.recordsVersions) ||
+        (state.assignment.kind === 'add' && state.assignment.recordsVersions && this.addToRepositoryProfiles.value))
+    );
+  });
+
   async unfinished(repository: string): Promise<boolean> {
     return stat(stagedFile(repository)).then(
       () => true,
@@ -155,8 +211,13 @@ export class Apply {
   }
 
   async start(repository: string, profile: ComparedProfile): Promise<void> {
+    await this.startFromProfiles(repository, [profile]);
+  }
+
+  /** The profiles apply in order, later ones overriding earlier ones. */
+  async startFromProfiles(repository: string, profiles: readonly ComparedProfile[]): Promise<void> {
     // An apply that is writing is neither replaced nor joined: its page shows it until it ends.
-    if (this.#writing()) {
+    if (this.#writing() || profiles.length === 0) {
       return;
     }
     this.#lastAppAccessRead = undefined;
@@ -165,15 +226,21 @@ export class Apply {
     if (this.#writing()) {
       return;
     }
-    this.#profile = profile;
+    this.#profiles = profiles;
+    this.addToRepositoryProfiles.value = true;
+    const name = profiles.map((profile) => profile.name).join(', ');
     if (unfinished) {
       this.#turn += 1;
-      this.state.value = { kind: 'unfinished', repository, profileName: profile.name };
+      this.state.value = { kind: 'unfinished', repository, profileName: name };
       return;
     }
-    await this.#work(repository, profile.name, 'reviewing', async () => {
+    await this.#work(repository, name, 'reviewing', async () => {
       await mkdir(dirname(stagedFile(repository)), { recursive: true });
-      await createStagedApply(stagedFile(repository), repository, profile.file);
+      await createStagedApply(
+        stagedFile(repository),
+        repository,
+        profiles.map((profile) => profile.file),
+      );
       return this.#edit(repository);
     });
   }
@@ -191,10 +258,11 @@ export class Apply {
     if (unfinished) {
       return;
     }
-    this.#profile = undefined;
+    this.#profiles = [];
+    this.addToRepositoryProfiles.value = true;
     await this.#work(repository, '', 'reviewing', async () => {
       await mkdir(dirname(stagedFile(repository)), { recursive: true });
-      await createStagedApply(stagedFile(repository), repository, undefined);
+      await createStagedApply(stagedFile(repository), repository, []);
       return this.#edit(repository);
     });
   }
@@ -282,9 +350,9 @@ export class Apply {
     return {
       kind: 'editing',
       repository,
-      profileName: profileNameOfApply(staged.base),
-      fromProfile: staged.base !== null,
-      builtIn: staged.base?.startsWith(`${builtInFolder}/`) === true,
+      profileName: profileNameOfApply(staged.profiles),
+      fromProfile: staged.profiles.length > 0,
+      builtIn: staged.profiles.some((profile) => profile.startsWith(`${builtInFolder}/`)),
       leftOut: staged.exclude,
     };
   }
@@ -314,7 +382,8 @@ export class Apply {
     if (this.state.value.kind === 'applying') {
       return;
     }
-    this.#profile = undefined;
+    this.#profiles = [];
+    this.addToRepositoryProfiles.value = true;
     await this.#work(repository, '', 'reviewing', () => this.#edit(repository));
   }
 
@@ -328,10 +397,10 @@ export class Apply {
 
   async startOver(): Promise<void> {
     const state = this.state.value;
-    const profile = this.#profile;
-    if (state.kind === 'unfinished' && profile !== undefined) {
+    const profiles = this.#profiles;
+    if (state.kind === 'unfinished' && profiles.length > 0) {
       await forget(state.repository);
-      await this.start(state.repository, profile);
+      await this.startFromProfiles(state.repository, profiles);
     }
   }
 
@@ -358,10 +427,10 @@ export class Apply {
 
   async reviewAgain(): Promise<void> {
     const state = this.state.value;
-    const profile = this.#profile;
-    if (state.kind === 'failed' && profile !== undefined && !(await this.unfinished(state.repository))) {
+    const profiles = this.#profiles;
+    if (state.kind === 'failed' && profiles.length > 0 && !(await this.unfinished(state.repository))) {
       // The apply never began, as when its profile couldn't be read, so it starts now.
-      await this.start(state.repository, profile);
+      await this.startFromProfiles(state.repository, profiles);
     } else if (state.kind === 'reviewed' || state.kind === 'failed') {
       await this.#work(state.repository, state.profileName, 'reviewing', () =>
         this.#review(state.repository, undefined),
@@ -388,6 +457,7 @@ export class Apply {
     await this.#work(state.repository, state.profileName, 'applying', async () => {
       try {
         const written = await applyPlan(this.#github, plan);
+        this.#recordAssignment(state);
         await forget(state.repository);
         return {
           kind: 'applied',
@@ -414,6 +484,63 @@ export class Apply {
         throw error;
       }
     });
+  }
+
+  async recordWithoutChanges(): Promise<void> {
+    const state = this.state.value;
+    if (state.kind !== 'reviewed' || !this.canRecordWithoutChanges.value) {
+      return;
+    }
+    this.#recordAssignment(state);
+    await this.#work(state.repository, state.profileName, 'applying', async () => {
+      await forget(state.repository);
+      return { kind: 'applied', repository: state.repository, profileName: state.profileName, changes: 0 };
+    });
+  }
+
+  #recordAssignment(state: Reviewed & { readonly repository: string }): void {
+    const [added] = state.appliedVersions;
+    if (state.assignment.kind === 'own' && state.assignment.recordsVersions) {
+      this.#assignments.recordApplied(state.repository, state.appliedVersions);
+    } else if (state.assignment.kind === 'add' && this.addToRepositoryProfiles.peek() && added !== undefined) {
+      this.#assignments.recordAdded(
+        state.repository,
+        added.profile,
+        state.assignment.recordsVersions ? added.version : undefined,
+      );
+    }
+  }
+
+  async #assignmentOf(
+    repository: string,
+    staged: StagedApply,
+    plan: Plan,
+  ): Promise<{ assignment: AssignmentOffer; appliedVersions: readonly AppliedVersion[] }> {
+    const files = staged.profiles;
+    // A read GitHub refused, as for a missing permission, compared nothing there, and granting it can change the plan.
+    const recordsVersions =
+      staged.exclude.length === 0 &&
+      !hasOneOffEdits(staged) &&
+      !plan.warnings.some((warning) => warning.cause === 'refused');
+    const paths = files.map((file) => this.#assignments.pathOf(file));
+    const inFolder = paths.filter((path) => path !== undefined);
+    if (inFolder.length === 0 || inFolder.length !== paths.length) {
+      return { assignment: { kind: 'none' }, appliedVersions: [] };
+    }
+    const own = this.#assignments.profilesOf(repository);
+    const [only] = inFolder;
+    const assignment: AssignmentOffer = isSameList(inFolder, own)
+      ? { kind: 'own', recordsVersions }
+      : inFolder.length === 1 && only !== undefined && !own.includes(only)
+        ? { kind: 'add', profileName: profileName(only), recordsVersions }
+        : { kind: 'none' };
+    if (assignment.kind === 'none') {
+      return { assignment, appliedVersions: [] };
+    }
+    const appliedVersions = await Promise.all(
+      files.map(async (file, index) => ({ profile: inFolder[index] ?? file, version: await profileVersion(file) })),
+    );
+    return { assignment, appliedVersions };
   }
 
   async discard(): Promise<void> {
@@ -457,16 +584,19 @@ export class Apply {
       this.#lastAppAccessRead = { repository, app: access.app };
     }
     // An apply picked up goes by the profile it started from, which may not be the one picked now.
-    const profile = profileNameOfApply(staged.staged.base);
+    const profile = profileNameOfApply(staged.staged.profiles);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));
+    const { assignment, appliedVersions } = await this.#assignmentOf(repository, staged.staged, staged.plan);
     return {
+      assignment,
+      appliedVersions,
       kind: 'reviewed',
       repository,
       profileName: profile,
       plan: staged.plan,
       lockedChangeCount: locks.size,
       sections: compareSections(staged.plan, locks, staged.exclusions),
-      fromProfile: staged.staged.base !== null,
+      fromProfile: staged.staged.profiles.length > 0,
       leftOut: staged.staged.exclude,
       skippedDrafts: staged.plan.skipped.map(describeSkipped),
       warnings: staged.plan.warnings.map(describeWarning),
