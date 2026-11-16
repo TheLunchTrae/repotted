@@ -831,11 +831,14 @@ async function stageBatch(
     ) {
       throw new UsageError('--discard removes the batch, so it takes no other option but --repo.');
     }
-    await discardBatch(folder);
+    const warnings = await discardBatch(folder);
     if (options.json) {
-      json(io, { discarded: path.resolve(folder) });
+      json(io, { discarded: path.resolve(folder), warnings });
     } else {
       io.err(`Removed the batch in ${folder}. Staged applies that joined it stay.\n`);
+      for (const { repository, message } of warnings) {
+        io.err(`warning: ${repository}: ${message}\n`);
+      }
     }
     return 0;
   }

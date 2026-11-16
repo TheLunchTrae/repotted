@@ -397,7 +397,11 @@ edit is never discarded. Apply also reads the manifest before each member, so
 a member left out or taken out after the review, or a batch that ended or
 started again, is not applied. A member with no changes is planned again too,
 so it ends only when the repository still matches. Discarding checks that each
-listed file is its member's staged apply before it removes any.
+listed file is its member's staged apply before it removes any. A file that
+fails that check stays where it is and is returned as a warning; the rest
+are discarded and the manifest is removed, so a damaged member file cannot
+keep the batch alive. Joined files stay without a check or warning. Taking
+one member out still refuses a file it cannot verify.
 
 The manifest lists the profiles new members start from. A member can instead
 start from profiles of its own, which the manifest records with it, so one

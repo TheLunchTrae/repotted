@@ -516,20 +516,42 @@ export async function discardBatchMember(folder: string, repository: string): Pr
   return { file: member.file, kept: member.joined, batch: left.members.length === 0 ? null : left };
 }
 
-/**
- * Every file is checked before any is removed, so a batch whose manifest lists
- * another file stays whole.
- */
-export async function discardBatch(folder: string): Promise<void> {
+interface DiscardWarning {
+  readonly repository: string;
+  readonly file: string;
+  readonly message: string;
+}
+
+/** Files that cannot be verified stay where they are, without keeping the batch alive. */
+export async function discardBatch(folder: string): Promise<readonly DiscardWarning[]> {
   const batch = await readBatch(folder);
   const files: string[] = [];
+  const keptFiles = new Set<string>();
+  const warnings: DiscardWarning[] = [];
   for (const member of batch.members) {
-    if (!member.joined && (await isMemberFile(member))) {
-      files.push(member.file);
+    if (member.joined) {
+      keptFiles.add(member.file);
+      continue;
+    }
+    try {
+      if (await isMemberFile(member)) {
+        files.push(member.file);
+      }
+    } catch (error) {
+      if (!(error instanceof ProfileError)) {
+        throw error;
+      }
+      keptFiles.add(member.file);
+      warnings.push({ repository: member.repository, file: member.file, message: error.message });
     }
   }
-  await removeFiles(batch.folder, files);
+  // A manifest can list a file more than once; any reason to keep it wins.
+  await removeFiles(
+    batch.folder,
+    files.filter((file) => !keptFiles.has(file)),
+  );
   await endBatch(batch);
+  return warnings;
 }
 
 export interface MemberError {
