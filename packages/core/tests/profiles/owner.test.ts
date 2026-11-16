@@ -403,7 +403,7 @@ describe('planning a typed profile', () => {
 
   test('keeps the type of the profile a staged apply starts from', async () => {
     const base = await write('staged-base.yaml', 'owner_type: organization\nrepository: { has_wiki: false }\n');
-    const staged = await createStagedApply(path.join(directory, 'staged.yaml'), 'lunch/app', base);
+    const staged = await createStagedApply(path.join(directory, 'staged.yaml'), 'lunch/app', [base]);
     const github = new FakeGitHub({ ownerType: 'User' });
 
     expect(staged.profile.owner_type).toBe('organization');
