@@ -48,8 +48,12 @@ block saving to apply while remaining available as drafts. Inactive settings
 are handled by [setting dependencies](#setting-dependencies).
 
 `packages/core/src/profiles/profile.ts` loads a profile and the chain of profiles it
-`extends`, merges them, and only then validates the result. Validating after
-the merge lets a base profile rely on what the profiles that extend it add.
+`extends`, merges them, and validates the result. Validating after the merge
+lets a base profile rely on what the profiles that extend it add.
+`parseLayer` checks duplicate entry names and autolink prefixes in each file
+before merging, separately for entries that apply and drafts. It uses the
+same case-insensitive keys for environments and labels as the merge, so
+replacement cannot hide a duplicate, and the error names the file at fault.
 Settings merge key by key, and so do the keys inside an object of settings,
 such as `selected_actions`. `flattenSettings` gives each setting its path, as
 `has_wiki` or `selected_actions.verified_allowed`, and `unflattenSettings`
@@ -397,7 +401,11 @@ edit is never discarded. Apply also reads the manifest before each member, so
 a member left out or taken out after the review, or a batch that ended or
 started again, is not applied. A member with no changes is planned again too,
 so it ends only when the repository still matches. Discarding checks that each
-listed file is its member's staged apply before it removes any.
+listed file is its member's staged apply before it removes any. A file that
+fails that check stays where it is and is returned as a warning; the rest
+are discarded and the manifest is removed, so a damaged member file cannot
+keep the batch alive. Joined files stay without a check or warning. Taking
+one member out still refuses a file it cannot verify.
 
 The manifest lists the profiles new members start from. A member can instead
 start from profiles of its own, which the manifest records with it, so one

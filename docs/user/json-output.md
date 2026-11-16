@@ -138,8 +138,11 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   as above; with `--repo` and `--discard`,
   `{ repository, file, kept, batch }`, where `kept` is true for a staged
   apply that joined the batch, which stays, and `batch` is the batch as it is now, or
-  null when it ended; and with `--discard` alone, `{ discarded }`, the
-  folder's path.
+  null when it ended; and with `--discard` alone, `{ discarded, warnings }`,
+  where `discarded` is the folder's path and `warnings` lists
+  `{ repository, file, message }` for each file Repotted can't verify as its
+  member's staged apply. Those files stay where they are, and the batch
+  ends. A staged apply that joined the batch stays without a warning.
 - `profiles` prints `{ profiles }`, each as `{ name, folder, file, extends, problem, owner_type }`,
   for the `.yaml` and `.yml` files in the folder and its subfolders: a folder's
   own profiles by file name, then each subfolder's, by name. Subfolders whose

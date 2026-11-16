@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { afterAll, describe, expect, test } from 'vitest';
-import { parse } from 'yaml';
+import { parse, stringify } from 'yaml';
 
 import { type GitHub, GitHubError } from '../../src/github/client.js';
 import {
@@ -165,7 +165,7 @@ describe('starting a batch', () => {
       members: [{ file: '../staged/lunch/web.yaml', joined: true }, { file: '../staged/lunch/app.yaml' }],
     });
 
-    await discardBatch(folder);
+    expect(await discardBatch(folder)).toEqual([]);
     expect(await exists(existing)).toBe(true);
     expect(await exists(path.join(root, 'staged', 'lunch', 'app.yaml'))).toBe(false);
     expect(await exists(folder)).toBe(false);
@@ -292,16 +292,99 @@ describe('starting a batch', () => {
     expect(await exists(existing)).toBe(true);
   });
 
-  test('removes no file that is not the staged apply the manifest says', async () => {
+  test.each([
+    'not: [a staged apply',
+    'apply_to: lunch/web\nrepository: { has_wiki: broken }\n',
+    'repository: { has_wiki: false }\n',
+    'apply_to: lunch/other\n',
+  ])('ends a batch while keeping and reporting an unverified member file: %s', async (damaged) => {
+    const { profile, folder } = await freshFolderWithProfile();
+    await createBatch(folder, { repositories: ['lunch/app', 'lunch/web', 'lunch/api'], profiles: [profile] });
+    const app = await batchMemberFile(folder, 'lunch/app');
+    const web = await batchMemberFile(folder, 'lunch/web');
+    const api = await batchMemberFile(folder, 'lunch/api');
+    await writeFile(web, damaged);
+    await leaveOut(folder, ['lunch/web'], true);
+    // Discard checks the staged file itself, without needing its profile to resolve.
+    await rm(profile);
+
+    expect(await discardBatch(folder)).toEqual([
+      { repository: 'lunch/web', file: web, message: expect.stringContaining('leaves it as it is') as unknown },
+    ]);
+    expect(await readFile(web, 'utf8')).toBe(damaged);
+    expect(await exists(app)).toBe(false);
+    expect(await exists(api)).toBe(false);
+    expect(await exists(path.join(folder, batchManifest))).toBe(false);
+
+    // A kept file does not keep the batch alive or prevent a fresh batch of other repositories.
+    await createBatch(folder, { repositories: ['lunch/app'] });
+    expect((await readBatch(folder)).members.map((member) => member.repository)).toEqual(['lunch/app']);
+    await expect(
+      createBatch(path.join(folder, 'other'), { repositories: ['lunch/web'], stagedFolder: folder }),
+    ).rejects.toThrow(/already has a staged apply/u);
+    expect(await readFile(web, 'utf8')).toBe(damaged);
+  });
+
+  test('ends a batch whose manifest points at an unrelated file, without deleting that file', async () => {
+    const { profile, folder } = await freshFolderWithProfile();
+    await createBatch(folder, { repositories: ['lunch/app'] });
+    const manifest = path.join(folder, batchManifest);
+    const text = await readFile(manifest, 'utf8');
+    await writeFile(manifest, text.replace('lunch/app.yaml', '../profile.yaml'));
+
+    expect(await discardBatch(folder)).toEqual([
+      { repository: 'lunch/app', file: profile, message: expect.stringContaining('leaves it as it is') as unknown },
+    ]);
+    expect(await readFile(profile, 'utf8')).toBe(profileText);
+    expect(await exists(manifest)).toBe(false);
+  });
+
+  test('ends a batch with a missing member file without reporting a file kept', async () => {
+    const { folder } = await freshFolderWithProfile();
+    await createBatch(folder, { repositories: ['lunch/app'] });
+    await rm(await batchMemberFile(folder, 'lunch/app'));
+
+    expect(await discardBatch(folder)).toEqual([]);
+    expect(await exists(path.join(folder, batchManifest))).toBe(false);
+  });
+
+  test.each([false, true])(
+    'keeps a file also listed by another member that must keep it (joined: %s)',
+    async (joined) => {
+      const { folder } = await freshFolderWithProfile();
+      const batch = await createBatch(folder, { repositories: ['lunch/app'] });
+      const file = await batchMemberFile(folder, 'lunch/app');
+      const original = await readFile(file, 'utf8');
+      const manifest = path.join(folder, batchManifest);
+      await writeFile(
+        manifest,
+        stringify({
+          id: batch.id,
+          members: [
+            { repository: 'lunch/app', file: 'lunch/app.yaml' },
+            { repository: 'lunch/web', file: 'lunch/app.yaml', joined },
+          ],
+        }),
+      );
+
+      expect(await discardBatch(folder)).toEqual(
+        joined
+          ? []
+          : [{ repository: 'lunch/web', file, message: expect.stringContaining('leaves it as it is') as unknown }],
+      );
+      expect(await readFile(file, 'utf8')).toBe(original);
+      expect(await exists(manifest)).toBe(false);
+    },
+  );
+
+  test('taking a member out refuses a file that is not the staged apply the manifest says', async () => {
     const { profile, folder } = await freshFolderWithProfile();
     await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profiles: [profile] });
     const app = await batchMemberFile(folder, 'lunch/app');
     const web = await batchMemberFile(folder, 'lunch/web');
     await writeFile(web, 'apply_to: lunch/other\n');
 
-    await expect(discardBatch(folder)).rejects.toThrow(/applies to lunch\/other, not lunch\/web/u);
     await expect(discardBatchMember(folder, 'lunch/web')).rejects.toThrow(/leaves it as it is/u);
-    // Every file is checked before any goes, so the batch stays whole.
     expect(await exists(app)).toBe(true);
     expect(await exists(web)).toBe(true);
     expect((await readBatch(folder)).members).toHaveLength(2);

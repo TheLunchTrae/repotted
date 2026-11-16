@@ -370,6 +370,26 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
   // Checked in each file, since a merge pairs entries by name and would keep only the last of two.
   const problems = [
     ...duplicateKeys(
+      ownAutolinks,
+      (entry) => `Autolink "${entry.key_prefix}"`,
+      (entry) => entry.key_prefix,
+    ),
+    ...duplicateKeys(
+      ownRulesets,
+      (entry) => `Ruleset "${entry.name}"`,
+      (entry) => entry.name,
+    ),
+    ...duplicateKeys(
+      ownEnvironments,
+      (entry) => `Environment "${entry.name}"`,
+      (entry) => environmentKey(entry.name),
+    ),
+    ...duplicateKeys(
+      ownLabels,
+      (entry) => `Label "${entry.name}"`,
+      (entry) => labelKey(entry.name),
+    ),
+    ...duplicateKeys(
       draftAutolinks,
       (entry) => `Draft autolink "${entry.key_prefix}"`,
       (entry) => entry.key_prefix,

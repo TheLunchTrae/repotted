@@ -473,7 +473,47 @@ describe('batch', () => {
     );
 
     const discarded = await cliWith(github, {}, 'stage', folder, '--discard', '--json');
-    expect(document(discarded)).toEqual({ discarded: folder });
+    expect(document(discarded)).toEqual({ discarded: folder, warnings: [] });
+  });
+
+  test.each([false, true])('discards a damaged batch and reports the file kept (json: %s)', async (json) => {
+    const { profile, folder } = await batchPlace();
+    const github = new FakeGitHub();
+    const started = await cli(
+      github,
+      'stage',
+      folder,
+      '--batch',
+      '--new',
+      'lunch/app',
+      '--new',
+      'lunch/web',
+      '--profile',
+      profile,
+    );
+    expect(started.code).toBe(0);
+    const file = path.join(folder, 'lunch', 'web.yaml');
+    const damaged = 'apply_to: lunch/other\n';
+    await writeFile(file, damaged);
+
+    const discarded = await cli(github, 'stage', folder, '--discard', ...(json ? ['--json'] : []));
+
+    expect(discarded.code).toBe(0);
+    const message = `${file} applies to lunch/other, not lunch/web, so Repotted leaves it as it is`;
+    if (json) {
+      expect(document(discarded)).toEqual({
+        discarded: folder,
+        warnings: [{ repository: 'lunch/web', file, message }],
+      });
+      expect(discarded.err).toBe('');
+    } else {
+      expect(discarded.err).toContain(`Removed the batch in ${folder}.`);
+      expect(discarded.err).toContain(`warning: lunch/web: ${message}\n`);
+    }
+    expect(await readFile(file, 'utf8')).toBe(damaged);
+    await expect(stat(path.join(folder, 'batch.yaml'))).rejects.toHaveProperty('code', 'ENOENT');
+    await expect(stat(path.join(folder, 'lunch', 'app.yaml'))).rejects.toHaveProperty('code', 'ENOENT');
+    expect(github.writes).toEqual([]);
   });
 
   test('applies only the repositories named, stops after a failure when asked, and takes one out', async () => {
