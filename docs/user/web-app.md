@@ -506,6 +506,19 @@ Once any rule is selected, the ruleset has exactly the selected rules, and
 applying removes every other rule it has on a repository; the form says
 which holds. **Leave its rules to GitHub** goes back to leaving them alone.
 
+A ruleset's **Include** and **Exclude** are options you can select together.
+**Include** offers **Default branch** (each repository's own default),
+**All branches** (or **All tags** in a tag ruleset), and **Branches by
+pattern** (or **Tags by pattern**), which shows a box for the patterns, one a
+line. **Exclude** offers **Default branch** and the patterns. A pattern
+starts with `refs/heads/` for a branch or `refs/tags/` for a tag, as in
+`refs/heads/release/*`. When GitHub would refuse a pattern or it would match
+nothing, the form says why, and the ruleset can't be saved until you correct
+it. Deselecting the pattern option clears its patterns. A push ruleset has no
+branch or tag targets, so its form shows none. An option the ruleset doesn't
+offer, such as the default branch in a tag ruleset, still shows while the
+ruleset names it, so you can deselect it.
+
 An environment that deploys from **Chosen branches and tags** takes
 **Branch patterns** and **Tag patterns**, one a line.
 
