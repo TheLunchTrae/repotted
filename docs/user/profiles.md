@@ -304,6 +304,11 @@ what it sets itself:
 Repotted checks a profile after it merges it with its bases, so a base may
 leave out something that each profile extending it adds.
 
+Within each file, ruleset, environment, and label names and autolink prefixes
+must be unique among entries that apply, and separately among drafts.
+Environment and label names match without regard to case. Repotted refuses
+duplicates before merging and reports the file that contains them.
+
 [`examples/base.yaml`](../../examples/base.yaml) is a base profile, and
 [`examples/repotted.yaml`](../../examples/repotted.yaml) extends it.
 
