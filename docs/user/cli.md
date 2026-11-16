@@ -191,7 +191,10 @@ changes it:
   repository whose own one-off edits set that value keeps its staged apply as
   it is, and `stage` names it and exits 1.
 - `--discard` ends the batch. It discards the staged applies the batch
-  started; one that joined stays as it was.
+  started; one that joined stays as it was. A file Repotted can't verify as
+  that repository's staged apply stays where it is, with a warning naming
+  it, and the batch still ends. Inspect or move that file before starting a
+  staged apply at the same path.
 
 `plan --staged <folder>` plans every repository of the batch that isn't left
 out, a few at a time. A repository that can't be planned, such as one the
