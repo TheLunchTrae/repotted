@@ -65,7 +65,7 @@ const savedManifest = z
     /**
      * One profile, or null for none, which reads as a list of one, or of
      * none, and is saved as `profiles`. Published versions of the CLI write
-     * it, and the web app keeps batches in the browser, so both are read.
+     * it, so both are read.
      */
     profile: z.string().min(1).nullable().optional(),
     members: z.array(savedMember),

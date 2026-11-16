@@ -346,15 +346,18 @@ the comparison's names for settings and values. `keepFiles` keeps nothing under
 one request for the repository, one for the branch, one comparison, and one
 for each changed profile.
 
-`apply.ts` applies a profile to a repository through the engine's staged
-apply, a file the browser keeps, so that leaving changes out and picking an
-apply up later are the engine's own. It reviews with `planStagedApply` and
-writes with `applyPlan`, which plans again and refuses when the repository
-has changed.
-Its first step is the profile editor over the staged apply's file: an
-`EditorStore` gives `ProfileEditor` the functions that read, preview, and
-write its file, the engine's profile functions for a profile and its staged
-apply functions for an apply.
+`apply.ts` applies a profile through the engine's staged apply, in temporary
+files under `/apply/<id>/apply.yaml`. Its first step is the profile editor
+over that file, followed by the review. An `EditorStore` gives
+`ProfileEditor` the engine functions that read, preview, and write a profile
+or a staged apply. It reviews with `planStagedApply` and writes with
+`applyPlan`, which plans again and refuses when the repository has changed.
+
+Pending applies belong to their pages, in the client's in-memory filesystem.
+Leaving discards their files and edits; a write already under way finishes. Each start has its own folder, so
+cleanup and late work from an apply left behind cannot remove or replace a
+later one. A late file creation is cleaned up when its work settles. Drafts
+belong to profiles and never form an apply state.
 
 `config-protection.ts` holds the built-in protection for a config
 repository, as profile YAML by what owns the repository, and checks the
@@ -365,9 +368,9 @@ for organizations, is another entry there.
 [State machines](state-machines.md#web-config-repository-protection) lists
 the states.
 
-`batch-apply.ts` does the same for several repositories through the engine's
-batch, whose members are the staged applies of single applies, so one can
-join the other.
+`batch-apply.ts` reviews several repositories through the engine's batch in
+`/apply/<id>/batch`. Each member starts from the selected profile, and the
+batch has the same page-scoped lifetime as a single apply.
 
 `action-pattern-checks.ts` asks GitHub what each allowed action pattern
 matches, with the engine's `checkActionPatterns`, and keeps the answers by
@@ -386,13 +389,13 @@ for settings and one for entries turn how a row ends into the engine's
 edits for each kind of save, so a preview, a save, and a save as a draft
 agree on what a row means.
 
-`keepFiles` (`src/app/storage/kept-files.ts`) keeps the in-memory files across
+`keepFiles` (`src/app/storage/kept-files.ts`) keeps files under `/profiles` across
 visits: it loads what IndexedDB holds into memory before the app draws, then
 writes each change there in order, by the file's path. So a working copy,
 with saves that haven't reached GitHub, is there on the next visit. The
-engine's temporary files and a branch preview's files are not kept. In a
-browser that gives the site no storage, the files last for the visit, and
-Settings says so.
+engine's temporary files, pending applies and batches, and branch previews
+are not kept or restored. In a browser that gives the site no storage, the
+files last for the visit, and Settings says so.
 
 What is kept must be the files as they were at one moment, or a later sync
 can take a profile the browser lost for one the user deleted. So one tab

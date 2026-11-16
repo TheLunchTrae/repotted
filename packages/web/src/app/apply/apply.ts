@@ -7,7 +7,6 @@ import {
   describeFailure,
   describeSkipped,
   describeWarning,
-  discardStagedApply,
   editStagedApply,
   type GitHub,
   lockChanges,
@@ -103,26 +102,15 @@ export type ApplyState =
       /** What this apply leaves out, which can't be edited here until it is put back. */
       readonly leftOut: readonly string[];
     } & Target)
-  | ({ readonly kind: 'unfinished' } & Target)
   | ({ readonly kind: 'reviewing' | 'applying' } & Target)
   | ({ readonly kind: 'failed'; readonly message: string } & Target)
   | ({ readonly kind: 'reviewed' } & Target & Reviewed)
   | ({ readonly kind: 'applied'; readonly changes: number } & Target);
 
-function stagedFile(repository: string): string {
-  const repo = parseRepo(repository);
-  return `/staged/${repo.owner.toLowerCase()}/${repo.name.toLowerCase()}.yaml`;
-}
-
-/** However the file reads. */
-async function forget(repository: string): Promise<void> {
-  await discardStagedApply(stagedFile(repository)).catch(() => rm(stagedFile(repository), { force: true }));
-}
-
 /** A message with its files by their names, not by where the browser keeps them. */
-function cleaned(message: string, repository: string): string {
+function cleaned(message: string, file: string): string {
   return message
-    .replaceAll(stagedFile(repository), 'this apply')
+    .replaceAll(file, 'this apply')
     .replaceAll(/\/profiles\/(?:browser\/|github\/[^/]+\/[^/]+\/@[^/]+\/)?/gu, '')
     .replaceAll(`${builtInFolder}/`, '');
 }
@@ -140,8 +128,8 @@ function isSameList(left: readonly string[], right: readonly string[]): boolean 
 }
 
 /**
- * It is kept as the engine's staged apply, a file in the browser, so an
- * apply left unfinished is there to pick up. Nothing is written to GitHub
+ * The engine's staged apply holds this page's one-off edits and exclusions
+ * in temporary files. Leaving the page discards them. Nothing is written to GitHub
  * except by `apply`, which writes exactly the plan last reviewed, and nothing
  * when the repository has changed since.
  */
@@ -156,6 +144,7 @@ export class Apply {
   readonly #onSignedOut: () => void;
   #lastAppAccessRead: { readonly repository: string; readonly app: AppAccess } | undefined;
   #profiles: readonly ComparedProfile[] = [];
+  #file: string | undefined;
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
 
@@ -203,67 +192,45 @@ export class Apply {
     );
   });
 
-  async unfinished(repository: string): Promise<boolean> {
-    return stat(stagedFile(repository)).then(
-      () => true,
-      () => false,
-    );
-  }
-
   async start(repository: string, profile: ComparedProfile): Promise<void> {
     await this.startFromProfiles(repository, [profile]);
   }
 
   /** The profiles apply in order, later ones overriding earlier ones. */
   async startFromProfiles(repository: string, profiles: readonly ComparedProfile[]): Promise<void> {
-    // An apply that is writing is neither replaced nor joined: its page shows it until it ends.
     if (this.#writing() || profiles.length === 0) {
       return;
     }
-    this.#lastAppAccessRead = undefined;
-    const unfinished = await this.unfinished(repository);
-    // Looked at again, since an apply may have begun to write while the browser's files were read.
-    if (this.#writing()) {
-      return;
-    }
-    this.#profiles = profiles;
-    this.addToRepositoryProfiles.value = true;
-    const name = profiles.map((profile) => profile.name).join(', ');
-    if (unfinished) {
-      this.#turn += 1;
-      this.state.value = { kind: 'unfinished', repository, profileName: name };
-      return;
-    }
-    await this.#work(repository, name, 'reviewing', async () => {
-      await mkdir(dirname(stagedFile(repository)), { recursive: true });
-      await createStagedApply(
-        stagedFile(repository),
-        repository,
-        profiles.map((profile) => profile.file),
-      );
-      return this.#edit(repository);
-    });
+    await this.#start(repository, profiles);
   }
 
   async startWithoutProfile(repository: string): Promise<void> {
-    if (this.#writing()) {
-      return;
+    if (!this.#writing()) {
+      await this.#start(repository, []);
     }
-    this.#lastAppAccessRead = undefined;
-    const unfinished = await this.unfinished(repository);
-    if (this.#writing()) {
-      return;
-    }
-    // One apply a repository at a time: an unfinished one is resumed or discarded first, from its panel.
-    if (unfinished) {
-      return;
-    }
-    this.#profiles = [];
+  }
+
+  async #start(repository: string, profiles: readonly ComparedProfile[]): Promise<void> {
+    const closing = this.close();
+    this.#profiles = profiles;
+    const file = `/apply/${crypto.randomUUID()}/apply.yaml`;
+    this.#file = file;
     this.addToRepositoryProfiles.value = true;
-    await this.#work(repository, '', 'reviewing', async () => {
-      await mkdir(dirname(stagedFile(repository)), { recursive: true });
-      await createStagedApply(stagedFile(repository), repository, []);
-      return this.#edit(repository);
+    const name = profiles.map((profile) => profile.name).join(', ');
+    await this.#work(repository, name, 'reviewing', async (current) => {
+      await closing;
+      await mkdir(dirname(file), { recursive: true });
+      try {
+        await createStagedApply(
+          file,
+          repository,
+          profiles.map((profile) => profile.file),
+        );
+      } catch (error) {
+        await rm(dirname(file), { recursive: true, force: true });
+        throw error;
+      }
+      return this.#edit(repository, file, current);
     });
   }
 
@@ -278,26 +245,28 @@ export class Apply {
     if (state.kind !== 'editing' || !(await this.#saveEdits()) || this.state.value !== state) {
       return;
     }
-    await this.#work(state.repository, state.profileName, 'reviewing', () => this.#review(state.repository, undefined));
+    await this.#work(state.repository, state.profileName, 'reviewing', (_current, file) =>
+      this.#review(state.repository, file, undefined),
+    );
   }
 
   async backToEdits(): Promise<void> {
     const state = this.state.value;
-    if (
-      (state.kind === 'reviewed' || (state.kind === 'failed' && (await this.unfinished(state.repository)))) &&
-      // The page may have moved on while the browser's files were read.
-      this.state.value === state
-    ) {
-      await this.#work(state.repository, state.profileName, 'reviewing', () => this.#edit(state.repository));
+    if (state.kind === 'reviewed' || state.kind === 'failed') {
+      await this.#work(state.repository, state.profileName, 'reviewing', (current, file) =>
+        this.#edit(state.repository, file, current),
+      );
     }
   }
 
   /** Edits that aren't saved are saved to the apply first, so the profile gets what the editor shows. */
   async saveToProfile(): Promise<void> {
     const state = this.state.value;
+    const file = this.#file;
     this.editError.value = undefined;
     if (
       state.kind !== 'editing' ||
+      file === undefined ||
       !state.fromProfile ||
       state.builtIn ||
       !(await this.#saveEdits()) ||
@@ -308,12 +277,14 @@ export class Apply {
     try {
       // The profile is written in its turn among the profiles' syncs, which commit it when profiles are kept on GitHub.
       await this.#writeProfile(async () => {
-        await saveStagedEdits(stagedFile(state.repository));
+        if (this.state.value === state) {
+          await saveStagedEdits(file);
+        }
       });
     } catch (error) {
       // Said only on the edits it is about: the apply may have been left or discarded while the turn ran.
       if (this.state.value === state) {
-        this.editError.value = cleaned(messageOf(error), state.repository);
+        this.editError.value = cleaned(messageOf(error), file);
       }
     }
     if (this.state.value === state) {
@@ -335,10 +306,13 @@ export class Apply {
     return !editor.dirty.peek() && editor.saveError.peek() === undefined;
   }
 
-  async #edit(repository: string): Promise<ApplyState> {
-    const staged = await resolveStagedApply(stagedFile(repository));
-    const editor = new ProfileEditor(stagedFile(repository), undefined, stagedStore);
+  async #edit(repository: string, file: string, current: () => boolean): Promise<ApplyState> {
+    const staged = await resolveStagedApply(file);
+    const editor = new ProfileEditor(file, undefined, stagedStore);
     await editor.load();
+    if (!current()) {
+      return { kind: 'idle' };
+    }
     this.editor.value = editor;
     const known = this.#lastAppAccessRead;
     if (known?.repository === repository) {
@@ -377,65 +351,49 @@ export class Apply {
     );
   }
 
-  /** Picks up the unfinished apply to a repository from its panel, with no profile picked. */
-  async pickUp(repository: string): Promise<void> {
-    if (this.state.value.kind === 'applying') {
-      return;
-    }
-    this.#profiles = [];
-    this.addToRepositoryProfiles.value = true;
-    await this.#work(repository, '', 'reviewing', () => this.#edit(repository));
-  }
-
-  /** Picks up the unfinished apply to the repository as it was left, whatever profile it started from. */
-  async resume(): Promise<void> {
-    const state = this.state.value;
-    if (state.kind === 'unfinished') {
-      await this.#work(state.repository, state.profileName, 'reviewing', () => this.#edit(state.repository));
-    }
-  }
-
-  async startOver(): Promise<void> {
-    const state = this.state.value;
-    const profiles = this.#profiles;
-    if (state.kind === 'unfinished' && profiles.length > 0) {
-      await forget(state.repository);
-      await this.startFromProfiles(state.repository, profiles);
-    }
-  }
-
   /** The profile keeps the change either way. */
   async leaveOut(key: string, out: boolean): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'editing' && !out) {
       // Put back from the edits, where what is left out can't be edited: the edits stay open, with the value back.
       if ((await this.#saveEdits()) && this.state.value === state) {
-        await this.#work(state.repository, state.profileName, 'reviewing', async () => {
-          await editStagedApply(stagedFile(state.repository), [{ exclude: key, excluded: false }]);
-          return this.#edit(state.repository);
+        await this.#work(state.repository, state.profileName, 'reviewing', async (current, file) => {
+          await editStagedApply(file, [{ exclude: key, excluded: false }]);
+          return this.#edit(state.repository, file, current);
         });
       }
       return;
     }
     if (state.kind === 'reviewed') {
-      await this.#work(state.repository, state.profileName, 'reviewing', async () => {
-        await editStagedApply(stagedFile(state.repository), [{ exclude: key, excluded: out }]);
-        return this.#review(state.repository, undefined);
+      await this.#work(state.repository, state.profileName, 'reviewing', async (_current, file) => {
+        await editStagedApply(file, [{ exclude: key, excluded: out }]);
+        return this.#review(state.repository, file, undefined);
       });
     }
   }
 
   async reviewAgain(): Promise<void> {
     const state = this.state.value;
-    const profiles = this.#profiles;
-    if (state.kind === 'failed' && profiles.length > 0 && !(await this.unfinished(state.repository))) {
-      // The apply never began, as when its profile couldn't be read, so it starts now.
-      await this.startFromProfiles(state.repository, profiles);
-    } else if (state.kind === 'reviewed' || state.kind === 'failed') {
-      await this.#work(state.repository, state.profileName, 'reviewing', () =>
-        this.#review(state.repository, undefined),
-      );
+    const file = this.#file;
+    if ((state.kind !== 'reviewed' && state.kind !== 'failed') || file === undefined) {
+      return;
     }
+    if (state.kind === 'failed') {
+      const exists = await stat(file).then(
+        () => true,
+        () => false,
+      );
+      if (this.state.value !== state) {
+        return;
+      }
+      if (!exists) {
+        await this.#start(state.repository, this.#profiles);
+        return;
+      }
+    }
+    await this.#work(state.repository, state.profileName, 'reviewing', (_current, currentFile) =>
+      this.#review(state.repository, currentFile, undefined),
+    );
   }
 
   /**
@@ -454,11 +412,11 @@ export class Apply {
     if (plan.repository.toLowerCase() !== state.repository.toLowerCase()) {
       return;
     }
-    await this.#work(state.repository, state.profileName, 'applying', async () => {
+    await this.#work(state.repository, state.profileName, 'applying', async (_current, file) => {
       try {
         const written = await applyPlan(this.#github, plan);
         this.#recordAssignment(state);
-        await forget(state.repository);
+        await rm(dirname(file), { recursive: true, force: true });
         return {
           kind: 'applied',
           repository: state.repository,
@@ -469,13 +427,14 @@ export class Apply {
         if (error instanceof StalePlanError) {
           return this.#review(
             state.repository,
+            file,
             `${state.repository} changed since you reviewed this apply, so nothing was written. This is what it needs now.`,
           );
         }
         if (error instanceof ApplyError) {
           const partly = `${describeFailure(error)} ${error.applied.length === 1 ? 'The 1 change before it stays' : `The ${error.applied.length} changes before it stay`} written, and nothing after it was.`;
           try {
-            return await this.#review(state.repository, `${partly} This is what is left.`);
+            return await this.#review(state.repository, file, `${partly} This is what is left.`);
           } catch (again) {
             // What was written is said even when what is left can't be read.
             throw new Error(`${partly} What is left couldn't be read: ${messageOf(again)}`, { cause: again });
@@ -492,8 +451,8 @@ export class Apply {
       return;
     }
     this.#recordAssignment(state);
-    await this.#work(state.repository, state.profileName, 'applying', async () => {
-      await forget(state.repository);
+    await this.#work(state.repository, state.profileName, 'applying', async (_current, file) => {
+      await rm(dirname(file), { recursive: true, force: true });
       return { kind: 'applied', repository: state.repository, profileName: state.profileName, changes: 0 };
     });
   }
@@ -543,30 +502,20 @@ export class Apply {
     return { assignment, appliedVersions };
   }
 
-  async discard(): Promise<void> {
-    const state = this.state.value;
-    if (state.kind === 'idle' || state.kind === 'applying') {
+  /** Leaving discards the pending apply, but a write already under way finishes. */
+  async close(): Promise<void> {
+    if (this.#writing()) {
       return;
     }
     this.#turn += 1;
-    this.#lastAppAccessRead = undefined;
-    await forget(state.repository);
+    const file = this.#file;
+    this.#file = undefined;
     this.editor.value = undefined;
+    this.editError.value = undefined;
+    this.#lastAppAccessRead = undefined;
     this.state.value = { kind: 'idle' };
-  }
-
-  /** The apply itself is kept, to pick up from its repository. */
-  close(): void {
-    if (this.state.value.kind !== 'applying') {
-      this.#turn += 1;
-      // Edits that can be saved go into the apply, never the profile, so leaving the page doesn't lose them.
-      const editor = this.editor.value;
-      if (this.state.value.kind === 'editing' && editor?.canSave.value === true) {
-        editor.save((work) => work()).catch(() => undefined);
-      }
-      this.editor.value = undefined;
-      this.#lastAppAccessRead = undefined;
-      this.state.value = { kind: 'idle' };
+    if (file !== undefined) {
+      await rm(dirname(file), { recursive: true, force: true });
     }
   }
 
@@ -574,16 +523,15 @@ export class Apply {
     return this.state.value.kind === 'applying';
   }
 
-  async #review(repository: string, notice: string | undefined): Promise<ApplyState> {
+  async #review(repository: string, file: string, notice: string | undefined): Promise<ApplyState> {
     const turn = this.#turn;
     const [staged, access] = await Promise.all([
-      planStagedApply(this.#github, stagedFile(repository)),
+      planStagedApply(this.#github, file),
       readAccess(this.#github, parseRepo(repository)),
     ]);
-    if (turn === this.#turn) {
+    if (turn === this.#turn && file === this.#file) {
       this.#lastAppAccessRead = { repository, app: access.app };
     }
-    // An apply picked up goes by the profile it started from, which may not be the one picked now.
     const profile = profileNameOfApply(staged.staged.profiles);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));
     const { assignment, appliedVersions } = await this.#assignmentOf(repository, staged.staged, staged.plan);
@@ -615,12 +563,16 @@ export class Apply {
     repository: string,
     profile: string,
     kind: 'reviewing' | 'applying',
-    work: (current: () => boolean) => Promise<ApplyState>,
+    work: (current: () => boolean, file: string) => Promise<ApplyState>,
   ): Promise<void> {
+    const file = this.#file;
+    if (file === undefined) {
+      return;
+    }
     const turn = (this.#turn += 1);
     this.state.value = { kind, repository, profileName: profile };
     try {
-      const next = await work(() => turn === this.#turn);
+      const next = await work(() => turn === this.#turn, file);
       if (turn === this.#turn) {
         this.state.value = next;
       }
@@ -629,13 +581,16 @@ export class Apply {
         this.#onSignedOut();
       }
       if (turn === this.#turn) {
-        const gone = messageOf(error).includes(stagedFile(repository)) && !(await this.unfinished(repository));
-        const message = gone
-          ? 'This apply is no longer in this browser. Start it again from its repository.'
-          : cleaned(messageOf(error), repository);
-        if (turn === this.#turn) {
-          this.state.value = { kind: 'failed', repository, profileName: profile, message };
-        }
+        this.state.value = {
+          kind: 'failed',
+          repository,
+          profileName: profile,
+          message: cleaned(messageOf(error), file),
+        };
+      }
+    } finally {
+      if (file !== this.#file) {
+        await rm(dirname(file), { recursive: true, force: true });
       }
     }
   }

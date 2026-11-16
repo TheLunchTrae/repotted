@@ -186,9 +186,8 @@ The first step shows the one-off edits, in the same editor as a profile.
 They apply on top of the profile for this apply only, and can't be drafts.
 From there you can:
 
-- Click **Review changes** to go on. Edits you haven't saved are saved to the
-  apply first, never to the profile, so the review shows what the edits say.
-  It waits while an edit isn't valid.
+- Click **Review changes** to review the current one-off edits without
+  changing the profile. It waits while an edit isn't valid.
 - Click **Save edits to profile** to write the one-off edits into the
   profile, which then sets them itself. An apply of the
   [built-in protection](#protect-the-config-repository) has no profile to
@@ -230,10 +229,10 @@ written, and the page shows what the apply needs now. If GitHub refuses a
 change partway, the changes before it stay written and nothing after it is,
 and the page shows what is left.
 
-An apply you leave before it finishes is kept in this browser, with the
-edits that could be saved. The repository's panel says **An apply here is
-not finished** with **Resume**. Starting another apply there offers to pick
-the unfinished one up or start over.
+An in-progress apply lasts only while this flow is open. Leaving the page
+or reloading discards its one-off edits and exclusions; starting again
+opens a fresh apply. Profile changes you explicitly saved to the profile
+stay saved. Writes already under way finish even if you leave the page.
 
 ### Keep a repository's profiles
 
@@ -274,26 +273,20 @@ until you confirm.
 
 To start one, select the repositories on the **Repositories** page, pick a
 profile in the panel, and click **Review apply**. The selection stays while you
-search, so you can find repositories one search at a time. A repository that
-already has an apply in progress joins the batch as it is, one-off edits and
-all. When that apply starts from another profile, or from none, the batch
-page says so on that repository. One batch is in progress at a time: while a
-batch is unfinished, **Review apply** waits until you resume it and apply or
-discard it.
+search, so you can find repositories one search at a time. Each repository
+starts from the selected profile.
 
 The page starts with **All repositories**, which lists each change that can
 be left out with how many repositories it reaches. **Leave out
 everywhere** leaves a change out of every repository's apply; the profile
-keeps it, and **Put back everywhere** undoes it. A repository whose one-off
-edits set that change keeps them, and the page says which.
+keeps it, and **Put back everywhere** undoes it.
 
 Under it, each repository shows its status: how many changes, **Already in
 line**, **Needs access** for a change GitHub would refuse, or **Couldn't
 compare** with why, and then its changes, each with **Leave out**. Deselect
 **In this batch** to leave a repository out; its apply stays, and selecting it
 puts it back. **Remove from batch**, on a repository that is left out or
-couldn't be compared, takes it out for good: an apply the batch started for
-it is discarded, and one that joined the batch stays.
+couldn't be compared, takes it and its pending apply out of the batch.
 
 Click **Apply to N repositories** and then **Apply now** to write them, one
 repository at a time. Repotted checks each on GitHub first, and writes
@@ -302,13 +295,9 @@ change GitHub would refuse waits, as do those you left out.
 
 Then the page lists the repositories that didn't finish first, with why, and
 **Review again** plans them again. Those that finished, or needed nothing,
-have left the batch, and the batch ends with the last of them. A batch you
-leave before it finishes is kept in this browser: the **Repositories** page
-says **A batch apply is not finished** with **Resume**. **Discard batch**
-throws it away; an apply that joined it stays, to resume on its own.
-
-To change one repository's one-off edits, open its own apply from the
-**Repositories** page.
+have left the batch, and the batch ends with the last of them. Leaving the
+page, reloading, or clicking **Discard batch** discards the pending batch.
+Changes already being written to GitHub finish even if you leave the page.
 
 ## Profiles
 

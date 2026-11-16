@@ -142,12 +142,12 @@ function SignedIn({
     if (path !== '/compare') {
       comparison.close();
     }
-    // An apply left before it is finished is kept, to pick up from its repository.
+    // Pending applies belong to their pages; a write already under way finishes.
     if (path !== '/apply') {
-      apply.close();
+      run(apply.close());
     }
     if (path !== '/batch') {
-      batch.close();
+      run(batch.close());
     }
   }, [path, comparison, apply, batch]);
   useEffect(() => {
@@ -162,9 +162,7 @@ function SignedIn({
   const [leaving, setLeaving] = useState(false);
   const [signOutBlockedWhileApplyWrites, setSignOutBlockedWhileApplyWrites] = useState(false);
   const leave = (): void => {
-    // An apply's edits that can be saved are, as when its page is left.
-    apply.close();
-    run(account.signOut());
+    run(Promise.all([apply.close(), batch.close()]).then(() => account.signOut()));
   };
   const writing = apply.state.value.kind === 'applying' || batch.state.value.kind === 'applying';
   // Signing out drops what the profiles' editors hold, so unsaved changes are asked about first,
@@ -218,27 +216,19 @@ function SignedIn({
             setRepositoryToCapture(repository);
             router.go('/profiles/new');
           }}
-          batch={batch}
           onBatch={(names, profile) => {
             run(
-              (profile === undefined ? batch.resume() : batch.start(names, profile)).then(() => {
+              batch.start(names, profile).then(() => {
                 // The selection has done its work once a batch started from it holds the repositories.
-                if (profile !== undefined && batch.state.value.kind === 'reviewed') {
+                if (batch.state.value.kind === 'reviewed') {
                   repositories.deselectAll();
                 }
               }),
             );
             router.go('/batch');
           }}
-          apply={apply}
           onApply={(repository, profile) => {
-            run(
-              profile === undefined
-                ? apply.pickUp(repository)
-                : profile === 'once'
-                  ? apply.startWithoutProfile(repository)
-                  : apply.start(repository, profile),
-            );
+            run(profile === 'once' ? apply.startWithoutProfile(repository) : apply.start(repository, profile));
             router.go('/apply');
           }}
           onApplyProfiles={(repository, assigned) => {

@@ -116,6 +116,27 @@ const screens: Readonly<Record<string, Screen>> = {
         .click(),
     visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Move teams/website down' }),
   },
+  'apply edits': {
+    path: '/?repository=lunch/api',
+    reachFromPath: (page) => page.getByRole('button', { name: 'Apply', exact: true }).click(),
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Review changes', exact: true }),
+  },
+  'apply review': {
+    path: '/?repository=lunch/api',
+    reachFromPath: async (page) => {
+      await page.getByRole('button', { name: 'Apply', exact: true }).click();
+      await page.getByRole('button', { name: 'Review changes', exact: true }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Leave out Wiki, repository.has_wiki', exact: true }),
+  },
+  'batch apply review': {
+    path: '/',
+    reachFromPath: async (page) => {
+      await page.getByRole('checkbox', { name: 'Select lunch/api' }).check();
+      await page.getByRole('button', { name: 'Review apply', exact: true }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('heading', { name: 'All repositories', exact: true }),
+  },
   'found config repositories': {
     path: '/?config-repositories',
     reachFromPath: (page) =>
@@ -253,6 +274,27 @@ for (const [name, screen] of Object.entries(screens)) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth), 'page width').toBeLessThanOrEqual(width);
     expect(await page.evaluate(elementsPastViewportEdges), 'elements past the edges').toEqual([]);
     expect(errors, 'page errors').toEqual([]);
+  });
+}
+
+for (const action of ['Apply', 'Change settings once']) {
+  test(`backing out of ${action} discards the flow instead of offering to resume`, async ({ page }) => {
+    await page.goto('/?repository=lunch/api');
+    for (const reviewed of [false, true]) {
+      await page.getByRole('button', { name: action, exact: true }).click();
+      const review = page.getByRole('button', { name: 'Review changes', exact: true });
+      await expect(review).toBeVisible();
+      if (reviewed) {
+        await review.click();
+        await expect(page.getByText(/^Step 2 of 2:/u)).toBeVisible();
+      }
+      await page.getByRole('link', { name: 'Back to repositories', exact: true }).click();
+      await expect(page.getByRole('button', { name: action, exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Resume', exact: true })).toHaveCount(0);
+      await expect(page.getByText('An apply here is not finished.', { exact: true })).toHaveCount(0);
+    }
+    await page.getByRole('button', { name: action, exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Review changes', exact: true })).toBeVisible();
   });
 }
 

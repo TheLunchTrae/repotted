@@ -112,6 +112,11 @@ export type Keeping = 'keeping' | 'visit-only' | 'stopped' | 'elsewhere';
 
 // The file the engine writes beside a file it is replacing, which is gone again at once.
 const temporary = /\/\.[^/]+\.tmp$/u;
+
+function isKept(file: string): boolean {
+  return file.startsWith('/profiles/') && !temporary.test(file);
+}
+
 /** Never kept between visits: its files last only as long as the preview. */
 export const branchPreviewFolder = '/preview';
 const lockName = 'repotted-files';
@@ -154,6 +159,9 @@ export async function keepFiles(keeper: FileKeeper, locks: SiteLocks | undefined
     return keeping;
   }
   for (const [file, content] of kept) {
+    if (!isKept(file)) {
+      continue;
+    }
     // A file that can't be placed, such as one under a path that is itself a file, is left out.
     await mkdir(dirname(file), { recursive: true })
       .then(() => writeFile(file, content))
@@ -161,7 +169,7 @@ export async function keepFiles(keeper: FileKeeper, locks: SiteLocks | undefined
   }
   let last = Promise.resolve();
   watchFiles((file, content) => {
-    if (temporary.test(file) || file.startsWith(`${branchPreviewFolder}/`)) {
+    if (!isKept(file)) {
       return;
     }
     last = last.then(async () => {

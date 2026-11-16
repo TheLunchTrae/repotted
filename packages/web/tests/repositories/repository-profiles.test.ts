@@ -383,7 +383,7 @@ test('an apply GitHub refuses partway, or one of a repository that changed since
   const refused = await appliedTogether(assignments, refusing, ['base.yaml', 'node.yaml']);
   await refused.apply();
   expect(refused.state.value).toMatchObject({ kind: 'reviewed' });
-  await refused.discard();
+  await refused.close();
 
   const changing = new FakeGitHub();
   const stale = await appliedTogether(assignments, changing, ['base.yaml', 'node.yaml']);

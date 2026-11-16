@@ -1,6 +1,9 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, expect, test, vi } from 'vitest';
 
+import { FakeFleet, FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import { Apply } from '../../src/app/apply/apply.js';
+import { BatchApply } from '../../src/app/apply/batch-apply.js';
 import { browserFiles, type FileKeeper, keepFiles, type SiteLocks } from '../../src/app/storage/kept-files.js';
 import { mkdir, readFile, rm, writeFile } from '../../src/engine/files.js';
 
@@ -174,4 +177,40 @@ test('a browser that has no locks, or refuses them, loads and keeps nothing, and
 
   expect(load).not.toHaveBeenCalled();
   expect(put).not.toHaveBeenCalled();
+});
+
+test('profile drafts survive a reload, while profile applies, one-time changes, and batches do not', async () => {
+  const browser = new IDBFactory();
+  const keeper = browserFiles(() => browser);
+  const profile = { file: '/profiles/base.yaml', name: 'base', folder: '/profiles' };
+  const content = 'repository: { has_wiki: false }\ndrafts: { repository: { has_wiki: true } }\n';
+  await keepFiles(keeper, siteLocks());
+  await mkdir('/profiles', { recursive: true });
+  await writeFile(profile.file, content);
+  const github = new FakeFleet([new FakeGitHub({}, 'lunch/app'), new FakeGitHub({}, 'lunch/api')]);
+  const apply = new Apply(github, () => undefined);
+  const batch = new BatchApply(github, () => undefined);
+  await apply.start('lunch/app', profile);
+  const once = new Apply(github, () => undefined);
+  await once.startWithoutProfile('lunch/app');
+  await once.editor.value?.addEntry('labels', { name: 'once-only', color: 'ffffff' });
+  await once.review();
+  await batch.start(['lunch/api'], profile);
+
+  await vi.waitFor(async () => {
+    expect(await text(keeper.load())).toEqual({ [profile.file]: content });
+  });
+
+  // Loading persistent storage also ignores files outside the profiles workspace.
+  await keeper.put('/apply/other/apply.yaml', new TextEncoder().encode('apply_to: lunch/app\n'));
+  vi.resetModules();
+  const next = await import('../../src/app/storage/kept-files.js');
+  const files = await import('../../src/engine/files.js');
+  await next.keepFiles(
+    next.browserFiles(() => browser),
+    siteLocks(),
+  );
+
+  expect(await files.readFile(profile.file, 'utf8')).toBe(content);
+  await expect(files.stat('/apply')).rejects.toMatchObject({ code: 'ENOENT' });
 });
