@@ -139,6 +139,11 @@ const screens: Readonly<Record<string, Screen>> = {
         .getByRole('button', { name: 'Review protection…' }),
   },
   profiles: { path: '/profiles', visibleOnceDrawn: (page) => page.getByText('website', { exact: true }) },
+  'profile editor with group actions': {
+    path: '/profiles',
+    reachFromPath: (page) => page.getByText('website', { exact: true }).click(),
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Remove all: 2 settings in About' }),
+  },
   'profile editor with save problems': {
     path: '/profiles',
     reachFromPath: async (page) => {
@@ -250,6 +255,33 @@ for (const [name, screen] of Object.entries(screens)) {
     expect(errors, 'page errors').toEqual([]);
   });
 }
+
+test('group actions sit beside the heading and above the description on phones', async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) > 760, 'The desktop layout keeps its description beside the actions');
+  await page.goto('/profiles');
+  await page.getByText('website', { exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Features', exact: true })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+
+  for (const name of ['About', 'Features']) {
+    const group = page.getByRole('region', { name, exact: true });
+    await group.scrollIntoViewIfNeeded();
+    const heading = await group.getByRole('heading', { name, exact: true }).boundingBox();
+    const action = await group.getByRole('button', { name: /^Remove all:/u }).boundingBox();
+    const description = await group.locator('p').first().boundingBox();
+    if (heading === null || action === null || description === null) {
+      throw new Error(`${name} needs a heading, action, and description`);
+    }
+    expect(action.x, `${name}: action beside heading`).toBeGreaterThanOrEqual(heading.x + heading.width);
+    expect(heading.y, `${name}: heading within action's row`).toBeGreaterThanOrEqual(action.y);
+    expect(heading.y + heading.height, `${name}: heading within action's row`).toBeLessThanOrEqual(
+      action.y + action.height,
+    );
+    expect(description.y, `${name}: description below action`).toBeGreaterThanOrEqual(action.y + action.height);
+    expect(description.x, `${name}: description aligned with heading`).toBe(heading.x);
+    expect(action.height, `${name}: touch target`).toBeGreaterThanOrEqual(44);
+  }
+});
 
 test('the header keeps to one row', async ({ page }) => {
   await page.goto('/');
