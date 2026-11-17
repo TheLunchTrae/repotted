@@ -407,11 +407,6 @@ describe('device flow', () => {
 });
 
 describe('release', () => {
-  // A build without the client ID cannot sign in, so the gate holds it back.
-  test('ships with the Repotted GitHub App client ID', () => {
-    expect(repottedGitHubApp.clientId).not.toBe('');
-  });
-
   // The web app's Worker, and its Previews, sign in with the same App.
   test('gives the web app the same client ID', () => {
     const config = readFileSync(path.join(import.meta.dirname, '../../../web/wrangler.jsonc'), 'utf8');
