@@ -270,6 +270,9 @@ export class EntryEdits {
 
   setSaved(saved: ResolvedProfile | undefined): void {
     this.#saved.value = saved;
+    if (saved === undefined) {
+      return;
+    }
     // A change that takes out an entry that is already gone has nothing left to do.
     const changes = new Map(this.#changes.value);
     for (const [key, change] of changes) {

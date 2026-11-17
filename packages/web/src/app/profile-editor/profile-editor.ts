@@ -16,6 +16,7 @@ import {
   stringifyProfile,
 } from '@repotted/core';
 
+import { readFile } from '../../engine/files.js';
 import { basename } from '../../engine/path.js';
 import type { ActionPatternChecks } from './action-pattern-checks.js';
 import type { ActionSearch } from './action-search.js';
@@ -39,6 +40,7 @@ import {
   type ResolvedProfile,
   settingsSections as draftSections,
 } from './own-drafts.js';
+import { ProfileRepair } from './profile-repair.js';
 import { sameValue } from './same-value.js';
 import {
   type SettingField,
@@ -358,6 +360,7 @@ export class ProfileEditor {
   readonly unsavedChangesProblem = signal<string | undefined>(undefined);
   readonly saveError = signal<string | undefined>(undefined);
   readonly saving = signal(false);
+  readonly repair = signal<ProfileRepair | undefined>(undefined);
 
   readonly #saved = signal<ResolvedProfile | undefined>(undefined);
   /** Undefined unless there are unsaved changes the engine accepts. */
@@ -398,14 +401,12 @@ export class ProfileEditor {
 
   readonly loaded = computed(() => this.#saved.value !== undefined);
 
-  /**
-   * A profile that can't be read counts for nothing, since it offers no way
-   * to save or reset; its changes come back if it reads again.
-   */
   readonly dirty = computed(
     () =>
-      this.loaded.value &&
-      (this.#edits.value.size > 0 || this.#entryEdits.count.value > 0 || this.#someTypedTextCannotBeAValue.value),
+      this.#edits.value.size > 0 ||
+      this.#entryEdits.count.value > 0 ||
+      this.#someTypedTextCannotBeAValue.value ||
+      this.repair.value?.dirty.value === true,
   );
 
   /**
@@ -452,12 +453,13 @@ export class ProfileEditor {
   /** Save applies the unsaved changes and the draft together, so it needs one of them. */
   readonly canSave = computed(
     () =>
-      this.loaded.value &&
-      (this.#changed.value || this.draftCount.value > 0) &&
-      !this.#someTypedTextCannotBeAValue.value &&
-      !this.#entryEdits.someEntryCannotBeSavedToApply.value &&
-      this.unsavedChangesProblem.value === undefined &&
-      !this.saving.value,
+      this.repair.value?.canSave.value ??
+      (this.loaded.value &&
+        (this.#changed.value || this.draftCount.value > 0) &&
+        !this.#someTypedTextCannotBeAValue.value &&
+        !this.#entryEdits.someEntryCannotBeSavedToApply.value &&
+        this.unsavedChangesProblem.value === undefined &&
+        !this.saving.value),
   );
 
   /**
@@ -716,22 +718,43 @@ export class ProfileEditor {
   /** Lays the unsaved changes over the profile as it is saved now. */
   async load(): Promise<void> {
     this.#batchUndo.value = undefined;
+    const repair = this.repair.value;
+    if (repair !== undefined && (repair.dirty.value || repair.saving.value)) {
+      await repair.check();
+      return;
+    }
+    let text: string | undefined;
+    let result: { readonly saved: ResolvedProfile } | { readonly problem: string };
     try {
-      this.#saved.value = await this.#store.resolve(this.file);
-      this.#entryEdits.setSaved(this.#saved.value);
-      await this.#readBaseOwner();
-      this.loadError.value = undefined;
+      text = this.#store === profileStore ? await readFile(this.file, 'utf8') : undefined;
+      result = {
+        saved: text === undefined ? await this.#store.resolve(this.file) : await resolveProfile(this.file, text),
+      };
     } catch (error) {
+      result = { problem: reasonOf(error, this.file) };
+    }
+    // Typing can start while a clean repair's file is being read.
+    const currentRepair = this.repair.value;
+    if (currentRepair !== undefined && (currentRepair.dirty.value || currentRepair.saving.value)) {
+      await currentRepair.check();
+      return;
+    }
+    this.#batchUndo.value = undefined;
+    if ('problem' in result) {
       this.#saved.value = undefined;
       this.#entryEdits.setSaved(undefined);
       this.#profileAsSaveWouldLeaveIt.value = undefined;
       this.closePreview();
       this.patterns?.follow(undefined);
-      this.loadError.value = reasonOf(error, this.file);
+      this.loadError.value = result.problem;
+      this.repair.value = text === undefined ? undefined : new ProfileRepair(this.file, text, result.problem);
       return;
-    } finally {
-      this.#batchUndo.value = undefined;
     }
+    this.#saved.value = result.saved;
+    this.#entryEdits.setSaved(result.saved);
+    this.repair.value = undefined;
+    this.loadError.value = undefined;
+    await this.#readBaseOwner();
     await this.#previewEdits();
     this.#findAgain();
   }
@@ -955,6 +978,11 @@ export class ProfileEditor {
     this.#entryEdits.resetAll();
     this.#typed.value = new Map();
     this.saveError.value = undefined;
+    if (this.repair.value !== undefined) {
+      this.repair.value = undefined;
+      await this.load();
+      return;
+    }
     await this.#previewEdits();
   }
 
@@ -1054,6 +1082,19 @@ export class ProfileEditor {
    * be tried again.
    */
   async save(write: (work: () => Promise<void>) => Promise<void>, mode: SaveMode = 'applies'): Promise<void> {
+    const repair = this.repair.value;
+    if (repair !== undefined) {
+      if (mode === 'applies' && repair.canSave.value) {
+        this.saving.value = true;
+        try {
+          await repair.save(write);
+        } finally {
+          this.saving.value = false;
+        }
+        await this.load();
+      }
+      return;
+    }
     if (!(mode === 'applies' ? this.canSave.value : this.canSaveAsDraft.value)) {
       return;
     }

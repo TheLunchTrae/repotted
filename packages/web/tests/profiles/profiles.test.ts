@@ -759,6 +759,57 @@ test('unsaved changes outlast a look at another profile, hold a move back, and a
   expect(profiles.opened.value?.text).toContain('has_wiki: true');
 });
 
+test('invalid profile corrections outlast navigation, hold a move back, and save through sync', async () => {
+  const github = repository();
+  github.write({ 'profiles/repair.yaml': 'repository:\n  has_wiki: broken\n' });
+  const profiles = await connected(github);
+  const listing = profiles.listings.value.find((item) => item.name === 'repair');
+  await profiles.select(listing);
+  const editor = profiles.editor.value;
+  const repair = editor?.repair.value;
+  if (editor === undefined || repair === undefined) {
+    throw new Error('An invalid profile should offer its YAML for repair.');
+  }
+  await repair.type('extends: base.yaml\nrepository:\n  has_issues: false\n');
+  await profiles.select(undefined);
+  expect(profiles.unsavedNames.value).toEqual(['repair']);
+  await profiles.keepInBrowser();
+  expect(profiles.connectError.value).toBe('Save or reset your unsaved changes first.');
+  await profiles.refresh();
+  await profiles.select(listing);
+  expect(profiles.editor.value).toBe(editor);
+  expect(editor.repair.value).toBe(repair);
+  expect(await profiles.saveAll()).toBe('saved');
+  expect(github.files()['profiles/repair.yaml']).toBe('extends: base.yaml\nrepository:\n  has_issues: false\n');
+  expect(editor.loaded.value).toBe(true);
+  expect(profiles.unsavedNames.value).toEqual([]);
+  expect(profiles.selected.value?.problem).toBeNull();
+});
+
+test('sync before a repair save refuses to overwrite remote changes and keeps corrections until discarded', async () => {
+  const github = repository();
+  github.write({ 'profiles/repair.yaml': 'repository:\n  has_wiki: broken\n' });
+  const profiles = await connected(github);
+  await profiles.select(profiles.listings.value.find((item) => item.name === 'repair'));
+  const repair = profiles.editor.value?.repair.value;
+  if (repair === undefined) {
+    throw new Error('An invalid profile should offer its YAML for repair.');
+  }
+  await repair.type('repository:\n  has_wiki: true\n');
+  const changed = 'repository:\n  description: A remote correction\n';
+  github.write({ 'profiles/repair.yaml': changed });
+  expect(await profiles.saveAll()).toBe('unsaved');
+  expect(repair.saveError.value).toContain('changed elsewhere');
+  expect(repair.text.value).toBe('repository:\n  has_wiki: true\n');
+  expect(github.files()['profiles/repair.yaml']).toBe(changed);
+  expect(await readFile(`${copy}/repair.yaml`, 'utf8')).toBe(changed);
+
+  await profiles.discardAll();
+  expect(profiles.unsavedNames.value).toEqual([]);
+  expect(profiles.editor.value?.repair.value).toBeUndefined();
+  expect(profiles.editor.value?.loaded.value).toBe(true);
+});
+
 test('closing the open profile leaves none open, and its unsaved changes wait for it to open again', async () => {
   await inBrowser({ 'base.yaml': base });
   const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);

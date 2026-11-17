@@ -895,9 +895,14 @@ async function readListed(
   return { appliedFirst, listedProfiles: chains.map(({ named }) => named) };
 }
 
-async function readChain<Read extends LayerRead>(file: string, kind: Layer<Read>): Promise<Chain<Read>> {
+async function readChain<Read extends LayerRead>(
+  file: string,
+  kind: Layer<Read>,
+  replacementText?: string,
+): Promise<Chain<Read>> {
   const first = await readText(path.resolve(file), kind.noun);
-  const head = parseLayer(first.text, first.file, kind);
+  const text = replacementText ?? first.text;
+  const head = parseLayer(text, first.file, kind);
   const { appliedFirst, listedProfiles } = await readListed(
     head.extends,
     path.dirname(first.file),
@@ -906,7 +911,7 @@ async function readChain<Read extends LayerRead>(file: string, kind: Layer<Read>
   );
   return {
     head: head.read,
-    text: first.text,
+    text,
     links: [
       { file: first.file, parsed: head.own, drafts: head.drafts, listedIn: new Set() },
       ...appliedFirst.toReversed(),
@@ -1200,8 +1205,9 @@ function resolveChain(
 export async function resolveLayer<Read extends LayerRead>(
   file: string,
   kind: Layer<Read>,
+  replacementText?: string,
 ): Promise<ResolvedLayer<Read>> {
-  const { head, links, listedProfiles } = await readChain(file, kind);
+  const { head, links, listedProfiles } = await readChain(file, kind, replacementText);
   return {
     head,
     ...resolveChain(links, path.resolve(file), head.adjust),
@@ -1210,8 +1216,9 @@ export async function resolveLayer<Read extends LayerRead>(
   };
 }
 
-export async function resolveProfile(file: string): Promise<ResolvedProfile> {
-  return (await resolveLayer(file, profileLayer)).resolved;
+/** Replacement text is checked at the file's real path, including inheritance cycles, without writing it. */
+export async function resolveProfile(file: string, replacementText?: string): Promise<ResolvedProfile> {
+  return (await resolveLayer(file, profileLayer, replacementText)).resolved;
 }
 
 /** For profile YAML that is not in a file, such as text an agent sends. `extends` resolves from `directory`. */

@@ -292,7 +292,7 @@ test('settings with no change show as saved while another change is refused, and
   expect(row(editor, 'repository.pull_request_creation_policy')).toBeUndefined();
 });
 
-test('a profile that stops reading keeps its changes for when it reads again, and counts as nothing unsaved meanwhile', async () => {
+test('a profile that stops reading keeps its changes unsaved until it reads again', async () => {
   const editor = await opened({ 'base.yaml': base, 'web.yaml': 'extends: base.yaml\n' });
   await editor.set(field('repository.has_issues'), false);
   expect(editor.dirty.value).toBe(true);
@@ -300,7 +300,7 @@ test('a profile that stops reading keeps its changes for when it reads again, an
   await rm('/profiles/base.yaml');
   await editor.load();
   expect(editor.loadError.value).toContain('base.yaml');
-  expect(editor.dirty.value).toBe(false);
+  expect(editor.dirty.value).toBe(true);
   expect(editor.canSave.value).toBe(false);
 
   await writeFile('/profiles/base.yaml', base);
@@ -553,6 +553,27 @@ test('an entry taken out stops being named here, and can be put back before the 
   await editor.addEntry('labels', { name: 'later' });
   await editor.takeOut(entry(editor, 'labels', 'later'));
   expect(editor.dirty.value).toBe(false);
+});
+
+test('a pending entry removal and setting change survive an invalid file and its YAML repair', async () => {
+  const editor = await opened({ 'web.yaml': entries });
+  await editor.takeOut(entry(editor, 'labels', 'bug'));
+  await editor.set(field('repository.has_issues'), false);
+  await writeFile('/profiles/web.yaml', `${entries}repository:\n  has_wiki: broken\n`);
+  await editor.load();
+  const repair = editor.repair.value;
+  if (repair === undefined) {
+    throw new Error('An invalid profile should offer its YAML for repair.');
+  }
+  await repair.type(entries);
+  await editor.save(write);
+  expect(editor.loaded.value).toBe(true);
+  expect(editor.dirty.value).toBe(true);
+  expect(entry(editor, 'labels', 'bug')).toMatchObject({ entry: undefined, unsaved: true });
+  expect(row(editor, 'repository.has_issues')).toMatchObject({ value: false, unsaved: true });
+  await editor.save(write);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).not.toContain('name: bug');
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toContain('has_issues: false');
 });
 
 test('an entry the engine refuses says why and holds the save back', async () => {
