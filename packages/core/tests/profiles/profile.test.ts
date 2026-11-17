@@ -103,12 +103,10 @@ rulesets:
     expect(String(error)).toContain('extends itself');
   });
 
-  test('names unknown keys, so a misspelled setting is never silently ignored', async () => {
+  test('ignores unknown keys without managing their values', async () => {
     const file = await write('typo.yaml', 'repository: { delete_branch_on_marge: true }\n');
 
-    const error = await rejection(loadProfile(file));
-    expect(error).toBeInstanceOf(ProfileError);
-    expect(String(error)).toContain('delete_branch_on_marge');
+    expect((await loadProfile(file)).repository).toEqual({});
   });
 
   test('rejects two rulesets with the same name', async () => {
@@ -212,8 +210,6 @@ rulesets:
         'expected one of "active"|"evaluate"|"disabled"\n  → at rulesets[0].enforcement',
       'environments: [{ name: npm, wait_timer: soon }]':
         'expected number, received string\n  → at environments[0].wait_timer',
-      'autolinks: [{ key_prefix: X-, absent: true, url_template: "x/<num>" }]':
-        'Unrecognized key: "url_template"\n  → at autolinks[0]',
       'pages: { build_type: sometimes }': 'expected one of "legacy"|"workflow"\n  → at pages.build_type',
       'rulesets: [{ name: Main, absent: false }]': 'absent is true or left out\n  → at rulesets[0].absent',
       'rulesets: [{ name: Main, draft: false }]': 'draft is true or left out\n  → at rulesets[0].draft',
@@ -440,11 +436,8 @@ describe('editProfile', () => {
 
     for (const key of [
       ['rulesets', '0'],
-      ['extends'],
-      ['repository'],
       ['repository', 'has_wiki', 'x'],
       ['repository', 'has_wikki'],
-      ['actions', 'selected_actions'],
     ]) {
       expect(String(await rejection(editProfile(file, [{ path: key, value: true }])))).toContain('Cannot edit');
     }
@@ -655,7 +648,7 @@ describe('listProfiles', () => {
     await mkdir(folder);
     await writeFile(path.join(folder, 'base.yaml'), 'repository: { has_wiki: false }\n');
     await writeFile(path.join(folder, 'app.yml'), 'extends: base.yaml\n');
-    await writeFile(path.join(folder, 'broken.yaml'), 'repository: { has_wikki: false }\n');
+    await writeFile(path.join(folder, 'broken.yaml'), 'repository: { has_wiki: broken }\n');
     await writeFile(path.join(folder, 'notes.md'), '# not a profile\n');
 
     const listings = await listProfiles(folder);
@@ -666,7 +659,7 @@ describe('listProfiles', () => {
       ['broken', '', null],
     ]);
     expect(listings.map((listing) => listing.problem === null)).toEqual([true, true, false]);
-    expect(listings[2]?.problem).toContain('has_wikki');
+    expect(listings[2]?.problem).toContain('has_wiki');
   });
 
   test('lists subfolders after the folder, leaving out hidden and linked ones', async () => {
@@ -937,10 +930,8 @@ drafts:
       'rulesets: [{ name: Main, draft: true, enforcement: maybe }, { name: Gone, draft: true, absent: true, target: tag }]\n',
     );
     const { warnings } = await resolveProfile(file);
-    expect(warnings).toHaveLength(2);
+    expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatch(/^Draft ruleset "Main": .* at enforcement$/u);
-    expect(warnings[1]).toMatch(/^Draft ruleset "Gone": /u);
-    expect(warnings[1]).toContain('target');
   });
 
   test('keep an empty list as written, and leave out a list of only drafts', async () => {
@@ -978,7 +969,7 @@ drafts:
     const listed = await write('draft-list.yaml', 'drafts: { rulesets: [{ name: Main }] }\n');
 
     expect(await rejection(resolveProfile(nameless))).toBeInstanceOf(ProfileError);
-    expect(String(await rejection(resolveProfile(listed)))).toContain('rulesets');
+    expect((await resolveProfile(listed)).drafts.rulesets).toBeUndefined();
   });
 
   test('cover every settings section', () => {
@@ -1137,7 +1128,10 @@ describe('editProfile with drafts', () => {
   test('edits draft keys only under a settings section', async () => {
     const file = await write('edit-draft-keys.yaml', 'repository: { has_wiki: false }\n');
 
-    for (const key of [['drafts'], ['drafts', 'repository'], ['drafts', 'rulesets', 'x']]) {
+    for (const key of [
+      ['drafts', 'repository'],
+      ['drafts', 'rulesets', 'x'],
+    ]) {
       expect(String(await rejection(editProfile(file, [{ path: key, value: true }])))).toContain('Cannot edit');
     }
   });

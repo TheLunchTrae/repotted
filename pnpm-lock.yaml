@@ -242,6 +242,9 @@ importers:
       preact:
         specifier: ^11.2.0
         version: 11.2.0
+      yaml:
+        specifier: ~2.9.1
+        version: 2.9.1
       zod:
         specifier: ^4.6.7
         version: 4.6.7

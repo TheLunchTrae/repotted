@@ -309,10 +309,19 @@ the file has it, and `entry-edits.ts` holds each change with the saved entry
 it was made on, so a save never writes an entry over one that has since
 changed elsewhere. `views/profile-editor/entries.tsx` only draws them.
 
-If a profile fails to resolve, `ProfileRepair` in `profile-editor/` keeps its
-original text and editable YAML. It validates through `resolveProfile` with
-replacement text at the file's real path, so relative bases and cycles follow
-the same rules as a saved profile. It validates again in the profiles' write
+`readProfileForEditing` opens syntactically valid YAML even when the
+configuration cannot resolve. It retains known invalid values with
+path-based problems and source files, and ignores unknown keys. The editor
+shows field and area errors before a change is made. Unique entry names
+keep their row identities; unnamed or duplicate entries use their original
+list positions. Corrections edit the original document before validating
+the result. Planning still uses `resolveProfile`, which requires a valid
+configuration.
+
+If the YAML syntax is invalid, `ProfileRepair` in `profile-editor/` keeps its
+original text and editable YAML. It validates syntax through
+`readProfileForEditing` with replacement text at the file's real path.
+Configuration errors remain available in the forms after a syntax repair. It validates again in the profiles' write
 queue after syncing, then compares the file with the original text before
 replacing it. A mismatch refuses the save and keeps the corrections. Dirty
 repairs keep their original version through refreshes, even if the saved file

@@ -495,10 +495,10 @@ test('a preview the engine refuses says why and opens nothing', async () => {
   const editor = await opened({ 'web.yaml': 'repository:\n  has_issues: true\n' });
   await editor.set(field('repository.has_issues'), false);
   // The file stops being a profile between the change and the preview.
-  await writeFile(file, 'repository: 5\n');
+  await writeFile(file, 'repository: [\n');
 
   await editor.openPreview();
 
   expect(editor.preview.value).toBeUndefined();
-  expect(editor.saveError.value).toContain('repository');
+  expect(editor.saveError.value).toContain('YAML');
 });

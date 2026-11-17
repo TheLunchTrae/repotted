@@ -9,9 +9,10 @@ each part.
 
 A profile has up to ten sections. Keys are the field names of the
 [GitHub REST API](https://docs.github.com/rest), so GitHub's REST docs
-describe each one. Repotted rejects a key it doesn't know, so a misspelling
-never passes silently. The exceptions are a rule's `parameters` and a
-ruleset's `conditions`, which Repotted passes to GitHub as they are.
+describe each one. Repotted ignores keys it doesn't know. A rule's
+`parameters` and a ruleset's `conditions` are open records, which Repotted
+passes to GitHub as they are. Known fields still need valid values before
+a profile can be planned or applied.
 
 | Section             | Keys                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

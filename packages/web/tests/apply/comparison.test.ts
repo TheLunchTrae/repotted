@@ -117,7 +117,7 @@ test("a profile for the other kind of owner can't be compared, and says how to u
 });
 
 test('a comparison that fails says why by the profile’s name, and a refused sign-in is reported', async () => {
-  await saved('repository:\n  has_wikis: 5\n');
+  await saved('repository:\n  has_wiki: 5\n');
   const signedOut = vi.fn();
   const github = new FakeGitHub();
   const comparison = new Comparison(github, signedOut);

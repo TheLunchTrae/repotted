@@ -170,7 +170,7 @@ test('an apply that cannot be reviewed says why and can be tried again, from the
   await apply.close();
 
   // A profile that can't be read starts no apply; a retry opens its edits once it reads.
-  await saved('repository:\n  has_wikis: 5\n');
+  await saved('repository:\n  has_wiki: 5\n');
   await apply.start('lunch/app', profile);
   await apply.review();
   expect(apply.state.value).toMatchObject({ kind: 'failed' });

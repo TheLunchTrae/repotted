@@ -1315,8 +1315,8 @@ describe('schema', () => {
         ],
       }),
     ).toBe(true);
-    expect(accepts({ rulesets: [{ name: 'Old', absent: true, enforcement: 'active' }] })).toBe(false);
-    expect(accepts({ pages: { absent: true, cname: 'docs.example.com' } })).toBe(false);
+    expect(accepts({ rulesets: [{ name: 'Old', absent: true, enforcement: 'active' }] })).toBe(true);
+    expect(accepts({ pages: { absent: true, cname: 'docs.example.com' } })).toBe(true);
     expect(accepts({ environments: [{ name: 'npm', draft: false }] })).toBe(false);
     expect(accepts({ repository: { has_wiki: 'yes' } })).toBe(false);
     expect(accepts({ security: { code_quality_setup: { runner_type: 'large' } } })).toBe(false);

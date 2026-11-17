@@ -18,10 +18,9 @@ endpoints are listed and what they need. Most
 sections capture the API's response as it is.
 Environments are the exception: `plan/sections/environments.ts` turns GitHub's
 protection rules into `wait_timer`, `reviewers`, and `prevent_self_review`,
-and reads `branch_policies` from a separate endpoint. The schema's objects are
-strict, so an unknown key is an error, except inside a rule's `parameters` and
-a ruleset's `conditions`, which are open records passed to GitHub as they
-are. A branch name, as `default_branch` or a Pages site's branch, and an
+and reads `branch_policies` from a separate endpoint. The schema's objects
+strip unknown keys. A rule's `parameters` and a ruleset's `conditions` are
+open records passed to GitHub as they are. A branch name, as `default_branch` or a Pages site's branch, and an
 environment's deployment pattern are checked by git's rules for a ref name in
 `ref-names.ts`, in words the web app shows as they are; a pattern may also
 hold fnmatch's `*`, `?`, and `[`. `settingValueProblems` and

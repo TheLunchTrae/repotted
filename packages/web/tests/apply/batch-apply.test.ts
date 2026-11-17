@@ -184,7 +184,7 @@ test('a repository that could not be compared is its own failure, and the rest a
 });
 
 test('a batch that cannot start says why and leaves nothing behind', async () => {
-  await saved('repository:\n  has_wikis: 5\n');
+  await saved('repository:\n  has_wiki: 5\n');
   const { github } = fleet('lunch/app');
   const batch = new BatchApply(github, () => undefined);
 

@@ -405,10 +405,17 @@ its name.
 
 ### Edit a profile
 
-If a profile is invalid, its page offers **Profile YAML** under **Fix the
-profile**. Correct the text there; **Save** stays off until the profile is
-valid, including the profiles it extends. Saving replaces the file exactly
-as typed and opens its settings. If the saved file changes before your
+A profile with valid YAML syntax opens in the settings, even if its
+configuration is invalid. Errors appear on the affected fields or areas and
+in the save problems list. Correct the values in the forms, or use **Remove
+invalid configuration** for a malformed area. Errors in a base profile name
+the file to open. Unknown keys are ignored. **Save** checks the corrected
+profile and its bases before writing.
+
+If the YAML syntax is invalid, the page offers **Profile YAML** under **Fix
+the profile**. Correct the syntax there; **Save** stays off until the YAML
+can be read. Saving replaces the file exactly as typed and opens its
+settings, where configuration errors can be corrected. If the saved file changes before your
 save, Repotted refuses to replace it and keeps your corrections. Copy them
 before using **Reload**, which discards unsaved changes and reads the saved
 file again.

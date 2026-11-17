@@ -761,7 +761,7 @@ test('unsaved changes outlast a look at another profile, hold a move back, and a
 
 test('invalid profile corrections outlast navigation, hold a move back, and save through sync', async () => {
   const github = repository();
-  github.write({ 'profiles/repair.yaml': 'repository:\n  has_wiki: broken\n' });
+  github.write({ 'profiles/repair.yaml': 'repository: [\n' });
   const profiles = await connected(github);
   const listing = profiles.listings.value.find((item) => item.name === 'repair');
   await profiles.select(listing);
@@ -788,7 +788,7 @@ test('invalid profile corrections outlast navigation, hold a move back, and save
 
 test('sync before a repair save refuses to overwrite remote changes and keeps corrections until discarded', async () => {
   const github = repository();
-  github.write({ 'profiles/repair.yaml': 'repository:\n  has_wiki: broken\n' });
+  github.write({ 'profiles/repair.yaml': 'repository: [\n' });
   const profiles = await connected(github);
   await profiles.select(profiles.listings.value.find((item) => item.name === 'repair'));
   const repair = profiles.editor.value?.repair.value;

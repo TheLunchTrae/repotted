@@ -21,7 +21,13 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
   const id = `setting-${field.path.join('-')}`;
   if (field.kind === 'choice') {
     return (
-      <div class="segments" role="radiogroup" aria-labelledby={`${id}-label`}>
+      <div
+        class="segments"
+        role="radiogroup"
+        aria-labelledby={`${id}-label`}
+        aria-invalid={invalid !== undefined}
+        aria-describedby={invalid === undefined ? undefined : `${id}-problem`}
+      >
         {row.optionsForProfileOwnerType.map((option) => (
           <label key={option.label}>
             <input
@@ -50,6 +56,7 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
         rows={Math.max(3, Array.isArray(value) ? value.length + 1 : 3)}
         aria-labelledby={`${id}-label`}
         aria-invalid={invalid !== undefined}
+        aria-describedby={invalid === undefined ? undefined : `${id}-problem`}
         disabled={row.greyedOutOnGitHubWhile !== undefined || row.missingPermissions.length > 0}
         value={text ?? (Array.isArray(value) ? value.join('\n') : '')}
         onInput={(event) => {
@@ -68,6 +75,7 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
       inputMode={field.kind === 'number' ? 'numeric' : undefined}
       aria-labelledby={`${id}-label`}
       aria-invalid={invalid !== undefined}
+      aria-describedby={invalid === undefined ? undefined : `${id}-problem`}
       disabled={row.greyedOutOnGitHubWhile !== undefined || row.missingPermissions.length > 0}
       placeholder={value === undefined ? 'Not managed' : undefined}
       value={text ?? (typeof value === 'string' || typeof value === 'number' ? String(value) : '')}
@@ -117,7 +125,7 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
         </div>
         <Control row={row} editor={editor} />
         <div class="setting-actions">
-          {row.unsaved || row.typedTextProblem !== undefined ? (
+          {row.unsaved || row.textBeingTyped !== undefined ? (
             <button
               class="button button-quiet button-small"
               type="button"
@@ -145,7 +153,7 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
         </div>
       </div>
       {row.typedTextProblem !== undefined && (
-        <p class="problem small" role="alert">
+        <p id={`${id}-problem`} class="problem small" role="alert">
           {row.typedTextProblem}
         </p>
       )}
@@ -333,6 +341,13 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
     if (place.kind === 'profile') {
       return;
     }
+    if (place.kind === 'configuration') {
+      editor.clearFilters();
+      if (tabNames.some((tab) => tab.id === problem.tab)) {
+        setTab(problem.tab);
+      }
+      return;
+    }
     editor.clearFilters();
     setTab(problem.tab);
     if (place.kind === 'setting') {
@@ -374,6 +389,34 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
   return (
     <>
       <DraftBanner editor={editor} saving={saving} />
+      {editor.problemsBlockingSave.value
+        .filter((problem) => problem.place.kind === 'configuration')
+        .map((problem) => {
+          const place = problem.place;
+          if (place.kind !== 'configuration') {
+            return null;
+          }
+          return (
+            <div key={problem.key} class="notice" role="alert">
+              <strong>{problem.name}</strong>
+              <p class="problem">{problem.message}</p>
+              {place.problem.file === editor.file ? (
+                <button
+                  class="button button-small"
+                  type="button"
+                  disabled={editor.saving.value}
+                  onClick={() => {
+                    run(editor.removeInvalidConfiguration(place.problem));
+                  }}
+                >
+                  Remove invalid configuration
+                </button>
+              ) : (
+                <p class="muted small">Open {problem.where} to correct this configuration.</p>
+              )}
+            </div>
+          );
+        })}
       <div class="filters" role="search" aria-label="Settings">
         <input
           class="field"

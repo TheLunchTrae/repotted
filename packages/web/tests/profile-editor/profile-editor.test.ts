@@ -299,7 +299,8 @@ test('a profile that stops reading keeps its changes unsaved until it reads agai
 
   await rm('/profiles/base.yaml');
   await editor.load();
-  expect(editor.loadError.value).toContain('base.yaml');
+  expect(editor.loaded.value).toBe(true);
+  expect(editor.unsavedChangesProblem.value).toContain('base.yaml');
   expect(editor.dirty.value).toBe(true);
   expect(editor.canSave.value).toBe(false);
 
@@ -348,10 +349,10 @@ test('a change made while a save runs stays unsaved, and a change to the file me
   expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: false, unsaved: true });
 });
 
-test('a profile that cannot be read says why and shows no settings', async () => {
-  const editor = await opened({ 'web.yaml': 'repository:\n  has_wikis: maybe\n' });
+test('invalid YAML says why and shows no settings', async () => {
+  const editor = await opened({ 'web.yaml': 'repository: [\n' });
 
-  expect(editor.loadError.value).toContain('has_wikis');
+  expect(editor.loadError.value).toContain('YAML');
   expect(editor.loaded.value).toBe(false);
   expect(editor.sections.value.flatMap((section) => section.groups.flatMap((group) => group.rows))).toEqual([]);
 });
@@ -559,7 +560,7 @@ test('a pending entry removal and setting change survive an invalid file and its
   const editor = await opened({ 'web.yaml': entries });
   await editor.takeOut(entry(editor, 'labels', 'bug'));
   await editor.set(field('repository.has_issues'), false);
-  await writeFile('/profiles/web.yaml', `${entries}repository:\n  has_wiki: broken\n`);
+  await writeFile('/profiles/web.yaml', `${entries}repository: [\n`);
   await editor.load();
   const repair = editor.repair.value;
   if (repair === undefined) {
@@ -582,10 +583,14 @@ test('an entry the engine refuses says why and holds the save back', async () =>
 
   await editor.changeEntry(bug, { ...bug.entry, description: 5 });
 
-  expect(editor.unsavedChangesProblem.value).toMatch(/description/iu);
+  expect(entry(editor, 'labels', 'bug').applyProblem).toBeDefined();
   expect(editor.canSave.value).toBe(false);
   expect(editor.problemsBlockingSave.value).toEqual([
-    expect.objectContaining({ key: 'profile', name: 'The profile', where: 'web.yaml', place: { kind: 'profile' } }),
+    expect.objectContaining({
+      name: 'bug',
+      where: 'Labels',
+      place: { kind: 'entry', row: entry(editor, 'labels', 'bug'), field: 'entry' },
+    }),
   ]);
   await editor.changeEntry(entry(editor, 'labels', 'bug'), { ...bug.entry });
   expect(editor.dirty.value).toBe(false);

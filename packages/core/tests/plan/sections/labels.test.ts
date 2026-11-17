@@ -297,7 +297,7 @@ describe('labels in profile files', () => {
     for (const file of [named, removed, own, taken]) {
       expect(await rejection(resolveProfile(file))).toContain('renamed_from');
     }
-    expect(await rejection(resolveProfile(absentRename))).toContain('renamed_from');
+    expect((await resolveProfile(absentRename)).profile.labels).toEqual([{ name: 'a', absent: true }]);
   });
 
   test('say when one label lists an old name twice', async () => {

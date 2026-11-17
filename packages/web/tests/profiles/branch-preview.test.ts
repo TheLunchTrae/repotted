@@ -263,7 +263,7 @@ test('lists the branches to preview, without the default one', async () => {
 
 test('leaves out a profile broken alike on both sides, and names files by their path among the profiles', async () => {
   const github = repository();
-  github.write({ 'profiles/bad.yaml': 'nonsense: true\n' });
+  github.write({ 'profiles/bad.yaml': 'repository: { has_wiki: broken }\n' });
   const { preview } = await setUp(github);
   github.write({ 'profiles/new.yaml': site, 'profiles/worse.yaml': 'extends: missing.yaml\n' }, { branch: 'feature' });
 
@@ -276,7 +276,7 @@ test('leaves out a profile broken alike on both sides, and names files by their 
 
 test('says when a profile that is broken on the default branch loads on the branch', async () => {
   const github = repository();
-  github.write({ 'profiles/bad.yaml': 'nonsense: true\n' });
+  github.write({ 'profiles/bad.yaml': 'repository: { has_wiki: broken }\n' });
   const { preview } = await setUp(github);
   github.write({ 'profiles/bad.yaml': site }, { branch: 'feature' });
 

@@ -1,4 +1,5 @@
 import { computed, signal } from '@preact/signals';
+import { entryValueProblems } from '@repotted/core';
 
 import { basename } from '../../engine/path.js';
 import { bypassListProblem } from './bypass-actors.js';
@@ -47,6 +48,7 @@ interface EntryProblem {
 }
 
 export interface EntryRow {
+  readonly index?: number | undefined;
   readonly list: EntryList;
   /** Stable while the editor is open, whatever the entry's name becomes. */
   readonly key: string;
@@ -93,6 +95,7 @@ export function canBeTakenOut(row: EntryRow): boolean {
 export type EntryChanges = ReadonlyMap<string, EntryChange>;
 
 export interface EntryWrite {
+  readonly index?: number | undefined;
   readonly list: EntryList;
   readonly name: string;
   /** Whether the file's draft of that name is meant, and not its entry that applies. */
@@ -111,6 +114,8 @@ interface EntryChange {
 }
 
 interface Slot {
+  readonly index?: number | undefined;
+  readonly draftIndex?: number | undefined;
   readonly key: string;
   readonly applied: Entry | undefined;
   readonly openFileNamesAppliedEntry: boolean;
@@ -550,16 +555,22 @@ export class EntryEdits {
       Object.entries(sources).find(([known]) => identity(list, known) === identity(list, name))?.[1];
     const entries = (found: unknown): Entry[] => (Array.isArray(found) ? found.filter(isEntry) : []);
     // Only this profile's own draft shows: a base profile's draft is that profile's to finish.
-    const drafts = entries(saved.drafts[list])
-      .filter((entry) => fileOf(saved.sources.drafts[list], nameOf(entry)) === own)
-      .map(({ draft: _draft, ...entry }): Entry => entry);
+    const draftsWithPositions = entries(saved.drafts[list])
+      .map(({ draft: _draft, ...entry }, at) => ({ entry, index: saved.draftEntryPositions?.[list]?.[at] }))
+      .filter(({ entry }) => fileOf(saved.sources.drafts[list], nameOf(entry)) === own);
+    const drafts = draftsWithPositions.map(({ entry }) => entry);
+    const draftPositions = new Map(draftsWithPositions.map(({ entry, index }) => [entry, index]));
+    const ambiguous = (entry: Entry, all: readonly Entry[]): boolean =>
+      nameOf(entry) === '' ||
+      all.filter((other) => identity(list, nameOf(other)) === identity(list, nameOf(entry))).length > 1;
     const unsets = new Set(
       ownUnsets(saved)
         .filter((key) => key.startsWith(`${list}/`))
         .map((key) => identity(list, key.slice(list.length + 1))),
     );
     const paired = new Set<Entry>();
-    const applying = entries(saved.profile[list]).map((applied): Slot => {
+    const appliedEntries = entries(saved.profile[list]);
+    const applying = appliedEntries.map((applied, at): Slot => {
       const name = nameOf(applied);
       const file = fileOf(saved.sources[list], name);
       const draft = drafts.find((entry) => identity(list, nameOf(entry)) === identity(list, name));
@@ -568,7 +579,9 @@ export class EntryEdits {
       }
       const here = file === undefined || file === own;
       return {
-        key: `${list}/${name}`,
+        key: `${list}/${name}${ambiguous(applied, appliedEntries) ? `:${saved.entryPositions?.[list]?.[at] ?? at}` : ''}`,
+        index: saved.entryPositions?.[list]?.[at],
+        draftIndex: draft === undefined ? undefined : draftPositions.get(draft),
         applied,
         openFileNamesAppliedEntry: here,
         baseProfileNamingAppliedEntry: here ? undefined : basename(file),
@@ -581,7 +594,8 @@ export class EntryEdits {
     const alone = drafts
       .filter((draft) => !paired.has(draft))
       .map((draft): Slot => ({
-        key: `${list}/${nameOf(draft)}`,
+        key: `${list}/${nameOf(draft)}${ambiguous(draft, drafts) ? `:${draftPositions.get(draft) ?? drafts.indexOf(draft)}` : ''}`,
+        draftIndex: draftPositions.get(draft),
         applied: undefined,
         openFileNamesAppliedEntry: false,
         baseProfileNamingAppliedEntry: undefined,
@@ -601,7 +615,14 @@ export class EntryEdits {
     const unsets: string[] = [];
     const add = (list: EntryList, slot: Slot | undefined, final: Entry | undefined): void => {
       const planned = writesFor(list, slot, final, mode);
-      writes.push(...planned.writes);
+      writes.push(
+        ...planned.writes.map((write) => ({
+          ...write,
+          ...((write.draft === true ? slot?.draftIndex : slot?.index) === undefined
+            ? {}
+            : { index: write.draft === true ? slot?.draftIndex : slot?.index }),
+        })),
+      );
       if (planned.unset !== undefined) {
         unsets.push(planned.unset);
       }
@@ -635,6 +656,7 @@ export class EntryEdits {
       return {
         list,
         key: slot.key,
+        index: slot.openFileDraft === undefined ? slot.index : slot.draftIndex,
         entry: change === undefined ? start : change.entry,
         saved: start,
         applied: slot.applied,
@@ -677,7 +699,7 @@ export class EntryEdits {
     const all = [...listed, ...others];
     return all.map((row) => {
       // A draft is checked as its change is, since a save that applies finishes it.
-      const applyProblem = row.unsaved || row.inDraft !== undefined ? this.#problem(row, all, true) : undefined;
+      const applyProblem = this.#problem(row, all, true);
       return {
         ...row,
         applyProblem: applyProblem?.message,
@@ -721,7 +743,13 @@ export class EntryEdits {
     }
     // The file still has that name for an entry whose change renames it or takes it out, until a save.
     if (
-      others.some((other) => other.unsaved && other.savedName !== undefined && identity(list, other.savedName) === id)
+      others.some(
+        (other) =>
+          other.unsaved &&
+          other.savedName !== undefined &&
+          identity(list, other.savedName) !== identity(list, row.savedName ?? '') &&
+          identity(list, other.savedName) === id,
+      )
     ) {
       return {
         field: 'name',
@@ -731,10 +759,23 @@ export class EntryEdits {
     if (!applies) {
       return undefined;
     }
-    return fieldProblem(
-      list,
-      entry,
-      others.map((other) => identity(list, nameOf(other.entry))).filter((other) => other !== ''),
-    );
+    const problem =
+      row.unsaved || row.inDraft !== undefined
+        ? fieldProblem(
+            list,
+            entry,
+            others.map((other) => identity(list, nameOf(other.entry))).filter((other) => other !== ''),
+          )
+        : undefined;
+    if (problem !== undefined) {
+      return problem;
+    }
+    const invalid = entryValueProblems(list, entry)[0];
+    return invalid === undefined
+      ? undefined
+      : {
+          field: invalid.path[0] === 'name' ? 'name' : invalid.path[0] === 'color' ? 'color' : 'entry',
+          message: invalid.message,
+        };
   }
 }

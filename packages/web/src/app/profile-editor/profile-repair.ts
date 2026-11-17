@@ -1,5 +1,5 @@
 import { computed, signal } from '@preact/signals';
-import { resolveProfile } from '@repotted/core';
+import { readProfileForEditing } from '@repotted/core';
 
 import { readFile, writeFile } from '../../engine/files.js';
 import { basename } from '../../engine/path.js';
@@ -36,7 +36,7 @@ export class ProfileRepair {
     const turn = (this.#check += 1);
     this.checking.value = true;
     try {
-      await resolveProfile(this.file, this.text.value);
+      await readProfileForEditing(this.file, this.text.value);
       if (turn === this.#check) {
         this.problem.value = undefined;
       }
@@ -60,7 +60,7 @@ export class ProfileRepair {
     this.saveError.value = undefined;
     try {
       await write(async () => {
-        await resolveProfile(this.file, text);
+        await readProfileForEditing(this.file, text);
         if ((await readFile(this.file, 'utf8')) !== this.#original.value) {
           throw new Error('The profile changed elsewhere. Copy your corrections, then reload before editing again.');
         }

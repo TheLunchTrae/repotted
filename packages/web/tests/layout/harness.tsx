@@ -164,7 +164,11 @@ await writeFile(
   '/profiles/browser/unfinished.yaml',
   'labels:\n  - name: unfinished\n    draft: true\n    color: invalid\n',
 );
-await writeFile('/profiles/browser/invalid.yaml', 'repository:\n  has_wiki: broken\n');
+await writeFile('/profiles/browser/invalid.yaml', 'repository: [\n');
+await writeFile(
+  '/profiles/browser/configuration.yaml',
+  'ignored: true\nrepository: { has_wiki: broken }\nlabels: [42, { name: keep, color: abcdef }]\n',
+);
 // Two profiles on the long name, the most a phone shows as tags, and four on another, one of them gone.
 localStorage.setItem(
   'repotted:repository-profiles',

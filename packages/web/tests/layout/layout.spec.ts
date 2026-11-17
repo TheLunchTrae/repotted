@@ -326,14 +326,31 @@ for (const action of ['Apply', 'Change settings once']) {
   });
 }
 
+test('configuration errors open in the forms and can be saved without editing YAML', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('configuration', { exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Profile YAML', exact: true })).toHaveCount(0);
+  const wiki = page.getByRole('radiogroup', { name: 'Wiki', exact: true });
+  const save = page.getByRole('button', { name: 'Save', exact: true });
+  await expect(wiki).toHaveAttribute('aria-invalid', 'true');
+  await expect(save).toBeDisabled();
+  await wiki.getByRole('radio', { name: 'On', exact: true }).check();
+  await page.getByRole('button', { name: 'Remove invalid configuration', exact: true }).click();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(wiki).toHaveAttribute('aria-invalid', 'false');
+  await page.getByRole('tab', { name: 'Labels', exact: true }).click();
+  await expect(page.getByText('keep', { exact: true })).toBeVisible();
+});
+
 test('invalid profiles keep unsaved YAML across navigation and open the settings after repair', async ({ page }) => {
   await page.goto('/profiles');
   await page.getByText('invalid', { exact: true }).click();
   const yaml = page.getByRole('textbox', { name: 'Profile YAML', exact: true });
   const save = page.getByRole('button', { name: 'Save', exact: true });
-  await expect(yaml).toHaveValue('repository:\n  has_wiki: broken\n');
+  await expect(yaml).toHaveValue('repository: [\n');
   await expect(save).toBeDisabled();
-  await yaml.fill('repository: [\n');
+  await yaml.fill('merge: [\n');
   await expect(save).toBeDisabled();
   await page.getByRole('link', { name: 'Repotted', exact: true }).click();
   const profiles = page.getByRole('link', { name: 'Profiles', exact: true });
@@ -342,7 +359,7 @@ test('invalid profiles keep unsaved YAML across navigation and open the settings
   }
   await profiles.click();
   await page.getByText('invalid', { exact: true }).click();
-  await expect(yaml).toHaveValue('repository: [\n');
+  await expect(yaml).toHaveValue('merge: [\n');
   await yaml.fill('# Repaired\nrepository:\n  has_wiki: true\n');
   await expect(save).toBeEnabled();
   await save.click();

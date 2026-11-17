@@ -32,12 +32,16 @@ export {
   listProfiles,
   parseProfile,
   previewProfile,
+  previewProfileChanges,
+  ProfileError,
   resolveProfile,
   settingPath,
   settingValueProblems,
   stringifyProfile,
   withExtends,
 } from './profiles/profile.js';
+export { readProfileForEditing } from './profiles/editing.js';
+export type { ConfigurationProblem, EditableProfile } from './profiles/editing.js';
 export { ownerHas, ownerTypes, partOwnerTypeCannotHold, settingRules } from './profiles/owner.js';
 export type { OwnerNeed, OwnerType } from './profiles/owner.js';
 export type { EntryEdit, ProfileEdit, ValueProblem } from './profiles/profile.js';

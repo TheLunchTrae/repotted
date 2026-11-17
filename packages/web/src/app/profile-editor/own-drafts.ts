@@ -1,11 +1,13 @@
-import type { resolveProfile } from '@repotted/core';
+import type { EditableProfile } from '@repotted/core';
 
 /** A profile, or a staged apply's file, which resolves over profiles as a profile does. */
-export type ResolvedProfile = Pick<
-  Awaited<ReturnType<typeof resolveProfile>>,
-  'chain' | 'profile' | 'drafts' | 'warnings' | 'sources'
-> &
-  Partial<Pick<Awaited<ReturnType<typeof resolveProfile>>, 'owner_source' | 'owner_changes'>>;
+export type ResolvedProfile = Pick<EditableProfile, 'chain' | 'profile' | 'drafts' | 'warnings' | 'sources'> &
+  Partial<
+    Pick<
+      EditableProfile,
+      'owner_source' | 'owner_changes' | 'problems' | 'entryPositions' | 'draftEntryPositions' | 'rawText'
+    >
+  >;
 
 /**
  * The engine files each key under the name GitHub knows its entry by, so a
