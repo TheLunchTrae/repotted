@@ -647,11 +647,19 @@ export const draftSettings = z
   })
   .partial();
 
-export const definitionSections = { 'actions-policy': 'actions', ruleset: 'rulesets' } as const;
+export const definitionSections = {
+  'actions-policy': 'actions',
+  ruleset: 'rulesets',
+  environment: 'environments',
+} as const;
 export type DefinitionKind = keyof typeof definitionSections;
-export const definitionKind = z.enum(['actions-policy', 'ruleset']);
+export const definitionKind = z.enum(['actions-policy', 'ruleset', 'environment']);
 export const profileReferences = z
-  .object({ actions: z.string().min(1).optional(), rulesets: z.array(z.string().min(1)).optional() })
+  .object({
+    actions: z.string().min(1).optional(),
+    rulesets: z.array(z.string().min(1)).optional(),
+    environments: z.array(z.string().min(1)).optional(),
+  })
   .strict();
 
 export const profileFile = z.object({

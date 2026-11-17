@@ -25,6 +25,36 @@ afterEach(async () => {
 
 const folder = '/profiles';
 
+test('a shared environment edit marks direct and transitive assignments changed without writing GitHub', async () => {
+  const listings = await profiles({
+    'production.yaml': 'kind: environment\nenvironments: [{ name: production, wait_timer: 5 }]\n',
+    'base.yaml': 'references: { environments: [./production.yaml] }\n',
+    'service.yaml': 'extends: ./base.yaml\nrepository: { has_wiki: false }\n',
+  });
+  const preferences = store();
+  const assignments = new RepositoryProfiles(preferences, { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/direct', ['production.yaml']);
+  assignments.setProfiles('lunch/service', ['service.yaml']);
+  await assignments.check();
+  for (const [repository, profile] of [
+    ['lunch/direct', 'production.yaml'],
+    ['lunch/service', 'service.yaml'],
+  ] as const) {
+    assignments.recordApplied(repository, [{ profile, version: await profileVersion(`${folder}/${profile}`) }]);
+    expect(assignments.status(repository)).toEqual({ kind: 'current' });
+  }
+
+  await writeFile(
+    `${folder}/production.yaml`,
+    'kind: environment\nenvironments: [{ name: production, wait_timer: 30 }]\n',
+  );
+  listings.value = await listProfiles(folder);
+  await assignments.check();
+
+  expect(assignments.status('lunch/direct')).toMatchObject({ kind: 'changed', changed: ['production.yaml'] });
+  expect(assignments.status('lunch/service')).toMatchObject({ kind: 'changed', changed: ['service.yaml'] });
+});
+
 function store(start: Record<string, unknown> = {}): {
   readonly kept: Record<string, unknown>;
   read: (key: string) => unknown;
