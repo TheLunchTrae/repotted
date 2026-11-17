@@ -369,8 +369,38 @@ for organizations, is another entry there.
 the states.
 
 `batch-apply.ts` reviews several repositories through the engine's batch in
-`/apply/<id>/batch`. Each member starts from the selected profile, and the
-batch has the same page-scoped lifetime as a single apply.
+`/apply/<id>/batch`. Each member starts from the selected profile or its
+effective folder and own layers, and the batch has the same page-scoped
+lifetime as a single apply. The engine limits concurrent planning as it
+does for every batch.
+
+Repository folders keep optional `profiles` and `applyProfilesOnMove` fields
+alongside their membership in `repository-folders`. Omitted fields mean no
+layers and no review on move. `RepositoryProfiles.profilesOf` combines a
+repository's folder layers with its own, keeping the first occurrence of a
+path; the engine resolves shared ancestors once. `ownProfilesOf` supplies
+the editable repository list, so inherited layers are never copied into it.
+Folders are flat and inherit all their layers; there is no per-layer opt-out.
+
+`Repositories.moveToFolder` calls its review callback only for repositories
+newly entering a known folder with the setting on and layers assigned.
+Preference reads, settings saves, renames, deletions, moves out, and moves to
+the same folder never call it. `reviewMovedProfiles` opens the single review
+or one batch using the effective layers after the move. A single review
+starts atomically in `Apply.startReview`, so late work cannot advance a
+newer apply from its edits. An active single or batch write refuses the
+review; a shell notice names the moved repositories and asks for a manual
+review after the write finishes. The move remains saved
+when planning fails or the review closes. Changes read from another browser
+update inherited layers and status through the shared preferences without
+opening a review.
+
+A successful full apply records the versions reviewed without changing the
+repository's own layers. Batch reviews carry those versions beside each
+plan, and record them only for successful or in-line members, without
+exclusions, one-off edits, or refused reads. An entirely in-line batch offers
+**Mark as applied**, which rechecks each repository through the batch engine
+and records versions without writing repository settings.
 Its change summary groups exclusion keys into readable
 labels using the comparison's setting fields, and retains each affected
 repository once per key. That summary includes repositories with locked

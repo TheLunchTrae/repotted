@@ -9,10 +9,19 @@ export const repositoryFoldersKey = 'repository-folders';
 export interface Folder {
   readonly name: string;
   readonly repositories: readonly string[];
+  readonly profiles?: readonly string[];
+  readonly applyProfilesOnMove?: boolean;
 }
 
 const names = z.array(z.string());
-const savedFolders = z.array(z.object({ name: z.string(), repositories: z.array(z.string()) }));
+const savedFolders = z.array(
+  z.object({
+    name: z.string(),
+    repositories: z.array(z.string()),
+    profiles: z.optional(z.array(z.string())),
+    applyProfilesOnMove: z.optional(z.boolean()),
+  }),
+);
 
 /** GitHub names are case-insensitive, and so are folder names. */
 export function sameName(left: string, right: string): boolean {
@@ -46,7 +55,12 @@ export function foldersIn(value: unknown): readonly Folder[] {
         folder.repositories.findIndex((other) => sameName(other, name)) === index,
     );
     filed.push(...repositories);
-    folders.push({ name: folder.name, repositories });
+    folders.push({
+      name: folder.name,
+      repositories,
+      ...(folder.profiles === undefined ? {} : { profiles: [...new Set(folder.profiles)] }),
+      ...(folder.applyProfilesOnMove === undefined ? {} : { applyProfilesOnMove: folder.applyProfilesOnMove }),
+    });
   }
   return folders.toSorted(byFolderName);
 }
@@ -119,6 +133,10 @@ function folderOfEachRepository(folders: readonly Folder[]): Map<string, { repos
   return filed;
 }
 
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 /**
  * A folder whose name changed only in case is renamed too. A deleted
  * folder's repositories leave it with the folder, so they get no line of
@@ -150,6 +168,14 @@ function folderChanges(beforeValue: unknown, afterValue: unknown): ConfigChange[
       return newName === undefined ? [] : [folderChange('Rename', `${folderBefore.name} to ${newName}`)];
     }),
     ...deleted.map((folderGone) => folderChange('Delete', folderGone.name)),
+    ...before.flatMap((folderBefore) => {
+      const folderAfter = renamedTo.get(folderBefore) ?? findIn(after, folderBefore.name);
+      return folderAfter !== undefined &&
+        (!sameValue(folderBefore.profiles ?? [], folderAfter.profiles ?? []) ||
+          (folderBefore.applyProfilesOnMove ?? false) !== (folderAfter.applyProfilesOnMove ?? false))
+        ? [folderChange('Update settings for', folderAfter.name)]
+        : [];
+    }),
   ];
   const currentName = (name: string): string => newNameByOldName.get(name.toLowerCase()) ?? name;
   const filedBefore = folderOfEachRepository(before);
@@ -186,10 +212,6 @@ function changesOf(key: string, before: unknown, after: unknown): ConfigChange[]
     return folderChanges(before, after);
   }
   return [];
-}
-
-function sameValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 /** What saving `after` over `before` changes, for the commit's message. */

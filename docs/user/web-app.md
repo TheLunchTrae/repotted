@@ -122,6 +122,30 @@ repositories back under their owners, and nothing changes on GitHub. A
 search looks in folders too, and a folder whose name matches shows
 everything in it.
 
+Choose **Settings** in a folder's **Edit** menu to give it profiles in the
+order they apply. Each repository in the folder starts with those profiles,
+then its own; later profiles override earlier ones, and a profile reached
+more than once counts once. Its panel marks the inherited profiles
+**From folder**. Change them in the folder's settings; **Edit** in the
+repository's **Profiles** section changes only its own profiles. Folders are
+flat, and a repository inherits every profile of its folder.
+
+**Apply profiles to repositories moved here** is off by default. With it on
+and profiles chosen for the folder, moving a repository into it opens a
+review of its folder and own profiles. Moving several opens one batch
+review, with each repository's own profiles after the folder's. Nothing is
+written until you review and apply. A repository already in that folder is
+not reviewed again by the move. Saving folder settings applies nothing to
+repositories already there.
+
+Moving out or deleting a folder removes its inherited profiles from future
+applies; it does not undo settings on GitHub. A move read from another
+browser updates the repository's profile status without opening a review
+here. Missing profiles or a failed comparison are reported in the review;
+the repository stays in its chosen folder. If another apply is writing, a
+notice asks you to review the moved repositories from their panels after
+that apply finishes.
+
 When your profiles are kept in a GitHub repository, the owners and
 repositories you hid, and your folders, are kept there too, in
 `.repotted-preferences.json` beside the profiles, so they follow you to any

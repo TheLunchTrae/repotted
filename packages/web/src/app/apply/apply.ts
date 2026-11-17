@@ -26,7 +26,12 @@ import { basename, dirname } from '../../engine/path.js';
 import { isSignedOut } from '../account/account.js';
 import { type EditorStore, ProfileEditor } from '../profile-editor/profile-editor.js';
 import { builtInFolder } from '../profiles/config-protection.js';
-import { type AppliedVersion, profileName, profileVersion } from '../repositories/repository-profiles.js';
+import {
+  type AppliedVersion,
+  profileName,
+  profilesApplyFully,
+  profileVersion,
+} from '../repositories/repository-profiles.js';
 import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
 
 /** What applying does to the profiles the repository uses. */
@@ -47,11 +52,6 @@ export interface ProfileAssignments {
   pathOf(file: string): string | undefined;
   recordApplied(repository: string, applied: readonly AppliedVersion[]): void;
   recordAdded(repository: string, profilePath: string, version: string | undefined): void;
-}
-
-function hasOneOffEdits(staged: StagedApply): boolean {
-  const { drafts: _drafts, ...settled } = staged.sources;
-  return Object.values(settled).some((setBy) => Object.values(setBy).includes(staged.file));
 }
 
 const noAssignments: ProfileAssignments = {
@@ -204,13 +204,19 @@ export class Apply {
     await this.#start(repository, profiles);
   }
 
+  async startReview(repository: string, profiles: readonly ComparedProfile[]): Promise<void> {
+    if (!this.#writing() && profiles.length > 0) {
+      await this.#start(repository, profiles, true);
+    }
+  }
+
   async startWithoutProfile(repository: string): Promise<void> {
     if (!this.#writing()) {
       await this.#start(repository, []);
     }
   }
 
-  async #start(repository: string, profiles: readonly ComparedProfile[]): Promise<void> {
+  async #start(repository: string, profiles: readonly ComparedProfile[], review = false): Promise<void> {
     const closing = this.close();
     this.#profiles = profiles;
     const file = `/apply/${crypto.randomUUID()}/apply.yaml`;
@@ -230,7 +236,7 @@ export class Apply {
         await rm(dirname(file), { recursive: true, force: true });
         throw error;
       }
-      return this.#edit(repository, file, current);
+      return review ? this.#review(repository, file, undefined) : this.#edit(repository, file, current);
     });
   }
 
@@ -477,10 +483,7 @@ export class Apply {
   ): Promise<{ assignment: AssignmentOffer; appliedVersions: readonly AppliedVersion[] }> {
     const files = staged.profiles;
     // A read GitHub refused, as for a missing permission, compared nothing there, and granting it can change the plan.
-    const recordsVersions =
-      staged.exclude.length === 0 &&
-      !hasOneOffEdits(staged) &&
-      !plan.warnings.some((warning) => warning.cause === 'refused');
+    const recordsVersions = profilesApplyFully(staged, plan);
     const paths = files.map((file) => this.#assignments.pathOf(file));
     const inFolder = paths.filter((path) => path !== undefined);
     if (inFolder.length === 0 || inFolder.length !== paths.length) {

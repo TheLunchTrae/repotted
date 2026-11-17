@@ -123,6 +123,7 @@ export class Repositories {
   readonly showHidden = signal(false);
   /** Undo brings them back. */
   readonly justHidden = signal<readonly string[]>([]);
+  readonly moveReviewNotice = signal<string | undefined>(undefined);
   /** Of those just hidden, the ones that were selected, which Undo selects again. */
   #justDeselected: readonly string[] = [];
   /** The repository let go of when the last hide took it out of view, which Undo opens again. */
@@ -132,6 +133,7 @@ export class Repositories {
   readonly #user: User;
   readonly #browser: Preferences;
   readonly #onSignedOut: () => void;
+  readonly #onReviewMoved: (repositories: readonly string[]) => boolean;
   readonly #hiddenOwners = computed(() => namesIn(this.preferences.read(hiddenOwnersKey)));
   /** Kept lowercase, since GitHub matches names in any case. */
   readonly #hiddenNames = computed<ReadonlySet<string>>(
@@ -157,6 +159,7 @@ export class Repositories {
     preferences: SharedPreferences,
     browser: Preferences,
     onSignedOut: () => void,
+    onReviewMoved: (repositories: readonly string[]) => boolean = () => true,
   ) {
     this.#github = github;
     this.#user = user;
@@ -166,6 +169,7 @@ export class Repositories {
     this.sortOrder.value = sortOrderIn(browser.read(sortOrderKey));
     this.filters.value = filtersIn(browser.read(filtersKey));
     this.#onSignedOut = onSignedOut;
+    this.#onReviewMoved = onReviewMoved;
   }
 
   isHidden(repository: Repository): boolean {
@@ -637,6 +641,26 @@ export class Repositories {
     this.#moveTarget.value = target;
   }
 
+  folder(name: string): Folder | undefined {
+    return this.#folders.value.find((folder) => sameName(folder.name, name));
+  }
+
+  setFolderSettings(name: string, profiles: readonly string[], applyProfilesOnMove: boolean): void {
+    this.#updateFolders((folders) =>
+      folders.map((folder) => {
+        if (!sameName(folder.name, name)) {
+          return folder;
+        }
+        const { profiles: _profiles, applyProfilesOnMove: _applyProfilesOnMove, ...keptFolder } = folder;
+        return {
+          ...keptFolder,
+          ...(profiles.length > 0 ? { profiles: [...new Set(profiles)] } : {}),
+          ...(applyProfilesOnMove ? { applyProfilesOnMove: true } : {}),
+        };
+      }),
+    );
+  }
+
   /**
    * Answers why not when the name can't be used. A folder of that name saved
    * elsewhere meanwhile takes the repositories instead.
@@ -715,9 +739,18 @@ export class Repositories {
     { deselect = false }: FolderMoveOptions = {},
   ): void {
     const moving = repositories.map((repository) => repository.full_name);
+    const target = name === undefined ? undefined : this.folder(name);
+    const entering = moving.filter(
+      (repository) => target?.repositories.some((filed) => sameName(filed, repository)) !== true,
+    );
     this.#updateFolders((folders) => withMoved(folders, moving, name));
     if (deselect) {
       this.#deselect(moving);
+    }
+    if (target?.applyProfilesOnMove === true && (target.profiles ?? []).length > 0 && entering.length > 0) {
+      this.moveReviewNotice.value = !this.#onReviewMoved(entering)
+        ? `${entering.join(', ')} moved to ${target.name}. An apply is writing to GitHub. When it finishes, open each moved repository and choose Review apply for its profiles.`
+        : undefined;
     }
   }
 

@@ -480,6 +480,89 @@ function several(
   });
 }
 
+test('folder settings survive moves and renames, and only newly moved repositories request a review', async () => {
+  const browser = memory();
+  const github = new FakeGitHub({ account: account(everyone) });
+  const review = vi.fn();
+  const repositories = new Repositories(github, user, inBrowser(github, browser), browser, () => undefined, review);
+  await repositories.load();
+  repositories.createFolder('Work');
+  repositories.setFolderSettings('Work', ['base.yaml', 'base.yaml'], false);
+  repositories.moveToFolder(several(repositories, 'zeta/site'), 'Work');
+  expect(review).not.toHaveBeenCalled();
+
+  repositories.setFolderSettings('work', ['base.yaml'], true);
+  expect(review).not.toHaveBeenCalled();
+  repositories.moveToFolder(several(repositories, 'zeta/site', 'Acme/api', 'acme/web'), 'WORK', { deselect: true });
+  expect(review.mock.calls).toEqual([[['Acme/api', 'acme/web']]]);
+  repositories.renameFolder('Work', 'Clients');
+  expect(repositories.folder('clients')).toMatchObject({ profiles: ['base.yaml'], applyProfilesOnMove: true });
+
+  repositories.moveToFolder(several(repositories, 'trae/dotfiles'), 'Clients');
+  expect(review.mock.calls).toEqual([[['Acme/api', 'acme/web']], [['trae/dotfiles']]]);
+  repositories.moveToFolder(several(repositories, 'trae/dotfiles'), 'Clients');
+  repositories.moveToFolder(several(repositories, 'trae/dotfiles'), undefined);
+  repositories.deleteFolder('Clients');
+  expect(review).toHaveBeenCalledTimes(2);
+});
+
+test('a remote move loads folder settings without opening a review and saves local settings beside them', async () => {
+  const source = { kind: 'repository', repository: 'trae/config', path: 'profiles' } as const;
+  const file = `profiles/${preferencesFile}`;
+  const config = new FakeGitRepository('trae/config');
+  const saved = { name: 'Work', repositories: ['zeta/site'], profiles: ['base.yaml'], applyProfilesOnMove: true };
+  config.write({ [file]: JSON.stringify({ 'repository-folders': [saved] }) });
+  const browser = memory();
+  const shared = new SharedPreferences(config, browser, () => undefined);
+  const review = vi.fn();
+  const github = new FakeGitHub({ account: account(everyone) });
+  const repositories = new Repositories(github, user, shared, browser, () => undefined, review);
+  await repositories.load();
+  await shared.use(source);
+  expect(repositories.folder('Work')).toEqual(saved);
+  expect(review).not.toHaveBeenCalled();
+
+  config.write({
+    [file]: JSON.stringify({ 'repository-folders': [{ ...saved, repositories: [...saved.repositories, 'Acme/api'] }] }),
+  });
+  repositories.setFolderSettings('Work', ['node.yaml'], true);
+  await vi.waitFor(() => {
+    expect(JSON.parse(config.files()[file] ?? '{}')).toEqual({
+      'repository-folders': [
+        {
+          ...saved,
+          profiles: ['node.yaml'],
+          repositories: ['zeta/site', 'Acme/api'],
+        },
+      ],
+    });
+  });
+  expect(review).not.toHaveBeenCalled();
+  expect(browser.kept).toEqual({});
+});
+
+test('a refused move review keeps the move and explains how to review after the active write', async () => {
+  const browser = memory();
+  const github = new FakeGitHub({ account: account(everyone) });
+  const repositories = new Repositories(
+    github,
+    user,
+    inBrowser(github, browser),
+    browser,
+    () => undefined,
+    () => false,
+  );
+  await repositories.load();
+  repositories.createFolder('Work');
+  repositories.setFolderSettings('Work', ['base.yaml'], true);
+
+  repositories.moveToFolder(several(repositories, 'Acme/api'), 'Work');
+
+  expect(repositories.folder('Work')?.repositories).toEqual(['Acme/api']);
+  expect(repositories.moveReviewNotice.value).toContain('Acme/api moved to Work');
+  expect(repositories.moveReviewNotice.value).toContain('An apply is writing to GitHub');
+});
+
 test('a folder holds repositories of any owner above the owner groups, which keep the rest', async () => {
   const preferences = memory();
   const github = new FakeGitHub({ account: account(everyone) });

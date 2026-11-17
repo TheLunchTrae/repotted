@@ -1,20 +1,25 @@
 import { type Signal, signal } from '@preact/signals';
 import { listProfiles } from '@repotted/core';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
-import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import { answered, FakeFleet, FakeGitHub } from '../../../core/tests/support/fake-github.js';
 import { Apply } from '../../src/app/apply/apply.js';
+import { BatchApply } from '../../src/app/apply/batch-apply.js';
+import { repositoryFoldersKey } from '../../src/app/preferences/preference-changes.js';
 import type { Change } from '../../src/app/preferences/shared-preferences.js';
 import type { ProfileListing } from '../../src/app/profiles/profiles.js';
+import { reviewMovedProfiles } from '../../src/app/repositories/folder-moves.js';
 import {
   profileVersion,
   RepositoryProfiles,
   repositoryProfilesKey,
   tagsFor,
 } from '../../src/app/repositories/repository-profiles.js';
+import * as files from '../../src/engine/files.js';
 import { mkdir, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await rm('/', { recursive: true });
 });
 
@@ -96,6 +101,230 @@ test('reads a hand-edited list that is not one as no profiles', () => {
 
   expect(assignments.profilesOf('lunch/app')).toEqual([]);
 });
+
+test('inherits folder profiles before its own and notices moves made elsewhere without applying', async () => {
+  const listings = await profiles({
+    'base.yaml': 'repository: { has_wiki: false }\n',
+    'node.yaml': 'repository: { has_projects: false }\n',
+    'web.yaml': 'repository: { has_issues: false }\n',
+  });
+  const preferences = store({
+    [repositoryFoldersKey]: [{ name: 'Packages', repositories: ['Lunch/App'], profiles: ['base.yaml', 'node.yaml'] }],
+  });
+  const assignments = new RepositoryProfiles(preferences, { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['node.yaml', 'web.yaml']);
+
+  expect(assignments.profilesOf('lunch/app')).toEqual(['base.yaml', 'node.yaml', 'web.yaml']);
+  expect(assignments.repositoriesWithProfiles.value).toContain('lunch/app');
+  await assignments.check();
+  assignments.recordApplied(
+    'lunch/app',
+    await Promise.all(
+      assignments.profilesOf('lunch/app').map(async (profile) => ({
+        profile,
+        version: await profileVersion(`${folder}/${profile}`),
+      })),
+    ),
+  );
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'current' });
+
+  preferences.update(repositoryFoldersKey, () => [
+    { name: 'Sites', repositories: ['lunch/app'], profiles: ['web.yaml'] },
+  ]);
+  await assignments.check();
+
+  expect(assignments.profilesOf('lunch/app')).toEqual(['web.yaml', 'node.yaml']);
+  expect(assignments.status('lunch/app')).toMatchObject({
+    kind: 'changed',
+    removed: ['base.yaml'],
+    reordered: true,
+  });
+});
+
+test('records an apply of inherited profiles without copying them to the repository', async () => {
+  const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: false }\n' });
+  const preferences = store({
+    [repositoryFoldersKey]: [{ name: 'Work', repositories: ['lunch/app'], profiles: ['base.yaml'] }],
+  });
+  const assignments = new RepositoryProfiles(preferences, { listings, folder: signal(folder) });
+  const apply = new Apply(
+    new FakeGitHub(),
+    () => undefined,
+    (work) => work(),
+    assignments,
+  );
+  await apply.startFromProfiles('lunch/app', [{ file: `${folder}/base.yaml`, name: 'base', folder }]);
+  await apply.review();
+  await apply.apply();
+  await assignments.check();
+
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'current' });
+  expect(preferences.kept[repositoryProfilesKey]).toMatchObject({ 'lunch/app': { profiles: [] } });
+  preferences.update(repositoryFoldersKey, () => undefined);
+  expect(assignments.profilesOf('lunch/app')).toEqual([]);
+});
+
+test('a batch reviews folder then own layers and records only complete successful applies', async () => {
+  const listings = await profiles({
+    'base.yaml': 'repository: { has_wiki: false }\n',
+    'node.yaml': 'repository: { has_projects: false }\n',
+    'web.yaml': 'extends: base.yaml\nrepository: { has_wiki: true }\n',
+  });
+  const names = ['lunch/app', 'lunch/api', 'lunch/web'];
+  const preferences = store({
+    [repositoryFoldersKey]: [{ name: 'Work', repositories: names, profiles: ['base.yaml', 'node.yaml'] }],
+  });
+  const assignments = new RepositoryProfiles(preferences, { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/web', ['web.yaml']);
+  await assignments.check();
+  const fakes = names.map((name) => new FakeGitHub({}, name));
+  const batch = new BatchApply(new FakeFleet(fakes), () => undefined, assignments);
+  await batch.startFromProfiles(
+    names.map((repository) => ({
+      repository,
+      profiles: assignments
+        .profilesOf(repository)
+        .map((path) => ({ file: assignments.fileOf(path), name: path, folder })),
+    })),
+  );
+
+  expect(batch.state.value.kind).toBe('reviewed');
+  expect(fakes.flatMap((fake) => fake.calls).every((call) => call.method === 'GET')).toBe(true);
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'not-applied' });
+  await batch.leaveOut('lunch/api', 'repository.has_wiki', true);
+  const app = fakes[0];
+  if (app !== undefined) {
+    app.state.repository['has_wiki'] = false;
+  }
+  await batch.apply();
+
+  expect(batch.state.value).toMatchObject({ kind: 'applied', left: 1 });
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'not-applied' });
+  expect(assignments.status('lunch/api')).toEqual({ kind: 'not-applied' });
+  expect(assignments.status('lunch/web')).toEqual({ kind: 'current' });
+  expect(fakes[1]?.state.repository).toMatchObject({ has_wiki: true, has_projects: false });
+  expect(fakes[2]?.state.repository).toMatchObject({ has_wiki: true, has_projects: false });
+  expect(assignments.ownProfilesOf('lunch/web')).toEqual(['web.yaml']);
+});
+
+test('an in-line batch can be marked as applied without writing settings', async () => {
+  const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: true }\n' });
+  const names = ['lunch/app', 'lunch/api'];
+  const assignments = new RepositoryProfiles(
+    store({
+      [repositoryFoldersKey]: [{ name: 'Work', repositories: names, profiles: ['base.yaml'] }],
+    }),
+    { listings, folder: signal(folder) },
+  );
+  await assignments.check();
+  const fakes = names.map((name) => new FakeGitHub({}, name));
+  const batch = new BatchApply(new FakeFleet(fakes), () => undefined, assignments);
+  await batch.startFromProfiles(
+    names.map((repository) => ({
+      repository,
+      profiles: [{ file: `${folder}/base.yaml`, name: 'base', folder }],
+    })),
+  );
+
+  expect(batch.ready.value).toEqual([]);
+  expect(batch.canRecordWithoutChanges.value).toBe(true);
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'not-applied' });
+  await batch.apply();
+
+  expect(batch.state.value).toMatchObject({ kind: 'applied', left: 0 });
+  expect(names.map((name) => assignments.status(name))).toEqual([{ kind: 'current' }, { kind: 'current' }]);
+  expect(fakes.flatMap((fake) => fake.calls).every((call) => call.method === 'GET')).toBe(true);
+});
+
+test('a move review that lands late cannot advance a newer apply from its edits', async () => {
+  const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: false }\n' });
+  const assignments = new RepositoryProfiles(
+    store({
+      [repositoryFoldersKey]: [{ name: 'Work', repositories: ['lunch/app'], profiles: ['base.yaml'] }],
+    }),
+    { listings, folder: signal(folder) },
+  );
+  let release = (): void => undefined;
+  let reading = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const entered = new Promise<void>((resolve) => {
+    reading = resolve;
+  });
+  const write = files.writeFile;
+  vi.spyOn(files, 'writeFile').mockImplementationOnce(async (...args) => {
+    reading();
+    await held;
+    return write(...args);
+  });
+  const github = new FakeFleet([new FakeGitHub(), new FakeGitHub({}, 'lunch/other')]);
+  const apply = new Apply(github, () => undefined);
+  const batch = new BatchApply(github, () => undefined);
+  const late = reviewMovedProfiles(['lunch/app'], assignments, folder, apply, batch);
+  await entered;
+  await apply.close();
+  await apply.start('lunch/other', { file: `${folder}/base.yaml`, name: 'base', folder });
+  expect(apply.state.value).toMatchObject({ kind: 'editing', repository: 'lunch/other' });
+
+  release();
+  await late?.work;
+
+  expect(apply.state.value).toMatchObject({ kind: 'editing', repository: 'lunch/other' });
+});
+
+test.each(['single', 'batch'] as const)(
+  'a move waits for an active %s write before it can open a review',
+  async (kind) => {
+    const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: false }\n' });
+    const assignments = new RepositoryProfiles(
+      store({
+        [repositoryFoldersKey]: [{ name: 'Work', repositories: ['lunch/app', 'lunch/api'], profiles: ['base.yaml'] }],
+      }),
+      { listings, folder: signal(folder) },
+    );
+    let release = (): void => undefined;
+    let writing = false;
+    let started = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const fleet = new FakeFleet([new FakeGitHub(), new FakeGitHub({}, 'lunch/api')]);
+    const github = {
+      request: async (...args: Parameters<FakeGitHub['request']>): Promise<unknown> => {
+        if (writing && args[0] !== 'GET') {
+          started();
+          await held;
+        }
+        return fleet.request(...args);
+      },
+    };
+    const apply = new Apply(github, () => undefined);
+    const batch = new BatchApply(github, () => undefined);
+    const profile = { file: `${folder}/base.yaml`, name: 'base', folder };
+    if (kind === 'single') {
+      await apply.startReview('lunch/app', [profile]);
+    } else {
+      await batch.start(['lunch/app'], profile);
+    }
+    writing = true;
+    const pending = kind === 'single' ? apply.apply() : batch.apply();
+    await entered;
+
+    expect(reviewMovedProfiles(['lunch/api'], assignments, folder, apply, batch)).toBeUndefined();
+    expect(reviewMovedProfiles(['lunch/app', 'lunch/api'], assignments, folder, apply, batch)).toBeUndefined();
+
+    release();
+    await pending;
+    const review = reviewMovedProfiles(['lunch/api'], assignments, folder, apply, batch);
+    expect(review?.path).toBe('/apply');
+    await review?.work;
+    expect(apply.state.value).toMatchObject({ kind: 'reviewed', repository: 'lunch/api' });
+  },
+);
 
 test('tells a repository whose profiles changed since the last apply from one up to date', async () => {
   const listings = await profiles({

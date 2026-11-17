@@ -27,6 +27,7 @@ import { useMenuPanelKeptOnPage } from '../layout/menu-placement.js';
 import { usePhone } from '../layout/phone.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
+import { FolderSettingsDialog } from './folder-settings.js';
 import { EditProfilesDialog, PanelProfiles, RowProfileTags } from './repository-profiles.js';
 
 function OwnerFilter({ repositories }: { readonly repositories: Repositories }): JSX.Element {
@@ -302,6 +303,7 @@ type FolderDialog =
       readonly isTheSelection: boolean;
     }
   | { readonly kind: 'rename'; readonly name: string }
+  | { readonly kind: 'settings'; readonly name: string }
   | { readonly kind: 'delete'; readonly name: string };
 
 const newFolderChoice = '\u0000new';
@@ -565,6 +567,15 @@ function FolderMenu({
         Edit
       </summary>
       <div class="menu-panel menu-panel-end">
+        <button
+          class="menu-item"
+          type="button"
+          onClick={() => {
+            pick({ kind: 'settings', name });
+          }}
+        >
+          Settings
+        </button>
         <button
           class="menu-item"
           type="button"
@@ -1543,7 +1554,15 @@ export function RepositoriesPage({
           />
         )
       )}
-      {dialog?.kind === 'delete' ? (
+      {dialog?.kind === 'settings' ? (
+        <FolderSettingsDialog
+          name={dialog.name}
+          repositories={repositories}
+          profiles={profiles}
+          assignments={assignments}
+          onClose={closeDialog}
+        />
+      ) : dialog?.kind === 'delete' ? (
         <DeleteFolderDialog repositories={repositories} name={dialog.name} onClose={closeDialog} />
       ) : (
         dialog !== undefined && <FolderNameDialog repositories={repositories} dialog={dialog} onClose={closeDialog} />
