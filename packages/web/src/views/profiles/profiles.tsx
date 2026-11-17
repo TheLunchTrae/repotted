@@ -506,7 +506,7 @@ interface ProfileProps {
 }
 
 function References({ listing, profiles, text }: ProfileProps & { readonly text: string }): JSX.Element {
-  const [selected, setSelected] = useState(profiles.referencesOf(text));
+  const [selected, setSelected] = useState(profiles.referencesOf(text, listing.file));
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   return (

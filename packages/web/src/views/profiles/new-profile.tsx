@@ -37,6 +37,7 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const formClosed = useRef(new AbortController());
+  const importRead = useRef(0);
   useEffect(
     () => () => {
       formClosed.current.abort();
@@ -296,11 +297,27 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
             if (file !== undefined) {
+              const request = ++importRead.current;
+              setWorking(true);
+              setKind('import');
+              setImportText('');
               run(
-                file.text().then((text) => {
-                  setImportText(text);
-                  setKind('import');
-                }),
+                file.text().then(
+                  (text) => {
+                    if (formClosed.current.signal.aborted || importRead.current !== request) {
+                      return;
+                    }
+                    setImportText(text);
+                    setWorking(false);
+                  },
+                  (error: unknown) => {
+                    if (formClosed.current.signal.aborted || importRead.current !== request) {
+                      return;
+                    }
+                    setError(error instanceof Error ? error.message : String(error));
+                    setWorking(false);
+                  },
+                ),
               );
             }
           }}
@@ -338,7 +355,7 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
         <button
           class="button button-primary"
           type="submit"
-          disabled={working || problem !== undefined || start === undefined}
+          disabled={working || (kind === 'import' && importText === '') || problem !== undefined || start === undefined}
         >
           {kind === 'repository' ? 'Capture' : 'Create'}
         </button>

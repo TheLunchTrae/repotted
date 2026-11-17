@@ -1288,3 +1288,10 @@ test('refuses deleting or moving sources used by repository assignments without 
   expect(await profiles.remove(listing)).toBeUndefined();
   expect(profiles.listings.value).toEqual([]);
 });
+
+test('reference controls normalize equivalent paths without adding duplicate sources', () => {
+  const profiles = new Profiles(new FakeGitHub(), memory(), () => undefined);
+  expect(
+    profiles.referencesOf('references: { actions: ./shared/../trusted.yaml }', '/profiles/browser/service.yaml'),
+  ).toEqual({ actions: 'trusted.yaml' });
+});
