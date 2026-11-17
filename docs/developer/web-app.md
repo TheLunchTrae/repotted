@@ -421,8 +421,27 @@ when planning fails or the review closes. Changes read from another browser
 update inherited layers and status through the shared preferences without
 opening a review.
 
-A successful full apply records the versions reviewed without changing the
-repository's own layers. Batch reviews carry those versions beside each
+Repository assignments keep optional `authoritative` and
+`appliedAuthoritative` section lists beside `profiles` and `applied` in
+shared preferences. Omitted lists mean partial management. Ownership belongs
+to the repository, never the folder, and covers the entire resolved effective
+profile combination. Changing the own profile list preserves ownership unless
+the dialog explicitly saves another choice. An assignment with ownership and
+no profiles remains meaningful: its owned sections have an empty desired set.
+
+`Apply` uses saved ownership when its source list matches the assignment;
+an explicit ownership argument overrides it for that apply. `BatchApply`
+writes each assignment's ownership to its own staged file before planning.
+Both carry a snapshot of effective profile order and ownership through the
+review and check it after engine revalidation, before writes begin. A changed
+assignment refuses the old review. Single review-again rebuilds from the
+current assignment; a batch asks for a fresh review. Successful recording
+compares the staged ownership with the saved choice, so a one-time override
+never advances the assignment baseline. A no-change single apply also
+revalidates through `applyPlan` before recording.
+
+A successful full apply records the versions and ownership reviewed without
+changing the repository's own layers. Batch reviews carry those versions beside each
 plan, and record them only for successful or in-line members, without
 exclusions, one-off edits, or refused reads. An entirely in-line batch offers
 **Mark as applied**, which rechecks each repository through the batch engine

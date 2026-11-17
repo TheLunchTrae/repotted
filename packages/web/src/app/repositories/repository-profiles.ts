@@ -1,5 +1,12 @@
 import { computed, signal } from '@preact/signals';
-import { type Plan, resolveProfile, type StagedApply, stringifyProfile } from '@repotted/core';
+import {
+  authoritativeSections,
+  type AuthoritativeSection,
+  type Plan,
+  resolveProfile,
+  type StagedApply,
+  stringifyProfile,
+} from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { basename, join, relative } from '../../engine/path.js';
@@ -23,6 +30,8 @@ export interface AppliedVersion {
 
 export interface Assignment {
   readonly profiles: readonly string[];
+  readonly authoritative?: readonly AuthoritativeSection[] | undefined;
+  readonly appliedAuthoritative?: readonly AuthoritativeSection[] | undefined;
   /** In the order they were applied. Undefined until one of them is. */
   readonly applied?: readonly AppliedVersion[] | undefined;
 }
@@ -41,6 +50,7 @@ export type AssignmentStatus =
       /** Applied last time and taken out of the list since, so an apply of the list now gives something else. */
       readonly removed: readonly string[];
       readonly reordered: boolean;
+      readonly ownershipChanged?: true;
     }
   | { readonly kind: 'current' };
 
@@ -58,6 +68,8 @@ const savedAssignments = z.record(
   z.string(),
   z.object({
     profiles: z.array(z.string()),
+    authoritative: z.optional(z.array(z.enum(authoritativeSections))),
+    appliedAuthoritative: z.optional(z.array(z.enum(authoritativeSections))),
     applied: z.optional(z.array(z.object({ profile: z.string(), version: z.string() }))),
   }),
 );
@@ -194,7 +206,7 @@ export class RepositoryProfiles {
   readonly repositoriesWithProfiles = computed(() => [
     ...new Set([
       ...Object.entries(this.#assignments.value).flatMap(([repository, item]) =>
-        item.profiles.length > 0 ? [repository] : [],
+        item.profiles.length > 0 || (item.authoritative?.length ?? 0) > 0 ? [repository] : [],
       ),
       ...this.#folders.value.flatMap((folder) =>
         (folder.profiles ?? []).length > 0 ? folder.repositories.map(keyOf) : [],
@@ -208,6 +220,10 @@ export class RepositoryProfiles {
 
   profilesOf(repository: string): readonly string[] {
     return [...new Set([...this.inheritedProfilesOf(repository), ...this.ownProfilesOf(repository)])];
+  }
+
+  authoritativeOf(repository: string): readonly AuthoritativeSection[] {
+    return this.assignment(repository)?.authoritative ?? [];
   }
 
   inheritedProfilesOf(repository: string): readonly string[] {
@@ -266,8 +282,9 @@ export class RepositoryProfiles {
   }
 
   status(repository: string): AssignmentStatus {
-    const assignment = { profiles: this.profilesOf(repository), applied: this.assignment(repository)?.applied };
-    if (assignment.profiles.length === 0) {
+    const assignment = { ...this.assignment(repository), profiles: this.profilesOf(repository) };
+    const authoritative = this.authoritativeOf(repository);
+    if (assignment.profiles.length === 0 && authoritative.length === 0) {
       return { kind: 'none' };
     }
     const missing = assignment.profiles.filter((profilePath) => !this.#listed.value.has(profilePath));
@@ -284,7 +301,7 @@ export class RepositoryProfiles {
       return { kind: 'checking' };
     }
     const applied = assignment.applied ?? [];
-    if (applied.length === 0) {
+    if (assignment.applied === undefined || (applied.length === 0 && assignment.profiles.length > 0)) {
       return { kind: 'not-applied' };
     }
     const appliedVersion = new Map(applied.map((item) => [item.profile, item.version]));
@@ -299,26 +316,51 @@ export class RepositoryProfiles {
       applied.map((item) => item.profile).filter((profilePath) => assignment.profiles.includes(profilePath)),
       assignment.profiles.filter((profilePath) => appliedVersion.has(profilePath)),
     );
-    return changed.length === 0 && notApplied.length === 0 && removed.length === 0 && !reordered
+    const ownershipChanged = !isSameList(
+      authoritativeSections.filter((section) => authoritative.includes(section)),
+      authoritativeSections.filter((section) => assignment.appliedAuthoritative?.includes(section) === true),
+    );
+    return changed.length === 0 && notApplied.length === 0 && removed.length === 0 && !reordered && !ownershipChanged
       ? { kind: 'current' }
-      : { kind: 'changed', changed, notApplied, removed, reordered };
+      : {
+          kind: 'changed',
+          changed,
+          notApplied,
+          removed,
+          reordered,
+          ...(ownershipChanged ? { ownershipChanged: true } : {}),
+        };
   }
 
   /** Keep the applied baseline with inherited layers, so removing own layers still reports drift. */
-  setProfiles(repository: string, profiles: readonly string[]): void {
+  setProfiles(repository: string, profiles: readonly string[], authoritative?: readonly AuthoritativeSection[]): void {
+    const owned = authoritativeSections.filter((section) =>
+      (authoritative ?? this.authoritativeOf(repository)).includes(section),
+    );
     const unique = [...new Set(profiles)];
     this.#change(repository, (current) =>
-      unique.length === 0 && this.inheritedProfilesOf(repository).length === 0
+      unique.length === 0 && this.inheritedProfilesOf(repository).length === 0 && owned.length === 0
         ? undefined
-        : { profiles: unique, applied: current?.applied },
+        : { ...current, profiles: unique, authoritative: owned },
     );
   }
 
   /** Records the effective layers without copying inherited ones into the repository's own list. */
-  recordApplied(repository: string, applied: readonly AppliedVersion[]): void {
+  recordApplied(
+    repository: string,
+    applied: readonly AppliedVersion[],
+    authoritative: readonly AuthoritativeSection[] = [],
+  ): void {
     const inherits = this.inheritedProfilesOf(repository).length > 0;
     this.#change(repository, (current) =>
-      current === undefined && !inherits ? undefined : { profiles: current?.profiles ?? [], applied: [...applied] },
+      current === undefined && !inherits
+        ? undefined
+        : {
+            ...current,
+            profiles: current?.profiles ?? [],
+            applied: [...applied],
+            appliedAuthoritative: [...authoritative],
+          },
     );
   }
 
@@ -330,6 +372,7 @@ export class RepositoryProfiles {
     this.#change(repository, (current) => {
       const applied = (current?.applied ?? []).filter((item) => item.profile !== profilePath);
       return {
+        ...current,
         profiles: [...(current?.profiles ?? []).filter((other) => other !== profilePath), profilePath],
         applied: version === undefined ? applied : [...applied, { profile: profilePath, version }],
       };
@@ -343,7 +386,12 @@ export class RepositoryProfiles {
       const next = change(all[key]);
       const kept = Object.fromEntries(Object.entries(all).filter(([other]) => other !== key));
       if (next !== undefined) {
-        kept[key] = next.applied === undefined || next.applied.length === 0 ? { profiles: next.profiles } : next;
+        kept[key] = {
+          profiles: next.profiles,
+          ...((next.authoritative?.length ?? 0) > 0 ? { authoritative: next.authoritative } : {}),
+          ...(next.applied === undefined ? {} : { applied: next.applied }),
+          ...((next.appliedAuthoritative?.length ?? 0) > 0 ? { appliedAuthoritative: next.appliedAuthoritative } : {}),
+        };
       }
       return Object.keys(kept).length > 0 ? kept : undefined;
     });

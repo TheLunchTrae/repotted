@@ -757,7 +757,9 @@ function RepositoryPanel({
   onBack,
 }: PanelProps): JSX.Element {
   const [editingProfiles, setEditingProfiles] = useState(false);
-  const usesProfiles = assignments.profilesOf(repository.full_name).length > 0;
+  const usesProfiles =
+    assignments.profilesOf(repository.full_name).length > 0 ||
+    assignments.authoritativeOf(repository.full_name).length > 0;
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const profile = listings.find((listing) => listing.file === picked) ?? listings[0];

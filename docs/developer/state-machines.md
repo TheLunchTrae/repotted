@@ -285,13 +285,19 @@ saved meanwhile.
 keeps which profiles each repository uses, in the order they apply, in the
 [shared preferences](#web-shared-preferences), so the list follows the
 profiles to their config repository. Under `repository-profiles` it keeps,
-by `owner/name` in lowercase, `{ profiles, applied }`: `profiles` are paths
+by `owner/name` in lowercase, `{ profiles, applied, authoritative, appliedAuthoritative }`: `profiles` are paths
 in the profiles folder, such as `web/node.yaml`, and `applied` is each
 profile's version at the last apply that recorded, in the order applied.
 `profiles` holds only the repository's own layers; the effective list starts
 with its folder's layers, then its own, keeping the first occurrence of a
 path. Applied versions describe that effective list. A repository with only
 inherited layers may have an empty own list with applied versions.
+`authoritative` is the repository's optional ownership list, and
+`appliedAuthoritative` is the last reviewed list recorded after a full apply.
+Omitting either means partial management. Ownership covers the entire
+combination, including folder profiles; folders have no ownership defaults.
+An owned assignment can have no profiles and deliberately reconcile an empty
+section.
 A version is a hash of what the profile sets with what it extends, so an
 edit to its drafts or comments changes nothing. Under `profile-tags` it
 keeps, by profile path, the tags people chose. Every other profile gets a
@@ -310,16 +316,26 @@ saved lists change.
 | Checking    | A version isn't read yet                                                                                | The tags; **Review apply** off.                                                                      |
 | Missing     | A profile is gone from the folder, can't be read as one, or stopped resolving when its version was read | **Missing profile** on the row; the panel names each and turns **Review apply** off.                 |
 | Not applied | None of them has been applied by a recording apply                                                      | **Not applied** on the row; the panel offers **Review apply**.                                       |
-| Changed     | One changed, was added or was taken out since the last apply, or their order changed                    | **Profile changed** on the row, **Changed** on a phone; the panel says which, with **Review apply**. |
+| Changed     | One changed, was added or was taken out since the last apply, or their order or ownership changed       | **Profile changed** on the row, **Changed** on a phone; the panel says which, with **Review apply**. |
 | Current     | Each was applied at its version now, in this order                                                      | The tags alone.                                                                                      |
 
-| State              | Event                              | Next                                                                                                                                                                           |
-| ------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Any                | Edit, then Save                    | Its own list as the dialog left it, saved; an empty one removes the entry unless folder layers remain. Applied versions stay, so status says what changed. Nothing is applied. |
-| Any                | Folder layers or membership change | Effective layers updated; status compares them with the last recorded versions. The own list stays as it is.                                                                   |
-| Any                | Edit, then Cancel or Escape        | Nothing saved.                                                                                                                                                                 |
-| A row              | It shows                           | Up to three tags, or two on a phone; with more, **N profiles**, which lists them in order on hover. A phone opens the panel instead.                                           |
-| A hand-edited file | It is read                         | A repository whose entry isn't a list of paths counts as using none.                                                                                                           |
+| State              | Event                              | Next                                                                                                                                                                                        |
+| ------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any                | Edit, then Save                    | Its own list as the dialog left it, saved; an empty one removes the entry unless folder layers or ownership remain. Applied versions stay, so status says what changed. Nothing is applied. |
+| Any                | Folder layers or membership change | Effective layers updated; status compares them with the last recorded versions. The own list stays as it is.                                                                                |
+| Any                | Edit, then Cancel or Escape        | Nothing saved.                                                                                                                                                                              |
+| A row              | It shows                           | Up to three tags, or two on a phone; with more, **N profiles**, which lists them in order on hover. A phone opens the panel instead.                                                        |
+| A hand-edited file | It is read                         | A repository whose entry isn't a list of paths counts as using none.                                                                                                                        |
+
+| State                | Event                                                | Next                                                                                                              |
+| -------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Any                  | Ownership saved or refreshed from config preferences | Effective ownership changes locally; applied ownership stays, so status reports the change. No repository writes. |
+| Owned                | Ownership disabled or assignment removed             | Future reviews stop enforcing it; previously deleted resources stay deleted.                                      |
+| Reviewing            | Effective profile order or ownership changes         | Old review refused; single review-again starts from current assignment, and a batch needs a fresh start.          |
+| Reviewed             | Assignment changes during engine revalidation        | The post-revalidation guard refuses before any writes for that repository.                                        |
+| Reviewed             | One-time ownership differs from the saved assignment | The reviewed changes may apply, but assignment choices and baseline stay unchanged.                               |
+| Reviewed, no changes | Record as applied                                    | Engine revalidation must still find no changes before the reviewed ownership and versions are recorded.           |
+| Current sources      | An extra resource appears on GitHub                  | Source status stays current; the next comparison shows live drift, including authoritative removals.              |
 
 `repositoriesWithProfiles` names the repositories that use any profile, and
 `profilesOf` gives one repository's list, so a filter on the repository list

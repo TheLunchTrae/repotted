@@ -286,8 +286,33 @@ When a review finds nothing to write, click **Record as applied** to mark the
 current versions as applied. A profile that was deleted or can't be read
 shows as **Missing profile**; remove it or put it back before applying.
 
-The list is kept with your hidden repositories and folders, so it follows
-your profiles to their GitHub repository.
+In **Edit**, choose **Full section ownership** to keep ownership for this
+repository. It applies to the complete combination of folder profiles,
+repository profiles, and reusable definitions. Folders supply profiles but
+never ownership defaults. Two repositories using the same profiles can own
+different sections. An owned empty section deliberately removes every
+repository-owned entry in that section; leaving ownership off preserves
+unlisted entries. See [Full section ownership](profiles.md#full-section-ownership)
+for supported sections and reset boundaries.
+
+**Review apply** starts with the saved ownership, and batch reviews use each
+repository's own choices. Changes made in the apply's ownership controls are
+for that apply only. Use **Edit**, then **Save** on the repository to keep a
+choice. Saving, disabling ownership, or removing an assignment writes no
+repository settings. Disabling ownership stops future enforcement; it does
+not restore resources deleted by an earlier apply.
+
+A changed ownership choice appears as **Assignment changed**. Source status
+records the configuration last applied, including referenced definitions;
+it does not claim that GitHub is still in line. Review again to compare live
+state: unexpected resources appear as removals even when no source changed.
+An assignment changed during review or revalidation cannot apply the old
+review. Review a single repository again, or start a fresh batch review.
+Missing sources and refused reads block full ownership rather than imply
+an empty section.
+
+The list and ownership choices are kept with your hidden repositories and
+folders, so they follow your profiles to their GitHub repository.
 
 ### Apply a profile to several repositories
 

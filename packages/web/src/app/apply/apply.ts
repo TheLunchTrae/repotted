@@ -49,14 +49,22 @@ export type AssignmentOffer =
 
 export interface ProfileAssignments {
   profilesOf(repository: string): readonly string[];
+  authoritativeOf(repository: string): readonly AuthoritativeSection[];
+  fileOf(profilePath: string): string;
   /** Undefined for a profile kept outside the profiles folder. */
   pathOf(file: string): string | undefined;
-  recordApplied(repository: string, applied: readonly AppliedVersion[]): void;
+  recordApplied(
+    repository: string,
+    applied: readonly AppliedVersion[],
+    authoritative: readonly AuthoritativeSection[],
+  ): void;
   recordAdded(repository: string, profilePath: string, version: string | undefined): void;
 }
 
 const noAssignments: ProfileAssignments = {
   profilesOf: () => [],
+  authoritativeOf: () => [],
+  fileOf: (path) => path,
   pathOf: () => undefined,
   recordApplied: () => undefined,
   recordAdded: () => undefined,
@@ -78,6 +86,7 @@ export interface Reviewed {
   readonly assignment: AssignmentOffer;
   /** Of the profiles reviewed, each by its path in the profiles folder. */
   readonly appliedVersions: readonly AppliedVersion[];
+  readonly assignmentKey: string | undefined;
 }
 
 interface Target {
@@ -125,6 +134,10 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export function assignmentKey(assignments: ProfileAssignments, repository: string): string {
+  return JSON.stringify([assignments.profilesOf(repository), [...assignments.authoritativeOf(repository)].toSorted()]);
+}
+
 function isSameList(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
@@ -146,6 +159,7 @@ export class Apply {
   readonly #onSignedOut: () => void;
   #lastAppAccessRead: { readonly repository: string; readonly app: AppAccess } | undefined;
   #profiles: readonly ComparedProfile[] = [];
+  #assignmentKey: string | undefined;
   #file: string | undefined;
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
@@ -202,9 +216,12 @@ export class Apply {
   async startFromProfiles(
     repository: string,
     profiles: readonly ComparedProfile[],
-    authoritative: readonly AuthoritativeSection[] = [],
+    authoritative?: readonly AuthoritativeSection[],
   ): Promise<void> {
-    if (this.#writing() || profiles.length === 0) {
+    if (
+      this.#writing() ||
+      (profiles.length === 0 && (authoritative ?? this.#assignments.authoritativeOf(repository)).length === 0)
+    ) {
       return;
     }
     await this.#start(repository, profiles, false, authoritative);
@@ -213,16 +230,19 @@ export class Apply {
   async startReview(
     repository: string,
     profiles: readonly ComparedProfile[],
-    authoritative: readonly AuthoritativeSection[] = [],
+    authoritative?: readonly AuthoritativeSection[],
   ): Promise<void> {
-    if (!this.#writing() && profiles.length > 0) {
+    if (
+      !this.#writing() &&
+      (profiles.length > 0 || (authoritative ?? this.#assignments.authoritativeOf(repository)).length > 0)
+    ) {
       await this.#start(repository, profiles, true, authoritative);
     }
   }
 
   async startWithoutProfile(repository: string): Promise<void> {
     if (!this.#writing()) {
-      await this.#start(repository, []);
+      await this.#start(repository, [], false, []);
     }
   }
 
@@ -230,10 +250,18 @@ export class Apply {
     repository: string,
     profiles: readonly ComparedProfile[],
     review = false,
-    authoritative: readonly AuthoritativeSection[] = [],
+    authoritative?: readonly AuthoritativeSection[],
   ): Promise<void> {
     const closing = this.close();
     this.#profiles = profiles;
+    const usesAssignment =
+      authoritative === undefined &&
+      isSameList(
+        profiles.map((profile) => this.#assignments.pathOf(profile.file) ?? profile.file),
+        this.#assignments.profilesOf(repository),
+      );
+    this.#assignmentKey = usesAssignment ? assignmentKey(this.#assignments, repository) : undefined;
+    const owned = authoritative ?? (usesAssignment ? this.#assignments.authoritativeOf(repository) : []);
     const file = `/apply/${crypto.randomUUID()}/apply.yaml`;
     this.#file = file;
     this.addToRepositoryProfiles.value = true;
@@ -246,7 +274,7 @@ export class Apply {
           file,
           repository,
           profiles.map((profile) => profile.file),
-          authoritative,
+          owned,
         );
       } catch (error) {
         await rm(dirname(file), { recursive: true, force: true });
@@ -412,6 +440,20 @@ export class Apply {
     if ((state.kind !== 'reviewed' && state.kind !== 'failed') || file === undefined) {
       return;
     }
+    if (
+      this.#assignmentKey !== undefined &&
+      this.#assignmentKey !== assignmentKey(this.#assignments, state.repository)
+    ) {
+      await this.#start(
+        state.repository,
+        this.#assignments.profilesOf(state.repository).map((path) => ({
+          file: this.#assignments.fileOf(path),
+          name: profileName(path),
+        })),
+        true,
+      );
+      return;
+    }
     if (state.kind === 'failed') {
       const exists = await stat(file).then(
         () => true,
@@ -448,7 +490,9 @@ export class Apply {
     }
     await this.#work(state.repository, state.profileName, 'applying', async (_current, file) => {
       try {
-        const written = await applyPlan(this.#github, plan);
+        const written = await applyPlan(this.#github, plan, () =>
+          this.#checkAssignment(state.repository, state.assignmentKey),
+        );
         this.#recordAssignment(state);
         await rm(dirname(file), { recursive: true, force: true });
         return {
@@ -484,17 +528,35 @@ export class Apply {
     if (state.kind !== 'reviewed' || !this.canRecordWithoutChanges.value) {
       return;
     }
-    this.#recordAssignment(state);
     await this.#work(state.repository, state.profileName, 'applying', async (_current, file) => {
+      try {
+        await applyPlan(this.#github, state.plan, () => this.#checkAssignment(state.repository, state.assignmentKey));
+      } catch (error) {
+        if (error instanceof StalePlanError) {
+          return this.#review(
+            state.repository,
+            file,
+            'The repository or sources changed since review. Review the current changes.',
+          );
+        }
+        throw error;
+      }
+      this.#recordAssignment(state);
       await rm(dirname(file), { recursive: true, force: true });
       return { kind: 'applied', repository: state.repository, profileName: state.profileName, changes: 0 };
     });
   }
 
+  #checkAssignment(repository: string, reviewed: string | undefined): void {
+    if (reviewed !== undefined && reviewed !== assignmentKey(this.#assignments, repository)) {
+      throw new Error('The repository assignment changed since review. Review again before applying.');
+    }
+  }
+
   #recordAssignment(state: Reviewed & { readonly repository: string }): void {
     const [added] = state.appliedVersions;
     if (state.assignment.kind === 'own' && state.assignment.recordsVersions) {
-      this.#assignments.recordApplied(state.repository, state.appliedVersions);
+      this.#assignments.recordApplied(state.repository, state.appliedVersions, state.plan.authoritative ?? []);
     } else if (state.assignment.kind === 'add' && this.addToRepositoryProfiles.peek() && added !== undefined) {
       this.#assignments.recordAdded(
         state.repository,
@@ -511,10 +573,12 @@ export class Apply {
   ): Promise<{ assignment: AssignmentOffer; appliedVersions: readonly AppliedVersion[] }> {
     const files = staged.profiles;
     // A read GitHub refused, as for a missing permission, compared nothing there, and granting it can change the plan.
-    const recordsVersions = profilesApplyFully(staged, plan);
+    const recordsVersions =
+      profilesApplyFully(staged, plan) &&
+      isSameList([...staged.authoritative].toSorted(), [...this.#assignments.authoritativeOf(repository)].toSorted());
     const paths = files.map((file) => this.#assignments.pathOf(file));
     const inFolder = paths.filter((path) => path !== undefined);
-    if (inFolder.length === 0 || inFolder.length !== paths.length) {
+    if ((inFolder.length === 0 && this.#assignmentKey === undefined) || inFolder.length !== paths.length) {
       return { assignment: { kind: 'none' }, appliedVersions: [] };
     }
     const own = this.#assignments.profilesOf(repository);
@@ -556,6 +620,8 @@ export class Apply {
 
   async #review(repository: string, file: string, notice: string | undefined): Promise<ApplyState> {
     const turn = this.#turn;
+    const reviewedAssignment = this.#assignmentKey;
+    this.#checkAssignment(repository, reviewedAssignment);
     const [staged, access] = await Promise.all([
       planStagedApply(this.#github, file),
       readAccess(this.#github, parseRepo(repository)),
@@ -566,9 +632,11 @@ export class Apply {
     const profile = profileNameOfApply(staged.staged.profiles);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));
     const { assignment, appliedVersions } = await this.#assignmentOf(repository, staged.staged, staged.plan);
+    this.#checkAssignment(repository, reviewedAssignment);
     return {
       assignment,
       appliedVersions,
+      assignmentKey: reviewedAssignment,
       kind: 'reviewed',
       repository,
       profileName: profile,

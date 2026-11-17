@@ -2,7 +2,7 @@ import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { BatchApply, BatchMemberView } from '../../app/apply/batch-apply.js';
-import { type CompareRow, exclusionLabel } from '../../app/apply/comparison.js';
+import { type CompareRow, exclusionLabel, sectionTitles } from '../../app/apply/comparison.js';
 import type { Router } from '../../app/navigation/router.js';
 import { BarActions } from '../layout/action-bar.js';
 import { Link } from '../layout/link.js';
@@ -76,6 +76,11 @@ function Member({ member, batch, reviewingOrApplying: working }: MemberProps): J
         </p>
       )}
       {member.profiles.length > 0 && <p class="muted small">Profiles, in order: {member.profiles.join(', ')}</p>}
+      {member.authoritative.length > 0 && (
+        <p class="muted small">
+          Full section ownership: {member.authoritative.map((section) => sectionTitles[section]).join(', ')}.
+        </p>
+      )}
       {(member.warnings.length > 0 || member.skippedDrafts.length > 0) && (
         <ul class="muted small">
           {member.warnings.map((warning) => (

@@ -615,7 +615,7 @@ async function replan(github: GitHub, reviewed: Plan): Promise<Plan> {
  * Applies a reviewed plan. The repository is planned again first, and the
  * plan only runs when that yields exactly the reviewed changes.
  */
-export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonly Change[]> {
+export async function applyPlan(github: GitHub, reviewed: Plan, beforeWrite?: () => void): Promise<readonly Change[]> {
   const current = await replan(github, reviewed);
   if (
     !isDeepEqual(jsonValue(current.changes), jsonValue(reviewed.changes)) ||
@@ -624,6 +624,7 @@ export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonl
   ) {
     throw new StalePlanError(current);
   }
+  beforeWrite?.();
   const applied: Change[] = [];
   for (const change of current.changes) {
     try {
