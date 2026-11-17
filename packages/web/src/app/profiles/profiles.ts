@@ -735,6 +735,14 @@ export class Profiles {
     return this.listings.value.filter((other) => !gone.has(other.file) && found.has(other.file));
   }
 
+  consumerNames(listing: ProfileListing): readonly string[] {
+    const profiles = this.dependents(listing);
+    return [
+      ...profiles.map((item) => item.name),
+      ...this.#assignedConsumers([listing.file, ...profiles.map((item) => item.file)]),
+    ];
+  }
+
   /** Deleted in one turn, so they leave in one commit. */
   remove(...listings: readonly ProfileListing[]): Promise<string | undefined> {
     return this.#work(async () => {

@@ -713,13 +713,8 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
       {listing.kind !== undefined && (
         <p class="notice">
           Used by:{' '}
-          {profiles.dependents(listing).length === 0
-            ? 'No profiles'
-            : profiles
-                .dependents(listing)
-                .map((item) => item.name)
-                .join(', ')}
-          . Saving changes every consumer on its next resolution. GitHub changes only after reviewed apply.
+          {profiles.consumerNames(listing).length === 0 ? 'No consumers' : profiles.consumerNames(listing).join(', ')}.
+          Saving changes every consumer on its next resolution. GitHub changes only after reviewed apply.
         </p>
       )}
       {listing.kind === undefined && opened?.file === listing.file && editor?.loaded.value === true && (

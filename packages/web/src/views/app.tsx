@@ -68,7 +68,7 @@ function SignedIn({
       const refused = (): void => {
         account.gitHubRefusedSignIn();
       };
-      const kept = new Profiles(github, preferences, refused, folders, (files) =>
+      const kept: Profiles = new Profiles(github, preferences, refused, folders, (files) =>
         assigned.repositoriesWithProfiles.value.filter((repository) =>
           assigned.profilesOf(repository).some((path) => files.includes(assigned.fileOf(path))),
         ),
