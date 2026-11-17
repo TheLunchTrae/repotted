@@ -11,7 +11,10 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   [warnings](#warnings) describes. With `--output`, it also writes the YAML
   to that file.
 - `plan` prints the plan, the same document `--out` saves:
-  `{ repository, desired, changes, skipped, warnings, access, locks }`.
+  `{ repository, desired, changes, skipped, warnings, source, access, locks }`.
+  `source` is `{ profile }` for a profile or definition file and `{ staged }`
+  for a staged apply, with an absolute path. Apply reads that source and its
+  references again; moving or deleting a source requires a fresh plan.
   Each change is `{ section, action, target, fields, request }`: `action` is
   `create`, `update` or `delete`, `target` names what it writes for people to
   read, `fields` lists what it changes as `{ field, from, to }`, and `request`

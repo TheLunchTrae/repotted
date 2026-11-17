@@ -573,3 +573,28 @@ test('saved draft problems offer navigation without an ineffective Reset', async
   await problems.getByRole('button', { name: 'Go to it', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Hex color', exact: true })).toBeFocused();
 });
+
+test('import waits for its selected file before creating a definition', async ({ page }) => {
+  await page.goto('/profiles/new');
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('imported-policy');
+  await page.evaluate(() => {
+    const read = (file: File): Promise<string> => Blob.prototype.text.call(file);
+    File.prototype.text = async function () {
+      await new Promise<void>((resolve) => window.addEventListener('release-import', () => resolve(), { once: true }));
+      return read(this);
+    };
+  });
+  await page.getByLabel('Import YAML file').setInputFiles({
+    name: 'policy.yaml',
+    mimeType: 'application/yaml',
+    buffer: Buffer.from('kind: actions-policy\nactions: { enabled: true }\n'),
+  });
+  const create = page.getByRole('button', { name: 'Create', exact: true });
+  await expect(create).toBeDisabled();
+  await page.evaluate(() => window.dispatchEvent(new Event('release-import')));
+  await expect(create).toBeEnabled();
+  await create.click();
+  await expect(page.getByRole('heading', { name: 'imported-policy', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Actions', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Repository', exact: true })).toHaveCount(0);
+});

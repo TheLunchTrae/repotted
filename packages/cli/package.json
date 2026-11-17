@@ -1,6 +1,6 @@
 {
   "name": "repotted",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Capture, plan and apply GitHub repository setups, with agent access over MCP",
   "license": "MIT",
   "type": "module",

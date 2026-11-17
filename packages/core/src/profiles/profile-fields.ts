@@ -65,6 +65,10 @@ function schemaForValue(schema: z.core.$ZodType, value: unknown): z.core.$ZodTyp
 export function profileFields(value: unknown): { readonly known: unknown; readonly unknown: readonly FieldPath[] } {
   const unknown: FieldPath[] = [];
   const read = (schema: z.core.$ZodType, value: unknown, path: FieldPath): unknown => {
+    // References are instructions to load another file; a misspelled kind must not silently stop managing it.
+    if (path.length === 1 && path[0] === 'references') {
+      return value;
+    }
     const field = schemaForValue(schemaAt(schema, path), value);
     if (field instanceof z.ZodObject && isRecord(value)) {
       return Object.fromEntries(

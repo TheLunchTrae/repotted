@@ -304,9 +304,12 @@ interface ProfileSettingsProps {
 
 export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets }: ProfileSettingsProps): JSX.Element {
   const sections = editor.sections.value;
-  const [tab, setTab] = useState(sections[0]?.section.section ?? '');
+  const supportedLists = entryLists.filter(
+    (list) => editor.definitionSection.value === undefined || list === editor.definitionSection.value,
+  );
+  const [tab, setTab] = useState(sections[0]?.section.section ?? supportedLists[0] ?? '');
   const entries = editor.entries.value;
-  const list = entryLists.find((item) => item === tab);
+  const list = supportedLists.find((item) => item === tab);
   const shown = list === undefined ? (sections.find((item) => item.section.section === tab) ?? sections[0]) : undefined;
   const problemCounts = editor.problemCountByTab.value;
   const tabNames = [
@@ -316,7 +319,7 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
       unsaved: groups.some((group) => group.rows.some((row) => row.unsaved || row.typedTextProblem !== undefined)),
       drafted: groups.some((group) => group.rows.some((row) => row.valueShownIsFromDraft)),
     })),
-    ...entryLists.map((item) => ({
+    ...supportedLists.map((item) => ({
       id: item,
       name: entryListTitles[item],
       unsaved: entries[item].some((row) => row.unsaved),

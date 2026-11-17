@@ -35,6 +35,9 @@
   ],
   "skipped": [],
   "warnings": [],
+  "source": {
+    "staged": "<tests>/staged.yaml"
+  },
   "access": {
     "role": "admin",
     "app": {

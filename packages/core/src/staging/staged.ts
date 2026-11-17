@@ -61,7 +61,10 @@ function parseExclusion(key: string): Exclusion | undefined {
     const name = key.slice(slash + 1);
     return isList(list) && name !== '' ? { kind: 'entry', list, name } : undefined;
   }
-  if (Object.hasOwn(profileFile.shape, key) && !['extends', 'drafts', 'owner_type'].includes(key)) {
+  if (
+    Object.hasOwn(profileFile.shape, key) &&
+    !['extends', 'drafts', 'owner_type', 'kind', 'references'].includes(key)
+  ) {
     return { kind: 'section', section: key };
   }
   const parts = key.split('.');
@@ -570,8 +573,14 @@ export async function planStagedApply(
     resolved.profile,
     skippedDrafts(resolved.drafts),
   );
+  const latest = staged(await resolveLayer(file, stagedLayer));
+  const inputs = (value: StagedApply): unknown => [value.repository, value.profiles, value.profile, value.exclude];
+  if (!isDeepEqual(inputs(resolved), inputs(latest))) {
+    throw new ProfileError('The staged apply or its sources changed while GitHub was being read. Review a fresh plan.');
+  }
   const plan = {
     ...created,
+    source: { staged: resolved.file },
     warnings: [
       ...created.warnings,
       ...read.overrideWarnings,

@@ -1,3 +1,5 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
@@ -206,4 +208,30 @@ describe('MCP server', () => {
     });
     expect(await call(client, 'find_actions', { query: 'nothing' })).toMatchObject({ isError: true });
   });
+});
+
+test('MCP re-resolves a shared policy supplied through inline YAML before applying', async () => {
+  const folder = await mkdtemp(path.join(tmpdir(), 'repotted-mcp-policy-'));
+  try {
+    const policy = path.join(folder, 'trusted.yaml');
+    await writeFile(policy, 'kind: actions-policy\nactions: { default_workflow_permissions: read }');
+    const github = new FakeGitHub();
+    const client = await connect(github);
+    const planned = await call(client, 'plan', {
+      repository: 'lunch/app',
+      profile: `references:\n  actions: ${JSON.stringify(policy)}\n`,
+    });
+    expect(planned.isError).toBe(false);
+    const id = /plan_id: (\S+)/u.exec(planned.text)?.[1];
+    expect(id).toBeDefined();
+    await writeFile(policy, 'kind: actions-policy\nactions: { default_workflow_permissions: write }');
+    const result = await call(client, 'apply', { plan_id: id });
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('changed since this plan');
+    expect(github.writes).toEqual([]);
+    expect((await call(client, 'apply', { plan_id: id })).text).toContain('No plan has that plan_id');
+    await client.close();
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
 });

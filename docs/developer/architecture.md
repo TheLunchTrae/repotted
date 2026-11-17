@@ -474,3 +474,28 @@ The web app bundles the engine into its page and calls it directly, with its
 state in classes the tests drive against the same in-memory GitHub. It runs
 no CLI and reads no JSON output. [The web app](web-app.md) describes it, and
 [State machines](state-machines.md) lists the flows it moves through.
+
+## Reusable definitions
+
+A definition uses the profile storage, discovery, editor, and sync paths, with
+an explicit `kind` that constrains its section. `actions-policy` permits only
+Actions settings, their drafts and unsets, and `owner_type`. A profile's
+`references.actions` names a definition relative to that profile. Definitions
+cannot inherit profiles or reference other definitions.
+
+`readListed` deduplicates inherited profiles before expanding their reference
+links. Each referenced definition applies immediately before its consumer's
+inline layer. Reusing one definition from several consumers applies it at each
+consumer's position, so explicit later references keep their precedence. Source
+maps retain the definition's path. Normal resolved validation checks owner types
+and cross-section dependencies after merging. Editing works on the original
+YAML document and preserves references. Discovery retains declared references
+even when another field prevents resolution, so lifecycle dependency checks do
+not overlook invalid consumers.
+
+Plans made from files record `source`: a profile path, a staged path, or inline
+text with its resolution directory. `applyPlan` resolves it again before reading
+live state and compares the regenerated requests with the reviewed requests.
+Missing definitions fail before any write. Assignment versions hash resolved
+settings, so transitive definition changes participate without another cache.
+`captureDefinition` reads only the selected section and repository owner metadata.

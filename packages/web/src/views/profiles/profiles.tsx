@@ -3,8 +3,10 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { Router } from '../../app/navigation/router.js';
 import type { BranchPreview } from '../../app/profiles/branch-preview.js';
+import { definitionTypes } from '../../app/profiles/definition-types.js';
 import type { ProfileFolderNode, ProfileListing, Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
+import { dirname, relative } from '../../engine/path.js';
 import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
@@ -70,6 +72,9 @@ function ProfileRow({ listing, profiles, onOpen }: RowProps): JSX.Element {
         }}
       >
         <span class="row-name">{listing.name}</span>
+        {listing.kind !== undefined && (
+          <span class="pill">{definitionTypes.find((item) => item.kind === listing.kind)?.label}</span>
+        )}
         {profiles.unsaved.value.has(listing.file) && <span class="pill pill-drift">Not saved</span>}
         {listing.problem !== null && <span class="pill pill-remove">Problem</span>}
         <span class="profile-row-details muted small">
@@ -500,6 +505,73 @@ interface ProfileProps {
   readonly profiles: Profiles;
 }
 
+function References({ listing, profiles, text }: ProfileProps & { readonly text: string }): JSX.Element {
+  const [selected, setSelected] = useState(profiles.referencesOf(text, listing.file));
+  const [problem, setProblem] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  return (
+    <details class="settings-group">
+      <summary>Reusable definitions</summary>
+      <p class="muted small">
+        References apply after base profiles and before inline values. Removing a reference stops managing its values.
+      </p>
+      {definitionTypes.map(({ kind, section, label }) => (
+        <label class="form-field" key={kind}>
+          <span>{label}</span>
+          <select
+            class="field"
+            disabled={busy}
+            value={typeof selected[section] === 'string' ? selected[section] : ''}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setSelected((before) => ({ ...before, [section]: value }));
+            }}
+          >
+            <option value="">None</option>
+            {profiles.listings.value
+              .filter((item) => item.kind === kind && item.problem === null)
+              .map((item) => {
+                const path = relative(dirname(listing.file), item.file);
+                return (
+                  <option key={path} value={path}>
+                    {profiles.pathOf(item)}
+                  </option>
+                );
+              })}
+          </select>
+        </label>
+      ))}
+      {problem !== undefined && (
+        <p class="problem" role="alert">
+          {problem}
+        </p>
+      )}
+      <button
+        type="button"
+        class="button"
+        disabled={busy || profiles.unsaved.value.has(listing.file)}
+        onClick={() => {
+          setBusy(true);
+          const references: Record<string, string | readonly string[]> = {};
+          for (const [section, value] of Object.entries(selected)) {
+            if (typeof value === 'string' && value !== '') {
+              references[section] = value;
+            }
+          }
+          run(
+            profiles.saveReferences(listing.file, references, text).then((failure) => {
+              setBusy(false);
+              setProblem(failure);
+            }),
+          );
+        }}
+      >
+        Save references
+      </button>
+    </details>
+  );
+}
+
 function Profile({ listing, profiles }: ProfileProps): JSX.Element {
   const [showYaml, setShowYaml] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -557,6 +629,15 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           >
             {showYaml ? 'Hide YAML' : 'Show YAML'}
           </button>
+          {opened?.file === listing.file && (
+            <a
+              class="button"
+              download={`${listing.name}.yaml`}
+              href={`data:application/yaml;charset=utf-8,${encodeURIComponent(opened.text)}`}
+            >
+              Export YAML
+            </a>
+          )}
           <button
             class="button"
             type="button"
@@ -629,6 +710,16 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
         </p>
       )}
       {editor?.repair.value !== undefined && <RepairProfile editor={editor} save={() => profiles.save()} />}
+      {listing.kind !== undefined && (
+        <p class="notice">
+          Used by:{' '}
+          {profiles.consumerNames(listing).length === 0 ? 'No consumers' : profiles.consumerNames(listing).join(', ')}.
+          Saving changes every consumer on its next resolution. GitHub changes only after reviewed apply.
+        </p>
+      )}
+      {listing.kind === undefined && opened?.file === listing.file && editor?.loaded.value === true && (
+        <References key={opened.text} listing={listing} profiles={profiles} text={opened.text} />
+      )}
       {editor?.loaded.value === true && (
         <ProfileSettings
           key={editor.file}

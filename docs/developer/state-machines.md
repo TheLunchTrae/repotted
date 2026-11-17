@@ -926,6 +926,21 @@ The form's owner type goes into the file as `owner_type`, except for a
 capture, which writes the repository's own, and a profile that extends a
 typed base, which takes the base's and writes none.
 
+### Reusable definitions and references
+
+Definitions use the same create, import, duplicate, sync and editor lifecycle.
+Creation validates the complete file before writing; imports with missing
+references leave no file. A duplicate preserves relative targets from its new
+folder. Moving files rewrites reference paths as well as `extends`.
+
+| State                | Event                                         | Next                                                                                                    |
+| -------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| References displayed | Save references                               | Queued behind sync; refuse unsaved editor changes or file text that differs from the displayed version. |
+| Saving references    | Validation succeeds                           | Only references change; reload the listing and dependent editors.                                       |
+| Saving references    | Missing source, invalid result, or stale text | Display the error and keep the file unchanged.                                                          |
+| Definition selected  | Save settings                                 | Listed dependent profiles resolve the saved values on their next load; no repository write occurs.      |
+| Deleting definition  | Other listed profiles depend on it            | Refuse deletion and name the consumers whose references must be removed first.                          |
+
 ## Web deleting a profile
 
 The open profile's **Delete profile**, or **Delete** for the selected
@@ -1028,15 +1043,18 @@ didn't shows in Settings.
 ## Plan and apply
 
 `createPlan` only reads. `applyPlan` (`packages/core/src/plan/plan.ts`) plans
-again from the reviewed plan's profile and writes only when that yields the
-same changes.
+again from its recorded source and writes only when that yields the same
+changes. Sources include profile files, definition files, staged applies, and
+inline YAML with its reference directory. Plans without source metadata use
+their saved desired profile.
 
-| State    | Event                  | Next                                                                                 |
-| -------- | ---------------------- | ------------------------------------------------------------------------------------ |
-| Reviewed | The new plan differs   | Stale: `StalePlanError` carries the current plan, and nothing is written.            |
-| Reviewed | The new plan matches   | Writing, change by change, from the new plan's requests.                             |
-| Writing  | A request fails        | Partly applied: `ApplyError` lists the changes already made and the one that failed. |
-| Writing  | Every request succeeds | Applied.                                                                             |
+| State    | Event                                | Next                                                                                 |
+| -------- | ------------------------------------ | ------------------------------------------------------------------------------------ |
+| Reviewed | A source or reference cannot resolve | Refused before any write; repair the source and review a fresh plan.                 |
+| Reviewed | The new plan differs                 | Stale: `StalePlanError` carries the current plan, and nothing is written.            |
+| Reviewed | The new plan matches                 | Writing, change by change, from the new plan's requests.                             |
+| Writing  | A request fails                      | Partly applied: `ApplyError` lists the changes already made and the one that failed. |
+| Writing  | Every request succeeds               | Applied.                                                                             |
 
 Partly applied is a state of the repository, not of the plan: nothing rolls
 back the changes already made. Planning again from the same profile lists

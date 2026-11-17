@@ -9,7 +9,7 @@ import {
   partOwnerTypeCannotHold,
   withoutOwnerConflicts,
 } from '../profiles/owner.js';
-import type { Drafts } from '../profiles/profile.js';
+import { type Drafts, parseProfile, resolveProfile } from '../profiles/profile.js';
 import {
   actionsSettings,
   commitPairs,
@@ -27,6 +27,7 @@ import {
 } from '../profiles/schema.js';
 import { activeProfileSettings } from '../profiles/setting-dependencies.js';
 import { isDeepEqual } from '../shared/equal.js';
+import { resolveStagedApply } from '../staging/staged.js';
 import {
   type Change,
   isListSection,
@@ -61,7 +62,14 @@ export interface Skipped {
   readonly unset?: true | undefined;
 }
 
+const planSource = z.union([
+  z.object({ profile: z.string().min(1) }),
+  z.object({ text: z.string(), directory: z.string().min(1) }),
+  z.object({ staged: z.string().min(1) }),
+]);
+
 export interface Plan {
+  readonly source?: z.infer<typeof planSource> | undefined;
   readonly repository: string;
   readonly desired: Profile;
   readonly changes: readonly Change[];
@@ -430,6 +438,7 @@ const savedChange = z.union([
 ]);
 
 const savedPlan = z.object({
+  source: planSource.optional(),
   repository: z.string().regex(repoPattern),
   desired: profile,
   changes: z.array(savedChange),
@@ -497,7 +506,40 @@ function jsonValue(value: unknown): unknown {
  * plan only runs when that yields exactly the reviewed changes.
  */
 export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonly Change[]> {
-  const current = await createPlan(github, parseRepo(reviewed.repository), reviewed.desired, reviewed.skipped);
+  const source = reviewed.source;
+  const resolveSource =
+    source === undefined
+      ? undefined
+      : () =>
+          'profile' in source
+            ? resolveProfile(source.profile)
+            : 'staged' in source
+              ? resolveStagedApply(source.staged)
+              : parseProfile(source.text, source.directory);
+  const resolved = await resolveSource?.();
+  if (
+    resolved !== undefined &&
+    'repository' in resolved &&
+    resolved.repository.toLowerCase() !== reviewed.repository.toLowerCase()
+  ) {
+    throw new Error('The staged apply now targets a different repository; review a fresh plan');
+  }
+  const current = await createPlan(
+    github,
+    parseRepo(reviewed.repository),
+    resolved?.profile ?? reviewed.desired,
+    resolved === undefined ? reviewed.skipped : skippedDrafts(resolved.drafts),
+  );
+  const latest = await resolveSource?.();
+  const inputs = (value: typeof resolved): unknown =>
+    value === undefined
+      ? undefined
+      : 'repository' in value
+        ? [value.repository, value.profiles, value.profile, value.exclude]
+        : value.profile;
+  if (!isDeepEqual(inputs(resolved), inputs(latest))) {
+    throw new Error('The source configuration changed while GitHub was being read. Review a fresh plan.');
+  }
   if (!isDeepEqual(jsonValue(current.changes), jsonValue(reviewed.changes))) {
     throw new StalePlanError(current);
   }

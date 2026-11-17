@@ -3,6 +3,10 @@ import {
   captureProfile,
   checkActionPatterns,
   declaredExtends,
+  type DefinitionKind,
+  editProfile,
+  parseProfile,
+  withRewrittenReferences,
   findActions,
   findGitHubApp,
   type GitHub,
@@ -14,6 +18,7 @@ import {
   syncFolder,
   withExtends,
 } from '@repotted/core';
+import { isMap, parseDocument } from 'yaml';
 import * as z from 'zod/mini';
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from '../../engine/files.js';
@@ -52,10 +57,13 @@ export type SyncState =
 export type NewProfileStart =
   | { readonly kind: 'empty' }
   | { readonly kind: 'extends'; readonly base: ProfileListing }
-  | { readonly kind: 'repository'; readonly repository: string };
+  | { readonly kind: 'repository'; readonly repository: string }
+  | { readonly kind: 'duplicate'; readonly source: ProfileListing }
+  | { readonly kind: 'import'; readonly text: string };
 
 export interface NewProfile {
   readonly name: string;
+  readonly definitionKind?: DefinitionKind;
   /** From the profiles folder; '' for the profiles folder itself. */
   readonly folder: string;
   readonly start: NewProfileStart;
@@ -173,19 +181,31 @@ export class Profiles {
   /** The files that captures under way will make, so no other new profile takes their names. */
   readonly #capturing = new Set<string>();
   readonly #folders: LocalFolders | undefined;
+  #assignedConsumers: (files: readonly string[]) => readonly string[];
   /** The folder on this computer, once the browser has let the page use it this visit. */
   #localFolder: LocalFolder | undefined;
 
-  constructor(github: GitHub, preferences: Preferences, onSignedOut: () => void, folders?: LocalFolders) {
+  constructor(
+    github: GitHub,
+    preferences: Preferences,
+    onSignedOut: () => void,
+    folders?: LocalFolders,
+    assignedConsumers: (files: readonly string[]) => readonly string[] = () => [],
+  ) {
     this.#github = github;
     this.#preferences = preferences;
     this.#onSignedOut = onSignedOut;
     this.#folders = folders;
+    this.#assignedConsumers = assignedConsumers;
     const saved = savedSource.safeParse(preferences.read(sourceKey));
     if (saved.success) {
       this.source.value = saved.data;
       this.chosen.value = true;
     }
+  }
+
+  protectAssignments(consumers: (files: readonly string[]) => readonly string[]): void {
+    this.#assignedConsumers = consumers;
   }
 
   readonly folder = computed(() => folderOf(this.source.value));
@@ -616,7 +636,13 @@ export class Profiles {
       try {
         const repository = parseRepo(profile.start.repository);
         const captured = await captureProfile(this.#github, repository);
-        text = stringifyProfile(captured.profile);
+        if (profile.definitionKind !== undefined && captured.profile.actions === undefined) {
+          return 'The Actions settings could not be captured. Check repository access before trying again.';
+        }
+        text =
+          profile.definitionKind === undefined
+            ? stringifyProfile(captured.profile)
+            : `kind: ${profile.definitionKind}\n${stringifyProfile({ owner_type: captured.profile.owner_type, actions: captured.profile.actions })}`;
         uncaptured = uncapturedSettings(captured.warnings, captured.profile.owner_type);
         if (uncaptured.needsAppPermission) {
           uncaptured = {
@@ -632,11 +658,33 @@ export class Profiles {
       } finally {
         this.#capturing.delete(file.toLowerCase());
       }
+    } else if (profile.start.kind === 'duplicate') {
+      try {
+        const source = profile.start.source.file;
+        const original = await readFile(source, 'utf8');
+        const base = declaredExtends(original);
+        text =
+          base === undefined
+            ? original
+            : withExtends(original, relative(dirname(file), resolve(dirname(source), base)));
+        text = withRewrittenReferences(text, (reference) =>
+          relative(dirname(file), resolve(dirname(source), reference)),
+        );
+      } catch (error) {
+        return messageOf(error);
+      }
+    } else if (profile.start.kind === 'import') {
+      text = profile.start.text;
     } else {
+      if (profile.definitionKind !== undefined && profile.start.kind === 'extends') {
+        return 'A reusable definition cannot extend a profile.';
+      }
       const owner = profile.ownerType === undefined ? '' : `owner_type: ${profile.ownerType}\n`;
       text =
         profile.start.kind === 'empty'
-          ? owner
+          ? profile.definitionKind === undefined
+            ? owner
+            : `kind: ${profile.definitionKind}\n${owner}actions: {}\n`
           : `extends: ${JSON.stringify(relative(dirname(file), profile.start.base.file))}\n${
               profile.start.base.owner_type === null ? owner : ''
             }`;
@@ -665,6 +713,7 @@ export class Profiles {
         return unusableFolder;
       }
       try {
+        await parseProfile(text, dirname(file));
         await mkdir(dirname(file), { recursive: true });
         await writeFile(file, text, { flag: 'wx' });
       } catch (error) {
@@ -686,13 +735,24 @@ export class Profiles {
     for (let grew = true; grew;) {
       grew = false;
       for (const other of this.listings.value) {
-        if (other.extends !== null && found.has(other.extends) && !found.has(other.file)) {
+        if (
+          [other.extends, ...(other.references ?? [])].some((source) => source !== null && found.has(source)) &&
+          !found.has(other.file)
+        ) {
           found.add(other.file);
           grew = true;
         }
       }
     }
     return this.listings.value.filter((other) => !gone.has(other.file) && found.has(other.file));
+  }
+
+  consumerNames(listing: ProfileListing): readonly string[] {
+    const profiles = this.dependents(listing);
+    return [
+      ...profiles.map((item) => item.name),
+      ...this.#assignedConsumers([listing.file, ...profiles.map((item) => item.file)]),
+    ];
   }
 
   /** Deleted in one turn, so they leave in one commit. */
@@ -703,6 +763,14 @@ export class Profiles {
       const going = new Set(listings.map((listing) => listing.file).filter((file) => listed.has(file)));
       if (going.size === 0) {
         return undefined;
+      }
+      const dependent = this.dependents(...listings);
+      if (listings.some((listing) => listing.kind !== undefined) && dependent.length > 0) {
+        return `Remove the references in ${dependent.map((listing) => listing.name).join(', ')} first.`;
+      }
+      const assigned = this.#assignedConsumers([...going]);
+      if (assigned.length > 0) {
+        return `Remove these sources from the assignments of ${assigned.join(', ')} before deleting them.`;
       }
       for (const file of going) {
         await rm(file, { force: true });
@@ -828,6 +896,10 @@ export class Profiles {
       if (moves.size === 0) {
         return undefined;
       }
+      const assigned = this.#assignedConsumers([...moves.keys()]);
+      if (assigned.length > 0) {
+        return `Remove these sources from the assignments of ${assigned.join(', ')} before moving them.`;
+      }
       for (const from of moves.keys()) {
         const listing = listed.get(from);
         if (listing?.problem !== null) {
@@ -864,8 +936,12 @@ export class Profiles {
         const base = declared === undefined ? undefined : resolve(dirname(from), declared);
         const baseNow = base === undefined ? undefined : (moves.get(base) ?? base);
         const stillPointed = declared === undefined || resolve(dirname(to), declared) === baseNow;
-        const text =
+        const extended =
           stillPointed || baseNow === undefined ? before : withExtends(before, relative(dirname(to), baseNow));
+        const text = withRewrittenReferences(extended, (reference) => {
+          const target = resolve(dirname(from), reference);
+          return relative(dirname(to), moves.get(target) ?? target);
+        });
         if (to !== from) {
           moved.push({ from, to, text });
         } else if (text !== before) {
@@ -990,6 +1066,40 @@ export class Profiles {
    * there, so the save lands on the file as it is now, and a sync after
    * commits it.
    */
+  async saveReferences(
+    file: string,
+    references: Readonly<Record<string, string | readonly string[]>>,
+    expected: string,
+  ): Promise<string | undefined> {
+    try {
+      await this.#write(async () => {
+        if (this.unsaved.value.has(file)) {
+          throw new Error(unsavedFirst);
+        }
+        if ((await readFile(file, 'utf8')) !== expected) {
+          throw new Error('The file changed. Reload its references before saving.');
+        }
+        await editProfile(file, [{ path: ['references'], value: references }]);
+      });
+      return undefined;
+    } catch (error) {
+      return messageOf(error);
+    }
+  }
+
+  referencesOf(text: string, file: string): Readonly<Record<string, unknown>> {
+    const node = parseDocument(text).get('references', true);
+    const value: unknown = isMap(node) ? node.toJSON() : {};
+    const references = z.record(z.string(), z.union([z.string(), z.array(z.string())])).parse(value);
+    const canonical = (reference: string): string => relative(dirname(file), resolve(dirname(file), reference));
+    return Object.fromEntries(
+      Object.entries(references).map(([section, reference]) => [
+        section,
+        typeof reference === 'string' ? canonical(reference) : reference.map(canonical),
+      ]),
+    );
+  }
+
   async save(mode: SaveMode = 'applies'): Promise<void> {
     await this.editor.value?.save((write) => this.#write(write), mode);
   }

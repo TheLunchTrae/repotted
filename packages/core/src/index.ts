@@ -27,6 +27,8 @@ export type { Plan } from './plan/plan.js';
 export {
   changeOwnerType,
   declaredExtends,
+  declaredReferences,
+  withRewrittenReferences,
   editProfile,
   entryValueProblems,
   listProfiles,
@@ -49,7 +51,8 @@ export type { EntryEdit, ProfileEdit, ValueProblem } from './profiles/profile.js
 export { lockChanges, permissionsInProse } from './github/permissions.js';
 export type { AppAccess } from './github/permissions.js';
 export { permissionsMissingForProfilePart } from './plan/part-permissions.js';
-export { profileFileJsonSchema } from './profiles/schema.js';
+export { definitionKind, definitionSections, profileFileJsonSchema } from './profiles/schema.js';
+export type { DefinitionKind } from './profiles/schema.js';
 export { currentUser, listRepositories, readAccess, readInstallationSettingsUrl } from './github/repositories.js';
 export type { InstallationMissingPermissions } from './github/repositories.js';
 export { listBranches, readBranchChanges } from './profiles/branch-changes.js';
@@ -88,3 +91,5 @@ export type { Batch, BatchPlan, MemberResult } from './staging/batch.js';
 
 export { settingCondition } from './profiles/setting-dependencies.js';
 export type { SettingCondition } from './profiles/setting-dependencies.js';
+
+export { captureDefinition, stringifyDefinition } from './profiles/definitions.js';

@@ -25,6 +25,10 @@ import { describeOwnerType, draftOwnerConflicts, type OwnerConflict, ownerConfli
 import { moveLeadingCommentAndBlankLine, profileFields, removeUnknownProfileFields } from './profile-fields.js';
 import {
   actionsSettings,
+  definitionKind,
+  definitionSections,
+  type DefinitionKind,
+  profileReferences,
   type AutolinkEntry,
   autolinkEntry,
   customProperties,
@@ -161,7 +165,7 @@ export interface Layer<Read extends LayerRead> {
 const profileLayer: Layer<LayerRead> = {
   noun: 'profile',
   schema: z.preprocess((value) => profileFields(value).known, profileFile).transform((layer) => ({ layer })),
-  ownTopLevelKeys: new Set(),
+  ownTopLevelKeys: new Set(['references', ...Object.keys(profileReferences.shape).map((key) => `references.${key}`)]),
   removeUnknownFields: removeUnknownProfileFields,
   check: () => undefined,
 };
@@ -371,7 +375,22 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
       problems: result.error.issues.map((issue) => ({ file: source, path: issue.path, message: issue.message })),
     });
   }
-  const { autolinks, rulesets, environments, labels, drafts, ...settings } = result.data.layer;
+  const layer = result.data.layer;
+  if (layer.kind !== undefined) {
+    const section = definitionSections[layer.kind];
+    const extra = Object.keys(layer).filter((key) => !['kind', 'owner_type', section, 'drafts'].includes(key));
+    const draftSections = Object.keys(layer.drafts ?? {}).filter((key) => key !== section && key !== 'unset');
+    const foreignUnset = (layer.drafts?.unset ?? []).some((key) => {
+      const unset = parseUnset(key);
+      return unset === undefined || (unset.kind === 'setting' ? unset.path[0] : unset.list) !== section;
+    });
+    if (extra.length > 0 || draftSections.length > 0 || foreignUnset) {
+      throw new ProfileError(
+        `${source}: ${layer.kind} definitions may only set that section (${section}), its drafts, and owner_type`,
+      );
+    }
+  }
+  const { autolinks, rulesets, environments, labels, drafts, ...settings } = layer;
   const [ownAutolinks, draftAutolinks] = partition<AutolinkEntry, DraftAutolink>(autolinks, isDraftAutolink);
   const [ownRulesets, draftRulesets] = partition<RulesetEntry, DraftEntry>(rulesets, isDraftEntry);
   const [ownEnvironments, draftEnvironments] = partition<EnvironmentEntry, DraftEntry>(environments, isDraftEntry);
@@ -781,6 +800,8 @@ export type ProfileSources = Readonly<
 >;
 
 export interface ResolvedProfile {
+  readonly kind?: DefinitionKind | undefined;
+  readonly references?: ProfileFile['references'];
   /** The profile file, then each one it extends, as real paths. */
   readonly chain: readonly string[];
   readonly profile: Profile;
@@ -842,11 +863,51 @@ async function readExtendsChain(start: string, listingFile: string | undefined):
     }
     seen.add(resolved);
     const parsed = parseLayer(text, resolved, profileLayer);
+    if (links.length > 0 && parsed.own.kind !== undefined) {
+      throw new ProfileError(`${resolved} is a reusable definition; use references instead of extends`);
+    }
     links.push({ file: resolved, parsed: parsed.own, drafts: parsed.drafts, listedIn: new Set() });
     const [parent] = parsed.extends;
     next = parent === undefined ? undefined : path.resolve(path.dirname(resolved), parent);
   }
   return links;
+}
+
+async function referencedLinks(link: Link, directory = path.dirname(link.file)): Promise<Link[]> {
+  const links: Link[] = [];
+  const references: Readonly<Record<string, string | readonly string[] | undefined>> = link.parsed.references ?? {};
+  for (const [section, value] of Object.entries(references)) {
+    const names = typeof value === 'string' ? [value] : (value ?? []);
+    for (const reference of names) {
+      const file = path.resolve(directory, reference);
+      try {
+        const read = await readText(file, 'reusable definition');
+        const parsed = parseLayer(read.text, read.file, profileLayer);
+        if (parsed.own.kind === undefined || definitionSections[parsed.own.kind] !== section) {
+          throw new ProfileError(`${file} is not a reusable ${section} definition`);
+        }
+        if (links.some((existing) => existing.file === read.file)) {
+          throw new ProfileError(`${file} is referenced more than once`);
+        }
+        links.push({ file: read.file, parsed: parsed.own, drafts: parsed.drafts, listedIn: link.listedIn });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new ProfileError(`${link.file}: ${message}`, {
+          cause: error,
+          problems: [{ file: link.file, path: ['references', section], message }],
+        });
+      }
+    }
+  }
+  return links;
+}
+
+async function withReferencedLinks(links: readonly Link[]): Promise<Link[]> {
+  const result: Link[] = [];
+  for (const link of links) {
+    result.push(...(await referencedLinks(link)), link);
+  }
+  return result;
 }
 
 interface Listed {
@@ -896,7 +957,7 @@ async function readListed(
       }
     }
   }
-  return { appliedFirst, listedProfiles: chains.map(({ named }) => named) };
+  return { appliedFirst: await withReferencedLinks(appliedFirst), listedProfiles: chains.map(({ named }) => named) };
 }
 
 async function readChain<Read extends LayerRead>(
@@ -922,11 +983,20 @@ async function readChain<Read extends LayerRead>(
       problems: [{ file: first.file, path: ['extends'], message }],
     });
   });
+  if (
+    kind.noun === profileLayer.noun &&
+    appliedFirst.some((link) => listedProfiles.includes(link.file) && link.parsed.kind !== undefined)
+  ) {
+    throw new ProfileError(`${first.file}: use references instead of extends for reusable definitions`);
+  }
   return {
     head: head.read,
     text,
     links: [
       { file: first.file, parsed: head.own, drafts: head.drafts, listedIn: new Set() },
+      ...(
+        await referencedLinks({ file: first.file, parsed: head.own, drafts: head.drafts, listedIn: new Set() })
+      ).toReversed(),
       ...appliedFirst.toReversed(),
     ],
     listedProfiles,
@@ -1192,6 +1262,8 @@ function resolveChain(
   }
   return {
     resolved: {
+      ...(chain[0]?.parsed.kind === undefined ? {} : { kind: chain[0].parsed.kind }),
+      ...(chain[0]?.parsed.references === undefined ? {} : { references: chain[0].parsed.references }),
       chain: chain.map((link) => link.file),
       profile: applied,
       drafts,
@@ -1240,10 +1312,11 @@ export async function parseProfile(text: string, directory: string): Promise<Res
   const parsed = parseLayer(text, 'The profile', profileLayer);
   const [parent] = parsed.extends;
   const base = parent === undefined ? [] : (await readChain(path.resolve(directory, parent), profileLayer)).links;
-  return resolveChain(
-    [{ file: 'The profile', parsed: parsed.own, drafts: parsed.drafts, listedIn: new Set() }, ...base],
-    'The profile',
-  ).resolved;
+  if (base.length > 0 && base[0].parsed.kind !== undefined) {
+    throw new ProfileError('The profile must use references instead of extends for reusable definitions');
+  }
+  const own = { file: 'The profile', parsed: parsed.own, drafts: parsed.drafts, listedIn: new Set<number>() };
+  return resolveChain([own, ...(await referencedLinks(own, directory)).toReversed(), ...base], 'The profile').resolved;
 }
 
 /**
@@ -1265,6 +1338,8 @@ export async function resolveProfilesTogether(profiles: readonly string[]): Prom
 }
 
 export interface ProfileListing {
+  readonly kind?: DefinitionKind | undefined;
+  readonly references?: readonly string[] | undefined;
   /** The file name without its extension. */
   readonly name: string;
   /** The subfolder the file is in, from the listed folder, with `/` separators; '' for the folder itself. */
@@ -1278,6 +1353,21 @@ export interface ProfileListing {
   readonly owner_type: OwnerType | null;
 }
 
+/** Reference paths are relative to the file that contains them. */
+export function declaredReferences(text: string): string[] {
+  const value: unknown = parse(text);
+  if (!isRecord(value) || !isRecord(value['references'])) {
+    return [];
+  }
+  return Object.values(value['references']).flatMap((item) =>
+    typeof item === 'string'
+      ? [item]
+      : Array.isArray(item)
+        ? item.filter((part): part is string => typeof part === 'string')
+        : [],
+  );
+}
+
 async function listFolder(root: string, folder: string, entries: Dirent[], listings: ProfileListing[]): Promise<void> {
   const byName = (a: Dirent, b: Dirent): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   for (const entry of entries.filter((item) => /\.ya?ml$/iu.test(item.name) && !item.isDirectory()).sort(byName)) {
@@ -1285,10 +1375,16 @@ async function listFolder(root: string, folder: string, entries: Dirent[], listi
     let base: string | null = null;
     let problem: string | null = null;
     let owner: OwnerType | null = null;
+    let kind: DefinitionKind | undefined;
+    let references: readonly string[] = [];
     try {
-      const { links } = await readChain(file, profileLayer);
+      const text = await readFile(file, 'utf8');
+      references = declaredReferences(text).map((reference) => path.resolve(path.dirname(file), reference));
+      const raw: unknown = parse(text);
+      kind = isRecord(raw) ? definitionKind.safeParse(raw['kind']).data : undefined;
+      const { links, head } = await readChain(file, profileLayer);
       file = links[0].file;
-      base = links[1]?.file ?? null;
+      base = head.layer.extends === undefined ? null : path.resolve(path.dirname(file), head.layer.extends);
       owner = resolveChain(links, file).resolved.profile.owner_type ?? null;
     } catch (error) {
       problem = error instanceof Error ? error.message : String(error);
@@ -1300,6 +1396,8 @@ async function listFolder(root: string, folder: string, entries: Dirent[], listi
       extends: base,
       problem,
       owner_type: owner,
+      ...(kind === undefined ? {} : { kind }),
+      ...(references.length === 0 ? {} : { references }),
     });
   }
   for (const entry of entries.filter((item) => item.isDirectory() && !item.name.startsWith('.')).sort(byName)) {
@@ -1870,4 +1968,25 @@ export function withExtends(text: string, base: string): string {
 
 export function stringifyProfile(value: Profile): string {
   return stringify(activeProfileSettings(value), { lineWidth: 0 });
+}
+
+export function withRewrittenReferences(text: string, rewrite: (reference: string) => string): string {
+  const document: Document = parseDocument(text);
+  const references = document.get('references', true);
+  if (!isMap(references)) {
+    return text;
+  }
+  for (const pair of references.items) {
+    if (isScalar(pair.value) && typeof pair.value.value === 'string') {
+      pair.value.value = rewrite(pair.value.value);
+    } else if (isSeq(pair.value)) {
+      for (const item of pair.value.items) {
+        if (isScalar(item) && typeof item.value === 'string') {
+          item.value = rewrite(item.value);
+        }
+      }
+    }
+  }
+  const result = document.toString({ lineWidth: 0, indent: /^( +)\S/mu.exec(text)?.[1]?.length ?? 2 });
+  return text.includes('\r\n') ? result.replaceAll('\n', '\r\n') : result;
 }

@@ -11,6 +11,9 @@
       "changes": [],
       "skipped": [],
       "warnings": [],
+      "source": {
+        "staged": "<batch>/batch/lunch/app.yaml"
+      },
       "file": "<batch>/batch/lunch/app.yaml",
       "digest": "e9f0152079a8d68b870c4c5680435a4654933794efc7ca56153406687a3d5601",
       "access": {
@@ -65,6 +68,9 @@
       ],
       "skipped": [],
       "warnings": [],
+      "source": {
+        "staged": "<batch>/batch/lunch/web.yaml"
+      },
       "file": "<batch>/batch/lunch/web.yaml",
       "digest": "2c1ca153d525523db1cb4b793379c4ddcbd89d90e1ec7f158e14ac07b2ae9709",
       "access": {

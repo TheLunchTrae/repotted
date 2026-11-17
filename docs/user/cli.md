@@ -149,8 +149,8 @@ its own, since everything in it is for this apply.
 `apply` applies that plan as it does any other: it writes only the reviewed
 changes, and nothing if the repository changed since you planned. A staged
 apply that starts from a profile reads the profile each time it resolves, so
-plan it again after the profile changes; a saved plan keeps the profile it was
-made from. With `--json`, the plan also says which `--exclude` key leaves out
+apply reads those sources again and refuses when changed sources or live state
+produce different writes. Missing sources block apply too. With `--json`, the plan also says which `--exclude` key leaves out
 each change, as [JSON output](json-output.md) describes.
 
 ## Apply a profile to several repositories
@@ -422,3 +422,26 @@ enter on GitHub. Once you have entered it, the agent's next call works.
 `repos`, `check-actions`, `find-actions`, and `status` print one JSON document instead of text, and `schema`
 print its schema on one line. The [JSON output reference](json-output.md)
 describes each document.
+
+## Reusable Actions policies
+
+Capture an independent policy with:
+
+```sh
+repotted capture octo-org/app --kind actions-policy --output trusted-actions.yaml
+repotted profile trusted-actions.yaml --set actions.default_workflow_permissions='"read"'
+repotted stage apply.yaml --new octo-org/service --profile trusted-actions.yaml
+repotted plan --staged apply.yaml --out plan.json
+repotted apply plan.json
+```
+
+Create a policy by writing `kind: actions-policy` and its `actions` settings in a
+YAML file. List and sync it with `profiles` and `sync`, just like profiles.
+`profile --set references.actions='"trusted-actions.yaml"'` adds a reference to
+an existing profile; `--unset references.actions` removes it without changing
+GitHub. See [reusable policies](profiles.md#reusable-actions-policies) for precedence.
+
+The MCP `capture` tool accepts `kind: "actions-policy"`. Its `plan` tool accepts
+a definition as `profile_path` or YAML in `profile`, including profile references.
+Relative references in inline YAML resolve from the server's directory. Apply
+re-resolves references before writing and requires a fresh plan if writes differ.

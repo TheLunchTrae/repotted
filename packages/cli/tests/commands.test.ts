@@ -69,7 +69,9 @@ async function fixture(name: string, result: Result, names: Record<string, strin
   if (Object.keys(names).includes('')) {
     throw new Error(`fixture ${name} names an empty string`);
   }
-  const roots = Object.entries({ ...names, [directory]: '<tests>' }).sort(([a], [b]) => b.length - a.length);
+  const roots = Object.entries({ ...names, [directory]: '<tests>', [path.resolve(examples)]: '<examples>' }).sort(
+    ([a], [b]) => b.length - a.length,
+  );
   const value: unknown = JSON.parse(result.out, (_key, value: unknown) => {
     if (typeof value !== 'string') {
       return value;

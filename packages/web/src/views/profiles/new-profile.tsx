@@ -1,8 +1,9 @@
-import type { ownerTypes } from '@repotted/core';
+import type { DefinitionKind, ownerTypes } from '@repotted/core';
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { Router } from '../../app/navigation/router.js';
+import { definitionTypes } from '../../app/profiles/definition-types.js';
 import type { NewProfileStart, Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
 import { run } from '../layout/run.js';
@@ -25,6 +26,8 @@ interface NewProfileProps {
 export function NewProfileForm({ profiles, repositories, router, repositoryToCapture }: NewProfileProps): JSX.Element {
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const captured = repositories.list.value?.repositories ?? [];
+  const [definitionKind, setDefinitionKind] = useState<DefinitionKind | undefined>(undefined);
+  const [importText, setImportText] = useState('');
   const [name, setName] = useState('');
   const [folder, setFolder] = useState(profiles.selected.value?.folder ?? '');
   const [kind, setKind] = useState<NewProfileStart['kind']>(repositoryToCapture === undefined ? 'empty' : 'repository');
@@ -34,6 +37,7 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const formClosed = useRef(new AbortController());
+  const importRead = useRef(0);
   useEffect(
     () => () => {
       formClosed.current.abort();
@@ -48,13 +52,19 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
   const start: NewProfileStart | undefined =
     kind === 'empty'
       ? { kind }
-      : kind === 'extends'
-        ? base === undefined
-          ? undefined
-          : { kind, base }
-        : from === ''
-          ? undefined
-          : { kind, repository: from };
+      : kind === 'import'
+        ? { kind, text: importText }
+        : kind === 'duplicate'
+          ? base === undefined
+            ? undefined
+            : { kind, source: base }
+          : kind === 'extends'
+            ? base === undefined
+              ? undefined
+              : { kind, base }
+            : from === ''
+              ? undefined
+              : { kind, repository: from };
   const fixedOwner =
     kind === 'repository'
       ? "The repository's owner sets the type."
@@ -71,7 +81,13 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
     setWorking(true);
     setError(undefined);
     const failure = await profiles.create(
-      { name, folder, start, ownerType: owner === 'any' ? undefined : owner },
+      {
+        name,
+        folder,
+        start,
+        ...(definitionKind === undefined ? {} : { definitionKind }),
+        ownerType: owner === 'any' ? undefined : owner,
+      },
       formClosed.current.signal,
     );
     if (formClosed.current.signal.aborted) {
@@ -96,11 +112,30 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
     >
       <div class="page-heading">
         <div>
-          <h1 id="new-profile-heading">New profile</h1>
+          <h1 id="new-profile-heading">New profile or definition</h1>
           <p class="muted">Repotted never replaces a profile that is already there.</p>
         </div>
       </div>
 
+      <label class="form-field">
+        <span>Type</span>
+        <select
+          class="field"
+          disabled={working}
+          value={definitionKind ?? ''}
+          onChange={(event) => {
+            setDefinitionKind(definitionTypes.find((item) => item.kind === event.currentTarget.value)?.kind);
+            setKind('empty');
+          }}
+        >
+          <option value="">Profile</option>
+          {definitionTypes.map((item) => (
+            <option key={item.kind} value={item.kind}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <div class="form-field">
         <label for="new-profile-name">Name</label>
         <input
@@ -165,7 +200,7 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
             type="radio"
             name="start"
             checked={kind === 'extends'}
-            disabled={listings.length === 0}
+            disabled={listings.length === 0 || definitionKind !== undefined}
             onChange={() => {
               setKind('extends');
             }}
@@ -232,6 +267,62 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
         </label>
       </fieldset>
 
+      <label class="form-field">
+        <span>Or reuse a saved file</span>
+        <select
+          class="field"
+          disabled={working}
+          value={kind === 'duplicate' ? baseFile : ''}
+          onChange={(event) => {
+            setBaseFile(event.currentTarget.value);
+            setKind('duplicate');
+          }}
+        >
+          <option value="" disabled>
+            Duplicate a profile or definition
+          </option>
+          {listings.map((item) => (
+            <option key={item.file} value={item.file}>
+              {profiles.pathOf(item)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label class="form-field">
+        <span>Import YAML file</span>
+        <input
+          type="file"
+          accept=".yaml,.yml"
+          disabled={working}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            if (file !== undefined) {
+              const request = ++importRead.current;
+              setWorking(true);
+              setKind('import');
+              setImportText('');
+              run(
+                file.text().then(
+                  (text) => {
+                    if (formClosed.current.signal.aborted || importRead.current !== request) {
+                      return;
+                    }
+                    setImportText(text);
+                    setWorking(false);
+                  },
+                  (error: unknown) => {
+                    if (formClosed.current.signal.aborted || importRead.current !== request) {
+                      return;
+                    }
+                    setError(error instanceof Error ? error.message : String(error));
+                    setWorking(false);
+                  },
+                ),
+              );
+            }
+          }}
+        />
+      </label>
       <fieldset class="choices" disabled={working || fixedOwner !== undefined}>
         <legend>For repositories owned by</legend>
         {fixedOwner === undefined ? (
@@ -264,7 +355,7 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
         <button
           class="button button-primary"
           type="submit"
-          disabled={working || problem !== undefined || start === undefined}
+          disabled={working || (kind === 'import' && importText === '') || problem !== undefined || start === undefined}
         >
           {kind === 'repository' ? 'Capture' : 'Create'}
         </button>
