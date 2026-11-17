@@ -1,6 +1,8 @@
 import { computed, signal } from '@preact/signals';
 import {
   captureProfile,
+  captureDefinition,
+  stringifyDefinition,
   checkActionPatterns,
   declaredExtends,
   type DefinitionKind,
@@ -642,15 +644,18 @@ export class Profiles {
       this.#capturing.add(file.toLowerCase());
       try {
         const repository = parseRepo(profile.start.repository);
-        const captured = await captureProfile(this.#github, repository);
-        if (profile.definitionKind !== undefined && captured.profile.actions === undefined) {
-          return 'The Actions settings could not be captured. Check repository access before trying again.';
-        }
-        text =
+        const captured =
           profile.definitionKind === undefined
-            ? stringifyProfile(captured.profile)
-            : `kind: ${profile.definitionKind}\n${stringifyProfile({ owner_type: captured.profile.owner_type, actions: captured.profile.actions })}`;
-        uncaptured = uncapturedSettings(captured.warnings, captured.profile.owner_type);
+            ? await captureProfile(this.#github, repository)
+            : await captureDefinition(
+                this.#github,
+                repository,
+                profile.definitionKind,
+                definition?.multiple === true ? targetName : undefined,
+              );
+        text = 'definition' in captured ? stringifyDefinition(captured.definition) : stringifyProfile(captured.profile);
+        const capturedOwner = 'definition' in captured ? captured.definition.owner_type : captured.profile.owner_type;
+        uncaptured = uncapturedSettings(captured.warnings, capturedOwner);
         if (uncaptured.needsAppPermission) {
           uncaptured = {
             ...uncaptured,

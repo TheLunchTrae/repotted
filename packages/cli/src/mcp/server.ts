@@ -84,15 +84,19 @@ export async function createServer(options: ServerOptions): Promise<McpServer> {
       inputSchema: {
         repository,
         kind: definitionKind.optional().describe('Capture a reusable definition instead of a whole profile'),
+        name: z.string().min(1).optional().describe('The target name of the ruleset to capture'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    ({ repository: name, kind }) =>
+    ({ repository: repositoryName, kind, name }) =>
       attempt(async () => {
+        if (kind === undefined && name !== undefined) {
+          return text('name needs kind to select a reusable definition.', true);
+        }
         const result =
           kind === undefined
-            ? await captureProfile(await client(), parseRepo(name))
-            : await captureDefinition(await client(), parseRepo(name), kind);
+            ? await captureProfile(await client(), parseRepo(repositoryName))
+            : await captureDefinition(await client(), parseRepo(repositoryName), kind, name);
         const yaml = 'definition' in result ? stringifyDefinition(result.definition) : stringifyProfile(result.profile);
         return text([yaml, ...result.warnings.map((warning) => `# ${describeWarning(warning)}`)].join('\n'));
       }),

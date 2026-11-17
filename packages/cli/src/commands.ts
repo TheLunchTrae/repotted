@@ -182,14 +182,22 @@ async function capture(io: Io, args: string[]): Promise<number> {
   const { positionals, values } = parseArgs({
     args,
     allowPositionals: true,
-    options: { output: { type: 'string', short: 'o' }, json: { type: 'boolean' }, kind: { type: 'string' } },
+    options: {
+      output: { type: 'string', short: 'o' },
+      json: { type: 'boolean' },
+      kind: { type: 'string' },
+      name: { type: 'string' },
+    },
   });
   const repo = parseRepo(only(positionals, 'repository'));
   const kind = values.kind === undefined ? undefined : definitionKind.parse(values.kind);
+  if (kind === undefined && values.name !== undefined) {
+    throw new Error('--name needs --kind to select a reusable definition.');
+  }
   const captured =
     kind === undefined
       ? await captureProfile(await io.github(), repo)
-      : await captureDefinition(await io.github(), repo, kind);
+      : await captureDefinition(await io.github(), repo, kind, values.name);
   const result = 'definition' in captured ? { profile: captured.definition, warnings: captured.warnings } : captured;
   const yaml = 'definition' in captured ? stringifyDefinition(captured.definition) : stringifyProfile(captured.profile);
   if (values.output !== undefined) {
