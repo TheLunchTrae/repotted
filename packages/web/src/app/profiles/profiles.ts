@@ -181,7 +181,7 @@ export class Profiles {
   /** The files that captures under way will make, so no other new profile takes their names. */
   readonly #capturing = new Set<string>();
   readonly #folders: LocalFolders | undefined;
-  readonly #assignedConsumers: (files: readonly string[]) => readonly string[];
+  #assignedConsumers: (files: readonly string[]) => readonly string[];
   /** The folder on this computer, once the browser has let the page use it this visit. */
   #localFolder: LocalFolder | undefined;
 
@@ -202,6 +202,10 @@ export class Profiles {
       this.source.value = saved.data;
       this.chosen.value = true;
     }
+  }
+
+  protectAssignments(consumers: (files: readonly string[]) => readonly string[]): void {
+    this.#assignedConsumers = consumers;
   }
 
   readonly folder = computed(() => folderOf(this.source.value));
