@@ -48,6 +48,7 @@ import {
 import {
   authoritativeSchema,
   type Ownership,
+  excludedEntry,
   ownedActions,
   owns,
   ownershipWarnings,
@@ -249,7 +250,11 @@ export async function createPlan(
       ownership,
       (desired.labels ?? []).flatMap((entry) => (entry.absent === true ? [] : (entry.renamed_from ?? []))),
     );
-    const labels = planLabels(entries, live, repo);
+    const kept = entries.filter(
+      (entry) =>
+        entry.absent === true || entry.renamed_from?.some((name) => excludedEntry(ownership, 'labels', name)) !== true,
+    );
+    const labels = planLabels(kept, live, repo);
     add(labels);
     // A rename applies even when a draft names the old label, so say so beside the skipped draft.
     for (const draft of skipped.filter((item) => item.section === 'labels')) {
@@ -268,6 +273,20 @@ export async function createPlan(
     }
   }
 
+  for (const change of changes) {
+    if (
+      change.action === 'delete' &&
+      change.entry !== undefined &&
+      owns(ownership, change.section) &&
+      skipped.some((draft) => draft.section === change.section && draft.target === change.entry.name)
+    ) {
+      warnings.push({
+        section: change.section,
+        key: change.entry.name,
+        message: `The draft for ${change.entry.name} is not part of the desired state. Full ownership deletes its live entry; exclude it to keep it.`,
+      });
+    }
+  }
   ownershipWarnings(changes, warnings, ownership);
   return {
     repository: `${repo.owner}/${repo.name}`,

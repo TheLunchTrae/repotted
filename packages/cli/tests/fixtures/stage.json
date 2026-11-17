@@ -1,6 +1,7 @@
 {
   "file": "<tests>/staged.yaml",
   "repository": "lunch/app",
+  "authoritative": [],
   "profiles": [
     "<tests>/staged-base.yaml"
   ],

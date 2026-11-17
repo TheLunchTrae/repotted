@@ -1567,3 +1567,19 @@ describe('stage', () => {
     expect(started.out).toBe('repository:\n  has_issues: false\n  has_wiki: true\n');
   });
 });
+
+test('CLI ownership remains one-time and is saved with the reviewed plan', async () => {
+  const file = path.join(directory, 'ownership.yaml');
+  await writeFile(file, '{}\n');
+  const github = new FakeGitHub({
+    labels: [{ id: 1, name: 'legacy', color: 'ffffff', description: null, default: false }],
+  });
+  const result = await cli(github, 'plan', 'lunch/app', '--profile', file, '--authoritative', 'labels', '--json');
+  expect(result.code).toBe(0);
+  expect(document(result)).toMatchObject({
+    authoritative: ['labels'],
+    changes: [{ action: 'delete', target: 'legacy' }],
+  });
+  expect(await readFile(file, 'utf8')).toBe('{}\n');
+  expect(github.writes).toEqual([]);
+});

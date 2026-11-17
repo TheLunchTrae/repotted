@@ -11,6 +11,9 @@
       "changes": [],
       "skipped": [],
       "warnings": [],
+      "exclude": [
+        "repository.has_wiki"
+      ],
       "source": {
         "staged": "<batch>/batch/lunch/app.yaml"
       },
@@ -68,6 +71,9 @@
       ],
       "skipped": [],
       "warnings": [],
+      "exclude": [
+        "repository.has_wiki"
+      ],
       "source": {
         "staged": "<batch>/batch/lunch/web.yaml"
       },

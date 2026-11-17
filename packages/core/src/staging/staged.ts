@@ -196,10 +196,24 @@ function withoutExclusion(data: unknown, exclusion: Exclusion): unknown {
     : data;
 }
 
-function excluding(exclude: readonly string[]): Adjust {
+function excluding(exclude: readonly string[], aliases: string[]): Adjust {
   return (data) => {
+    aliases.length = 0;
+    const labels = isRecord(data) && Array.isArray(data['labels']) ? data['labels'] : [];
+    for (const entry of labels) {
+      if (!isRecord(entry) || typeof entry['name'] !== 'string') {
+        continue;
+      }
+      const previous = Array.isArray(entry['renamed_from'])
+        ? entry['renamed_from'].filter((name): name is string => typeof name === 'string')
+        : [];
+      const names = [entry['name'], ...previous];
+      if (names.some((name) => exclude.some((key) => exclusionKey(key) === `labels/${labelKey(name)}`))) {
+        aliases.push(...names.map((name) => `labels/${name}`));
+      }
+    }
     const unmatched: string[] = [];
-    const left = exclude.reduce<unknown>((current, key) => {
+    const left = [...new Set([...exclude, ...aliases])].reduce<unknown>((current, key) => {
       const exclusion = parseExclusion(key);
       const next = exclusion === undefined ? current : withoutExclusion(current, exclusion);
       if (isDeepEqual(next, current)) {
@@ -207,12 +221,13 @@ function excluding(exclude: readonly string[]): Adjust {
       }
       return next;
     }, data);
-    return { data: left, unmatched };
+    return { data: left, unmatched: unmatched.filter((key) => exclude.includes(key)) };
   };
 }
 
 interface StagedRead {
   readonly own: StagedFile;
+  readonly aliases: readonly string[];
   readonly layer: ProfileFile;
   readonly adjust: Adjust;
   readonly listedProfiles: readonly string[];
@@ -222,10 +237,12 @@ const stagedLayer: Layer<StagedRead> = {
   noun: 'staged apply',
   schema: stagedFile.transform((own): StagedRead => {
     const { apply_to: _repository, authoritative: _ownership, exclude = [], extends: listed, ...layer } = own;
+    const aliases: string[] = [];
     return {
       own,
+      aliases,
       layer,
-      adjust: excluding(exclude),
+      adjust: excluding(exclude, aliases),
       listedProfiles: listed === undefined ? [] : typeof listed === 'string' ? [listed] : listed,
     };
   }),
@@ -596,7 +613,9 @@ export async function planStagedApply(
     skippedDrafts(resolved.drafts),
     {
       ...(resolved.authoritative.length === 0 ? {} : { authoritative: resolved.authoritative }),
-      ...(resolved.exclude.length === 0 ? {} : { exclude: resolved.exclude }),
+      ...([...resolved.exclude, ...read.head.aliases].length === 0
+        ? {}
+        : { exclude: [...new Set([...resolved.exclude, ...read.head.aliases])] }),
     },
   );
   const plan = {

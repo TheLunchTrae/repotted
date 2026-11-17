@@ -523,7 +523,9 @@ Repotted resolves the entire ordered combination and its references and
 one-off edits first. It then removes repository entries outside that final
 desired set. An owned section omitted from the combination is an explicitly
 empty desired set and removes every repository entry in that section. An
-unselected section remains partially managed. Ownership is an apply option;
+unselected section remains partially managed. Drafts are outside the effective
+desired set and do not protect live entries from pruning; exclude an entry to
+keep it while its definition is drafted. Ownership is an apply option;
 it does not edit the source profiles or save an assignment.
 
 Within a retained entry, omitted fields keep their live values. This includes

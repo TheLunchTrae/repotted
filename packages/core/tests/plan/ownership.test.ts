@@ -161,3 +161,33 @@ test('ambiguous live targets cannot be pruned by name', async () => {
   await expect(createPlan(github, repo, {}, [], { authoritative: ['rulesets'] })).rejects.toThrow('duplicate names');
   expect(github.writes).toEqual([]);
 });
+
+test('excluding either identity of a label rename cannot turn it into a deletion', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'repotted-rename-ownership-'));
+  try {
+    const profile = path.join(directory, 'profile.yaml');
+    await writeFile(profile, 'labels: [{name: Defect, renamed_from: [BUG]}]\n');
+    for (const name of ['Defect', 'bug']) {
+      const file = path.join(directory, `${name}.yaml`);
+      const github = new FakeGitHub({
+        labels: [{ id: 1, name: 'bug', color: 'ffffff', description: null, default: false }],
+      });
+      await createStagedApply(file, 'lunch/app', [profile], ['labels']);
+      expect((await planStagedApply(github, file)).plan.changes.map((change) => change.action)).toEqual(['update']);
+      await editStagedApply(file, [{ exclude: `labels/${name}`, excluded: true }]);
+      expect((await planStagedApply(github, file)).plan.changes).toEqual([]);
+      expect(github.writes).toEqual([]);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('drafts do not silently shield unexpected live entries from explicit ownership', async () => {
+  const github = new FakeGitHub({ rulesets: [ruleset(1, 'Draft')] });
+  const plan = await createPlan(github, repo, {}, [{ section: 'rulesets', target: 'Draft' }], {
+    authoritative: ['rulesets'],
+  });
+  expect(plan.changes.map((change) => [change.action, change.target])).toEqual([['delete', 'Draft']]);
+  expect(plan.warnings.some((warning) => warning.message.includes('Full ownership deletes its live entry'))).toBe(true);
+});
