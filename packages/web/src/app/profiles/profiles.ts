@@ -675,12 +675,20 @@ export class Profiles {
         this.#capturing.delete(file.toLowerCase());
       }
     } else if (profile.start.kind === 'duplicate') {
-      const source = profile.start.source.file;
-      const original = await readFile(source, 'utf8');
-      const base = declaredExtends(original);
-      text =
-        base === undefined ? original : withExtends(original, relative(dirname(file), resolve(dirname(source), base)));
-      text = withRewrittenReferences(text, (reference) => relative(dirname(file), resolve(dirname(source), reference)));
+      try {
+        const source = profile.start.source.file;
+        const original = await readFile(source, 'utf8');
+        const base = declaredExtends(original);
+        text =
+          base === undefined
+            ? original
+            : withExtends(original, relative(dirname(file), resolve(dirname(source), base)));
+        text = withRewrittenReferences(text, (reference) =>
+          relative(dirname(file), resolve(dirname(source), reference)),
+        );
+      } catch (error) {
+        return messageOf(error);
+      }
     } else if (profile.start.kind === 'import') {
       text = profile.start.text;
     } else {
