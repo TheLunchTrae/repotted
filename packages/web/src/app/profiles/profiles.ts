@@ -185,7 +185,7 @@ export class Profiles {
   /** The files that captures under way will make, so no other new profile takes their names. */
   readonly #capturing = new Set<string>();
   readonly #folders: LocalFolders | undefined;
-  readonly #assignedConsumers: (files: readonly string[]) => readonly string[];
+  #assignedConsumers: (files: readonly string[]) => readonly string[];
   /** The folder on this computer, once the browser has let the page use it this visit. */
   #localFolder: LocalFolder | undefined;
 
@@ -206,6 +206,10 @@ export class Profiles {
       this.source.value = saved.data;
       this.chosen.value = true;
     }
+  }
+
+  protectAssignments(consumers: (files: readonly string[]) => readonly string[]): void {
+    this.#assignedConsumers = consumers;
   }
 
   readonly folder = computed(() => folderOf(this.source.value));
@@ -1091,10 +1095,17 @@ export class Profiles {
     }
   }
 
-  referencesOf(text: string): Readonly<Record<string, unknown>> {
+  referencesOf(text: string, file: string): Readonly<Record<string, unknown>> {
     const node = parseDocument(text).get('references', true);
     const value: unknown = isMap(node) ? node.toJSON() : {};
-    return z.record(z.string(), z.unknown()).parse(value);
+    const references = z.record(z.string(), z.union([z.string(), z.array(z.string())])).parse(value);
+    const canonical = (reference: string): string => relative(dirname(file), resolve(dirname(file), reference));
+    return Object.fromEntries(
+      Object.entries(references).map(([section, reference]) => [
+        section,
+        typeof reference === 'string' ? canonical(reference) : reference.map(canonical),
+      ]),
+    );
   }
 
   async save(mode: SaveMode = 'applies'): Promise<void> {

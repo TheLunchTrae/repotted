@@ -68,11 +68,7 @@ function SignedIn({
       const refused = (): void => {
         account.gitHubRefusedSignIn();
       };
-      const kept: Profiles = new Profiles(github, preferences, refused, folders, (files) =>
-        assigned.repositoriesWithProfiles.value.filter((repository) =>
-          assigned.profilesOf(repository).some((path) => files.includes(assigned.fileOf(path))),
-        ),
-      );
+      const kept = new Profiles(github, preferences, refused, folders);
       // The hidden repositories and owners follow the profiles: to their repository, or this browser. Using
       // the profiles' place from the start means the first list shows what that place hides. Folders follow them
       // too, but which folders are closed stays in this browser, so opening one commits nothing.
@@ -80,6 +76,11 @@ function SignedIn({
       run(shared.use(kept.source.value));
       // Which profiles each repository uses follows the profiles too, since it names them by their paths.
       const assigned = new RepositoryProfiles(shared, kept);
+      kept.protectAssignments((files) =>
+        assigned.repositoriesWithProfiles.value.filter((repository) =>
+          assigned.profilesOf(repository).some((path) => files.includes(assigned.fileOf(path))),
+        ),
+      );
       const applying = new Apply(github, refused, (work) => kept.write(work), assigned);
       const batching = new BatchApply(github, refused, assigned);
       const reviewMoved = (names: readonly string[]): boolean => {
