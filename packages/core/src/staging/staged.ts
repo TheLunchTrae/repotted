@@ -573,6 +573,11 @@ export async function planStagedApply(
     resolved.profile,
     skippedDrafts(resolved.drafts),
   );
+  const latest = staged(await resolveLayer(file, stagedLayer));
+  const inputs = (value: StagedApply): unknown => [value.repository, value.profiles, value.profile, value.exclude];
+  if (!isDeepEqual(inputs(resolved), inputs(latest))) {
+    throw new ProfileError('The staged apply or its sources changed while GitHub was being read. Review a fresh plan.');
+  }
   const plan = {
     ...created,
     source: { staged: resolved.file },
