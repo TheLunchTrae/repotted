@@ -289,7 +289,7 @@ test.each([
       release();
       await expect(applying).rejects.toThrow();
       expect(fake.writes).toEqual([]);
-      expect(fake.state.rulesets.map((item) => item['name'])).toEqual(['Legacy']);
+      expect(fake.state.rulesets.map((item) => item.name)).toEqual(['Legacy']);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
