@@ -744,6 +744,8 @@ export interface BatchApplyOptions {
   /** The members after the first failure are `stopped`. */
   readonly stopOnFailure?: boolean;
   readonly onResult?: (result: MemberResult) => void;
+  /** Checks assignment state after revalidation and before the member writes. */
+  readonly beforeApply?: (repository: string) => void;
 }
 
 function listsMember(batch: Batch, reviewed: ReviewedBatch, member: ReviewedMember): boolean {
@@ -798,7 +800,12 @@ async function resultIfNotTried(reviewed: ReviewedBatch, member: ReviewedMember)
   return undefined;
 }
 
-async function applyMember(github: GitHub, reviewed: ReviewedBatch, member: ReviewedMember): Promise<MemberResult> {
+async function applyMember(
+  github: GitHub,
+  reviewed: ReviewedBatch,
+  member: ReviewedMember,
+  beforeApply: BatchApplyOptions['beforeApply'],
+): Promise<MemberResult> {
   const { repository } = member;
   let applied: readonly Change[];
   try {
@@ -807,7 +814,7 @@ async function applyMember(github: GitHub, reviewed: ReviewedBatch, member: Revi
       return resultWithoutTrying;
     }
     // Even a plan with no changes is planned again, so a member is never called in line on an old read.
-    applied = await applyPlan(github, member.plan);
+    applied = await applyPlan(github, member.plan, () => beforeApply?.(repository));
   } catch (error) {
     if (error instanceof StalePlanError) {
       return { repository, ended: false, status: 'stale', message: error.message, current: error.current };
@@ -862,7 +869,7 @@ export async function applyBatch(
   for (const member of chosenMembers(reviewed, only)) {
     const result: MemberResult = stopped
       ? { repository: member.repository, ended: false, status: 'stopped' }
-      : await applyMember(github, reviewed, member);
+      : await applyMember(github, reviewed, member, options.beforeApply);
     stopped ||= stopOnFailure && isFailure(result);
     results.push(result);
     onResult?.(result);

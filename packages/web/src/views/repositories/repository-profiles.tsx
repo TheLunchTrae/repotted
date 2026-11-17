@@ -1,10 +1,12 @@
+import type { AuthoritativeSection } from '@repotted/core';
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
 
-import type { ComparedProfile } from '../../app/apply/comparison.js';
+import { type ComparedProfile, sectionTitles } from '../../app/apply/comparison.js';
 import type { Profiles } from '../../app/profiles/profiles.js';
 import type { Repository } from '../../app/repositories/repositories.js';
 import type { AssignmentStatus, RepositoryProfiles } from '../../app/repositories/repository-profiles.js';
+import { OwnershipChoices } from '../apply/ownership.js';
 import { useModal } from '../layout/shell.js';
 
 /** As the list names a profile: by its path, without `.yaml`, which tells two of one name apart. */
@@ -50,6 +52,7 @@ export function statusSentence(status: AssignmentStatus): string | undefined {
           ? `${inProse(removed)} ${removed.length === 1 ? 'was' : 'were'} removed since the last apply.`
           : '',
         status.reordered ? 'Their order changed since the last apply.' : '',
+        status.ownershipChanged === true ? 'Full section ownership changed since the last apply.' : '',
       ]
         .filter((sentence) => sentence !== '')
         .join(' ');
@@ -68,7 +71,11 @@ function statusPill(status: AssignmentStatus, phone: boolean): JSX.Element | und
       return <span class="pill pill-remove">Missing profile</span>;
     }
     case 'changed': {
-      return <span class="pill pill-drift">{phone ? 'Changed' : 'Profile changed'}</span>;
+      return (
+        <span class="pill pill-drift">
+          {phone ? 'Changed' : status.ownershipChanged === true ? 'Assignment changed' : 'Profile changed'}
+        </span>
+      );
     }
     case 'not-applied': {
       return <span class="pill">Not applied</span>;
@@ -93,7 +100,7 @@ interface RowTagsProps {
  */
 export function RowProfileTags({ repository, assignments, phone }: RowTagsProps): JSX.Element | null {
   const profiles = assignments.profilesOf(repository.full_name);
-  if (profiles.length === 0) {
+  if (profiles.length === 0 && assignments.authoritativeOf(repository.full_name).length === 0) {
     return null;
   }
   const status = assignments.status(repository.full_name);
@@ -145,7 +152,9 @@ export function PanelProfiles({
   const profiles = assignments.profilesOf(repository.full_name);
   const status = assignments.status(repository.full_name);
   const sentence = statusSentence(status);
-  const canApply = profiles.length > 0 && status.kind !== 'missing' && status.kind !== 'checking';
+  const authoritative = assignments.authoritativeOf(repository.full_name);
+  const canApply =
+    (profiles.length > 0 || authoritative.length > 0) && status.kind !== 'missing' && status.kind !== 'checking';
   const reviewApply = (
     <button
       class={status.kind === 'current' ? 'button' : 'button button-small'}
@@ -178,7 +187,7 @@ export function PanelProfiles({
           Edit
         </button>
       </div>
-      {profiles.length === 0 ? (
+      {profiles.length === 0 && authoritative.length === 0 ? (
         <p class="muted small">None yet. Apply a profile to add it, or choose some with Edit.</p>
       ) : (
         <>
@@ -194,6 +203,11 @@ export function PanelProfiles({
             ))}
           </ol>
           {profiles.length > 1 && <p class="muted small">Later profiles override earlier ones.</p>}
+          {authoritative.length > 0 && (
+            <p class="muted small">
+              Full section ownership: {authoritative.map((section) => sectionTitles[section]).join(', ')}.
+            </p>
+          )}
           {sentence === undefined ? (
             reviewApply
           ) : (
@@ -333,6 +347,9 @@ interface EditDialogProps {
 export function EditProfilesDialog({ repository, assignments, profiles, onClose }: EditDialogProps): JSX.Element {
   const dialog = useModal();
   const [list, setList] = useState<readonly string[]>(() => assignments.ownProfilesOf(repository.full_name));
+  const [authoritative, setAuthoritative] = useState<readonly AuthoritativeSection[]>(() =>
+    assignments.authoritativeOf(repository.full_name),
+  );
   const inherited = assignments.inheritedProfilesOf(repository.full_name);
   return (
     <dialog class="dialog dialog-profiles" ref={dialog} aria-labelledby="edit-profiles-heading" onClose={onClose}>
@@ -340,7 +357,7 @@ export function EditProfilesDialog({ repository, assignments, profiles, onClose 
         method="dialog"
         onSubmit={(event) => {
           if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'save') {
-            assignments.setProfiles(repository.full_name, list);
+            assignments.setProfiles(repository.full_name, list, authoritative);
           }
         }}
       >
@@ -365,8 +382,13 @@ export function EditProfilesDialog({ repository, assignments, profiles, onClose 
         )}
         {inherited.length > 0 && <h3>Own profiles</h3>}
         <ProfileLayers profiles={profiles} assignments={assignments} list={list} onChange={setList} />
+        <OwnershipChoices value={authoritative} onChange={setAuthoritative} />
         <p class="muted small">
-          Saving changes which profiles this repository uses. Nothing is applied until you review an apply.
+          Ownership applies to the complete combination, including folder profiles. Turning it off stops future
+          enforcement and does not restore deleted resources.
+        </p>
+        <p class="muted small">
+          Saving changes this repository's profiles and ownership. Nothing is applied until you review an apply.
         </p>
         <div class="form-actions">
           <button class="button button-primary" type="submit" value="save">

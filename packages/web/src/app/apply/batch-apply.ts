@@ -1,6 +1,7 @@
 import { computed, signal } from '@preact/signals';
 import {
   applyBatch,
+  type AuthoritativeSection,
   type BatchPlan,
   createBatch,
   describeSkipped,
@@ -21,12 +22,13 @@ import { rm } from '../../engine/files.js';
 import { basename, dirname } from '../../engine/path.js';
 import { isSignedOut } from '../account/account.js';
 import { type AppliedVersion, profilesApplyFully, profileVersion } from '../repositories/repository-profiles.js';
-import type { ProfileAssignments } from './apply.js';
+import { assignmentKey, type ProfileAssignments } from './apply.js';
 import { type ComparedProfile, type CompareSection, compareSections, exclusionLabel } from './comparison.js';
 
 export interface BatchMemberView {
   readonly repository: string;
   readonly profiles: readonly string[];
+  readonly authoritative: readonly AuthoritativeSection[];
   readonly status: 'changes' | 'in-line' | 'needs-access' | 'failed' | 'left-out';
   readonly changes: number;
   readonly comparisonFailureMessage: string | undefined;
@@ -67,6 +69,7 @@ export type BatchState =
       /** What a change everywhere couldn't do in some repository, as when its own edits set the value. */
       readonly refused: readonly string[];
       readonly appliedVersions: ReadonlyMap<string, readonly AppliedVersion[]>;
+      readonly assignments: ReadonlyMap<string, string>;
     } & Named)
   | ({
       readonly kind: 'applying';
@@ -142,6 +145,7 @@ function membersOf(plan: BatchPlan, assignments: ProfileAssignments | undefined)
       profiles: member.staged.profiles.map((file) =>
         (assignments?.pathOf(file) ?? basename(file)).replace(/\.ya?ml$/iu, ''),
       ),
+      authoritative: member.authoritative ?? [],
       status: member.locks.length > 0 ? 'needs-access' : member.changes.length === 0 ? 'in-line' : 'changes',
       changes: member.changes.length,
       comparisonFailureMessage: undefined,
@@ -154,6 +158,7 @@ function membersOf(plan: BatchPlan, assignments: ProfileAssignments | undefined)
   const rest = (repository: string, status: 'failed' | 'left-out', message: string | undefined): BatchMemberView => ({
     repository,
     profiles: [],
+    authoritative: [],
     status,
     changes: 0,
     comparisonFailureMessage: message,
@@ -194,6 +199,7 @@ export class BatchApply {
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
   #folder: string | undefined;
+  #assigned = new Map<string, string>();
 
   constructor(github: GitHub, onSignedOut: () => void, assignments?: ProfileAssignments) {
     this.#github = github;
@@ -248,6 +254,7 @@ export class BatchApply {
       repositories.map(({ repository, profiles }) => ({
         repository,
         profiles: profiles.map((profile) => profile.file),
+        authoritative: this.#assignments?.authoritativeOf(repository) ?? [],
       })),
     );
   }
@@ -255,16 +262,36 @@ export class BatchApply {
   async #start(
     profileName: string,
     profiles: readonly string[],
-    repositories: readonly (string | { readonly repository: string; readonly profiles: readonly string[] })[],
+    repositories: readonly (
+      | string
+      | {
+          readonly repository: string;
+          readonly profiles: readonly string[];
+          readonly authoritative: readonly AuthoritativeSection[];
+        }
+    )[],
   ): Promise<void> {
     if (this.#writing() || repositories.length === 0) {
       return;
     }
     const closing = this.close();
+    const snapshots = new Map<string, string>();
+    for (const input of repositories) {
+      if (typeof input !== 'string' && this.#assignments !== undefined) {
+        snapshots.set(input.repository, assignmentKey(this.#assignments, input.repository));
+      }
+    }
+    this.#assigned = snapshots;
     this.#folder = `/apply/${crypto.randomUUID()}/batch`;
     await this.#work(profileName, [], async (folder) => {
       await closing;
-      await createBatch(folder, { profiles, repositories });
+      const batch = await createBatch(folder, { profiles, repositories });
+      for (const member of batch.members) {
+        const input = repositories.find((item) => typeof item !== 'string' && item.repository === member.repository);
+        if (input !== undefined && typeof input !== 'string') {
+          await editStagedApply(member.file, [{ authoritative: input.authoritative }]);
+        }
+      }
       return this.#review(folder, []);
     });
   }
@@ -378,10 +405,24 @@ export class BatchApply {
           })),
         },
         {
+          beforeApply: (repository) => {
+            const reviewed = state.assignments.get(repository);
+            if (
+              reviewed !== undefined &&
+              this.#assignments !== undefined &&
+              reviewed !== assignmentKey(this.#assignments, repository)
+            ) {
+              throw new Error('The repository assignment changed since review. Start a new batch review.');
+            }
+          },
           onResult: (result) => {
             const versions = state.appliedVersions.get(result.repository);
             if ((result.status === 'applied' || result.status === 'in_line') && versions !== undefined) {
-              this.#assignments?.recordApplied(result.repository, versions);
+              this.#assignments?.recordApplied(
+                result.repository,
+                versions,
+                plan.plans.find((member) => member.repository === result.repository)?.authoritative ?? [],
+              );
             }
             results.push(resultOf(result));
             if (turn === this.#turn) {
@@ -430,6 +471,7 @@ export class BatchApply {
     this.#turn += 1;
     const folder = this.#folder;
     this.#folder = undefined;
+    this.#assigned = new Map();
     this.state.value = { kind: 'idle' };
     if (folder !== undefined) {
       await rm(dirname(folder), { recursive: true, force: true });
@@ -445,7 +487,24 @@ export class BatchApply {
   }
 
   async #review(folder: string, refused: readonly string[]): Promise<BatchState> {
+    const reviewedAssignments = new Map(this.#assigned);
+    const checkAssignments = (): void => {
+      for (const [repository, reviewed] of reviewedAssignments) {
+        if (this.#assignments !== undefined && reviewed !== assignmentKey(this.#assignments, repository)) {
+          throw new Error(`${repository}'s assignment changed since review. Start a new batch review.`);
+        }
+      }
+    };
+    checkAssignments();
+    const batch = await readBatch(folder);
+    const sourceFiles = [...new Set(batch.members.flatMap((member) => member.profiles ?? batch.profiles))];
+    const sourceVersions = new Map(
+      await Promise.all(
+        sourceFiles.map(async (file) => [file, await profileVersion(file).catch(() => undefined)] as const),
+      ),
+    );
     const plan = await planBatch(this.#github, folder);
+    checkAssignments();
     if (plan.failures.some((failure) => failure.error.kind === 'signed_out')) {
       this.#onSignedOut();
     }
@@ -455,20 +514,35 @@ export class BatchApply {
       for (const member of plan.plans) {
         const paths = member.staged.profiles.map((file) => assignments.pathOf(file));
         const own = assignments.profilesOf(member.repository);
-        if (paths.length === 0 || paths.length !== own.length || paths.some((path, index) => path !== own[index])) {
+        if (
+          (paths.length === 0 && assignments.authoritativeOf(member.repository).length === 0) ||
+          paths.length !== own.length ||
+          paths.some((path, index) => path !== own[index])
+        ) {
           continue;
         }
         const staged = await resolveStagedApply(member.file);
-        if (profilesApplyFully(staged, member)) {
-          appliedVersions.set(
-            member.repository,
-            await Promise.all(
-              member.staged.profiles.map(async (file) => ({
-                profile: assignments.pathOf(file) ?? file,
-                version: await profileVersion(file),
-              })),
-            ),
+        if (
+          profilesApplyFully(staged, member) &&
+          JSON.stringify([...staged.authoritative].toSorted()) ===
+            JSON.stringify([...assignments.authoritativeOf(member.repository)].toSorted())
+        ) {
+          const versions = await Promise.all(
+            member.staged.profiles.map(async (file) => ({
+              profile: assignments.pathOf(file) ?? file,
+              version: await profileVersion(file),
+            })),
           );
+          if (
+            versions.some(
+              (version, index) => sourceVersions.get(member.staged.profiles[index] ?? '') !== version.version,
+            )
+          ) {
+            throw new Error(
+              `${member.repository}'s profile sources changed during review. Review again before applying.`,
+            );
+          }
+          appliedVersions.set(member.repository, versions);
         }
       }
     }
@@ -479,6 +553,7 @@ export class BatchApply {
       members: membersOf(plan, assignments),
       refused,
       appliedVersions,
+      assignments: reviewedAssignments,
     };
   }
 
