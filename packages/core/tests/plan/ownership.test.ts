@@ -238,3 +238,60 @@ test('fresh source revalidation preserves expanded rename exclusions', async () 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test.each([
+  ['staged', 'edit'],
+  ['staged', 'delete'],
+  ['profile', 'edit'],
+  ['text', 'edit'],
+] as const)(
+  'a %s source %s during authoritative revalidation cannot authorize a stale deletion',
+  async (kind, change) => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'repotted-source-race-'));
+    try {
+      const source = path.join(directory, 'base.yaml');
+      const staged = path.join(directory, 'apply.yaml');
+      await writeFile(source, 'rulesets: []\n');
+      await createStagedApply(staged, 'lunch/app', [source], ['rulesets']);
+      const fake = new FakeGitHub({ rulesets: [ruleset(1, 'Legacy')] });
+      const planned = (await planStagedApply(fake, staged)).plan;
+      const reviewed =
+        kind === 'staged'
+          ? planned
+          : {
+              ...planned,
+              source: kind === 'profile' ? { profile: source } : { text: 'extends: base.yaml\n', directory },
+            };
+      let release = (): void => undefined;
+      let entered = (): void => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const reading = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const github: GitHub = {
+        request: async (...args) => {
+          if (args[0] === 'GET') {
+            entered();
+            await held;
+          }
+          return fake.request(...args);
+        },
+      };
+      const applying = applyPlan(github, reviewed);
+      await reading;
+      if (change === 'edit') {
+        await writeFile(source, 'rulesets: [{ name: Legacy }]\n');
+      } else {
+        await rm(source);
+      }
+      release();
+      await expect(applying).rejects.toThrow();
+      expect(fake.writes).toEqual([]);
+      expect(fake.state.rulesets.map((item) => item['name'])).toEqual(['Legacy']);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);

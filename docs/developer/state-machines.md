@@ -1067,6 +1067,12 @@ it writes, so two calls with one id can't both apply it, and a stale or
 failed apply needs a new plan. A sign-in failure comes before that, so it
 keeps the plan.
 
+A staged plan resolves its effective inputs again after live reads, including
+ownership and the rename identities protected by exclusions. An edit, removal,
+or broken reference during those reads refuses the plan before it is returned
+or written. A direct profile or text-backed apply performs the same source
+check after revalidation and before its first write.
+
 ## Drafts
 
 A ruleset, environment, autolink, or setting in a profile file is a draft or

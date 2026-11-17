@@ -618,6 +618,21 @@ export async function planStagedApply(
         : { exclude: [...new Set([...resolved.exclude, ...read.head.aliases])] }),
     },
   );
+  // Live reads can overlap a source edit. Do not return a plan whose inputs
+  // have already changed, including rename aliases protected by exclusions.
+  const latest = await resolveLayer(file, stagedLayer);
+  const current = staged(latest);
+  const inputs = (value: StagedApply, aliases: readonly string[]): unknown => [
+    value.repository,
+    value.profiles,
+    value.profile,
+    value.authoritative,
+    value.exclude,
+    aliases,
+  ];
+  if (!isDeepEqual(inputs(resolved, read.head.aliases), inputs(current, latest.head.aliases))) {
+    throw new ProfileError('The staged apply or its sources changed while GitHub was being read. Review a fresh plan.');
+  }
   const plan = {
     ...created,
     source: { staged: resolved.file },

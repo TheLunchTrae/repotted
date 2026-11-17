@@ -592,19 +592,23 @@ async function replan(github: GitHub, reviewed: Plan): Promise<Plan> {
       })
     ).plan;
   }
-  const resolved =
+  const resolveSource =
     source === undefined
       ? undefined
-      : 'profile' in source
-        ? await resolveProfile(source.profile)
-        : await parseProfile(source.text, source.directory);
-  return createPlan(
+      : () => ('profile' in source ? resolveProfile(source.profile) : parseProfile(source.text, source.directory));
+  const resolved = await resolveSource?.();
+  const current = await createPlan(
     github,
     parseRepo(reviewed.repository),
     resolved?.profile ?? reviewed.desired,
     resolved === undefined ? reviewed.skipped : skippedDrafts(resolved.drafts),
     reviewed,
   );
+  const latest = await resolveSource?.();
+  if (resolved !== undefined && !isDeepEqual(resolved.profile, latest?.profile)) {
+    throw new Error('The source configuration changed while GitHub was being read. Review a fresh plan.');
+  }
+  return current;
 }
 
 /**
