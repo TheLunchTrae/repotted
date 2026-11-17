@@ -925,3 +925,41 @@ test('assignment ownership syncs with config preferences and reloads changes mad
   expect(assignments.authoritativeOf('lunch/app')).toEqual(['labels']);
   expect(assignments.authoritativeOf('lunch/api')).toEqual(['environments']);
 });
+
+test('transitive reusable edits change assignment status and missing definitions block authoritative review', async () => {
+  const listings = await profiles({
+    'policy.yaml': 'kind: actions-policy\nactions: { default_workflow_permissions: read }\n',
+    'base.yaml': 'references: { actions: policy.yaml }\n',
+    'service.yaml': 'extends: base.yaml\n',
+  });
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['service.yaml'], ['rulesets']);
+  assignments.recordApplied(
+    'lunch/app',
+    [{ profile: 'service.yaml', version: await profileVersion(`${folder}/service.yaml`) }],
+    ['rulesets'],
+  );
+  await assignments.check();
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'current' });
+
+  await writeFile(`${folder}/policy.yaml`, 'kind: actions-policy\nactions: { default_workflow_permissions: write }\n');
+  listings.value = await listProfiles(folder);
+  await assignments.check();
+  expect(assignments.status('lunch/app')).toMatchObject({ kind: 'changed', changed: ['service.yaml'] });
+
+  await rm(`${folder}/policy.yaml`);
+  listings.value = await listProfiles(folder);
+  await assignments.check();
+  expect(assignments.status('lunch/app')).toMatchObject({ kind: 'missing', unreadable: ['service.yaml'] });
+  const github = new FakeGitHub({ rulesets: [liveRule(1, 'Preserve')] });
+  const apply = new Apply(
+    github,
+    () => undefined,
+    (work) => work(),
+    assignments,
+  );
+  await apply.startReview('lunch/app', [{ file: `${folder}/service.yaml`, name: 'service' }]);
+  expect(apply.state.value.kind).toBe('failed');
+  await apply.apply();
+  expect(github.writes).toEqual([]);
+});
