@@ -305,27 +305,6 @@ for (const [name, screen] of Object.entries(screens)) {
   });
 }
 
-for (const action of ['Apply', 'Change settings once']) {
-  test(`backing out of ${action} discards the flow instead of offering to resume`, async ({ page }) => {
-    await page.goto('/?repository=lunch/api');
-    for (const reviewed of [false, true]) {
-      await page.getByRole('button', { name: action, exact: true }).click();
-      const review = page.getByRole('button', { name: 'Review changes', exact: true });
-      await expect(review).toBeVisible();
-      if (reviewed) {
-        await review.click();
-        await expect(page.getByText(/^Step 2 of 2:/u)).toBeVisible();
-      }
-      await page.getByRole('link', { name: 'Back to repositories', exact: true }).click();
-      await expect(page.getByRole('button', { name: action, exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Resume', exact: true })).toHaveCount(0);
-      await expect(page.getByText('An apply here is not finished.', { exact: true })).toHaveCount(0);
-    }
-    await page.getByRole('button', { name: action, exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Review changes', exact: true })).toBeVisible();
-  });
-}
-
 test('unknown keys can be previewed and saved away without another edit', async ({ page }) => {
   await page.goto('/profiles');
   await page.getByText('unknown-keys', { exact: true }).click();

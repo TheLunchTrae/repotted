@@ -175,6 +175,13 @@ version-numbered names.
   assertion can fail: for a bug, reproduce it with a failing regression test
   before the fix when practical; otherwise inject a fault for its claim.
   Mechanical moves need no new evidence.
+- Exercise production behavior with an independently chosen expected result.
+  Do not add tautologies, expectations derived from the same logic as the
+  result, or checks that only confirm hardcoded constants or test setup.
+- Remove a feature's tests when the feature is deleted. Do not keep or add
+  tests whose only claim is that its symbols, files, routes, or UI controls
+  are absent. Keep negative assertions that defend a current contract, such
+  as refusing an unauthorized write or cleaning up a cancelled flow.
 - Prefer one focused test at the narrowest stable interface over duplicated
   examples. Keep test setup smaller than the behavior it protects.
 - Test counts and coverage percentages are not goals.
