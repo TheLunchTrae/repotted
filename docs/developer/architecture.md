@@ -222,8 +222,9 @@ A profile manages only what it names: a setting it leaves out keeps its live
 value, a ruleset, environment or label it doesn't name is left alone, and
 inside a ruleset a key it leaves out keeps its live value. Deleting a ruleset,
 an environment or a label needs an explicit `absent: true` entry. As a result, a profile can
-cover a repository one setting at a time, and every delete a plan makes
-appears in the profile as an `absent: true` entry.
+cover a repository one setting at a time, and every delete a partial-management plan makes
+appears in the profile as an `absent: true` entry. Explicit section ownership
+is the opt-in exception described under [Explicit section ownership](#explicit-section-ownership).
 
 `packages/core/src/plan/match.ts` decides what counts as drift. A desired value
 only needs to be present in the live value, so defaults that GitHub fills in

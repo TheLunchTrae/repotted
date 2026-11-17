@@ -1,7 +1,8 @@
 # Context
 
 - **Profile**: YAML that describes the setup a repository should have. It
-  names only what it manages; anything it leaves out is unmanaged.
+  names only what it manages; anything it leaves out is unmanaged unless an
+  apply explicitly owns that section.
 - **Base profile**: a profile that others build on with `extends`. A profile
   that extends it is an **override**.
 - **Section**: one area of a repository's setup that a profile can manage:
@@ -9,6 +10,11 @@
   custom properties, GitHub Pages, autolinks, rulesets, deployment
   environments, or labels. Each section has one adapter that reads it and plans its
   writes.
+- **Full section ownership**: an explicit apply choice that makes the complete
+  resolved combination the desired set for selected sections. It removes
+  unlisted repository entries and resets omitted Actions settings to the
+  documented baseline. Retained collection entries keep omitted fields, and
+  exclusions protect their targets. Partial management remains the default.
 - **Owner type**: what owns the repositories a profile is for, a personal
   account (`user`) or an organization. A profile without one is for any
   owner. A typed profile takes only what that owner has, and plans refuse a
@@ -35,7 +41,8 @@
   overriding earlier ones, **one-off edits** laid over those profiles
   for this apply only, and **exclusions**, the values of the profile this apply
   leaves out. Its plan is reviewed and applied like any other, and the
-  profile changes only when its edits are saved to it.
+  profile changes only when its edits are saved to it. Its optional section
+  ownership choices stay separate from source profiles.
 - **Batch**: profiles applied to several repositories, as a folder of
   staged applies, one for each, listed in a manifest. A repository can start
   from profiles of its own rather than the batch's. Each repository is

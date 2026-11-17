@@ -133,7 +133,9 @@ export async function createServer(options: ServerOptions): Promise<McpServer> {
         const github = await client();
         const repo = parseRepo(name);
         const plan: Plan = {
-          ...(await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts), { ...(authoritative === undefined ? {} : { authoritative }) })),
+          ...(await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts), {
+            ...(authoritative === undefined ? {} : { authoritative }),
+          })),
           source:
             profilePath === undefined
               ? { text: profile ?? '', directory: options.profileBaseDirectory }

@@ -369,7 +369,11 @@ async function plan(io: Io, args: string[]): Promise<number> {
     const desired = await resolveProfile(values.profile);
     github = await io.github();
     result = {
-      ...(await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts), { ...(values.authoritative === undefined ? {} : { authoritative: authoritativeSchema.parse(values.authoritative) }) })),
+      ...(await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts), {
+        ...(values.authoritative === undefined
+          ? {}
+          : { authoritative: authoritativeSchema.parse(values.authoritative) }),
+      })),
       source: { profile: path.resolve(values.profile) },
     };
   } else {
