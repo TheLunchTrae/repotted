@@ -76,6 +76,36 @@ describe('MCP server', () => {
     );
   });
 
+  test('captures and plans a standalone environment through the same tool inputs as profiles', async () => {
+    const github = new FakeGitHub({
+      environments: [
+        {
+          name: 'Production',
+          wait_timer: 15,
+          prevent_self_review: false,
+          reviewers: [],
+          deployment_branch_policy: null,
+          branch_policies: [],
+        },
+      ],
+    });
+    const client = await connect(github);
+    try {
+      const captured = await call(client, 'capture', {
+        repository: 'lunch/app',
+        kind: 'environment',
+        name: 'production',
+      });
+      expect(captured.isError).toBe(false);
+      expect(captured.text).toContain('kind: environment');
+      const planned = await call(client, 'plan', { repository: 'lunch/app', profile: captured.text });
+      expect(planned).toEqual({ text: 'lunch/app matches the profile.', isError: false });
+      expect(github.writes).toEqual([]);
+    } finally {
+      await client.close();
+    }
+  });
+
   test('plans without writing, then applies that plan by its id', async () => {
     const github = new FakeGitHub();
     const client = await connect(github);

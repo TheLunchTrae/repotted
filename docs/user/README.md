@@ -18,6 +18,8 @@ You can use Repotted in three ways:
 The command line and agents sign in the same way; see
 [Sign in](sign-in.md). The web app [signs in from the browser](web-app.md#sign-in). [Profiles](profiles.md)
 describes what a profile can hold and how Repotted plans and applies it.
+[Reusable environments](reusable-environments.md) describes sharing deployment
+protection settings across profiles and applying them directly.
 [JSON output](json-output.md) describes what the CLI prints for scripts.
 
 To learn how Repotted works inside, or to change it, see the

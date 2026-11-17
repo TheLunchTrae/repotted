@@ -52,6 +52,36 @@ async function profiles(texts: Readonly<Record<string, string>>): Promise<Signal
   return signal(await listProfiles(folder));
 }
 
+test('a shared environment edit marks direct and transitive assignments changed without writing GitHub', async () => {
+  const listings = await profiles({
+    'production.yaml': 'kind: environment\nenvironments: [{ name: production, wait_timer: 5 }]\n',
+    'base.yaml': 'references: { environments: [./production.yaml] }\n',
+    'service.yaml': 'extends: ./base.yaml\nrepository: { has_wiki: false }\n',
+  });
+  const preferences = store();
+  const assignments = new RepositoryProfiles(preferences, { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/direct', ['production.yaml']);
+  assignments.setProfiles('lunch/service', ['service.yaml']);
+  await assignments.check();
+  for (const [repository, profile] of [
+    ['lunch/direct', 'production.yaml'],
+    ['lunch/service', 'service.yaml'],
+  ] as const) {
+    assignments.recordApplied(repository, [{ profile, version: await profileVersion(`${folder}/${profile}`) }]);
+    expect(assignments.status(repository)).toEqual({ kind: 'current' });
+  }
+
+  await writeFile(
+    `${folder}/production.yaml`,
+    'kind: environment\nenvironments: [{ name: production, wait_timer: 30 }]\n',
+  );
+  listings.value = await listProfiles(folder);
+  await assignments.check();
+
+  expect(assignments.status('lunch/direct')).toMatchObject({ kind: 'changed', changed: ['production.yaml'] });
+  expect(assignments.status('lunch/service')).toMatchObject({ kind: 'changed', changed: ['service.yaml'] });
+});
+
 test('makes a short tag of each name that is its own, after the tags people chose', () => {
   const tags = tagsFor(
     ['npm-package.yaml', 'npm-cli.yaml', 'base.yaml', 'web/base.yaml', 'a-very-long-profile-name.yaml', 'public.yaml'],

@@ -150,7 +150,7 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
                 setTargetName(event.currentTarget.value);
               }}
             />
-            <span class="muted small">The name of the ruleset on GitHub. For a capture, enter its existing name.</span>
+            <span class="muted small">The name on GitHub. For a capture, enter its existing name.</span>
           </label>
         )}
 

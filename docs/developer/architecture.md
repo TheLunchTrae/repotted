@@ -65,6 +65,19 @@ name or prefix whole, and `pages: { absent: true }` replaces a base's site. The
 resolved profile records which file sets each value, which
 `repotted profile --json` reports and the web app shows.
 
+### Reusable environments
+
+Reusable environment definitions use `kind: environment` and the existing
+`environments` schema with exactly one target name. `references.environments`
+resolves paths into source links before the consumer's inline layer. The named
+definition and reference collision checks use `environmentKey`, so a target
+has the same case-insensitive identity during resolution, editing, and planning.
+`captureDefinition` reads only environment protection and the repository owner;
+it refuses missing targets, unavailable reads, and owner-incompatible protection
+instead of saving a weaker or empty definition. The existing environment planner
+preserves omitted live protection fields and never reads or writes secrets or
+variables for these updates.
+
 ### Setting dependencies
 
 `profiles/setting-dependencies.ts` owns the conditions that make a setting
