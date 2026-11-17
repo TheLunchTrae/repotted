@@ -68,7 +68,11 @@ function SignedIn({
       const refused = (): void => {
         account.gitHubRefusedSignIn();
       };
-      const kept = new Profiles(github, preferences, refused, folders);
+      const kept = new Profiles(github, preferences, refused, folders, (files) =>
+        assigned.repositoriesWithProfiles.value.filter((repository) =>
+          assigned.profilesOf(repository).some((path) => files.includes(assigned.fileOf(path))),
+        ),
+      );
       // The hidden repositories and owners follow the profiles: to their repository, or this browser. Using
       // the profiles' place from the start means the first list shows what that place hides. Folders follow them
       // too, but which folders are closed stays in this browser, so opening one commits nothing.

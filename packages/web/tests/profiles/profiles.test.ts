@@ -1262,3 +1262,29 @@ test('definitions duplicate across folders without changing their source and imp
   ).toContain('missing.yaml');
   expect(profiles.listings.value.map((item) => item.name)).not.toContain('broken');
 });
+
+test('refuses deleting or moving sources used by repository assignments without partial changes', async () => {
+  await inBrowser({ 'shared.yaml': base });
+  const used = new Set(['/profiles/browser/shared.yaml']);
+  const profiles = new Profiles(
+    new FakeGitRepository(),
+    memory(),
+    () => undefined,
+    undefined,
+    (files) => (files.some((file) => used.has(file)) ? ['lunch/app'] : []),
+  );
+  await profiles.refresh();
+  const listing = profiles.listings.value[0];
+  if (listing === undefined) {
+    throw new Error('Missing source');
+  }
+
+  expect(await profiles.remove(listing)).toContain('lunch/app');
+  expect(await profiles.move([listing], 'moved')).toContain('lunch/app');
+  expect(await readFile(listing.file, 'utf8')).toBe(base);
+  expect(profiles.listings.value.map((item) => item.file)).toEqual([listing.file]);
+
+  used.clear();
+  expect(await profiles.remove(listing)).toBeUndefined();
+  expect(profiles.listings.value).toEqual([]);
+});

@@ -181,14 +181,22 @@ export class Profiles {
   /** The files that captures under way will make, so no other new profile takes their names. */
   readonly #capturing = new Set<string>();
   readonly #folders: LocalFolders | undefined;
+  readonly #assignedConsumers: (files: readonly string[]) => readonly string[];
   /** The folder on this computer, once the browser has let the page use it this visit. */
   #localFolder: LocalFolder | undefined;
 
-  constructor(github: GitHub, preferences: Preferences, onSignedOut: () => void, folders?: LocalFolders) {
+  constructor(
+    github: GitHub,
+    preferences: Preferences,
+    onSignedOut: () => void,
+    folders?: LocalFolders,
+    assignedConsumers: (files: readonly string[]) => readonly string[] = () => [],
+  ) {
     this.#github = github;
     this.#preferences = preferences;
     this.#onSignedOut = onSignedOut;
     this.#folders = folders;
+    this.#assignedConsumers = assignedConsumers;
     const saved = savedSource.safeParse(preferences.read(sourceKey));
     if (saved.success) {
       this.source.value = saved.data;
@@ -740,6 +748,10 @@ export class Profiles {
       if (listings.some((listing) => listing.kind !== undefined) && dependent.length > 0) {
         return `Remove the references in ${dependent.map((listing) => listing.name).join(', ')} first.`;
       }
+      const assigned = this.#assignedConsumers([...going]);
+      if (assigned.length > 0) {
+        return `Remove these sources from the assignments of ${assigned.join(', ')} before deleting them.`;
+      }
       for (const file of going) {
         await rm(file, { force: true });
       }
@@ -863,6 +875,10 @@ export class Profiles {
       const moves = new Map([...plan()].filter(([from, to]) => listed.has(from) && from !== to));
       if (moves.size === 0) {
         return undefined;
+      }
+      const assigned = this.#assignedConsumers([...moves.keys()]);
+      if (assigned.length > 0) {
+        return `Remove these sources from the assignments of ${assigned.join(', ')} before moving them.`;
       }
       for (const from of moves.keys()) {
         const listing = listed.get(from);
