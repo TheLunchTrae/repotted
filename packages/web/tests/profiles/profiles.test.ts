@@ -1295,3 +1295,18 @@ test('reference controls normalize equivalent paths without adding duplicate sou
     profiles.referencesOf('references: { actions: ./shared/../trusted.yaml }', '/profiles/browser/service.yaml'),
   ).toEqual({ actions: 'trusted.yaml' });
 });
+
+test('a duplicate whose source disappeared reports an error without leaving a destination', async () => {
+  await inBrowser({ 'source.yaml': base });
+  const profiles = new Profiles(new FakeGitHub(), memory(), () => undefined);
+  await profiles.refresh();
+  const source = profiles.listings.value[0];
+  if (source === undefined) {
+    throw new Error('Missing source');
+  }
+  await rm(source.file);
+  expect(
+    await profiles.create({ name: 'copy', folder: '', start: { kind: 'duplicate', source }, ownerType: undefined }),
+  ).toContain('source.yaml');
+  expect(await readdir('/profiles/browser')).toEqual([]);
+});
