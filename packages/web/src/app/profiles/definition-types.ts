@@ -4,4 +4,8 @@ export const definitionTypes: readonly {
   readonly kind: DefinitionKind;
   readonly section: string;
   readonly label: string;
-}[] = [{ kind: 'actions-policy', section: 'actions', label: 'Actions policy' }];
+  readonly multiple?: boolean;
+}[] = [
+  { kind: 'actions-policy', section: 'actions', label: 'Actions policy' },
+  { kind: 'ruleset', section: 'rulesets', label: 'Ruleset', multiple: true },
+];

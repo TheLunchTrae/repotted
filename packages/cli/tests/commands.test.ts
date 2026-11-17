@@ -90,6 +90,35 @@ async function savePlan(github: FakeGitHub, name: string): Promise<string> {
 }
 
 describe('apply', () => {
+  test('captures a selected ruleset and refuses its saved plan after the shared definition changes', async () => {
+    const github = new FakeGitHub({
+      rulesets: [
+        { id: 1, name: 'Main', target: 'branch', enforcement: 'active', bypass_actors: [], rules: [] },
+        { id: 2, name: 'Release', target: 'tag', enforcement: 'evaluate', bypass_actors: [], rules: [] },
+      ],
+    });
+    const definition = path.join(directory, 'captured-ruleset.yaml');
+    expect(
+      (await cli(github, 'capture', 'lunch/app', '--kind', 'ruleset', '--name', 'Release', '--output', definition))
+        .code,
+    ).toBe(0);
+    expect(parse(await readFile(definition, 'utf8'))).toEqual({
+      kind: 'ruleset',
+      owner_type: 'organization',
+      rulesets: [{ name: 'Release', target: 'tag', enforcement: 'evaluate', bypass_actors: [], rules: [] }],
+    });
+    await writeFile(definition, 'kind: ruleset\nrulesets: [{ name: Release, enforcement: active }]\n');
+    const consumer = path.join(directory, 'ruleset-consumer.yaml');
+    await writeFile(consumer, 'references: { rulesets: [captured-ruleset.yaml] }\n');
+    const saved = path.join(directory, 'ruleset-plan.json');
+    expect((await cli(github, 'plan', 'lunch/app', '--profile', consumer, '--out', saved)).code).toBe(0);
+    await writeFile(definition, 'kind: ruleset\nrulesets: [{ name: Release, enforcement: disabled }]\n');
+    const applied = await cli(github, 'apply', saved, '--yes', '--json');
+    expect(applied.code).toBe(1);
+    expect(document(applied)).toMatchObject({ error: { kind: 'stale_plan' } });
+    expect(github.writes).toEqual([]);
+  });
+
   test('refuses to write without a terminal or --yes', async () => {
     const github = new FakeGitHub();
     const file = await savePlan(github, 'no-terminal.json');

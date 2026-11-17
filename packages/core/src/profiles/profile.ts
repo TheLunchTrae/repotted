@@ -389,6 +389,12 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
         `${source}: ${layer.kind} definitions may only set that section (${section}), its drafts, and owner_type`,
       );
     }
+    if (isEntryList(section)) {
+      const targets = new Set(layer[section]?.map((entry) => entryKeys[section](entry.name)));
+      if (targets.size !== 1) {
+        throw new ProfileError(`${source}: ${layer.kind} definitions must describe exactly one target name`);
+      }
+    }
   }
   const { autolinks, rulesets, environments, labels, drafts, ...settings } = layer;
   const [ownAutolinks, draftAutolinks] = partition<AutolinkEntry, DraftAutolink>(autolinks, isDraftAutolink);
@@ -878,6 +884,7 @@ async function referencedLinks(link: Link, directory = path.dirname(link.file)):
   const references: Readonly<Record<string, string | readonly string[] | undefined>> = link.parsed.references ?? {};
   for (const [section, value] of Object.entries(references)) {
     const names = typeof value === 'string' ? [value] : (value ?? []);
+    const targets = new Map<string, string>();
     for (const reference of names) {
       const file = path.resolve(directory, reference);
       try {
@@ -888,6 +895,21 @@ async function referencedLinks(link: Link, directory = path.dirname(link.file)):
         }
         if (links.some((existing) => existing.file === read.file)) {
           throw new ProfileError(`${file} is referenced more than once`);
+        }
+        if (isEntryList(section)) {
+          const entries = [...(parsed.own[section] ?? []), ...(parsed.drafts[section] ?? [])];
+          for (const entry of entries) {
+            const name = entry.name;
+            if (typeof name !== 'string') {
+              continue;
+            }
+            const key = entryKeys[section](name);
+            const previous = targets.get(key);
+            if (previous !== undefined && previous !== read.file) {
+              throw new ProfileError(`${section} target "${name}" is supplied by both ${previous} and ${read.file}`);
+            }
+            targets.set(key, read.file);
+          }
         }
         links.push({ file: read.file, parsed: parsed.own, drafts: parsed.drafts, listedIn: link.listedIn });
       } catch (error) {

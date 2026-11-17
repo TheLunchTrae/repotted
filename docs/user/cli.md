@@ -445,3 +445,29 @@ The MCP `capture` tool accepts `kind: "actions-policy"`. Its `plan` tool accepts
 a definition as `profile_path` or YAML in `profile`, including profile references.
 Relative references in inline YAML resolve from the server's directory. Apply
 re-resolves references before writing and requires a fresh plan if writes differ.
+
+## Reusable rulesets
+
+Capture one repository-owned ruleset by its exact GitHub name:
+
+```sh
+repotted capture octo-org/app --kind ruleset --name Main --output main-ruleset.yaml
+repotted profile main-ruleset.yaml --ruleset '{"name":"Main","enforcement":"evaluate"}'
+repotted profile service.yaml --set references.rulesets='["main-ruleset.yaml"]'
+repotted stage apply.yaml --new octo-org/service --profile main-ruleset.yaml
+```
+
+`--name` is required for a ruleset capture. A missing or ambiguous target fails
+without writing an output file. A ruleset definition uses `kind: ruleset` and
+one named target in `rulesets`. Its capture reads only repository metadata and
+repository-owned rulesets; it does not copy organization rulesets.
+
+Use `profile --ruleset` to edit the shared definition, and
+`--set references.rulesets` to replace a profile's list of references. Inline
+rulesets remain editable with the same options, and editing them preserves
+references. See [reusable rulesets](profiles.md#reusable-rulesets) for target
+identity, partial-field behavior, and precedence.
+
+The MCP `capture` tool accepts `kind: "ruleset"` and `name: "Main"`. Its `plan`
+and `apply` tools use the same direct-definition and reference resolution as
+the CLI and web app.

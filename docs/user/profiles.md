@@ -177,6 +177,48 @@ type, such as a `pull_request` rule's `allowed_merge_methods`, which needs at
 least one of `merge`, `squash`, and `rebase`, and a `merge_queue` rule's
 `merge_method`. Other parameters, and other rule types, are sent as written.
 
+### Reusable rulesets
+
+Keep a shared ruleset in its own YAML file:
+
+```yaml
+# main-ruleset.yaml
+kind: ruleset
+rulesets:
+  - name: Main
+    target: branch
+    conditions:
+      ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] }
+    rules: [{ type: deletion }, { type: non_fast_forward }]
+```
+
+A definition describes one target name. It can keep an unfinished draft
+beside the applying entry of that same name. Its filename identifies the
+saved definition; `name` identifies the ruleset on GitHub. Applying it again
+updates that ruleset instead of creating a second one. Changing `name`
+creates or manages the new target and leaves the old target alone.
+
+Use the file directly wherever you choose a profile to compare, stage, apply,
+or assign. To share it with a profile, list its path relative to that profile:
+
+```yaml
+references:
+  rulesets: [main-ruleset.yaml, release-ruleset.yaml]
+```
+
+References apply after the base profile and before inline rulesets. An inline
+entry with the same name replaces the referenced entry whole, following the
+same rule as profile inheritance. Two references in one profile cannot supply
+the same target name. A missing definition or a reference to another kind of
+definition blocks resolution.
+
+The editor shows the definition that supplies each ruleset. Editing an inline
+setting keeps references intact. A saved shared edit is resolved by every
+consumer on its next comparison; it changes no repository until a fresh
+reviewed apply. Removing a reference or deleting a saved definition does not
+delete the live ruleset. Unrelated live rulesets and omitted fields remain
+unmanaged.
+
 ## Environments
 
 Environments also match by name, without regard to case, as GitHub does. A
@@ -451,13 +493,14 @@ profile. Update consumers deliberately before deleting a shared definition.
 
 ### Manage reusable definitions in the web app
 
-On **New profile or definition**, choose **Actions policy** to create a policy
-with the existing Actions controls. You can capture it from a repository,
+On **New profile or definition**, choose **Actions policy** or **Ruleset** to
+create a definition with the existing section controls. For a ruleset, enter
+its GitHub name in **Target name**. You can capture it from a repository,
 duplicate a saved file, or import YAML. **Export YAML** downloads the selected
 file. Definitions share profiles' browser, local-folder, and config-repository
 storage and sync.
 
-Open a profile's **Reusable definitions** controls to select a policy and
+Open a profile's **Reusable definitions** controls to select a policy or rulesets and
 **Save references**. Inline values override referenced values. A definition
 names its dependent profiles before saving; changing it takes effect on their
 next resolution. Deleting a referenced definition is refused until those

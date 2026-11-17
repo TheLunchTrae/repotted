@@ -27,6 +27,7 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const captured = repositories.list.value?.repositories ?? [];
   const [definitionKind, setDefinitionKind] = useState<DefinitionKind | undefined>(undefined);
+  const [targetName, setTargetName] = useState('');
   const [importText, setImportText] = useState('');
   const [name, setName] = useState('');
   const [folder, setFolder] = useState(profiles.selected.value?.folder ?? '');
@@ -85,7 +86,7 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
         name,
         folder,
         start,
-        ...(definitionKind === undefined ? {} : { definitionKind }),
+        ...(definitionKind === undefined ? {} : { definitionKind, targetName }),
         ownerType: owner === 'any' ? undefined : owner,
       },
       formClosed.current.signal,
@@ -136,6 +137,23 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
           ))}
         </select>
       </label>
+      {definitionTypes.find((item) => item.kind === definitionKind)?.multiple === true &&
+        (kind === 'empty' || kind === 'repository') && (
+          <label class="form-field">
+            <span>Target name</span>
+            <input
+              class="field"
+              required
+              disabled={working}
+              value={targetName}
+              onInput={(event) => {
+                setTargetName(event.currentTarget.value);
+              }}
+            />
+            <span class="muted small">The name of the ruleset on GitHub. For a capture, enter its existing name.</span>
+          </label>
+        )}
+
       <div class="form-field">
         <label for="new-profile-name">Name</label>
         <input

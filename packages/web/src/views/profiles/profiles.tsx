@@ -515,32 +515,65 @@ function References({ listing, profiles, text }: ProfileProps & { readonly text:
       <p class="muted small">
         References apply after base profiles and before inline values. Removing a reference stops managing its values.
       </p>
-      {definitionTypes.map(({ kind, section, label }) => (
-        <label class="form-field" key={kind}>
-          <span>{label}</span>
-          <select
-            class="field"
-            disabled={busy}
-            value={typeof selected[section] === 'string' ? selected[section] : ''}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              setSelected((before) => ({ ...before, [section]: value }));
-            }}
-          >
-            <option value="">None</option>
+      {definitionTypes.map(({ kind, section, label, multiple }) =>
+        multiple === true ? (
+          <fieldset class="choices" key={kind} disabled={busy}>
+            <legend>{label} references</legend>
             {profiles.listings.value
               .filter((item) => item.kind === kind && item.problem === null)
               .map((item) => {
                 const path = relative(dirname(listing.file), item.file);
+                const values = selected[section];
+                const checked = Array.isArray(values) && values.includes(path);
                 return (
-                  <option key={path} value={path}>
-                    {profiles.pathOf(item)}
-                  </option>
+                  <label class="choice" key={path}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => {
+                        const enabled = event.currentTarget.checked;
+                        setSelected((before) => {
+                          const previous = before[section];
+                          const paths: readonly string[] = Array.isArray(previous) ? previous : [];
+                          return {
+                            ...before,
+                            [section]: enabled ? [...paths, path] : paths.filter((value) => value !== path),
+                          };
+                        });
+                      }}
+                    />
+                    <span>{profiles.pathOf(item)}</span>
+                  </label>
                 );
               })}
-          </select>
-        </label>
-      ))}
+          </fieldset>
+        ) : (
+          <label class="form-field" key={kind}>
+            <span>{label}</span>
+            <select
+              class="field"
+              disabled={busy}
+              value={typeof selected[section] === 'string' ? selected[section] : ''}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setSelected((before) => ({ ...before, [section]: value }));
+              }}
+            >
+              <option value="">None</option>
+              {profiles.listings.value
+                .filter((item) => item.kind === kind && item.problem === null)
+                .map((item) => {
+                  const path = relative(dirname(listing.file), item.file);
+                  return (
+                    <option key={path} value={path}>
+                      {profiles.pathOf(item)}
+                    </option>
+                  );
+                })}
+            </select>
+          </label>
+        ),
+      )}
       {problem !== undefined && (
         <p class="problem" role="alert">
           {problem}
@@ -555,6 +588,9 @@ function References({ listing, profiles, text }: ProfileProps & { readonly text:
           const references: Record<string, string | readonly string[]> = {};
           for (const [section, value] of Object.entries(selected)) {
             if (typeof value === 'string' && value !== '') {
+              references[section] = value;
+            }
+            if (Array.isArray(value) && value.length > 0) {
               references[section] = value;
             }
           }

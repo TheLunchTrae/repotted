@@ -499,3 +499,13 @@ live state and compares the regenerated requests with the reviewed requests.
 Missing definitions fail before any write. Assignment versions hash resolved
 settings, so transitive definition changes participate without another cache.
 `captureDefinition` reads only the selected section and repository owner metadata.
+
+`kind: ruleset` constrains a file to one target name in `rulesets`, with an
+optional draft beside the applying entry. A profile's `references.rulesets`
+lists paths to these definitions. Resolution rejects two referenced files
+that supply the same target in one layer, before ordinary inline replacement
+can hide the collision. Inline rulesets replace a referenced entry whole by
+name, as they replace inherited entries. The existing ruleset planner retains
+its live ID and omitted fields. Capture selects one exact name from the
+complete repository-owned ruleset enumeration and refuses zero or multiple
+matches.
