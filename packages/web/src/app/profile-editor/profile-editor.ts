@@ -2,6 +2,7 @@ import { computed, signal } from '@preact/signals';
 import {
   type AppAccess,
   type ConfigurationProblem,
+  definitionSections,
   changeOwnerType,
   editProfile,
   type OwnerNeed,
@@ -626,8 +627,13 @@ export class ProfileEditor {
     return installation?.status === 'installed' ? installation.settings_url : null;
   });
 
+  readonly definitionSection = computed(() => {
+    const kind = this.#saved.value?.kind;
+    return kind === undefined ? undefined : definitionSections[kind];
+  });
+
   readonly sections = computed((): SectionRows[] =>
-    settingSections.map((section) => {
+    settingSections.filter((section) => this.definitionSection.value === undefined || section.section === this.definitionSection.value).map((section) => {
       const groups = section.groups.map((group) => ({ group, rows: this.#rows(group) }));
       const sectionLacks = permissionsEveryRowLacks(groups.flatMap(({ rows }) => rows));
       return {

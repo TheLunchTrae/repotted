@@ -5,6 +5,7 @@ export type ResolvedProfile = Pick<EditableProfile, 'chain' | 'profile' | 'draft
   Partial<
     Pick<
       EditableProfile,
+      | 'kind'
       | 'owner_source'
       | 'owner_changes'
       | 'problems'

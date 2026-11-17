@@ -3,6 +3,10 @@ import {
   captureProfile,
   checkActionPatterns,
   declaredExtends,
+  type DefinitionKind,
+  editProfile,
+  resolveProfile,
+  withRewrittenReferences,
   findActions,
   findGitHubApp,
   type GitHub,
@@ -15,6 +19,7 @@ import {
   withExtends,
 } from '@repotted/core';
 import * as z from 'zod/mini';
+import { parseDocument } from 'yaml';
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from '../../engine/files.js';
 import { basename, dirname, join, relative, resolve } from '../../engine/path.js';
@@ -52,10 +57,13 @@ export type SyncState =
 export type NewProfileStart =
   | { readonly kind: 'empty' }
   | { readonly kind: 'extends'; readonly base: ProfileListing }
-  | { readonly kind: 'repository'; readonly repository: string };
+  | { readonly kind: 'repository'; readonly repository: string }
+  | { readonly kind: 'duplicate'; readonly source: ProfileListing }
+  | { readonly kind: 'import'; readonly text: string };
 
 export interface NewProfile {
   readonly name: string;
+  readonly definitionKind?: DefinitionKind;
   /** From the profiles folder; '' for the profiles folder itself. */
   readonly folder: string;
   readonly start: NewProfileStart;
@@ -616,7 +624,11 @@ export class Profiles {
       try {
         const repository = parseRepo(profile.start.repository);
         const captured = await captureProfile(this.#github, repository);
-        text = stringifyProfile(captured.profile);
+        if (profile.definitionKind !== undefined && captured.profile.actions === undefined) {
+          return 'The Actions settings could not be captured. Check repository access before trying again.';
+        }
+        text = profile.definitionKind === undefined ? stringifyProfile(captured.profile) :
+          `kind: ${profile.definitionKind}\n${stringifyProfile({ owner_type: captured.profile.owner_type, actions: captured.profile.actions })}`;
         uncaptured = uncapturedSettings(captured.warnings, captured.profile.owner_type);
         if (uncaptured.needsAppPermission) {
           uncaptured = {
@@ -632,11 +644,22 @@ export class Profiles {
       } finally {
         this.#capturing.delete(file.toLowerCase());
       }
+    } else if (profile.start.kind === 'duplicate') {
+      const source = profile.start.source.file;
+      const original = await readFile(source, 'utf8');
+      const base = declaredExtends(original);
+      text = base === undefined ? original : withExtends(original, relative(dirname(file), resolve(dirname(source), base)));
+      text = withRewrittenReferences(text, (reference) => relative(dirname(file), resolve(dirname(source), reference)));
+    } else if (profile.start.kind === 'import') {
+      text = profile.start.text;
     } else {
+      if (profile.definitionKind !== undefined && profile.start.kind === 'extends') {
+        return 'A reusable definition cannot extend a profile.';
+      }
       const owner = profile.ownerType === undefined ? '' : `owner_type: ${profile.ownerType}\n`;
       text =
         profile.start.kind === 'empty'
-          ? owner
+          ? profile.definitionKind === undefined ? owner : `kind: ${profile.definitionKind}\n${owner}actions: {}\n`
           : `extends: ${JSON.stringify(relative(dirname(file), profile.start.base.file))}\n${
               profile.start.base.owner_type === null ? owner : ''
             }`;
@@ -665,6 +688,7 @@ export class Profiles {
         return unusableFolder;
       }
       try {
+        await resolveProfile(file, text);
         await mkdir(dirname(file), { recursive: true });
         await writeFile(file, text, { flag: 'wx' });
       } catch (error) {
@@ -686,7 +710,7 @@ export class Profiles {
     for (let grew = true; grew;) {
       grew = false;
       for (const other of this.listings.value) {
-        if (other.extends !== null && found.has(other.extends) && !found.has(other.file)) {
+        if ([other.extends, ...(other.references ?? [])].some((source) => source !== null && found.has(source)) && !found.has(other.file)) {
           found.add(other.file);
           grew = true;
         }
@@ -703,6 +727,10 @@ export class Profiles {
       const going = new Set(listings.map((listing) => listing.file).filter((file) => listed.has(file)));
       if (going.size === 0) {
         return undefined;
+      }
+      const dependent = this.dependents(...listings);
+      if (listings.some((listing) => listing.kind !== undefined) && dependent.length > 0) {
+        return `Remove the references in ${dependent.map((listing) => listing.name).join(', ')} first.`;
       }
       for (const file of going) {
         await rm(file, { force: true });
@@ -864,8 +892,12 @@ export class Profiles {
         const base = declared === undefined ? undefined : resolve(dirname(from), declared);
         const baseNow = base === undefined ? undefined : (moves.get(base) ?? base);
         const stillPointed = declared === undefined || resolve(dirname(to), declared) === baseNow;
-        const text =
+        const extended =
           stillPointed || baseNow === undefined ? before : withExtends(before, relative(dirname(to), baseNow));
+        const text = withRewrittenReferences(extended, (reference) => {
+          const target = resolve(dirname(from), reference);
+          return relative(dirname(to), moves.get(target) ?? target);
+        });
         if (to !== from) {
           moved.push({ from, to, text });
         } else if (text !== before) {
@@ -990,6 +1022,22 @@ export class Profiles {
    * there, so the save lands on the file as it is now, and a sync after
    * commits it.
    */
+  async saveReferences(file: string, references: Readonly<Record<string, string | readonly string[]>>, expected: string): Promise<string | undefined> {
+    try {
+      await this.#write(async () => {
+        if (this.unsaved.value.has(file)) { throw new Error(unsavedFirst); }
+        if (await readFile(file, 'utf8') !== expected) { throw new Error('The file changed. Reload its references before saving.'); }
+        await editProfile(file, [{ path: ['references'], value: references }]);
+      });
+      return undefined;
+    } catch (error) { return messageOf(error); }
+  }
+
+  referencesOf(text: string): Readonly<Record<string, unknown>> {
+    const value: unknown = parseDocument(text).get('references')?.toJSON();
+    return typeof value === 'object' && value !== null ? value : {};
+  }
+
   async save(mode: SaveMode = 'applies'): Promise<void> {
     await this.editor.value?.save((write) => this.#write(write), mode);
   }
