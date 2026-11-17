@@ -9,7 +9,8 @@ each part.
 
 A profile has up to ten sections. Keys are the field names of the
 [GitHub REST API](https://docs.github.com/rest), so GitHub's REST docs
-describe each one. Repotted ignores keys it doesn't know. A rule's
+describe each one. Repotted ignores keys it doesn't know when loading and
+removes them when saving edits. A rule's
 `parameters` and a ruleset's `conditions` are open records, which Repotted
 passes to GitHub as they are. Known fields still need valid values before
 a profile can be planned or applied.
@@ -127,9 +128,10 @@ finishes the whole draft at once when you click **Save**.
 Drafts never change what applies. A draft can share a name with an entry in
 the same profile or in a base profile, and a draft setting can sit beside the
 same setting, which applies until you finish the draft. Two drafts in the same
-list can't share a name or prefix, and a draft setting's name can't hold a
-dot, which joins a group to its key. A Pages draft with `absent: true` turns
-the site off, so Repotted warns about any other key beside it.
+list can't share a name or prefix. Unknown fields in drafts are ignored on
+load and removed on save, while known fields can hold unfinished values. A
+Pages draft with `absent: true` turns the site off; its other fields are
+ignored and removed on save.
 
 `draft: true` is separate from a ruleset's `enforcement: disabled`. A disabled
 ruleset is a real state that Repotted applies: GitHub has the ruleset, turned

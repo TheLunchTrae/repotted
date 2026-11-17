@@ -169,3 +169,20 @@ test.each([invalid, 'repository:\n  has_wiki: false\n'])(
     }
   },
 );
+
+test('a syntax repair removes unknown keys while preserving known invalid values for form validation', async () => {
+  const editor = await opened();
+  const repair = repairOf(editor);
+  await repair.type('# Keep this header\nunknown: true\nrepository: { has_wiki: wrong, has_wikki: true }\n');
+  expect(repair.canSave.value).toBe(true);
+  await editor.save(write);
+  expect(editor.repair.value).toBeUndefined();
+  expect(editor.loaded.value).toBe(true);
+  expect(editor.dirty.value).toBe(false);
+  const text = await readFile(file, 'utf8');
+  expect(text).toContain('# Keep this header');
+  expect(text).toContain('has_wiki: wrong');
+  expect(text).not.toContain('has_wikki');
+  expect(text).not.toContain('unknown');
+  expect(editor.problemCountByTab.value.get('repository')).toBe(1);
+});

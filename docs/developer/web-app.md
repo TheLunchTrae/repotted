@@ -311,10 +311,15 @@ changed elsewhere. `views/profile-editor/entries.tsx` only draws them.
 
 `readProfileForEditing` opens syntactically valid YAML even when the
 configuration cannot resolve. It retains known invalid values with
-path-based problems and source files, and ignores unknown keys. The editor
+path-based problems and source files, and omits unknown keys. The editor
 shows field and area errors before a change is made. Unique entry names
 keep their row identities; unnamed or duplicate entries use their original
-list positions. Corrections edit the original document before validating
+list positions. Unknown keys enable a cleanup-only save without marking the
+profile as an unsaved user edit. The save preview lists those keys. Saving
+prunes unknown fields from the original YAML document while retaining known
+invalid values, comments, and open records such as rule parameters. Base
+files stay untouched. Syntax-repair saves use the same cleanup.
+Corrections edit the original document before validating
 the result. Planning still uses `resolveProfile`, which requires a valid
 configuration.
 

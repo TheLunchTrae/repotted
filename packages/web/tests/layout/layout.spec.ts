@@ -326,6 +326,28 @@ for (const action of ['Apply', 'Change settings once']) {
   });
 }
 
+test('unknown keys can be previewed and saved away without another edit', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('unknown-keys', { exact: true }).click();
+  const save = page.getByRole('button', { name: 'Save', exact: true });
+  await expect(save).toBeEnabled();
+  const previewButton = page.getByRole('button', { name: 'Preview', exact: true });
+  if (!(await previewButton.isVisible())) {
+    await page.locator('.bar-more > summary').click();
+  }
+  await previewButton.click();
+  const preview = page.getByRole('dialog', { name: 'Preview changes to unknown-keys', exact: true });
+  await expect(preview).toContainText('Saving removes unrecognized keys: mystery, repository.has_wikki.');
+  await preview.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(preview).toHaveCount(0);
+  await expect(save).toBeDisabled();
+  await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
+  const yaml = page.getByRole('region', { name: 'unknown-keys as YAML', exact: true });
+  await expect(yaml).toContainText('has_wiki: true');
+  await expect(yaml).not.toContainText('mystery');
+  await expect(yaml).not.toContainText('has_wikki');
+});
+
 test('configuration errors open in the forms and can be saved without editing YAML', async ({ page }) => {
   await page.goto('/profiles');
   await page.getByText('configuration', { exact: true }).click();

@@ -10,7 +10,6 @@ import {
   isScalar,
   isSeq,
   parse,
-  type Scalar,
   parseDocument,
   stringify,
   visit,
@@ -23,6 +22,7 @@ import { isDeepEqual } from '../shared/equal.js';
 import { replaceFile } from '../shared/files.js';
 import type { ConfigurationProblem } from './editing.js';
 import { describeOwnerType, draftOwnerConflicts, type OwnerConflict, ownerConflicts, type OwnerType } from './owner.js';
+import { moveLeadingCommentAndBlankLine, profileFields, removeUnknownProfileFields } from './profile-fields.js';
 import {
   actionsSettings,
   type AutolinkEntry,
@@ -153,14 +153,16 @@ export interface Layer<Read extends LayerRead> {
   readonly noun: string;
   readonly schema: LayerSchema<Read>;
   readonly ownTopLevelKeys: ReadonlySet<string>;
+  readonly removeUnknownFields?: (document: Document) => void;
   /** Throws when the edited file, resolved, is not one to save. */
   readonly check: (edited: ResolvedLayer<Read>) => void;
 }
 
 const profileLayer: Layer<LayerRead> = {
   noun: 'profile',
-  schema: profileFile.transform((layer) => ({ layer })),
+  schema: z.preprocess((value) => profileFields(value).known, profileFile).transform((layer) => ({ layer })),
   ownTopLevelKeys: new Set(),
+  removeUnknownFields: removeUnknownProfileFields,
   check: () => undefined,
 };
 
@@ -764,24 +766,6 @@ function draftWarnings(drafts: Drafts): string[] {
 }
 
 /**
- * What a file's drafts lose as they merge: a Pages draft with `absent: true`
- * turns the site off, so the other keys beside it are left out, though the
- * file keeps them and finishing the draft would then fail.
- */
-function fileDraftWarnings(drafts: Drafts, file: string): string[] {
-  const pages = drafts.pages;
-  if (pages?.['absent'] !== true) {
-    return [];
-  }
-  const others = Object.keys(pages).filter((key) => key !== 'absent');
-  return others.length === 0
-    ? []
-    : [
-        `Draft pages in ${path.basename(file)}: absent turns the Pages site off, so ${others.join(', ')} ${others.length === 1 ? 'is' : 'are'} left out`,
-      ];
-}
-
-/**
  * Settings go by key, and a setting inside a group by `<group>.<key>`, as
  * `selected_actions.verified_allowed` under `actions`. Autolinks go by prefix,
  * and rulesets, environments and labels by name.
@@ -1212,7 +1196,7 @@ function resolveChain(
       profile: applied,
       drafts,
       warnings: [
-        ...chain.flatMap((link) => [...fileDraftWarnings(link.drafts, link.file), ...unsetWarnings(link)]),
+        ...chain.flatMap(unsetWarnings),
         ...draftWarnings(drafts),
         ...renamedDraftWarnings(applied, drafts),
         // A draft entry may be unfinished, so what its owner type lacks is a warning until it is finished.
@@ -1374,9 +1358,8 @@ export interface EntryEdit {
 export type ProfileEdit = SettingEdit | EntryEdit;
 
 /**
- * A draft may name a key the section does not have yet, so any key goes, and
- * a key inside a group such as `selected_actions` goes by the group's key as
- * settings do.
+ * A draft addresses a setting or a key within a group. Unknown names are
+ * removed with the rest of the file's unknown fields before saving.
  */
 function isDraftPath(path: readonly string[]): boolean {
   const [section, key, inner, ...rest] = path;
@@ -1564,21 +1547,6 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
   }
 }
 
-function moveLeadingCommentAndBlankLine(from: Scalar, to: Scalar): void {
-  if (from.commentBefore !== undefined && from.commentBefore !== null) {
-    // A comment the key already has stays, under the one that moves.
-    to.commentBefore =
-      to.commentBefore === undefined || to.commentBefore === null
-        ? from.commentBefore
-        : `${from.commentBefore}\n${to.commentBefore}`;
-    from.commentBefore = null;
-  }
-  if (from.spaceBefore === true) {
-    to.spaceBefore = true;
-    from.spaceBefore = false;
-  }
-}
-
 /**
  * A file that doesn't name `owner_type` yet gets it first, or right after
  * `extends`, with any comment over the file's first key kept above it.
@@ -1705,6 +1673,7 @@ async function editChain<Read extends LayerRead>(
       }
     }
   }
+  layer.removeUnknownFields?.(document);
   const { links, listedProfiles } = await readChain(own.file, layer, document.toString({ lineWidth: 0 }));
   const [, ...base] = links;
   const indent = /^( +)\S/mu.exec(original)?.[1]?.length ?? 2;

@@ -60,7 +60,7 @@ test('invalid saved values open on their fields and can be corrected without edi
   expect(await readFile(file, 'utf8')).toContain('# Keep this too');
 });
 
-test('unknown keys are ignored at every closed level and survive unrelated setting edits', async () => {
+test('unknown keys are ignored at every closed level and removed by saving', async () => {
   const editor = await opened(
     'mystery: ignored\nrepository: { has_wikki: true, has_issues: true }\nactions: { selected_actions: { verified_allowed: true, mistake: true } }\nlabels: [{ name: bug, color: abcdef, extra: ignored }]\n',
   );
@@ -72,8 +72,8 @@ test('unknown keys are ignored at every closed level and survive unrelated setti
   expect(resolved.profile.repository).toEqual({ has_issues: false });
   expect(resolved.profile.actions?.selected_actions).toEqual({ verified_allowed: true });
   expect(resolved.profile.labels).toEqual([{ name: 'bug', color: 'abcdef' }]);
-  expect(await readFile(file, 'utf8')).toContain('has_wikki');
-  expect(await readFile(file, 'utf8')).toContain('mystery');
+  expect(await readFile(file, 'utf8')).not.toContain('has_wikki');
+  expect(await readFile(file, 'utf8')).not.toContain('mystery');
 });
 
 test.each([
@@ -317,4 +317,64 @@ test.each(['ruleset', 'environment'])('entry names cannot redirect a duplicate r
   const resolved = await resolveProfile(file);
   expect(resolved.profile.rulesets).toEqual([{ name: 'Main' }]);
   expect(resolved.profile.labels).toEqual([{ name, color: 'abcdef' }]);
+});
+
+test('unknown fields alone can be saved away without changing known configuration', async () => {
+  const text = '# Keep this comment\nunknown: true\nrepository: { has_wiki: true, has_wikki: false }\n';
+  const editor = await opened(text);
+  expect(await readFile(file, 'utf8')).toBe(text);
+  expect(editor.dirty.value).toBe(false);
+  expect(editor.canSave.value).toBe(true);
+  await editor.openPreview();
+  expect(editor.preview.value?.removedUnknownFields).toEqual(['unknown', 'repository.has_wikki']);
+  await editor.save(write);
+  expect(editor.saveError.value).toBeUndefined();
+  expect(editor.canSave.value).toBe(false);
+  const saved = await readFile(file, 'utf8');
+  expect(saved).toContain('# Keep this comment');
+  expect(saved).not.toContain('unknown');
+  expect(saved).not.toContain('has_wikki');
+  expect((await resolveProfile(file)).profile.repository).toEqual({ has_wiki: true });
+});
+
+test('invalid custom-property draft names remain counted and can be removed through their validation area', async () => {
+  const editor = await opened('drafts: { custom_properties: { "a.b": wrong } }\n');
+  expect(editor.draftCount.value).toBe(1);
+  expect(editor.canDiscardDraft.value).toBe(true);
+  const [problem] = editor.configurationProblems.value;
+  if (problem === undefined) {
+    throw new Error('Missing invalid custom property');
+  }
+  await editor.removeInvalidConfiguration(problem);
+  expect(editor.canSave.value).toBe(true);
+  await editor.save(write);
+  expect(editor.saveError.value).toBeUndefined();
+  expect((await resolveProfile(file)).drafts).toEqual({});
+});
+
+test('discarding an invalid property draft checks its literal name before overwriting a queued change', async () => {
+  const editor = await opened('drafts: { custom_properties: { "a.b": wrong } }\n');
+  const held = Promise.withResolvers<undefined>();
+  const discarding = editor.discardDraft(async (work) => {
+    await held.promise;
+    await work();
+  });
+  const elsewhere = 'drafts: { custom_properties: { "a.b": changed } }\n';
+  await writeFile(file, elsewhere);
+  held.resolve(undefined);
+  await discarding;
+  expect(editor.saveError.value).toContain('draft changed elsewhere');
+  expect(await readFile(file, 'utf8')).toBe(elsewhere);
+});
+
+test('saving unknown-key cleanup as a draft retains known invalid draft values', async () => {
+  const editor = await opened('unknown: true\nlabels: [{ name: bug, draft: true, color: invalid, mystery: true }]\n');
+  expect(editor.canSave.value).toBe(false);
+  expect(editor.canSaveAsDraft.value).toBe(true);
+  await editor.save(write, 'draft');
+  expect(editor.saveError.value).toBeUndefined();
+  expect((await resolveProfile(file)).drafts.labels).toEqual([{ name: 'bug', draft: true, color: 'invalid' }]);
+  const text = await readFile(file, 'utf8');
+  expect(text).not.toContain('unknown');
+  expect(text).not.toContain('mystery');
 });

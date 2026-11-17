@@ -5,6 +5,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 
 import type { OwnerType } from './owner.js';
+import { profileFields } from './profile-fields.js';
 import {
   type Drafts,
   ProfileError,
@@ -30,48 +31,13 @@ export interface EditableProfile extends Omit<ResolvedProfile, 'profile'> {
   readonly profile: Readonly<Record<string, unknown>> & { readonly owner_type?: OwnerType | undefined };
   readonly problems?: readonly ConfigurationProblem[];
   readonly rawText?: string;
+  readonly unknownFields?: readonly string[];
   readonly entryPositions?: Partial<Record<EntryList, readonly (number | undefined)[]>>;
   readonly draftEntryPositions?: Partial<Record<EntryList, readonly (number | undefined)[]>>;
 }
 
 function isRecord(value: unknown): value is Entry {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function acceptsDiscriminator(schema: z.core.$ZodType, key: string, value: unknown): boolean {
-  if (schema instanceof z.ZodDiscriminatedUnion) {
-    return schema.options.some((option) => acceptsDiscriminator(option, key, value));
-  }
-  const field: unknown = schema instanceof z.ZodObject ? schema.shape[key] : undefined;
-  return field instanceof z.ZodType && field.safeParse(value).success;
-}
-
-/** Keeps invalid values for correction, while applying the schema's unknown-key policy. */
-function knownFields(schema: z.core.$ZodType, value: unknown): unknown {
-  if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) {
-    return knownFields(schema.unwrap(), value);
-  }
-  if (schema instanceof z.ZodObject && isRecord(value)) {
-    return Object.fromEntries(
-      Object.entries(value).flatMap(([key, item]) => {
-        const field: unknown = schema.shape[key];
-        return field instanceof z.ZodType
-          ? [[key, knownFields(field, item)]]
-          : schema.def.catchall instanceof z.ZodUnknown
-            ? [[key, item]]
-            : [];
-      }),
-    );
-  }
-  if (schema instanceof z.ZodArray && Array.isArray(value)) {
-    return value.map((item) => knownFields(schema.element, item));
-  }
-  if (schema instanceof z.ZodDiscriminatedUnion && isRecord(value)) {
-    const key = schema.def.discriminator;
-    const branch = schema.options.find((option) => acceptsDiscriminator(option, key, value[key]));
-    return branch instanceof z.ZodType ? knownFields(branch, value) : value;
-  }
-  return value;
 }
 
 function issues(schema: z.ZodType, value: unknown, file: string): ConfigurationProblem[] {
@@ -146,8 +112,11 @@ function mergeSettings(
 export async function readProfileForEditing(file: string, replacementText?: string): Promise<EditableProfile> {
   const original = replacementText ?? (await readFile(file, 'utf8'));
   let failure: unknown;
+  let unknownFields: readonly string[] = [];
   try {
-    return { ...(await resolveProfile(file, original)), rawText: original };
+    const fields = profileFields(parse(original) ?? {});
+    unknownFields = fields.unknown.map((path) => z.core.toDotPath([...path]));
+    return { ...(await resolveProfile(file, original)), rawText: original, unknownFields };
   } catch (error) {
     failure = error;
     // The tolerant read below preserves known values and reports configuration errors by path.
@@ -188,7 +157,7 @@ export async function readProfileForEditing(file: string, replacementText?: stri
       });
       break;
     }
-    const known = knownFields(profileFile, parsed);
+    const known = profileFields(parsed).known;
     const data = isRecord(known) ? known : {};
     chain.push(resolved);
     layers.push({ file: resolved, data });
@@ -319,6 +288,7 @@ export async function readProfileForEditing(file: string, replacementText?: stri
     owner_changes: { user: [], organization: [] },
     problems: unique,
     rawText: original,
+    unknownFields,
     entryPositions: positions,
     draftEntryPositions: draftPositions,
   };

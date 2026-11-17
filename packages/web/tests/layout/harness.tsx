@@ -169,6 +169,10 @@ await writeFile(
   '/profiles/browser/configuration.yaml',
   'ignored: true\nrepository: { has_wiki: broken }\nlabels: [42, { name: keep, color: abcdef }]\n',
 );
+await writeFile(
+  '/profiles/browser/unknown-keys.yaml',
+  '# Keep header\nmystery: true\nrepository: { has_wiki: true, has_wikki: false }\n',
+);
 // Two profiles on the long name, the most a phone shows as tags, and four on another, one of them gone.
 localStorage.setItem(
   'repotted:repository-profiles',

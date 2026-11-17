@@ -332,22 +332,22 @@ const topics = 'repository:\n  has_wiki: false\ndrafts:\n  repository:\n    topi
 
 test('a draft setting the tabs leave to the file is counted, finished, and discarded with the rest', async () => {
   const editor = await opened({ 'web.yaml': topics });
-  // The key no section has is not the editor's: it stays, with the profile's warning.
+  // Known drafts are finished or discarded; unknown keys are removed on either save.
   expect(editor.draftCount.value).toBe(1);
-  expect(editor.savedDraftWarnings.value.join('\n')).toContain('made_up');
+  expect(editor.unknownFields.value).toContain('drafts.repository.made_up');
 
   await editor.save(write);
 
   expect(editor.saveError.value).toBeUndefined();
   const saved = await resolveProfile(file);
   expect(saved.profile.repository).toEqual({ has_wiki: false, topics: ['infra'] });
-  expect(saved.drafts).toEqual({ repository: { made_up: 1 } });
+  expect(saved.drafts).toEqual({});
 
   await writeFile(file, topics);
   await editor.load();
   await editor.discardDraft(write);
 
-  expect((await resolveProfile(file)).drafts).toEqual({ repository: { made_up: 1 } });
+  expect((await resolveProfile(file)).drafts).toEqual({});
   expect(editor.draftCount.value).toBe(0);
 });
 

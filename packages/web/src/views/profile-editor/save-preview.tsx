@@ -126,6 +126,9 @@ export function SavePreviewDialog({ name, editor, saving, preview }: SavePreview
         ) : (
           <Diff lines={preview.lines} />
         )}
+        {(preview.removedUnknownFields?.length ?? 0) > 0 && (
+          <p class="muted small">Saving removes unrecognized keys: {preview.removedUnknownFields?.join(', ')}.</p>
+        )}
         <div class="form-actions">
           <button class="button button-primary" type="submit" value="applies" disabled={!editor.canSave.value}>
             Save

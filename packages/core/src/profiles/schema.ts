@@ -627,19 +627,9 @@ export const draftAutolink = z.looseObject({
   draft: z.literal(true),
 });
 
-// A dot joins a group to its key in a draft's path, as
-// `selected_actions.verified_allowed`, so no name may hold one.
-const draftValues = z.record(z.string(), z.unknown()).superRefine((values, context) => {
-  for (const [key, value] of Object.entries(values)) {
-    const inner = typeof value === 'object' && value !== null && !Array.isArray(value) ? Object.keys(value) : [];
-    const paths = [[key], ...inner.map((name) => [key, name])].filter((path) => path.at(-1)?.includes('.') === true);
-    for (const path of paths) {
-      context.addIssue({ code: 'custom', message: 'A draft setting name cannot contain a dot', path });
-    }
-  }
-});
+const draftValues = z.record(z.string(), z.unknown());
 
-/** Any key and value is kept, since a draft may be unfinished; what would stop it from applying is a warning. */
+/** Known fields are selected before parsing; their draft values may be unfinished. */
 export const draftSettings = z
   .object({
     repository: draftValues,

@@ -621,9 +621,11 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
           {editor.saving.value
             ? 'Saving…'
             : !editor.dirty.value
-              ? editor.draftCount.value > 0
-                ? 'Everything is saved, some of it as a draft. Save applies the draft.'
-                : 'Everything is saved.'
+              ? editor.unknownFields.value.length > 0
+                ? 'Unrecognized keys will be removed when you save.'
+                : editor.draftCount.value > 0
+                  ? 'Everything is saved, some of it as a draft. Save applies the draft.'
+                  : 'Everything is saved.'
               : blocking
                 ? `${editor.problemsBlockingSave.value.length === 1 ? 'One thing holds' : `${editor.problemsBlockingSave.value.length} things hold`} the save back.`
                 : (editor.draftProblem.value ?? 'You have changes that are not saved.')}

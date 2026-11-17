@@ -5,7 +5,13 @@ export type ResolvedProfile = Pick<EditableProfile, 'chain' | 'profile' | 'draft
   Partial<
     Pick<
       EditableProfile,
-      'owner_source' | 'owner_changes' | 'problems' | 'entryPositions' | 'draftEntryPositions' | 'rawText'
+      | 'owner_source'
+      | 'owner_changes'
+      | 'problems'
+      | 'entryPositions'
+      | 'draftEntryPositions'
+      | 'rawText'
+      | 'unknownFields'
     >
   >;
 
@@ -36,12 +42,10 @@ export function comparableOwnDraft(saved: ResolvedProfile): unknown {
     settings: settingsSections.map((section) =>
       mine(saved.sources.drafts[section]).map((key) => [
         key,
-        key
-          .split('.')
-          .reduce<unknown>(
-            (value, part) => (typeof value === 'object' && value !== null ? Reflect.get(value, part) : undefined),
-            saved.drafts[section],
-          ),
+        (section === 'custom_properties' ? [key] : key.split('.')).reduce<unknown>(
+          (value, part) => (typeof value === 'object' && value !== null ? Reflect.get(value, part) : undefined),
+          saved.drafts[section],
+        ),
       ]),
     ),
     entries: entrySections.map((list) => {

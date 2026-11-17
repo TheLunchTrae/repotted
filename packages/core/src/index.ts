@@ -41,6 +41,7 @@ export {
   withExtends,
 } from './profiles/profile.js';
 export { readProfileForEditing } from './profiles/editing.js';
+export { withoutUnknownProfileFields } from './profiles/profile-fields.js';
 export type { ConfigurationProblem, EditableProfile } from './profiles/editing.js';
 export { ownerHas, ownerTypes, partOwnerTypeCannotHold, settingRules } from './profiles/owner.js';
 export type { OwnerNeed, OwnerType } from './profiles/owner.js';

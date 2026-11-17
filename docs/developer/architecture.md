@@ -19,7 +19,9 @@ sections capture the API's response as it is.
 Environments are the exception: `plan/sections/environments.ts` turns GitHub's
 protection rules into `wait_timer`, `reviewers`, and `prevent_self_review`,
 and reads `branch_policies` from a separate endpoint. The schema's objects
-strip unknown keys. A rule's `parameters` and a ruleset's `conditions` are
+strip unknown keys on load. Profile edits remove those keys from the saved
+YAML, including drafts; known draft values may remain unfinished or invalid.
+A rule's `parameters` and a ruleset's `conditions` are
 open records passed to GitHub as they are. A branch name, as `default_branch` or a Pages site's branch, and an
 environment's deployment pattern are checked by git's rules for a ref name in
 `ref-names.ts`, in words the web app shows as they are; a pattern may also
@@ -117,7 +119,8 @@ compare, and the MCP server never see a draft. Keeping drafts out of the
 profile type, rather than marking them and filtering later, means a new
 section or adapter can't forget to skip them.
 
-A draft keeps any key and value, so `profileFile` only checks that a draft
+A draft keeps known fields with unfinished values. Field selection uses the
+applying schemas before `profileFile` checks that a draft
 entry has a name, or an autolink its prefix. `draftWarnings` checks each
 draft against the schema that would apply to it and reports what fails as
 warnings. A draft setting is checked against its section's field in
@@ -164,9 +167,8 @@ preferences and marker commits use the same function.
 `repotted profile --set`, `--unset`, `--ruleset`, `--environment`, and the
 `--drop-` options. It works on the YAML document rather than the parsed value,
 so an edit changes only what differs and keeps comments, line endings, and
-indent width. Edits under `drafts` take any key below a settings section,
-and a key inside one of its groups, since a draft may name a key that
-doesn't exist yet. The web app saves through it, so a profile edited
+indent width. Edits under `drafts` address settings and keys within their
+groups. Unknown fields are removed from the edited file, including drafts. The web app saves through it, so a profile edited
 both by hand and in the app keeps both sets of changes, except inside an
 entry the app rewrites. An edit writes nothing when the result is not a
 valid profile, and it refuses a list that shares parts through YAML anchors

@@ -208,6 +208,7 @@ export interface SaveProblem {
 
 /** What a save that applies would change: the profile that applies now against the one that would, as a diff of YAML. */
 export interface SavePreview {
+  readonly removedUnknownFields?: readonly string[];
   readonly lines: readonly (DiffLine | DiffFold)[];
   readonly changedLineCount: number;
   readonly draftChangeCount: number;
@@ -456,6 +457,7 @@ export class ProfileEditor {
   readonly canChangeOwnerType = computed(() => this.loaded.value && !this.dirty.value && !this.saving.value);
 
   readonly preview = signal<SavePreview | undefined>(undefined);
+  readonly unknownFields = computed(() => this.#saved.value?.unknownFields ?? []);
 
   readonly savedDraftWarnings = computed(() => this.#saved.value?.warnings ?? []);
 
@@ -464,7 +466,7 @@ export class ProfileEditor {
     () =>
       this.repair.value?.canSave.value ??
       (this.loaded.value &&
-        (this.#changed.value || this.draftCount.value > 0) &&
+        (this.#changed.value || this.draftCount.value > 0 || this.unknownFields.value.length > 0) &&
         !this.#someTypedTextCannotBeAValue.value &&
         !this.#entryEdits.someEntryCannotBeSavedToApply.value &&
         this.configurationProblems.value.length === 0 &&
@@ -604,7 +606,7 @@ export class ProfileEditor {
       this.canHoldDrafts &&
       this.loaded.value &&
       (this.#saved.value?.problems?.length ?? 0) === 0 &&
-      this.#changed.value &&
+      (this.#changed.value || this.unknownFields.value.length > 0) &&
       !this.#someTypedTextCannotBeAValue.value &&
       this.draftProblem.value === undefined &&
       !this.saving.value,
@@ -867,6 +869,7 @@ export class ProfileEditor {
         changedLineCount: lines.filter((line) => line.kind !== 'same').length,
         draftChangeCount: drafted,
         unsavedChangeCount: unsaved,
+        ...((before.unknownFields?.length ?? 0) === 0 ? {} : { removedUnknownFields: before.unknownFields }),
       };
     } catch (error) {
       if (turn === this.#opens) {
@@ -1344,7 +1347,7 @@ export class ProfileEditor {
     return draftSections.flatMap((section) =>
       Object.entries(saved.sources.drafts[section])
         .filter(([, file]) => file === saved.chain[0])
-        .map(([key]) => [section, ...key.split('.')])
+        .map(([key]) => [section, ...(section === 'custom_properties' ? [key] : key.split('.'))])
         .filter((path) => !rows.has(keyOf(path)) && settingPath(path) === 'setting')
         .map((path) => ({ path, value: getIn(saved.drafts, path) })),
     );
@@ -1408,7 +1411,10 @@ export class ProfileEditor {
     const others = this.#ownUnsets.value.filter((key) => !entryKeys.test(key) && !rows.has(key));
     if (mode === 'applies') {
       for (const draft of this.#otherDrafts()) {
-        writes.push(draft, { path: ['drafts', ...draft.path], value: undefined });
+        if (!edits.has(keyOf(draft.path))) {
+          writes.push(draft);
+        }
+        writes.push({ path: ['drafts', ...draft.path], value: undefined });
       }
       for (const key of others.filter((other) => !other.includes('/'))) {
         writes.push({ path: key.split('.'), value: undefined });
