@@ -25,6 +25,33 @@ afterEach(async () => {
 
 const folder = '/profiles';
 
+function store(start: Record<string, unknown> = {}): {
+  readonly kept: Record<string, unknown>;
+  read: (key: string) => unknown;
+  update: (key: string, change: Change) => void;
+} {
+  const values = signal<Record<string, unknown>>({ ...start });
+  return {
+    get kept() {
+      return values.value;
+    },
+    read: (key) => values.value[key],
+    update: (key, change) => {
+      const value = change(values.value[key]);
+      const others = Object.entries(values.value).filter(([other]) => other !== key);
+      values.value = Object.fromEntries(value === undefined ? others : [...others, [key, value]]);
+    },
+  };
+}
+
+async function profiles(texts: Readonly<Record<string, string>>): Promise<Signal<readonly ProfileListing[]>> {
+  await mkdir(`${folder}/web`, { recursive: true });
+  for (const [name, text] of Object.entries(texts)) {
+    await writeFile(`${folder}/${name}`, text);
+  }
+  return signal(await listProfiles(folder));
+}
+
 test('a shared environment edit marks direct and transitive assignments changed without writing GitHub', async () => {
   const listings = await profiles({
     'production.yaml': 'kind: environment\nenvironments: [{ name: production, wait_timer: 5 }]\n',
@@ -54,33 +81,6 @@ test('a shared environment edit marks direct and transitive assignments changed 
   expect(assignments.status('lunch/direct')).toMatchObject({ kind: 'changed', changed: ['production.yaml'] });
   expect(assignments.status('lunch/service')).toMatchObject({ kind: 'changed', changed: ['service.yaml'] });
 });
-
-function store(start: Record<string, unknown> = {}): {
-  readonly kept: Record<string, unknown>;
-  read: (key: string) => unknown;
-  update: (key: string, change: Change) => void;
-} {
-  const values = signal<Record<string, unknown>>({ ...start });
-  return {
-    get kept() {
-      return values.value;
-    },
-    read: (key) => values.value[key],
-    update: (key, change) => {
-      const value = change(values.value[key]);
-      const others = Object.entries(values.value).filter(([other]) => other !== key);
-      values.value = Object.fromEntries(value === undefined ? others : [...others, [key, value]]);
-    },
-  };
-}
-
-async function profiles(texts: Readonly<Record<string, string>>): Promise<Signal<readonly ProfileListing[]>> {
-  await mkdir(`${folder}/web`, { recursive: true });
-  for (const [name, text] of Object.entries(texts)) {
-    await writeFile(`${folder}/${name}`, text);
-  }
-  return signal(await listProfiles(folder));
-}
 
 test('makes a short tag of each name that is its own, after the tags people chose', () => {
   const tags = tagsFor(
