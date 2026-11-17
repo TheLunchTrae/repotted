@@ -143,6 +143,27 @@ describe('apply', () => {
 });
 
 describe('--json', () => {
+  test('captures an environment definition by its target name without writing GitHub', async () => {
+    const github = new FakeGitHub({
+      environments: [
+        {
+          name: 'Production',
+          wait_timer: 15,
+          prevent_self_review: false,
+          reviewers: [],
+          deployment_branch_policy: null,
+          branch_policies: [],
+        },
+      ],
+    });
+    const result = await cli(github, 'capture', 'lunch/app', '--kind', 'environment', '--name', 'production', '--json');
+    expect(result.code).toBe(0);
+    expect(document(result)).toMatchObject({
+      profile: { kind: 'environment', environments: [{ name: 'Production', wait_timer: 15 }] },
+    });
+    expect(github.writes).toEqual([]);
+  });
+
   test('plans, saves and applies with nothing but JSON on stdout', async () => {
     const github = new FakeGitHub();
     const file = path.join(directory, 'plan.json');

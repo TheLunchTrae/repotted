@@ -4,10 +4,11 @@ import { type GitHub, repoPath, type RepoRef } from '../github/client.js';
 import type { Warning } from '../plan/change.js';
 import { captureEndpoints, loadable, readEndpoints } from '../plan/endpoints.js';
 import { actionsEndpoints, readActions } from '../plan/sections/actions.js';
+import { describeEnvironment, readEnvironments } from '../plan/sections/environments.js';
 import { repositoryOwnerType } from '../plan/sections/repository.js';
 import { readRulesets } from '../plan/sections/rulesets.js';
 import { withoutOwnerConflicts } from './owner.js';
-import { actionsSettings, type DefinitionKind, type ProfileFile, ruleset } from './schema.js';
+import { actionsSettings, type DefinitionKind, environmentKey, profile, type ProfileFile, ruleset } from './schema.js';
 import { activeProfileSettings } from './setting-dependencies.js';
 
 export async function captureDefinition(
@@ -16,13 +17,31 @@ export async function captureDefinition(
   kind: DefinitionKind,
   targetName?: string,
 ): Promise<{ definition: ProfileFile; warnings: Warning[] }> {
-  if (kind === 'ruleset' && (targetName === undefined || targetName.trim() === '')) {
-    throw new Error('Give the name of the ruleset to capture.');
+  if (kind !== 'actions-policy' && (targetName === undefined || targetName.trim() === '')) {
+    throw new Error(`Give the name of the ${kind} to capture.`);
   }
   if (kind === 'actions-policy' && targetName !== undefined) {
     throw new Error('An Actions policy has no target name.');
   }
   const owner = repositoryOwnerType(await github.request('GET', repoPath(repo)));
+  if (kind === 'environment') {
+    const live = await readEnvironments(github, repo);
+    if (!live.available) {
+      throw new Error(`Cannot capture environment ${targetName}: ${live.reason}`);
+    }
+    const matches = live.environments.filter(
+      (entry) => environmentKey(entry.name) === environmentKey(targetName ?? ''),
+    );
+    const [matched] = matches;
+    if (matches.length !== 1 || matched === undefined) {
+      throw new Error(`Expected one environment named ${targetName}, found ${matches.length}.`);
+    }
+    const captured = profile.parse({
+      ...(owner === undefined ? {} : { owner_type: owner }),
+      environments: [describeEnvironment(matched)],
+    });
+    return { definition: { kind, ...captured }, warnings: [] };
+  }
   if (kind === 'ruleset') {
     const live = await readRulesets(github, repo);
     if (!live.available) {

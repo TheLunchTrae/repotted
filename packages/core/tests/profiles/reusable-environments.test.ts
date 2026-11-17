@@ -5,8 +5,9 @@ import path from 'node:path';
 import { afterEach, expect, test } from 'vitest';
 import { parse } from 'yaml';
 
-import { parseRepo } from '../../src/github/client.js';
+import { GitHubError, parseRepo } from '../../src/github/client.js';
 import { applyPlan, createPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
+import { captureDefinition } from '../../src/profiles/definitions.js';
 import { editProfile, resolveProfile } from '../../src/profiles/profile.js';
 import { createStagedApply, planStagedApply } from '../../src/staging/staged.js';
 import { FakeGitHub } from '../support/fake-github.js';
@@ -144,5 +145,47 @@ test('a referenced environment change requires fresh review before a saved stage
   await writeFile(path.join(folder, 'production.yaml'), production.replace('15', '30'));
 
   await expect(applyPlan(github, reviewed)).rejects.toBeInstanceOf(StalePlanError);
+  expect(github.writes).toEqual([]);
+});
+
+test('captures one environment by case-insensitive name without reading unrelated sections', async () => {
+  const github = new FakeGitHub({
+    environments: [
+      {
+        name: 'Production',
+        wait_timer: 15,
+        prevent_self_review: true,
+        reviewers: [{ type: 'User', id: 7 }],
+        deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+        branch_policies: [{ id: 2, name: 'v*', type: 'tag' }],
+      },
+    ],
+  }).fail('GET /repos/lunch/app/actions/permissions', new GitHubError(403, 'No Actions access'));
+  const captured = await captureDefinition(github, repo, 'environment', 'production');
+  expect(captured).toEqual({
+    definition: {
+      kind: 'environment',
+      owner_type: 'organization',
+      environments: [
+        {
+          name: 'Production',
+          wait_timer: 15,
+          prevent_self_review: true,
+          reviewers: [{ type: 'User', id: 7 }],
+          deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+          branch_policies: [{ name: 'v*', type: 'tag' }],
+        },
+      ],
+    },
+    warnings: [],
+  });
+  expect(github.writes).toEqual([]);
+});
+
+test('refuses captures with missing targets or unreadable protection instead of saving an empty definition', async () => {
+  const github = new FakeGitHub();
+  await expect(captureDefinition(github, repo, 'environment', 'missing')).rejects.toThrow(/missing/u);
+  github.fail('GET /repos/lunch/app/environments', new GitHubError(403, 'No environment access'));
+  await expect(captureDefinition(github, repo, 'environment', 'production')).rejects.toThrow(/permission|access/iu);
   expect(github.writes).toEqual([]);
 });
