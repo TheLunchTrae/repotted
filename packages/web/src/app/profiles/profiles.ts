@@ -5,7 +5,7 @@ import {
   declaredExtends,
   type DefinitionKind,
   editProfile,
-  resolveProfile,
+  parseProfile,
   withRewrittenReferences,
   findActions,
   findGitHubApp,
@@ -18,8 +18,8 @@ import {
   syncFolder,
   withExtends,
 } from '@repotted/core';
+import { isMap, parseDocument } from 'yaml';
 import * as z from 'zod/mini';
-import { parseDocument } from 'yaml';
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from '../../engine/files.js';
 import { basename, dirname, join, relative, resolve } from '../../engine/path.js';
@@ -627,8 +627,10 @@ export class Profiles {
         if (profile.definitionKind !== undefined && captured.profile.actions === undefined) {
           return 'The Actions settings could not be captured. Check repository access before trying again.';
         }
-        text = profile.definitionKind === undefined ? stringifyProfile(captured.profile) :
-          `kind: ${profile.definitionKind}\n${stringifyProfile({ owner_type: captured.profile.owner_type, actions: captured.profile.actions })}`;
+        text =
+          profile.definitionKind === undefined
+            ? stringifyProfile(captured.profile)
+            : `kind: ${profile.definitionKind}\n${stringifyProfile({ owner_type: captured.profile.owner_type, actions: captured.profile.actions })}`;
         uncaptured = uncapturedSettings(captured.warnings, captured.profile.owner_type);
         if (uncaptured.needsAppPermission) {
           uncaptured = {
@@ -648,7 +650,8 @@ export class Profiles {
       const source = profile.start.source.file;
       const original = await readFile(source, 'utf8');
       const base = declaredExtends(original);
-      text = base === undefined ? original : withExtends(original, relative(dirname(file), resolve(dirname(source), base)));
+      text =
+        base === undefined ? original : withExtends(original, relative(dirname(file), resolve(dirname(source), base)));
       text = withRewrittenReferences(text, (reference) => relative(dirname(file), resolve(dirname(source), reference)));
     } else if (profile.start.kind === 'import') {
       text = profile.start.text;
@@ -659,7 +662,9 @@ export class Profiles {
       const owner = profile.ownerType === undefined ? '' : `owner_type: ${profile.ownerType}\n`;
       text =
         profile.start.kind === 'empty'
-          ? profile.definitionKind === undefined ? owner : `kind: ${profile.definitionKind}\n${owner}actions: {}\n`
+          ? profile.definitionKind === undefined
+            ? owner
+            : `kind: ${profile.definitionKind}\n${owner}actions: {}\n`
           : `extends: ${JSON.stringify(relative(dirname(file), profile.start.base.file))}\n${
               profile.start.base.owner_type === null ? owner : ''
             }`;
@@ -688,7 +693,7 @@ export class Profiles {
         return unusableFolder;
       }
       try {
-        await resolveProfile(file, text);
+        await parseProfile(text, dirname(file));
         await mkdir(dirname(file), { recursive: true });
         await writeFile(file, text, { flag: 'wx' });
       } catch (error) {
@@ -710,7 +715,10 @@ export class Profiles {
     for (let grew = true; grew;) {
       grew = false;
       for (const other of this.listings.value) {
-        if ([other.extends, ...(other.references ?? [])].some((source) => source !== null && found.has(source)) && !found.has(other.file)) {
+        if (
+          [other.extends, ...(other.references ?? [])].some((source) => source !== null && found.has(source)) &&
+          !found.has(other.file)
+        ) {
           found.add(other.file);
           grew = true;
         }
@@ -1022,20 +1030,31 @@ export class Profiles {
    * there, so the save lands on the file as it is now, and a sync after
    * commits it.
    */
-  async saveReferences(file: string, references: Readonly<Record<string, string | readonly string[]>>, expected: string): Promise<string | undefined> {
+  async saveReferences(
+    file: string,
+    references: Readonly<Record<string, string | readonly string[]>>,
+    expected: string,
+  ): Promise<string | undefined> {
     try {
       await this.#write(async () => {
-        if (this.unsaved.value.has(file)) { throw new Error(unsavedFirst); }
-        if (await readFile(file, 'utf8') !== expected) { throw new Error('The file changed. Reload its references before saving.'); }
+        if (this.unsaved.value.has(file)) {
+          throw new Error(unsavedFirst);
+        }
+        if ((await readFile(file, 'utf8')) !== expected) {
+          throw new Error('The file changed. Reload its references before saving.');
+        }
         await editProfile(file, [{ path: ['references'], value: references }]);
       });
       return undefined;
-    } catch (error) { return messageOf(error); }
+    } catch (error) {
+      return messageOf(error);
+    }
   }
 
   referencesOf(text: string): Readonly<Record<string, unknown>> {
-    const value: unknown = parseDocument(text).get('references')?.toJSON();
-    return typeof value === 'object' && value !== null ? value : {};
+    const node = parseDocument(text).get('references', true);
+    const value: unknown = isMap(node) ? node.toJSON() : {};
+    return z.record(z.string(), z.unknown()).parse(value);
   }
 
   async save(mode: SaveMode = 'applies'): Promise<void> {

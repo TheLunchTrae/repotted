@@ -1199,3 +1199,66 @@ test('deleting the selected profiles together names what extends any of them and
   ).toEqual(['profiles/leaf.yaml', 'profiles/teams/web.yaml']);
   expect(profiles.batch.value).toEqual([]);
 });
+
+test('Actions definitions move with references and refuse deletion while consumers remain', async () => {
+  await inBrowser({
+    'trusted.yaml': 'kind: actions-policy\nactions:\n  enabled: true\n',
+    'service.yaml': 'references:\n  actions: trusted.yaml\nrepository:\n  has_wiki: false\n',
+  });
+  const profiles = new Profiles(new FakeGitHub(), memory(), () => undefined);
+  await profiles.refresh();
+  const definition = profiles.listings.value.find((item) => item.name === 'trusted');
+  if (definition === undefined) {
+    throw new Error('Missing definition');
+  }
+  expect(profiles.dependents(definition).map((item) => item.name)).toEqual(['service']);
+  expect(await profiles.remove(definition)).toContain('service');
+  expect(await profiles.move([definition], 'shared')).toBeUndefined();
+  expect(await readFile('/profiles/browser/service.yaml', 'utf8')).toContain('shared/trusted.yaml');
+  expect(profiles.listings.value.every((item) => item.problem === null)).toBe(true);
+});
+
+test('reference saves refuse stale file text and preserve unrelated inline values', async () => {
+  await inBrowser({
+    'trusted.yaml': 'kind: actions-policy\nactions:\n  enabled: true\n',
+    'service.yaml': 'repository:\n  has_wiki: false\n',
+  });
+  const profiles = new Profiles(new FakeGitHub(), memory(), () => undefined);
+  await profiles.refresh();
+  const file = '/profiles/browser/service.yaml';
+  const text = await readFile(file, 'utf8');
+  expect(await profiles.saveReferences(file, { actions: 'trusted.yaml' }, text)).toBeUndefined();
+  const saved = await readFile(file, 'utf8');
+  expect(saved).toContain('has_wiki: false');
+  expect(saved).toContain('trusted.yaml');
+  expect(await profiles.saveReferences(file, {}, text)).toContain('changed');
+  expect(await readFile(file, 'utf8')).toBe(saved);
+});
+
+test('definitions duplicate across folders without changing their source and import validates references', async () => {
+  await inBrowser({ 'trusted.yaml': 'kind: actions-policy\nactions:\n  enabled: true\n' });
+  const profiles = new Profiles(new FakeGitHub(), memory(), () => undefined);
+  await profiles.refresh();
+  const source = profiles.listings.value[0];
+  if (source === undefined) {
+    throw new Error('Missing source');
+  }
+  expect(
+    await profiles.create({
+      name: 'copy',
+      folder: 'shared',
+      start: { kind: 'duplicate', source },
+      ownerType: undefined,
+    }),
+  ).toBeUndefined();
+  expect(await readFile('/profiles/browser/shared/copy.yaml', 'utf8')).toBe(await readFile(source.file, 'utf8'));
+  expect(
+    await profiles.create({
+      name: 'broken',
+      folder: '',
+      start: { kind: 'import', text: 'references:\n  actions: missing.yaml\n' },
+      ownerType: undefined,
+    }),
+  ).toContain('missing.yaml');
+  expect(profiles.listings.value.map((item) => item.name)).not.toContain('broken');
+});

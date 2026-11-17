@@ -926,6 +926,21 @@ The form's owner type goes into the file as `owner_type`, except for a
 capture, which writes the repository's own, and a profile that extends a
 typed base, which takes the base's and writes none.
 
+### Reusable definitions and references
+
+Definitions use the same create, import, duplicate, sync and editor lifecycle.
+Creation validates the complete file before writing; imports with missing
+references leave no file. A duplicate preserves relative targets from its new
+folder. Moving files rewrites reference paths as well as `extends`.
+
+| State                | Event                                         | Next                                                                                                    |
+| -------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| References displayed | Save references                               | Queued behind sync; refuse unsaved editor changes or file text that differs from the displayed version. |
+| Saving references    | Validation succeeds                           | Only references change; reload the listing and dependent editors.                                       |
+| Saving references    | Missing source, invalid result, or stale text | Display the error and keep the file unchanged.                                                          |
+| Definition selected  | Save settings                                 | Listed dependent profiles resolve the saved values on their next load; no repository write occurs.      |
+| Deleting definition  | Other listed profiles depend on it            | Refuse deletion and name the consumers whose references must be removed first.                          |
+
 ## Web deleting a profile
 
 The open profile's **Delete profile**, or **Delete** for the selected

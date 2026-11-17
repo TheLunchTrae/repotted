@@ -304,7 +304,9 @@ interface ProfileSettingsProps {
 
 export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets }: ProfileSettingsProps): JSX.Element {
   const sections = editor.sections.value;
-  const supportedLists = entryLists.filter((list) => editor.definitionSection.value === undefined || list === editor.definitionSection.value);
+  const supportedLists = entryLists.filter(
+    (list) => editor.definitionSection.value === undefined || list === editor.definitionSection.value,
+  );
   const [tab, setTab] = useState(sections[0]?.section.section ?? supportedLists[0] ?? '');
   const entries = editor.entries.value;
   const list = supportedLists.find((item) => item === tab);

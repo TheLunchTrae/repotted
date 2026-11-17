@@ -3,9 +3,9 @@ import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { Router } from '../../app/navigation/router.js';
+import { definitionTypes } from '../../app/profiles/definition-types.js';
 import type { NewProfileStart, Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
-import { definitionTypes } from '../../app/profiles/definition-types.js';
 import { run } from '../layout/run.js';
 
 type OwnerChoice = (typeof ownerTypes)[number] | 'any';
@@ -51,20 +51,22 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
   const start: NewProfileStart | undefined =
     kind === 'empty'
       ? { kind }
-      : kind === 'import' ? { kind, text: importText }
-      : kind === 'duplicate' ? base === undefined ? undefined : { kind, source: base }
-      : kind === 'extends'
-        ? base === undefined
-          ? undefined
-          : { kind, base }
-        : from === ''
-          ? undefined
-          : { kind, repository: from };
+      : kind === 'import'
+        ? { kind, text: importText }
+        : kind === 'duplicate'
+          ? base === undefined
+            ? undefined
+            : { kind, source: base }
+          : kind === 'extends'
+            ? base === undefined
+              ? undefined
+              : { kind, base }
+            : from === ''
+              ? undefined
+              : { kind, repository: from };
   const fixedOwner =
     kind === 'repository'
       ? "The repository's owner sets the type."
-      : kind === 'import' ? { kind, text: importText }
-      : kind === 'duplicate' ? base === undefined ? undefined : { kind, source: base }
       : kind === 'extends' && base !== undefined && base.owner_type !== null
         ? `${base.name} is for ${ownerLabels[base.owner_type].toLowerCase()}, so this one is too.`
         : undefined;
@@ -78,7 +80,13 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
     setWorking(true);
     setError(undefined);
     const failure = await profiles.create(
-      { name, folder, start, ...(definitionKind === undefined ? {} : { definitionKind }), ownerType: owner === 'any' ? undefined : owner },
+      {
+        name,
+        folder,
+        start,
+        ...(definitionKind === undefined ? {} : { definitionKind }),
+        ownerType: owner === 'any' ? undefined : owner,
+      },
       formClosed.current.signal,
     );
     if (formClosed.current.signal.aborted) {
@@ -110,12 +118,21 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
 
       <label class="form-field">
         <span>Type</span>
-        <select class="field" disabled={working} value={definitionKind ?? ''} onChange={(event) => {
-          setDefinitionKind(definitionTypes.find((item) => item.kind === event.currentTarget.value)?.kind);
-          setKind('empty');
-        }}>
+        <select
+          class="field"
+          disabled={working}
+          value={definitionKind ?? ''}
+          onChange={(event) => {
+            setDefinitionKind(definitionTypes.find((item) => item.kind === event.currentTarget.value)?.kind);
+            setKind('empty');
+          }}
+        >
           <option value="">Profile</option>
-          {definitionTypes.map((item) => <option key={item.kind} value={item.kind}>{item.label}</option>)}
+          {definitionTypes.map((item) => (
+            <option key={item.kind} value={item.kind}>
+              {item.label}
+            </option>
+          ))}
         </select>
       </label>
       <div class="form-field">
@@ -249,18 +266,45 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
         </label>
       </fieldset>
 
-      <label class="form-field"><span>Or reuse a saved file</span>
-        <select class="field" disabled={working} value={kind === 'duplicate' ? baseFile : ''} onChange={(event) => {
-          setBaseFile(event.currentTarget.value); setKind('duplicate');
-        }}><option value="" disabled>Duplicate a profile or definition</option>
-          {listings.map((item) => <option key={item.file} value={item.file}>{profiles.pathOf(item)}</option>)}
+      <label class="form-field">
+        <span>Or reuse a saved file</span>
+        <select
+          class="field"
+          disabled={working}
+          value={kind === 'duplicate' ? baseFile : ''}
+          onChange={(event) => {
+            setBaseFile(event.currentTarget.value);
+            setKind('duplicate');
+          }}
+        >
+          <option value="" disabled>
+            Duplicate a profile or definition
+          </option>
+          {listings.map((item) => (
+            <option key={item.file} value={item.file}>
+              {profiles.pathOf(item)}
+            </option>
+          ))}
         </select>
       </label>
-      <label class="form-field"><span>Import YAML file</span>
-        <input type="file" accept=".yaml,.yml" disabled={working} onChange={(event) => {
-          const file = event.currentTarget.files?.[0];
-          if (file !== undefined) { run(file.text().then((text) => { setImportText(text); setKind('import'); })); }
-        }} />
+      <label class="form-field">
+        <span>Import YAML file</span>
+        <input
+          type="file"
+          accept=".yaml,.yml"
+          disabled={working}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            if (file !== undefined) {
+              run(
+                file.text().then((text) => {
+                  setImportText(text);
+                  setKind('import');
+                }),
+              );
+            }
+          }}
+        />
       </label>
       <fieldset class="choices" disabled={working || fixedOwner !== undefined}>
         <legend>For repositories owned by</legend>

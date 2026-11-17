@@ -397,3 +397,17 @@ For example, a new ruleset exists before a ruleset it replaces is deleted,
 and labels are deleted, then renamed, then updated, then created.
 [Plan and apply](cli.md#plan-and-apply) describes how to review and apply a
 plan.
+
+### Manage reusable definitions in the web app
+
+On **New profile or definition**, choose **Actions policy** to create a policy
+with the existing Actions controls. You can capture it from a repository,
+duplicate a saved file, or import YAML. **Export YAML** downloads the selected
+file. Definitions share profiles' browser, local-folder, and config-repository
+storage and sync.
+
+Open a profile's **Reusable definitions** controls to select a policy and
+**Save references**. Inline values override referenced values. A definition
+names its dependent profiles before saving; changing it takes effect on their
+next resolution. Deleting a referenced definition is refused until those
+references are deliberately removed. Moving it updates references.
