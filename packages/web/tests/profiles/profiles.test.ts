@@ -1308,5 +1308,5 @@ test('a duplicate whose source disappeared reports an error without leaving a de
   expect(
     await profiles.create({ name: 'copy', folder: '', start: { kind: 'duplicate', source }, ownerType: undefined }),
   ).toContain('source.yaml');
-  expect(await readdir('/profiles/browser')).toEqual([]);
+  expect(await readdir('/profiles/browser', { withFileTypes: true })).toEqual([]);
 });
