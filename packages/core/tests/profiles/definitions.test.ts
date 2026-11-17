@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { afterAll, expect, test } from 'vitest';
 
-import { parseRepo } from '../../src/github/client.js';
+import { type GitHub, parseRepo } from '../../src/github/client.js';
 import { applyPlan, createPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
 import { captureDefinition } from '../../src/profiles/definitions.js';
 import {
@@ -185,3 +185,38 @@ test('discovery retains dependencies when an unrelated field prevents resolution
 test('unknown reference kinds are errors rather than silently empty profiles', async () => {
   await expect(parseProfile('references: { action: missing.yaml }', folder)).rejects.toThrow('Unrecognized key');
 });
+
+test.each(['profile', 'staged'] as const)(
+  'a policy edit during %s live revalidation refuses stale writes',
+  async (kind) => {
+    const file = await write(`race-${kind}.yaml`, 'kind: actions-policy\nactions: { enabled: false }\n');
+    const staged = path.join(folder, `race-${kind}-apply.yaml`);
+    await createStagedApply(staged, 'lunch/app', [file]);
+    const fake = new FakeGitHub();
+    const planned = (await planStagedApply(fake, staged)).plan;
+    const reviewed = kind === 'staged' ? planned : { ...planned, source: { profile: file } };
+    let release = (): void => undefined;
+    let entered = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const github: GitHub = {
+      request: async (...args) => {
+        if (args[0] === 'GET') {
+          entered();
+          await held;
+        }
+        return fake.request(...args);
+      },
+    };
+    const applying = applyPlan(github, reviewed);
+    await reading;
+    await writeFile(file, 'kind: actions-policy\nactions: { enabled: true }\n');
+    release();
+    await expect(applying).rejects.toThrow('changed while');
+    expect(fake.writes).toEqual([]);
+  },
+);
