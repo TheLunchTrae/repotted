@@ -507,14 +507,16 @@ function jsonValue(value: unknown): unknown {
  */
 export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonly Change[]> {
   const source = reviewed.source;
-  const resolved =
+  const resolveSource =
     source === undefined
       ? undefined
-      : 'profile' in source
-        ? await resolveProfile(source.profile)
-        : 'staged' in source
-          ? await resolveStagedApply(source.staged)
-          : await parseProfile(source.text, source.directory);
+      : () =>
+          'profile' in source
+            ? resolveProfile(source.profile)
+            : 'staged' in source
+              ? resolveStagedApply(source.staged)
+              : parseProfile(source.text, source.directory);
+  const resolved = await resolveSource?.();
   if (
     resolved !== undefined &&
     'repository' in resolved &&
@@ -528,6 +530,16 @@ export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonl
     resolved?.profile ?? reviewed.desired,
     resolved === undefined ? reviewed.skipped : skippedDrafts(resolved.drafts),
   );
+  const latest = await resolveSource?.();
+  const inputs = (value: typeof resolved): unknown =>
+    value === undefined
+      ? undefined
+      : 'repository' in value
+        ? [value.repository, value.profiles, value.profile, value.exclude]
+        : value.profile;
+  if (!isDeepEqual(inputs(resolved), inputs(latest))) {
+    throw new Error('The source configuration changed while GitHub was being read. Review a fresh plan.');
+  }
   if (!isDeepEqual(jsonValue(current.changes), jsonValue(reviewed.changes))) {
     throw new StalePlanError(current);
   }
