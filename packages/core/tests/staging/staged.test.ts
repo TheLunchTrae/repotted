@@ -141,7 +141,7 @@ describe('staged apply', () => {
   });
 
   test('writes nothing when the profile it would start from does not resolve', async () => {
-    const files = await freshFolderWithProfile('repository: { no_such_setting: true }\n');
+    const files = await freshFolderWithProfile('repository: { has_wiki: broken }\n');
 
     expect(await rejection(createStagedApply(files.staged, 'lunch/app', [files.profile]))).toBeInstanceOf(ProfileError);
     expect(await rejection(readFile(files.staged))).toBeInstanceOf(Error);

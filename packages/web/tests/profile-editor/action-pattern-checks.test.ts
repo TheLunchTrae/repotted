@@ -306,13 +306,14 @@ test("an editor's list is followed as it is typed, and only while GitHub shows i
   await editor.set(field('actions.allowed_actions'), 'selected');
   expect(editor.allowsRepository('other/one')).toBe(false);
 
-  // A profile that stops reading has no list to ask about.
+  // A malformed section stays editable, including the list being typed.
   await editor.resetAll();
   await editor.type(field('actions.selected_actions.patterns_allowed'), 'actions/*\nnew/one');
   await writeFile('/profiles/web.yaml', 'actions: 5\n');
   await editor.load();
   vi.advanceTimersByTime(600);
-  expect(github.runs).toHaveLength(2);
+  expect(github.runs).toHaveLength(3);
+  expect(github.runs[2]).toEqual(['new/one']);
 
   await rm('/', { recursive: true });
 });

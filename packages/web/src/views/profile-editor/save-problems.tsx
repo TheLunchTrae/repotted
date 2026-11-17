@@ -85,7 +85,7 @@ export function SaveProblems({ editor, onGoTo }: SaveProblemsProps): JSX.Element
                     <strong>{problem.name}</strong>
                     <span>{problem.message}</span>
                     <span class="fix-where">{where(problem)}</span>
-                    {problem.place.kind === 'entry' && !problem.canReset && (
+                    {problem.place.kind === 'entry' && problem.place.row.inDraft !== undefined && !problem.canReset && (
                       <span class="muted small">Saved in a draft. Edit it or discard the draft.</span>
                     )}
                   </div>

@@ -20,7 +20,7 @@ export function RepairProfile({
       <div class="form-field">
         <h2 id="repair-heading">Fix the profile</h2>
         <p class="muted">
-          Correct the YAML below. Save checks the profile and its base profiles before replacing this file. Your
+          Correct the YAML syntax below. Configuration errors can be fixed in the settings after saving. Your
           corrections stay here when you visit another page in this tab.
         </p>
         <label for="repair-yaml">Profile YAML</label>

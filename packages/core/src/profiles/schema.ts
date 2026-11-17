@@ -67,8 +67,7 @@ export const repositoryEndpointFields = {
       max_open_pull_requests: z.number().int().min(1),
       include_drafts: z.boolean(),
     })
-    .partial()
-    .strict(),
+    .partial(),
 };
 
 export const mergeFields = {
@@ -122,12 +121,9 @@ export function mergeSettingsProblems(merge: MergeSettings): string[] {
   return problems;
 }
 
-export const repositorySettings = z
-  .object({ ...repositoryFields, ...repositoryEndpointFields })
-  .partial()
-  .strict();
+export const repositorySettings = z.object({ ...repositoryFields, ...repositoryEndpointFields }).partial();
 
-export const mergeSettings = z.object(mergeFields).partial().strict();
+export const mergeSettings = z.object(mergeFields).partial();
 
 export const selectedActions = z
   .object({
@@ -135,8 +131,7 @@ export const selectedActions = z
     verified_allowed: z.boolean(),
     patterns_allowed: z.array(z.string()),
   })
-  .partial()
-  .strict();
+  .partial();
 
 /**
  * An endpoint under `actions/` with one field goes by that field's name; one
@@ -150,10 +145,7 @@ export const actionsEndpointFields = {
     'first_time_contributors',
     'all_external_contributors',
   ]),
-  artifact_and_log_retention: z
-    .object({ days: z.number().int().min(1) })
-    .partial()
-    .strict(),
+  artifact_and_log_retention: z.object({ days: z.number().int().min(1) }).partial(),
   fork_pr_workflows_private_repos: z
     .object({
       run_workflows_from_fork_pull_requests: z.boolean(),
@@ -161,8 +153,7 @@ export const actionsEndpointFields = {
       send_secrets_and_variables: z.boolean(),
       require_approval_for_fork_pr_workflows: z.boolean(),
     })
-    .partial()
-    .strict(),
+    .partial(),
   max_cache_retention_days: z.number().int().min(1),
   max_cache_size_gb: z.number().int().min(1),
   oidc_customization_sub: z
@@ -171,8 +162,7 @@ export const actionsEndpointFields = {
       include_claim_keys: z.array(z.string().regex(/^\w+$/u, 'A claim key is letters, digits and underscores')),
       use_immutable_subject: z.boolean(),
     })
-    .partial()
-    .strict(),
+    .partial(),
 };
 
 export const actionsSettings = z
@@ -185,10 +175,9 @@ export const actionsSettings = z
     can_approve_pull_request_reviews: z.boolean(),
     ...actionsEndpointFields,
   })
-  .partial()
-  .strict();
+  .partial();
 
-const status = z.object({ status: z.enum(['enabled', 'disabled']) }).strict();
+const status = z.object({ status: z.enum(['enabled', 'disabled']) });
 
 /**
  * GitHub reports `dependabot_security_updates` there too, but sets it only
@@ -206,22 +195,17 @@ export const securityAndAnalysis = z
     secret_scanning_delegated_bypass: status,
     // GitHub Enterprise Cloud only.
     secret_scanning_validity_checks: status,
-    secret_scanning_delegated_bypass_options: z
-      .object({
-        reviewers: z.array(
-          z
-            .object({
-              reviewer_id: z.number().int(),
-              reviewer_type: z.enum(['TEAM', 'ROLE']),
-              mode: z.enum(['ALWAYS', 'EXEMPT']).optional(),
-            })
-            .strict(),
-        ),
-      })
-      .strict(),
+    secret_scanning_delegated_bypass_options: z.object({
+      reviewers: z.array(
+        z.object({
+          reviewer_id: z.number().int(),
+          reviewer_type: z.enum(['TEAM', 'ROLE']),
+          mode: z.enum(['ALWAYS', 'EXEMPT']).optional(),
+        }),
+      ),
+    }),
   })
-  .partial()
-  .strict();
+  .partial();
 
 const runnerSetup = {
   runner_type: z.enum(['standard', 'labeled']),
@@ -248,12 +232,8 @@ export const securityFields = {
       query_suite: z.enum(['default', 'extended']),
       threat_model: z.enum(['remote', 'remote_and_local']),
     })
-    .partial()
-    .strict(),
-  code_scanning_ai_scan: z
-    .object({ pr_scan: z.enum(['enabled', 'disabled']) })
-    .partial()
-    .strict(),
+    .partial(),
+  code_scanning_ai_scan: z.object({ pr_scan: z.enum(['enabled', 'disabled']) }).partial(),
   code_quality_setup: z
     .object({
       state: z.enum(['configured', 'not-configured']),
@@ -261,8 +241,7 @@ export const securityFields = {
       languages: z.array(z.enum(['csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby'])),
       ai_findings_option: z.enum(['disabled', 'on_push']),
     })
-    .partial()
-    .strict(),
+    .partial(),
   dependabot_runner_settings: z
     .object({
       runner_type: z.enum(['standard', 'labeled']),
@@ -270,11 +249,10 @@ export const securityFields = {
       // GitHub reports no group as an empty one.
       runner_group: z.string(),
     })
-    .partial()
-    .strict(),
+    .partial(),
 };
 
-export const securitySettings = z.object(securityFields).partial().strict();
+export const securitySettings = z.object(securityFields).partial();
 
 /**
  * Null clears a value. GitHub documents a property name as 1 to 75 of `a-z`,
@@ -305,21 +283,17 @@ function markingKeyError(key: 'absent' | 'draft'): { error: z.core.$ZodErrorMap 
   return { error: (issue) => (issue.code === 'invalid_union' ? `${key} is true or left out` : undefined) };
 }
 
-export const autolink = z
-  .object({
-    key_prefix: z.string().min(1),
-    url_template: z.string().includes('<num>', { message: 'url_template needs <num>' }),
-    is_alphanumeric: z.boolean().optional(),
-  })
-  .strict();
+export const autolink = z.object({
+  key_prefix: z.string().min(1),
+  url_template: z.string().includes('<num>', { message: 'url_template needs <num>' }),
+  is_alphanumeric: z.boolean().optional(),
+});
 
-const absentAutolink = z
-  .object({
-    key_prefix: z.string().min(1),
-    absent: z.literal(true),
-    draft: unmarked,
-  })
-  .strict();
+const absentAutolink = z.object({
+  key_prefix: z.string().min(1),
+  absent: z.literal(true),
+  draft: unmarked,
+});
 
 export const autolinkEntry = z.discriminatedUnion(
   'absent',
@@ -335,18 +309,16 @@ export const pagesSite = z
         branch: branchName,
         path: z.enum(['/', '/docs']),
       })
-      .partial()
-      .strict(),
+      .partial(),
     cname: z.string().nullable(),
     https_enforced: z.boolean(),
     // Whether anyone may see the site, rather than only people with read
     // access to the repository. GitHub Enterprise Cloud only.
     public: z.boolean(),
   })
-  .partial()
-  .strict();
+  .partial();
 
-const absentPages = z.object({ absent: z.literal(true) }).strict();
+const absentPages = z.object({ absent: z.literal(true) });
 
 export const pagesEntry = z.discriminatedUnion(
   'absent',
@@ -354,13 +326,11 @@ export const pagesEntry = z.discriminatedUnion(
   markingKeyError('absent'),
 );
 
-export const bypassActor = z
-  .object({
-    actor_id: z.number().int().nullable(),
-    actor_type: z.string(),
-    bypass_mode: z.enum(['always', 'pull_request', 'exempt']),
-  })
-  .strict();
+export const bypassActor = z.object({
+  actor_id: z.number().int().nullable(),
+  actor_type: z.string(),
+  bypass_mode: z.enum(['always', 'pull_request', 'exempt']),
+});
 
 const patternParameters = z
   .looseObject({ operator: z.enum(['starts_with', 'ends_with', 'contains', 'regex']) })
@@ -408,7 +378,6 @@ export const rule = z
     type: z.string(),
     parameters: z.record(z.string(), z.unknown()).optional(),
   })
-  .strict()
   .superRefine((value, context) => {
     const result = ruleParameters.get(value.type)?.safeParse(value.parameters ?? {});
     for (const issue of result?.error?.issues ?? []) {
@@ -416,24 +385,20 @@ export const rule = z
     }
   });
 
-export const ruleset = z
-  .object({
-    name: z.string().min(1),
-    target: z.enum(['branch', 'tag', 'push']).optional(),
-    enforcement: z.enum(['active', 'evaluate', 'disabled']).optional(),
-    bypass_actors: z.array(bypassActor).optional(),
-    conditions: z.record(z.string(), z.unknown()).optional(),
-    rules: z.array(rule).optional(),
-  })
-  .strict();
+export const ruleset = z.object({
+  name: z.string().min(1),
+  target: z.enum(['branch', 'tag', 'push']).optional(),
+  enforcement: z.enum(['active', 'evaluate', 'disabled']).optional(),
+  bypass_actors: z.array(bypassActor).optional(),
+  conditions: z.record(z.string(), z.unknown()).optional(),
+  rules: z.array(rule).optional(),
+});
 
-const absentRuleset = z
-  .object({
-    name: z.string().min(1),
-    absent: z.literal(true),
-    draft: unmarked,
-  })
-  .strict();
+const absentRuleset = z.object({
+  name: z.string().min(1),
+  absent: z.literal(true),
+  draft: unmarked,
+});
 
 export const rulesetEntry = z.discriminatedUnion(
   'absent',
@@ -441,29 +406,24 @@ export const rulesetEntry = z.discriminatedUnion(
   markingKeyError('absent'),
 );
 
-export const environmentReviewer = z
-  .object({
-    type: z.enum(['User', 'Team']),
-    id: z.number().int(),
-  })
-  .strict();
+export const environmentReviewer = z.object({
+  type: z.enum(['User', 'Team']),
+  id: z.number().int(),
+});
 
 export const deploymentBranchPolicy = z
   .object({
     protected_branches: z.boolean(),
     custom_branch_policies: z.boolean(),
   })
-  .strict()
   .refine((value) => value.protected_branches !== value.custom_branch_policies, {
     message: 'Set exactly one of protected_branches and custom_branch_policies to true',
   });
 
-export const branchPolicy = z
-  .object({
-    name: z.string().superRefine(checkedWith(branchPatternProblem)),
-    type: z.enum(['branch', 'tag']).optional(),
-  })
-  .strict();
+export const branchPolicy = z.object({
+  name: z.string().superRefine(checkedWith(branchPatternProblem)),
+  type: z.enum(['branch', 'tag']).optional(),
+});
 
 export const environment = z
   .object({
@@ -474,7 +434,6 @@ export const environment = z
     deployment_branch_policy: deploymentBranchPolicy.nullable().optional(),
     branch_policies: z.array(branchPolicy).optional(),
   })
-  .strict()
   .superRefine((value, context) => {
     // Name patterns only apply, and GitHub only accepts them, under custom policies.
     if (value.branch_policies !== undefined && value.deployment_branch_policy?.custom_branch_policies !== true) {
@@ -506,13 +465,11 @@ export const environment = z
     }
   });
 
-const absentEnvironment = z
-  .object({
-    name: z.string().min(1),
-    absent: z.literal(true),
-    draft: unmarked,
-  })
-  .strict();
+const absentEnvironment = z.object({
+  name: z.string().min(1),
+  absent: z.literal(true),
+  draft: unmarked,
+});
 
 export const environmentEntry = z.discriminatedUnion(
   'absent',
@@ -533,26 +490,22 @@ const labelColor = z
   // eslint-disable-next-line regexp/use-ignore-case -- JSON Schema patterns carry no flags, so editors would refuse uppercase
   .regex(/^#?[\dA-Fa-f]{6}$/u, 'color is six hex digits, as d73a4a');
 
-export const label = z
-  .object({
-    name: z.string().min(1).max(50),
-    color: labelColor.optional(),
-    description: z.string().max(100).optional(),
-    /**
-     * Names the label had before. A repository with one of them and no label
-     * of this name has it renamed, so issues and pull requests keep it.
-     */
-    renamed_from: z.array(z.string().min(1).max(50)).min(1).optional(),
-  })
-  .strict();
+export const label = z.object({
+  name: z.string().min(1).max(50),
+  color: labelColor.optional(),
+  description: z.string().max(100).optional(),
+  /**
+   * Names the label had before. A repository with one of them and no label
+   * of this name has it renamed, so issues and pull requests keep it.
+   */
+  renamed_from: z.array(z.string().min(1).max(50)).min(1).optional(),
+});
 
-const absentLabel = z
-  .object({
-    name: z.string().min(1).max(50),
-    absent: z.literal(true),
-    draft: unmarked,
-  })
-  .strict();
+const absentLabel = z.object({
+  name: z.string().min(1).max(50),
+  absent: z.literal(true),
+  draft: unmarked,
+});
 
 export const labelEntry = z.discriminatedUnion(
   'absent',
@@ -637,7 +590,6 @@ export const profile = z
     labels: z.array(labelEntry),
   })
   .partial()
-  .strict()
   .superRefine((value, context) => {
     for (const message of mergeSettingsProblems(value.merge ?? {})) {
       context.addIssue({ code: 'custom', message, path: ['merge'] });
@@ -675,19 +627,9 @@ export const draftAutolink = z.looseObject({
   draft: z.literal(true),
 });
 
-// A dot joins a group to its key in a draft's path, as
-// `selected_actions.verified_allowed`, so no name may hold one.
-const draftValues = z.record(z.string(), z.unknown()).superRefine((values, context) => {
-  for (const [key, value] of Object.entries(values)) {
-    const inner = typeof value === 'object' && value !== null && !Array.isArray(value) ? Object.keys(value) : [];
-    const paths = [[key], ...inner.map((name) => [key, name])].filter((path) => path.at(-1)?.includes('.') === true);
-    for (const path of paths) {
-      context.addIssue({ code: 'custom', message: 'A draft setting name cannot contain a dot', path });
-    }
-  }
-});
+const draftValues = z.record(z.string(), z.unknown());
 
-/** Any key and value is kept, since a draft may be unfinished; what would stop it from applying is a warning. */
+/** Known fields are selected before parsing; their draft values may be unfinished. */
 export const draftSettings = z
   .object({
     repository: draftValues,
@@ -703,30 +645,27 @@ export const draftSettings = z
      */
     unset: z.array(z.string().min(1)),
   })
-  .partial()
-  .strict();
+  .partial();
 
-export const profileFile = z
-  .object({
-    extends: z.string().min(1).optional(),
-    owner_type: ownerType.optional(),
-    repository: repositorySettings.optional(),
-    merge: mergeSettings.optional(),
-    actions: actionsSettings.optional(),
-    security: securitySettings.optional(),
-    custom_properties: customProperties.optional(),
-    pages: pagesEntry.optional(),
-    autolinks: z
-      .array(z.discriminatedUnion('draft', [draftAutolink, autolinkEntry], markingKeyError('draft')))
-      .optional(),
-    rulesets: z.array(z.discriminatedUnion('draft', [draftEntry, rulesetEntry], markingKeyError('draft'))).optional(),
-    environments: z
-      .array(z.discriminatedUnion('draft', [draftEntry, environmentEntry], markingKeyError('draft')))
-      .optional(),
-    labels: z.array(z.discriminatedUnion('draft', [draftEntry, labelEntry], markingKeyError('draft'))).optional(),
-    drafts: draftSettings.optional(),
-  })
-  .strict();
+export const profileFile = z.object({
+  extends: z.string().min(1).optional(),
+  owner_type: ownerType.optional(),
+  repository: repositorySettings.optional(),
+  merge: mergeSettings.optional(),
+  actions: actionsSettings.optional(),
+  security: securitySettings.optional(),
+  custom_properties: customProperties.optional(),
+  pages: pagesEntry.optional(),
+  autolinks: z
+    .array(z.discriminatedUnion('draft', [draftAutolink, autolinkEntry], markingKeyError('draft')))
+    .optional(),
+  rulesets: z.array(z.discriminatedUnion('draft', [draftEntry, rulesetEntry], markingKeyError('draft'))).optional(),
+  environments: z
+    .array(z.discriminatedUnion('draft', [draftEntry, environmentEntry], markingKeyError('draft')))
+    .optional(),
+  labels: z.array(z.discriminatedUnion('draft', [draftEntry, labelEntry], markingKeyError('draft'))).optional(),
+  drafts: draftSettings.optional(),
+});
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

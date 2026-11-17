@@ -1,6 +1,7 @@
 import { computed, signal } from '@preact/signals';
 import {
   type AppAccess,
+  type ConfigurationProblem,
   changeOwnerType,
   editProfile,
   type OwnerNeed,
@@ -8,13 +9,15 @@ import {
   type OwnerType,
   permissionsMissingForProfilePart,
   type ProfileEdit,
-  previewProfile,
+  previewProfileChanges,
+  ProfileError,
+  readProfileForEditing,
   resolveProfile,
   settingPath,
   settingRules,
   settingValueProblems,
-  stringifyProfile,
 } from '@repotted/core';
+import { stringify } from 'yaml';
 
 import { readFile } from '../../engine/files.js';
 import { basename } from '../../engine/path.js';
@@ -68,8 +71,11 @@ export interface EditorStore {
 
 const profileStore: EditorStore = {
   canHoldDrafts: true,
-  resolve: resolveProfile,
-  preview: previewProfile,
+  resolve: readProfileForEditing,
+  preview: async (file, edits) => ({
+    before: await readProfileForEditing(file),
+    after: await previewProfileChanges(file, edits),
+  }),
   edit: editProfile,
 };
 
@@ -77,6 +83,7 @@ const profileStore: EditorStore = {
 interface SettingEdit {
   readonly path: readonly string[];
   readonly value: unknown;
+  readonly originalText?: string | undefined;
 }
 
 export interface SettingWithValue {
@@ -181,6 +188,7 @@ export type SaveProblemPlace =
       readonly hiddenWhile: SettingWithValue | undefined;
     }
   | { readonly kind: 'entry'; readonly row: EntryRow; readonly field: EntryField }
+  | { readonly kind: 'configuration'; readonly problem: ConfigurationProblem }
   /** The engine refused the changes together, so no one setting or entry can be reset for it. */
   | { readonly kind: 'profile' };
 
@@ -200,6 +208,7 @@ export interface SaveProblem {
 
 /** What a save that applies would change: the profile that applies now against the one that would, as a diff of YAML. */
 export interface SavePreview {
+  readonly removedUnknownFields?: readonly string[];
   readonly lines: readonly (DiffLine | DiffFold)[];
   readonly changedLineCount: number;
   readonly draftChangeCount: number;
@@ -242,7 +251,7 @@ function reasonOf(error: unknown, file: string): string {
 }
 
 function yamlLines(resolved: ResolvedProfile): string[] {
-  const text = stringifyProfile(resolved.profile).trimEnd();
+  const text = stringify(resolved.profile, { lineWidth: 0 }).trimEnd();
   return text === '' || text === '{}' ? [] : text.split('\n');
 }
 
@@ -363,6 +372,7 @@ export class ProfileEditor {
   readonly repair = signal<ProfileRepair | undefined>(undefined);
 
   readonly #saved = signal<ResolvedProfile | undefined>(undefined);
+  readonly configurationProblems = signal<readonly ConfigurationProblem[]>([]);
   /** Undefined unless there are unsaved changes the engine accepts. */
   readonly #profileAsSaveWouldLeaveIt = signal<ResolvedProfile | undefined>(undefined);
   readonly #edits = signal<ReadonlyMap<string, SettingEdit>>(new Map());
@@ -447,6 +457,7 @@ export class ProfileEditor {
   readonly canChangeOwnerType = computed(() => this.loaded.value && !this.dirty.value && !this.saving.value);
 
   readonly preview = signal<SavePreview | undefined>(undefined);
+  readonly unknownFields = computed(() => this.#saved.value?.unknownFields ?? []);
 
   readonly savedDraftWarnings = computed(() => this.#saved.value?.warnings ?? []);
 
@@ -455,9 +466,10 @@ export class ProfileEditor {
     () =>
       this.repair.value?.canSave.value ??
       (this.loaded.value &&
-        (this.#changed.value || this.draftCount.value > 0) &&
+        (this.#changed.value || this.draftCount.value > 0 || this.unknownFields.value.length > 0) &&
         !this.#someTypedTextCannotBeAValue.value &&
         !this.#entryEdits.someEntryCannotBeSavedToApply.value &&
+        this.configurationProblems.value.length === 0 &&
         this.unsavedChangesProblem.value === undefined &&
         !this.saving.value),
   );
@@ -477,7 +489,7 @@ export class ProfileEditor {
     const settings = settingSections.flatMap((section) =>
       section.groups.flatMap((group) =>
         group.fields.flatMap((field): SaveProblem[] => {
-          const problem = typed.get(keyOf(field.path))?.problem;
+          const problem = typed.get(keyOf(field.path))?.problem ?? this.#configurationProblemFor(field);
           if (problem === undefined) {
             return [];
           }
@@ -489,7 +501,7 @@ export class ProfileEditor {
               where: `${section.name} › ${group.title}`,
               tab: section.section,
               message: problem,
-              canReset: true,
+              canReset: edits.has(keyOf(field.path)) || typed.has(keyOf(field.path)),
               place: {
                 kind: 'setting',
                 field,
@@ -526,7 +538,7 @@ export class ProfileEditor {
     );
     const refused = this.unsavedChangesProblem.value;
     const profile: SaveProblem[] =
-      refused === undefined
+      refused === undefined || this.configurationProblems.value.length > 0
         ? []
         : [
             {
@@ -539,7 +551,24 @@ export class ProfileEditor {
               place: { kind: 'profile' },
             },
           ];
-    return [...settings, ...entries, ...profile];
+    const configuration = this.configurationProblems.value.flatMap((problem, index): SaveProblem[] => {
+      if (allFields.some((field) => this.#problemMatchesField(problem, field))) {
+        return [];
+      }
+      const tab = String(problem.path[0] ?? '');
+      return [
+        {
+          key: `configuration ${index}`,
+          name: problem.path.length === 0 ? 'The profile' : problem.path.map(String).join('.'),
+          where: basename(problem.file),
+          tab,
+          message: problem.message,
+          canReset: false,
+          place: { kind: 'configuration', problem },
+        },
+      ];
+    });
+    return [...settings, ...entries, ...configuration, ...profile];
   });
 
   /** How many problems hold Save back on each tab. */
@@ -576,7 +605,8 @@ export class ProfileEditor {
     () =>
       this.canHoldDrafts &&
       this.loaded.value &&
-      this.#changed.value &&
+      (this.#saved.value?.problems?.length ?? 0) === 0 &&
+      (this.#changed.value || this.unknownFields.value.length > 0) &&
       !this.#someTypedTextCannotBeAValue.value &&
       this.draftProblem.value === undefined &&
       !this.saving.value,
@@ -728,7 +758,7 @@ export class ProfileEditor {
     try {
       text = this.#store === profileStore ? await readFile(this.file, 'utf8') : undefined;
       result = {
-        saved: text === undefined ? await this.#store.resolve(this.file) : await resolveProfile(this.file, text),
+        saved: text === undefined ? await this.#store.resolve(this.file) : await readProfileForEditing(this.file, text),
       };
     } catch (error) {
       result = { problem: reasonOf(error, this.file) };
@@ -751,6 +781,7 @@ export class ProfileEditor {
       return;
     }
     this.#saved.value = result.saved;
+    this.configurationProblems.value = result.saved.problems ?? [];
     this.#entryEdits.setSaved(result.saved);
     this.repair.value = undefined;
     this.loadError.value = undefined;
@@ -838,6 +869,7 @@ export class ProfileEditor {
         changedLineCount: lines.filter((line) => line.kind !== 'same').length,
         draftChangeCount: drafted,
         unsavedChangeCount: unsaved,
+        ...((before.unknownFields?.length ?? 0) === 0 ? {} : { removedUnknownFields: before.unknownFields }),
       };
     } catch (error) {
       if (turn === this.#opens) {
@@ -983,6 +1015,45 @@ export class ProfileEditor {
       await this.load();
       return;
     }
+    await this.#previewEdits();
+  }
+
+  async removeInvalidConfiguration(problem: ConfigurationProblem): Promise<void> {
+    if (problem.file !== this.file || this.saving.value) {
+      return;
+    }
+    const path = problem.path.filter((part): part is string => typeof part === 'string');
+    const edits = new Map(this.#edits.value);
+    const section = path[0];
+    const list = entryLists.find((known) => known === section);
+    if (problem.path.length === 1 && list !== undefined) {
+      this.#entryEdits.takeOutAllIn(list);
+    }
+    const at = typeof problem.path[1] === 'number' ? problem.path[1] : undefined;
+    if (at !== undefined && entryLists.some((list) => list === section)) {
+      const row = Object.values(this.entries.value)
+        .flat()
+        .find((row) => row.list === section && row.index === at);
+      if (row !== undefined) {
+        this.#entryEdits.takeOut(row);
+        await this.#previewEdits();
+        return;
+      }
+    }
+    const target =
+      at !== undefined && ['autolinks', ...entryLists].some((list) => list === section)
+        ? [section ?? '', String(at)]
+        : settingPath(path) !== undefined
+          ? path
+          : path[0] === 'drafts' && (path[1] === 'unset' || draftSections.some((section) => section === path[1]))
+            ? path.slice(0, path[1] === 'unset' ? 2 : 3)
+            : [path[0] ?? 'repository'];
+    edits.set(keyOf(target), {
+      path: target,
+      value: undefined,
+      originalText: this.#saved.value?.rawText,
+    });
+    this.#edits.value = edits;
     await this.#previewEdits();
   }
 
@@ -1198,6 +1269,13 @@ export class ProfileEditor {
         // The file may have changed since it was read, as by the sync before this turn. An entry is
         // written whole, so one that changed under its change is not written over.
         const current = await this.#store.resolve(this.file);
+        if (
+          [...writing.values()].some((edit) => edit.originalText !== undefined && edit.originalText !== current.rawText)
+        ) {
+          throw new Error(
+            'The profile changed elsewhere. Reset the invalid configuration removals and refresh before trying again.',
+          );
+        }
         this.#saved.value = current;
         this.#entryEdits.setSaved(current);
         // Every save finishes, adds to, or discards the whole draft, so it acts only on the draft that was shown.
@@ -1269,7 +1347,7 @@ export class ProfileEditor {
     return draftSections.flatMap((section) =>
       Object.entries(saved.sources.drafts[section])
         .filter(([, file]) => file === saved.chain[0])
-        .map(([key]) => [section, ...key.split('.')])
+        .map(([key]) => [section, ...(section === 'custom_properties' ? [key] : key.split('.'))])
         .filter((path) => !rows.has(keyOf(path)) && settingPath(path) === 'setting')
         .map((path) => ({ path, value: getIn(saved.drafts, path) })),
     );
@@ -1297,6 +1375,7 @@ export class ProfileEditor {
     const writes: SettingEdit[] = [];
     const unsets: string[] = [];
     const rows = new Set(allFields.map((field) => keyOf(field.path)));
+    writes.push(...[...edits].filter(([key]) => !rows.has(key)).map(([, edit]) => edit));
     for (const field of allFields) {
       const key = keyOf(field.path);
       const edit = edits.get(key);
@@ -1332,7 +1411,10 @@ export class ProfileEditor {
     const others = this.#ownUnsets.value.filter((key) => !entryKeys.test(key) && !rows.has(key));
     if (mode === 'applies') {
       for (const draft of this.#otherDrafts()) {
-        writes.push(draft, { path: ['drafts', ...draft.path], value: undefined });
+        if (!edits.has(keyOf(draft.path))) {
+          writes.push(draft);
+        }
+        writes.push({ path: ['drafts', ...draft.path], value: undefined });
       }
       for (const key of others.filter((other) => !other.includes('/'))) {
         writes.push({ path: key.split('.'), value: undefined });
@@ -1465,6 +1547,7 @@ export class ProfileEditor {
     if (edits.length === 0) {
       this.#profileAsSaveWouldLeaveIt.value = undefined;
       this.unsavedChangesProblem.value = undefined;
+      this.configurationProblems.value = this.#saved.value?.problems ?? [];
       return;
     }
     try {
@@ -1472,11 +1555,47 @@ export class ProfileEditor {
       if (turn === this.#latestPreviewNumber) {
         this.#profileAsSaveWouldLeaveIt.value = after;
         this.unsavedChangesProblem.value = undefined;
+        this.configurationProblems.value = [];
       }
     } catch (error) {
       if (turn === this.#latestPreviewNumber) {
         // No profile to show but the saved one, with each edit laid over its own setting.
         this.#profileAsSaveWouldLeaveIt.value = undefined;
+        this.configurationProblems.value =
+          error instanceof ProfileError
+            ? error.problems.map((problem) => {
+                const [list, index, ...rest] = problem.path;
+                if (
+                  problem.file !== this.file ||
+                  typeof index !== 'number' ||
+                  !['autolinks', ...entryLists].some((known) => known === list)
+                ) {
+                  return problem;
+                }
+                const removed = edits
+                  .flatMap((edit): number[] => {
+                    if ('list' in edit) {
+                      return edit.list === list && edit.entry === undefined && edit.index !== undefined
+                        ? [edit.index]
+                        : [];
+                    }
+                    return edit.path[0] === list &&
+                      edit.path.length === 2 &&
+                      edit.value === undefined &&
+                      /^\d+$/u.test(edit.path[1] ?? '')
+                      ? [Number(edit.path[1])]
+                      : [];
+                  })
+                  .sort((a, b) => a - b);
+                let original = index;
+                for (const at of removed) {
+                  if (at <= original) {
+                    original += 1;
+                  }
+                }
+                return { ...problem, path: [list ?? '', original, ...rest] };
+              })
+            : [];
         this.unsavedChangesProblem.value = reasonOf(error, this.file);
       }
     }
@@ -1516,7 +1635,11 @@ export class ProfileEditor {
     return (
       group.fields
         // What owners of the profile's type don't have is left out, settings and choices, so it is never part of a save.
-        .filter((field) => fits(owner, needOf(field.path)) && this.#turnedOffOnGitHub(field)?.hidden !== true)
+        .filter(
+          (field) =>
+            this.#configurationProblemFor(field) !== undefined ||
+            (fits(owner, needOf(field.path)) && this.#turnedOffOnGitHub(field)?.hidden !== true),
+        )
         .map((field) => {
           const turnedOff = this.#turnedOffOnGitHub(field);
           const key = keyOf(field.path);
@@ -1541,7 +1664,7 @@ export class ProfileEditor {
             greyedOutOnGitHubWhile:
               turnedOff === undefined ? undefined : { field: turnedOff.field, value: turnedOff.value },
             textBeingTyped: typed?.text,
-            typedTextProblem: typed?.problem,
+            typedTextProblem: typed?.problem ?? this.#configurationProblemFor(field),
             hiddenWithTextThatCannotBeSaved: section.filter(
               (other) =>
                 this.#turnedOffOnGitHub(other)?.field === field &&
@@ -1563,5 +1686,18 @@ export class ProfileEditor {
           };
         })
     );
+  }
+
+  #problemMatchesField(problem: ConfigurationProblem, field: SettingField): boolean {
+    return problem.path.length >= field.path.length && field.path.every((part, index) => part === problem.path[index]);
+  }
+
+  #configurationProblemFor(field: SettingField): string | undefined {
+    const problem = this.configurationProblems.value.find((problem) => this.#problemMatchesField(problem, field));
+    return problem === undefined
+      ? undefined
+      : problem.file === this.file
+        ? problem.message
+        : `${problem.message} Open ${basename(problem.file)} to correct it.`;
   }
 }

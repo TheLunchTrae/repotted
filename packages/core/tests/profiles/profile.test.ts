@@ -103,12 +103,10 @@ rulesets:
     expect(String(error)).toContain('extends itself');
   });
 
-  test('names unknown keys, so a misspelled setting is never silently ignored', async () => {
+  test('ignores unknown keys without managing their values', async () => {
     const file = await write('typo.yaml', 'repository: { delete_branch_on_marge: true }\n');
 
-    const error = await rejection(loadProfile(file));
-    expect(error).toBeInstanceOf(ProfileError);
-    expect(String(error)).toContain('delete_branch_on_marge');
+    expect((await loadProfile(file)).repository).toEqual({});
   });
 
   test('rejects two rulesets with the same name', async () => {
@@ -212,8 +210,6 @@ rulesets:
         'expected one of "active"|"evaluate"|"disabled"\n  → at rulesets[0].enforcement',
       'environments: [{ name: npm, wait_timer: soon }]':
         'expected number, received string\n  → at environments[0].wait_timer',
-      'autolinks: [{ key_prefix: X-, absent: true, url_template: "x/<num>" }]':
-        'Unrecognized key: "url_template"\n  → at autolinks[0]',
       'pages: { build_type: sometimes }': 'expected one of "legacy"|"workflow"\n  → at pages.build_type',
       'rulesets: [{ name: Main, absent: false }]': 'absent is true or left out\n  → at rulesets[0].absent',
       'rulesets: [{ name: Main, draft: false }]': 'draft is true or left out\n  → at rulesets[0].draft',
@@ -440,11 +436,8 @@ describe('editProfile', () => {
 
     for (const key of [
       ['rulesets', '0'],
-      ['extends'],
-      ['repository'],
       ['repository', 'has_wiki', 'x'],
       ['repository', 'has_wikki'],
-      ['actions', 'selected_actions'],
     ]) {
       expect(String(await rejection(editProfile(file, [{ path: key, value: true }])))).toContain('Cannot edit');
     }
@@ -655,7 +648,7 @@ describe('listProfiles', () => {
     await mkdir(folder);
     await writeFile(path.join(folder, 'base.yaml'), 'repository: { has_wiki: false }\n');
     await writeFile(path.join(folder, 'app.yml'), 'extends: base.yaml\n');
-    await writeFile(path.join(folder, 'broken.yaml'), 'repository: { has_wikki: false }\n');
+    await writeFile(path.join(folder, 'broken.yaml'), 'repository: { has_wiki: broken }\n');
     await writeFile(path.join(folder, 'notes.md'), '# not a profile\n');
 
     const listings = await listProfiles(folder);
@@ -666,7 +659,7 @@ describe('listProfiles', () => {
       ['broken', '', null],
     ]);
     expect(listings.map((listing) => listing.problem === null)).toEqual([true, true, false]);
-    expect(listings[2]?.problem).toContain('has_wikki');
+    expect(listings[2]?.problem).toContain('has_wiki');
   });
 
   test('lists subfolders after the folder, leaving out hidden and linked ones', async () => {
@@ -730,17 +723,16 @@ drafts:
 
     expect(resolved.profile).toEqual({ repository: { has_wiki: false }, rulesets: [{ name: 'Main' }] });
     expect(resolved.drafts).toEqual({
-      repository: { has_wiki: true, has_wikis: true },
+      repository: { has_wiki: true },
       actions: { allowed_actions: 'none' },
       rulesets: [{ name: 'Unfinished', draft: true, enforcement: 'sometimes' }],
       environments: [{ name: 'npm', draft: true, wait_timer: 5 }],
     });
-    expect(resolved.warnings).toHaveLength(3);
-    expect(resolved.warnings.join('\n')).toContain('Draft repository.has_wikis: repository has no setting has_wikis');
+    expect(resolved.warnings).toHaveLength(2);
     expect(resolved.warnings.join('\n')).toContain('Draft actions.allowed_actions:');
     expect(resolved.warnings.join('\n')).toContain('Draft ruleset "Unfinished":');
     expect(resolved.sources.drafts).toEqual({
-      repository: { has_wiki: file, has_wikis: file },
+      repository: { has_wiki: file },
       merge: {},
       actions: { allowed_actions: file },
       security: {},
@@ -905,23 +897,21 @@ drafts:
     expect(resolved.sources.drafts.security).toEqual({});
   });
 
-  test('refuse a draft setting whose name holds a dot', async () => {
-    const file = await write('drafts-dot.yaml', 'drafts:\n  repository: { "has.wiki": true }\n');
-    const error = await rejection(resolveProfile(file));
-    expect(error).toBeInstanceOf(ProfileError);
-    expect(String(error)).toContain('A draft setting name cannot contain a dot');
-
-    const inner = await write('drafts-dot-inner.yaml', 'drafts:\n  actions: { selected_actions: { "a.b": true } }\n');
-    expect(String(await rejection(resolveProfile(inner)))).toContain('A draft setting name cannot contain a dot');
+  test('ignore unknown draft keys, including names with dots, and retain known invalid values', async () => {
+    const file = await write('drafts-dot.yaml', 'drafts:\n  repository: { "has.wiki": true, has_wiki: false }\n');
+    expect((await resolveProfile(file)).drafts.repository).toEqual({ has_wiki: false });
+    const inner = await write(
+      'drafts-dot-inner.yaml',
+      'drafts:\n  actions: { selected_actions: { "a.b": true, verified_allowed: invalid } }\n',
+    );
+    expect((await resolveProfile(inner)).drafts.actions).toEqual({ selected_actions: { verified_allowed: 'invalid' } });
   });
 
-  test('warn when a Pages draft turns the site off beside other keys', async () => {
+  test('ignore draft keys that are not used when a Pages draft turns the site off', async () => {
     const file = await write('drafts-pages-absent.yaml', 'drafts:\n  pages: { absent: true, build_type: nope }\n');
     const resolved = await resolveProfile(file);
     expect(resolved.drafts.pages).toEqual({ absent: true });
-    expect(resolved.warnings).toEqual([
-      'Draft pages in drafts-pages-absent.yaml: absent turns the Pages site off, so build_type is left out',
-    ]);
+    expect(resolved.warnings).toEqual([]);
   });
 
   test('warn about an empty custom property name without a trailing place', async () => {
@@ -937,10 +927,8 @@ drafts:
       'rulesets: [{ name: Main, draft: true, enforcement: maybe }, { name: Gone, draft: true, absent: true, target: tag }]\n',
     );
     const { warnings } = await resolveProfile(file);
-    expect(warnings).toHaveLength(2);
+    expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatch(/^Draft ruleset "Main": .* at enforcement$/u);
-    expect(warnings[1]).toMatch(/^Draft ruleset "Gone": /u);
-    expect(warnings[1]).toContain('target');
   });
 
   test('keep an empty list as written, and leave out a list of only drafts', async () => {
@@ -978,7 +966,7 @@ drafts:
     const listed = await write('draft-list.yaml', 'drafts: { rulesets: [{ name: Main }] }\n');
 
     expect(await rejection(resolveProfile(nameless))).toBeInstanceOf(ProfileError);
-    expect(String(await rejection(resolveProfile(listed)))).toContain('rulesets');
+    expect((await resolveProfile(listed)).drafts.rulesets).toBeUndefined();
   });
 
   test('cover every settings section', () => {
@@ -1137,7 +1125,10 @@ describe('editProfile with drafts', () => {
   test('edits draft keys only under a settings section', async () => {
     const file = await write('edit-draft-keys.yaml', 'repository: { has_wiki: false }\n');
 
-    for (const key of [['drafts'], ['drafts', 'repository'], ['drafts', 'rulesets', 'x']]) {
+    for (const key of [
+      ['drafts', 'repository'],
+      ['drafts', 'rulesets', 'x'],
+    ]) {
       expect(String(await rejection(editProfile(file, [{ path: key, value: true }])))).toContain('Cannot edit');
     }
   });
@@ -1159,4 +1150,14 @@ test('a move points extends at the new place and keeps the rest of the file as w
   );
   expect(declaredExtends('merge: [unclosed\n')).toBeUndefined();
   expect(declaredExtends('extends: 3\n')).toBeUndefined();
+});
+
+test('keeps known draft values with invalid objects for validation instead of rejecting their inner keys', async () => {
+  const file = await write(
+    'draft-property-object.yaml',
+    'drafts: { custom_properties: { service: { "a.b": true } } }\n',
+  );
+  const resolved = await resolveProfile(file);
+  expect(resolved.drafts.custom_properties).toEqual({ service: { 'a.b': true } });
+  expect(resolved.warnings).toHaveLength(1);
 });

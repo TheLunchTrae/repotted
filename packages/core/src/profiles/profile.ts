@@ -10,7 +10,6 @@ import {
   isScalar,
   isSeq,
   parse,
-  type Scalar,
   parseDocument,
   stringify,
   visit,
@@ -21,7 +20,9 @@ import { z } from 'zod';
 
 import { isDeepEqual } from '../shared/equal.js';
 import { replaceFile } from '../shared/files.js';
+import type { ConfigurationProblem } from './editing.js';
 import { describeOwnerType, draftOwnerConflicts, type OwnerConflict, ownerConflicts, type OwnerType } from './owner.js';
+import { moveLeadingCommentAndBlankLine, profileFields, removeUnknownProfileFields } from './profile-fields.js';
 import {
   actionsSettings,
   type AutolinkEntry,
@@ -49,9 +50,12 @@ import {
 import { activeProfileSettings, activeSettings } from './setting-dependencies.js';
 
 export class ProfileError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
+  readonly problems: readonly ConfigurationProblem[];
+
+  constructor(message: string, options?: ErrorOptions & { readonly problems?: readonly ConfigurationProblem[] }) {
     super(message, options);
     this.name = 'ProfileError';
+    this.problems = options?.problems ?? [];
   }
 }
 
@@ -110,12 +114,13 @@ function duplicateKeys<Entry>(
   list: readonly Entry[] | undefined,
   label: (entry: Entry) => string,
   key: (entry: Entry) => string,
-): string[] {
+  at: (entry: Entry) => readonly PropertyKey[],
+): ValueProblem[] {
   const keys = new Set<string>();
-  const problems: string[] = [];
+  const problems: ValueProblem[] = [];
   for (const entry of list ?? []) {
     if (keys.has(key(entry))) {
-      problems.push(`${label(entry)} appears more than once`);
+      problems.push({ path: at(entry), message: `${label(entry)} appears more than once` });
     }
     keys.add(key(entry));
   }
@@ -148,14 +153,16 @@ export interface Layer<Read extends LayerRead> {
   readonly noun: string;
   readonly schema: LayerSchema<Read>;
   readonly ownTopLevelKeys: ReadonlySet<string>;
+  readonly removeUnknownFields?: (document: Document) => void;
   /** Throws when the edited file, resolved, is not one to save. */
   readonly check: (edited: ResolvedLayer<Read>) => void;
 }
 
 const profileLayer: Layer<LayerRead> = {
   noun: 'profile',
-  schema: profileFile.transform((layer) => ({ layer })),
+  schema: z.preprocess((value) => profileFields(value).known, profileFile).transform((layer) => ({ layer })),
   ownTopLevelKeys: new Set(),
+  removeUnknownFields: removeUnknownProfileFields,
   check: () => undefined,
 };
 
@@ -360,7 +367,9 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
   }
   const result = kind.schema.safeParse(data);
   if (!result.success) {
-    throw new ProfileError(`${source} is not a valid ${kind.noun}:\n${describe(result.error)}`);
+    throw new ProfileError(`${source} is not a valid ${kind.noun}:\n${describe(result.error)}`, {
+      problems: result.error.issues.map((issue) => ({ file: source, path: issue.path, message: issue.message })),
+    });
   }
   const { autolinks, rulesets, environments, labels, drafts, ...settings } = result.data.layer;
   const [ownAutolinks, draftAutolinks] = partition<AutolinkEntry, DraftAutolink>(autolinks, isDraftAutolink);
@@ -373,41 +382,49 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
       ownAutolinks,
       (entry) => `Autolink "${entry.key_prefix}"`,
       (entry) => entry.key_prefix,
+      (entry) => ['autolinks', autolinks?.indexOf(entry) ?? 0, 'key_prefix'],
     ),
     ...duplicateKeys(
       ownRulesets,
       (entry) => `Ruleset "${entry.name}"`,
       (entry) => entry.name,
+      (entry) => ['rulesets', rulesets?.indexOf(entry) ?? 0, 'name'],
     ),
     ...duplicateKeys(
       ownEnvironments,
       (entry) => `Environment "${entry.name}"`,
       (entry) => environmentKey(entry.name),
+      (entry) => ['environments', environments?.indexOf(entry) ?? 0, 'name'],
     ),
     ...duplicateKeys(
       ownLabels,
       (entry) => `Label "${entry.name}"`,
       (entry) => labelKey(entry.name),
+      (entry) => ['labels', labels?.indexOf(entry) ?? 0, 'name'],
     ),
     ...duplicateKeys(
       draftAutolinks,
       (entry) => `Draft autolink "${entry.key_prefix}"`,
       (entry) => entry.key_prefix,
+      (entry) => ['autolinks', autolinks?.indexOf(entry) ?? 0, 'key_prefix'],
     ),
     ...duplicateKeys(
       draftRulesets,
       (entry) => `Draft ruleset "${entry.name}"`,
       (entry) => entry.name,
+      (entry) => ['rulesets', rulesets?.indexOf(entry) ?? 0, 'name'],
     ),
     ...duplicateKeys(
       draftEnvironments,
       (entry) => `Draft environment "${entry.name}"`,
       (entry) => environmentKey(entry.name),
+      (entry) => ['environments', environments?.indexOf(entry) ?? 0, 'name'],
     ),
     ...duplicateKeys(
       draftLabels,
       (entry) => `Draft label "${entry.name}"`,
       (entry) => labelKey(entry.name),
+      (entry) => ['labels', labels?.indexOf(entry) ?? 0, 'name'],
     ),
     ...unsetProblems(drafts?.unset, {
       ...drafts,
@@ -415,10 +432,13 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
       rulesets: draftRulesets,
       environments: draftEnvironments,
       labels: draftLabels,
-    }),
+    }).map((message) => ({ path: ['drafts', 'unset'], message })),
   ];
   if (problems.length > 0) {
-    throw new ProfileError(`${source} is not a valid ${kind.noun}:\n${problems.map((line) => `✖ ${line}`).join('\n')}`);
+    throw new ProfileError(
+      `${source} is not a valid ${kind.noun}:\n${problems.map(({ message }) => `✖ ${message}`).join('\n')}`,
+      { problems: problems.map((problem) => ({ ...problem, file: source })) },
+    );
   }
   return {
     read: result.data,
@@ -613,7 +633,9 @@ function toProfile(merged: SourcedProfile): unknown {
 function validate(data: unknown, source: string): Profile {
   const result = profile.safeParse(data);
   if (!result.success) {
-    throw new ProfileError(`${source} is not a valid profile:\n${describe(result.error)}`);
+    throw new ProfileError(`${source} is not a valid profile:\n${describe(result.error)}`, {
+      problems: result.error.issues.map((issue) => ({ file: source, path: issue.path, message: issue.message })),
+    });
   }
   return result.data;
 }
@@ -741,24 +763,6 @@ function draftWarnings(drafts: Drafts): string[] {
     warnings.push(...entryProblems(labelEntry, entry).map((line) => `Draft label "${entry.name}": ${line}`));
   }
   return warnings;
-}
-
-/**
- * What a file's drafts lose as they merge: a Pages draft with `absent: true`
- * turns the site off, so the other keys beside it are left out, though the
- * file keeps them and finishing the draft would then fail.
- */
-function fileDraftWarnings(drafts: Drafts, file: string): string[] {
-  const pages = drafts.pages;
-  if (pages?.['absent'] !== true) {
-    return [];
-  }
-  const others = Object.keys(pages).filter((key) => key !== 'absent');
-  return others.length === 0
-    ? []
-    : [
-        `Draft pages in ${path.basename(file)}: absent turns the Pages site off, so ${others.join(', ')} ${others.length === 1 ? 'is' : 'are'} left out`,
-      ];
 }
 
 /**
@@ -908,7 +912,16 @@ async function readChain<Read extends LayerRead>(
     path.dirname(first.file),
     first.file,
     (named) => `${first.file} names ${named} more than once in extends`,
-  );
+  ).catch((error: unknown) => {
+    if (error instanceof ProfileError && error.problems.length > 0) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new ProfileError(message, {
+      cause: error,
+      problems: [{ file: first.file, path: ['extends'], message }],
+    });
+  });
   return {
     head: head.read,
     text,
@@ -1174,6 +1187,7 @@ function resolveChain(
   if (draftConflicts.length > 0) {
     throw new ProfileError(
       `${source} is not a valid profile:\n${draftConflicts.map(({ message, path: at }) => `✖ ${message}\n  → at ${at.join('.')}`).join('\n')}`,
+      { problems: draftConflicts.map(({ message, path: at }) => ({ file: source, path: at, message })) },
     );
   }
   return {
@@ -1182,7 +1196,7 @@ function resolveChain(
       profile: applied,
       drafts,
       warnings: [
-        ...chain.flatMap((link) => [...fileDraftWarnings(link.drafts, link.file), ...unsetWarnings(link)]),
+        ...chain.flatMap(unsetWarnings),
         ...draftWarnings(drafts),
         ...renamedDraftWarnings(applied, drafts),
         // A draft entry may be unfinished, so what its owner type lacks is a warning until it is finished.
@@ -1335,6 +1349,8 @@ export interface SettingEdit {
 export interface EntryEdit {
   readonly list: 'rulesets' | 'environments' | 'labels';
   readonly name: string;
+  /** The original list position when repairing an unnamed or duplicate entry. */
+  readonly index?: number | undefined;
   readonly draft?: boolean;
   readonly entry: Readonly<Record<string, unknown>> | undefined;
 }
@@ -1342,9 +1358,8 @@ export interface EntryEdit {
 export type ProfileEdit = SettingEdit | EntryEdit;
 
 /**
- * A draft may name a key the section does not have yet, so any key goes, and
- * a key inside a group such as `selected_actions` goes by the group's key as
- * settings do.
+ * A draft addresses a setting or a key within a group. Unknown names are
+ * removed with the rest of the file's unknown fields before saving.
  */
 function isDraftPath(path: readonly string[]): boolean {
   const [section, key, inner, ...rest] = path;
@@ -1357,6 +1372,24 @@ function isDraftPath(path: readonly string[]): boolean {
 }
 
 function isEditable(path: readonly string[]): boolean {
+  if (
+    path.length === 1 &&
+    [
+      'extends',
+      'owner_type',
+      'drafts',
+      ...settingsSections,
+      'autolinks',
+      'rulesets',
+      'environments',
+      'labels',
+    ].includes(path[0] ?? '')
+  ) {
+    return true;
+  }
+  if (settingPath(path) === 'group') {
+    return true;
+  }
   if (path.length === 1 && path[0] === 'owner_type') {
     return true;
   }
@@ -1454,8 +1487,11 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
     throw new ProfileError(`The entry for ${edit.name} needs a name`);
   }
   const touched = new Map([
-    [`${edit.list}:${String(from)}:${key(edit.name)}`, `${noun(from)} ${edit.name}`],
-    [`${edit.list}:${String(to)}:${key(name)}`, `${noun(to)} ${name}`],
+    [
+      `${edit.list}:${String(from)}:${edit.index === undefined ? key(edit.name) : `#${edit.index}`}`,
+      `${noun(from)} ${edit.name}`,
+    ],
+    [`${edit.list}:${String(to)}:${edit.index === undefined ? key(name) : `#${edit.index}`}`, `${noun(to)} ${name}`],
   ]);
   for (const [each, label] of touched) {
     if (seen.has(each)) {
@@ -1475,7 +1511,7 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
     list?.items.findIndex(
       (item) => isMap(item) && key(String(item.get('name'))) === key(wanted) && (item.get('draft') === true) === draft,
     ) ?? -1;
-  const index = find(edit.name, from);
+  const index = edit.index ?? find(edit.name, from);
   if (edit.entry === undefined) {
     if (list !== undefined && index !== -1) {
       list.items.splice(index, 1);
@@ -1486,7 +1522,9 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
     return;
   }
   const other = find(name, to);
-  if (other !== -1 && other !== index) {
+  // Positional repairs can rename another duplicate later in the same edit.
+  // The complete edited file is checked for duplicate names before saving.
+  if (edit.index === undefined && other !== -1 && other !== index) {
     const action =
       key(name) !== key(edit.name)
         ? `rename ${edit.name}`
@@ -1506,21 +1544,6 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
       list.flow = false;
     }
     list.items.push(document.createNode(edit.entry));
-  }
-}
-
-function moveLeadingCommentAndBlankLine(from: Scalar, to: Scalar): void {
-  if (from.commentBefore !== undefined && from.commentBefore !== null) {
-    // A comment the key already has stays, under the one that moves.
-    to.commentBefore =
-      to.commentBefore === undefined || to.commentBefore === null
-        ? from.commentBefore
-        : `${from.commentBefore}\n${to.commentBefore}`;
-    from.commentBefore = null;
-  }
-  if (from.spaceBefore === true) {
-    to.spaceBefore = true;
-    from.spaceBefore = false;
   }
 }
 
@@ -1562,7 +1585,7 @@ interface EditedLayer<Read extends LayerRead> {
    * Resolves the chain as it was read. Only a preview needs it, and an edit
    * can fix a chain that no longer resolves, so it is not resolved up front.
    */
-  readonly before: () => ResolvedProfile;
+  readonly before: () => Promise<ResolvedProfile>;
   readonly result: ResolvedLayer<Read>;
   readonly file: string;
   readonly original: string;
@@ -1571,20 +1594,46 @@ interface EditedLayer<Read extends LayerRead> {
 
 async function editChain<Read extends LayerRead>(
   file: string,
-  edits: (head: Read) => readonly ProfileEdit[],
+  edits: readonly ProfileEdit[] | ((head: Read) => readonly ProfileEdit[]),
   layer: Layer<Read>,
 ): Promise<EditedLayer<Read>> {
-  const { head, text: original, links, listedProfiles } = await readChain(file, layer);
-  const [own, ...base] = links;
-  const document = parseDocument(original);
+  const own = await readText(path.resolve(file), layer.noun);
+  const original = own.text;
+  const document: Document = parseDocument(original);
+  if (document.errors.length > 0) {
+    throw new ProfileError(`${own.file} is not valid YAML`);
+  }
+  const changes = typeof edits === 'function' ? edits(parseLayer(original, own.file, layer).read) : edits;
+  if (!isMap(document.contents)) {
+    document.contents = document.createNode({});
+  }
   const seen = new Set<string>();
-  for (const edit of edits(head)) {
+  const position = (edit: ProfileEdit): number =>
+    'list' in edit
+      ? (edit.index ?? -1)
+      : edit.path.length === 2 &&
+          ['autolinks', 'rulesets', 'environments', 'labels'].includes(edit.path[0] ?? '') &&
+          /^\d+$/u.test(edit.path[1] ?? '')
+        ? Number(edit.path[1])
+        : -1;
+  // Positions refer to the original list, so removals must run from the end.
+  for (const edit of [...changes].sort((a, b) => position(b) - position(a))) {
     if ('list' in edit) {
       editEntry(document, edit, seen);
       continue;
     }
     const key = edit.path.join('.');
-    if (!isEditable(edit.path) && !layer.ownTopLevelKeys.has(key)) {
+    const removesListItem =
+      edit.value === undefined &&
+      edit.path.length === 2 &&
+      ['autolinks', 'rulesets', 'environments', 'labels'].includes(edit.path[0] ?? '') &&
+      /^\d+$/u.test(edit.path[1] ?? '');
+    const removesDraftSection =
+      edit.value === undefined &&
+      edit.path.length === 2 &&
+      edit.path[0] === 'drafts' &&
+      isSettingsSection(edit.path[1]);
+    if (!isEditable(edit.path) && !removesListItem && !removesDraftSection && !layer.ownTopLevelKeys.has(key)) {
       throw new ProfileError(`Cannot edit ${key}: it is not one setting of a profile section, or a draft of one`);
     }
     if (seen.has(key)) {
@@ -1596,6 +1645,12 @@ async function editChain<Read extends LayerRead>(
       continue;
     }
     if (edit.value !== undefined) {
+      for (let depth = 1; depth < edit.path.length; depth += 1) {
+        const parent = edit.path.slice(0, depth);
+        if (!isMap(document.getIn(parent, true))) {
+          document.setIn(parent, document.createNode({}));
+        }
+      }
       document.setIn(
         edit.path,
         edit.value !== null && typeof edit.value === 'object' ? document.createNode(edit.value) : edit.value,
@@ -1618,11 +1673,14 @@ async function editChain<Read extends LayerRead>(
       }
     }
   }
+  layer.removeUnknownFields?.(document);
+  const { links, listedProfiles } = await readChain(own.file, layer, document.toString({ lineWidth: 0 }));
+  const [, ...base] = links;
   const indent = /^( +)\S/mu.exec(original)?.[1]?.length ?? 2;
   const resolveEdited = () => {
     const edited = parseLayer(document.toString({ lineWidth: 0, indent }), own.file, layer);
     const editedLinks = [
-      { file: own.file, parsed: edited.own, drafts: edited.drafts, listedIn: own.listedIn },
+      { file: own.file, parsed: edited.own, drafts: edited.drafts, listedIn: new Set<number>() },
       ...base,
     ];
     return {
@@ -1659,7 +1717,13 @@ async function editChain<Read extends LayerRead>(
   }
   const text = document.toString({ lineWidth: 0, indent });
   layer.check(result);
-  return { before: () => resolveChain(links, own.file, head.adjust).resolved, result, file: own.file, original, text };
+  return {
+    before: async () => (await resolveLayer(own.file, layer, original)).resolved,
+    result,
+    file: own.file,
+    original,
+    text,
+  };
 }
 
 /**
@@ -1668,7 +1732,7 @@ async function editChain<Read extends LayerRead>(
  */
 export async function editLayer<Read extends LayerRead>(
   file: string,
-  edits: (head: Read) => readonly ProfileEdit[],
+  edits: readonly ProfileEdit[] | ((head: Read) => readonly ProfileEdit[]),
   layer: Layer<Read>,
 ): Promise<ResolvedLayer<Read>> {
   const edited = await editChain(file, edits, layer);
@@ -1690,7 +1754,12 @@ export async function editLayer<Read extends LayerRead>(
  * when the result, laid over the profiles it extends, is a valid profile.
  */
 export async function editProfile(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
-  return (await editLayer(file, () => edits, profileLayer)).resolved;
+  return (await editLayer(file, edits, profileLayer)).resolved;
+}
+
+/** Checks the corrected result even when the saved configuration is invalid. */
+export async function previewProfileChanges(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
+  return (await editChain(file, edits, profileLayer)).result.resolved;
 }
 
 export async function previewLayer<Read extends LayerRead>(
@@ -1708,8 +1777,8 @@ export interface ProfilePreview {
 }
 
 export async function previewProfile(file: string, edits: readonly ProfileEdit[]): Promise<ProfilePreview> {
-  const { before, result } = await editChain(file, () => edits, profileLayer);
-  return { before: before(), after: result.resolved };
+  const { before, result } = await editChain(file, edits, profileLayer);
+  return { before: await before(), after: result.resolved };
 }
 
 function overrides(own: Link, { edit }: OwnerConflict): boolean {

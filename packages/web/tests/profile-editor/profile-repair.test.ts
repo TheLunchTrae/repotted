@@ -9,7 +9,7 @@ afterEach(async () => {
 });
 
 const file = '/profiles/teams/web.yaml';
-const invalid = 'repository:\n  has_wiki: broken\n';
+const invalid = 'repository: [\n';
 const corrected = '# Keep this comment.\r\nextends: ../base.yaml\r\nrepository:\r\n  has_wiki: true\r\n';
 const write = (work: () => Promise<void>): Promise<void> => work();
 
@@ -41,12 +41,7 @@ test('previews replacement text at its file path without writing the invalid fil
   await expect(resolveProfile(file, corrected)).rejects.toThrow('extends itself');
 });
 
-test.each([
-  invalid,
-  'repository: [\n',
-  'labels:\n  - name: bug\n    color: aaaaaa\n  - name: bug\n    color: bbbbbb\n',
-  'extends: missing.yaml\n',
-])('an invalid profile offers a validated whole-file repair: %s', async (text) => {
+test.each([invalid, 'repository: [\n'])('an invalid profile offers a validated whole-file repair: %s', async (text) => {
   const editor = await opened(text);
   const repair = repairOf(editor);
   expect(repair.text.value).toBe(text);
@@ -111,22 +106,15 @@ test('a whole-file save refuses a change made while it waits in the queue', asyn
   expect(repair.text.value).toBe(corrected);
 });
 
-test('a save validates again after a base profile changes while it waits', async () => {
+test('syntax repair opens the settings even when the configuration or a base is invalid', async () => {
   const editor = await opened();
   const repair = repairOf(editor);
-  await repair.type(corrected);
-  const release = Promise.withResolvers<undefined>();
-  const saving = editor.save(async (work) => {
-    await release.promise;
-    await work();
-  });
-  await writeFile('/profiles/base.yaml', 'repository: [\n');
-  release.resolve(undefined);
-  await saving;
-  expect(repair.saveError.value).toContain('base.yaml');
-  expect(repair.canSave.value).toBe(false);
-  expect(await readFile(file, 'utf8')).toBe(invalid);
-  expect(repair.text.value).toBe(corrected);
+  await repair.type('extends: ../missing.yaml\nrepository:\n  has_wiki: broken\n');
+  expect(repair.canSave.value).toBe(true);
+  await editor.save(write);
+  expect(editor.repair.value).toBeUndefined();
+  expect(editor.loaded.value).toBe(true);
+  expect(editor.problemsBlockingSave.value.length).toBeGreaterThan(0);
 });
 
 test('text typed while saving stays unsaved, including a return to the original text', async () => {
@@ -181,3 +169,20 @@ test.each([invalid, 'repository:\n  has_wiki: false\n'])(
     }
   },
 );
+
+test('a syntax repair removes unknown keys while preserving known invalid values for form validation', async () => {
+  const editor = await opened();
+  const repair = repairOf(editor);
+  await repair.type('# Keep this header\nunknown: true\nrepository: { has_wiki: wrong, has_wikki: true }\n');
+  expect(repair.canSave.value).toBe(true);
+  await editor.save(write);
+  expect(editor.repair.value).toBeUndefined();
+  expect(editor.loaded.value).toBe(true);
+  expect(editor.dirty.value).toBe(false);
+  const text = await readFile(file, 'utf8');
+  expect(text).toContain('# Keep this header');
+  expect(text).toContain('has_wiki: wrong');
+  expect(text).not.toContain('has_wikki');
+  expect(text).not.toContain('unknown');
+  expect(editor.problemCountByTab.value.get('repository')).toBe(1);
+});
