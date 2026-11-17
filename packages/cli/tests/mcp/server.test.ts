@@ -43,6 +43,39 @@ async function call(
 }
 
 describe('MCP server', () => {
+  test('captures one named reusable ruleset and plans its direct application without unrelated sections', async () => {
+    const github = new FakeGitHub({
+      rulesets: [
+        {
+          id: 1,
+          name: 'Main',
+          target: 'branch',
+          enforcement: 'active',
+          bypass_actors: [],
+          rules: [{ type: 'deletion' }],
+        },
+        { id: 2, name: 'Release', target: 'tag', enforcement: 'evaluate', bypass_actors: [], rules: [] },
+      ],
+    });
+    const client = await connect(github);
+    const captured = await call(client, 'capture', { repository: 'lunch/app', kind: 'ruleset', name: 'Release' });
+    expect(captured.isError).toBe(false);
+    expect(captured.text).toContain('kind: ruleset');
+    expect(captured.text).toContain('name: Release');
+    expect(captured.text).not.toContain('name: Main');
+    const planned = await call(client, 'plan', {
+      repository: 'lunch/app',
+      profile: captured.text.replace('enforcement: evaluate', 'enforcement: active'),
+    });
+    expect(planned.isError).toBe(false);
+    const id = /plan_id: (\S+)/u.exec(planned.text)?.[1];
+    expect((await call(client, 'apply', { plan_id: id })).isError).toBe(false);
+    expect(github.writes.map((write) => write.path)).toEqual(['/repos/lunch/app/rulesets/2']);
+    expect((await call(client, 'capture', { repository: 'lunch/app', kind: 'ruleset', name: 'Missing' })).isError).toBe(
+      true,
+    );
+  });
+
   test('plans without writing, then applies that plan by its id', async () => {
     const github = new FakeGitHub();
     const client = await connect(github);
