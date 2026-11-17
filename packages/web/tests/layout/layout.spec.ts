@@ -578,10 +578,10 @@ test('import waits for its selected file before creating a definition', async ({
   await page.goto('/profiles/new');
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('imported-policy');
   await page.evaluate(() => {
-    const read = File.prototype.text;
+    const read = (file: File): Promise<string> => Blob.prototype.text.call(file);
     File.prototype.text = async function () {
       await new Promise<void>((resolve) => window.addEventListener('release-import', () => resolve(), { once: true }));
-      return read.call(this);
+      return read(this);
     };
   });
   await page.getByLabel('Import YAML file').setInputFiles({
