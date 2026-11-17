@@ -509,7 +509,7 @@ merge: { allow_rebase_merge: false }
   test.each([
     ['shows', (file: string) => resolveStagedApply(file)],
     ['plans', async (file: string) => (await planStagedApply(new FakeGitHub(), file)).staged],
-  ])('%s its file as one read found it, though the file changes meanwhile', async (_, read) => {
+  ])('%s handles a file that changes during its read', async (operation, read) => {
     const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     await editStagedApply(files.staged, [
@@ -521,6 +521,10 @@ merge: { allow_rebase_merge: false }
       `apply_to: lunch/app\nextends: ${path.basename(files.profile)}\nrepository: { has_issues: false }\n`,
     );
 
+    if (operation === 'plans') {
+      await expect(read(files.staged)).rejects.toThrow('changed while GitHub was being read');
+      return;
+    }
     const staged = await read(files.staged);
 
     expect(staged.exclude).toEqual(['repository.delete_branch_on_merge']);
