@@ -622,6 +622,7 @@ export class Apply {
     const turn = this.#turn;
     const reviewedAssignment = this.#assignmentKey;
     this.#checkAssignment(repository, reviewedAssignment);
+    const sourceVersions = await Promise.all(this.#profiles.map((source) => profileVersion(source.file)));
     const [staged, access] = await Promise.all([
       planStagedApply(this.#github, file),
       readAccess(this.#github, parseRepo(repository)),
@@ -632,6 +633,15 @@ export class Apply {
     const profile = profileNameOfApply(staged.staged.profiles);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));
     const { assignment, appliedVersions } = await this.#assignmentOf(repository, staged.staged, staged.plan);
+    if (
+      assignment.kind !== 'none' &&
+      !isSameList(
+        sourceVersions,
+        appliedVersions.map((source) => source.version),
+      )
+    ) {
+      throw new Error('The profile sources changed during review. Review again before applying.');
+    }
     this.#checkAssignment(repository, reviewedAssignment);
     return {
       assignment,

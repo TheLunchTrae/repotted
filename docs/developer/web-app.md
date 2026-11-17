@@ -440,6 +440,9 @@ compares the staged ownership with the saved choice, so a one-time override
 never advances the assignment baseline. A no-change single apply also
 revalidates through `applyPlan` before recording.
 
+A review reads source versions before live planning and checks them against
+the versions it would record afterward. A changed source refuses the review,
+so its plan and assignment baseline cannot describe different source states.
 A successful full apply records the versions and ownership reviewed without
 changing the repository's own layers. Batch reviews carry those versions beside each
 plan, and record them only for successful or in-line members, without

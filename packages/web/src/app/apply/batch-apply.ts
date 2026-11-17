@@ -496,6 +496,13 @@ export class BatchApply {
       }
     };
     checkAssignments();
+    const batch = await readBatch(folder);
+    const sourceFiles = [...new Set(batch.members.flatMap((member) => member.profiles ?? batch.profiles))];
+    const sourceVersions = new Map(
+      await Promise.all(
+        sourceFiles.map(async (file) => [file, await profileVersion(file).catch(() => undefined)] as const),
+      ),
+    );
     const plan = await planBatch(this.#github, folder);
     checkAssignments();
     if (plan.failures.some((failure) => failure.error.kind === 'signed_out')) {
@@ -520,15 +527,22 @@ export class BatchApply {
           JSON.stringify([...staged.authoritative].toSorted()) ===
             JSON.stringify([...assignments.authoritativeOf(member.repository)].toSorted())
         ) {
-          appliedVersions.set(
-            member.repository,
-            await Promise.all(
-              member.staged.profiles.map(async (file) => ({
-                profile: assignments.pathOf(file) ?? file,
-                version: await profileVersion(file),
-              })),
-            ),
+          const versions = await Promise.all(
+            member.staged.profiles.map(async (file) => ({
+              profile: assignments.pathOf(file) ?? file,
+              version: await profileVersion(file),
+            })),
           );
+          if (
+            versions.some(
+              (version, index) => sourceVersions.get(member.staged.profiles[index] ?? '') !== version.version,
+            )
+          ) {
+            throw new Error(
+              `${member.repository}'s profile sources changed during review. Review again before applying.`,
+            );
+          }
+          appliedVersions.set(member.repository, versions);
         }
       }
     }

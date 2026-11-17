@@ -963,3 +963,51 @@ test('transitive reusable edits change assignment status and missing definitions
   await apply.apply();
   expect(github.writes).toEqual([]);
 });
+
+test.each(['single', 'batch'] as const)(
+  'a %s review cannot record source versions read after its plan changed',
+  async (kind) => {
+    const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: false }\n' });
+    const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+    assignments.setProfiles('lunch/app', ['base.yaml']);
+    const fake = new FakeGitHub();
+    let liveWasRead = false;
+    const github = {
+      request: async (...args: Parameters<FakeGitHub['request']>): Promise<unknown> => {
+        liveWasRead = true;
+        return fake.request(...args);
+      },
+    };
+    const versions = await import('../../src/app/repositories/repository-profiles.js');
+    const readVersion = versions.profileVersion;
+    vi.spyOn(versions, 'profileVersion').mockImplementation(async (file) => {
+      if (liveWasRead) {
+        await writeFile(`${folder}/base.yaml`, 'repository: { has_wiki: true }\n');
+      }
+      return readVersion(file);
+    });
+    const chosenProfiles = [{ file: `${folder}/base.yaml`, name: 'base' }];
+    if (kind === 'single') {
+      const apply = new Apply(
+        github,
+        () => undefined,
+        (work) => work(),
+        assignments,
+      );
+      await apply.startReview('lunch/app', chosenProfiles);
+      expect(apply.state.value.kind).toBe('failed');
+      if (apply.state.value.kind === 'failed') {
+        expect(apply.state.value.message).toContain('sources changed during review');
+      }
+    } else {
+      const batch = new BatchApply(github, () => undefined, assignments);
+      await batch.startFromProfiles([{ repository: 'lunch/app', profiles: chosenProfiles }]);
+      expect(batch.state.value.kind).toBe('failed');
+      if (batch.state.value.kind === 'failed') {
+        expect(batch.state.value.message).toContain('sources changed during review');
+      }
+    }
+    expect(assignments.assignment('lunch/app')?.applied).toBeUndefined();
+    expect(fake.writes).toEqual([]);
+  },
+);
