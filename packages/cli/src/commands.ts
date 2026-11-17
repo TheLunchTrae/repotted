@@ -23,6 +23,9 @@ import {
   planBatch,
   readBatch,
   captureProfile,
+  captureDefinition,
+  stringifyDefinition,
+  definitionKind,
   checkActionPatterns,
   createGitHub,
   createPlan,
@@ -98,6 +101,7 @@ const usage = `Usage: repotted <command> [options]
 
 Commands:
   capture <owner/repo> [--output file]          Write the repository's setup as a YAML profile
+        [--kind actions-policy]                Capture only a reusable Actions policy
   plan <owner/repo> --profile file [--out file]  Show the changes a profile needs; --out saves the plan
   plan [owner/repo] --staged file [--out file]   Show the changes a staged apply needs, or each repository
                                                  of a batch, when file is a batch folder
@@ -178,11 +182,16 @@ async function capture(io: Io, args: string[]): Promise<number> {
   const { positionals, values } = parseArgs({
     args,
     allowPositionals: true,
-    options: { output: { type: 'string', short: 'o' }, json: { type: 'boolean' } },
+    options: { output: { type: 'string', short: 'o' }, json: { type: 'boolean' }, kind: { type: 'string' } },
   });
   const repo = parseRepo(only(positionals, 'repository'));
-  const result = await captureProfile(await io.github(), repo);
-  const yaml = stringifyProfile(result.profile);
+  const kind = values.kind === undefined ? undefined : definitionKind.parse(values.kind);
+  const captured =
+    kind === undefined
+      ? await captureProfile(await io.github(), repo)
+      : await captureDefinition(await io.github(), repo, kind);
+  const result = 'definition' in captured ? { profile: captured.definition, warnings: captured.warnings } : captured;
+  const yaml = 'definition' in captured ? stringifyDefinition(captured.definition) : stringifyProfile(captured.profile);
   if (values.output !== undefined) {
     await writeFile(values.output, yaml);
   }

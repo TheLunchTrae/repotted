@@ -8,6 +8,9 @@ import {
   describeFailure,
   describeWarning,
   captureProfile,
+  captureDefinition,
+  stringifyDefinition,
+  definitionKind,
   checkActionPatterns,
   createPlan,
   describeActionCheck,
@@ -78,17 +81,20 @@ export async function createServer(options: ServerOptions): Promise<McpServer> {
     {
       title: 'Capture a repository',
       description: 'Reads a repository and returns a YAML profile that describes its current setup.',
-      inputSchema: { repository },
+      inputSchema: {
+        repository,
+        kind: definitionKind.optional().describe('Capture a reusable definition instead of a whole profile'),
+      },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    ({ repository: name }) =>
+    ({ repository: name, kind }) =>
       attempt(async () => {
-        const result = await captureProfile(await client(), parseRepo(name));
-        return text(
-          [stringifyProfile(result.profile), ...result.warnings.map((warning) => `# ${describeWarning(warning)}`)].join(
-            '\n',
-          ),
-        );
+        const result =
+          kind === undefined
+            ? await captureProfile(await client(), parseRepo(name))
+            : await captureDefinition(await client(), parseRepo(name), kind);
+        const yaml = 'definition' in result ? stringifyDefinition(result.definition) : stringifyProfile(result.profile);
+        return text([yaml, ...result.warnings.map((warning) => `# ${describeWarning(warning)}`)].join('\n'));
       }),
   );
 

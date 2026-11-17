@@ -870,7 +870,8 @@ async function readExtendsChain(start: string, listingFile: string | undefined):
 
 async function referencedLinks(link: Link, directory = path.dirname(link.file)): Promise<Link[]> {
   const links: Link[] = [];
-  for (const [section, value] of Object.entries(link.parsed.references ?? {})) {
+  const references: Readonly<Record<string, string | readonly string[] | undefined>> = link.parsed.references ?? {};
+  for (const [section, value] of Object.entries(references)) {
     const names = typeof value === 'string' ? [value] : (value ?? []);
     for (const reference of names) {
       const file = path.resolve(directory, reference);
@@ -977,6 +978,12 @@ async function readChain<Read extends LayerRead>(
       problems: [{ file: first.file, path: ['extends'], message }],
     });
   });
+  if (
+    kind === profileLayer &&
+    appliedFirst.some((link) => listedProfiles.includes(link.file) && link.parsed.kind !== undefined)
+  ) {
+    throw new ProfileError(`${first.file}: use references instead of extends for reusable definitions`);
+  }
   return {
     head: head.read,
     text,
@@ -1300,6 +1307,9 @@ export async function parseProfile(text: string, directory: string): Promise<Res
   const parsed = parseLayer(text, 'The profile', profileLayer);
   const [parent] = parsed.extends;
   const base = parent === undefined ? [] : (await readChain(path.resolve(directory, parent), profileLayer)).links;
+  if (base.length > 0 && base[0].parsed.kind !== undefined) {
+    throw new ProfileError('The profile must use references instead of extends for reusable definitions');
+  }
   const own = { file: 'The profile', parsed: parsed.own, drafts: parsed.drafts, listedIn: new Set<number>() };
   return resolveChain([own, ...(await referencedLinks(own, directory)).toReversed(), ...base], 'The profile').resolved;
 }
@@ -1336,6 +1346,21 @@ export interface ProfileListing {
   readonly problem: string | null;
   /** Null when it is for any owner or doesn't resolve. */
   readonly owner_type: OwnerType | null;
+}
+
+/** Reference paths are relative to the file that contains them. */
+export function declaredReferences(text: string): string[] {
+  const value: unknown = parse(text);
+  if (!isRecord(value) || !isRecord(value['references'])) {
+    return [];
+  }
+  return Object.values(value['references']).flatMap((item) =>
+    typeof item === 'string'
+      ? [item]
+      : Array.isArray(item)
+        ? item.filter((part): part is string => typeof part === 'string')
+        : [],
+  );
 }
 
 async function listFolder(root: string, folder: string, entries: Dirent[], listings: ProfileListing[]): Promise<void> {
@@ -1938,21 +1963,6 @@ export function withExtends(text: string, base: string): string {
 
 export function stringifyProfile(value: Profile): string {
   return stringify(activeProfileSettings(value), { lineWidth: 0 });
-}
-
-/** Reference paths are relative to the file that contains them. */
-export function declaredReferences(text: string): string[] {
-  const value: unknown = parse(text);
-  if (!isRecord(value) || !isRecord(value['references'])) {
-    return [];
-  }
-  return Object.values(value['references']).flatMap((item) =>
-    typeof item === 'string'
-      ? [item]
-      : Array.isArray(item)
-        ? item.filter((part): part is string => typeof part === 'string')
-        : [],
-  );
 }
 
 export function withRewrittenReferences(text: string, rewrite: (reference: string) => string): string {
