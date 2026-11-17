@@ -101,6 +101,8 @@ const usage = `Usage: repotted <command> [options]
 
 Commands:
   capture <owner/repo> [--output file]          Write the repository's setup as a YAML profile
+          [--kind actions-policy|ruleset]      Capture one reusable definition instead
+          [--name target]                     The GitHub ruleset name to capture
         [--kind actions-policy]                Capture only a reusable Actions policy
   plan <owner/repo> --profile file [--out file]  Show the changes a profile needs; --out saves the plan
   plan [owner/repo] --staged file [--out file]   Show the changes a staged apply needs, or each repository

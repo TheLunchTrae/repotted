@@ -493,13 +493,14 @@ profile. Update consumers deliberately before deleting a shared definition.
 
 ### Manage reusable definitions in the web app
 
-On **New profile or definition**, choose **Actions policy** to create a policy
-with the existing Actions controls. You can capture it from a repository,
+On **New profile or definition**, choose **Actions policy** or **Ruleset** to
+create a definition with the existing section controls. For a ruleset, enter
+its GitHub name in **Target name**. You can capture it from a repository,
 duplicate a saved file, or import YAML. **Export YAML** downloads the selected
 file. Definitions share profiles' browser, local-folder, and config-repository
 storage and sync.
 
-Open a profile's **Reusable definitions** controls to select a policy and
+Open a profile's **Reusable definitions** controls to select a policy or rulesets and
 **Save references**. Inline values override referenced values. A definition
 names its dependent profiles before saving; changing it takes effect on their
 next resolution. Deleting a referenced definition is refused until those

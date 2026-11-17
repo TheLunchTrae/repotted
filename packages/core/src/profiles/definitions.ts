@@ -33,7 +33,7 @@ export async function captureDefinition(
       throw new Error(`Expected one repository ruleset named ${targetName}, found ${matches.length}.`);
     }
     const { value, dropped } = withoutOwnerConflicts({ rulesets: [ruleset.parse(matches[0].ruleset)] }, owner);
-    if (value.rulesets?.length !== 1) {
+    if (value.rulesets.length !== 1) {
       throw new Error(`Ruleset ${targetName} is not supported for this repository's owner type.`);
     }
     return {

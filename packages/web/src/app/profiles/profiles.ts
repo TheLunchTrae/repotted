@@ -623,7 +623,7 @@ export class Profiles {
     if (
       definition?.multiple === true &&
       (profile.start.kind === 'empty' || profile.start.kind === 'repository') &&
-      !targetName
+      (targetName === undefined || targetName === '')
     ) {
       return `Give the ${definition.label.toLowerCase()} a target name.`;
     }
