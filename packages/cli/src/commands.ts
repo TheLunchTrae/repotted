@@ -343,7 +343,10 @@ async function plan(io: Io, args: string[]): Promise<number> {
     }
     const desired = await resolveProfile(values.profile);
     github = await io.github();
-    result = await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts));
+    result = {
+      ...(await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts))),
+      source: { profile: path.resolve(values.profile) },
+    };
   } else {
     if (values.profile !== undefined) {
       throw new UsageError('plan takes --profile or --staged, not both.');

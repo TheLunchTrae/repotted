@@ -647,7 +647,14 @@ export const draftSettings = z
   })
   .partial();
 
+export const definitionSections = { 'actions-policy': 'actions' } as const;
+export type DefinitionKind = keyof typeof definitionSections;
+export const definitionKind = z.enum(['actions-policy']);
+export const profileReferences = z.object({ actions: z.string().min(1).optional() }).strict();
+
 export const profileFile = z.object({
+  kind: definitionKind.optional(),
+  references: profileReferences.optional(),
   extends: z.string().min(1).optional(),
   owner_type: ownerType.optional(),
   repository: repositorySettings.optional(),
