@@ -27,7 +27,7 @@ import {
 } from '../profiles/schema.js';
 import { activeProfileSettings } from '../profiles/setting-dependencies.js';
 import { isDeepEqual } from '../shared/equal.js';
-import { resolveStagedApply } from '../staging/staged.js';
+import { planStagedApply } from '../staging/staged.js';
 import {
   type Change,
   isListSection,
@@ -581,35 +581,43 @@ function jsonValue(value: unknown): unknown {
   return copy;
 }
 
-/**
- * Applies a reviewed plan. The repository is planned again first, and the
- * plan only runs when that yields exactly the reviewed changes.
- */
-export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonly Change[]> {
+async function replan(github: GitHub, reviewed: Plan): Promise<Plan> {
   const source = reviewed.source;
+  if (source !== undefined && 'staged' in source) {
+    return (
+      await planStagedApply(github, source.staged, (staged) => {
+        if (staged.repository.toLowerCase() !== reviewed.repository.toLowerCase()) {
+          throw new Error('The staged apply now targets a different repository; review a fresh plan');
+        }
+      })
+    ).plan;
+  }
   const resolved =
     source === undefined
       ? undefined
       : 'profile' in source
         ? await resolveProfile(source.profile)
-        : 'staged' in source
-          ? await resolveStagedApply(source.staged)
-          : await parseProfile(source.text, source.directory);
-  if (
-    resolved !== undefined &&
-    'repository' in resolved &&
-    resolved.repository.toLowerCase() !== reviewed.repository.toLowerCase()
-  ) {
-    throw new Error('The staged apply now targets a different repository; review a fresh plan');
-  }
-  const current = await createPlan(
+        : await parseProfile(source.text, source.directory);
+  return createPlan(
     github,
     parseRepo(reviewed.repository),
     resolved?.profile ?? reviewed.desired,
     resolved === undefined ? reviewed.skipped : skippedDrafts(resolved.drafts),
     reviewed,
   );
-  if (!isDeepEqual(jsonValue(current.changes), jsonValue(reviewed.changes))) {
+}
+
+/**
+ * Applies a reviewed plan. The repository is planned again first, and the
+ * plan only runs when that yields exactly the reviewed changes.
+ */
+export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonly Change[]> {
+  const current = await replan(github, reviewed);
+  if (
+    !isDeepEqual(jsonValue(current.changes), jsonValue(reviewed.changes)) ||
+    !isDeepEqual(current.authoritative ?? [], reviewed.authoritative ?? []) ||
+    !isDeepEqual(current.exclude ?? [], reviewed.exclude ?? [])
+  ) {
     throw new StalePlanError(current);
   }
   const applied: Change[] = [];

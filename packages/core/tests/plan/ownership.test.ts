@@ -191,3 +191,50 @@ test('drafts do not silently shield unexpected live entries from explicit owners
   expect(plan.changes.map((change) => [change.action, change.target])).toEqual([['delete', 'Draft']]);
   expect(plan.warnings.some((warning) => warning.message.includes('Full ownership deletes its live entry'))).toBe(true);
 });
+
+test('apply re-resolves staged ownership and exclusions, including choices with the same writes', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'repotted-stale-ownership-'));
+  try {
+    const profile = path.join(directory, 'profile.yaml');
+    await writeFile(profile, 'repository: {has_wiki: false}\n');
+    for (const kind of ['disable', 'exclude', 'enable'] as const) {
+      const github = new FakeGitHub({
+        labels:
+          kind === 'enable' ? [] : [{ id: 1, name: 'legacy', color: 'ffffff', description: null, default: false }],
+      });
+      const file = path.join(directory, `${kind}.yaml`);
+      await createStagedApply(file, 'lunch/app', [profile], kind === 'enable' ? [] : ['labels']);
+      const reviewed = parsePlan(JSON.parse(JSON.stringify((await planStagedApply(github, file)).plan)));
+      await editStagedApply(
+        file,
+        kind === 'exclude'
+          ? [{ exclude: 'labels/legacy', excluded: true }]
+          : [{ authoritative: kind === 'enable' ? ['labels'] : [] }],
+      );
+      await expect(applyPlan(github, reviewed)).rejects.toBeInstanceOf(StalePlanError);
+      expect(github.writes).toEqual([]);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('fresh source revalidation preserves expanded rename exclusions', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'repotted-alias-ownership-'));
+  try {
+    const profile = path.join(directory, 'profile.yaml');
+    const file = path.join(directory, 'apply.yaml');
+    await writeFile(profile, 'repository: {has_wiki: false}\nlabels: [{name: Defect, renamed_from: [BUG]}]\n');
+    const github = new FakeGitHub({
+      labels: [{ id: 1, name: 'bug', color: 'ffffff', description: null, default: false }],
+    });
+    await createStagedApply(file, 'lunch/app', [profile], ['labels']);
+    await editStagedApply(file, [{ exclude: 'labels/Defect', excluded: true }]);
+    const reviewed = parsePlan(JSON.parse(JSON.stringify((await planStagedApply(github, file)).plan)));
+    await applyPlan(github, reviewed);
+    expect(github.writes.map((write) => write.method)).toEqual(['PATCH']);
+    expect(github.state.labels[0]?.name).toBe('bug');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
