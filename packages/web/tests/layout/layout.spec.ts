@@ -183,6 +183,11 @@ const screens: Readonly<Record<string, Screen>> = {
         .getByRole('button', { name: 'Review protection…' }),
   },
   profiles: { path: '/profiles', visibleOnceDrawn: (page) => page.getByText('website', { exact: true }) },
+  'invalid profile repair': {
+    path: '/profiles',
+    reachFromPath: (page) => page.getByText('invalid', { exact: true }).click(),
+    visibleOnceDrawn: (page) => page.getByRole('textbox', { name: 'Profile YAML', exact: true }),
+  },
   'profile editor with group actions': {
     path: '/profiles',
     reachFromPath: (page) => page.getByText('website', { exact: true }).click(),
@@ -320,6 +325,32 @@ for (const action of ['Apply', 'Change settings once']) {
     await expect(page.getByRole('button', { name: 'Review changes', exact: true })).toBeVisible();
   });
 }
+
+test('invalid profiles keep unsaved YAML across navigation and open the settings after repair', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('invalid', { exact: true }).click();
+  const yaml = page.getByRole('textbox', { name: 'Profile YAML', exact: true });
+  const save = page.getByRole('button', { name: 'Save', exact: true });
+  await expect(yaml).toHaveValue('repository:\n  has_wiki: broken\n');
+  await expect(save).toBeDisabled();
+  await yaml.fill('repository: [\n');
+  await expect(save).toBeDisabled();
+  await page.getByRole('link', { name: 'Repotted', exact: true }).click();
+  const profiles = page.getByRole('link', { name: 'Profiles', exact: true });
+  if (!(await profiles.isVisible())) {
+    await page.locator('.account-menu > summary').click();
+  }
+  await profiles.click();
+  await page.getByText('invalid', { exact: true }).click();
+  await expect(yaml).toHaveValue('repository: [\n');
+  await yaml.fill('# Repaired\nrepository:\n  has_wiki: true\n');
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page.getByRole('tab', { name: 'Repository', exact: true })).toBeVisible();
+  await expect(yaml).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'invalid as YAML' })).toContainText('# Repaired');
+});
 
 test('group actions sit beside the heading and above the description on phones', async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) > 760, 'The desktop layout keeps its description beside the actions');

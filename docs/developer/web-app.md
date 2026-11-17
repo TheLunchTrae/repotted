@@ -309,6 +309,18 @@ the file has it, and `entry-edits.ts` holds each change with the saved entry
 it was made on, so a save never writes an entry over one that has since
 changed elsewhere. `views/profile-editor/entries.tsx` only draws them.
 
+If a profile fails to resolve, `ProfileRepair` in `profile-editor/` keeps its
+original text and editable YAML. It validates through `resolveProfile` with
+replacement text at the file's real path, so relative bases and cycles follow
+the same rules as a saved profile. It validates again in the profiles' write
+queue after syncing, then compares the file with the original text before
+replacing it. A mismatch refuses the save and keeps the corrections. Dirty
+repairs keep their original version through refreshes, even if the saved file
+becomes valid. The editor cache keeps corrections across navigation; a
+successful save returns to the settings unless newer text remains unsaved.
+Pending setting and entry edits survive a failed read and a repair too.
+Staged applies use their own store and do not offer whole-file repair.
+
 A value is checked by the engine's own rules, so the editor refuses what a
 profile file would, in the same words: `settingValueProblems` and
 `entryValueProblems` in core check one setting by its path, or one entry,

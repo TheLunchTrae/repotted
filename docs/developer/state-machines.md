@@ -134,9 +134,9 @@ reads from the error and its causes:
 
 **Try again** checks again with what the first check would have said when signed out, such as why a sign-in had just failed.
 
-Edits to a profile whose file can't be read then, as after a sync brought
-in one that isn't valid YAML, are not counted as unsaved, so they are not
-asked about. A sign-in GitHub refuses mid-visit asks nothing either.
+Edits to a profile whose file can't be read, including YAML corrections,
+count as unsaved and are asked about too. A sign-in GitHub refuses
+mid-visit asks nothing.
 
 ## Web repositories
 
@@ -485,14 +485,32 @@ whenever the list is read.
 
 ### The profile
 
-| State  | Event                                              | Next                                                                                                                                                   |
-| ------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| None   | A profile is opened for the first time             | Loading, then Loaded with its settings, or Unreadable with why and no settings.                                                                        |
-| Loaded | The list is read again, as after a sync            | Loaded from the file as it is then, with the unsaved changes laid over it again.                                                                       |
-| Loaded | The profile, or one it extends, can't be read then | Unreadable, with why and no settings. Its changes are kept and count as nothing unsaved, so they hold no move back; they show again if it reads again. |
-| Loaded | Its file is gone from the list                     | The editor goes, with its unsaved changes.                                                                                                             |
-| Any    | Profiles are moved to another place                | Every editor goes. Unsaved changes hold the move back, with "Save or reset your unsaved changes first."                                                |
-| Loaded | The profile is deleted                             | The editor goes, with its unsaved changes.                                                                                                             |
+| State  | Event                                              | Next                                                                                                                                               |
+| ------ | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| None   | A profile is opened for the first time             | Loading, then Loaded with its settings, or Repair with editable YAML and why it is invalid. A file that cannot be read is Unreadable with why.     |
+| Loaded | The list is read again, as after a sync            | Loaded from the file as it is then, with the unsaved changes laid over it again.                                                                   |
+| Loaded | The profile, or one it extends, can't be read then | Repair if its text is readable, otherwise Unreadable. Its setting and entry changes stay unsaved and show again after repair or a successful read. |
+| Loaded | Its file is gone from the list                     | The editor goes, with its unsaved changes.                                                                                                         |
+| Any    | Profiles are moved to another place                | Every editor goes. Unsaved changes hold the move back, with "Save or reset your unsaved changes first."                                            |
+| Loaded | The profile is deleted                             | The editor goes, with its unsaved changes.                                                                                                         |
+
+### YAML repair
+
+`ProfileRepair` keeps whole-file corrections in the editor cache. Validation
+uses the same file path, bases, and cycle checks as a saved profile. This is
+offered only for profiles, not staged applies. Repairs are kept in this tab's
+memory, so reloading or closing the tab loses unsaved corrections.
+
+| State    | Event                                                              | Next                                                                                                                                                        |
+| -------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repair   | YAML is typed                                                      | Checking, with the text kept exactly as typed and Save off. A change back to the original text is no change.                                                |
+| Checking | Validation ends                                                    | Repair with Save on only when the text changed and resolves, otherwise with why and Save off. An older result cannot settle newer text.                     |
+| Repair   | Another profile or page is opened                                  | The repair stays cached and its changes count as unsaved, including for save all, discard all, changing source, and sign-out.                               |
+| Repair   | The list is refreshed                                              | Dirty or saving repairs keep their text and original version and validate again over the current bases. A clean repair follows the saved file.              |
+| Repair   | Save                                                               | Saving in the profiles' queue after a sync. The captured text is validated again and the original file compared before writing.                             |
+| Saving   | The file differs from the original, or validation or writing fails | Repair, keeping corrections and showing why. A changed file is never replaced.                                                                              |
+| Saving   | The write ends                                                     | Loaded with settings, unless text typed while saving remains unsaved, in which case Repair. Setting and entry changes from before the failure stay unsaved. |
+| Repair   | Reload or discard all                                              | Changes are discarded and the current file is read again, becoming Loaded or a clean Repair. Reload is off while saving.                                    |
 
 ### Unsaved changes
 

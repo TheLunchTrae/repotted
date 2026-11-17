@@ -173,6 +173,12 @@ entry the app rewrites. An edit writes nothing when the result is not a
 valid profile, and it refuses a list that shares parts through YAML anchors
 and aliases, which an edit could leave dangling or expand.
 
+`resolveProfile` also accepts replacement text for the file being resolved.
+It checks that text at the file's real path without writing, so an invalid
+file can be repaired while keeping inheritance and cycle checks. The web
+app's [repair editor](web-app.md#profiles) uses this for whole-file corrections
+and refuses to save over a changed file.
+
 ## Plans
 
 `createPlan` in `packages/core/src/plan/plan.ts` reads only the sections a profile

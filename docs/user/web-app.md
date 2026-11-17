@@ -405,6 +405,20 @@ its name.
 
 ### Edit a profile
 
+If a profile is invalid, its page offers **Profile YAML** under **Fix the
+profile**. Correct the text there; **Save** stays off until the profile is
+valid, including the profiles it extends. Saving replaces the file exactly
+as typed and opens its settings. If the saved file changes before your
+save, Repotted refuses to replace it and keeps your corrections. Copy them
+before using **Reload**, which discards unsaved changes and reads the saved
+file again.
+
+Corrections stay in this tab while you visit another profile or page, and
+the profile is marked **Not saved**. They count as unsaved when changing
+where profiles are kept or signing out. Reloading or closing the browser tab
+loses corrections you haven't saved. Setting changes made before a profile
+became invalid stay unsaved too and return to its settings after repair.
+
 Open a profile to edit it. Its tabs follow the parts of a repository's
 setup: **Repository**, **Merge**, **Actions**, **Security**, **Pages**,
 **Rulesets**, **Environments**, and **Labels**. A

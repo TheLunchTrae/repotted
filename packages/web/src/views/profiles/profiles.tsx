@@ -9,6 +9,7 @@ import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
+import { RepairProfile } from '../profile-editor/profile-repair.js';
 import { previewAddress, PreviewPicker } from './branch-preview.js';
 import { NewProfileForm } from './new-profile.js';
 import { OwnerTypeDialog } from './owner-type.js';
@@ -622,11 +623,12 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           )}
         </div>
       )}
-      {listing.problem !== null && (
+      {listing.problem !== null && editor?.repair.value === undefined && (
         <p class="notice notice-problem" role="alert">
           {listing.problem}
         </p>
       )}
+      {editor?.repair.value !== undefined && <RepairProfile editor={editor} save={() => profiles.save()} />}
       {editor?.loaded.value === true && (
         <ProfileSettings
           key={editor.file}
