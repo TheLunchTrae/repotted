@@ -1048,13 +1048,14 @@ changes. Sources include profile files, definition files, staged applies, and
 inline YAML with its reference directory. Plans without source metadata use
 their saved desired profile.
 
-| State    | Event                                | Next                                                                                 |
-| -------- | ------------------------------------ | ------------------------------------------------------------------------------------ |
-| Reviewed | A source or reference cannot resolve | Refused before any write; repair the source and review a fresh plan.                 |
-| Reviewed | The new plan differs                 | Stale: `StalePlanError` carries the current plan, and nothing is written.            |
-| Reviewed | The new plan matches                 | Writing, change by change, from the new plan's requests.                             |
-| Writing  | A request fails                      | Partly applied: `ApplyError` lists the changes already made and the one that failed. |
-| Writing  | Every request succeeds               | Applied.                                                                             |
+| State    | Event                                       | Next                                                                                 |
+| -------- | ------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Reviewed | New live entries appear in an owned section | Stale before any write; new pruning requires a fresh review.                         |
+| Reviewed | A source or reference cannot resolve        | Refused before any write; repair the source and review a fresh plan.                 |
+| Reviewed | The new plan differs                        | Stale: `StalePlanError` carries the current plan, and nothing is written.            |
+| Reviewed | The new plan matches                        | Writing, change by change, from the new plan's requests.                             |
+| Writing  | A request fails                             | Partly applied: `ApplyError` lists the changes already made and the one that failed. |
+| Writing  | Every request succeeds                      | Applied.                                                                             |
 
 Partly applied is a state of the repository, not of the plan: nothing rolls
 back the changes already made. Planning again from the same profile lists
@@ -1065,6 +1066,12 @@ server keeps plans in memory by `plan_id`. An apply takes its plan out before
 it writes, so two calls with one id can't both apply it, and a stale or
 failed apply needs a new plan. A sign-in failure comes before that, so it
 keeps the plan.
+
+A staged plan resolves its effective inputs again after live reads, including
+ownership and the rename identities protected by exclusions. An edit, removal,
+or broken reference during those reads refuses the plan before it is returned
+or written. A direct profile or text-backed apply performs the same source
+check after revalidation and before its first write.
 
 ## Drafts
 
@@ -1101,6 +1108,9 @@ changes, so every failed event below leaves the file as it was.
 | None     | Start from a profile that doesn't resolve                               | None: nothing is written.                                                                                                                                                 |
 | None     | Start from profiles that don't resolve together                         | None: nothing is written. A profile named twice, one already applied through an earlier one, or profiles for different owner types are refused.                           |
 | None     | Start with edits that fail                                              | None: `stage --new` removes the file it started.                                                                                                                          |
+| Staged   | Ownership selection changes                                             | Staged with the explicit section list; source profiles remain unchanged and subsequent plans reconcile the full combination.                                              |
+| Staged   | An owned section cannot be completely read                              | Staged; planning fails without writes instead of treating unread entries as empty.                                                                                        |
+| Staged   | An exclusion protects an owned entry                                    | Staged; that entry is excluded from updates and generated pruning.                                                                                                        |
 | Staged   | An edit or exclusion                                                    | Staged, with the edit. The profile is checked once the exclusions are left out.                                                                                           |
 | Staged   | An edit the profile makes invalid                                       | Staged as before: `editStagedApply` throws.                                                                                                                               |
 | Staged   | An exclusion and an edit of the same value                              | Staged as before: the file check refuses it.                                                                                                                              |

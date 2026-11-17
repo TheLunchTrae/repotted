@@ -1,0 +1,297 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { expect, test } from 'vitest';
+
+import { type GitHub, parseRepo } from '../../src/github/client.js';
+import { applyPlan, createPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
+import { createStagedApply, editStagedApply, planStagedApply, resolveStagedApply } from '../../src/staging/staged.js';
+import { answered, FakeGitHub } from '../support/fake-github.js';
+
+const repo = parseRepo('lunch/app');
+const ruleset = (id: number, name: string) => ({
+  id,
+  name,
+  target: 'branch',
+  enforcement: 'active',
+  bypass_actors: [],
+  rules: [{ type: 'deletion' }],
+});
+
+test('prunes once after merging the entire combination and never prunes an excluded entry', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'repotted-ownership-'));
+  try {
+    const first = path.join(directory, 'base.yaml');
+    const second = path.join(directory, 'service.yaml');
+    const staged = path.join(directory, 'apply.yaml');
+    await writeFile(first, 'rulesets: [{name: Main}]\n');
+    await writeFile(second, 'rulesets: [{name: Release}]\n');
+    const github = new FakeGitHub({ rulesets: [ruleset(1, 'Main'), ruleset(2, 'Release'), ruleset(3, 'Legacy')] });
+    await createStagedApply(staged, 'lunch/app', [first, second], ['rulesets']);
+    const reviewed = await planStagedApply(github, staged);
+    expect(reviewed.plan.changes.map((change) => [change.action, change.target])).toEqual([['delete', 'Legacy']]);
+    await editStagedApply(staged, [
+      { exclude: 'rulesets/Legacy', excluded: true },
+      { exclude: 'rulesets/Main', excluded: true },
+    ]);
+    expect((await planStagedApply(github, staged)).plan.changes).toEqual([]);
+    expect((await resolveStagedApply(staged)).authoritative).toEqual(['rulesets']);
+    expect(github.writes).toEqual([]);
+    await writeFile(second, 'extends: missing.yaml\n');
+    await expect(planStagedApply(github, staged)).rejects.toThrow();
+    expect(github.writes).toEqual([]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('an explicitly owned empty section prunes all pages and stale plans cannot delete newly added entries', async () => {
+  const github = new FakeGitHub({
+    rulesets: Array.from({ length: 101 }, (_, index) => ruleset(index + 1, `Rule ${index}`)),
+  });
+  expect((await createPlan(github, repo, {})).changes).toEqual([]);
+  const reviewed = parsePlan(
+    JSON.parse(JSON.stringify(await createPlan(github, repo, {}, [], { authoritative: ['rulesets'] }))),
+  );
+  expect(reviewed.changes).toHaveLength(101);
+  github.state.rulesets.push(ruleset(102, 'New'));
+  await expect(applyPlan(github, reviewed)).rejects.toBeInstanceOf(StalePlanError);
+  expect(github.writes).toEqual([]);
+  const fresh = await createPlan(github, repo, {}, [], { authoritative: ['rulesets'] });
+  await applyPlan(github, fresh);
+  expect(github.state.rulesets).toEqual([]);
+});
+
+test('matches environment and label names without case and preserves retained fields and label rename sources', async () => {
+  const github = new FakeGitHub({
+    environments: [
+      {
+        name: 'Production',
+        wait_timer: 30,
+        prevent_self_review: true,
+        reviewers: [{ type: 'User', id: 7 }],
+        deployment_branch_policy: null,
+        branch_policies: [],
+      },
+      {
+        name: 'Old',
+        wait_timer: 0,
+        prevent_self_review: false,
+        reviewers: [],
+        deployment_branch_policy: null,
+        branch_policies: [],
+      },
+    ],
+    labels: [{ id: 1, name: 'bug', color: 'ffffff', description: 'Keep this', default: false }],
+    autolinks: [{ id: 1, key_prefix: 'OLD-', url_template: 'https://example.com/<num>', is_alphanumeric: true }],
+  });
+  const plan = await createPlan(
+    github,
+    repo,
+    { environments: [{ name: 'production' }], labels: [{ name: 'Defect', renamed_from: ['BUG'] }] },
+    [],
+    { authoritative: ['environments', 'labels', 'autolinks'] },
+  );
+  expect(plan.changes.map((change) => [change.action, change.target])).toEqual([
+    ['delete', 'OLD-'],
+    ['delete', 'Old'],
+    ['update', 'Defect'],
+  ]);
+  expect(plan.warnings.some((warning) => warning.message.includes('secrets and variables'))).toBe(true);
+  await applyPlan(github, plan);
+  expect(github.state.environments[0]).toMatchObject({ wait_timer: 30, reviewers: [{ type: 'User', id: 7 }] });
+  expect(github.state.labels[0]).toMatchObject({ name: 'Defect', description: 'Keep this' });
+});
+
+test('refused and truncated reads block ownership instead of implying empty state', async () => {
+  const github = new FakeGitHub().fail('GET /repos/lunch/app/environments', answered(403, 'Forbidden'));
+  await expect(createPlan(github, repo, {}, [], { authoritative: ['environments'] })).rejects.toThrow(
+    'Cannot fully own environments',
+  );
+  const incomplete: GitHub = { request: () => Promise.resolve({ total_count: 2, environments: [] }) };
+  await expect(createPlan(incomplete, repo, {}, [], { authoritative: ['environments'] })).rejects.toThrow(
+    'Incomplete enumeration',
+  );
+  expect(github.writes).toEqual([]);
+});
+
+test('Actions ownership shows and applies its explicit baseline while exclusions preserve live settings', async () => {
+  const github = new FakeGitHub({
+    settings: {
+      '/actions/permissions/access': { access_level: 'organization' },
+      '/actions/permissions/fork-pr-contributor-approval': { approval_policy: 'first_time_contributors' },
+      '/actions/permissions/fork-pr-workflows-private-repos': {
+        run_workflows_from_fork_pull_requests: true,
+        send_write_tokens_to_workflows: true,
+        send_secrets_and_variables: true,
+        require_approval_for_fork_pr_workflows: false,
+      },
+      '/actions/permissions/artifact-and-log-retention': { days: 30 },
+      '/actions/cache/retention-limit': { max_cache_retention_days: 30 },
+      '/actions/cache/storage-limit': { max_cache_size_gb: 20 },
+      '/actions/oidc/customization/sub': {
+        use_default: false,
+        use_immutable_subject: true,
+        include_claim_keys: ['repo'],
+      },
+    },
+  });
+  const plan = await createPlan(github, repo, {}, [], {
+    authoritative: ['actions'],
+    exclude: ['actions.artifact_and_log_retention'],
+  });
+  expect(
+    plan.changes.some((change) =>
+      change.fields.some((field) => field.field === 'default_workflow_permissions' && field.to === 'read'),
+    ),
+  ).toBe(true);
+  await applyPlan(github, parsePlan(JSON.parse(JSON.stringify(plan))));
+  expect(github.state.actions).toMatchObject({ allowed_actions: 'selected', sha_pinning_required: true });
+  expect(github.state.selected).toEqual({ github_owned_allowed: false, verified_allowed: false, patterns_allowed: [] });
+  expect(github.state.settings['/actions/permissions/artifact-and-log-retention']).toEqual({ days: 30 });
+  expect(github.state.workflow['default_workflow_permissions']).toBe('read');
+  const inaccessible = new FakeGitHub();
+  await expect(createPlan(inaccessible, repo, {}, [], { authoritative: ['actions'] })).rejects.toThrow(
+    'Cannot fully own actions',
+  );
+});
+
+test('ambiguous live targets cannot be pruned by name', async () => {
+  const github = new FakeGitHub({ rulesets: [ruleset(1, 'Same'), ruleset(2, 'Same')] });
+  await expect(createPlan(github, repo, {}, [], { authoritative: ['rulesets'] })).rejects.toThrow('duplicate names');
+  expect(github.writes).toEqual([]);
+});
+
+test('excluding either identity of a label rename cannot turn it into a deletion', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'repotted-rename-ownership-'));
+  try {
+    const profile = path.join(directory, 'profile.yaml');
+    await writeFile(profile, 'labels: [{name: Defect, renamed_from: [BUG]}]\n');
+    for (const name of ['Defect', 'bug']) {
+      const file = path.join(directory, `${name}.yaml`);
+      const github = new FakeGitHub({
+        labels: [{ id: 1, name: 'bug', color: 'ffffff', description: null, default: false }],
+      });
+      await createStagedApply(file, 'lunch/app', [profile], ['labels']);
+      expect((await planStagedApply(github, file)).plan.changes.map((change) => change.action)).toEqual(['update']);
+      await editStagedApply(file, [{ exclude: `labels/${name}`, excluded: true }]);
+      expect((await planStagedApply(github, file)).plan.changes).toEqual([]);
+      expect(github.writes).toEqual([]);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('drafts do not silently shield unexpected live entries from explicit ownership', async () => {
+  const github = new FakeGitHub({ rulesets: [ruleset(1, 'Draft')] });
+  const plan = await createPlan(github, repo, {}, [{ section: 'rulesets', target: 'Draft' }], {
+    authoritative: ['rulesets'],
+  });
+  expect(plan.changes.map((change) => [change.action, change.target])).toEqual([['delete', 'Draft']]);
+  expect(plan.warnings.some((warning) => warning.message.includes('Full ownership deletes its live entry'))).toBe(true);
+});
+
+test('apply re-resolves staged ownership and exclusions, including choices with the same writes', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'repotted-stale-ownership-'));
+  try {
+    const profile = path.join(directory, 'profile.yaml');
+    await writeFile(profile, 'repository: {has_wiki: false}\n');
+    for (const kind of ['disable', 'exclude', 'enable'] as const) {
+      const github = new FakeGitHub({
+        labels:
+          kind === 'enable' ? [] : [{ id: 1, name: 'legacy', color: 'ffffff', description: null, default: false }],
+      });
+      const file = path.join(directory, `${kind}.yaml`);
+      await createStagedApply(file, 'lunch/app', [profile], kind === 'enable' ? [] : ['labels']);
+      const reviewed = parsePlan(JSON.parse(JSON.stringify((await planStagedApply(github, file)).plan)));
+      await editStagedApply(
+        file,
+        kind === 'exclude'
+          ? [{ exclude: 'labels/legacy', excluded: true }]
+          : [{ authoritative: kind === 'enable' ? ['labels'] : [] }],
+      );
+      await expect(applyPlan(github, reviewed)).rejects.toBeInstanceOf(StalePlanError);
+      expect(github.writes).toEqual([]);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('fresh source revalidation preserves expanded rename exclusions', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'repotted-alias-ownership-'));
+  try {
+    const profile = path.join(directory, 'profile.yaml');
+    const file = path.join(directory, 'apply.yaml');
+    await writeFile(profile, 'repository: {has_wiki: false}\nlabels: [{name: Defect, renamed_from: [BUG]}]\n');
+    const github = new FakeGitHub({
+      labels: [{ id: 1, name: 'bug', color: 'ffffff', description: null, default: false }],
+    });
+    await createStagedApply(file, 'lunch/app', [profile], ['labels']);
+    await editStagedApply(file, [{ exclude: 'labels/Defect', excluded: true }]);
+    const reviewed = parsePlan(JSON.parse(JSON.stringify((await planStagedApply(github, file)).plan)));
+    await applyPlan(github, reviewed);
+    expect(github.writes.map((write) => write.method)).toEqual(['PATCH']);
+    expect(github.state.labels[0]?.name).toBe('bug');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test.each([
+  ['staged', 'edit'],
+  ['staged', 'delete'],
+  ['profile', 'edit'],
+  ['text', 'edit'],
+] as const)(
+  'a %s source %s during authoritative revalidation cannot authorize a stale deletion',
+  async (kind, change) => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'repotted-source-race-'));
+    try {
+      const source = path.join(directory, 'base.yaml');
+      const staged = path.join(directory, 'apply.yaml');
+      await writeFile(source, 'rulesets: []\n');
+      await createStagedApply(staged, 'lunch/app', [source], ['rulesets']);
+      const fake = new FakeGitHub({ rulesets: [ruleset(1, 'Legacy')] });
+      const planned = (await planStagedApply(fake, staged)).plan;
+      const reviewed =
+        kind === 'staged'
+          ? planned
+          : {
+              ...planned,
+              source: kind === 'profile' ? { profile: source } : { text: 'extends: base.yaml\n', directory },
+            };
+      let release = (): void => undefined;
+      let entered = (): void => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const reading = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const github: GitHub = {
+        request: async (...args) => {
+          if (args[0] === 'GET') {
+            entered();
+            await held;
+          }
+          return fake.request(...args);
+        },
+      };
+      const applying = applyPlan(github, reviewed);
+      await reading;
+      if (change === 'edit') {
+        await writeFile(source, 'rulesets: [{ name: Legacy }]\n');
+      } else {
+        await rm(source);
+      }
+      release();
+      await expect(applying).rejects.toThrow();
+      expect(fake.writes).toEqual([]);
+      expect(fake.state.rulesets.map((item) => item.name)).toEqual(['Legacy']);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);

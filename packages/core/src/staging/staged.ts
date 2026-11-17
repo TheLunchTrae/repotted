@@ -5,6 +5,7 @@ import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 
 import { type GitHub, parseRepo, repoPattern } from '../github/client.js';
+import { authoritativeSchema, type AuthoritativeSection } from '../plan/ownership.js';
 import { createPlan, type Plan, skippedDrafts } from '../plan/plan.js';
 import {
   type Adjust,
@@ -98,6 +99,7 @@ function sets(layer: Readonly<Record<string, unknown>>, exclusion: Exclusion): b
 }
 
 const stagedFields = {
+  authoritative: authoritativeSchema.optional(),
   apply_to: z.string().regex(repoPattern, 'Use owner/name'),
   exclude: z.array(z.string().min(1)).optional(),
   /** One profile, or several applied in order, later ones overriding earlier ones. */
@@ -194,10 +196,24 @@ function withoutExclusion(data: unknown, exclusion: Exclusion): unknown {
     : data;
 }
 
-function excluding(exclude: readonly string[]): Adjust {
+function excluding(exclude: readonly string[], aliases: string[]): Adjust {
   return (data) => {
+    aliases.length = 0;
+    const labels = isRecord(data) && Array.isArray(data['labels']) ? data['labels'] : [];
+    for (const entry of labels) {
+      if (!isRecord(entry) || typeof entry['name'] !== 'string') {
+        continue;
+      }
+      const previous = Array.isArray(entry['renamed_from'])
+        ? entry['renamed_from'].filter((name): name is string => typeof name === 'string')
+        : [];
+      const names = [entry['name'], ...previous];
+      if (names.some((name) => exclude.some((key) => exclusionKey(key) === `labels/${labelKey(name)}`))) {
+        aliases.push(...names.map((name) => `labels/${name}`));
+      }
+    }
     const unmatched: string[] = [];
-    const left = exclude.reduce<unknown>((current, key) => {
+    const left = [...new Set([...exclude, ...aliases])].reduce<unknown>((current, key) => {
       const exclusion = parseExclusion(key);
       const next = exclusion === undefined ? current : withoutExclusion(current, exclusion);
       if (isDeepEqual(next, current)) {
@@ -205,12 +221,13 @@ function excluding(exclude: readonly string[]): Adjust {
       }
       return next;
     }, data);
-    return { data: left, unmatched };
+    return { data: left, unmatched: unmatched.filter((key) => exclude.includes(key)) };
   };
 }
 
 interface StagedRead {
   readonly own: StagedFile;
+  readonly aliases: readonly string[];
   readonly layer: ProfileFile;
   readonly adjust: Adjust;
   readonly listedProfiles: readonly string[];
@@ -219,15 +236,17 @@ interface StagedRead {
 const stagedLayer: Layer<StagedRead> = {
   noun: 'staged apply',
   schema: stagedFile.transform((own): StagedRead => {
-    const { apply_to: _repository, exclude = [], extends: listed, ...layer } = own;
+    const { apply_to: _repository, authoritative: _ownership, exclude = [], extends: listed, ...layer } = own;
+    const aliases: string[] = [];
     return {
       own,
+      aliases,
       layer,
-      adjust: excluding(exclude),
+      adjust: excluding(exclude, aliases),
       listedProfiles: listed === undefined ? [] : typeof listed === 'string' ? [listed] : listed,
     };
   }),
-  ownTopLevelKeys: new Set(['exclude']),
+  ownTopLevelKeys: new Set(['exclude', 'authoritative']),
   check: () => undefined,
 };
 
@@ -271,6 +290,7 @@ function sourcesWithoutExclusions(sources: Sources, exclusions: readonly Exclusi
 }
 
 export interface StagedApply {
+  readonly authoritative: readonly AuthoritativeSection[];
   readonly file: string;
   readonly repository: string;
   /**
@@ -315,6 +335,7 @@ function staged({
   return {
     file: resolved.chain[0] ?? '',
     repository: own.apply_to,
+    authoritative: own.authoritative ?? [],
     profiles: listedProfiles,
     exclude,
     chain: resolved.chain,
@@ -344,7 +365,9 @@ export async function createStagedApply(
   file: string,
   repository: string,
   profiles: readonly string[],
+  authoritative: readonly AuthoritativeSection[] = [],
 ): Promise<StagedApply> {
+  authoritativeSchema.parse(authoritative);
   const repo = parseRepo(repository);
   const lines = [
     '# A staged apply: one-off edits for one apply to one repository.',
@@ -352,7 +375,10 @@ export async function createStagedApply(
       ? '# The profiles it extends apply in order and stay as they are.'
       : '# The profile it extends stays as it is unless these edits are saved to it.',
   ];
-  const data: Record<string, unknown> = { apply_to: `${repo.owner}/${repo.name}` };
+  const data: Record<string, unknown> = {
+    apply_to: `${repo.owner}/${repo.name}`,
+    ...(authoritative.length === 0 ? {} : { authoritative }),
+  };
   if (profiles.length > 1) {
     await resolveProfilesTogether(profiles);
   }
@@ -384,7 +410,10 @@ function isSameList(left: readonly string[], right: readonly string[]): boolean 
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
-export type StagedEdit = ProfileEdit | { readonly exclude: string; readonly excluded: boolean };
+export type StagedEdit =
+  | ProfileEdit
+  | { readonly exclude: string; readonly excluded: boolean }
+  | { readonly authoritative: readonly AuthoritativeSection[] };
 
 /** The file changes only when the result is a valid staged apply. */
 export async function editStagedApply(file: string, edits: readonly StagedEdit[]): Promise<StagedApply> {
@@ -392,6 +421,10 @@ export async function editStagedApply(file: string, edits: readonly StagedEdit[]
     const exclude = [...(own.exclude ?? [])];
     const profileEdits: ProfileEdit[] = [];
     for (const edit of edits) {
+      if ('authoritative' in edit) {
+        profileEdits.push({ path: ['authoritative'], value: authoritativeSchema.parse(edit.authoritative) });
+        continue;
+      }
       if (!('exclude' in edit)) {
         profileEdits.push(edit);
         continue;
@@ -419,9 +452,15 @@ export async function editStagedApply(file: string, edits: readonly StagedEdit[]
   return staged(
     await editLayer(file, fileEdits, {
       ...stagedLayer,
-      check: ({ unmatched }) => {
+      check: ({ unmatched, head }) => {
         // A new exclusion that leaves nothing out is most likely a mistyped name.
-        const missed = unmatched.find((key) => added.has(exclusionKey(key)));
+        const missed = unmatched.find(
+          (key) =>
+            added.has(exclusionKey(key)) &&
+            head.own.authoritative?.some(
+              (section) => key === section || key.startsWith(`${section}/`) || key.startsWith(`${section}.`),
+            ) !== true,
+        );
         if (missed !== undefined) {
           throw new ProfileError(`Cannot exclude ${missed}: the profile it starts from sets nothing it names`);
         }
@@ -572,10 +611,26 @@ export async function planStagedApply(
     parseRepo(resolved.repository),
     resolved.profile,
     skippedDrafts(resolved.drafts),
+    {
+      ...(resolved.authoritative.length === 0 ? {} : { authoritative: resolved.authoritative }),
+      ...([...resolved.exclude, ...read.head.aliases].length === 0
+        ? {}
+        : { exclude: [...new Set([...resolved.exclude, ...read.head.aliases])] }),
+    },
   );
-  const latest = staged(await resolveLayer(file, stagedLayer));
-  const inputs = (value: StagedApply): unknown => [value.repository, value.profiles, value.profile, value.exclude];
-  if (!isDeepEqual(inputs(resolved), inputs(latest))) {
+  // Live reads can overlap a source edit. Do not return a plan whose inputs
+  // have already changed, including rename aliases protected by exclusions.
+  const latest = await resolveLayer(file, stagedLayer);
+  const current = staged(latest);
+  const inputs = (value: StagedApply, aliases: readonly string[]): unknown => [
+    value.repository,
+    value.profiles,
+    value.profile,
+    value.authoritative,
+    value.exclude,
+    aliases,
+  ];
+  if (!isDeepEqual(inputs(resolved, read.head.aliases), inputs(current, latest.head.aliases))) {
     throw new ProfileError('The staged apply or its sources changed while GitHub was being read. Review a fresh plan.');
   }
   const plan = {

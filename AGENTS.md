@@ -42,9 +42,11 @@ under [Text in the web app](#text-in-the-web-app).
   Keep that property when you change the plan format or the engine: a new
   member of a change also goes into `savedChange`, as
   [Plans](docs/developer/architecture.md#plans) explains.
-- A profile manages only what it names. Settings, rulesets, environments, and
-  labels it leaves out stay as they are; a ruleset, environment, or label is
-  deleted only by an `absent: true` entry.
+- Partial management is the default: a profile manages only what it names.
+  Deleting an autolink, ruleset, environment, or label needs an `absent: true`
+  entry or an apply that explicitly owns its section. Ownership reconciles
+  the complete resolved combination, preserves excluded targets, and shows
+  every generated deletion and Actions baseline reset in the reviewed plan.
 - Tests use the in-memory GitHub in `packages/core/tests/support/fake-github.ts`.
   Never run `apply` against a real repository, and never change a real
   repository's settings, rulesets, or branch protection, without the owner's

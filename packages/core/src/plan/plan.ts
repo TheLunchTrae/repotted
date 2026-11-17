@@ -27,7 +27,7 @@ import {
 } from '../profiles/schema.js';
 import { activeProfileSettings } from '../profiles/setting-dependencies.js';
 import { isDeepEqual } from '../shared/equal.js';
-import { resolveStagedApply } from '../staging/staged.js';
+import { planStagedApply } from '../staging/staged.js';
 import {
   type Change,
   isListSection,
@@ -45,6 +45,15 @@ import {
   unloadableReason,
   warningForUnavailable,
 } from './endpoints.js';
+import {
+  authoritativeSchema,
+  type Ownership,
+  excludedEntry,
+  ownedActions,
+  owns,
+  ownershipWarnings,
+  pruneEntries,
+} from './ownership.js';
 import { actionsEndpoints, planActions, readActions } from './sections/actions.js';
 import { describeAutolink, planAutolinks, readAutolinks } from './sections/autolinks.js';
 import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';
@@ -68,7 +77,7 @@ const planSource = z.union([
   z.object({ staged: z.string().min(1) }),
 ]);
 
-export interface Plan {
+export interface Plan extends Ownership {
   readonly source?: z.infer<typeof planSource> | undefined;
   readonly repository: string;
   readonly desired: Profile;
@@ -124,9 +133,14 @@ export class OwnerMismatchError extends Error {
 export async function createPlan(
   github: GitHub,
   repo: RepoRef,
-  desired: Profile,
+  input: Profile,
   skipped: readonly Skipped[] = [],
+  ownership: Ownership = {},
 ): Promise<Plan> {
+  authoritativeSchema.parse(ownership.authoritative ?? []);
+  const original = input;
+  const actions = ownedActions(input.actions, ownership);
+  const desired = { ...input, ...(actions === undefined ? {} : { actions }) };
   if (desired.owner_type !== undefined) {
     const owner = repositoryOwnerType(await github.request('GET', repoPath(repo)));
     if (owner !== undefined && owner !== desired.owner_type) {
@@ -189,17 +203,58 @@ export async function createPlan(
   if (desired.pages !== undefined) {
     add(planPages(desired.pages, await readPages(github, repo), repo));
   }
-  if (desired.autolinks !== undefined) {
-    add(planAutolinks(desired.autolinks, await readAutolinks(github, repo), repo));
+  if (desired.autolinks !== undefined || owns(ownership, 'autolinks')) {
+    const live = await readAutolinks(github, repo);
+    const entries = pruneEntries(
+      desired.autolinks ?? [],
+      live.available ? live.autolinks.map((entry) => entry.key_prefix) : [],
+      (entry) => entry.key_prefix,
+      (key_prefix) => ({ key_prefix, absent: true as const }),
+      'autolinks',
+      ownership,
+    );
+    add(planAutolinks(entries, live, repo));
   }
-  if (desired.rulesets !== undefined) {
-    add(planRulesets(desired.rulesets, await readRulesets(github, repo), repo));
+  if (desired.rulesets !== undefined || owns(ownership, 'rulesets')) {
+    const live = await readRulesets(github, repo);
+    const entries = pruneEntries(
+      desired.rulesets ?? [],
+      live.available ? live.rulesets.map((entry) => entry.ruleset.name) : [],
+      (entry) => entry.name,
+      (name) => ({ name, absent: true as const }),
+      'rulesets',
+      ownership,
+    );
+    add(planRulesets(entries, live, repo));
   }
-  if (desired.environments !== undefined) {
-    add(planEnvironments(desired.environments, await readEnvironments(github, repo), repo));
+  if (desired.environments !== undefined || owns(ownership, 'environments')) {
+    const live = await readEnvironments(github, repo);
+    const entries = pruneEntries(
+      desired.environments ?? [],
+      live.available ? live.environments.map((entry) => entry.name) : [],
+      (entry) => entry.name,
+      (name) => ({ name, absent: true as const }),
+      'environments',
+      ownership,
+    );
+    add(planEnvironments(entries, live, repo));
   }
-  if (desired.labels !== undefined) {
-    const labels = planLabels(desired.labels, await readLabels(github, repo), repo);
+  if (desired.labels !== undefined || owns(ownership, 'labels')) {
+    const live = await readLabels(github, repo);
+    const entries = pruneEntries(
+      desired.labels ?? [],
+      live.available ? live.labels.map((entry) => entry.name) : [],
+      (entry) => entry.name,
+      (name) => ({ name, absent: true as const }),
+      'labels',
+      ownership,
+      (desired.labels ?? []).flatMap((entry) => (entry.absent === true ? [] : (entry.renamed_from ?? []))),
+    );
+    const kept = entries.filter(
+      (entry) =>
+        entry.absent === true || entry.renamed_from?.some((name) => excludedEntry(ownership, 'labels', name)) !== true,
+    );
+    const labels = planLabels(kept, live, repo);
     add(labels);
     // A rename applies even when a draft names the old label, so say so beside the skipped draft.
     for (const draft of skipped.filter((item) => item.section === 'labels')) {
@@ -218,7 +273,30 @@ export async function createPlan(
     }
   }
 
-  return { repository: `${repo.owner}/${repo.name}`, desired, changes, skipped, warnings };
+  for (const change of changes) {
+    if (
+      change.action === 'delete' &&
+      change.entry !== undefined &&
+      owns(ownership, change.section) &&
+      skipped.some((draft) => draft.section === change.section && draft.target === change.entry.name)
+    ) {
+      warnings.push({
+        section: change.section,
+        key: change.entry.name,
+        message: `The draft for ${change.entry.name} is not part of the desired state. Full ownership deletes its live entry; exclude it to keep it.`,
+      });
+    }
+  }
+  ownershipWarnings(changes, warnings, ownership);
+  return {
+    repository: `${repo.owner}/${repo.name}`,
+    desired: original,
+    changes,
+    skipped,
+    warnings,
+    ...(ownership.authoritative === undefined ? {} : { authoritative: ownership.authoritative }),
+    ...(ownership.exclude === undefined ? {} : { exclude: ownership.exclude }),
+  };
 }
 
 /**
@@ -439,6 +517,8 @@ const savedChange = z.union([
 
 const savedPlan = z.object({
   source: planSource.optional(),
+  authoritative: authoritativeSchema.exactOptional(),
+  exclude: z.array(z.string()).exactOptional(),
   repository: z.string().regex(repoPattern),
   desired: profile,
   changes: z.array(savedChange),
@@ -501,46 +581,47 @@ function jsonValue(value: unknown): unknown {
   return copy;
 }
 
-/**
- * Applies a reviewed plan. The repository is planned again first, and the
- * plan only runs when that yields exactly the reviewed changes.
- */
-export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonly Change[]> {
+async function replan(github: GitHub, reviewed: Plan): Promise<Plan> {
   const source = reviewed.source;
+  if (source !== undefined && 'staged' in source) {
+    return (
+      await planStagedApply(github, source.staged, (staged) => {
+        if (staged.repository.toLowerCase() !== reviewed.repository.toLowerCase()) {
+          throw new Error('The staged apply now targets a different repository; review a fresh plan');
+        }
+      })
+    ).plan;
+  }
   const resolveSource =
     source === undefined
       ? undefined
-      : () =>
-          'profile' in source
-            ? resolveProfile(source.profile)
-            : 'staged' in source
-              ? resolveStagedApply(source.staged)
-              : parseProfile(source.text, source.directory);
+      : () => ('profile' in source ? resolveProfile(source.profile) : parseProfile(source.text, source.directory));
   const resolved = await resolveSource?.();
-  if (
-    resolved !== undefined &&
-    'repository' in resolved &&
-    resolved.repository.toLowerCase() !== reviewed.repository.toLowerCase()
-  ) {
-    throw new Error('The staged apply now targets a different repository; review a fresh plan');
-  }
   const current = await createPlan(
     github,
     parseRepo(reviewed.repository),
     resolved?.profile ?? reviewed.desired,
     resolved === undefined ? reviewed.skipped : skippedDrafts(resolved.drafts),
+    reviewed,
   );
   const latest = await resolveSource?.();
-  const inputs = (value: typeof resolved): unknown =>
-    value === undefined
-      ? undefined
-      : 'repository' in value
-        ? [value.repository, value.profiles, value.profile, value.exclude]
-        : value.profile;
-  if (!isDeepEqual(inputs(resolved), inputs(latest))) {
+  if (resolved !== undefined && !isDeepEqual(resolved.profile, latest?.profile)) {
     throw new Error('The source configuration changed while GitHub was being read. Review a fresh plan.');
   }
-  if (!isDeepEqual(jsonValue(current.changes), jsonValue(reviewed.changes))) {
+  return current;
+}
+
+/**
+ * Applies a reviewed plan. The repository is planned again first, and the
+ * plan only runs when that yields exactly the reviewed changes.
+ */
+export async function applyPlan(github: GitHub, reviewed: Plan): Promise<readonly Change[]> {
+  const current = await replan(github, reviewed);
+  if (
+    !isDeepEqual(jsonValue(current.changes), jsonValue(reviewed.changes)) ||
+    !isDeepEqual(current.authoritative ?? [], reviewed.authoritative ?? []) ||
+    !isDeepEqual(current.exclude ?? [], reviewed.exclude ?? [])
+  ) {
     throw new StalePlanError(current);
   }
   const applied: Change[] = [];
@@ -610,6 +691,11 @@ export function describeWarning({ section, key, field, cause, message }: Warning
 
 export function formatPlan(plan: Plan, locks: readonly Lock[] = []): string {
   const lines = [
+    ...((plan.authoritative?.length ?? 0) > 0
+      ? [
+          `Full ownership: ${plan.authoritative?.join(', ')}. Unlisted entries are removed; Actions omissions use the documented baseline.`,
+        ]
+      : []),
     plan.changes.length === 0
       ? `${plan.repository} matches the profile.`
       : `${plan.repository}: ${plan.changes.length} ${plan.changes.length === 1 ? 'change' : 'changes'}`,

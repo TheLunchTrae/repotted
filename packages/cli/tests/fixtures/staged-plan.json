@@ -35,6 +35,9 @@
   ],
   "skipped": [],
   "warnings": [],
+  "exclude": [
+    "repository.has_issues"
+  ],
   "source": {
     "staged": "<tests>/staged.yaml"
   },

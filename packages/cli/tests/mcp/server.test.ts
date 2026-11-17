@@ -298,3 +298,20 @@ test('MCP re-resolves a shared policy supplied through inline YAML before applyi
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+test('MCP ownership explicitly reviews pruning and refuses new live drift', async () => {
+  const github = new FakeGitHub({
+    labels: [{ id: 1, name: 'legacy', color: 'ffffff', description: null, default: false }],
+  });
+  const client = await connect(github);
+  const planned = await call(client, 'plan', { repository: 'lunch/app', profile: '{}', authoritative: ['labels'] });
+  expect(planned.isError).toBe(false);
+  expect(planned.text).toContain('Full ownership: labels');
+  const id = /plan_id: (\S+)/u.exec(planned.text)?.[1];
+  github.state.labels.push({ id: 2, name: 'new', color: 'ffffff', description: null, default: false });
+  const applied = await call(client, 'apply', { plan_id: id });
+  expect(applied.isError).toBe(true);
+  expect(applied.text).toContain('changed since');
+  expect(github.writes).toEqual([]);
+  await client.close();
+});
