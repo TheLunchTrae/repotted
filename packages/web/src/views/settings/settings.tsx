@@ -480,6 +480,42 @@ export function SettingsPage({
             </>
           )}
         </section>
+        <section class="settings-group" aria-labelledby="settings-about">
+          <h2 id="settings-about">About Repotted</h2>
+          <div class="settings">
+            <div class="setting-row">
+              <div class="setting-text">
+                <strong>Repotted on GitHub</strong>
+                <span class="muted small">Browse the code, report an issue, or contribute.</span>
+                <span class="mono muted small">TheLunchTrae/repotted</span>
+              </div>
+              <a
+                class="button button-quiet"
+                href="https://github.com/TheLunchTrae/repotted"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <span>
+                  View on GitHub{' '}
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M9 2h5v5M14 2 7 9M6 2H2v12h12v-4" />
+                  </svg>
+                </span>
+                <span class="visually-hidden"> (opens in a new tab)</span>
+              </a>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );

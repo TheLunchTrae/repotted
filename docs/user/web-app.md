@@ -804,3 +804,7 @@ the browser. When they're kept in a GitHub repository, **Open on GitHub**
 opens that repository in a new tab. While they are kept in a personal repository, it also says
 whether that repository has the
 [built-in protection](#protect-the-config-repository).
+
+**About Repotted**, below **Profiles**, links to Repotted's source repository.
+**View on GitHub** opens it in a new tab, where you can browse the code,
+report an issue, or contribute.
