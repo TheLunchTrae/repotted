@@ -398,6 +398,57 @@ and labels are deleted, then renamed, then updated, then created.
 [Plan and apply](cli.md#plan-and-apply) describes how to review and apply a
 plan.
 
+## Reusable Actions policies
+
+An Actions policy is a separate YAML definition in the same folder as your
+profiles. Its file path identifies it. It can hold Actions settings and their
+drafts, plus an optional owner type. It cannot manage other sections or extend
+another file.
+
+```yaml
+# trusted-actions.yaml
+kind: actions-policy
+actions:
+  allowed_actions: selected
+  selected_actions:
+    github_owned_allowed: true
+    patterns_allowed: ['my-org/*']
+  default_workflow_permissions: read
+```
+
+Use the definition directly wherever you choose a profile: compare, stage,
+apply, or assign it to a repository. Partial management applies: omitted
+settings and other sections remain untouched. Removing a reference or deleting
+a definition does not delete live configuration.
+
+A profile references the definition without copying its contents:
+
+```yaml
+extends: base.yaml
+references:
+  actions: trusted-actions.yaml
+actions:
+  selected_actions:
+    verified_allowed: false
+```
+
+Paths resolve from the file containing the reference. Base profiles apply
+first, then the referenced policy, then inline settings, then staged one-off
+edits. Settings and nested settings merge by key. Ordered profile combinations
+apply each profile's references at that profile's position. The source display
+identifies the definition supplying each value. Editing an inline value or
+saving the profile preserves its references.
+
+Saving a shared definition changes what consumers resolve on their next read;
+it does not write to GitHub. Assigned profiles report changes to their effective
+settings, including changes through shared definitions. A missing or invalid
+reference blocks resolution. Apply reads the sources again and refuses changed
+writes until you review a fresh plan.
+
+Definitions sync, import, export, duplicate, and move with profiles. Moves update
+relative references, and deletion refuses definitions still referenced by a
+profile. Update consumers deliberately before deleting a shared definition.
+
 ### Manage reusable definitions in the web app
 
 On **New profile or definition**, choose **Actions policy** to create a policy

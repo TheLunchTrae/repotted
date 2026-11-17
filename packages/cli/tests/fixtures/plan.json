@@ -638,6 +638,9 @@
   ],
   "skipped": [],
   "warnings": [],
+  "source": {
+    "profile": "<examples>/base.yaml"
+  },
   "access": {
     "role": "admin",
     "app": {

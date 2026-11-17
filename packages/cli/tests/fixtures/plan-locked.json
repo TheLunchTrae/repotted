@@ -28,6 +28,9 @@
   ],
   "skipped": [],
   "warnings": [],
+  "source": {
+    "profile": "<tests>/wiki.yaml"
+  },
   "access": {
     "role": "admin",
     "app": {

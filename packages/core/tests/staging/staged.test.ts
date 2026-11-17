@@ -284,16 +284,15 @@ merge: { allow_rebase_merge: false }
     expect(github.writes).toEqual([]);
   });
 
-  test('applies what was reviewed even when the profile changes after review', async () => {
+  test('refuses changed profile inputs after review', async () => {
     const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', [files.profile]);
     const github = new FakeGitHub();
     const { plan } = await planStagedApply(github, files.staged);
     await writeFile(files.profile, 'repository: { has_issues: false }\n');
 
-    await applyPlan(github, plan);
-    expect(github.state.repository['has_issues']).toBe(true);
-    expect(github.state.repository['has_wiki']).toBe(false);
+    await expect(applyPlan(github, plan)).rejects.toBeInstanceOf(StalePlanError);
+    expect(github.writes).toEqual([]);
   });
 
   test('reports what was applied when a write fails partway', async () => {

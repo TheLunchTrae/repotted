@@ -1043,15 +1043,18 @@ didn't shows in Settings.
 ## Plan and apply
 
 `createPlan` only reads. `applyPlan` (`packages/core/src/plan/plan.ts`) plans
-again from the reviewed plan's profile and writes only when that yields the
-same changes.
+again from its recorded source and writes only when that yields the same
+changes. Sources include profile files, definition files, staged applies, and
+inline YAML with its reference directory. Plans without source metadata use
+their saved desired profile.
 
-| State    | Event                  | Next                                                                                 |
-| -------- | ---------------------- | ------------------------------------------------------------------------------------ |
-| Reviewed | The new plan differs   | Stale: `StalePlanError` carries the current plan, and nothing is written.            |
-| Reviewed | The new plan matches   | Writing, change by change, from the new plan's requests.                             |
-| Writing  | A request fails        | Partly applied: `ApplyError` lists the changes already made and the one that failed. |
-| Writing  | Every request succeeds | Applied.                                                                             |
+| State    | Event                                | Next                                                                                 |
+| -------- | ------------------------------------ | ------------------------------------------------------------------------------------ |
+| Reviewed | A source or reference cannot resolve | Refused before any write; repair the source and review a fresh plan.                 |
+| Reviewed | The new plan differs                 | Stale: `StalePlanError` carries the current plan, and nothing is written.            |
+| Reviewed | The new plan matches                 | Writing, change by change, from the new plan's requests.                             |
+| Writing  | A request fails                      | Partly applied: `ApplyError` lists the changes already made and the one that failed. |
+| Writing  | Every request succeeds               | Applied.                                                                             |
 
 Partly applied is a state of the repository, not of the plan: nothing rolls
 back the changes already made. Planning again from the same profile lists

@@ -25,6 +25,7 @@ import { describeOwnerType, draftOwnerConflicts, type OwnerConflict, ownerConfli
 import { moveLeadingCommentAndBlankLine, profileFields, removeUnknownProfileFields } from './profile-fields.js';
 import {
   actionsSettings,
+  definitionKind,
   definitionSections,
   type DefinitionKind,
   profileReferences,
@@ -378,10 +379,14 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
   if (layer.kind !== undefined) {
     const section = definitionSections[layer.kind];
     const extra = Object.keys(layer).filter((key) => !['kind', 'owner_type', section, 'drafts'].includes(key));
-    const draftSections = Object.keys(layer.drafts ?? {}).filter((key) => key !== section);
-    if (extra.length > 0 || draftSections.length > 0 || layer[section] === undefined) {
+    const draftSections = Object.keys(layer.drafts ?? {}).filter((key) => key !== section && key !== 'unset');
+    const foreignUnset = (layer.drafts?.unset ?? []).some((key) => {
+      const unset = parseUnset(key);
+      return unset === undefined || (unset.kind === 'setting' ? unset.path[0] : unset.list) !== section;
+    });
+    if (extra.length > 0 || draftSections.length > 0 || foreignUnset) {
       throw new ProfileError(
-        `${source}: ${layer.kind} definitions must contain ${section} and may only set that section, its drafts, and owner_type`,
+        `${source}: ${layer.kind} definitions may only set that section (${section}), its drafts, and owner_type`,
       );
     }
   }
@@ -979,7 +984,7 @@ async function readChain<Read extends LayerRead>(
     });
   });
   if (
-    kind === profileLayer &&
+    kind.noun === profileLayer.noun &&
     appliedFirst.some((link) => listedProfiles.includes(link.file) && link.parsed.kind !== undefined)
   ) {
     throw new ProfileError(`${first.file}: use references instead of extends for reusable definitions`);
@@ -1373,11 +1378,11 @@ async function listFolder(root: string, folder: string, entries: Dirent[], listi
     let kind: DefinitionKind | undefined;
     let references: readonly string[] = [];
     try {
+      const text = await readFile(file, 'utf8');
+      references = declaredReferences(text).map((reference) => path.resolve(path.dirname(file), reference));
+      const raw: unknown = parse(text);
+      kind = isRecord(raw) ? definitionKind.safeParse(raw['kind']).data : undefined;
       const { links, head } = await readChain(file, profileLayer);
-      kind = head.layer.kind;
-      references = declaredReferences(await readFile(file, 'utf8')).map((reference) =>
-        path.resolve(path.dirname(file), reference),
-      );
       file = links[0].file;
       base = head.layer.extends === undefined ? null : path.resolve(path.dirname(file), head.layer.extends);
       owner = resolveChain(links, file).resolved.profile.owner_type ?? null;
