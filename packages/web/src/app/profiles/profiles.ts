@@ -32,6 +32,7 @@ import type { SaveMode } from '../profile-editor/entry-edits.js';
 import { type OwnerChoice, ProfileEditor } from '../profile-editor/profile-editor.js';
 import { SerialQueue } from '../storage/serial-queue.js';
 import { markConfigRepository, normalFolder, unmarkConfigRepository } from './config-marker.js';
+import { definitionTypes } from './definition-types.js';
 import {
   type LocalFolder,
   type LocalFolders,
@@ -64,6 +65,7 @@ export type NewProfileStart =
 export interface NewProfile {
   readonly name: string;
   readonly definitionKind?: DefinitionKind;
+  readonly targetName?: string;
   /** From the profiles folder; '' for the profiles folder itself. */
   readonly folder: string;
   readonly start: NewProfileStart;
@@ -614,6 +616,15 @@ export class Profiles {
    * before it ends leaves nothing behind. It answers why it couldn't.
    */
   async create(profile: NewProfile, signal?: AbortSignal): Promise<string | undefined> {
+    const definition = definitionTypes.find((item) => item.kind === profile.definitionKind);
+    const targetName = profile.targetName?.trim();
+    if (
+      definition?.multiple === true &&
+      (profile.start.kind === 'empty' || profile.start.kind === 'repository') &&
+      !targetName
+    ) {
+      return `Give the ${definition.label.toLowerCase()} a target name.`;
+    }
     const problem = this.nameProblem(profile.name, profile.folder);
     if (problem !== undefined) {
       return problem;
@@ -670,9 +681,9 @@ export class Profiles {
       const owner = profile.ownerType === undefined ? '' : `owner_type: ${profile.ownerType}\n`;
       text =
         profile.start.kind === 'empty'
-          ? profile.definitionKind === undefined
+          ? definition === undefined
             ? owner
-            : `kind: ${profile.definitionKind}\n${owner}actions: {}\n`
+            : `kind: ${definition.kind}\n${owner}${stringifyProfile({ [definition.section]: definition.multiple === true ? [{ name: targetName }] : {} })}`
           : `extends: ${JSON.stringify(relative(dirname(file), profile.start.base.file))}\n${
               profile.start.base.owner_type === null ? owner : ''
             }`;
