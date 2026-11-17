@@ -93,3 +93,10 @@ export { settingCondition } from './profiles/setting-dependencies.js';
 export type { SettingCondition } from './profiles/setting-dependencies.js';
 
 export { captureDefinition, stringifyDefinition } from './profiles/definitions.js';
+
+export {
+  authoritativeSections,
+  authoritativeSchema,
+  type AuthoritativeSection,
+  type Ownership,
+} from './plan/ownership.js';

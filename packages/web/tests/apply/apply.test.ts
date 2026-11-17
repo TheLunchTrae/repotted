@@ -320,6 +320,7 @@ test('an apply opens on its one-off edits, which change this apply only and can 
   await apply.start('lunch/app', profile);
   expect(apply.state.value).toEqual({
     kind: 'editing',
+    authoritative: [],
     repository: 'lunch/app',
     profileName: 'web',
     fromProfile: true,
@@ -373,6 +374,7 @@ test('settings are changed once, with no profile, from the repository as it is',
   await apply.startWithoutProfile('lunch/app');
   expect(apply.state.value).toEqual({
     kind: 'editing',
+    authoritative: [],
     repository: 'lunch/app',
     profileName: '',
     fromProfile: false,
@@ -665,4 +667,29 @@ test('a failed review retried as another apply starts cannot take over that new 
   await apply.apply();
   expect(writes(app)).toEqual([]);
   expect(writes(other)).toEqual(['PATCH /repos/lunch/other']);
+});
+
+test('one-time ownership is reviewed, can exclude pruning, and stays out of the source profile', async () => {
+  await saved('labels: []\n');
+  const github = new FakeGitHub({
+    labels: [{ id: 1, name: 'legacy', color: 'ffffff', description: null, default: false }],
+  });
+  const apply = new Apply(github, () => undefined);
+  await apply.start('lunch/app', profile);
+  await apply.setAuthoritative(['labels']);
+  await apply.review();
+  expect(apply.state.value).toMatchObject({
+    kind: 'reviewed',
+    plan: { authoritative: ['labels'], changes: [{ action: 'delete', target: 'legacy' }] },
+  });
+  expect(github.writes).toEqual([]);
+  await apply.leaveOut('labels/legacy', true);
+  expect(apply.counts.value.changes).toBe(0);
+  await apply.leaveOut('labels/legacy', false);
+  await apply.backToEdits();
+  await apply.setAuthoritative([]);
+  await apply.review();
+  expect(apply.counts.value.changes).toBe(0);
+  expect(await readFile(profile.file, 'utf8')).toBe('labels: []\n');
+  expect(github.writes).toEqual([]);
 });

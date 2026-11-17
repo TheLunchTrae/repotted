@@ -187,6 +187,9 @@ export async function readAllPages<Item>(
   for (let page = 1; ; page += 1) {
     const { items: pageItems, total } = await fetchPage(`${path}${separator}per_page=${pageSize}&page=${page}`);
     items.push(...pageItems);
+    if (total !== undefined && pageItems.length < pageSize && items.length < total) {
+      throw new Error(`Incomplete enumeration of ${path}: received ${items.length} of ${total} entries`);
+    }
     if (pageItems.length < pageSize || (total !== undefined && items.length >= total)) {
       return items;
     }

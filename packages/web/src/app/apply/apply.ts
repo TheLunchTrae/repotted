@@ -1,6 +1,7 @@
 import { computed, signal } from '@preact/signals';
 import {
   type AppAccess,
+  type AuthoritativeSection,
   ApplyError,
   applyPlan,
   createStagedApply,
@@ -101,6 +102,7 @@ export type ApplyState =
       readonly builtIn: boolean;
       /** What this apply leaves out, which can't be edited here until it is put back. */
       readonly leftOut: readonly string[];
+      readonly authoritative: readonly AuthoritativeSection[];
     } & Target)
   | ({ readonly kind: 'reviewing' | 'applying' } & Target)
   | ({ readonly kind: 'failed'; readonly message: string } & Target)
@@ -197,16 +199,24 @@ export class Apply {
   }
 
   /** The profiles apply in order, later ones overriding earlier ones. */
-  async startFromProfiles(repository: string, profiles: readonly ComparedProfile[]): Promise<void> {
+  async startFromProfiles(
+    repository: string,
+    profiles: readonly ComparedProfile[],
+    authoritative: readonly AuthoritativeSection[] = [],
+  ): Promise<void> {
     if (this.#writing() || profiles.length === 0) {
       return;
     }
-    await this.#start(repository, profiles);
+    await this.#start(repository, profiles, false, authoritative);
   }
 
-  async startReview(repository: string, profiles: readonly ComparedProfile[]): Promise<void> {
+  async startReview(
+    repository: string,
+    profiles: readonly ComparedProfile[],
+    authoritative: readonly AuthoritativeSection[] = [],
+  ): Promise<void> {
     if (!this.#writing() && profiles.length > 0) {
-      await this.#start(repository, profiles, true);
+      await this.#start(repository, profiles, true, authoritative);
     }
   }
 
@@ -216,7 +226,12 @@ export class Apply {
     }
   }
 
-  async #start(repository: string, profiles: readonly ComparedProfile[], review = false): Promise<void> {
+  async #start(
+    repository: string,
+    profiles: readonly ComparedProfile[],
+    review = false,
+    authoritative: readonly AuthoritativeSection[] = [],
+  ): Promise<void> {
     const closing = this.close();
     this.#profiles = profiles;
     const file = `/apply/${crypto.randomUUID()}/apply.yaml`;
@@ -231,6 +246,7 @@ export class Apply {
           file,
           repository,
           profiles.map((profile) => profile.file),
+          authoritative,
         );
       } catch (error) {
         await rm(dirname(file), { recursive: true, force: true });
@@ -254,6 +270,17 @@ export class Apply {
     await this.#work(state.repository, state.profileName, 'reviewing', (_current, file) =>
       this.#review(state.repository, file, undefined),
     );
+  }
+
+  async setAuthoritative(authoritative: readonly AuthoritativeSection[]): Promise<void> {
+    const state = this.state.value;
+    if (state.kind !== 'editing' || !(await this.#saveEdits()) || this.state.value !== state) {
+      return;
+    }
+    await this.#work(state.repository, state.profileName, 'reviewing', async (current, file) => {
+      await editStagedApply(file, [{ authoritative }]);
+      return this.#edit(state.repository, file, current);
+    });
   }
 
   async backToEdits(): Promise<void> {
@@ -334,6 +361,7 @@ export class Apply {
       fromProfile: staged.profiles.length > 0,
       builtIn: staged.profiles.some((profile) => profile.startsWith(`${builtInFolder}/`)),
       leftOut: staged.exclude,
+      authoritative: staged.authoritative,
     };
   }
 

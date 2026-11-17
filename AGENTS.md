@@ -44,7 +44,8 @@ under [Text in the web app](#text-in-the-web-app).
   [Plans](docs/developer/architecture.md#plans) explains.
 - A profile manages only what it names. Settings, rulesets, environments, and
   labels it leaves out stay as they are; a ruleset, environment, or label is
-  deleted only by an `absent: true` entry.
+  deleted only by an `absent: true` entry, or a staged apply that explicitly
+  owns its section and shows the generated deletion in its reviewed plan.
 - Tests use the in-memory GitHub in `packages/core/tests/support/fake-github.ts`.
   Never run `apply` against a real repository, and never change a real
   repository's settings, rulesets, or branch protection, without the owner's

@@ -13,6 +13,7 @@ import {
   definitionKind,
   checkActionPatterns,
   createPlan,
+  authoritativeSchema,
   describeActionCheck,
   describeFoundAction,
   findActions,
@@ -110,12 +111,17 @@ export async function createServer(options: ServerOptions): Promise<McpServer> {
         'Compares a repository with a profile and lists the changes that would bring it in line. Writes nothing. Give the profile as YAML text or as a file path. Returns a plan_id for apply.',
       inputSchema: {
         repository,
+        authoritative: authoritativeSchema
+          .optional()
+          .describe(
+            'Sections fully owned for this apply. Unlisted entries are deleted; omitted Actions settings use the documented baseline.',
+          ),
         profile: z.string().optional().describe('Profile YAML. `extends` resolves from the server’s directory.'),
         profile_path: z.string().optional().describe('Path to a profile file, relative to the server’s directory.'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    ({ repository: name, profile, profile_path: profilePath }) =>
+    ({ repository: name, profile, profile_path: profilePath, authoritative }) =>
       attempt(async () => {
         if ((profile === undefined) === (profilePath === undefined)) {
           return text('Give exactly one of profile or profile_path.', true);
@@ -127,7 +133,7 @@ export async function createServer(options: ServerOptions): Promise<McpServer> {
         const github = await client();
         const repo = parseRepo(name);
         const plan: Plan = {
-          ...(await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts))),
+          ...(await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts), { ...(authoritative === undefined ? {} : { authoritative }) })),
           source:
             profilePath === undefined
               ? { text: profile ?? '', directory: options.profileBaseDirectory }

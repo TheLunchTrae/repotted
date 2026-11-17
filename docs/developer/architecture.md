@@ -522,3 +522,27 @@ name, as they replace inherited entries. The existing ruleset planner retains
 its live ID and omitted fields. Capture selects one exact name from the
 complete repository-owned ruleset enumeration and refuses zero or multiple
 matches.
+
+### Explicit section ownership
+
+`plan/ownership.ts` defines the supported authoritative sections and Actions
+baselines. Ownership belongs to staged applies and plans, never profiles.
+`createPlan` receives ownership after resolution of the complete combination.
+Each collection is fully enumerated before unlisted repository entries become
+ordinary `absent` entries, preserving the adapters' write ordering. Retained
+entries use the same partial-field semantics as other applies. Label rename
+sources count as desired until renamed. Ambiguous live names stop planning.
+
+Exclusions remain in the plan independently of its effective profile. Collection
+exclusions protect entries from generated deletions; Actions exclusions remove
+baseline values before diffing. A section exclusion disables ownership for that
+section. The staged editor accepts exclusion keys for generated changes even
+when no source names them. Unavailable or refused owned reads stop the plan;
+pagination with an advertised total refuses a truncated final page. Organization
+rulesets are outside repository ownership and the review says so.
+
+A saved plan retains its original desired profile, authoritative sections and
+exclusions, rather than freezing generated deletions into the desired profile.
+Apply enumerates and reconciles again before comparing complete writes. A new
+live entry therefore makes an authoritative plan stale. Ownership does not
+persist through saving staged edits to a source profile.

@@ -61,6 +61,7 @@ import {
   skippedDrafts,
   StalePlanError,
   createStagedApply,
+  authoritativeSchema,
   discardStagedApply,
   editStagedApply,
   planStagedApply,
@@ -126,6 +127,7 @@ Commands:
                                                  profiles applied in order (later ones override earlier
                                                  ones) or over the repository as it is
   stage <file> [--set key=json] [--unset key]    Show a staged apply resolved; edit it as profile does, and
+        [--authoritative section]... [--partial]
         [--exclude key] [--include key]              exclude values of its profile, as repository.has_wiki or
         [--save-to-profile] [--discard]          rulesets/Main; save its edits to its profile; or remove it
   stage <folder> --batch --new owner/repo ...    Start a batch: a staged apply for each repository, all from
@@ -341,10 +343,14 @@ async function plan(io: Io, args: string[]): Promise<number> {
     options: {
       profile: { type: 'string', short: 'p' },
       staged: { type: 'string' },
+      authoritative: { type: 'string', multiple: true },
       out: { type: 'string' },
       json: { type: 'boolean' },
     },
   });
+  if (values.staged !== undefined && values.authoritative !== undefined) {
+    throw new UsageError('Set ownership on the staged apply with stage --authoritative, then plan it.');
+  }
   if (values.staged !== undefined && (await isFolder(values.staged))) {
     if (values.profile !== undefined || positionals.length > 0) {
       throw new UsageError('plan --staged <folder> plans each repository of a batch, so it takes no other.');
@@ -363,7 +369,7 @@ async function plan(io: Io, args: string[]): Promise<number> {
     const desired = await resolveProfile(values.profile);
     github = await io.github();
     result = {
-      ...(await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts))),
+      ...(await createPlan(github, repo, desired.profile, skippedDrafts(desired.drafts), { ...(values.authoritative === undefined ? {} : { authoritative: authoritativeSchema.parse(values.authoritative) }) })),
       source: { profile: path.resolve(values.profile) },
     };
   } else {
@@ -773,6 +779,9 @@ async function stageFile(io: Io, file: string, options: StageOptions, edits: rea
     return 0;
   }
   io.err(`Staged apply to ${result.repository}, ${startsFrom(result.profiles, 'the repository as it is')}\n`);
+  if (result.authoritative.length > 0) {
+    io.err(`Full ownership: ${result.authoritative.join(', ')}\n`);
+  }
   if (result.exclude.length > 0) {
     io.err(`Exclusions: ${result.exclude.join(', ')}\n`);
   }
@@ -950,6 +959,8 @@ async function stage(io: Io, args: string[]): Promise<number> {
       label: { type: 'string', multiple: true },
       'drop-label': { type: 'string', multiple: true },
       exclude: { type: 'string', multiple: true },
+      authoritative: { type: 'string', multiple: true },
+      partial: { type: 'boolean' },
       include: { type: 'string', multiple: true },
       'save-to-profile': { type: 'boolean' },
       discard: { type: 'boolean' },
@@ -964,7 +975,13 @@ async function stage(io: Io, args: string[]): Promise<number> {
     },
   });
   const target = only(positionals, 'staged apply file or batch folder');
+  if (values.partial === true && values.authoritative !== undefined) {
+    throw new UsageError('Choose --partial or --authoritative, not both.');
+  }
   const edits: StagedEdit[] = [
+    ...(values.authoritative === undefined && values.partial !== true
+      ? []
+      : [{ authoritative: authoritativeSchema.parse(values.authoritative ?? []) }]),
     ...profileEdits(tokens),
     ...tokens.flatMap((token) =>
       token.kind === 'option' && (token.name === 'exclude' || token.name === 'include')

@@ -10,6 +10,7 @@ import { BarActions } from '../layout/action-bar.js';
 import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
+import { OwnershipChoices } from './ownership.js';
 
 const kinds: Readonly<Record<CompareRow['kind'], string>> = { changes: 'Changes', adds: 'Adds', removes: 'Removes' };
 
@@ -191,6 +192,12 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 </ul>
               </div>
             )}
+            <OwnershipChoices
+              value={state.authoritative}
+              onChange={(sections) => {
+                run(apply.setAuthoritative(sections));
+              }}
+            />
             <ProfileSettings
               key={editor.file}
               name={state.profileName}
@@ -236,6 +243,11 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
         )}
         {state.kind === 'reviewed' && (
           <>
+            {(state.plan.authoritative?.length ?? 0) > 0 && (
+              <p class="notice notice-drift">
+                Full ownership: {state.plan.authoritative?.join(', ')}. Every removal and reset is included below.
+              </p>
+            )}
             {state.notice !== undefined && (
               <p class="notice notice-problem" role="alert">
                 {state.notice}
@@ -272,7 +284,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
             )}
             {state.warnings.length > 0 && (
               <div class="notice notice-drift">
-                <p>The review left some things out:</p>
+                <p>Review notes:</p>
                 <ul>
                   {state.warnings.map((warning) => (
                     <li key={warning}>{warning}</li>
