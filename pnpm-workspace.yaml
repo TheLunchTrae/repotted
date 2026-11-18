@@ -9,6 +9,15 @@ savePrefix: '^'
 # guaranteed.
 minimumReleaseAge: 4320
 
+# picomatch 4.0.7 is confined to Vitest/Vite and Knip; no patched release is
+# listed. Remove this exception when those paths resolve to a fixed version,
+# and reassess it if picomatch enters production dependencies.
+# https://github.com/advisories/GHSA-fc5q-39xc-vjpf
+# https://github.com/TheLunchTrae/repotted/issues/401
+audit:
+  ignore:
+    - GHSA-fc5q-39xc-vjpf
+
 # eslint, which the regexp lint plugin needs, still asks for minimatch 10, and
 # minimatch below 11.0.1 has GHSA-g3hv-75wg-m249. No eslint release asks for 11.
 overrides:

@@ -31,6 +31,17 @@ alone.
 [AGENTS.md](../../AGENTS.md) lists the narrower checks to run for each kind of
 change.
 
+The audit includes development dependencies and keeps its low severity
+threshold. `pnpm-workspace.yaml` lists the temporary exception for
+[the picomatch advisory](https://github.com/advisories/GHSA-fc5q-39xc-vjpf),
+which has no listed patched release. The locked package is reachable through
+Vitest/Vite and Knip only; production dependencies and the browser, Worker,
+and CLI bundles exclude it. Tooling that processes untrusted glob patterns
+still carries the risk. Remove the exception when those dependency paths can
+use a patched release, and reassess it if picomatch becomes a production
+dependency. [The tracking issue](https://github.com/TheLunchTrae/repotted/issues/401)
+stays open until removal.
+
 ## Versions
 
 Manifests and tool configs state version ranges, and lockfiles pin the exact
