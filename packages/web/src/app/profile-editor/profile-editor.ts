@@ -10,6 +10,8 @@ import {
   type OwnerType,
   permissionsMissingForProfilePart,
   type ProfileEdit,
+  type ProfileReferences,
+  profileReferences,
   previewProfileChanges,
   ProfileError,
   readProfileForEditing,
@@ -21,7 +23,7 @@ import {
 import { stringify } from 'yaml';
 
 import { readFile } from '../../engine/files.js';
-import { basename } from '../../engine/path.js';
+import { basename, dirname, relative, resolve } from '../../engine/path.js';
 import type { ActionPatternChecks } from './action-pattern-checks.js';
 import type { ActionSearch } from './action-search.js';
 import type { GitHubAppLookup } from './bypass-actors.js';
@@ -79,6 +81,15 @@ const profileStore: EditorStore = {
   }),
   edit: editProfile,
 };
+
+function canonicalReferences(file: string, references: ProfileReferences): ProfileReferences {
+  const canonical = (named: string): string => relative(dirname(file), resolve(dirname(file), named));
+  return {
+    ...(references.actions === undefined ? {} : { actions: canonical(references.actions) }),
+    ...(references.rulesets === undefined ? {} : { rulesets: references.rulesets.map(canonical) }),
+    ...(references.environments === undefined ? {} : { environments: references.environments.map(canonical) }),
+  };
+}
 
 /** An undefined value stops naming the setting in the open profile's file. */
 interface SettingEdit {
@@ -412,6 +423,50 @@ export class ProfileEditor {
 
   readonly loaded = computed(() => this.#saved.value !== undefined);
 
+  readonly references = computed(() => {
+    const edit = this.#edits.value.get('references');
+    return canonicalReferences(
+      this.file,
+      profileReferences.parse(edit === undefined ? (this.#saved.value?.references ?? {}) : (edit.value ?? {})),
+    );
+  });
+
+  readonly sourceFiles = computed(() => {
+    const shown = this.#profileAsSaveWouldLeaveIt.value ?? this.#saved.value;
+    return shown === undefined
+      ? []
+      : [
+          ...new Set([
+            ...shown.chain,
+            ...Object.values(shown.sources.actions),
+            ...Object.values(shown.sources.rulesets),
+            ...Object.values(shown.sources.environments),
+          ]),
+        ];
+  });
+
+  async setReferences(references: ProfileReferences): Promise<void> {
+    this.#batchUndo.value = undefined;
+    const edits = new Map(this.#edits.value);
+    const original = edits.get('references')?.originalText ?? this.#saved.value?.rawText;
+    if (
+      sameValue(
+        canonicalReferences(this.file, references),
+        canonicalReferences(this.file, this.#saved.value?.references ?? {}),
+      )
+    ) {
+      edits.delete('references');
+    } else {
+      edits.set('references', {
+        path: ['references'],
+        value: Object.keys(references).length === 0 ? undefined : references,
+        originalText: original,
+      });
+    }
+    this.#edits.value = edits;
+    await this.#previewEdits();
+  }
+
   readonly dirty = computed(
     () =>
       this.#edits.value.size > 0 ||
@@ -589,6 +644,9 @@ export class ProfileEditor {
   readonly draftProblem = computed(() => {
     if (!this.canHoldDrafts) {
       return undefined;
+    }
+    if (this.#edits.value.has('references')) {
+      return 'Shared definition references cannot be kept as drafts. Save the profile or reset the references.';
     }
     if (this.#entryEdits.someChangedEntryCannotBeDraft.value) {
       return 'Give each new or renamed ruleset, environment, and label a name no other has, to keep them as a draft.';

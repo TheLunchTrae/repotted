@@ -366,7 +366,7 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
     }
   };
   const settingsUrl = editor.installationSettingsUrl.value;
-  const filtering = editor.filtering.value;
+  const filtering = editor.definitionSection.value === undefined && editor.filtering.value;
   const preview = editor.preview.value;
   const search = useRef<HTMLInputElement>(null);
   const saveError = editor.saveError.value;
@@ -428,61 +428,63 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
             </div>
           );
         })}
-      <div class="filters" role="search" aria-label="Settings">
-        <input
-          class="field"
-          type="search"
-          ref={search}
-          placeholder="Find a setting"
-          aria-label="Find a setting"
-          value={editor.query.value}
-          onInput={(event) => {
-            editor.search(event.currentTarget.value);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              editor.search('');
-            }
-          }}
-        />
-        <div class="segments" role="group" aria-label="Show only">
-          {filterNames
-            .filter(({ id }) => id !== 'drafts' || editor.draftCount.value > 0 || editor.filters.value.has(id))
-            .map(({ id, name }) => (
-              <label key={id}>
-                <input
-                  type="checkbox"
-                  checked={editor.filters.value.has(id)}
-                  onChange={(event) => {
-                    editor.filter(id, event.currentTarget.checked);
-                    // The Drafts filter goes once it is off on a profile with no draft, and takes the keyboard with it.
-                    if (id === 'drafts' && !event.currentTarget.checked) {
-                      search.current?.focus();
-                    }
-                  }}
-                />
-                <span>{name}</span>
-              </label>
-            ))}
-        </div>
-        {filtering && (
-          <button
-            class="button button-quiet button-small"
-            type="button"
-            onClick={() => {
-              editor.clearFilters();
-              search.current?.focus();
+      {editor.definitionSection.value === undefined && (
+        <div class="filters" role="search" aria-label="Settings">
+          <input
+            class="field"
+            type="search"
+            ref={search}
+            placeholder="Find a setting"
+            aria-label="Find a setting"
+            value={editor.query.value}
+            onInput={(event) => {
+              editor.search(event.currentTarget.value);
             }}
-          >
-            Show every setting
-          </button>
-        )}
-        {/* The message is there before it has anything to say, so a screen reader announces what it comes to say. */}
-        <p class={filtering ? 'muted small' : 'visually-hidden'} role="status">
-          {filtering ? editor.foundSummary.value : ''}
-        </p>
-      </div>
-      {editor.settingsHiddenForOwnerTypeCount.value > 0 && (
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                editor.search('');
+              }
+            }}
+          />
+          <div class="segments" role="group" aria-label="Show only">
+            {filterNames
+              .filter(({ id }) => id !== 'drafts' || editor.draftCount.value > 0 || editor.filters.value.has(id))
+              .map(({ id, name }) => (
+                <label key={id}>
+                  <input
+                    type="checkbox"
+                    checked={editor.filters.value.has(id)}
+                    onChange={(event) => {
+                      editor.filter(id, event.currentTarget.checked);
+                      // The Drafts filter goes once it is off on a profile with no draft, and takes the keyboard with it.
+                      if (id === 'drafts' && !event.currentTarget.checked) {
+                        search.current?.focus();
+                      }
+                    }}
+                  />
+                  <span>{name}</span>
+                </label>
+              ))}
+          </div>
+          {filtering && (
+            <button
+              class="button button-quiet button-small"
+              type="button"
+              onClick={() => {
+                editor.clearFilters();
+                search.current?.focus();
+              }}
+            >
+              Show every setting
+            </button>
+          )}
+          {/* The message is there before it has anything to say, so a screen reader announces what it comes to say. */}
+          <p class={filtering ? 'muted small' : 'visually-hidden'} role="status">
+            {filtering ? editor.foundSummary.value : ''}
+          </p>
+        </div>
+      )}
+      {editor.definitionSection.value === undefined && editor.settingsHiddenForOwnerTypeCount.value > 0 && (
         <p class="muted small">
           {editor.settingsHiddenForOwnerTypeCount.value === 1
             ? '1 setting that only organizations have is hidden.'
@@ -615,6 +617,7 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
                 list={list}
                 ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
                 goTo={entryGoTo?.list === list ? entryGoTo : undefined}
+                single={editor.definitionSection.value === list}
               />
             </div>
           )}

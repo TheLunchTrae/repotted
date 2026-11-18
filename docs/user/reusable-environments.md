@@ -68,8 +68,8 @@ repotted capture lunch/service --kind environment --name production --output pro
 The target name is required. A missing target or unreadable protection settings
 fails the capture instead of saving an empty definition. The MCP `capture` tool
 takes the same choice as `kind: environment` and `name: production`. In the web
-app, choose **Environment** as the type and enter the **Target name** when
-creating or capturing a definition. Its editor uses the existing environment
+app, open **Environments**, choose **New environment**, and enter the
+**Target name** when creating or capturing a definition. Its editor uses the existing environment
 controls.
 
 Use the definition wherever you choose a profile for a one-time staged apply or

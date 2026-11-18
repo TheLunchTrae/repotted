@@ -6,7 +6,6 @@ import {
   checkActionPatterns,
   declaredExtends,
   type DefinitionKind,
-  editProfile,
   parseProfile,
   withRewrittenReferences,
   findActions,
@@ -14,13 +13,14 @@ import {
   type GitHub,
   listProfiles,
   type OwnerType,
+  type ProfileReferences,
   parseRepo,
   readInstallationSettingsUrl,
   stringifyProfile,
   syncFolder,
   withExtends,
 } from '@repotted/core';
-import { isMap, parseDocument } from 'yaml';
+import { parseDocument } from 'yaml';
 import * as z from 'zod/mini';
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from '../../engine/files.js';
@@ -65,6 +65,8 @@ export type NewProfileStart =
   | { readonly kind: 'import'; readonly text: string };
 
 export interface NewProfile {
+  /** Definition paths from the profiles folder, independent of the destination folder. */
+  readonly references?: ProfileReferences;
   readonly name: string;
   readonly definitionKind?: DefinitionKind;
   readonly targetName?: string;
@@ -158,6 +160,7 @@ export class Profiles {
   /** The profiles that changed both here and where they sync with since the last sync, by path in the folder. */
   readonly conflicts = signal<readonly string[]>([]);
   readonly listings = signal<readonly ProfileListing[]>([]);
+  readonly definitions = computed(() => this.listings.value.filter((listing) => listing.kind !== undefined));
   readonly listingError = signal<string | undefined>(undefined);
   readonly listed = signal(false);
   readonly profileWorkUnderWay = signal(false);
@@ -266,8 +269,8 @@ export class Profiles {
 
   readonly tree = computed<ProfileFolderNode>(() => {
     const words = this.search.value.trim().toLowerCase();
-    const shown = this.listings.value.filter((listing) =>
-      `${listing.folder}/${listing.name}`.toLowerCase().includes(words),
+    const shown = this.listings.value.filter(
+      (listing) => listing.kind === undefined && `${listing.folder}/${listing.name}`.toLowerCase().includes(words),
     );
     const build = (path: string): ProfileFolderNode => {
       const under = shown.filter(
@@ -706,6 +709,28 @@ export class Profiles {
               profile.start.base.owner_type === null ? owner : ''
             }`;
     }
+    if (profile.references !== undefined) {
+      try {
+        const document = parseDocument(text);
+        const [error] = document.errors;
+        if (error !== undefined) {
+          throw error;
+        }
+        const references = profile.references;
+        const repoint = (named: string): string => relative(dirname(file), resolve(folder, named));
+        document.set(
+          'references',
+          document.createNode({
+            ...(references.actions === undefined ? {} : { actions: repoint(references.actions) }),
+            ...(references.rulesets === undefined ? {} : { rulesets: references.rulesets.map(repoint) }),
+            ...(references.environments === undefined ? {} : { environments: references.environments.map(repoint) }),
+          }),
+        );
+        text = document.toString({ lineWidth: 0 });
+      } catch (error) {
+        return messageOf(error);
+      }
+    }
     return this.#work(async () => {
       // A capture whose form closed makes nothing. A profile asked for outright is made even so.
       if (profile.start.kind === 'repository' && signal?.aborted === true) {
@@ -730,7 +755,10 @@ export class Profiles {
         return unusableFolder;
       }
       try {
-        await parseProfile(text, dirname(file));
+        const parsed = await parseProfile(text, dirname(file));
+        if (profile.definitionKind !== undefined && parsed.kind !== profile.definitionKind) {
+          throw new Error(`Import a ${profile.definitionKind} definition into this library.`);
+        }
         await mkdir(dirname(file), { recursive: true });
         await writeFile(file, text, { flag: 'wx' });
       } catch (error) {
@@ -740,7 +768,9 @@ export class Profiles {
       await this.#sync({});
       await this.#list();
       this.settingsCaptureCouldNotRead.value = uncaptured.count > 0 ? { file, uncaptured } : undefined;
-      await this.select(this.listings.value.find((listing) => listing.file === file));
+      if (signal?.aborted !== true) {
+        await this.select(this.listings.value.find((listing) => listing.file === file));
+      }
       return undefined;
     });
   }
@@ -749,6 +779,17 @@ export class Profiles {
   dependents(...listings: readonly ProfileListing[]): readonly ProfileListing[] {
     const gone = new Set(listings.map((listing) => listing.file));
     const found = new Set<string>(gone);
+    for (const editor of this.#editors.value) {
+      const references = Object.values(editor.references.value).flatMap((value) =>
+        typeof value === 'string' ? [value] : (value ?? []),
+      );
+      if (
+        !gone.has(editor.file) &&
+        references.some((reference) => found.has(resolve(dirname(editor.file), reference)))
+      ) {
+        found.add(editor.file);
+      }
+    }
     for (let grew = true; grew;) {
       grew = false;
       for (const other of this.listings.value) {
@@ -775,6 +816,19 @@ export class Profiles {
   /** Deleted in one turn, so they leave in one commit. */
   remove(...listings: readonly ProfileListing[]): Promise<string | undefined> {
     return this.#work(async () => {
+      if (listings.some((listing) => listing.kind !== undefined)) {
+        await this.#sync({});
+        await this.#list();
+        for (const listing of listings) {
+          const current = this.listings.value.find((item) => item.file === listing.file);
+          if (current !== undefined && current.kind !== listing.kind) {
+            return 'This definition changed. Refresh before deleting it.';
+          }
+          if (this.unsaved.value.has(listing.file)) {
+            return unsavedFirst;
+          }
+        }
+      }
       // The list may have been read again, from another place, since the user asked.
       const listed = new Set(this.listings.value.map((item) => item.file));
       const going = new Set(listings.map((listing) => listing.file).filter((file) => listed.has(file)));
@@ -1083,40 +1137,6 @@ export class Profiles {
    * there, so the save lands on the file as it is now, and a sync after
    * commits it.
    */
-  async saveReferences(
-    file: string,
-    references: Readonly<Record<string, string | readonly string[]>>,
-    expected: string,
-  ): Promise<string | undefined> {
-    try {
-      await this.#write(async () => {
-        if (this.unsaved.value.has(file)) {
-          throw new Error(unsavedFirst);
-        }
-        if ((await readFile(file, 'utf8')) !== expected) {
-          throw new Error('The file changed. Reload its references before saving.');
-        }
-        await editProfile(file, [{ path: ['references'], value: references }]);
-      });
-      return undefined;
-    } catch (error) {
-      return messageOf(error);
-    }
-  }
-
-  referencesOf(text: string, file: string): Readonly<Record<string, unknown>> {
-    const node = parseDocument(text).get('references', true);
-    const value: unknown = isMap(node) ? node.toJSON() : {};
-    const references = z.record(z.string(), z.union([z.string(), z.array(z.string())])).parse(value);
-    const canonical = (reference: string): string => relative(dirname(file), resolve(dirname(file), reference));
-    return Object.fromEntries(
-      Object.entries(references).map(([section, reference]) => [
-        section,
-        typeof reference === 'string' ? canonical(reference) : reference.map(canonical),
-      ]),
-    );
-  }
-
   async save(mode: SaveMode = 'applies'): Promise<void> {
     await this.editor.value?.save((write) => this.#write(write), mode);
   }

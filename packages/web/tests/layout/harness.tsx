@@ -182,6 +182,27 @@ const keeping = await keepFiles(
   navigator.locks,
 );
 await mkdir('/profiles/browser/teams', { recursive: true });
+await mkdir('/profiles/browser/definitions/ruleset', { recursive: true });
+await mkdir('/profiles/browser/definitions/environment', { recursive: true });
+await mkdir('/profiles/browser/definitions/actions-policy', { recursive: true });
+await writeFile(
+  '/profiles/browser/definitions/ruleset/Main.yaml',
+  'kind: ruleset\nrulesets: [{ name: Main, target: branch, enforcement: active, rules: [{ type: pull_request, parameters: { required_approving_review_count: 1 } }] }]\n',
+);
+await writeFile(
+  '/profiles/browser/definitions/environment/production.yaml',
+  'kind: environment\nenvironments: [{ name: production, wait_timer: 15 }]\n',
+);
+await writeFile(
+  '/profiles/browser/definitions/actions-policy/Approved.yaml',
+  'kind: actions-policy\nactions: { enabled: true, allowed_actions: selected, selected_actions: { verified_allowed: true } }\n',
+);
+for (const name of ['shared-api', 'shared-web']) {
+  await writeFile(
+    `/profiles/browser/${name}.yaml`,
+    'references: { actions: definitions/actions-policy/Approved.yaml, rulesets: [definitions/ruleset/Main.yaml], environments: [definitions/environment/production.yaml] }\n',
+  );
+}
 await writeFile('/profiles/browser/base.yaml', 'repository:\n  has_wiki: false\n  delete_branch_on_merge: true\n');
 await writeFile(
   '/profiles/browser/teams/website.yaml',

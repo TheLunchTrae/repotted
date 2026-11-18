@@ -337,6 +337,23 @@ the file has it, and `entry-edits.ts` holds each change with the saved entry
 it was made on, so a save never writes an entry over one that has since
 changed elsewhere. `views/profile-editor/entries.tsx` only draws them.
 
+`views/profiles/definitions.tsx` gives Actions policies, rulesets, and
+environments separate routes. It reuses `NewProfileForm` fixed to a kind
+and the existing profile editor, preserving capture, duplicate, import,
+export, owner handling, and drafts. `Profiles.definitions` derives library
+lists from the same listings; the profile tree filters them out without
+removing definitions from apply and assignment pickers.
+
+`SharedDefinitions` adds reference pickers during profile creation and
+editing. Creation retains root-relative selections until the destination
+folder is known. An existing editor previews and saves `references` with its
+settings, checks the original file text before replacing that mapping,
+and refuses drafting reference edits. Library links use effective source
+files for inherited values. Saving a definition refreshes the existing
+editor cache, preserving unrelated edits. Consumer tracking includes cached
+unsaved references; deletion refreshes dependencies before checking its
+kind, dirty state, profile consumers, and assignments.
+
 `readProfileForEditing` opens syntactically valid YAML even when the
 configuration cannot resolve. It retains known invalid values with
 path-based problems and source files, and omits unknown keys. The editor

@@ -1,4 +1,4 @@
-import type { DefinitionKind, ownerTypes } from '@repotted/core';
+import type { DefinitionKind, ownerTypes, ProfileReferences } from '@repotted/core';
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
@@ -9,6 +9,7 @@ import type { NewProfileStart, Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
 import { useProfileConfirmation } from '../layout/notifications.js';
 import { run } from '../layout/run.js';
+import { SharedDefinitions } from './shared-definitions.js';
 
 type OwnerChoice = (typeof ownerTypes)[number] | 'any';
 
@@ -19,17 +20,27 @@ const ownerLabels: Readonly<Record<OwnerChoice, string>> = {
 };
 
 interface NewProfileProps {
+  readonly definitionKind?: DefinitionKind;
   readonly profiles: Profiles;
   readonly repositories: Repositories;
   readonly router: Router;
   readonly repositoryToCapture: string | undefined;
 }
 
-export function NewProfileForm({ profiles, repositories, router, repositoryToCapture }: NewProfileProps): JSX.Element {
+export function NewProfileForm({
+  profiles,
+  repositories,
+  router,
+  repositoryToCapture,
+  definitionKind,
+}: NewProfileProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
-  const listings = profiles.listings.value.filter((listing) => listing.problem === null);
+  const listings = profiles.listings.value.filter(
+    (listing) => listing.problem === null && listing.kind === definitionKind,
+  );
   const captured = repositories.list.value?.repositories ?? [];
-  const [definitionKind, setDefinitionKind] = useState<DefinitionKind | undefined>(undefined);
+  const [references, setReferences] = useState<ProfileReferences>({});
+  const library = definitionTypes.find((item) => item.kind === definitionKind);
   const [targetName, setTargetName] = useState('');
   const [importText, setImportText] = useState('');
   const [name, setName] = useState('');
@@ -92,6 +103,7 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
         start,
         ...(definitionKind === undefined ? {} : { definitionKind, targetName }),
         ownerType: owner === 'any' ? undefined : owner,
+        ...(Object.keys(references).length === 0 ? {} : { references }),
       },
       formClosed.current.signal,
     );
@@ -104,7 +116,13 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
       return;
     }
     if (failure === undefined) {
-      router.go('/profiles');
+      const created = profiles.selected.value;
+      const destination = definitionTypes.find((item) => item.kind === created?.kind);
+      router.go(
+        destination === undefined || created === undefined
+          ? '/profiles'
+          : `${destination.path}?definition=${encodeURIComponent(profiles.pathOf(created))}`,
+      );
     } else {
       setError(failure);
     }
@@ -121,30 +139,15 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
     >
       <div class="page-heading">
         <div>
-          <h1 id="new-profile-heading">New profile or definition</h1>
+          <h1 id="new-profile-heading">
+            {library === undefined
+              ? 'New profile'
+              : `New ${library.kind === 'actions-policy' ? library.label : library.label.toLowerCase()}`}
+          </h1>
           <p class="muted">Repotted never replaces a profile that is already there.</p>
         </div>
       </div>
 
-      <label class="form-field">
-        <span>Type</span>
-        <select
-          class="field"
-          disabled={working}
-          value={definitionKind ?? ''}
-          onChange={(event) => {
-            setDefinitionKind(definitionTypes.find((item) => item.kind === event.currentTarget.value)?.kind);
-            setKind('empty');
-          }}
-        >
-          <option value="">Profile</option>
-          {definitionTypes.map((item) => (
-            <option key={item.kind} value={item.kind}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </label>
       {definitionTypes.find((item) => item.kind === definitionKind)?.multiple === true &&
         (kind === 'empty' || kind === 'repository') && (
           <label class="form-field">
@@ -349,6 +352,15 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
           }}
         />
       </label>
+      {definitionKind === undefined && (
+        <SharedDefinitions
+          profiles={profiles}
+          folder={profiles.folder.value}
+          references={references}
+          onChange={setReferences}
+          disabled={working}
+        />
+      )}
       <fieldset class="choices" disabled={working || fixedOwner !== undefined}>
         <legend>For repositories owned by</legend>
         {fixedOwner === undefined ? (
@@ -385,13 +397,13 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
           type="submit"
           disabled={working || (kind === 'import' && importText === '') || problem !== undefined || start === undefined}
         >
-          {kind === 'repository' ? 'Capture' : 'Create'}
+          {kind === 'repository' ? 'Capture' : library === undefined ? 'Create' : 'Create definition'}
         </PendingButton>
         <button
           class="button button-quiet"
           type="button"
           onClick={() => {
-            router.go('/profiles');
+            router.go(library?.path ?? '/profiles');
           }}
         >
           Cancel

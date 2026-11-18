@@ -16,6 +16,7 @@ import { SharedPreferences } from '../app/preferences/shared-preferences.js';
 import { BranchPreview } from '../app/profiles/branch-preview.js';
 import { ConfigDiscovery } from '../app/profiles/config-discovery.js';
 import { ConfigProtection } from '../app/profiles/config-protection.js';
+import { definitionTypes } from '../app/profiles/definition-types.js';
 import type { LocalFolders } from '../app/profiles/local-folder.js';
 import { Profiles } from '../app/profiles/profiles.js';
 import { reviewMovedProfiles } from '../app/repositories/folder-moves.js';
@@ -31,6 +32,7 @@ import { NotificationContext, Toasts } from './layout/notifications.js';
 import { run } from './layout/run.js';
 import { Shell } from './layout/shell.js';
 import { BranchPreviewPage } from './profiles/branch-preview.js';
+import { DefinitionsPage } from './profiles/definitions.js';
 import { FoundConfig } from './profiles/found-config.js';
 import { SignOutQuestion } from './profiles/leave.js';
 import { ProfilesPage } from './profiles/profiles.js';
@@ -152,6 +154,7 @@ function SignedIn({
     };
   }, [profiles, apply]);
   const path = router.path.value;
+  const library = definitionTypes.find((definition) => definition.path === path);
   const previewedBranch = path === '/profiles' ? (new URLSearchParams(router.search.value).get('preview') ?? '') : '';
   // A preview is of the profiles' repository, so it goes when they are kept somewhere else, before
   // the one the address asks for opens of the new one.
@@ -184,7 +187,7 @@ function SignedIn({
       setRepositoryToCapture(undefined);
     }
   }, [path]);
-  const title = titles[path];
+  const title = library?.title ?? titles[path];
   useEffect(() => {
     document.title = title === undefined ? 'Repotted' : `${title} - Repotted`;
   }, [title]);
@@ -301,6 +304,14 @@ function SignedIn({
               run(comparison.compare(repository, profile));
               router.go('/compare');
             }}
+          />
+        ) : library !== undefined ? (
+          <DefinitionsPage
+            key={library.kind}
+            kind={library.kind}
+            profiles={profiles}
+            repositories={repositories}
+            router={router}
           />
         ) : path === '/profiles' || path === '/profiles/new' ? (
           <ProfilesPage

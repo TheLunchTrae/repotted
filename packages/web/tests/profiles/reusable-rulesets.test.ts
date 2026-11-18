@@ -43,9 +43,9 @@ test('creates, references, and duplicates a ruleset without copying it into a co
     await profiles.create({ name: 'service', folder: '', start: { kind: 'empty' }, ownerType: undefined }),
   ).toBeUndefined();
   const file = '/profiles/browser/service.yaml';
-  expect(
-    await profiles.saveReferences(file, { rulesets: ['main.yaml'] }, await readFile(file, 'utf8')),
-  ).toBeUndefined();
+  await profiles.editor.value!.setReferences({ rulesets: ['main.yaml'] });
+  await profiles.save();
+  expect(profiles.editor.value!.saveError.value).toBeUndefined();
   expect((await resolveProfile(file)).sources.rulesets['Main']).toBe(shared.file);
   expect(await readFile(file, 'utf8')).not.toContain('name: Main');
   expect(

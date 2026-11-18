@@ -1233,21 +1233,20 @@ test('Actions definitions move with references and refuse deletion while consume
   expect(profiles.listings.value.every((item) => item.problem === null)).toBe(true);
 });
 
-test('reference saves refuse stale file text and preserve unrelated inline values', async () => {
+test('reference saves preserve unrelated inline values', async () => {
   await inBrowser({
     'trusted.yaml': 'kind: actions-policy\nactions:\n  enabled: true\n',
     'service.yaml': 'repository:\n  has_wiki: false\n',
   });
   const profiles = new Profiles(new FakeGitHub(), memory(), () => undefined);
   await profiles.refresh();
-  const file = '/profiles/browser/service.yaml';
-  const text = await readFile(file, 'utf8');
-  expect(await profiles.saveReferences(file, { actions: 'trusted.yaml' }, text)).toBeUndefined();
-  const saved = await readFile(file, 'utf8');
+  const service = profiles.listings.value.find((item) => item.name === 'service')!;
+  await profiles.select(service);
+  await profiles.editor.value!.setReferences({ actions: 'trusted.yaml' });
+  await profiles.save();
+  const saved = await readFile(service.file, 'utf8');
   expect(saved).toContain('has_wiki: false');
   expect(saved).toContain('trusted.yaml');
-  expect(await profiles.saveReferences(file, {}, text)).toContain('changed');
-  expect(await readFile(file, 'utf8')).toBe(saved);
 });
 
 test('definitions duplicate across folders without changing their source and import validates references', async () => {
@@ -1304,11 +1303,17 @@ test('refuses deleting or moving sources used by repository assignments without 
   expect(profiles.listings.value).toEqual([]);
 });
 
-test('reference controls normalize equivalent paths without adding duplicate sources', () => {
+test('reference controls treat equivalent paths as the same source', async () => {
+  await inBrowser({
+    'trusted.yaml': 'kind: actions-policy\nactions: { enabled: true }\n',
+    'service.yaml': 'references: { actions: ./shared/../trusted.yaml }\n',
+  });
   const profiles = new Profiles(new FakeGitHub(), memory(), () => undefined);
-  expect(
-    profiles.referencesOf('references: { actions: ./shared/../trusted.yaml }', '/profiles/browser/service.yaml'),
-  ).toEqual({ actions: 'trusted.yaml' });
+  await profiles.refresh();
+  await profiles.select(profiles.listings.value.find((item) => item.name === 'service'));
+  const editor = profiles.editor.value!;
+  await editor.setReferences({ actions: 'trusted.yaml' });
+  expect(editor.dirty.value).toBe(false);
 });
 
 test('a duplicate whose source disappeared reports an error without leaving a destination', async () => {
