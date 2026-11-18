@@ -1171,20 +1171,23 @@ test.each([
   expect(editor.dirty.value).toBe(false);
 });
 
-test('validates configured code scanning with Actions disabled by a base before saving', async () => {
-  const original = 'extends: base.yaml\n';
-  const editor = await opened({ 'base.yaml': 'actions: { enabled: false }', 'web.yaml': original });
-  const setup = field('security.code_scanning_default_setup.state');
+test.each(['code_scanning_default_setup', 'code_quality_setup'])(
+  'validates configured %s with Actions disabled by a base before saving',
+  async (key) => {
+    const original = 'extends: base.yaml\n';
+    const editor = await opened({ 'base.yaml': 'actions: { enabled: false }', 'web.yaml': original });
+    const setup = field(`security.${key}.state`);
 
-  await editor.set(setup, 'configured');
+    await editor.set(setup, 'configured');
 
-  expect(editor.unsavedChangesProblem.value).toContain('Actions');
-  expect(editor.problemsBlockingSave.value.some((problem) => problem.message.includes('Actions'))).toBe(true);
-  expect(editor.canSave.value).toBe(false);
-  expect(editor.canSaveAsDraft.value).toBe(true);
-  await editor.save(write);
-  expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(original);
+    expect(editor.unsavedChangesProblem.value).toContain('Actions');
+    expect(editor.problemsBlockingSave.value.some((problem) => problem.message.includes('Actions'))).toBe(true);
+    expect(editor.canSave.value).toBe(false);
+    expect(editor.canSaveAsDraft.value).toBe(true);
+    await editor.save(write);
+    expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(original);
 
-  await editor.reset(setup);
-  expect(editor.unsavedChangesProblem.value).toBeUndefined();
-});
+    await editor.reset(setup);
+    expect(editor.unsavedChangesProblem.value).toBeUndefined();
+  },
+);

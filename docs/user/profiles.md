@@ -54,10 +54,16 @@ edited YAML file, including settings disabled by a base profile; it leaves
 base files and drafts unchanged.
 
 The profile editor checks conflicting active settings before **Save**. Code
-scanning default setup cannot be configured while the profile disables
-Actions, including through inherited settings. Fix the conflict or use
-**Save as draft** to keep unfinished changes out of plans. A setting the
-profile leaves unmanaged still depends on the target repository's setup.
+scanning default setup and code quality setup cannot be configured while the
+profile disables Actions, including through inherited settings. Fix the
+conflict or use **Save as draft** to keep unfinished changes out of plans.
+A setting the profile leaves unmanaged still depends on the target repository's setup.
+
+Neither setup requires allowing all actions or all GitHub-owned actions.
+Dependabot updates do not require the profile to enable Actions; GitHub lets
+those jobs bypass Actions policy restrictions and disablement. See
+[GitHub's Actions policy requirements](https://docs.github.com/en/enterprise-cloud@latest/admin/enforcing-policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-actions-in-your-enterprise)
+and [Dependabot on Actions](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-on-actions).
 
 A few options on GitHub's settings pages have no API, such as wiki's
 **Restrict editing to collaborators only**, so no profile can set them.
@@ -441,11 +447,10 @@ and labels are deleted, then renamed, then updated, then created.
 
 Settings that need another setting apply after their prerequisites. For
 example, if a profile enables Actions and configures code scanning default
-setup, Repotted enables Actions first. If the profile leaves Actions
-unmanaged and Actions is disabled, code scanning configuration is skipped
-with a warning. Repotted does not enable unmanaged settings. A profile that
-turns off both code scanning default setup and Actions turns off the setup
-first.
+setup or code quality setup, Repotted enables Actions first. If the profile
+leaves Actions unmanaged and Actions is disabled, setup configuration is
+skipped with a warning. Repotted does not enable unmanaged settings. A profile
+that turns off a setup and Actions turns off the setup first.
 
 [Plan and apply](cli.md#plan-and-apply) describes how to review and apply a
 plan.

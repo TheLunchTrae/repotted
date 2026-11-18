@@ -43,10 +43,10 @@ there a marking key that a branch leaves out becomes `not: {}`, a key the
 branch rules out; any other type JSON Schema can't hold still throws. The
 refinements that span keys, such as `mergeSettingsProblems` and repeated
 names, have no JSON Schema form and stay out of it.
-The resolved profile rejects configured code scanning default setup with
-Actions disabled. The editor previews through this validation, so conflicts
-block saving to apply while remaining available as drafts. Inactive settings
-are handled by [setting dependencies](#setting-dependencies).
+The resolved profile rejects configured code scanning default setup or code
+quality setup with Actions disabled. The editor previews through this
+validation, so conflicts block saving to apply while remaining available as
+drafts. Inactive settings are handled by [setting dependencies](#setting-dependencies).
 
 `packages/core/src/profiles/profile.ts` loads a profile and the chain of profiles it
 `extends`, merges them, and validates the result. Validating after the merge
@@ -97,8 +97,8 @@ the resolved values against live state. The security planner also reads
 Dependabot alerts when only security updates are named, to check that
 dependency without managing the alerts.
 
-Code scanning default setup also needs Actions enabled. Planning uses the
-profile's `actions.enabled` first, then the live Actions policy when it is
+Code scanning default setup and code quality setup also need Actions enabled.
+Planning uses the profile's `actions.enabled` first, then the live Actions policy when it is
 unmanaged. A disabled or unreadable prerequisite skips configuration with a
 warning; it never adds an unrequested enablement. Turning the setup off does
 not need Actions enabled. The selected-actions list is read while the live
@@ -273,8 +273,9 @@ order:
 `plan/setting-order.ts` orders planned setting writes by the prerequisite
 chains in `setting-dependencies.ts`, keeping adapter order for unrelated
 changes. It also moves an Actions enablement before code scanning default
-setup configuration. An explicit code scanning shutdown keeps the base order
-regardless of the Actions change, since shutdown needs no Actions prerequisite.
+setup or code quality setup configuration. An explicit setup shutdown keeps
+the base order regardless of the Actions change, since shutdown needs no
+Actions prerequisite.
 A prerequisite in the same request needs no separate
 write. Cyclic write dependencies refuse planning. The resulting order is
 part of the reviewed plan and is checked again by apply; apply does not reorder
