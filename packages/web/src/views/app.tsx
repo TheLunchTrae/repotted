@@ -11,7 +11,7 @@ import { AddressedRepository } from '../app/navigation/addressed-repository.js';
 import type { Router } from '../app/navigation/router.js';
 import { Notifications } from '../app/notifications.js';
 import { repositoryFoldersKey } from '../app/preferences/preference-changes.js';
-import type { Preferences } from '../app/preferences/preferences.js';
+import type { BrowserPreferences } from '../app/preferences/preferences.js';
 import { SharedPreferences } from '../app/preferences/shared-preferences.js';
 import { BranchPreview } from '../app/profiles/branch-preview.js';
 import { ConfigDiscovery } from '../app/profiles/config-discovery.js';
@@ -50,7 +50,7 @@ const titles: Readonly<Record<string, string>> = {
 interface AppProps {
   readonly account: Account;
   readonly github: GitHub;
-  readonly preferences: Preferences;
+  readonly preferences: BrowserPreferences;
   readonly router: Router;
   readonly keeping: Signal<Keeping>;
   readonly folders: LocalFolders;

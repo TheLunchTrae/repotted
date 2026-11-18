@@ -93,12 +93,16 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
       },
       formClosed.current.signal,
     );
-    if (formClosed.current.signal.aborted) {
+    const closed = formClosed.current.signal.aborted;
+    // Ordinary creation finishes after the form closes; a capture is canceled on close.
+    if (failure === undefined && (start.kind !== 'repository' || !closed)) {
+      confirm(`${name.trim()} created.`);
+    }
+    if (closed) {
       return;
     }
     setWorking(false);
     if (failure === undefined) {
-      confirm(`${name.trim()} created.`);
       router.go('/profiles');
     } else {
       setError(failure);

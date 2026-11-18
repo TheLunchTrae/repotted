@@ -3,6 +3,10 @@ export interface Preferences {
   write(key: string, value: unknown): void;
 }
 
+export interface BrowserPreferences extends Preferences {
+  write(key: string, value: unknown): boolean;
+}
+
 const prefix = 'repotted:';
 
 /**
@@ -10,7 +14,9 @@ const prefix = 'repotted:';
  * itself, since a browser that blocks a site's data throws when the page so
  * much as names `localStorage`.
  */
-export function browserPreferences(storage: () => Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>): Preferences {
+export function browserPreferences(
+  storage: () => Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>,
+): BrowserPreferences {
   return {
     read(key) {
       try {
@@ -28,8 +34,10 @@ export function browserPreferences(storage: () => Pick<Storage, 'getItem' | 'set
         } else {
           storage().setItem(prefix + key, JSON.stringify(value));
         }
+        return true;
       } catch {
         // The choice still holds for this visit.
+        return false;
       }
     },
   };

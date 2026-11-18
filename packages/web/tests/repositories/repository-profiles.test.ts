@@ -900,7 +900,7 @@ test('assignment ownership syncs with config preferences and reloads changes mad
       },
     }),
   });
-  const preferences = new SharedPreferences(github, { read: () => undefined, write: () => undefined }, () => undefined);
+  const preferences = new SharedPreferences(github, { read: () => undefined, write: () => true }, () => undefined);
   await preferences.use({ kind: 'repository', repository: 'lunch/config', path: 'profiles' });
   const assignments = new RepositoryProfiles(preferences, { listings, folder: signal(folder) });
   expect(assignments.authoritativeOf('lunch/app')).toEqual(['rulesets']);

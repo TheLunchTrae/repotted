@@ -8,7 +8,7 @@ import type { ProfilesSource } from '../profiles/profiles.js';
 import { readRepositoryFile, writeRepositoryFile } from '../storage/repository-files.js';
 import { SerialQueue } from '../storage/serial-queue.js';
 import { preferenceChanges } from './preference-changes.js';
-import type { Preferences } from './preferences.js';
+import type { BrowserPreferences, Preferences } from './preferences.js';
 
 /** Hidden, so a profile sync and the profile list leave it out. */
 export const preferencesFile = '.repotted-preferences.json';
@@ -78,7 +78,7 @@ export class SharedPreferences implements Preferences {
   readonly error = signal<string | undefined>(undefined);
 
   readonly #github: GitHub;
-  readonly #browser: Preferences;
+  readonly #browser: BrowserPreferences;
   readonly #onSignedOut: () => void;
   readonly #onSaved: ((keys: readonly string[], destination: 'browser' | 'repository') => void) | undefined;
   readonly #queue = new SerialQueue();
@@ -94,7 +94,7 @@ export class SharedPreferences implements Preferences {
 
   constructor(
     github: GitHub,
-    browser: Preferences,
+    browser: BrowserPreferences,
     onSignedOut: () => void,
     onSaved?: (keys: readonly string[], destination: 'browser' | 'repository') => void,
   ) {
@@ -169,9 +169,8 @@ export class SharedPreferences implements Preferences {
     const place = this.#place;
     if (place === undefined) {
       const value = change(this.#browser.read(key));
-      this.#browser.write(key, value);
-      if (this.#onSaved !== undefined && JSON.stringify(this.#browser.read(key)) === JSON.stringify(value)) {
-        this.#onSaved([key], 'browser');
+      if (this.#browser.write(key, value)) {
+        this.#onSaved?.([key], 'browser');
       }
       this.#version.value += 1;
       return;

@@ -3,19 +3,20 @@ import { GitHubError } from '@repotted/core';
 import { expect, test, vi } from 'vitest';
 
 import { FakeGitRepository } from '../../../core/tests/support/fake-git.js';
-import type { Preferences } from '../../src/app/preferences/preferences.js';
+import { browserPreferences, type BrowserPreferences } from '../../src/app/preferences/preferences.js';
 import { preferencesFile, SharedPreferences } from '../../src/app/preferences/shared-preferences.js';
 
 const source = { kind: 'repository', repository: 'lunch/config', path: 'profiles' } as const;
 const file = `profiles/${preferencesFile}`;
 
-function memory(start: Record<string, unknown> = {}): Preferences & { readonly kept: Record<string, unknown> } {
+function memory(start: Record<string, unknown> = {}): BrowserPreferences & { readonly kept: Record<string, unknown> } {
   const kept = { ...start };
   return {
     kept,
     read: (key) => kept[key],
     write: (key, value) => {
       kept[key] = value;
+      return true;
     },
   };
 }
@@ -51,13 +52,39 @@ test('save confirmations wait for a successful write and ignore refused browser 
   await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith(['repository-profiles'], 'repository'));
   const blocked = new SharedPreferences(
     repository,
-    { read: () => undefined, write: () => undefined },
+    { read: () => undefined, write: () => false },
     () => undefined,
     confirm,
   );
   confirm.mockClear();
   blocked.write('repository-profiles', { 'lunch/app': { profiles: ['base.yaml'] } });
   expect(confirm).not.toHaveBeenCalled();
+});
+
+test('browser removal confirms only when storage accepts the deletion', () => {
+  const kept = new Map<string, string>();
+  const access = { blocked: false };
+  const browser = browserPreferences(() => {
+    if (access.blocked) {
+      throw new DOMException('Storage is blocked', 'SecurityError');
+    }
+    return {
+      getItem: (key) => kept.get(key) ?? null,
+      setItem: (key, value) => kept.set(key, value),
+      removeItem: (key) => kept.delete(key),
+    };
+  });
+  browser.write('repository-profiles', { 'lunch/app': { profiles: ['base.yaml'] } });
+  const confirm = vi.fn();
+  const preferences = new SharedPreferences(new FakeGitRepository(), browser, () => undefined, confirm);
+  access.blocked = true;
+  preferences.write('repository-profiles', undefined);
+  expect(confirm).not.toHaveBeenCalled();
+  expect(kept.has('repotted:repository-profiles')).toBe(true);
+  access.blocked = false;
+  preferences.write('repository-profiles', undefined);
+  expect(kept.has('repotted:repository-profiles')).toBe(false);
+  expect(confirm).toHaveBeenCalledExactlyOnceWith(['repository-profiles'], 'browser');
 });
 
 test('kept in this browser until the profiles are kept in a repository, and again after', async () => {

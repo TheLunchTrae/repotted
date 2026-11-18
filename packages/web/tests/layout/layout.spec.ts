@@ -197,7 +197,7 @@ const screens: Readonly<Record<string, Screen>> = {
     path: '/profiles',
     reachFromPath: async (page) => {
       await page.getByText('website', { exact: true }).click();
-      await page.getByRole('textbox', { name: 'Default branch', exact: true }).fill('main dev');
+      await page.getByRole('textbox', { name: /^Default branch/u }).fill('main dev');
       await page.getByRole('button', { name: '1 thing to fix', exact: true }).click();
     },
     visibleOnceDrawn: (page) => page.getByRole('heading', { name: '1 thing to fix before you save' }),
@@ -266,6 +266,29 @@ test('creation confirms across navigation and closes after five seconds', async 
   await expect(confirmation.getByText('confirmed created.', { exact: true })).toBeVisible();
   await page.clock.runFor(5000);
   await expect(confirmation.getByRole('button', { name: 'Dismiss confirmation' })).toHaveCount(0);
+});
+
+test('ordinary creation confirms after the form closes while sync is pending', async ({ page }) => {
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'Use a GitHub repository…', exact: true }).click();
+  await page.getByRole('combobox', { name: /^Repository Any repository/u }).fill('trae/repotted-config');
+  await page.getByRole('checkbox', { name: /^Add the .* from this browser/u }).check();
+  await page.getByRole('button', { name: 'Use this repository', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Change repository…', exact: true })).toBeVisible();
+  if (!(await page.getByRole('link', { name: 'Profiles', exact: true }).isVisible())) {
+    await page.locator('.account-menu > summary').click();
+  }
+  await page.getByRole('link', { name: 'Profiles', exact: true }).click();
+  await page.getByRole('link', { name: 'New profile', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('completed-later');
+  await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Create', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page).toHaveURL('/profiles');
+  await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
+  await expect(page.locator('.toasts').getByText('completed-later created.', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL('/profiles');
 });
 
 test('a save confirmation clears the current height of the save bar', async ({ page }) => {

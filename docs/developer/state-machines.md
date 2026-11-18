@@ -155,6 +155,10 @@ hover, keyboard focus, open dialogs, and page visibility independently.
 
 Failed syncs, conflicts, capture omissions, and partial or stale apply results
 keep their durable notices. They never become successful confirmations.
+Browser preferences confirm only when storage accepts the write or removal.
+Ordinary profile creation that finishes after its form closes still confirms
+through the signed-in shell; it leaves the current route alone. A canceled
+capture does not confirm.
 
 ## Web repositories
 
