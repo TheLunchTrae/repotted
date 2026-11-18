@@ -139,3 +139,22 @@ test('capturing stored empty workflow targets produces an applicable all-workflo
   expect(captured.definition.actions_policies?.[0]).toMatchObject({ conditions: expected });
   expect((await captureProfile(github, repo)).profile.actions_policies?.[0]).toMatchObject({ conditions: expected });
 });
+
+test('partial policy updates normalize stored empty workflow targets in the reviewed request', async () => {
+  const github = new FakeGitHub({
+    policies: [{ ...policy(1, 'Release'), conditions: { workflow_path: { include: [], exclude: [] } } }],
+  });
+  const plan = await createPlan(github, repo, {
+    actions_policies: [{ name: 'Release', enforcement: 'disabled' }],
+  });
+  expect(plan.changes[0]?.request.body).toMatchObject({
+    conditions: { workflow_path: { include: ['~ALL'], exclude: [] } },
+  });
+  expect(plan.changes[0]?.fields).toContainEqual({
+    field: 'conditions',
+    from: { workflow_path: { include: [], exclude: [] } },
+    to: { workflow_path: { include: ['~ALL'], exclude: [] } },
+  });
+  await applyPlan(github, plan);
+  expect((await createPlan(github, repo, plan.desired)).changes).toEqual([]);
+});

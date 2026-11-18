@@ -100,12 +100,12 @@ function writePolicy(entry: ActionPolicy, current?: StoredPolicy): StoredPolicy 
       throw new Error(`Actions policy "${entry.name}": ${rule.type} needs ${required}`);
     }
   }
-  return {
+  return describeActionPolicy({
     name: entry.name,
     enforcement: entry.enforcement ?? current?.enforcement ?? 'active',
     ...(conditions === undefined ? {} : { conditions: z.record(z.string(), z.unknown()).parse(conditions) }),
     rules,
-  };
+  });
 }
 
 export function planActionPolicies(
