@@ -1,7 +1,13 @@
 import { repoPath, type RepoRef } from '../../github/client.js';
 import { securityAndAnalysis, securityFields, type SecuritySettings } from '../../profiles/schema.js';
 import type { Change, SectionPlan, Warning } from '../change.js';
-import { activeSettingsForPlan, type Endpoint, type EndpointValue, planEndpoint } from '../endpoints.js';
+import {
+  activeSettingsForPlan,
+  type Endpoint,
+  type EndpointValue,
+  planEndpoint,
+  warningForUnavailable,
+} from '../endpoints.js';
 import { fieldChanges } from '../match.js';
 
 /**
@@ -171,6 +177,7 @@ export function planSecurity(
   securityAndAnalysisLive: Record<string, unknown> | undefined,
   endpoints: ReadonlyMap<string, EndpointValue>,
   repo: RepoRef,
+  actionsEnabled: EndpointValue | undefined,
 ): SectionPlan {
   const changes: Change[] = [];
   const warnings: Warning[] = [];
@@ -209,6 +216,25 @@ export function planSecurity(
     const value: unknown = Reflect.get(desired, endpoint.key);
     const live = endpoints.get(endpoint.key);
     if (value === undefined || live === undefined) {
+      continue;
+    }
+    if (
+      endpoint.key === 'code_scanning_default_setup' &&
+      desired.code_scanning_default_setup?.state !== 'not-configured' &&
+      actionsEnabled !== undefined &&
+      (!actionsEnabled.available || actionsEnabled.value !== true)
+    ) {
+      warnings.push({
+        section: 'security',
+        key: endpoint.key,
+        ...(actionsEnabled.available
+          ? {
+              cause: 'not_applicable' as const,
+              message:
+                'it needs Actions to be enabled; set actions.enabled: true in the profile or enable Actions on the repository',
+            }
+          : warningForUnavailable(actionsEnabled)),
+      });
       continue;
     }
     const plan = planEndpoint('security', endpoint, value, live, repo);

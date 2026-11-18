@@ -54,7 +54,7 @@ import {
   ownershipWarnings,
   pruneEntries,
 } from './ownership.js';
-import { actionsEndpoints, planActions, readActions } from './sections/actions.js';
+import { actionsEndpoints, planActions, readActions, readActionsEnabled } from './sections/actions.js';
 import { describeAutolink, planAutolinks, readAutolinks } from './sections/autolinks.js';
 import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';
 import { describeLabel, planLabels, readLabels } from './sections/labels.js';
@@ -63,6 +63,7 @@ import { captureCustomProperties, planCustomProperties, readCustomProperties } f
 import { planRepository, readRepository, repositoryEndpoints, repositoryOwnerType } from './sections/repository.js';
 import { planRulesets, readRulesets } from './sections/rulesets.js';
 import { liveSecurityAndAnalysis, planSecurity, securityEndpoints } from './sections/security.js';
+import { orderSettingChanges } from './setting-order.js';
 
 export interface Skipped {
   readonly section: Section;
@@ -155,6 +156,15 @@ export async function createPlan(
   };
 
   const security = desired.security;
+  const liveActions = desired.actions === undefined ? undefined : await readActions(github, repo);
+  const enabled = desired.actions?.enabled ?? liveActions?.enabled;
+  const scanning = security?.code_scanning_default_setup;
+  const actionsEnabled =
+    scanning === undefined || scanning.state === 'not-configured'
+      ? undefined
+      : enabled === undefined
+        ? await readActionsEnabled(github, repo)
+        : { available: true as const, value: enabled };
   if (
     desired.repository !== undefined ||
     desired.merge !== undefined ||
@@ -174,6 +184,7 @@ export async function createPlan(
           liveSecurityAndAnalysis(live.securityAndAnalysis),
           await readEndpoints(github, repo, named),
           repo,
+          actionsEnabled,
         ),
       );
     }
@@ -183,11 +194,11 @@ export async function createPlan(
         Object.hasOwn(security, endpoint.key) ||
         (endpoint.key === 'vulnerability_alerts' && security.automated_security_fixes !== undefined),
     );
-    add(planSecurity(security, undefined, await readEndpoints(github, repo, named), repo));
+    add(planSecurity(security, undefined, await readEndpoints(github, repo, named), repo, actionsEnabled));
   }
-  if (desired.actions !== undefined) {
+  if (desired.actions !== undefined && liveActions !== undefined) {
     const { actions } = desired;
-    add(planActions(actions, await readActions(github, repo), repo));
+    add(planActions(actions, liveActions, repo));
     const named = actionsEndpoints.filter((endpoint) => Object.hasOwn(actions, endpoint.key));
     const live = await readEndpoints(github, repo, named);
     for (const endpoint of named) {
@@ -291,7 +302,7 @@ export async function createPlan(
   return {
     repository: `${repo.owner}/${repo.name}`,
     desired: original,
-    changes,
+    changes: orderSettingChanges(changes),
     skipped,
     warnings,
     ...(ownership.authoritative === undefined ? {} : { authoritative: ownership.authoritative }),
