@@ -141,6 +141,73 @@ body:has(dialog[open]) .toasts {
   color: var(--muted);
 }
 
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.loading-spinner {
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex: none;
+  width: 1em;
+  height: 1em;
+  margin-inline-end: 0.35em;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  animation: loading-turn 850ms linear infinite;
+}
+
+.skeleton-list {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--panel-radius);
+  background: var(--surface);
+}
+
+.skeleton-row {
+  display: flex;
+  gap: 24px;
+  padding: 24px 18px;
+}
+
+.skeleton-row + .skeleton-row {
+  border-top: 1px solid var(--border);
+}
+
+.skeleton-row span {
+  height: 12px;
+  width: 42%;
+  border-radius: 4px;
+  background: var(--border);
+}
+
+.skeleton-row span + span {
+  margin-inline-start: auto;
+  width: 20%;
+}
+
+.batch-progress {
+  display: block;
+  max-width: 100%;
+  margin-top: 12px;
+  accent-color: var(--rail);
+}
+
+@keyframes loading-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation: none;
+  }
+}
+
 .small {
   font-size: 13.5px;
 }

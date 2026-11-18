@@ -1,4 +1,5 @@
 import type { JSX } from 'preact';
+import { Spinner } from '../layout/loading.js';
 
 import { type ActionPatternChecks, gitHubPageOf, patternNote } from '../../app/profile-editor/action-pattern-checks.js';
 
@@ -29,7 +30,10 @@ export function PatternChecks({ checks }: { readonly checks: ActionPatternChecks
       </ul>
       {/* The count's place is there before it has anything to say, so a screen reader announces what it comes to say. */}
       <p class="muted small">
-        <span role="status">{checks.summary.value === '' ? '' : `${checks.summary.value}.`}</span>{' '}
+        <span role="status">
+          {lines.some((line) => line.state?.kind === 'checking' || line.state?.kind === 'waiting') && <Spinner />}
+          {checks.summary.value === '' ? '' : `${checks.summary.value}.`}
+        </span>{' '}
         {checks.canCheckAgain.value && (
           <button
             class="link"

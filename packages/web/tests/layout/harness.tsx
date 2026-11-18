@@ -139,6 +139,12 @@ const config: GitHub = {
 const fleet = new FakeFleet([app, ...others]);
 
 const signedOut = new URLSearchParams(location.search).has('signed-out');
+const configReads = { fail: new URLSearchParams(location.search).has('fail-first-sync'), pending: Promise.resolve() };
+window.addEventListener('hold-config', () => {
+  configReads.pending = new Promise<void>((resolve) =>
+    window.addEventListener('release-config', () => resolve(), { once: true }),
+  );
+});
 const pendingRead = { value: Promise.resolve() };
 const holdRequests = (): void => {
   pendingRead.value = new Promise<void>((resolve) =>
@@ -153,6 +159,13 @@ const github: GitHub = signedOut
   ? { request: () => Promise.reject(answered(401, 'Bad credentials')) }
   : {
       request: async (method, path, body) => {
+        if (path.startsWith(`/repos/${configName}`)) {
+          if (configReads.fail && path === `/repos/${configName}`) {
+            configReads.fail = false;
+            throw new Error('Config unavailable');
+          }
+          await configReads.pending;
+        }
         if (path !== '/user') {
           await pendingRead.value;
         }

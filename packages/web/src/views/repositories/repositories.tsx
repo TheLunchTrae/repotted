@@ -23,6 +23,7 @@ import {
   visibilityFilters,
   visibilityLabels,
 } from '../../app/repositories/sort-and-filters.js';
+import { Loading, LoadingList } from '../layout/loading.js';
 import { useMenuPanelKeptOnPage } from '../layout/menu-placement.js';
 import { useNotifications } from '../layout/notifications.js';
 import { usePhone } from '../layout/phone.js';
@@ -1325,12 +1326,9 @@ export function RepositoriesPage({
             {preferencesError}
           </p>
         )}
-        {list === undefined && loading && (
-          <p class="muted" role="status">
-            Reading your repositories…
-          </p>
-        )}
+        {list === undefined && loading && <LoadingList>Reading your repositories…</LoadingList>}
 
+        {list !== undefined && loading && <Loading>Refreshing your repositories…</Loading>}
         {list !== undefined && total === 0 && (
           <div class="empty">
             <h2>No repositories yet</h2>

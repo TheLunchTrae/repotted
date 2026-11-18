@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { Spinner } from '../layout/loading.js';
 
 import type { BatchApply, BatchMemberView } from '../../app/apply/batch-apply.js';
 import { type CompareRow, exclusionLabel, sectionTitles } from '../../app/apply/comparison.js';
@@ -234,6 +235,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
               {state.profileName === '' ? 'to several repositories' : `${state.profileName} to several repositories`}
             </h1>
             <p class="muted" role="status">
+              {(state.kind === 'reviewing' || state.kind === 'applying') && <Spinner />}
               {state.kind === 'reviewing'
                 ? 'Reading from GitHub…'
                 : state.kind === 'applying'
@@ -248,6 +250,14 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                         ? 'No repository has changes that can be written.'
                         : `${repositories(ready.length)} with changes to write. Nothing is written until you apply.`}
             </p>
+            {state.kind === 'applying' && (
+              <progress
+                class="batch-progress"
+                max={state.total}
+                value={state.results.length}
+                aria-label="Repositories finished"
+              />
+            )}
             {ready.length > 0 && (
               <ul class="batch-repositories muted" aria-label="Repositories to change">
                 {ready.map((member) => (

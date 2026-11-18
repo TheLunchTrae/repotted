@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
+import { Loading } from '../layout/loading.js';
 
 import type { Account, User } from '../../app/account/account.js';
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
@@ -184,9 +185,7 @@ function ProtectionRow({ protection, repository, onReview }: ProtectionProps): J
         <strong>Protect this repository</strong>
         <span class="muted small">{protectionText}</span>
         {state.kind === 'checking' ? (
-          <span class="muted small" role="status">
-            Checking the repository…
-          </span>
+          <Loading>Checking the repository…</Loading>
         ) : state.kind === 'failed' ? (
           <span class="problem small" role="alert">
             Couldn't check the repository. {/[.!?]$/u.test(state.message) ? state.message : `${state.message}.`}

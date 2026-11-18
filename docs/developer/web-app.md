@@ -248,6 +248,11 @@ Empty states offer a next action and search resets return focus to the field
 without changing other filters. `Profiles.listed` distinguishes a successful
 empty read from the initial unread state and resets when the source changes.
 
+Pending page and lookup reads use `views/layout/loading.tsx`. Initial lists
+show decorative skeleton rows and one accessible status. A failed initial read keeps its error instead of drawing
+an empty state. Refreshes retain existing data. Batch progress uses completed
+repository counts from the apply state. Reduced motion stops spinner rotation.
+
 ## Profiles
 
 `Profiles` (`src/app/profiles/profiles.ts`) holds where the profiles are kept, how the
