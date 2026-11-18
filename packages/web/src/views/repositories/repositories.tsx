@@ -1,6 +1,6 @@
 import { type InstallationMissingPermissions, permissionsInProse } from '@repotted/core';
 import type { JSX, RefObject } from 'preact';
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { PendingButton } from '../layout/pending-button.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
@@ -721,12 +721,24 @@ function FolderSection({
   readonly phone: boolean;
   readonly onDialog: (dialog: FolderDialog) => void;
 }): JSX.Element {
+  const section = useRef<HTMLElement>(null);
+  const preserveSelectionFocus = useCallback((element: HTMLButtonElement | null) => {
+    if (element === null) {
+      return;
+    }
+    // Ref cleanup runs before the focused control is removed.
+    return () => {
+      if (element === document.activeElement) {
+        section.current?.querySelector<HTMLElement>('.folder-menu > summary')?.focus();
+      }
+    };
+  }, []);
   const searching = repositories.search.value.trim() !== '';
   const count = folder.repositories.length;
   const everyShownRepositorySelected =
     count > 0 && folder.repositories.every((repository) => repositories.isSelected(repository));
   return (
-    <section class="folder" aria-label={folder.name}>
+    <section class="folder" aria-label={folder.name} ref={section}>
       <div class="folder-heading">
         <h2 class="folder-title">
           <button
@@ -759,6 +771,7 @@ function FolderSection({
         {!phone && folder.open && count > 0 && (
           <button
             class="button button-quiet button-small folder-select"
+            ref={preserveSelectionFocus}
             type="button"
             aria-label={`${everyShownRepositorySelected ? 'Deselect all in' : 'Select all in'} ${folder.name}`}
             onClick={() => {

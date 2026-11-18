@@ -861,8 +861,40 @@ test('folder profiles collapse and expand on resize while keeping one header row
   await page.setViewportSize({ width: 320, height: 568 });
   await expect(tags.getByText('2 profiles', { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(tags.getByText('base', { exact: true })).toBeVisible();
+  await expect(tags.getByText('base', { exact: true }))
+    .toBeVisible()
+    .catch(async (error: unknown) => {
+      const sizes = await tags.evaluate((element) => ({
+        viewport: innerWidth,
+        tags: element.querySelector('.folder-profile-names')?.getBoundingClientRect().width,
+        labels: element.querySelector('.folder-profile-names')?.textContent,
+        group: element.parentElement?.getBoundingClientRect().width,
+        picker: element.parentElement?.querySelector('.folder-profile-add')?.getBoundingClientRect().width,
+        style: element.parentElement?.getAttribute('style'),
+      }));
+      throw new Error(`Profile tags did not expand: ${JSON.stringify(sizes)}`, { cause: error });
+    });
   await expect(tags.getByText('website', { exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 667, height: 844 });
+  const changedMetrics = await page.addStyleTag({ content: '.folder-profile-names .tag { letter-spacing: 0.3px; }' });
+  await expect
+    .poll(() =>
+      tags.locator('.folder-profile-names').evaluate((element) => {
+        const label = element.getBoundingClientRect();
+        const control = element.parentElement?.getBoundingClientRect();
+        return (
+          getComputedStyle(element).visibility === 'visible' &&
+          control !== undefined &&
+          label.left >= control.left &&
+          label.right <= control.right
+        );
+      }),
+    )
+    .toBe(true);
+  await changedMetrics.evaluate((element) => {
+    element.parentNode?.removeChild(element);
+  });
 
   for (const width of [768, 800]) {
     await page.setViewportSize({ width, height: 900 });
@@ -931,6 +963,9 @@ test('folder profiles collapse and expand on resize while keeping one header row
   await page.setViewportSize({ width: 900, height: 900 });
   await expect(menu).toBeFocused();
   await expect(folder.locator('.folder-menu')).toHaveJSProperty('open', false);
+  await folder.getByRole('button', { name: 'Select all in Personal Configs', exact: true }).focus();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(menu).toBeFocused();
 });
 
 for (const members of [['lunch/infra'], ['lunch/docs', 'lunch/a_repository_name_with_no_hyphens_in_it_at_all']]) {

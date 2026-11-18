@@ -2056,7 +2056,7 @@ select.field {
     flex: none;
     justify-content: flex-end;
     gap: 0;
-    width: min(var(--folder-profiles-full-width, 44px), 164px, 45vw);
+    width: min(var(--folder-profiles-full-width, 44px), 45vw);
     margin-inline-start: auto;
   }
 
