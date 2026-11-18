@@ -220,7 +220,6 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                     {state.fromProfile && !state.builtIn && (
                       <PendingButton
                         pending={savingProfile}
-                        pendingLabel="Saving…"
                         class="button"
                         type="button"
                         disabled={
@@ -241,7 +240,6 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 primaryActionInsteadOfSave: (
                   <PendingButton
                     pending={reviewing}
-                    pendingLabel="Reviewing…"
                     class="button button-primary"
                     type="button"
                     disabled={
@@ -406,7 +404,6 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 ) : (
                   <PendingButton
                     pending={state.kind === 'applying'}
-                    pendingLabel="Applying…"
                     class="button button-primary"
                     type="button"
                     disabled={!apply.canApply.value}
@@ -433,7 +430,6 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                   </button>
                   <PendingButton
                     pending={reviewingAgain}
-                    pendingLabel="Reviewing…"
                     class="button"
                     type="button"
                     disabled={working}

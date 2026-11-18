@@ -106,7 +106,6 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
           <>
             <PendingButton
               pending={working && saving}
-              pendingLabel="Saving…"
               class="button button-primary"
               type="button"
               disabled={working}
@@ -119,7 +118,6 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
             </PendingButton>
             <PendingButton
               pending={working && !saving}
-              pendingLabel="Discarding…"
               class="button"
               type="button"
               disabled={working}

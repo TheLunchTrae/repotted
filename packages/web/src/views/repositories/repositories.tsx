@@ -330,7 +330,6 @@ function RefreshButton({ repositories }: { readonly repositories: Repositories }
     <>
       <PendingButton
         pending={repositories.loading.value}
-        pendingLabel="Refreshing…"
         class="button refresh"
         type="button"
         aria-disabled={off ? 'true' : undefined}

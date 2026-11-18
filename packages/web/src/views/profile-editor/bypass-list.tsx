@@ -166,7 +166,6 @@ function AddApp({ appLookup, onAdd, onClose }: AddAppProps): JSX.Element {
         />
         <PendingButton
           pending={appLookup?.state.value.kind === 'finding'}
-          pendingLabel="Finding…"
           class="button button-small"
           type="submit"
           disabled={typedId === undefined && (slug === undefined || appLookup === undefined)}

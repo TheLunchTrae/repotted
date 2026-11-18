@@ -287,7 +287,6 @@ export function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNam
         <div class="form-actions">
           <PendingButton
             pending={moving}
-            pendingLabel="Moving…"
             class="button button-primary"
             type="submit"
             value="save"
@@ -403,7 +402,6 @@ export function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JS
         <div class="form-actions">
           <PendingButton
             pending={deleting}
-            pendingLabel="Deleting…"
             class="button button-danger"
             type="submit"
             value="delete"
@@ -511,13 +509,7 @@ export function SelectedPanel({
               ))}
             <option value={newFolderChoice}>New folder…</option>
           </select>
-          <PendingButton
-            pending={movingProfiles}
-            pendingLabel="Moving…"
-            class="button"
-            type="submit"
-            disabled={target === undefined || busy}
-          >
+          <PendingButton pending={movingProfiles} class="button" type="submit" disabled={target === undefined || busy}>
             {target === newFolderChoice ? 'New folder' : 'Move'}
           </PendingButton>
         </div>
@@ -782,7 +774,6 @@ export function Banners({ profiles }: { readonly profiles: Profiles }): JSX.Elem
           <div class="notice-actions">
             <PendingButton
               pending={keepingLocal}
-              pendingLabel="Syncing…"
               class="button"
               type="button"
               disabled={busy}
@@ -794,7 +785,6 @@ export function Banners({ profiles }: { readonly profiles: Profiles }): JSX.Elem
             </PendingButton>
             <PendingButton
               pending={keepingRemote}
-              pendingLabel="Syncing…"
               class="button"
               type="button"
               disabled={busy}
@@ -978,7 +968,6 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
           <div class="page-actions">
             <PendingButton
               pending={refreshing}
-              pendingLabel="Refreshing…"
               class="button"
               type="button"
               disabled={busy}

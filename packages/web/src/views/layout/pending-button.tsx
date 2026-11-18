@@ -42,20 +42,12 @@ export function usePendingAction(): readonly [boolean, (work: () => Promise<unkn
 
 type PendingButtonProps = JSX.IntrinsicElements['button'] & {
   readonly pending: boolean;
-  readonly pendingLabel: string;
 };
 
-export function PendingButton({
-  pending,
-  pendingLabel,
-  children,
-  disabled,
-  onClick,
-  ...props
-}: PendingButtonProps): JSX.Element {
-  const idle = useRef(children);
+export function PendingButton({ pending, children, disabled, onClick, ...props }: PendingButtonProps): JSX.Element {
+  const label = useRef(children);
   if (!pending) {
-    idle.current = children;
+    label.current = children;
   }
   const blocked = pending || disabled === true || props['aria-disabled'] === true || props['aria-disabled'] === 'true';
   return (
@@ -73,10 +65,10 @@ export function PendingButton({
       }}
     >
       <span class="pending-label">
-        <span aria-hidden={pending}>{idle.current}</span>
+        <span aria-hidden={pending}>{label.current}</span>
         <span class="pending-label-busy" aria-hidden={!pending}>
           <span class="pending-spinner" aria-hidden="true" />
-          {pendingLabel}
+          {label.current}
         </span>
       </span>
     </button>

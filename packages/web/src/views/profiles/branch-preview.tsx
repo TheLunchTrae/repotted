@@ -307,7 +307,6 @@ export function BranchPreviewPage({ preview, repositories, router, branch, onCom
           <div class="notice-actions">
             <PendingButton
               pending={state.kind === 'loading'}
-              pendingLabel="Refreshing…"
               class="button"
               type="button"
               disabled={state.kind === 'loading'}

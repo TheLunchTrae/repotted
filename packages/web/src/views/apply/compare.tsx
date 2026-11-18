@@ -99,7 +99,6 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
           <p>
             <PendingButton
               pending={state.kind === 'comparing'}
-              pendingLabel="Comparing…"
               class="button"
               type="button"
               onClick={() => {

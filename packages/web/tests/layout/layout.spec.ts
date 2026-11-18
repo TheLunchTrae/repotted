@@ -95,7 +95,7 @@ const screens: Readonly<Record<string, Screen>> = {
         .waitFor();
       await page.getByRole('button', { name: 'Refresh' }).click();
     },
-    visibleOnceDrawn: (page) => page.getByText(/^\s*in \d+s$/u),
+    visibleOnceDrawn: (page) => page.getByText(/^\s*in \d+s$/u).filter({ visible: true }),
   },
   'selected panel': {
     path: '/',
@@ -328,7 +328,7 @@ test('ordinary creation confirms after the form closes while sync is pending', a
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('completed-later');
   await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
   await page.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Creating…', exact: true })).toHaveAttribute('aria-busy', 'true');
+  await expect(page.getByRole('button', { name: 'Create', exact: true })).toHaveAttribute('aria-busy', 'true');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page).toHaveURL('/profiles');
   await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
@@ -476,7 +476,7 @@ test('retrying a failed first sync keeps an empty cache in the loading state', a
   await expect(page.locator('.empty')).toBeVisible();
 });
 
-test('a refresh centres its idle label and keeps its width and focus while pending', async ({ page }) => {
+test('a refresh keeps its label and size and centres idle text', async ({ page }) => {
   await page.goto('/');
   const refresh = page.getByRole('button', { name: 'Refresh', exact: true });
   await page.getByRole('checkbox', { name: 'Select lunch/app', exact: true }).waitFor();
@@ -492,14 +492,16 @@ test('a refresh centres its idle label and keeps its width and focus while pendi
   await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
   await refresh.focus();
   await refresh.press('Enter');
-  const pending = page.getByRole('button', { name: 'Refreshing…', exact: true });
-  await expect(pending).toHaveAttribute('aria-busy', 'true');
-  await expect(pending).toBeFocused();
-  expect((await pending.boundingBox())?.width).toBe(before?.width);
-  await pending.press('Enter');
+  await expect(refresh).toHaveAttribute('aria-busy', 'true');
+  await expect(refresh).toHaveAccessibleName('Refresh');
+  await expect(refresh.locator('.pending-spinner')).toBeVisible();
+  await expect(refresh).toBeFocused();
+  expect(await refresh.boundingBox()).toMatchObject({ width: before?.width, height: before?.height });
+  await refresh.press('Enter');
   await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
   await expect(refresh).not.toHaveAttribute('aria-busy', 'true');
   await expect(refresh).toBeFocused();
+  await expect(refresh.locator('.pending-spinner')).toBeHidden();
 });
 
 test('an ordinary save does not mark an untouched owner-type action busy', async ({ page }) => {
@@ -516,8 +518,13 @@ test('an ordinary save does not mark an untouched owner-type action busy', async
   await page.getByText('website', { exact: true }).click();
   await page.getByRole('textbox', { name: /^Default branch/u }).fill('develop');
   await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Saving…', exact: true })).toBeVisible();
+  const save = page.getByRole('button', { name: 'Save', exact: true });
+  const before = await save.boundingBox();
+  await save.click();
+  await expect(save).toHaveAttribute('aria-busy', 'true');
+  await expect(save).toHaveAccessibleName('Save');
+  await expect(save.locator('.pending-spinner')).toBeVisible();
+  expect(await save.boundingBox()).toMatchObject({ width: before?.width, height: before?.height });
   await page.getByRole('button', { name: 'Change who the profile is for', exact: true }).click();
   const change = page.getByRole('dialog').getByRole('button', { name: 'Change to any owner', exact: true });
   await expect(change).toBeDisabled();
@@ -535,10 +542,11 @@ test('a batch keeps its reviewed action width while applying', async ({ page }) 
   await apply.click();
   await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
   await page.getByRole('button', { name: 'Apply now', exact: true }).click();
-  const pending = page.getByRole('button', { name: 'Applying…', exact: true });
-  await expect(pending).toHaveAttribute('aria-busy', 'true');
-  await expect(pending).toBeFocused();
-  expect((await pending.boundingBox())?.width).toBe(before?.width);
+  await expect(apply).toHaveAttribute('aria-busy', 'true');
+  await expect(apply).toHaveAccessibleName('Apply to 1 repository');
+  await expect(apply.locator('.pending-spinner')).toBeVisible();
+  await expect(apply).toBeFocused();
+  expect((await apply.boundingBox())?.width).toBe(before?.width);
   await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
   await expect(page.getByText('Every repository is finished, and the batch has ended.')).toBeVisible();
 });

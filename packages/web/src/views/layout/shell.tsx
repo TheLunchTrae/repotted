@@ -128,7 +128,6 @@ function AccountMenu({ account, user, router, onSignOut, holdsPageLinks }: Accou
         </a>
         <PendingButton
           pending={account.signingOut.value}
-          pendingLabel="Signing out…"
           class="menu-item"
           type="button"
           disabled={account.signingOut.value}

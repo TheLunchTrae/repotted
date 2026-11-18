@@ -414,7 +414,6 @@ export function ProfileSettings({
   const save = (
     <PendingButton
       pending={savingChanges}
-      pendingLabel="Saving…"
       class={saving.primaryActionInsteadOfSave === undefined ? 'button button-primary' : 'button'}
       type="button"
       disabled={!editor.canSave.value}
@@ -709,7 +708,6 @@ export function ProfileSettings({
                   </button>
                   <PendingButton
                     pending={savingDraft}
-                    pendingLabel="Saving…"
                     class="button"
                     type="button"
                     disabled={!editor.canSaveAsDraft.value}

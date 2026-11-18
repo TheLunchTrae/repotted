@@ -118,13 +118,7 @@ function ConnectForm({ profiles, repositories, onClose, onConnected }: ConnectFo
         </p>
       )}
       <div class="form-actions">
-        <PendingButton
-          pending={working}
-          pendingLabel="Connecting…"
-          class="button button-primary"
-          type="submit"
-          disabled={working}
-        >
+        <PendingButton pending={working} class="button button-primary" type="submit" disabled={working}>
           Use this repository
         </PendingButton>
         <button class="button button-quiet" type="button" disabled={working} onClick={onClose}>
@@ -174,7 +168,6 @@ function ProtectionOffer({
       <div class="notice-actions">
         <PendingButton
           pending={reviewing}
-          pendingLabel="Preparing…"
           class="button button-primary"
           type="button"
           onClick={() => {
@@ -225,7 +218,6 @@ function ProtectionRow({ protection, repository, onReview }: ProtectionProps): J
       {state.kind === 'failed' || state.kind === 'checking' ? (
         <PendingButton
           pending={state.kind === 'checking'}
-          pendingLabel="Checking…"
           class="button button-quiet"
           type="button"
           onClick={() => {
@@ -238,7 +230,6 @@ function ProtectionRow({ protection, repository, onReview }: ProtectionProps): J
         state.changeCount > 0 && (
           <PendingButton
             pending={reviewing}
-            pendingLabel="Preparing…"
             class="button button-quiet"
             type="button"
             onClick={() => {
@@ -331,7 +322,6 @@ export function SettingsPage({
               </a>
               <PendingButton
                 pending={account.signingOut.value}
-                pendingLabel="Signing out…"
                 class="button button-quiet"
                 type="button"
                 disabled={account.signingOut.value}
@@ -423,7 +413,6 @@ export function SettingsPage({
                   )}
                   <PendingButton
                     pending={refreshing}
-                    pendingLabel="Syncing…"
                     class="button button-quiet"
                     type="button"
                     disabled={busy}
@@ -488,7 +477,6 @@ export function SettingsPage({
                   {profiles.foldersSupported && (
                     <PendingButton
                       pending={choosingFolder}
-                      pendingLabel="Opening folder…"
                       class="button button-quiet"
                       type="button"
                       disabled={busy}
@@ -521,7 +509,6 @@ export function SettingsPage({
                     </div>
                     <PendingButton
                       pending={movingToBrowser}
-                      pendingLabel="Moving…"
                       class="button button-quiet"
                       type="button"
                       disabled={busy}
