@@ -200,7 +200,9 @@ Choices that follow the user, such as the owners and repositories the list
 hides and the user's folders, go through `SharedPreferences`
 (`src/app/preferences/shared-preferences.ts`), which has the same `read` and `write`, and
 `update`, which saves a change to a value, such as adding a name to a list,
-rather than the value. While profiles are kept in a config repository, it
+rather than the value. `save` makes the same change and returns whether it
+was persisted in the current destination, so a dependent action can wait
+for a successful save. While profiles are kept in a config repository, it
 keeps them in `.repotted-preferences.json` beside the profiles and commits
 each change there through the contents API; otherwise it passes them to the
 browser's `Preferences`. The file is a JSON object keyed by preference key,
@@ -475,16 +477,20 @@ the smaller of their intrinsic widths plus the picker, so a side panel
 cannot clip the badge. A phone's width budget comes from the full tag list
 even while collapsed. Measuring rendered widths avoids parsing CSS math
 expressions and lets the count expand when that budget grows.
-Neither saving path starts an apply. **Save and review apply** saves those
-edits first, then `Repositories.reviewFolderProfiles` requests a review of
-the complete stored membership, independent of the list's search, filters,
-and hidden owners or repositories. Empty membership or layers refuse the
-review. An active write keeps the dialog open with an error; the edits stay
-saved.
+The header picker only saves the folder. `FolderSettings` in
+`app/repositories/folder-settings.ts` owns the dialog's draft, saved baseline,
+and pending save. **Save** waits for `SharedPreferences.save` without opening
+a review. **Save and apply** waits for persistence, then
+`Repositories.reviewFolderProfiles` reviews every stored member, independent
+of the list's visibility. **Apply** uses saved profiles and is unavailable
+while the draft differs from its baseline or current settings, or folder
+preferences are pending. Failed saves retain the draft. A successful save
+whose review is blocked leaves **Apply** available. Closing the dialog lets
+a pending save finish without opening a late review.
 
 `Repositories.moveToFolder` calls its review callback only for repositories
 newly entering a known folder with the setting on and layers assigned.
-Preference reads, profile saves, renames, deletions, moves out, and moves to
+Preference reads, **Save**, header profile additions, renames, deletions, moves out, and moves to
 the same folder never call it. Both move and explicit folder reviews use
 `reviewAssignedProfiles` in `profile-reviews.ts` to open a single review
 or one batch using each member's effective layers. A single review

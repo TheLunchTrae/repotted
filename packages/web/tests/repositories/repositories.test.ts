@@ -488,11 +488,11 @@ test('folder profiles survive moves and renames, and only newly moved repositori
   const repositories = new Repositories(github, user, inBrowser(github, browser), browser, () => undefined, review);
   await repositories.load();
   repositories.createFolder('Work');
-  repositories.setFolderProfiles('Work', ['base.yaml', 'base.yaml'], false);
+  await repositories.setFolderProfiles('Work', ['base.yaml', 'base.yaml'], false);
   repositories.moveToFolder(several(repositories, 'zeta/site'), 'Work');
   expect(review).not.toHaveBeenCalled();
 
-  repositories.setFolderProfiles('work', ['base.yaml'], true);
+  await repositories.setFolderProfiles('work', ['base.yaml'], true);
   expect(review).not.toHaveBeenCalled();
   repositories.moveToFolder(several(repositories, 'zeta/site', 'Acme/api', 'acme/web'), 'WORK', { deselect: true });
   expect(review.mock.calls).toEqual([[['Acme/api', 'acme/web']]]);
@@ -526,7 +526,7 @@ test('a remote move loads folder profiles without opening a review and saves loc
   config.write({
     [file]: JSON.stringify({ 'repository-folders': [{ ...saved, repositories: [...saved.repositories, 'Acme/api'] }] }),
   });
-  repositories.setFolderProfiles('Work', ['node.yaml'], true);
+  await repositories.setFolderProfiles('Work', ['node.yaml'], true);
   await vi.waitFor(() => {
     expect(JSON.parse(config.files()[file] ?? '{}')).toEqual({
       'repository-folders': [
@@ -555,7 +555,7 @@ test('a refused move review keeps the move and explains how to review after the 
   );
   await repositories.load();
   repositories.createFolder('Work');
-  repositories.setFolderProfiles('Work', ['base.yaml'], true);
+  await repositories.setFolderProfiles('Work', ['base.yaml'], true);
 
   repositories.moveToFolder(several(repositories, 'Acme/api'), 'Work');
 
@@ -598,7 +598,7 @@ test('reviewing folder profiles includes all members regardless of list visibili
   const repositories = new Repositories(github, user, inBrowser(github, browser), browser, () => undefined, review);
   await repositories.load();
   repositories.createFolder('Work', several(repositories, 'zeta/site', 'Acme/api', 'acme/web'));
-  repositories.setFolderProfiles('Work', ['base.yaml'], false);
+  await repositories.setFolderProfiles('Work', ['base.yaml'], false);
   repositories.setOwnerShown('Acme', false);
   repositories.hide(several(repositories, 'zeta/site'));
   repositories.search.value = 'dotfiles';
@@ -616,7 +616,7 @@ test('an empty folder or an active write cannot start a folder profile review', 
   await repositories.load();
   repositories.createFolder('Work');
   expect(repositories.reviewFolderProfiles('Work')).toBeDefined();
-  repositories.setFolderProfiles('Work', ['base.yaml'], false);
+  await repositories.setFolderProfiles('Work', ['base.yaml'], false);
   expect(repositories.reviewFolderProfiles('Work')).toBeDefined();
   expect(review).not.toHaveBeenCalled();
 

@@ -161,24 +161,34 @@ export class SharedPreferences implements Preferences {
     return this.#place === undefined ? this.#browser.read(key) : this.#fileWithPendingChanges[key];
   }
 
+  hasPending(key: string): boolean {
+    void this.#version.value;
+    return this.#pending.some((pending) => pending.key === key && samePlace(pending.place, this.#place));
+  }
+
   write(key: string, value: unknown): void {
     this.update(key, () => value);
   }
 
   update(key: string, change: Change): void {
+    this.save(key, change).catch(() => undefined);
+  }
+
+  save(key: string, change: Change): Promise<boolean> {
     const place = this.#place;
     if (place === undefined) {
       const value = change(this.#browser.read(key));
-      if (this.#browser.write(key, value)) {
+      const written = this.#browser.write(key, value);
+      if (written) {
         this.#onSaved?.([key], 'browser');
       }
       this.#version.value += 1;
-      return;
+      return Promise.resolve(written);
     }
     this.#pending = [...this.#pending, { place, key, change }];
     this.#changed();
     // Changes made while one saves wait their turn and go in one commit. A save reports its own failure in error.
-    this.#queue.run(() => this.#save(place)).catch(() => undefined);
+    return this.#queue.run(() => this.#save(place));
   }
 
   #changed(): void {
@@ -190,10 +200,10 @@ export class SharedPreferences implements Preferences {
     this.#version.value += 1;
   }
 
-  async #save(place: Place): Promise<void> {
+  async #save(place: Place): Promise<boolean> {
     const changes = this.#pending.filter((pending) => samePlace(pending.place, place));
     if (changes.length === 0) {
-      return;
+      return samePlace(this.#place, place);
     }
     try {
       let merged: Record<string, unknown> | undefined;
@@ -224,9 +234,11 @@ export class SharedPreferences implements Preferences {
         this.#changed();
         this.#onSaved?.([...new Set(changes.map((change) => change.key))], 'repository');
       }
+      return samePlace(this.#place, place);
     } catch (error) {
       // The changes stay, so the next save tries them again.
       this.#failed(place, error, `Couldn't save your preferences to ${place.repository}`);
+      return false;
     }
   }
 

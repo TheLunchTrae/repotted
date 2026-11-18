@@ -168,14 +168,16 @@ When the layout changes while you are using a folder menu, it closes and
 returns keyboard focus to its button.
 The selection button also returns focus there when it moves into the phone menu.
 
-To apply profiles to repositories already in the folder, choose **Save and
-review apply** in its **Profiles** dialog. It saves the list you're editing
-and opens a review for every repository in that folder, including those
-hidden by search, filters, or visibility choices. Each starts with the
-folder's profiles, then its own. One repository opens a single review;
-several open a batch review. Nothing is written to their settings until you
-review and apply. The action needs at least one profile and one repository.
-**Save** only saves the folder's profiles and review-on-move choice.
+**Save** keeps the folder's profile list and settings without applying them.
+**Save and apply** saves the settings, then opens a review for every
+repository already in the folder, including those hidden by the list's
+search or filters. With no unsaved changes, **Apply** opens the same review
+using the saved profiles. One repository opens a single review; several
+open one batch review, with each repository's own profiles after the
+folder's. Neither apply action changes GitHub until you review and apply.
+An empty folder or one with no profiles can still be saved, but its apply
+actions are unavailable. A failed save keeps the dialog open for a retry
+and opens no review.
 
 **Apply profiles to repositories moved here** is off by default. With it on
 and profiles chosen for the folder, moving a repository into it opens a

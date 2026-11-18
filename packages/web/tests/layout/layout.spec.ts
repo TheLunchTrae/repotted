@@ -764,6 +764,61 @@ test('group actions sit beside the heading and above the description on phones',
   }
 });
 
+test('folder settings offer Save, Apply without edits, and Save and apply for all members', async ({ page }) => {
+  await page.goto('/');
+  for (const name of ['lunch/api', 'lunch/docs']) {
+    await page.getByRole('checkbox', { name: `Select ${name}`, exact: true }).check();
+  }
+  await newRepositoryFolder(page);
+  await openFolderProfiles(page);
+  const dialog = page.getByRole('dialog', { name: 'Profiles for Work', exact: true });
+  const save = dialog.getByRole('button', { name: 'Save', exact: true });
+  const apply = dialog.getByRole('button', { name: 'Apply', exact: true });
+  const both = dialog.getByRole('button', { name: 'Save and apply', exact: true });
+  await dialog.getByRole('combobox', { name: 'Add a profile' }).selectOption('base.yaml');
+  await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(apply).toBeDisabled();
+  await expect(both).toBeEnabled();
+  await page.evaluate(() => document.fonts.ready);
+  for (const button of [apply, save, both]) {
+    const offset = await button.evaluate((element) => {
+      const label = element.querySelector('.pending-label > span[aria-hidden="false"]') ?? element;
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      const text = range.getBoundingClientRect();
+      const control = element.getBoundingClientRect();
+      return Math.abs((text.left + text.right) / 2 - (control.left + control.right) / 2);
+    });
+    expect(offset, 'button label centered').toBeLessThanOrEqual(1);
+  }
+  await save.click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page).toHaveURL(/repotted\.test\/$/u);
+
+  await openFolderProfiles(page);
+  await expect(save).toBeDisabled();
+  await expect(both).toBeDisabled();
+  await expect(apply).toBeEnabled();
+  await apply.click();
+  await expect(page).toHaveURL(/\/batch$/u);
+  for (const name of ['lunch/api', 'lunch/docs']) {
+    await expect(page.getByRole('region', { name, exact: true })).toBeVisible();
+  }
+
+  await page.getByRole('link', { name: 'Repotted', exact: true }).click();
+  await openFolderProfiles(page);
+  await dialog.getByRole('combobox', { name: 'Add a profile' }).selectOption('teams/website.yaml');
+  await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+  await both.click();
+  await expect(page).toHaveURL(/\/batch$/u);
+  for (const name of ['lunch/api', 'lunch/docs']) {
+    await expect(page.getByRole('region', { name, exact: true })).toBeVisible();
+  }
+  await page.getByRole('link', { name: 'Repotted', exact: true }).click();
+  await openFolderProfiles(page);
+  await expect(dialog.getByRole('button', { name: 'Remove teams/website', exact: true })).toBeVisible();
+});
+
 test('folder profiles only open move reviews when enabled', async ({ page }) => {
   await page.goto('/');
   await newRepositoryFolder(page);
@@ -822,8 +877,8 @@ test('folder tags add profiles immediately and reopen their ordered list', async
   const dialog = page.getByRole('dialog', { name: 'Profiles for Work', exact: true });
   await expect(dialog.getByRole('option', { name: /^definitions\//u })).toHaveCount(0);
   await expect(dialog.getByText('base', { exact: true })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Save and review apply' })).toBeDisabled();
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Save and apply' })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(tags).toBeFocused();
   await page.reload();
   await expect(tags).toBeVisible();
@@ -945,7 +1000,7 @@ test('folder profiles collapse and expand on resize while keeping one header row
   await count.click();
   const dialog = page.getByRole('dialog', { name: 'Profiles for Personal Configs', exact: true });
   await expect(dialog.locator('.layer-name .mono')).toHaveText(['base', 'teams/website', 'shared-api', 'shared-web']);
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(count).toBeFocused();
 
   const menu = folder.getByLabel('Edit Personal Configs', { exact: true });
@@ -976,7 +1031,7 @@ for (const members of [['lunch/infra'], ['lunch/docs', 'lunch/a_repository_name_
     }
     await newRepositoryFolder(page);
     await openFolderProfiles(page);
-    const review = page.getByRole('button', { name: 'Save and review apply', exact: true });
+    const review = page.getByRole('button', { name: 'Save and apply', exact: true });
     await expect(review).toBeDisabled();
     await page.getByRole('combobox', { name: 'Add a profile' }).selectOption('base.yaml');
     await page.getByRole('button', { name: 'Add', exact: true }).click();
