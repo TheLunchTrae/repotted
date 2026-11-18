@@ -212,7 +212,7 @@ export function FolderProfilesDialog({
         }}
       >
         <header>
-          <div class="folder-profiles-heading">
+          <div class="folder-settings-heading">
             <h2 id="folder-profiles-heading">Profiles for {name}</h2>
             <span class={dirty ? 'pill pill-drift' : 'pill'}>{dirty ? 'Unsaved changes' : 'Saved'}</span>
           </div>
