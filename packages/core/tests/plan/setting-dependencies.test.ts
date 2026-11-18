@@ -32,7 +32,7 @@ test.each(['all', 'selected'] as const)(
     expect(github.writes).toEqual([]);
     expect(plan.warnings).toEqual([]);
     expect(plan.changes.map((change) => change.target)).toEqual([
-      'Actions policy',
+      'Actions permissions',
       'code scanning default setup',
       'selected actions',
       'workflow permissions',
@@ -96,7 +96,7 @@ test('turns code scanning off before disabling Actions', async () => {
     security: { code_scanning_default_setup: { state: 'not-configured' } },
   };
   const plan = await createPlan(github, repo, desired);
-  expect(plan.changes.map((change) => change.target)).toEqual(['code scanning default setup', 'Actions policy']);
+  expect(plan.changes.map((change) => change.target)).toEqual(['code scanning default setup', 'Actions permissions']);
   await applyPlan(github, plan);
   expect((await createPlan(github, repo, desired)).changes).toEqual([]);
 });
@@ -110,11 +110,11 @@ test('turns code scanning off before an independent Actions enablement that fail
     actions: { enabled: true },
     security: { code_scanning_default_setup: { state: 'not-configured' } },
   });
-  expect(plan.changes.map((change) => change.target)).toEqual(['code scanning default setup', 'Actions policy']);
+  expect(plan.changes.map((change) => change.target)).toEqual(['code scanning default setup', 'Actions permissions']);
   await expect(applyPlan(github, plan)).rejects.toMatchObject({
     name: ApplyError.name,
     applied: [{ target: 'code scanning default setup' }],
-    failed: { target: 'Actions policy' },
+    failed: { target: 'Actions permissions' },
   });
   expect(github.state.settings['/code-scanning/default-setup']).toMatchObject({ state: 'not-configured' });
 });
@@ -142,7 +142,7 @@ test('does not configure code scanning after its Actions prerequisite fails', as
   await expect(applyPlan(github, plan)).rejects.toMatchObject({
     name: ApplyError.name,
     applied: [],
-    failed: { target: 'Actions policy' },
+    failed: { target: 'Actions permissions' },
   });
   expect(github.writes.map((call) => call.path)).toEqual(['/repos/lunch/app/actions/permissions']);
 });
@@ -182,7 +182,7 @@ test('orders same-section prerequisites and nested dependency chains without cha
     security: { vulnerability_alerts: true, automated_security_fixes: true },
   });
   expect(orderSettingChanges(plan.changes.toReversed()).map((change) => change.target)).toEqual([
-    'Actions policy',
+    'Actions permissions',
     'selected actions',
     'Dependabot alerts',
     'Dependabot security updates',
