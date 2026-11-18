@@ -272,28 +272,24 @@ deleted elsewhere meanwhile makes it again, so no repository loses its filing.
 Folder profiles default to no profiles and review on move off. Profiles are
 paths in the profiles folder, ordered and deduplicated. Profiles are shared
 with membership, not with the browser's closed state. The folder's **Profiles**
-dialog edits its layers and **Apply profiles to repositories moved here**.
+dialog edits its layers and **Apply profiles to repositories moved here**;
+[Folder profile dialog](#folder-profile-dialog) describes its save and apply actions.
 
-| Folder profiles                    | Event                                                                  | Next                                                                                                                                                                           |
-| ---------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Any                                | **Profiles**, then Save                                                | Layers and the review-on-move choice saved; membership and other folders kept, including changes made elsewhere. No review opens.                                              |
-| Any                                | **Profiles**, then Cancel or Escape                                    | Nothing saved.                                                                                                                                                                 |
-| Any                                | Header **+**, then a profile                                           | The profile appended to the current saved layers, once; review-on-move kept and the picker closed. No review opens.                                                            |
-| Picker open                        | Escape or a click outside                                              | Picker closed, nothing added; Escape returns focus to **+**.                                                                                                                   |
-| Header profile tags                | Tags exceed the available width                                        | One count badge replaces the tags; **+** stays available, and the phone header stays on one row.                                                                               |
-| Header profile count               | Resize or changed tags leave enough space                              | The ordered tags show again; the same button keeps keyboard focus.                                                                                                             |
-| Header profile tags or count       | Last profile removed and saved                                         | The tags or count go; **+** stays and takes focus, and the header releases the profile label's space.                                                                          |
-| Header tags or count               | Click                                                                  | **Profiles** opens with the full ordered list; closing returns focus to that header control.                                                                                   |
-| A folder with profiles and members | **Save and review apply**                                              | Edits saved, then a single or batch review of all stored members with their folder and own profiles, including hidden or filtered members. No repository settings are written. |
-| No profiles or no members          | **Profiles** dialog                                                    | **Save and review apply** disabled; **Save** stays available.                                                                                                                  |
-| A single or batch apply is writing | **Save and review apply**                                              | Edits saved; dialog stays open with an error and the active apply stays. Retry after it finishes.                                                                              |
-| Review on move, with layers        | A local move puts one repository into the folder                       | Membership saved, then the usual single apply review of its effective layers opens. Nothing is applied.                                                                        |
-| Review on move, with layers        | A local move puts several repositories into the folder                 | Membership saved, then one batch review opens, each repository with its effective layers. Nothing is applied.                                                                  |
-| Any                                | A move includes repositories already in that folder                    | Only newly entering repositories count toward the review.                                                                                                                      |
-| Review off, or no folder layers    | A local move into the folder                                           | Membership saved; no review.                                                                                                                                                   |
-| Any                                | A move out, folder rename or deletion, or settings read from elsewhere | Inherited layers and profile status updated; no review and no changes to repository settings.                                                                                  |
-| Review opened by a move            | A profile is missing, planning fails, or the review is left            | The usual apply or batch failure, or its temporary files discarded; the membership stays saved.                                                                                |
-| A single or batch apply is writing | A local move would open a review                                       | Membership saved; the active apply stays. A dismissible shell notice names the moved repositories and asks for a manual review from their panels when the write finishes.      |
+| Folder profiles                    | Event                                                                  | Next                                                                                                                                                                      |
+| ---------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any                                | Header **+**, then a profile                                           | The profile appended to the current saved layers, once; review-on-move kept and the picker closed. No review opens.                                                       |
+| Picker open                        | Escape or a click outside                                              | Picker closed, nothing added; Escape returns focus to **+**.                                                                                                              |
+| Header profile tags                | Tags exceed the available width                                        | One count badge replaces the tags; **+** stays available, and the phone header stays on one row.                                                                          |
+| Header profile count               | Resize or changed tags leave enough space                              | The ordered tags show again; the same button keeps keyboard focus.                                                                                                        |
+| Header profile tags or count       | Last profile removed and saved                                         | The tags or count go; **+** stays and takes focus, and the header releases the profile label's space.                                                                     |
+| Header tags or count               | Click                                                                  | **Profiles** opens with the full ordered list; closing returns focus to that header control.                                                                              |
+| Review on move, with layers        | A local move puts one repository into the folder                       | Membership saved, then the usual single apply review of its effective layers opens. Nothing is applied.                                                                   |
+| Review on move, with layers        | A local move puts several repositories into the folder                 | Membership saved, then one batch review opens, each repository with its effective layers. Nothing is applied.                                                             |
+| Any                                | A move includes repositories already in that folder                    | Only newly entering repositories count toward the review.                                                                                                                 |
+| Review off, or no folder layers    | A local move into the folder                                           | Membership saved; no review.                                                                                                                                              |
+| Any                                | A move out, folder rename or deletion, or settings read from elsewhere | Inherited layers and profile status updated; no review and no changes to repository settings.                                                                             |
+| Review opened by a move            | A profile is missing, planning fails, or the review is left            | The usual apply or batch failure, or its temporary files discarded; the membership stays saved.                                                                           |
+| A single or batch apply is writing | A local move would open a review                                       | Membership saved; the active apply stays. A dismissible shell notice names the moved repositories and asks for a manual review from their panels when the write finishes. |
 
 It keeps the sort order under `repository-sort-order` and the filters, as
 `{ visibility, archived, topics }`, under `repository-filters`, both in this
@@ -330,6 +326,32 @@ the profiles repository changes what the list hides as soon as it arrives.
 Each save is a change to the list, such as adding a name or taking one out,
 not the list as this page last saw it, so it keeps names another browser
 saved meanwhile.
+
+### Folder profile dialog
+
+`FolderSettings` (`packages/web/src/app/repositories/folder-settings.ts`)
+holds one dialog's draft and saved baseline. Applying uses every stored
+member, independent of the repository list's search, filters, or hidden
+owners. Folder layers precede each member's own profiles.
+
+| State                             | Event                                                                                                       | Next                                                                                                                                                     |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Saved                             | Open **Profiles**                                                                                           | Saved, with **Apply** available when both profiles and members exist. **Save** and **Save and apply** are unavailable.                                   |
+| Saved or edited                   | Change profiles, their order, or review on move                                                             | Edited, unless the draft matches the baseline. **Apply** is unavailable while edited.                                                                    |
+| Saved or edited                   | Pending folder preferences, a failed save reverted to its baseline, or changed settings read from elsewhere | Unsaved until the displayed settings are persisted and match the current folder. **Apply** remains unavailable; **Save** can persist the displayed list. |
+| Edited                            | **Save**                                                                                                    | Saving, with controls and Escape blocked until persistence finishes.                                                                                     |
+| Edited, with profiles and members | **Save and apply**                                                                                          | Saving, as above; a successful save is followed by a review of all members.                                                                              |
+| Saving                            | Repeated action                                                                                             | Ignored; the original save finishes.                                                                                                                     |
+| Saving                            | Persistence fails or browser storage refuses                                                                | Edited with the draft retained and an error. No review opens; saving can be retried.                                                                     |
+| Saving                            | Another folder change is pending or replaces the displayed settings before review starts                    | Unsaved with an error; no review opens. The displayed settings can be saved again.                                                                       |
+| Saving                            | **Save** succeeds                                                                                           | Closed, with settings persisted and no review.                                                                                                           |
+| Saving                            | **Save and apply** succeeds                                                                                 | Single review for one member, batch review for several. Nothing applies until the reviewed plan is confirmed.                                            |
+| Saved, with profiles and members  | **Apply**                                                                                                   | The same review, without a settings write.                                                                                                               |
+| Opening a review                  | A single or batch apply is writing                                                                          | Saved, with an error and **Apply** available to retry after the write finishes.                                                                          |
+| Any                               | The folder has no profiles or members                                                                       | Apply actions unavailable; edits can still be saved.                                                                                                     |
+| Saved or edited                   | Close, Cancel, or Escape                                                                                    | Closed, with no save or review.                                                                                                                          |
+| Saving                            | The dialog unmounts                                                                                         | Closed; the save finishes, but cannot open a review or close another dialog.                                                                             |
+| Saving                            | The folder is deleted elsewhere before the save                                                             | Error, without recreating the folder or opening a review.                                                                                                |
 
 ## Web repository profiles
 
@@ -405,6 +427,10 @@ value now to the next; `write` is one that ignores the value now), not as
 its result, until it is saved. What a preference reads is the file as last
 read or saved with the unsaved changes made onto it in order. A save makes
 the same changes onto the file as it is then.
+
+`save(key, change)` returns whether its queued change persisted in the
+current destination. A storage refusal, failed commit, or destination
+change returns false; callers do not start dependent reviews on that result.
 
 | State             | Event                                      | Next                                                                                                                                                            |
 | ----------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |

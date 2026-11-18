@@ -655,9 +655,9 @@ export class Repositories {
     );
   }
 
-  setFolderProfiles(name: string, profiles: readonly string[], applyProfilesOnMove: boolean): void {
-    this.#updateFolders((folders) =>
-      folders.map((folder) => {
+  setFolderProfiles(name: string, profiles: readonly string[], applyProfilesOnMove: boolean): Promise<boolean> {
+    return this.preferences.save(repositoryFoldersKey, (current) => {
+      const next = foldersIn(current).map((folder) => {
         if (!sameName(folder.name, name)) {
           return folder;
         }
@@ -667,8 +667,9 @@ export class Repositories {
           ...(profiles.length > 0 ? { profiles: [...new Set(profiles)] } : {}),
           ...(applyProfilesOnMove ? { applyProfilesOnMove: true } : {}),
         };
-      }),
-    );
+      });
+      return next.length > 0 ? next.toSorted(byFolderName) : undefined;
+    });
   }
 
   reviewFolderProfiles(name: string): string | undefined {

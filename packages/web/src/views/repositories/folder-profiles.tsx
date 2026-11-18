@@ -1,10 +1,13 @@
 import type { JSX } from 'preact';
-import { useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Profiles } from '../../app/profiles/profiles.js';
+import { FolderSettings } from '../../app/repositories/folder-settings.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
 import type { RepositoryProfiles } from '../../app/repositories/repository-profiles.js';
 import { useMenuPanelKeptOnPage } from '../layout/menu-placement.js';
+import { PendingButton } from '../layout/pending-button.js';
+import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
 import { ProfileLayers } from './repository-profiles.js';
 
@@ -159,83 +162,142 @@ export function FolderProfilesDialog({
   readonly onClose: (folderToFocus: string) => void;
 }): JSX.Element {
   const dialog = useModal();
-  const saved = repositories.folder(name);
-  const [layers, setLayers] = useState<readonly string[]>(saved?.profiles ?? []);
-  const [applyOnMove, setApplyOnMove] = useState(saved?.applyProfilesOnMove ?? false);
-  const [problem, setProblem] = useState<string | undefined>(undefined);
-  const count = saved?.repositories.length ?? 0;
+  const settings = useMemo(() => new FolderSettings(name, repositories), [name, repositories]);
+  useEffect(() => () => settings.close(), [settings]);
+  const saving = settings.saving.value;
+  const count = settings.count.value;
+  const dirty = settings.dirty.value;
+  const applyHint =
+    count === 0
+      ? 'No repositories in this folder yet. You can still save your folder settings.'
+      : settings.layers.value.length === 0
+        ? 'Add a profile to apply it. You can still save your folder settings.'
+        : dirty
+          ? `Save keeps your folder settings. Applying opens a review for the ${count === 1 ? 'repository' : `${count} repositories`} already here.`
+          : 'No unsaved changes. Apply opens a review using this folder’s saved profiles.';
   return (
     <dialog
       class="dialog dialog-profiles"
       ref={dialog}
       aria-labelledby="folder-profiles-heading"
+      onCancel={(event) => {
+        if (saving !== undefined) {
+          event.preventDefault();
+        }
+      }}
       onClose={() => {
+        settings.close();
         onClose(name);
       }}
     >
       <form
         method="dialog"
         onSubmit={(event) => {
-          if (event.submitter instanceof HTMLButtonElement && ['save', 'review'].includes(event.submitter.value)) {
-            repositories.setFolderProfiles(name, layers, applyOnMove);
-            if (event.submitter.value === 'review') {
-              const refused = repositories.reviewFolderProfiles(name);
-              if (refused !== undefined) {
-                event.preventDefault();
-                setProblem(refused);
-              }
-            }
+          event.preventDefault();
+          if (!(event.submitter instanceof HTMLButtonElement) || saving !== undefined) {
+            return;
+          }
+          const action = event.submitter.value;
+          if (action === 'apply' && settings.apply()) {
+            dialog.current?.close();
+          } else if (action === 'save' || action === 'save-and-apply') {
+            run(
+              settings.save(action === 'save-and-apply').then((finished) => {
+                if (finished) {
+                  dialog.current?.close();
+                }
+              }),
+            );
           }
         }}
       >
-        <div>
-          <h2 id="folder-profiles-heading">Profiles for {name}</h2>
+        <header>
+          <div class="folder-settings-heading">
+            <h2 id="folder-profiles-heading">Profiles for {name}</h2>
+            <span class={dirty ? 'pill pill-drift' : 'pill'}>{dirty ? 'Unsaved changes' : 'Saved'}</span>
+          </div>
           <p class="muted small">
-            These apply in order, before each repository's own profiles. Later profiles override earlier ones.
+            {count} {count === 1 ? 'repository' : 'repositories'} in this folder
           </p>
-        </div>
-        <ProfileLayers profiles={profiles} assignments={assignments} list={layers} onChange={setLayers} />
-        <label class="check">
-          <input
-            type="checkbox"
-            checked={applyOnMove}
-            onChange={(event) => {
-              setApplyOnMove(event.currentTarget.checked);
+        </header>
+        <fieldset class="folder-settings-fields" disabled={saving !== undefined}>
+          <div>
+            <h3>Profiles</h3>
+            <p class="muted small">
+              These apply in order, before each repository's own profiles. Later profiles override earlier ones.
+            </p>
+          </div>
+          <ProfileLayers
+            profiles={profiles}
+            assignments={assignments}
+            list={settings.layers.value}
+            onChange={(layers) => {
+              settings.layers.value = layers;
             }}
           />
-          Apply profiles to repositories moved here
-        </label>
-        <p class="muted small">
-          Moving a repository here opens a review of its profiles. Moving several opens one batch review. Nothing is
-          written until you review and apply.
-        </p>
-        <p class="muted small">
-          Save only updates the folder.{' '}
-          {count === 0
-            ? 'Move repositories into it before reviewing an apply.'
-            : `To apply these profiles to the ${count === 1 ? 'repository' : `${count} repositories`} already here, save and review ${count === 1 ? 'its' : 'their'} changes.`}
-        </p>
-        {problem !== undefined && (
-          <p class="problem small" role="alert">
-            {problem}
+          <div class="folder-settings-moves">
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={settings.applyOnMove.value}
+                onChange={(event) => {
+                  settings.applyOnMove.value = event.currentTarget.checked;
+                }}
+              />
+              Apply profiles to repositories moved here
+            </label>
+            <p class="muted small">Moving repositories here opens a review before applying.</p>
+          </div>
+        </fieldset>
+        {settings.error.value !== undefined && (
+          <p class="notice notice-problem" role="alert">
+            {settings.error.value}
           </p>
         )}
-        <div class="form-actions">
-          <button
-            class="button button-primary"
-            type="submit"
-            value="review"
-            disabled={count === 0 || layers.length === 0}
-          >
-            Save and review apply
-          </button>
-          <button class="button" type="submit" value="save">
-            Save
-          </button>
-          <button class="button button-quiet" type="submit" value="cancel">
-            Cancel
-          </button>
-        </div>
+        <footer class="folder-settings-footer">
+          <p class="muted small">{applyHint}</p>
+          <div class="form-actions folder-settings-actions">
+            <button
+              class="button button-quiet folder-settings-cancel"
+              type="button"
+              disabled={saving !== undefined}
+              onClick={() => {
+                dialog.current?.close();
+              }}
+            >
+              {dirty ? 'Cancel' : 'Close'}
+            </button>
+            <button
+              class="button"
+              type="submit"
+              value="apply"
+              disabled={!settings.canApply.value}
+              title={dirty ? 'Save changes first, or choose Save and apply.' : undefined}
+            >
+              Apply
+            </button>
+            <PendingButton
+              class="button"
+              type="submit"
+              value="save"
+              pending={saving === 'save'}
+              pendingLabel="Saving…"
+              disabled={!settings.canSave.value}
+            >
+              Save
+            </PendingButton>
+            <PendingButton
+              class="button button-primary"
+              type="submit"
+              value="save-and-apply"
+              pending={saving === 'save-and-apply'}
+              pendingLabel="Saving…"
+              disabled={!settings.canSaveAndApply.value}
+            >
+              Save and apply
+            </PendingButton>
+          </div>
+        </footer>
       </form>
     </dialog>
   );

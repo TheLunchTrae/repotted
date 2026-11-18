@@ -3067,6 +3067,65 @@ select.field {
   width: min(32rem, calc(100vw - 32px));
 }
 
+.folder-settings-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.folder-settings-fields {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.folder-settings-fields h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.folder-settings-moves,
+.folder-settings-footer {
+  display: grid;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.folder-settings-footer {
+  gap: 12px;
+}
+
+.folder-settings-actions {
+  gap: 8px;
+}
+
+.folder-settings-cancel {
+  margin-inline-end: auto;
+  border-color: transparent;
+}
+
+@media (max-width: 600px) {
+  .folder-settings-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .folder-settings-actions .button-primary {
+    grid-row: 1;
+    grid-column: 1 / -1;
+  }
+
+  .folder-settings-cancel {
+    margin: 0;
+  }
+}
+
 .add-profile {
   display: flex;
   flex-wrap: wrap;
