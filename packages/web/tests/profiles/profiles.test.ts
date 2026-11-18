@@ -1310,3 +1310,18 @@ test('a duplicate whose source disappeared reports an error without leaving a de
   ).toContain('source.yaml');
   expect(await readdir('/profiles/browser', { withFileTypes: true })).toEqual([]);
 });
+
+test('an unread profile folder becomes empty only after a successful read, and an initial failure can recover', async () => {
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  expect(profiles.listed.value).toBe(false);
+  await mkdir('/profiles', { recursive: true });
+  await writeFile('/profiles/browser', 'A file where the folder belongs');
+  await profiles.refresh();
+  expect(profiles.listingError.value).toBeDefined();
+  expect(profiles.listed.value).toBe(false);
+  await rm('/profiles/browser');
+  await profiles.refresh();
+  expect(profiles.listed.value).toBe(true);
+  expect(profiles.listingError.value).toBeUndefined();
+  expect(profiles.listings.value).toEqual([]);
+});

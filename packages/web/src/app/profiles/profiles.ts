@@ -159,6 +159,7 @@ export class Profiles {
   readonly conflicts = signal<readonly string[]>([]);
   readonly listings = signal<readonly ProfileListing[]>([]);
   readonly listingError = signal<string | undefined>(undefined);
+  readonly listed = signal(false);
   readonly profileWorkUnderWay = signal(false);
   readonly search = signal('');
   /** Until the next change of where profiles are kept. */
@@ -1190,6 +1191,7 @@ export class Profiles {
         this.#folders?.forget().catch(() => undefined);
       }
     }
+    this.listed.value = false;
     this.source.value = source;
     this.#preferences.write(sourceKey, source);
     this.chosen.value = true;
@@ -1302,6 +1304,7 @@ export class Profiles {
       await mkdir(this.folder.value, { recursive: true });
       this.listings.value = await listProfiles(this.folder.value);
       this.listingError.value = undefined;
+      this.listed.value = true;
     } catch (error) {
       this.listingError.value = messageOf(error);
     }

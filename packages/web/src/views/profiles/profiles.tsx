@@ -886,6 +886,7 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
   const [picking, setPicking] = useState(false);
   const [dialog, setDialog] = useState<ProfilesDialog | undefined>(undefined);
   const heading = useRef<HTMLHeadingElement>(null);
+  const search = useRef<HTMLInputElement>(null);
   const listScroll = useRef(0);
   const first = useRef(true);
   const previous = useRef(showing);
@@ -1077,8 +1078,13 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
         )}
         <Banners profiles={profiles} />
 
-        {total === 0 ? (
+        {total === 0 &&
+        profiles.listed.value &&
+        !busy &&
+        profiles.listingError.value === undefined &&
+        profiles.sync.value.status !== 'failed' ? (
           <div class="empty">
+            <h2>No profiles yet</h2>
             {source.kind === 'folder' ? (
               <p>
                 <span class="mono">{source.name}</span> has no profiles yet.
@@ -1100,6 +1106,9 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
                 </p>
               </>
             )}
+            <Link class="button button-primary" router={router} to="/profiles/new">
+              New profile
+            </Link>
           </div>
         ) : (
           <>
@@ -1107,6 +1116,7 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
               <input
                 class="field"
                 type="search"
+                ref={search}
                 placeholder="Find a profile"
                 aria-label="Find a profile"
                 value={profiles.search.value}
@@ -1136,9 +1146,20 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
                 </button>
               )}
             </div>
-            {shown.length === 0 ? (
+            {shown.length === 0 && total > 0 ? (
               <div class="empty">
+                <h2>No profiles found</h2>
                 <p>No profile matches "{profiles.search.value.trim()}".</p>
+                <button
+                  class="button"
+                  type="button"
+                  onClick={() => {
+                    profiles.search.value = '';
+                    search.current?.focus();
+                  }}
+                >
+                  Clear search
+                </button>
               </div>
             ) : (
               <div class="groups">

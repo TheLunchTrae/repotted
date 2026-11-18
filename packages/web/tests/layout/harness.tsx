@@ -140,16 +140,22 @@ const fleet = new FakeFleet([app, ...others]);
 
 const signedOut = new URLSearchParams(location.search).has('signed-out');
 const pendingRead = { value: Promise.resolve() };
-window.addEventListener('hold-github', () => {
+const holdRequests = (): void => {
   pendingRead.value = new Promise<void>((resolve) =>
     window.addEventListener('release-github', () => resolve(), { once: true }),
   );
-});
+};
+if (new URLSearchParams(location.search).has('hold-github')) {
+  holdRequests();
+}
+window.addEventListener('hold-github', holdRequests);
 const github: GitHub = signedOut
   ? { request: () => Promise.reject(answered(401, 'Bad credentials')) }
   : {
       request: async (method, path, body) => {
-        await pendingRead.value;
+        if (path !== '/user') {
+          await pendingRead.value;
+        }
         return (path.startsWith(`/repos/${configName}`) ? config : fleet).request(method, path, body);
       },
     };

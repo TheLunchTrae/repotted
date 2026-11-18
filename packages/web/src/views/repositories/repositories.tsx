@@ -1333,6 +1333,7 @@ export function RepositoriesPage({
 
         {list !== undefined && total === 0 && (
           <div class="empty">
+            <h2>No repositories yet</h2>
             <p>
               {fromApp
                 ? 'The Repotted App is not installed on any repositories you administer yet.'
@@ -1437,7 +1438,8 @@ export function RepositoriesPage({
 
             {repositories.everyOwnerHidden.value ? (
               <div class="empty">
-                <p>Every owner is hidden.</p>
+                <h2>Every owner is hidden</h2>
+                <p>Show the owners again to see their repositories.</p>
                 <button
                   class="button"
                   type="button"
@@ -1450,7 +1452,8 @@ export function RepositoriesPage({
               </div>
             ) : repositories.everyRepositoryHidden.value ? (
               <div class="empty">
-                <p>Every repository here is hidden.</p>
+                <h2>Every repository here is hidden</h2>
+                <p>Show hidden repositories to find them.</p>
                 <button
                   class="button"
                   type="button"
@@ -1463,11 +1466,24 @@ export function RepositoriesPage({
               </div>
             ) : groups.length === 0 && folders.length === 0 ? (
               <div class="empty">
+                <h2>No repositories found</h2>
                 <p>
                   {noMatch(repositories.search.value.trim(), repositories.filtering.value)}
                   {hiddenMatches > 0 &&
                     (hiddenMatches === 1 ? ' 1 hidden repository does.' : ` ${hiddenMatches} hidden repositories do.`)}
                 </p>
+                {repositories.search.value.trim() !== '' && (
+                  <button
+                    class="button"
+                    type="button"
+                    onClick={() => {
+                      repositories.search.value = '';
+                      search.current?.focus();
+                    }}
+                  >
+                    Clear search
+                  </button>
+                )}
                 {repositories.filtering.value && (
                   <button
                     class="button"

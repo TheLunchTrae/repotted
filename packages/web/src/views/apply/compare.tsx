@@ -1,4 +1,5 @@
 import type { JSX } from 'preact';
+import { useRef } from 'preact/hooks';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { CompareRow, Comparison } from '../../app/apply/comparison.js';
@@ -34,6 +35,7 @@ interface CompareProps {
 }
 
 export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
+  const search = useRef<HTMLInputElement>(null);
   const state = comparison.state.value;
   const startedFrom = comparison.backLink.value;
   const back =
@@ -149,6 +151,7 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                 <input
                   class="field"
                   type="search"
+                  ref={search}
                   placeholder="Search this comparison"
                   aria-label="Search this comparison"
                   value={comparison.search.value}
@@ -187,11 +190,24 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
               </div>
             )}
             {shown.length === 0 && comparison.search.value.trim() !== '' && (
-              <p class="empty">
-                {comparison.showOnlyDifferences.value || comparison.showOnlyLockedDifferences.value
-                  ? `No difference matches "${comparison.search.value.trim()}".`
-                  : `Nothing in this comparison matches "${comparison.search.value.trim()}".`}
-              </p>
+              <div class="empty">
+                <h2>No matching settings</h2>
+                <p>
+                  {comparison.showOnlyDifferences.value || comparison.showOnlyLockedDifferences.value
+                    ? `No difference matches "${comparison.search.value.trim()}".`
+                    : `Nothing in this comparison matches "${comparison.search.value.trim()}".`}
+                </p>
+                <button
+                  class="button"
+                  type="button"
+                  onClick={() => {
+                    comparison.search.value = '';
+                    search.current?.focus();
+                  }}
+                >
+                  Clear search
+                </button>
+              </div>
             )}
             <div class="groups">
               {shown.map((section) => (

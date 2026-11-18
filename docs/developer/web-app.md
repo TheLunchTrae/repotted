@@ -244,6 +244,10 @@ current destination. `views/layout/notifications.tsx` draws one confirmation
 and pauses it while hovered, focused, obscured by a dialog, or in a hidden
 tab. [State machines](state-machines.md#web-confirmations) owns the transitions.
 
+Empty states offer a next action and search resets return focus to the field
+without changing other filters. `Profiles.listed` distinguishes a successful
+empty read from the initial unread state and resets when the source changes.
+
 ## Profiles
 
 `Profiles` (`src/app/profiles/profiles.ts`) holds where the profiles are kept, how the
