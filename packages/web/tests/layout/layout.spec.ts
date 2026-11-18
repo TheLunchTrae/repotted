@@ -1243,6 +1243,29 @@ test('a new reusable environment stays in the profile through a linked definitio
   await expect(panel.getByRole('textbox', { name: 'Wait timer, in minutes', exact: true })).toHaveValue('5');
 });
 
+for (const [type, label] of [
+  ['restrict_action_events', 'Restrict events'],
+  ['restrict_actions_actors', 'Restrict actors'],
+]) {
+  test(`restoring the ${type} policy rule preserves its omitted allowlist`, async ({ page }) => {
+    await page.goto('/actions-policies?new');
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Partial policy');
+    await page.getByLabel('Import YAML file').setInputFiles({
+      name: 'partial-policy.yaml',
+      mimeType: 'application/yaml',
+      buffer: Buffer.from(`kind: actions-policy\nactions_policies: [{ name: Partial, rules: [{ type: ${type} }] }]\n`),
+    });
+    await page.getByRole('button', { name: 'Create definition', exact: true }).click();
+    const save = page.getByRole('button', { name: 'Save definition', exact: true });
+    const rule = page.getByRole('checkbox', { name: new RegExp(`^${label}`, 'u') });
+    await expect(save).toBeDisabled();
+    await rule.uncheck();
+    await expect(save).toBeEnabled();
+    await rule.check();
+    await expect(save).toBeDisabled();
+  });
+}
+
 test('named Actions policies edit workflow rules and link alongside general settings', async ({ page }) => {
   await page.goto('/actions-policies?new');
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Release workflows');

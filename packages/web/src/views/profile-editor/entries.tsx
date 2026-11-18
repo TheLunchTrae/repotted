@@ -456,7 +456,9 @@ function ActionPolicyForm({ entry, saved, change, problemIn }: FormProps): JSX.E
     const next = withRule(entry, type, on, saved);
     const parameters = ruleOf(next, type)?.['parameters'];
     change(
-      on && (!isEntry(parameters) || parameters[key] === undefined) ? withRuleParameter(next, type, key, []) : next,
+      on && ruleOf(saved, type) === undefined && (!isEntry(parameters) || parameters[key] === undefined)
+        ? withRuleParameter(next, type, key, [])
+        : next,
     );
   };
   const otherRules = items(entry['rules'])
