@@ -1,6 +1,7 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { SaveMode } from '../../app/profile-editor/entry-edits.js';
+import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { Router } from '../../app/navigation/router.js';
 import type { BranchPreview } from '../../app/profiles/branch-preview.js';
@@ -279,14 +280,16 @@ function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps)
           )}
         </div>
         <div class="form-actions">
-          <button
+          <PendingButton
+            pending={moving}
+            pendingLabel="Moving…"
             class="button button-primary"
             type="submit"
             value="save"
             disabled={profiles.profileWorkUnderWay.value}
           >
             {renaming === undefined ? 'Create and move' : 'Rename folder'}
-          </button>
+          </PendingButton>
           <button class="button button-quiet" type="submit" value="cancel" disabled={moving}>
             Cancel
           </button>
@@ -389,14 +392,16 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
           </p>
         )}
         <div class="form-actions">
-          <button
+          <PendingButton
+            pending={deleting}
+            pendingLabel="Deleting…"
             class="button button-danger"
             type="submit"
             value="delete"
             disabled={profiles.profileWorkUnderWay.value}
           >
             {one === undefined ? `Delete ${listings.length} profiles` : 'Delete profile'}
-          </button>
+          </PendingButton>
           {/* The dialog opens with the keyboard on Cancel, so Enter never deletes by itself. */}
           <button class="button button-quiet" type="submit" value="cancel" disabled={deleting} autofocus>
             Cancel
@@ -420,6 +425,7 @@ interface SelectedProps {
 
 function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
+  const [movingProfiles, moveProfiles] = usePendingAction();
   const batch = profiles.batch.value;
   const busy = profiles.profileWorkUnderWay.value;
   const [picked, setPicked] = useState<string | undefined>(undefined);
@@ -445,13 +451,15 @@ function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedP
             onDialog({ kind: 'new-folder', listings: batch });
           } else if (target !== undefined) {
             run(
-              profiles.move(batch, target).then((failure) => {
-                setProblem(failure);
-                if (failure === undefined) {
-                  confirm('Profiles moved.');
-                  onMoved(target);
-                }
-              }),
+              moveProfiles(() =>
+                profiles.move(batch, target).then((failure) => {
+                  setProblem(failure);
+                  if (failure === undefined) {
+                    confirm('Profiles moved.');
+                    onMoved(target);
+                  }
+                }),
+              ),
             );
           }
         }}
@@ -483,9 +491,15 @@ function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedP
               ))}
             <option value={newFolderChoice}>New folder…</option>
           </select>
-          <button class="button" type="submit" disabled={target === undefined || busy}>
+          <PendingButton
+            pending={movingProfiles}
+            pendingLabel="Moving…"
+            class="button"
+            type="submit"
+            disabled={target === undefined || busy}
+          >
             {target === newFolderChoice ? 'New folder' : 'Move'}
-          </button>
+          </PendingButton>
         </div>
         {problem !== undefined && (
           <p id="move-problem" class="problem small" role="alert">
@@ -593,7 +607,9 @@ function References({ listing, profiles, text }: ProfileProps & { readonly text:
           {problem}
         </p>
       )}
-      <button
+      <PendingButton
+        pending={busy}
+        pendingLabel="Saving…"
         type="button"
         class="button"
         disabled={busy || profiles.unsaved.value.has(listing.file)}
@@ -620,7 +636,7 @@ function References({ listing, profiles, text }: ProfileProps & { readonly text:
         }}
       >
         Save references
-      </button>
+      </PendingButton>
     </details>
   );
 }
@@ -819,6 +835,8 @@ interface ProfilesProps {
 }
 
 function Banners({ profiles }: { readonly profiles: Profiles }): JSX.Element | null {
+  const [keepingLocal, keepLocal] = usePendingAction();
+  const [keepingRemote, keepRemote] = usePendingAction();
   const source = profiles.source.value;
   const conflicts = profiles.conflicts.value;
   const busy = profiles.profileWorkUnderWay.value;
@@ -847,26 +865,30 @@ function Banners({ profiles }: { readonly profiles: Profiles }): JSX.Element | n
             Which version do you want to keep?
           </p>
           <div class="notice-actions">
-            <button
+            <PendingButton
+              pending={keepingLocal}
+              pendingLabel="Syncing…"
               class="button"
               type="button"
               disabled={busy}
               onClick={() => {
-                run(profiles.keep('local'));
+                run(keepLocal(() => profiles.keep('local')));
               }}
             >
               Keep mine
-            </button>
-            <button
+            </PendingButton>
+            <PendingButton
+              pending={keepingRemote}
+              pendingLabel="Syncing…"
               class="button"
               type="button"
               disabled={busy}
               onClick={() => {
-                run(profiles.keep('remote'));
+                run(keepRemote(() => profiles.keep('remote')));
               }}
             >
               {source.kind === 'folder' ? "Use the folder's" : "Use GitHub's"}
-            </button>
+            </PendingButton>
           </div>
         </div>
       )}
@@ -876,6 +898,7 @@ function Banners({ profiles }: { readonly profiles: Profiles }): JSX.Element | n
 
 export function ProfilesPage({ profiles, repositories, router, preview, newProfileForm }: ProfilesProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
+  const [refreshing, refresh] = usePendingAction();
   const source = profiles.source.value;
   const tree = profiles.tree.value;
   const selected = profiles.selected.value;
@@ -1036,22 +1059,24 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
             </p>
           </div>
           <div class="page-actions">
-            <button
+            <PendingButton
+              pending={refreshing}
+              pendingLabel="Refreshing…"
               class="button"
               type="button"
               disabled={busy}
               onClick={() => {
                 run(
-                  profiles
-                    .refresh()
-                    .then(() =>
+                  refresh(() =>
+                    profiles.refresh().then(() =>
                       confirm(profiles.source.value.kind === 'browser' ? 'Profiles refreshed.' : 'Profiles synced.'),
                     ),
+                  ),
                 );
               }}
             >
               {source.kind === 'browser' ? 'Refresh' : 'Sync'}
-            </button>
+            </PendingButton>
             {source.kind === 'repository' && (
               <button
                 class="button"

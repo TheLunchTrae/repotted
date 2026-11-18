@@ -249,9 +249,18 @@ without changing other filters. `Profiles.listed` distinguishes a successful
 empty read from the initial unread state and resets when the source changes.
 
 Pending page and lookup reads use `views/layout/loading.tsx`. Initial lists
-show decorative skeleton rows and one accessible status. A failed initial read keeps its error instead of drawing
-an empty state. Refreshes retain existing data. Batch progress uses completed
+show decorative skeleton rows and one accessible status. A failed initial read
+keeps its error instead of drawing an empty state. Refreshes retain existing data. Batch progress uses completed
 repository counts from the apply state. Reduced motion stops spinner rotation.
+
+`views/layout/pending-button.tsx` owns pending button presentation. Both
+labels reserve space in the same grid cell, and a spinner slot keeps the
+button width stable. Pending buttons stay focusable but suppress activation
+and expose `aria-busy` and `aria-disabled`. Existing operation signals drive
+buttons with a dedicated state. `usePendingAction` owns a control-local lock
+for shared profile operations; it starts work from the user gesture, releases
+the lock on fulfillment or rejection, and ignores state updates after unmount.
+Reduced motion stops spinner rotation.
 
 ## Profiles
 

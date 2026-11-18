@@ -1,5 +1,6 @@
 import type { ComponentChildren, JSX, RefObject } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
+import { PendingButton } from './pending-button.js';
 
 import type { Account, User } from '../../app/account/account.js';
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
@@ -119,9 +120,16 @@ function AccountMenu({ account, user, router, onSignOut, holdsPageLinks }: Accou
         <a class="menu-item" href={repottedAppInstallUrl} target="_blank" rel="noreferrer">
           Add repositories
         </a>
-        <button class="menu-item" type="button" disabled={account.signingOut.value} onClick={onSignOut}>
+        <PendingButton
+          pending={account.signingOut.value}
+          pendingLabel="Signing out…"
+          class="menu-item"
+          type="button"
+          disabled={account.signingOut.value}
+          onClick={onSignOut}
+        >
           Sign out
-        </button>
+        </PendingButton>
         {account.signOutError.value !== undefined && (
           <p class="menu-note" role="alert">
             {account.signOutError.value}

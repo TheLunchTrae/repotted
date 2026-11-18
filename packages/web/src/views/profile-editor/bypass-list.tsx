@@ -1,6 +1,7 @@
 import { gitHubAppSlug } from '@repotted/core';
 import type { JSX } from 'preact';
 import { useId, useState } from 'preact/hooks';
+import { PendingButton } from '../layout/pending-button.js';
 
 import {
   builtInRepositoryRoleIds,
@@ -163,13 +164,15 @@ function AddApp({ appLookup, onAdd, onClose }: AddAppProps): JSX.Element {
             appLookup?.reset();
           }}
         />
-        <button
+        <PendingButton
+          pending={appLookup?.state.value.kind === 'finding'}
+          pendingLabel="Finding…"
           class="button button-small"
           type="submit"
           disabled={typedId === undefined && (slug === undefined || appLookup === undefined)}
         >
           {typedId === undefined ? 'Find' : 'Add'}
-        </button>
+        </PendingButton>
         <button class="button button-quiet button-small" type="button" onClick={onClose}>
           Cancel
         </button>

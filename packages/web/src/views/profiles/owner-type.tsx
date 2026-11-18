@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { PendingButton } from '../layout/pending-button.js';
 
 import type { OwnerChoice, ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import type { Profiles } from '../../app/profiles/profiles.js';
@@ -108,14 +109,16 @@ export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): 
           </p>
         )}
         <div class="form-actions">
-          <button
+          <PendingButton
+            pending={editor.saving.value}
+            pendingLabel="Saving…"
             class="button button-primary"
             type="submit"
             value="change"
             disabled={picked === current || from !== undefined || !editor.canChangeOwnerType.value}
           >
             {changeLabels[picked]}
-          </button>
+          </PendingButton>
           <button class="button button-quiet" type="submit" value="cancel">
             Cancel
           </button>

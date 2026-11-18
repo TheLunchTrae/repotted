@@ -1,6 +1,7 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Spinner } from '../layout/loading.js';
+import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { Apply } from '../../app/apply/apply.js';
@@ -89,6 +90,9 @@ interface ApplyProps {
 }
 
 export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
+  const [reviewingAgain, reviewAgain] = usePendingAction();
+  const [savingProfile, saveProfile] = usePendingAction();
+  const [reviewing, review] = usePendingAction();
   const state = apply.state.value;
   const [confirming, setConfirming] = useState(false);
   const back = (
@@ -214,30 +218,41 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                   <>
                     {discard}
                     {state.fromProfile && !state.builtIn && (
-                      <button
+                      <PendingButton
+                        pending={savingProfile}
+                        pendingLabel="Saving…"
                         class="button"
                         type="button"
-                        disabled={editor.saving.value || (editor.dirty.value && !editor.canSave.value)}
+                        disabled={
+                          savingProfile ||
+                          reviewing ||
+                          editor.saving.value ||
+                          (editor.dirty.value && !editor.canSave.value)
+                        }
                         onClick={() => {
-                          run(apply.saveToProfile());
+                          run(saveProfile(() => apply.saveToProfile()));
                         }}
                       >
                         Save edits to profile
-                      </button>
+                      </PendingButton>
                     )}
                   </>
                 ),
                 primaryActionInsteadOfSave: (
-                  <button
+                  <PendingButton
+                    pending={reviewing}
+                    pendingLabel="Reviewing…"
                     class="button button-primary"
                     type="button"
-                    disabled={editor.saving.value || (editor.dirty.value && !editor.canSave.value)}
+                    disabled={
+                      savingProfile || reviewing || editor.saving.value || (editor.dirty.value && !editor.canSave.value)
+                    }
                     onClick={() => {
-                      run(apply.review());
+                      run(review(() => apply.review()));
                     }}
                   >
                     Review changes
-                  </button>
+                  </PendingButton>
                 ),
               }}
             />
@@ -389,7 +404,9 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                     Record as applied
                   </button>
                 ) : (
-                  <button
+                  <PendingButton
+                    pending={state.kind === 'applying'}
+                    pendingLabel="Applying…"
                     class="button button-primary"
                     type="button"
                     disabled={!apply.canApply.value}
@@ -398,7 +415,7 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                     }}
                   >
                     Apply
-                  </button>
+                  </PendingButton>
                 )
               }
               otherActions={
@@ -414,16 +431,18 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                   >
                     Back to edits
                   </button>
-                  <button
+                  <PendingButton
+                    pending={reviewingAgain}
+                    pendingLabel="Reviewing…"
                     class="button"
                     type="button"
                     disabled={working}
                     onClick={() => {
-                      run(apply.reviewAgain());
+                      run(reviewAgain(() => apply.reviewAgain()));
                     }}
                   >
                     Review again
-                  </button>
+                  </PendingButton>
                 </>
               }
             />

@@ -2,6 +2,7 @@ import type { JSX } from 'preact';
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Loading, Spinner } from '../layout/loading.js';
+import { PendingButton } from '../layout/pending-button.js';
 
 import type { ComparedProfile } from '../../app/apply/comparison.js';
 import type { Router } from '../../app/navigation/router.js';
@@ -304,7 +305,9 @@ export function BranchPreviewPage({ preview, repositories, router, branch, onCom
             here is saved or synced.
           </p>
           <div class="notice-actions">
-            <button
+            <PendingButton
+              pending={state.kind === 'loading'}
+              pendingLabel="Refreshing…"
               class="button"
               type="button"
               disabled={state.kind === 'loading'}
@@ -313,7 +316,7 @@ export function BranchPreviewPage({ preview, repositories, router, branch, onCom
               }}
             >
               Refresh
-            </button>
+            </PendingButton>
             {exit}
           </div>
         </div>

@@ -323,21 +323,20 @@ function SignedIn({
               // A second press while the first is starting would start a second apply over the first.
               if (state.kind === 'checked' && !openingProtection.current) {
                 openingProtection.current = true;
-                run(
-                  protection
-                    .writeProfileForApply()
-                    .then((profile) => {
-                      if (profile !== undefined) {
-                        router.go('/apply');
-                        return apply.start(state.repository, profile);
-                      }
-                      return undefined;
-                    })
-                    .finally(() => {
-                      openingProtection.current = false;
-                    }),
-                );
+                return protection
+                  .writeProfileForApply()
+                  .then((profile) => {
+                    if (profile !== undefined) {
+                      router.go('/apply');
+                      return apply.start(state.repository, profile);
+                    }
+                    return undefined;
+                  })
+                  .finally(() => {
+                    openingProtection.current = false;
+                  });
               }
+              return Promise.resolve();
             }}
             onSignOut={signOut}
           />

@@ -160,6 +160,25 @@ Ordinary profile creation that finishes after its form closes still confirms
 through the signed-in shell; it leaves the current route alone. A canceled
 capture does not confirm.
 
+## Web pending controls
+
+`usePendingAction` in `views/layout/pending-button.tsx` tracks one control's
+pending flag, synchronous activation lock, and mounted state independently of
+other controls disabled by the same shared work queue.
+
+| State   | Event             | Next state                                                                                            |
+| ------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
+| Idle    | Activate          | Lock immediately, display pending feedback, and start the operation from the gesture.                 |
+| Pending | Activate again    | Keep the existing operation; suppress another submission.                                             |
+| Pending | Fulfill or reject | Release the lock and reset pending presentation if mounted; the owning operation reports its failure. |
+| Any     | Unmount           | Stop updating the control; let the owning operation finish normally.                                  |
+
+The new-profile form distinguishes file reading from creation, so reading an
+import keeps **Create** disabled without claiming that creation has started.
+The sign-out question also remembers whether it is saving or discarding so
+only the chosen action shows progress. Pending buttons expose a busy state
+without losing focus, and reduced motion keeps their indicator static.
+
 ## Web repositories
 
 `Repositories` (`packages/web/src/app/repositories/repositories.ts`) holds the repository

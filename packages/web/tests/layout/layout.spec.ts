@@ -431,6 +431,42 @@ test('retrying a failed first sync keeps an empty cache in the loading state', a
   await expect(page.locator('.empty')).toBeVisible();
 });
 
+test('a pending refresh keeps its width and focus and blocks another submission', async ({ page }) => {
+  await page.goto('/');
+  const refresh = page.getByRole('button', { name: 'Refresh', exact: true });
+  await page.getByRole('checkbox', { name: 'Select lunch/app', exact: true }).waitFor();
+  const before = await refresh.boundingBox();
+  await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
+  await refresh.focus();
+  await refresh.press('Enter');
+  const pending = page.getByRole('button', { name: 'Refreshing…', exact: true });
+  await expect(pending).toHaveAttribute('aria-busy', 'true');
+  await expect(pending).toBeFocused();
+  expect((await pending.boundingBox())?.width).toBe(before?.width);
+  await pending.press('Enter');
+  await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
+  await expect(refresh).not.toHaveAttribute('aria-busy', 'true');
+  await expect(refresh).toBeFocused();
+});
+
+test('a batch keeps its reviewed action width while applying', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('checkbox', { name: 'Select lunch/api', exact: true }).check();
+  await page.getByRole('button', { name: 'Review apply', exact: true }).click();
+  const apply = page.getByRole('button', { name: 'Apply to 1 repository', exact: true });
+  await expect(apply).toBeVisible();
+  const before = await apply.boundingBox();
+  await apply.click();
+  await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
+  await page.getByRole('button', { name: 'Apply now', exact: true }).click();
+  const pending = page.getByRole('button', { name: 'Applying…', exact: true });
+  await expect(pending).toHaveAttribute('aria-busy', 'true');
+  await expect(pending).toBeFocused();
+  expect((await pending.boundingBox())?.width).toBe(before?.width);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
+  await expect(page.getByText('Every repository is finished, and the batch has ended.')).toBeVisible();
+});
+
 function elementsPastViewportEdges(): string[] {
   const width = document.documentElement.clientWidth;
   const found: string[] = [];
