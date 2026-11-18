@@ -95,7 +95,7 @@ const screens: Readonly<Record<string, Screen>> = {
         .waitFor();
       await page.getByRole('button', { name: 'Refresh' }).click();
     },
-    visibleOnceDrawn: (page) => page.getByText(/^\s*in \d+s$/u),
+    visibleOnceDrawn: (page) => page.getByText(/^\s*in \d+s$/u).filter({ visible: true }),
   },
   'selected panel': {
     path: '/',
