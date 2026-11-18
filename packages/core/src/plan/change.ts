@@ -7,7 +7,7 @@ export interface Request {
   readonly body?: unknown;
 }
 
-/** The sections in the order a plan applies them. */
+/** The base section order, adjusted for planned setting prerequisites. */
 export const sections = [
   'repository',
   'merge',

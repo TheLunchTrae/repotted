@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { type GitHub, repoPath, type RepoRef } from '../../github/client.js';
 import { actionsEndpointFields, type ActionsSettings } from '../../profiles/schema.js';
 import type { Change, SectionPlan, Warning } from '../change.js';
-import { activeSettingsForPlan, type Endpoint } from '../endpoints.js';
+import { activeSettingsForPlan, type Endpoint, type EndpointValue, readResource } from '../endpoints.js';
 import { fieldChanges } from '../match.js';
 
 // These apply after the policy.
@@ -92,6 +92,11 @@ const liveWorkflow = z.object({
   default_workflow_permissions: z.enum(['read', 'write']),
   can_approve_pull_request_reviews: z.boolean(),
 });
+
+export async function readActionsEnabled(github: GitHub, repo: RepoRef): Promise<EndpointValue> {
+  const live = await readResource(github, repo, '/actions/permissions', 'Actions policy');
+  return live.available ? { available: true, value: livePermissions.parse(live.value).enabled } : live;
+}
 
 export async function readActions(github: GitHub, repo: RepoRef): Promise<ActionsSettings> {
   const base = `${repoPath(repo)}/actions/permissions`;

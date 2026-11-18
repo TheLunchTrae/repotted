@@ -1138,14 +1138,17 @@ changes. Sources include profile files, definition files, staged applies, and
 inline YAML with its reference directory. Plans without source metadata use
 their saved desired profile.
 
-| State    | Event                                       | Next                                                                                 |
-| -------- | ------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Reviewed | New live entries appear in an owned section | Stale before any write; new pruning requires a fresh review.                         |
-| Reviewed | A source or reference cannot resolve        | Refused before any write; repair the source and review a fresh plan.                 |
-| Reviewed | The new plan differs                        | Stale: `StalePlanError` carries the current plan, and nothing is written.            |
-| Reviewed | The new plan matches                        | Writing, change by change, from the new plan's requests.                             |
-| Writing  | A request fails                             | Partly applied: `ApplyError` lists the changes already made and the one that failed. |
-| Writing  | Every request succeeds                      | Applied.                                                                             |
+| State    | Event                                                                      | Next                                                                                    |
+| -------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Planning | A setting needs another planned write                                      | The prerequisite precedes it in the reviewed changes; nested dependencies are followed. |
+| Planning | Code scanning configuration needs disabled or unreadable unmanaged Actions | Configuration is skipped with a warning; Actions stays unmanaged.                       |
+| Planning | Code scanning turns off                                                    | Its shutdown precedes an Actions change and does not depend on enabling Actions.        |
+| Reviewed | New live entries appear in an owned section                                | Stale before any write; new pruning requires a fresh review.                            |
+| Reviewed | A source or reference cannot resolve                                       | Refused before any write; repair the source and review a fresh plan.                    |
+| Reviewed | The new plan differs                                                       | Stale: `StalePlanError` carries the current plan, and nothing is written.               |
+| Reviewed | The new plan matches                                                       | Writing, change by change, from the new plan's requests.                                |
+| Writing  | A request fails                                                            | Partly applied: `ApplyError` lists the changes already made and the one that failed.    |
+| Writing  | Every request succeeds                                                     | Applied.                                                                                |
 
 Partly applied is a state of the repository, not of the plan: nothing rolls
 back the changes already made. Planning again from the same profile lists

@@ -97,6 +97,14 @@ the resolved values against live state. The security planner also reads
 Dependabot alerts when only security updates are named, to check that
 dependency without managing the alerts.
 
+Code scanning default setup also needs Actions enabled. Planning uses the
+profile's `actions.enabled` first, then the live Actions policy when it is
+unmanaged. A disabled or unreadable prerequisite skips configuration with a
+warning; it never adds an unrequested enablement. Turning the setup off does
+not need Actions enabled. The selected-actions list is read while the live
+policy is `selected`, including when Actions is disabled, so a partial list
+keeps its unmanaged fields when the profile enables Actions.
+
 ### Owner types
 
 `owner.ts` lists what only some owners have, as
@@ -238,24 +246,37 @@ new environment.
 
 ### Order
 
-A plan lists its changes in the order they apply, chosen so the repository is
-never less protected in between:
+A plan lists its changes in the order they apply. Adapters establish the base
+order:
 
 1. Repository settings and merge methods.
-2. The Actions policy, then its selected-actions list, then workflow
+2. Security settings: security and analysis, then Dependabot alerts before
+   security updates, then the other security endpoints.
+3. The Actions policy, then its selected-actions list, then workflow
    permissions.
-3. Ruleset creates, then updates, then deletes, so a replacement exists before
+4. Custom properties, Pages, and autolinks.
+5. Ruleset creates, then updates, then deletes, so a replacement exists before
    the rulesets it replaces go.
-4. Environment creates and updates, then deleted deployment patterns, then new
+6. Environment creates and updates, then deleted deployment patterns, then new
    ones, then environment deletes. Custom branch policies are on before their
    patterns are added, and no branch or tag outside both the old and the new
    lists can deploy in between.
-5. Label deletes, then renames, then updates, then creates. A label pairs
+7. Label deletes, then renames, then updates, then creates. A label pairs
    with the repository's by name in any case, or, when the repository lacks
    it, by the first name in its `renamed_from` that the repository has, which
    it renames so the label stays on its issues. `addRenameIssues` in
    `schema.ts` refuses an old name that a profile label has or that two labels
    claim, so no two changes write one label.
+
+`plan/setting-order.ts` orders planned setting writes by the prerequisite
+chains in `setting-dependencies.ts`, keeping adapter order for unrelated
+changes. It also moves an Actions enablement before code scanning default
+setup configuration. An explicit code scanning shutdown keeps the base order
+regardless of the Actions change, since shutdown needs no Actions prerequisite.
+A prerequisite in the same request needs no separate
+write. Cyclic write dependencies refuse planning. The resulting order is
+part of the reviewed plan and is checked again by apply; apply does not reorder
+requests after review.
 
 ### Checks at plan time
 

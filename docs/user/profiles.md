@@ -437,6 +437,15 @@ Pages, and autolinks, then rulesets, then environments, then labels. Within
 each, Repotted orders the writes so the repository stays protected throughout.
 For example, a new ruleset exists before a ruleset it replaces is deleted,
 and labels are deleted, then renamed, then updated, then created.
+
+Settings that need another setting apply after their prerequisites. For
+example, if a profile enables Actions and configures code scanning default
+setup, Repotted enables Actions first. If the profile leaves Actions
+unmanaged and Actions is disabled, code scanning configuration is skipped
+with a warning. Repotted does not enable unmanaged settings. A profile that
+turns off both code scanning default setup and Actions turns off the setup
+first.
+
 [Plan and apply](cli.md#plan-and-apply) describes how to review and apply a
 plan.
 
