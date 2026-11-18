@@ -138,6 +138,24 @@ Edits to a profile whose file can't be read, including YAML corrections,
 count as unsaved and are asked about too. A sign-in GitHub refuses
 mid-visit asks nothing.
 
+## Web confirmations
+
+`Notifications` in `packages/web/src/app/notifications.ts` owns one confirmation,
+its remaining interval, timer, pause reasons, and disposed flag. The signed-in
+shell owns the instance; page navigation leaves it alive. The view tracks
+hover, keyboard focus, open dialogs, and page visibility independently.
+
+| State            | Event                                                | Next state                                                                                                                              |
+| ---------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Empty or visible | A deliberate action completes successfully           | Replace the confirmation and its announcement identity, even for identical text, and give it five seconds, starting only when unpaused. |
+| Counting down    | Hover, focus, a dialog, or a hidden page             | Cancel the timer, subtract elapsed time, and record the pause reason.                                                                   |
+| Paused           | One reason ends                                      | Remove that reason; resume the remaining time only when no reasons remain.                                                              |
+| Visible          | Its remaining time elapses or **Dismiss** is pressed | Clear the confirmation and timer.                                                                                                       |
+| Any              | Signed-in shell unmounts                             | Clear the confirmation and timer, mark disposed, and ignore late completions.                                                           |
+
+Failed syncs, conflicts, capture omissions, and partial or stale apply results
+keep their durable notices. They never become successful confirmations.
+
 ## Web repositories
 
 `Repositories` (`packages/web/src/app/repositories/repositories.ts`) holds the repository

@@ -7,6 +7,7 @@ import type { ConfigProtection } from '../../app/profiles/config-protection.js';
 import type { Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
 import type { Keeping } from '../../app/storage/kept-files.js';
+import { useProfileConfirmation } from '../layout/notifications.js';
 import { run } from '../layout/run.js';
 import { SyncNote } from '../profiles/sync-note.js';
 
@@ -19,6 +20,7 @@ interface ConnectFormProps {
 }
 
 function ConnectForm({ profiles, repositories, onClose, onConnected }: ConnectFormProps): JSX.Element {
+  const confirm = useProfileConfirmation(profiles);
   const source = profiles.source.value;
   const [repository, setRepository] = useState(source.kind === 'repository' ? source.repository : '');
   const [path, setPath] = useState(source.kind === 'repository' ? source.path : '');
@@ -36,6 +38,7 @@ function ConnectForm({ profiles, repositories, onClose, onConnected }: ConnectFo
     const problem = await profiles.connect(repository, path, addLocal && !alreadyKeptThere);
     setWorking(false);
     if (problem === undefined) {
+      confirm('Config repository connected.');
       onConnected();
       onClose();
     }
@@ -243,6 +246,7 @@ export function SettingsPage({
   onReviewProtection,
   onSignOut,
 }: SettingsProps): JSX.Element {
+  const confirm = useProfileConfirmation(profiles);
   const [connecting, setConnecting] = useState(false);
   // The repository the profiles were just put in, which the protection is offered for until it is put off.
   const [offered, setOffered] = useState<string | undefined>(undefined);
@@ -384,7 +388,7 @@ export function SettingsPage({
                     type="button"
                     disabled={busy}
                     onClick={() => {
-                      run(profiles.refresh());
+                      run(profiles.refresh().then(() => confirm('Profiles refreshed.')));
                     }}
                   >
                     {onGitHub || inFolder ? 'Sync now' : 'Refresh'}
@@ -447,7 +451,14 @@ export function SettingsPage({
                       type="button"
                       disabled={busy}
                       onClick={() => {
-                        run(profiles.useFolder(addToFolder && !inFolder));
+                        const before = profiles.source.value;
+                        run(
+                          profiles.useFolder(addToFolder && !inFolder).then((failure) => {
+                            if (failure === undefined && profiles.source.value !== before) {
+                              confirm('Profiles folder connected.');
+                            }
+                          }),
+                        );
                       }}
                     >
                       {inFolder ? 'Change folder…' : 'Choose a folder…'}
@@ -469,7 +480,13 @@ export function SettingsPage({
                       type="button"
                       disabled={busy}
                       onClick={() => {
-                        run(profiles.keepInBrowser());
+                        run(
+                          profiles.keepInBrowser().then(() => {
+                            if (profiles.source.value.kind === 'browser') {
+                              confirm('Profiles moved to this browser.');
+                            }
+                          }),
+                        );
                       }}
                     >
                       Use this browser

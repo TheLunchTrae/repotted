@@ -12,6 +12,11 @@ Use Repotted in one tab at a time. A second tab says that Repotted is open
 in another one, so that two tabs can't save over each other's profiles;
 close the first and click **Reload**.
 
+Successful saves, moves, connections, and explicit refreshes show a brief
+confirmation. It closes after five seconds; hovering it or focusing its
+**Dismiss** button pauses the countdown. Errors, sync conflicts, capture
+omissions, and apply results stay with the action that produced them.
+
 ## On a phone
 
 In a window 760 pixels wide or less, such as a phone's, the app lays itself

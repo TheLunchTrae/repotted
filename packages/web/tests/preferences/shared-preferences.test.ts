@@ -37,6 +37,29 @@ async function settled(preferences: SharedPreferences): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+test('save confirmations wait for a successful write and ignore refused browser storage', async () => {
+  const repository = new FakeGitRepository();
+  const confirm = vi.fn();
+  const preferences = new SharedPreferences(repository, memory(), () => undefined, confirm);
+  await preferences.use(source);
+  repository.refuseWrites = new GitHubError(403, 'Write refused');
+  preferences.write('repository-profiles', { 'lunch/app': { profiles: ['base.yaml'] } });
+  await vi.waitFor(() => expect(preferences.error.value).toBeDefined());
+  expect(confirm).not.toHaveBeenCalled();
+  repository.refuseWrites = undefined;
+  await preferences.reload();
+  await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith(['repository-profiles'], 'repository'));
+  const blocked = new SharedPreferences(
+    repository,
+    { read: () => undefined, write: () => undefined },
+    () => undefined,
+    confirm,
+  );
+  confirm.mockClear();
+  blocked.write('repository-profiles', { 'lunch/app': { profiles: ['base.yaml'] } });
+  expect(confirm).not.toHaveBeenCalled();
+});
+
 test('kept in this browser until the profiles are kept in a repository, and again after', async () => {
   const repository = new FakeGitRepository();
   repository.write({ [file]: '{ "hidden-repositories": ["lunch/old"] }' });

@@ -257,6 +257,80 @@ const test = base.extend<object, { bundle: string }>({
   },
 });
 
+test('creation confirms across navigation and closes after five seconds', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/profiles/new');
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('confirmed');
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  const confirmation = page.locator('.toasts');
+  await expect(confirmation.getByText('confirmed created.', { exact: true })).toBeVisible();
+  await page.clock.runFor(5000);
+  await expect(confirmation.getByRole('button', { name: 'Dismiss confirmation' })).toHaveCount(0);
+});
+
+test('a save confirmation clears the current height of the save bar', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('website', { exact: true }).click();
+  await page.getByRole('textbox', { name: 'Description', exact: true }).fill('Draft description');
+  if (await page.locator('.bar-more > summary').isVisible()) {
+    await page.locator('.bar-more > summary').click();
+  }
+  await page.getByRole('button', { name: 'Save as draft', exact: true }).click();
+  await expect(page.getByText('website saved as a draft.', { exact: true })).toBeVisible();
+  await expect(page.locator('.bar-more[open]')).toHaveCount(0);
+  await page.locator('.save-bar').scrollIntoViewIfNeeded();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const toast = document.querySelector('.toasts')?.getBoundingClientRect();
+        const bar = document.querySelector('.save-bar')?.getBoundingClientRect();
+        return toast !== undefined && bar !== undefined && toast.bottom <= bar.top;
+      }),
+    )
+    .toBe(true);
+});
+
+test('a save bar above long YAML cannot push a confirmation above the viewport', async ({ page }) => {
+  await page.goto('/profiles/new');
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('long-profile');
+  await page.getByLabel('Import YAML file').setInputFiles({
+    name: 'long-profile.yaml',
+    mimeType: 'application/yaml',
+    buffer: Buffer.from('repository: { has_wiki: true }\n' + '# A profile comment\n'.repeat(70)),
+  });
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page.getByText('long-profile created.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
+  await page
+    .locator('pre.code')
+    .evaluate((element) => window.scrollTo(0, window.scrollY + element.getBoundingClientRect().top - 160));
+  await expect
+    .poll(() =>
+      page.locator('.toasts').evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return box.top >= 0 && box.bottom <= window.innerHeight;
+      }),
+    )
+    .toBe(true);
+});
+
+test('two saves of the same profile replace the live announcement', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/profiles');
+  await page.getByText('website', { exact: true }).click();
+  const description = page.getByRole('textbox', { name: 'Description', exact: true });
+  await description.fill('First description');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const message = page.locator('.toasts [role="status"]');
+  await expect(message).toHaveText('website saved.Available in this tab.');
+  const first = await page.locator('.toast-copy').elementHandle();
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
+  await description.fill('Second description');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => first.evaluate((element) => element.isConnected)).toBe(false);
+  await expect(message).toHaveText('website saved.Available in this tab.');
+});
+
 function elementsPastViewportEdges(): string[] {
   const width = document.documentElement.clientWidth;
   const found: string[] = [];

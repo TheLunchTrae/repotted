@@ -234,6 +234,16 @@ transitions.
 page again. The Worker's asset config answers every path with `index.html`,
 so an address works when opened directly.
 
+User-triggered completions use `Notifications` in `src/app/notifications.ts`.
+The signed-in shell owns its lifetime, so navigation preserves confirmations
+and sign-out disposes pending timers and ignores late completions. Profile
+confirmations check the sync, conflicts, and listing result before
+claiming success; browser copies are described as available in the tab.
+Shared preferences report saved keys after a successful write to their
+current destination. `views/layout/notifications.tsx` draws one confirmation
+and pauses it while hovered, focused, obscured by a dialog, or in a hidden
+tab. [State machines](state-machines.md#web-confirmations) owns the transitions.
+
 ## Profiles
 
 `Profiles` (`src/app/profiles/profiles.ts`) holds where the profiles are kept, how the

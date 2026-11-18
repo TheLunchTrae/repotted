@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { OwnerChoice, ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import type { Profiles } from '../../app/profiles/profiles.js';
+import { useProfileConfirmation } from '../layout/notifications.js';
 import { run } from '../layout/run.js';
 
 const choices: readonly { readonly type: OwnerChoice; readonly label: string; readonly help: string }[] = [
@@ -32,6 +33,7 @@ interface OwnerTypeProps {
 }
 
 export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): JSX.Element {
+  const confirm = useProfileConfirmation(profiles);
   const dialog = useRef<HTMLDialogElement>(null);
   const current: OwnerChoice = editor.ownerType.value ?? 'any';
   const [picked, setPicked] = useState<OwnerChoice>(current);
@@ -55,6 +57,7 @@ export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): 
             run(
               profiles.changeOwnerType(picked).then(() => {
                 if (editor.saveError.value === undefined) {
+                  confirm('Profile owner type saved.');
                   dialog.current?.close();
                 }
               }),

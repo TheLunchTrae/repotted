@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import type { SaveMode } from '../../app/profile-editor/entry-edits.js';
 
 import type { Router } from '../../app/navigation/router.js';
 import type { BranchPreview } from '../../app/profiles/branch-preview.js';
@@ -8,6 +9,7 @@ import type { ProfileFolderNode, ProfileListing, Profiles } from '../../app/prof
 import type { Repositories } from '../../app/repositories/repositories.js';
 import { dirname, relative } from '../../engine/path.js';
 import { Link } from '../layout/link.js';
+import { useProfileConfirmation } from '../layout/notifications.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
@@ -191,6 +193,7 @@ interface FolderNameProps {
 }
 
 function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps): JSX.Element {
+  const confirm = useProfileConfirmation(profiles);
   const dialog = useModal();
   const renaming = asked.kind === 'rename' ? asked : undefined;
   const [name, setName] = useState(renaming?.name ?? '');
@@ -236,6 +239,7 @@ function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps)
               .then((failure) => {
                 setProblem(failure);
                 if (failure === undefined) {
+                  confirm(renaming === undefined ? 'Profiles moved.' : 'Folder renamed.');
                   landed.current = folder;
                   dialog.current?.close();
                 }
@@ -299,6 +303,7 @@ interface DeleteProps {
 }
 
 function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Element {
+  const confirm = useProfileConfirmation(profiles);
   const dialog = useModal();
   const [error, setError] = useState<string | undefined>(undefined);
   const deleted = useRef(false);
@@ -333,6 +338,11 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
                 .then((failure) => {
                   setError(failure);
                   if (failure === undefined) {
+                    confirm(
+                      listings.length === 1
+                        ? `${listings[0]?.name ?? 'Profile'} deleted.`
+                        : `${listings.length} profiles deleted.`,
+                    );
                     deleted.current = true;
                     dialog.current?.close();
                   }
@@ -408,6 +418,7 @@ interface SelectedProps {
 }
 
 function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedProps): JSX.Element {
+  const confirm = useProfileConfirmation(profiles);
   const batch = profiles.batch.value;
   const busy = profiles.profileWorkUnderWay.value;
   const [picked, setPicked] = useState<string | undefined>(undefined);
@@ -436,6 +447,7 @@ function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedP
               profiles.move(batch, target).then((failure) => {
                 setProblem(failure);
                 if (failure === undefined) {
+                  confirm('Profiles moved.');
                   onMoved(target);
                 }
               }),
@@ -506,6 +518,7 @@ interface ProfileProps {
 }
 
 function References({ listing, profiles, text }: ProfileProps & { readonly text: string }): JSX.Element {
+  const confirm = useProfileConfirmation(profiles);
   const [selected, setSelected] = useState(profiles.referencesOf(text, listing.file));
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -598,6 +611,9 @@ function References({ listing, profiles, text }: ProfileProps & { readonly text:
             profiles.saveReferences(listing.file, references, text).then((failure) => {
               setBusy(false);
               setProblem(failure);
+              if (failure === undefined) {
+                confirm(`${listing.name} references saved.`);
+              }
             }),
           );
         }}
@@ -609,6 +625,7 @@ function References({ listing, profiles, text }: ProfileProps & { readonly text:
 }
 
 function Profile({ listing, profiles }: ProfileProps): JSX.Element {
+  const confirm = useProfileConfirmation(profiles);
   const [showYaml, setShowYaml] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [changingOwner, setChangingOwner] = useState(false);
@@ -616,6 +633,17 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
   const editor = profiles.editor.value;
   const opened = profiles.opened.value;
   const base = profiles.listings.value.find((item) => item.file === listing.extends);
+  const save = async (mode: SaveMode = 'applies'): Promise<void> => {
+    const current = profiles.editor.value;
+    if (current === undefined || !(mode === 'applies' ? current.canSave.value : current.canSaveAsDraft.value)) {
+      return;
+    }
+    const repair = current.repair.value;
+    await profiles.save(mode);
+    if (current.saveError.value === undefined && repair?.saveError.value === undefined) {
+      confirm(`${listing.name} saved${mode === 'draft' ? ' as a draft' : ''}.`);
+    }
+  };
   return (
     <article class="page-body" aria-labelledby="profile-heading">
       <div class="page-heading">
@@ -745,7 +773,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           {listing.problem}
         </p>
       )}
-      {editor?.repair.value !== undefined && <RepairProfile editor={editor} save={() => profiles.save()} />}
+      {editor?.repair.value !== undefined && <RepairProfile editor={editor} save={save} />}
       {listing.kind !== undefined && (
         <p class="notice">
           Used by:{' '}
@@ -762,7 +790,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           name={listing.name}
           editor={editor}
           saving={{
-            save: (mode) => profiles.save(mode),
+            save,
             discardDraft: () => profiles.discardDraft(),
             onGitHub: profiles.source.value.kind === 'repository',
           }}
@@ -843,6 +871,7 @@ function Banners({ profiles }: { readonly profiles: Profiles }): JSX.Element | n
 }
 
 export function ProfilesPage({ profiles, repositories, router, preview, newProfileForm }: ProfilesProps): JSX.Element {
+  const confirm = useProfileConfirmation(profiles);
   const source = profiles.source.value;
   const tree = profiles.tree.value;
   const selected = profiles.selected.value;
@@ -1007,7 +1036,13 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
               type="button"
               disabled={busy}
               onClick={() => {
-                run(profiles.refresh());
+                run(
+                  profiles
+                    .refresh()
+                    .then(() =>
+                      confirm(profiles.source.value.kind === 'browser' ? 'Profiles refreshed.' : 'Profiles synced.'),
+                    ),
+                );
               }}
             >
               {source.kind === 'browser' ? 'Refresh' : 'Sync'}
