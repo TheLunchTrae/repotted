@@ -701,12 +701,19 @@ export const profile = z
     for (const message of mergeSettingsProblems(value.merge ?? {})) {
       context.addIssue({ code: 'custom', message, path: ['merge'] });
     }
-    if (value.actions?.enabled === false && value.security?.code_scanning_default_setup?.state === 'configured') {
-      context.addIssue({
-        code: 'custom',
-        message: 'Enable Actions or turn off code scanning default setup',
-        path: ['security', 'code_scanning_default_setup', 'state'],
-      });
+    if (value.actions?.enabled === false) {
+      for (const [key, name] of [
+        ['code_scanning_default_setup', 'code scanning default setup'],
+        ['code_quality_setup', 'code quality setup'],
+      ] as const) {
+        if (value.security?.[key]?.state === 'configured') {
+          context.addIssue({
+            code: 'custom',
+            message: `Enable Actions or turn off ${name}`,
+            path: ['security', key, 'state'],
+          });
+        }
+      }
     }
     addDuplicateNameIssues(
       (value.autolinks ?? []).map((entry) => ({ name: entry.key_prefix })),

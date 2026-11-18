@@ -47,6 +47,37 @@ function rejection(promise: Promise<unknown>): Promise<unknown> {
 }
 
 describe('the profile that applies', () => {
+  test.each(['code_scanning_default_setup', 'code_quality_setup'] as const)(
+    'checks the Actions requirement for %s after inheritance and leaves drafts out',
+    async (setup) => {
+      const base = await write(`${setup}-base.yaml`, 'actions: { enabled: false }\n');
+      const file = await write(
+        `${setup}-override.yaml`,
+        `extends: ${path.basename(base)}\nsecurity: { ${setup}: { state: configured } }\n`,
+      );
+
+      await expect(resolveProfile(file)).rejects.toThrow('Enable Actions');
+      await expect(
+        parseProfile(`actions: { enabled: false }\nsecurity: { ${setup}: { state: configured } }`, directory),
+      ).rejects.toThrow(`security.${setup}.state`);
+      await expect(
+        parseProfile(`extends: ${path.basename(file)}\nactions: { enabled: true }`, directory),
+      ).resolves.toMatchObject({ profile: { actions: { enabled: true } } });
+      await expect(
+        parseProfile(`extends: ${path.basename(file)}\nsecurity: { ${setup}: { state: not-configured } }`, directory),
+      ).resolves.toMatchObject({ profile: { security: { [setup]: { state: 'not-configured' } } } });
+      await expect(parseProfile(`security: { ${setup}: { state: configured } }`, directory)).resolves.toMatchObject({
+        profile: { security: { [setup]: { state: 'configured' } } },
+      });
+      await expect(
+        parseProfile(
+          `extends: ${path.basename(base)}\ndrafts: { security: { ${setup}: { state: configured } } }`,
+          directory,
+        ),
+      ).resolves.toMatchObject({ drafts: { security: { [setup]: { state: 'configured' } } } });
+    },
+  );
+
   test('lays a repository profile over the profile it extends', async () => {
     await write(
       'base.yaml',

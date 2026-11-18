@@ -160,13 +160,14 @@ export async function createPlan(
   const security = desired.security;
   const liveActions = desired.actions === undefined ? undefined : await readActions(github, repo);
   const enabled = desired.actions?.enabled ?? liveActions?.enabled;
-  const scanning = security?.code_scanning_default_setup;
-  const actionsEnabled =
-    scanning === undefined || scanning.state === 'not-configured'
-      ? undefined
-      : enabled === undefined
-        ? await readActionsEnabled(github, repo)
-        : { available: true as const, value: enabled };
+  const needsActions = [security?.code_scanning_default_setup, security?.code_quality_setup].some(
+    (setup) => setup !== undefined && setup.state !== 'not-configured',
+  );
+  const actionsEnabled = !needsActions
+    ? undefined
+    : enabled === undefined
+      ? await readActionsEnabled(github, repo)
+      : { available: true as const, value: enabled };
   if (
     desired.repository !== undefined ||
     desired.merge !== undefined ||

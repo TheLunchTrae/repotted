@@ -537,12 +537,8 @@ export class FakeGitHub implements GitHub {
     // A PUT replaces the settings; a PATCH changes the fields it sends.
     const written = method === 'PUT' ? { ...next } : { ...record(settings[relative]), ...next };
     if (relative === '/code-scanning/default-setup' || relative === '/code-quality/setup') {
-      if (
-        relative === '/code-scanning/default-setup' &&
-        written['state'] === 'configured' &&
-        !this.state.actions.enabled
-      ) {
-        throw new GitHubError(422, 'Code scanning default setup can only be enabled if Actions is enabled');
+      if (written['state'] === 'configured' && !this.state.actions.enabled) {
+        throw new GitHubError(422, 'GitHub Actions must be enabled to configure this setup');
       }
       if (written['state'] === 'not-configured') {
         // GitHub reports no runner while the setup is not configured.

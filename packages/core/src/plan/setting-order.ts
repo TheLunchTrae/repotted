@@ -8,8 +8,10 @@ export function orderSettingChanges(changes: readonly Change[]): Change[] {
     if (isListSection(change.section)) {
       continue;
     }
-    const disablesCodeScanning = change.fields.some(
-      (field) => field.field === 'code_scanning_default_setup.state' && field.to === 'not-configured',
+    const disablesSetup = change.fields.some(
+      (field) =>
+        (field.field === 'code_scanning_default_setup.state' || field.field === 'code_quality_setup.state') &&
+        field.to === 'not-configured',
     );
     for (const field of change.fields) {
       let key = field.field;
@@ -33,8 +35,8 @@ export function orderSettingChanges(changes: readonly Change[]): Change[] {
       }
       if (
         change.section === 'security' &&
-        field.field.startsWith('code_scanning_default_setup.') &&
-        !disablesCodeScanning
+        (field.field.startsWith('code_scanning_default_setup.') || field.field.startsWith('code_quality_setup.')) &&
+        !disablesSetup
       ) {
         for (const other of changes) {
           if (

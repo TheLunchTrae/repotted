@@ -219,8 +219,8 @@ export function planSecurity(
       continue;
     }
     if (
-      endpoint.key === 'code_scanning_default_setup' &&
-      desired.code_scanning_default_setup?.state !== 'not-configured' &&
+      (endpoint.key === 'code_scanning_default_setup' || endpoint.key === 'code_quality_setup') &&
+      desired[endpoint.key]?.state !== 'not-configured' &&
       actionsEnabled !== undefined &&
       (!actionsEnabled.available || actionsEnabled.value !== true)
     ) {

@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import { GitHubError, parseRepo } from '../../src/github/client.js';
 import { ApplyError, applyPlan, captureProfile, createPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
@@ -12,62 +12,166 @@ import { FakeGitHub } from '../support/fake-github.js';
 
 const repo = parseRepo('lunch/app');
 
-test.each(['all', 'selected'] as const)(
-  'enables Actions before code scanning and selected actions when the disabled policy is %s',
-  async (allowed) => {
+describe.each([
+  ['code_scanning_default_setup', '/code-scanning/default-setup', 'code scanning default setup'],
+  ['code_quality_setup', '/code-quality/setup', 'code quality setup'],
+] as const)('%s Actions prerequisites', (key, endpoint, target) => {
+  test.each(['all', 'selected'] as const)(
+    'enables Actions before setup and selected actions when the disabled policy is %s',
+    async (allowed) => {
+      const github = new FakeGitHub({
+        actions: { enabled: false, allowed_actions: allowed },
+        settings: { [endpoint]: { state: 'not-configured' } },
+      });
+      const desired: Profile = {
+        actions: {
+          enabled: true,
+          allowed_actions: 'selected',
+          selected_actions: { github_owned_allowed: true, patterns_allowed: ['octo/*'] },
+          default_workflow_permissions: 'read',
+        },
+        security: { [key]: { state: 'configured' } },
+      };
+      const plan = await createPlan(github, repo, desired);
+      expect(github.writes).toEqual([]);
+      expect(plan.warnings).toEqual([]);
+      expect(plan.changes.map((change) => change.target)).toEqual([
+        'Actions permissions',
+        target,
+        'selected actions',
+        'workflow permissions',
+      ]);
+      await applyPlan(github, parsePlan(JSON.parse(JSON.stringify(plan))));
+      expect(github.writes.map((call) => call.path)).toEqual([
+        '/repos/lunch/app/actions/permissions',
+        `/repos/lunch/app${endpoint}`,
+        '/repos/lunch/app/actions/permissions/selected-actions',
+        '/repos/lunch/app/actions/permissions/workflow',
+      ]);
+      expect((await createPlan(github, repo, desired)).changes).toEqual([]);
+    },
+  );
+
+  test('skips setup configuration when Actions is disabled and unmanaged', async () => {
     const github = new FakeGitHub({
-      actions: { enabled: false, allowed_actions: allowed },
-      settings: { '/code-scanning/default-setup': { state: 'not-configured' } },
+      actions: { enabled: false },
+      settings: { [endpoint]: { state: 'not-configured' } },
+    });
+    const plan = await createPlan(github, repo, {
+      security: { [key]: { state: 'configured' } },
+    });
+    expect(plan.changes).toEqual([]);
+    expect(plan.warnings).toEqual([
+      {
+        section: 'security',
+        key,
+        cause: 'not_applicable',
+        message:
+          'it needs Actions to be enabled; set actions.enabled: true in the profile or enable Actions on the repository',
+      },
+    ]);
+    await applyPlan(github, plan);
+    expect(github.writes).toEqual([]);
+  });
+
+  test('turns setup off before disabling Actions', async () => {
+    const github = new FakeGitHub({
+      settings: { [endpoint]: { state: 'configured' } },
     });
     const desired: Profile = {
-      actions: {
-        enabled: true,
-        allowed_actions: 'selected',
-        selected_actions: { github_owned_allowed: true, patterns_allowed: ['octo/*'] },
-        default_workflow_permissions: 'read',
-      },
-      security: { code_scanning_default_setup: { state: 'configured', query_suite: 'extended' } },
+      actions: { enabled: false },
+      security: { [key]: { state: 'not-configured' } },
     };
     const plan = await createPlan(github, repo, desired);
-    expect(github.writes).toEqual([]);
-    expect(plan.warnings).toEqual([]);
-    expect(plan.changes.map((change) => change.target)).toEqual([
-      'Actions permissions',
-      'code scanning default setup',
-      'selected actions',
-      'workflow permissions',
-    ]);
-    await applyPlan(github, parsePlan(JSON.parse(JSON.stringify(plan))));
-    expect(github.writes.map((call) => call.path)).toEqual([
-      '/repos/lunch/app/actions/permissions',
-      '/repos/lunch/app/code-scanning/default-setup',
-      '/repos/lunch/app/actions/permissions/selected-actions',
-      '/repos/lunch/app/actions/permissions/workflow',
-    ]);
+    expect(plan.changes.map((change) => change.target)).toEqual([target, 'Actions permissions']);
+    await applyPlan(github, plan);
     expect((await createPlan(github, repo, desired)).changes).toEqual([]);
-  },
-);
+  });
 
-test('skips code scanning configuration when Actions is disabled and unmanaged', async () => {
+  test('turns setup off before an independent Actions enablement that fails', async () => {
+    const github = new FakeGitHub({
+      actions: { enabled: false },
+      settings: { [endpoint]: { state: 'configured' } },
+    }).fail(
+      'PUT /repos/lunch/app/actions/permissions',
+      new GitHubError(403, 'Actions is disabled by the organization'),
+    );
+    const plan = await createPlan(github, repo, {
+      actions: { enabled: true },
+      security: { [key]: { state: 'not-configured' } },
+    });
+    expect(plan.changes.map((change) => change.target)).toEqual([target, 'Actions permissions']);
+    await expect(applyPlan(github, plan)).rejects.toMatchObject({
+      name: ApplyError.name,
+      applied: [{ target }],
+      failed: { target: 'Actions permissions' },
+    });
+    expect(github.state.settings[endpoint]).toMatchObject({ state: 'not-configured' });
+  });
+
+  test('refuses an apply when Actions must be enabled by a change that was not reviewed', async () => {
+    const github = new FakeGitHub({ settings: { [endpoint]: { state: 'not-configured' } } });
+    const plan = await createPlan(github, repo, {
+      actions: { enabled: true },
+      security: { [key]: { state: 'configured' } },
+    });
+    github.state.actions.enabled = false;
+    await expect(applyPlan(github, plan)).rejects.toBeInstanceOf(StalePlanError);
+    expect(github.writes).toEqual([]);
+  });
+
+  test('does not configure setup after its Actions prerequisite fails', async () => {
+    const github = new FakeGitHub({
+      actions: { enabled: false },
+      settings: { [endpoint]: { state: 'not-configured' } },
+    }).fail(
+      'PUT /repos/lunch/app/actions/permissions',
+      new GitHubError(403, 'Actions is disabled by the organization'),
+    );
+    const plan = await createPlan(github, repo, {
+      actions: { enabled: true },
+      security: { [key]: { state: 'configured' } },
+    });
+    await expect(applyPlan(github, plan)).rejects.toMatchObject({
+      name: ApplyError.name,
+      applied: [],
+      failed: { target: 'Actions permissions' },
+    });
+    expect(github.writes.map((call) => call.path)).toEqual(['/repos/lunch/app/actions/permissions']);
+  });
+
+  test('reports an unreadable Actions prerequisite instead of attempting setup configuration', async () => {
+    const github = new FakeGitHub({
+      settings: { [endpoint]: { state: 'not-configured' } },
+    }).fail('GET /repos/lunch/app/actions/permissions', new GitHubError(403, 'Resource not accessible by integration'));
+    const plan = await createPlan(github, repo, {
+      security: { [key]: { state: 'configured' } },
+    });
+    expect(plan.changes).toEqual([]);
+    expect(plan.warnings).toEqual([
+      expect.objectContaining({
+        section: 'security',
+        key,
+        cause: 'refused',
+        remedy: { kind: 'permission', permission: 'Administration read' },
+      }),
+    ]);
+    expect(github.writes).toEqual([]);
+  });
+});
+
+test('allows Dependabot security updates with Actions disabled', async () => {
+  const { profile } = await parseProfile(
+    'actions: { enabled: false }\nsecurity: { vulnerability_alerts: true, automated_security_fixes: true }',
+    '.',
+  );
   const github = new FakeGitHub({
     actions: { enabled: false },
-    settings: { '/code-scanning/default-setup': { state: 'not-configured' } },
+    settings: { '/vulnerability-alerts': false, '/automated-security-fixes': { enabled: false } },
   });
-  const plan = await createPlan(github, repo, {
-    security: { code_scanning_default_setup: { state: 'configured' } },
-  });
-  expect(plan.changes).toEqual([]);
-  expect(plan.warnings).toEqual([
-    {
-      section: 'security',
-      key: 'code_scanning_default_setup',
-      cause: 'not_applicable',
-      message:
-        'it needs Actions to be enabled; set actions.enabled: true in the profile or enable Actions on the repository',
-    },
-  ]);
-  await applyPlan(github, plan);
-  expect(github.writes).toEqual([]);
+  await applyPlan(github, await createPlan(github, repo, profile));
+  expect(github.state.settings['/automated-security-fixes']).toMatchObject({ enabled: true });
+  expect(github.state.actions.enabled).toBe(false);
 });
 
 test('keeps unmanaged selected-actions settings when enabling Actions with a partial list', async () => {
@@ -85,85 +189,6 @@ test('keeps unmanaged selected-actions settings when enabling Actions with a par
     patterns_allowed: ['octo/*'],
   });
   expect((await createPlan(github, repo, desired)).changes).toEqual([]);
-});
-
-test('turns code scanning off before disabling Actions', async () => {
-  const github = new FakeGitHub({
-    settings: { '/code-scanning/default-setup': { state: 'configured' } },
-  });
-  const desired: Profile = {
-    actions: { enabled: false },
-    security: { code_scanning_default_setup: { state: 'not-configured' } },
-  };
-  const plan = await createPlan(github, repo, desired);
-  expect(plan.changes.map((change) => change.target)).toEqual(['code scanning default setup', 'Actions permissions']);
-  await applyPlan(github, plan);
-  expect((await createPlan(github, repo, desired)).changes).toEqual([]);
-});
-
-test('turns code scanning off before an independent Actions enablement that fails', async () => {
-  const github = new FakeGitHub({
-    actions: { enabled: false },
-    settings: { '/code-scanning/default-setup': { state: 'configured' } },
-  }).fail('PUT /repos/lunch/app/actions/permissions', new GitHubError(403, 'Actions is disabled by the organization'));
-  const plan = await createPlan(github, repo, {
-    actions: { enabled: true },
-    security: { code_scanning_default_setup: { state: 'not-configured' } },
-  });
-  expect(plan.changes.map((change) => change.target)).toEqual(['code scanning default setup', 'Actions permissions']);
-  await expect(applyPlan(github, plan)).rejects.toMatchObject({
-    name: ApplyError.name,
-    applied: [{ target: 'code scanning default setup' }],
-    failed: { target: 'Actions permissions' },
-  });
-  expect(github.state.settings['/code-scanning/default-setup']).toMatchObject({ state: 'not-configured' });
-});
-
-test('refuses an apply when Actions must be enabled by a change that was not reviewed', async () => {
-  const github = new FakeGitHub({ settings: { '/code-scanning/default-setup': { state: 'not-configured' } } });
-  const plan = await createPlan(github, repo, {
-    actions: { enabled: true },
-    security: { code_scanning_default_setup: { state: 'configured' } },
-  });
-  github.state.actions.enabled = false;
-  await expect(applyPlan(github, plan)).rejects.toBeInstanceOf(StalePlanError);
-  expect(github.writes).toEqual([]);
-});
-
-test('does not configure code scanning after its Actions prerequisite fails', async () => {
-  const github = new FakeGitHub({
-    actions: { enabled: false },
-    settings: { '/code-scanning/default-setup': { state: 'not-configured' } },
-  }).fail('PUT /repos/lunch/app/actions/permissions', new GitHubError(403, 'Actions is disabled by the organization'));
-  const plan = await createPlan(github, repo, {
-    actions: { enabled: true },
-    security: { code_scanning_default_setup: { state: 'configured' } },
-  });
-  await expect(applyPlan(github, plan)).rejects.toMatchObject({
-    name: ApplyError.name,
-    applied: [],
-    failed: { target: 'Actions permissions' },
-  });
-  expect(github.writes.map((call) => call.path)).toEqual(['/repos/lunch/app/actions/permissions']);
-});
-
-test('reports an unreadable Actions prerequisite instead of attempting code scanning configuration', async () => {
-  const github = new FakeGitHub({
-    settings: { '/code-scanning/default-setup': { state: 'not-configured' } },
-  }).fail('GET /repos/lunch/app/actions/permissions', new GitHubError(403, 'Resource not accessible by integration'));
-  const plan = await createPlan(github, repo, {
-    security: { code_scanning_default_setup: { state: 'configured' } },
-  });
-  expect(plan.changes).toEqual([]);
-  expect(plan.warnings).toEqual([
-    expect.objectContaining({
-      section: 'security',
-      key: 'code_scanning_default_setup',
-      cause: 'refused',
-      remedy: { kind: 'permission', permission: 'Administration read' },
-    }),
-  ]);
-  expect(github.writes).toEqual([]);
 });
 
 test('orders same-section prerequisites and nested dependency chains without changing unrelated order', async () => {
