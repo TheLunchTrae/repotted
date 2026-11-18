@@ -24,6 +24,8 @@ import { stringify } from 'yaml';
 
 import { readFile } from '../../engine/files.js';
 import { basename, dirname, relative, resolve } from '../../engine/path.js';
+import { profileNameProblem } from '../profiles/profile-name.js';
+import type { ReusableDefinition, ReusableSection } from '../profiles/save-reusable-definitions.js';
 import type { ActionPatternChecks } from './action-pattern-checks.js';
 import type { ActionSearch } from './action-search.js';
 import type { GitHubAppLookup } from './bypass-actors.js';
@@ -64,16 +66,23 @@ import { matchesSearch, parentOf, searchWords } from './setting-search.js';
  */
 export interface EditorStore {
   readonly canHoldDrafts: boolean;
+  readonly readText?: (file: string) => Promise<string>;
   readonly resolve: (file: string) => Promise<ResolvedProfile>;
   readonly preview: (
     file: string,
     edits: readonly ProfileEdit[],
   ) => Promise<{ readonly before: ResolvedProfile; readonly after: ResolvedProfile }>;
   readonly edit: (file: string, edits: readonly ProfileEdit[]) => Promise<ResolvedProfile>;
+  readonly saveReusable?: (
+    file: string,
+    edits: readonly ProfileEdit[],
+    definitions: readonly ReusableDefinition[],
+  ) => Promise<ResolvedProfile>;
 }
 
-const profileStore: EditorStore = {
+export const profileStore: EditorStore = {
   canHoldDrafts: true,
+  readText: (file) => readFile(file, 'utf8'),
   resolve: readProfileForEditing,
   preview: async (file, edits) => ({
     before: await readProfileForEditing(file),
@@ -220,6 +229,7 @@ export interface SaveProblem {
 
 /** What a save that applies would change: the profile that applies now against the one that would, as a diff of YAML. */
 export interface SavePreview {
+  readonly reusableDefinitions?: readonly ReusableDefinition[];
   readonly removedUnknownFields?: readonly string[];
   readonly lines: readonly (DiffLine | DiffFold)[];
   readonly changedLineCount: number;
@@ -391,6 +401,7 @@ export class ProfileEditor {
   readonly #typed = signal<ReadonlyMap<string, TypedText>>(new Map());
   readonly #batchUndo = signal<BatchUndo | undefined>(undefined);
   readonly #entryEdits = new EntryEdits();
+  readonly #reusable = signal<readonly (ReusableDefinition & { readonly key: string })[]>([]);
   #settingEditsSaveIsWriting: ReadonlyMap<string, SettingEdit> = new Map();
   #latestPreviewNumber = 0;
   /** Counts what a preview of a save can go out of date by, so one made before then is never shown. */
@@ -422,6 +433,61 @@ export class ProfileEditor {
   }
 
   readonly loaded = computed(() => this.#saved.value !== undefined);
+
+  readonly canReuse = computed(
+    () => this.#store.saveReusable !== undefined && this.definitionSection.value === undefined,
+  );
+
+  readonly reusableDefinitions = computed(() =>
+    this.#reusable.value.flatMap((definition) => {
+      if (definition.section === 'actions') {
+        return [definition];
+      }
+      const row = this.#entryEdits.rows.value[definition.section].find((entry) => entry.key === definition.key);
+      return row !== undefined && row.source === undefined && row.entry !== undefined && row.entry['absent'] !== true
+        ? [{ ...definition, targetName: typeof row.entry['name'] === 'string' ? row.entry['name'].trim() : '' }]
+        : [];
+    }),
+  );
+
+  reusableName(key: string): string | undefined {
+    return this.reusableDefinitions.value.find((definition) => definition.key === key)?.name;
+  }
+
+  setReusable(section: ReusableSection, key: string, name: string | undefined): void {
+    if (!this.canReuse.value || this.saving.value) {
+      return;
+    }
+    this.#batchUndo.value = undefined;
+    this.closePreview();
+    this.saveError.value = undefined;
+    this.#reusable.value = [
+      ...this.#reusable.value.filter((definition) => definition.key !== key),
+      ...(name === undefined ? [] : [{ section, key, name }]),
+    ];
+  }
+
+  readonly reusableProblem = computed(() => {
+    const names = new Set<string>();
+    for (const definition of this.reusableDefinitions.value) {
+      const problem = profileNameProblem(definition.name, 'reusable definition');
+      if (problem !== undefined) {
+        return { ...definition, message: problem };
+      }
+      const path = `${definition.section}/${definition.name.trim().toLowerCase()}`;
+      if (names.has(path)) {
+        return { ...definition, message: 'Give each reusable definition a different name.' };
+      }
+      names.add(path);
+      if (definition.section === 'actions') {
+        const profile = this.#profileAsSaveWouldLeaveIt.value ?? this.#saved.value;
+        if (Object.keys(profile?.profile['actions'] ?? {}).length === 0) {
+          return { ...definition, message: 'Choose at least one Actions setting for the reusable policy.' };
+        }
+      }
+    }
+    return undefined;
+  });
 
   readonly references = computed(() => {
     const edit = this.#edits.value.get('references');
@@ -471,6 +537,7 @@ export class ProfileEditor {
     () =>
       this.#edits.value.size > 0 ||
       this.#entryEdits.count.value > 0 ||
+      this.reusableDefinitions.value.length > 0 ||
       this.#someTypedTextCannotBeAValue.value ||
       this.repair.value?.dirty.value === true,
   );
@@ -527,6 +594,7 @@ export class ProfileEditor {
         !this.#entryEdits.someEntryCannotBeSavedToApply.value &&
         this.configurationProblems.value.length === 0 &&
         this.unsavedChangesProblem.value === undefined &&
+        this.reusableProblem.value === undefined &&
         !this.saving.value),
   );
 
@@ -624,7 +692,26 @@ export class ProfileEditor {
         },
       ];
     });
-    return [...settings, ...entries, ...configuration, ...profile];
+    const reusable = this.reusableProblem.value;
+    return [
+      ...settings,
+      ...entries,
+      ...configuration,
+      ...profile,
+      ...(reusable === undefined
+        ? []
+        : [
+            {
+              key: `reusable ${reusable.key}`,
+              name: 'Reusable definition',
+              where: reusable.section === 'actions' ? 'Actions' : entryListTitles[reusable.section],
+              tab: reusable.section,
+              message: reusable.message,
+              canReset: false,
+              place: { kind: 'profile' as const },
+            },
+          ]),
+    ];
   });
 
   /** How many problems hold Save back on each tab. */
@@ -644,6 +731,9 @@ export class ProfileEditor {
   readonly draftProblem = computed(() => {
     if (!this.canHoldDrafts) {
       return undefined;
+    }
+    if (this.reusableDefinitions.value.length > 0) {
+      return 'Reusable definitions cannot be kept as drafts. Save the profile or clear the reusable choices.';
     }
     if (this.#edits.value.has('references')) {
       return 'Shared definition references cannot be kept as drafts. Save the profile or reset the references.';
@@ -818,7 +908,9 @@ export class ProfileEditor {
     return preview.rows.value;
   });
 
-  readonly #changed = computed(() => this.#edits.value.size > 0 || this.#entryEdits.count.value > 0);
+  readonly #changed = computed(
+    () => this.#edits.value.size > 0 || this.#entryEdits.count.value > 0 || this.reusableDefinitions.value.length > 0,
+  );
 
   readonly #ownUnsets = computed(() => (this.#saved.value === undefined ? [] : ownUnsets(this.#saved.value)));
 
@@ -841,7 +933,7 @@ export class ProfileEditor {
     let text: string | undefined;
     let result: { readonly saved: ResolvedProfile } | { readonly problem: string };
     try {
-      text = this.#store === profileStore ? await readFile(this.file, 'utf8') : undefined;
+      text = await this.#store.readText?.(this.file);
       result = {
         saved: text === undefined ? await this.#store.resolve(this.file) : await readProfileForEditing(this.file, text),
       };
@@ -936,7 +1028,8 @@ export class ProfileEditor {
     if (!this.canSave.value) {
       return;
     }
-    const unsaved = this.#edits.value.size + this.#entryEdits.count.value;
+    const definitions = this.reusableDefinitions.value;
+    const unsaved = this.#edits.value.size + this.#entryEdits.count.value + definitions.length;
     const drafted = this.draftCount.value;
     const turn = (this.#opens += 1);
     try {
@@ -950,6 +1043,7 @@ export class ProfileEditor {
       }
       const lines = diffLines(yamlLines(before), yamlLines(after));
       this.preview.value = {
+        reusableDefinitions: definitions,
         lines: foldUnchanged(lines),
         changedLineCount: lines.filter((line) => line.kind !== 'same').length,
         draftChangeCount: drafted,
@@ -1093,6 +1187,7 @@ export class ProfileEditor {
     this.#batchUndo.value = undefined;
     this.#edits.value = new Map();
     this.#entryEdits.resetAll();
+    this.#reusable.value = [];
     this.#typed.value = new Map();
     this.saveError.value = undefined;
     if (this.repair.value !== undefined) {
@@ -1254,6 +1349,7 @@ export class ProfileEditor {
     if (!(mode === 'applies' ? this.canSave.value : this.canSaveAsDraft.value)) {
       return;
     }
+    const definitions = this.reusableDefinitions.value;
     await this.#write(write, this.#edits.value, async (writing) => {
       if (this.#entryEdits.writesOverChange()) {
         throw new Error(
@@ -1268,7 +1364,15 @@ export class ProfileEditor {
         throw new Error("A ruleset, environment, or label can't be saved as it stands. Open it to see why.");
       }
       const entries = this.#entryEdits.saving(mode);
-      return this.#store.edit(this.file, [...this.#settingWrites(writing, mode, entries.unsets), ...entries.writes]);
+      const edits = [...this.#settingWrites(writing, mode, entries.unsets), ...entries.writes];
+      const saved =
+        definitions.length > 0 && this.#store.saveReusable !== undefined
+          ? await this.#store.saveReusable(this.file, edits, definitions)
+          : await this.#store.edit(this.file, edits);
+      this.#reusable.value = this.#reusable.value.filter(
+        (definition) => !definitions.some((saved) => saved.key === definition.key),
+      );
+      return saved;
     });
   }
 

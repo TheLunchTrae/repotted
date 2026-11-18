@@ -501,17 +501,12 @@ captures a definition from a repository, duplicates a saved definition, or
 imports YAML. **Export YAML** downloads an open definition. Definitions
 share profiles' browser, local-folder, and config-repository storage and sync.
 
-**Shared definitions** on a profile's creation or editing page adds existing
-policies, rulesets, and environments. **Save** keeps reference edits with
-other profile changes, preserving the references in YAML. **Remove** detaches
-a reference without making a copy. Reference changes cannot be saved as
-drafts. Inline values override referenced values.
-
-When duplicating or importing a profile, its existing references are kept.
-The creation form adds selected rulesets and environments and replaces the
-Actions policy only when you select one. Remove unwanted references after
-creation. Unsaved reference changes preview the resolved entries; save those
-changes before editing the entries.
+A profile's **Actions**, **Rulesets**, and **Environments** tabs let you
+select existing shared definitions separately from creating inline items.
+When creating a ruleset or environment, you can also save it as a reusable
+definition and link it to the profile. The **Actions** tab offers the same
+choice for a policy. See [Shared definitions](web-app.md#shared-definitions)
+for selecting, creating, and saving these links.
 
 **Edit shared definition** opens its library editor. **Used by** lists the
 profiles using it, and assigned repositories are shown too. Saving a

@@ -61,8 +61,22 @@ const screens: Readonly<Record<string, Screen>> = {
   },
   'profile with shared references': {
     path: '/profiles',
-    reachFromPath: (page) => page.getByText('shared-api', { exact: true }).click(),
-    visibleOnceDrawn: (page) => page.getByRole('combobox', { name: 'Add ruleset', exact: true }),
+    reachFromPath: async (page) => {
+      await page.getByText('shared-api', { exact: true }).click();
+      await page.getByRole('tab', { name: 'Rulesets', exact: true }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('combobox', { name: 'Use a reusable ruleset', exact: true }),
+  },
+  'creating a reusable environment': {
+    path: '/profiles',
+    reachFromPath: async (page) => {
+      await page.getByText('shared-api', { exact: true }).click();
+      await page.getByRole('tab', { name: 'Environments', exact: true }).click();
+      await page.getByRole('button', { name: 'New environment', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Name', exact: true }).fill('staging');
+      await page.getByRole('checkbox', { name: /^Also save as a reusable environment/u }).check();
+    },
+    visibleOnceDrawn: (page) => page.getByRole('textbox', { name: 'Reusable definition name', exact: true }),
   },
   'sign-in': {
     path: '/?signed-out',
@@ -569,9 +583,7 @@ for (const [name, screen] of Object.entries(screens)) {
   });
 }
 
-test('shared changes reach linked profile forms and new profiles keep references after a folder choice', async ({
-  page,
-}) => {
+test('shared changes reach profile forms and related tabs save relative references', async ({ page }) => {
   await page.goto('/environments?definition=definitions%2Fenvironment%2Fproduction.yaml');
   const minutes = page.getByRole('textbox', { name: 'Wait timer, in minutes', exact: true });
   await minutes.fill('7');
@@ -584,21 +596,22 @@ test('shared changes reach linked profile forms and new profiles keep references
     await page.getByRole('tab', { name: 'Environments', exact: true }).click();
     await page.getByRole('button', { name: /production.*Waits 7 minutes/u }).click();
     await expect(minutes).toHaveValue('7');
-    await page
-      .locator('.shared-definition-group')
-      .filter({ has: page.getByRole('heading', { name: 'Environments', exact: true }) })
-      .getByRole('link', { name: 'Edit shared definition' })
-      .click();
+    await page.getByRole('link', { name: 'Edit shared definition', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Used by 2 profiles', exact: true })).toBeVisible();
   }
   await page.getByText('shared-api', { exact: true }).click();
   await page.getByRole('button', { name: 'All profiles', exact: true }).click();
   await page.getByRole('link', { name: 'New profile', exact: true }).click();
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('New service');
-  await page.getByRole('combobox', { name: 'Add ruleset', exact: true }).selectOption('definitions/ruleset/Main.yaml');
   await page.getByRole('combobox', { name: 'Folder', exact: true }).selectOption('teams');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'New service', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Rulesets', exact: true }).click();
+  await page
+    .getByRole('combobox', { name: 'Use a reusable ruleset', exact: true })
+    .selectOption('../definitions/ruleset/Main.yaml');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
   await expect(page.getByRole('region', { name: 'New service as YAML', exact: true })).toContainText(
     '../definitions/ruleset/Main.yaml',
@@ -631,8 +644,8 @@ test('moving a library definition updates consumers without moving selected prof
 test('unsaved reference changes preview their entries before saving', async ({ page }) => {
   await page.goto('/profiles');
   await page.getByText('shared-api', { exact: true }).click();
-  await page.getByRole('button', { name: 'Remove production reference', exact: true }).click();
   await page.getByRole('tab', { name: 'Environments', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove production reference', exact: true }).click();
   const panel = page.getByRole('tabpanel');
   await expect(panel).toContainText('The profile manages no environments');
   await expect(panel).toContainText('Save reference changes before editing these entries.');
@@ -641,7 +654,7 @@ test('unsaved reference changes preview their entries before saving', async ({ p
   await save.click();
   await expect(save).toBeDisabled();
   await page
-    .getByRole('combobox', { name: 'Add environment', exact: true })
+    .getByRole('combobox', { name: 'Use a reusable environment', exact: true })
     .selectOption('definitions/environment/production.yaml');
   const production = panel.getByRole('button', { name: /production.*Waits 15 minutes/u });
   await expect(production).toBeVisible();
@@ -943,4 +956,28 @@ test('import waits for its selected file before creating a definition', async ({
   await expect(page.getByRole('heading', { name: 'imported-policy', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Actions', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Repository', exact: true })).toHaveCount(0);
+});
+
+test('a new reusable environment stays in the profile through a linked definition', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('shared-api', { exact: true }).click();
+  await page.getByRole('tab', { name: 'Environments', exact: true }).click();
+  const panel = page.getByRole('tabpanel');
+  await expect(panel.getByRole('combobox', { name: 'Use a reusable environment', exact: true })).toBeVisible();
+  await panel.getByRole('button', { name: 'New environment', exact: true }).click();
+  await panel.getByRole('textbox', { name: 'Name', exact: true }).fill('staging');
+  await panel.getByRole('textbox', { name: 'Wait timer, in minutes', exact: true }).fill('5');
+  await panel.getByRole('checkbox', { name: /^Also save as a reusable environment/u }).check();
+  await panel.getByRole('textbox', { name: 'Reusable definition name', exact: true }).fill('Staging deployment');
+  const save = page.getByRole('button', { name: 'Save', exact: true });
+  await save.click();
+  await expect(save).toBeDisabled();
+  await expect(panel.getByText('Staging deployment', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
+  const yaml = page.getByRole('region', { name: 'shared-api as YAML', exact: true });
+  await expect(yaml).toContainText('definitions/environment/Staging deployment.yaml');
+  await expect(yaml).not.toContainText('wait_timer: 5');
+  await panel.getByRole('button', { name: 'Back to environments', exact: true }).click();
+  await panel.getByRole('button', { name: /staging.*Waits 5 minutes/u }).click();
+  await expect(panel.getByRole('textbox', { name: 'Wait timer, in minutes', exact: true })).toHaveValue('5');
 });

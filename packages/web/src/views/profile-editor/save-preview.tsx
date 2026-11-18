@@ -121,6 +121,12 @@ export function SavePreviewDialog({ name, editor, saving, preview }: SavePreview
       >
         <h2 id="preview-heading">Preview changes to {name}</h2>
         <p class="muted small">{message(preview)}</p>
+        {(preview.reusableDefinitions?.length ?? 0) > 0 && (
+          <p class="muted small">
+            Saving creates and links reusable definitions:{' '}
+            {preview.reusableDefinitions?.map((definition) => definition.name).join(', ')}.
+          </p>
+        )}
         {preview.changedLineCount === 0 ? (
           <p class="notice">Saving applies nothing new: what the profile applies stays as it is.</p>
         ) : (

@@ -1,4 +1,4 @@
-import type { DefinitionKind, ownerTypes, ProfileReferences } from '@repotted/core';
+import type { DefinitionKind, ownerTypes } from '@repotted/core';
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
@@ -9,7 +9,6 @@ import type { NewProfileStart, Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
 import { useProfileConfirmation } from '../layout/notifications.js';
 import { run } from '../layout/run.js';
-import { SharedDefinitions } from './shared-definitions.js';
 
 type OwnerChoice = (typeof ownerTypes)[number] | 'any';
 
@@ -39,7 +38,6 @@ export function NewProfileForm({
     (listing) => listing.problem === null && listing.kind === definitionKind,
   );
   const captured = repositories.list.value?.repositories ?? [];
-  const [references, setReferences] = useState<ProfileReferences>({});
   const library = definitionTypes.find((item) => item.kind === definitionKind);
   const [targetName, setTargetName] = useState('');
   const [importText, setImportText] = useState('');
@@ -103,7 +101,6 @@ export function NewProfileForm({
         start,
         ...(definitionKind === undefined ? {} : { definitionKind, targetName }),
         ownerType: owner === 'any' ? undefined : owner,
-        ...(Object.keys(references).length === 0 ? {} : { references }),
       },
       formClosed.current.signal,
     );
@@ -352,23 +349,6 @@ export function NewProfileForm({
           }}
         />
       </label>
-      {definitionKind === undefined && (
-        <>
-          {(kind === 'duplicate' || kind === 'import') && (
-            <p class="muted small">
-              Existing references are kept. These choices add rulesets and environments; choosing an Actions policy
-              replaces the existing policy. After creation, remove any references you do not need in the profile editor.
-            </p>
-          )}
-          <SharedDefinitions
-            profiles={profiles}
-            folder={profiles.folder.value}
-            references={references}
-            onChange={setReferences}
-            disabled={working}
-          />
-        </>
-      )}
       <fieldset class="choices" disabled={working || fixedOwner !== undefined}>
         <legend>For repositories owned by</legend>
         {fixedOwner === undefined ? (

@@ -37,10 +37,11 @@ test('libraries separate definitions from the profile tree while new profiles pe
       folder: 'teams',
       start: { kind: 'empty' },
       ownerType: undefined,
-      references: { environments: ['definitions/production.yaml'] },
     }),
   ).toBeUndefined();
   const api = kept.selected.value!;
+  await kept.editor.value!.setReferences({ environments: ['../definitions/production.yaml'] });
+  await kept.save();
   expect(await readFile(api.file, 'utf8')).toContain('../definitions/production.yaml');
   expect((await resolveProfile(api.file)).profile.environments).toEqual([{ name: 'production' }]);
   expect(kept.tree.value.count).toBe(1);
@@ -59,8 +60,9 @@ test('a shared edit refreshes consumers without losing unrelated unsaved profile
       folder: '',
       start: { kind: 'empty' },
       ownerType: undefined,
-      references: { environments: ['definitions/production.yaml'] },
     });
+    await kept.editor.value!.setReferences({ environments: ['definitions/production.yaml'] });
+    await kept.save();
   }
   const api = kept.listings.value.find((item) => item.name === 'API')!;
   await kept.select(api);
@@ -157,20 +159,6 @@ test('closing a queued creation preserves the currently open profile', async () 
   expect(kept.selected.value?.file).toBe(api.file);
 });
 
-test('malformed imports with picked references return an error without leaving a file', async () => {
-  const kept = await setup();
-  expect(
-    await kept.create({
-      name: 'Bad',
-      folder: '',
-      start: { kind: 'import', text: 'repository: [\n' },
-      ownerType: undefined,
-      references: { environments: ['definitions/production.yaml'] },
-    }),
-  ).toBeTypeOf('string');
-  expect(kept.listings.value.some((item) => item.name === 'Bad')).toBe(false);
-});
-
 test('deleting a stale definition cannot delete a profile that replaced it', async () => {
   const kept = await setup();
   const definition = kept.selected.value!;
@@ -179,49 +167,41 @@ test('deleting a stale definition cannot delete a profile that replaced it', asy
   expect(await readFile(definition.file, 'utf8')).toBe('repository: { has_wiki: false }\n');
 });
 
-test.each(['duplicate', 'import'] as const)(
-  '%s adds picked references without dropping existing ones',
-  async (kind) => {
-    const kept = await setup();
+test.each(['duplicate', 'import'] as const)('%s preserves existing shared references', async (kind) => {
+  const kept = await setup();
+  await kept.create({
+    name: 'approved',
+    definitionKind: 'actions-policy',
+    folder: 'definitions',
+    start: { kind: 'empty' },
+    ownerType: undefined,
+  });
+  await kept.create({
+    name: 'Source',
+    folder: 'sources',
+    start: { kind: 'empty' },
+    ownerType: undefined,
+  });
+  const source = kept.selected.value!;
+  await kept.editor.value!.setReferences({
+    actions: '../definitions/approved.yaml',
+    environments: ['../definitions/production.yaml'],
+  });
+  await kept.save();
+  const text = await readFile(source.file, 'utf8');
+  expect(
     await kept.create({
-      name: 'approved',
-      definitionKind: 'actions-policy',
-      folder: 'definitions',
-      start: { kind: 'empty' },
+      name: 'Copy',
+      folder: 'copies',
+      start: kind === 'duplicate' ? { kind, source } : { kind, text },
       ownerType: undefined,
-    });
-    await kept.create({
-      name: 'staging',
-      definitionKind: 'environment',
-      targetName: 'staging',
-      folder: 'definitions',
-      start: { kind: 'empty' },
-      ownerType: undefined,
-    });
-    await kept.create({
-      name: 'Source',
-      folder: 'sources',
-      start: { kind: 'empty' },
-      ownerType: undefined,
-      references: { actions: 'definitions/approved.yaml', environments: ['definitions/production.yaml'] },
-    });
-    const source = kept.selected.value!;
-    const text = await readFile(source.file, 'utf8');
-    expect(
-      await kept.create({
-        name: 'Copy',
-        folder: 'copies',
-        start: kind === 'duplicate' ? { kind, source } : { kind, text },
-        ownerType: undefined,
-        references: { environments: ['definitions/staging.yaml', 'definitions/../definitions/staging.yaml'] },
-      }),
-    ).toBeUndefined();
-    expect((await resolveProfile(kept.selected.value!.file)).references).toEqual({
-      actions: '../definitions/approved.yaml',
-      environments: ['../definitions/production.yaml', '../definitions/staging.yaml'],
-    });
-  },
-);
+    }),
+  ).toBeUndefined();
+  expect((await resolveProfile(kept.selected.value!.file)).references).toEqual({
+    actions: '../definitions/approved.yaml',
+    environments: ['../definitions/production.yaml'],
+  });
+});
 
 test.each([
   ['', []],

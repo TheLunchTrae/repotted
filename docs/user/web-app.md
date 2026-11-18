@@ -429,18 +429,32 @@ In windows where those links need more room, they appear in the account
 menu. Each library lists its definitions; opening one shows its settings,
 **Used by** profiles, and assigned repositories.
 
-**Shared definitions** on a profile's creation or editing page selects an
-existing policy, ruleset, or environment. A profile can reference one Actions
-policy and several rulesets and environments. **Edit shared definition**
-opens the original in its library. **Remove** detaches the reference, and
-**Save** keeps reference edits with the profile's other changes. References
-inherited from a base are changed in that base. Inline settings retain
-priority over shared values.
+In a profile's **Actions**, **Rulesets**, or **Environments** tab, use
+**Use a reusable Actions policy**, **Use a reusable ruleset**, or
+**Use a reusable environment** to select an existing definition. The selector
+is separate from **New ruleset** and **New environment**, which create items
+in the profile. A profile can reference one Actions policy and several
+rulesets and environments. **Edit shared definition** opens the original in
+its library. **Remove** detaches the reference, and **Save** keeps reference
+edits with the profile's other changes. References inherited from a base are
+changed in that base. Inline settings retain priority over shared values.
 
 Reference changes preview the resolved entries before saving. Save those
-changes before editing the entries. Duplicating or importing a profile keeps
-its existing references; the creation form adds selected rulesets and
-environments and replaces the Actions policy only when you choose one.
+changes before editing the entries. Create a profile first, then choose
+shared definitions in its related tabs. Duplicating or importing a profile
+keeps its existing references.
+
+When creating a ruleset or environment, select **Also save as a reusable
+ruleset** or **Also save as a reusable environment** and enter a **Reusable
+definition name** to create a separate definition and link it to the profile.
+The **Actions** tab offers **Also save as a reusable Actions policy** for its
+settings. **Save** creates the definition in its library and saves the
+profile's reference together; the profile keeps no inline copy. Leave the
+option clear to keep the configuration in this profile. These choices stay
+with unsaved edits when navigating away, and **Reset** clears them. Reusable
+definitions require **Save**, rather than **Save as draft**. If a name is
+already used or saving fails, the choices stay available to correct and
+retry.
 
 Saving a definition updates linked profiles on their next resolution and
 refreshes cached editors while preserving unsaved changes. It does not

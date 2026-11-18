@@ -37,6 +37,7 @@ import { run } from '../layout/run.js';
 import { BatchActions, describeEntriesDone } from './batch-actions.js';
 import { BypassList } from './bypass-list.js';
 import { MissingPermissionsNote } from './missing-permissions-note.js';
+import { ReusableDefinitionOption } from './reusable-definition.js';
 
 const nouns: Readonly<Record<EntryList, { readonly one: string; readonly many: string; readonly title: string }>> = {
   rulesets: { one: 'ruleset', many: 'rulesets', title: 'Ruleset' },
@@ -1007,6 +1008,12 @@ function EntryForm({
           <LabelForm entry={entry} saved={row.saved} change={change} problemIn={problemIn} savedName={appliedName} />
         )}
       </fieldset>
+      {single !== true &&
+        row.source === undefined &&
+        !absent &&
+        (row.list === 'environments' || row.list === 'rulesets') && (
+          <ReusableDefinitionOption editor={editor} section={row.list} entryKey={row.key} defaultName={name} />
+        )}
     </div>
   );
 }
