@@ -2,8 +2,8 @@ import type { Apply } from '../apply/apply.js';
 import type { BatchApply } from '../apply/batch-apply.js';
 import type { RepositoryProfiles } from './repository-profiles.js';
 
-/** An active write cannot be replaced; callers keep the move and explain why its review must wait. */
-export function reviewMovedProfiles(
+/** An active write cannot be replaced; callers explain why the review must wait. */
+export function reviewAssignedProfiles(
   repositories: readonly string[],
   assignments: RepositoryProfiles,
   folder: string,

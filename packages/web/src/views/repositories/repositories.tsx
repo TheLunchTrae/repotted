@@ -1,6 +1,6 @@
 import { type InstallationMissingPermissions, permissionsInProse } from '@repotted/core';
 import type { JSX, RefObject } from 'preact';
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { PendingButton } from '../layout/pending-button.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
@@ -30,7 +30,7 @@ import { useNotifications } from '../layout/notifications.js';
 import { usePhone } from '../layout/phone.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
-import { FolderSettingsDialog } from './folder-settings.js';
+import { FolderProfilesDialog, FolderProfileTags } from './folder-profiles.js';
 import { EditProfilesDialog, PanelProfiles, RowProfileTags } from './repository-profiles.js';
 
 function OwnerFilter({ repositories }: { readonly repositories: Repositories }): JSX.Element {
@@ -306,7 +306,7 @@ type FolderDialog =
       readonly isTheSelection: boolean;
     }
   | { readonly kind: 'rename'; readonly name: string }
-  | { readonly kind: 'settings'; readonly name: string }
+  | { readonly kind: 'profiles'; readonly name: string }
   | { readonly kind: 'delete'; readonly name: string };
 
 const newFolderChoice = '\u0000new';
@@ -564,11 +564,33 @@ function FolderPicker({ repositories, id, value, onChange }: FolderPickerProps):
 function FolderMenu({
   name,
   onDialog,
+  phone,
+  onSelect,
+  everySelected,
 }: {
   readonly name: string;
   readonly onDialog: (dialog: FolderDialog) => void;
+  readonly phone: boolean;
+  readonly onSelect: (() => void) | undefined;
+  readonly everySelected: boolean;
 }): JSX.Element {
   const menu = useDismissibleMenu();
+  const previousPhone = useRef(phone);
+  useEffect(() => {
+    const element = menu.current;
+    if (previousPhone.current === phone || element === null) {
+      return;
+    }
+    previousPhone.current = phone;
+    if (element.open) {
+      // The focused phone-only action may already be unmounted by this render.
+      const focusLost = document.activeElement === document.body || element.contains(document.activeElement);
+      element.open = false;
+      if (focusLost) {
+        element.querySelector('summary')?.focus();
+      }
+    }
+  }, [phone, menu]);
   const pick = (dialog: FolderDialog): void => {
     if (menu.current !== null) {
       menu.current.open = false;
@@ -578,17 +600,33 @@ function FolderMenu({
   return (
     <details class="menu folder-menu" ref={menu}>
       <summary class="button button-quiet button-small" aria-label={`Edit ${name}`}>
-        Edit
+        {phone ? '⋯' : 'Edit'}
       </summary>
       <div class="menu-panel menu-panel-end">
+        {phone && onSelect !== undefined && (
+          <button
+            class="menu-item"
+            type="button"
+            aria-label={`${everySelected ? 'Deselect all in' : 'Select all in'} ${name}`}
+            onClick={() => {
+              if (menu.current !== null) {
+                menu.current.open = false;
+                menu.current.querySelector('summary')?.focus();
+              }
+              onSelect();
+            }}
+          >
+            {everySelected ? 'Deselect all in folder' : 'Select all in folder'}
+          </button>
+        )}
         <button
           class="menu-item"
           type="button"
           onClick={() => {
-            pick({ kind: 'settings', name });
+            pick({ kind: 'profiles', name });
           }}
         >
-          Settings
+          Profiles
         </button>
         <button
           class="menu-item"
@@ -671,27 +709,42 @@ function RepositoryRow({ repository, repositories, assignments, phone, withOwner
 function FolderSection({
   folder,
   repositories,
+  profiles,
   assignments,
   phone,
   onDialog,
 }: {
   readonly folder: FolderGroup;
   readonly repositories: Repositories;
+  readonly profiles: Profiles;
   readonly assignments: RepositoryProfiles;
   readonly phone: boolean;
   readonly onDialog: (dialog: FolderDialog) => void;
 }): JSX.Element {
+  const section = useRef<HTMLElement>(null);
+  const preserveSelectionFocus = useCallback((element: HTMLButtonElement | null) => {
+    if (element === null) {
+      return;
+    }
+    // Ref cleanup runs before the focused control is removed.
+    return () => {
+      if (element === document.activeElement) {
+        section.current?.querySelector<HTMLElement>('.folder-menu > summary')?.focus();
+      }
+    };
+  }, []);
   const searching = repositories.search.value.trim() !== '';
   const count = folder.repositories.length;
   const everyShownRepositorySelected =
     count > 0 && folder.repositories.every((repository) => repositories.isSelected(repository));
   return (
-    <section class="folder" aria-label={folder.name}>
+    <section class="folder" aria-label={folder.name} ref={section}>
       <div class="folder-heading">
         <h2 class="folder-title">
           <button
             class="folder-toggle"
             type="button"
+            title={folder.name}
             aria-expanded={folder.open}
             disabled={searching}
             onClick={() => {
@@ -705,9 +758,20 @@ function FolderSection({
             <span class="muted count">{count}</span>
           </button>
         </h2>
-        {folder.open && count > 0 && (
+        <FolderProfileTags
+          name={folder.name}
+          repositories={repositories}
+          profiles={profiles}
+          assignments={assignments}
+          phone={phone}
+          onEdit={() => {
+            onDialog({ kind: 'profiles', name: folder.name });
+          }}
+        />
+        {!phone && folder.open && count > 0 && (
           <button
             class="button button-quiet button-small folder-select"
+            ref={preserveSelectionFocus}
             type="button"
             aria-label={`${everyShownRepositorySelected ? 'Deselect all in' : 'Select all in'} ${folder.name}`}
             onClick={() => {
@@ -717,7 +781,19 @@ function FolderSection({
             {everyShownRepositorySelected ? 'Deselect all' : 'Select all'}
           </button>
         )}
-        <FolderMenu name={folder.name} onDialog={onDialog} />
+        <FolderMenu
+          name={folder.name}
+          onDialog={onDialog}
+          phone={phone}
+          everySelected={everyShownRepositorySelected}
+          onSelect={
+            folder.open && count > 0
+              ? () => {
+                  repositories.selectEach(folder.repositories, !everyShownRepositorySelected);
+                }
+              : undefined
+          }
+        />
       </div>
       {folder.open &&
         (folder.holdsNoListedRepository ? (
@@ -1239,16 +1315,24 @@ export function RepositoriesPage({
   const newFolderButton = useRef<HTMLButtonElement>(null);
   /**
    * Puts the focus in a folder once the page has drawn it: on its heading
-   * when `on` is the toggle and it can be pressed, otherwise on its menu, or
-   * on New folder when there is no such folder.
+   * when `on` is the toggle and it can be pressed, its profile tags or picker
+   * after editing profiles, otherwise its menu, or New folder if it is gone.
    */
-  const focusFolder = (name: string | undefined, on: 'toggle' | 'menu'): void => {
+  const focusFolder = (name: string | undefined, on: 'toggle' | 'menu' | 'profiles'): void => {
     requestAnimationFrame(() => {
       const section = [...document.querySelectorAll<HTMLElement>('section.folder')].find(
         (found) => name !== undefined && found.getAttribute('aria-label')?.toLowerCase() === name.toLowerCase(),
       );
-      const toggle = on === 'toggle' ? section?.querySelector<HTMLElement>('.folder-toggle:not(:disabled)') : null;
-      (toggle ?? section?.querySelector<HTMLElement>('.folder-menu > summary') ?? newFolderButton.current)?.focus();
+      const target =
+        on === 'toggle'
+          ? section?.querySelector<HTMLElement>('.folder-toggle:not(:disabled)')
+          : on === 'profiles'
+            ? section?.querySelector<HTMLElement>('.folder-profile-tags, .folder-profile-plus')
+            : null;
+      ((target?.getClientRects().length ?? 0) > 0
+        ? target
+        : (section?.querySelector<HTMLElement>('.folder-menu > summary') ?? newFolderButton.current)
+      )?.focus();
     });
   };
   // The buttons that deselect go with the selection, so the focus moves to New folder.
@@ -1274,7 +1358,7 @@ export function RepositoriesPage({
       }
       return;
     }
-    focusFolder(focus, 'menu');
+    focusFolder(focus, opened === 'profiles' ? 'profiles' : 'menu');
   };
   const fromApp = list?.source === 'installations';
   const total = list?.repositories.length ?? 0;
@@ -1518,6 +1602,7 @@ export function RepositoriesPage({
                     key={folder.name}
                     folder={folder}
                     repositories={repositories}
+                    profiles={profiles}
                     assignments={assignments}
                     phone={phone}
                     onDialog={setDialog}
@@ -1583,8 +1668,8 @@ export function RepositoriesPage({
           />
         )
       )}
-      {dialog?.kind === 'settings' ? (
-        <FolderSettingsDialog
+      {dialog?.kind === 'profiles' ? (
+        <FolderProfilesDialog
           name={dialog.name}
           repositories={repositories}
           profiles={profiles}

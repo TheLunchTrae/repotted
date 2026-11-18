@@ -481,18 +481,18 @@ function several(
   });
 }
 
-test('folder settings survive moves and renames, and only newly moved repositories request a review', async () => {
+test('folder profiles survive moves and renames, and only newly moved repositories request a review', async () => {
   const browser = memory();
   const github = new FakeGitHub({ account: account(everyone) });
   const review = vi.fn();
   const repositories = new Repositories(github, user, inBrowser(github, browser), browser, () => undefined, review);
   await repositories.load();
   repositories.createFolder('Work');
-  repositories.setFolderSettings('Work', ['base.yaml', 'base.yaml'], false);
+  repositories.setFolderProfiles('Work', ['base.yaml', 'base.yaml'], false);
   repositories.moveToFolder(several(repositories, 'zeta/site'), 'Work');
   expect(review).not.toHaveBeenCalled();
 
-  repositories.setFolderSettings('work', ['base.yaml'], true);
+  repositories.setFolderProfiles('work', ['base.yaml'], true);
   expect(review).not.toHaveBeenCalled();
   repositories.moveToFolder(several(repositories, 'zeta/site', 'Acme/api', 'acme/web'), 'WORK', { deselect: true });
   expect(review.mock.calls).toEqual([[['Acme/api', 'acme/web']]]);
@@ -507,7 +507,7 @@ test('folder settings survive moves and renames, and only newly moved repositori
   expect(review).toHaveBeenCalledTimes(2);
 });
 
-test('a remote move loads folder settings without opening a review and saves local settings beside them', async () => {
+test('a remote move loads folder profiles without opening a review and saves local settings beside them', async () => {
   const source = { kind: 'repository', repository: 'trae/config', path: 'profiles' } as const;
   const file = `profiles/${preferencesFile}`;
   const config = new FakeGitRepository('trae/config');
@@ -526,7 +526,7 @@ test('a remote move loads folder settings without opening a review and saves loc
   config.write({
     [file]: JSON.stringify({ 'repository-folders': [{ ...saved, repositories: [...saved.repositories, 'Acme/api'] }] }),
   });
-  repositories.setFolderSettings('Work', ['node.yaml'], true);
+  repositories.setFolderProfiles('Work', ['node.yaml'], true);
   await vi.waitFor(() => {
     expect(JSON.parse(config.files()[file] ?? '{}')).toEqual({
       'repository-folders': [
@@ -555,13 +555,74 @@ test('a refused move review keeps the move and explains how to review after the 
   );
   await repositories.load();
   repositories.createFolder('Work');
-  repositories.setFolderSettings('Work', ['base.yaml'], true);
+  repositories.setFolderProfiles('Work', ['base.yaml'], true);
 
   repositories.moveToFolder(several(repositories, 'Acme/api'), 'Work');
 
   expect(repositories.folder('Work')?.repositories).toEqual(['Acme/api']);
   expect(repositories.moveReviewNotice.value).toContain('Acme/api moved to Work');
   expect(repositories.moveReviewNotice.value).toContain('An apply is writing to GitHub');
+});
+
+test('quickly adding a folder profile keeps profiles and the move choice saved in another browser', async () => {
+  const config = new FakeGitRepository('trae/config');
+  const file = `profiles/${preferencesFile}`;
+  const folder = { name: 'Work', repositories: ['zeta/site'], profiles: ['base.yaml'] };
+  config.write({ [file]: JSON.stringify({ 'repository-folders': [folder] }) });
+  const browser = memory();
+  const shared = new SharedPreferences(config, browser, () => undefined);
+  const repositories = new Repositories(config, user, shared, browser, () => undefined);
+  await shared.use({ kind: 'repository', repository: 'trae/config', path: 'profiles' });
+  config.write({
+    [file]: JSON.stringify({
+      'repository-folders': [{ ...folder, profiles: ['base.yaml', 'node.yaml'], applyProfilesOnMove: true }],
+    }),
+  });
+
+  repositories.addFolderProfile('work', 'web.yaml');
+  repositories.addFolderProfile('WORK', 'web.yaml');
+
+  await vi.waitFor(() => {
+    expect(JSON.parse(config.files()[file] ?? '{}')).toEqual({
+      'repository-folders': [
+        { ...folder, profiles: ['base.yaml', 'node.yaml', 'web.yaml'], applyProfilesOnMove: true },
+      ],
+    });
+  });
+});
+
+test('reviewing folder profiles includes all members regardless of list visibility', async () => {
+  const browser = memory();
+  const github = new FakeGitHub({ account: account(everyone) });
+  const review = vi.fn(() => true);
+  const repositories = new Repositories(github, user, inBrowser(github, browser), browser, () => undefined, review);
+  await repositories.load();
+  repositories.createFolder('Work', several(repositories, 'zeta/site', 'Acme/api', 'acme/web'));
+  repositories.setFolderProfiles('Work', ['base.yaml'], false);
+  repositories.setOwnerShown('Acme', false);
+  repositories.hide(several(repositories, 'zeta/site'));
+  repositories.search.value = 'dotfiles';
+
+  expect(repositories.reviewFolderProfiles('work')).toBeUndefined();
+
+  expect(review.mock.calls).toEqual([[['zeta/site', 'Acme/api', 'acme/web']]]);
+});
+
+test('an empty folder or an active write cannot start a folder profile review', async () => {
+  const browser = memory();
+  const github = new FakeGitHub({ account: account(everyone) });
+  const review = vi.fn(() => false);
+  const repositories = new Repositories(github, user, inBrowser(github, browser), browser, () => undefined, review);
+  await repositories.load();
+  repositories.createFolder('Work');
+  expect(repositories.reviewFolderProfiles('Work')).toBeDefined();
+  repositories.setFolderProfiles('Work', ['base.yaml'], false);
+  expect(repositories.reviewFolderProfiles('Work')).toBeDefined();
+  expect(review).not.toHaveBeenCalled();
+
+  repositories.moveToFolder(several(repositories, 'Acme/api'), 'Work');
+  expect(repositories.reviewFolderProfiles('Work')).toContain('An apply is writing to GitHub');
+  expect(repositories.folder('Work')?.profiles).toEqual(['base.yaml']);
 });
 
 test('a folder holds repositories of any owner above the owner groups, which keep the rest', async () => {

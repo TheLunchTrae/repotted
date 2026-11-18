@@ -19,7 +19,7 @@ import { ConfigProtection } from '../app/profiles/config-protection.js';
 import { definitionTypes } from '../app/profiles/definition-types.js';
 import type { LocalFolders } from '../app/profiles/local-folder.js';
 import { Profiles } from '../app/profiles/profiles.js';
-import { reviewMovedProfiles } from '../app/repositories/folder-moves.js';
+import { reviewAssignedProfiles } from '../app/repositories/profile-reviews.js';
 import { Repositories } from '../app/repositories/repositories.js';
 import { RepositoryProfiles, repositoryProfilesKey } from '../app/repositories/repository-profiles.js';
 import type { Keeping } from '../app/storage/kept-files.js';
@@ -95,8 +95,8 @@ function SignedIn({
       );
       const applying = new Apply(github, refused, (work) => kept.write(work), assigned);
       const batching = new BatchApply(github, refused, assigned);
-      const reviewMoved = (names: readonly string[]): boolean => {
-        const review = reviewMovedProfiles(names, assigned, kept.folder.value, applying, batching);
+      const reviewProfiles = (names: readonly string[]): boolean => {
+        const review = reviewAssignedProfiles(names, assigned, kept.folder.value, applying, batching);
         if (review === undefined) {
           return false;
         }
@@ -105,7 +105,7 @@ function SignedIn({
         return true;
       };
       return {
-        repositories: new Repositories(github, user, shared, preferences, refused, reviewMoved),
+        repositories: new Repositories(github, user, shared, preferences, refused, reviewProfiles),
         profiles: kept,
         assignments: assigned,
         discovery: new ConfigDiscovery(github, kept, refused),

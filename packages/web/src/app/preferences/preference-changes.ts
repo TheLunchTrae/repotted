@@ -173,7 +173,7 @@ function folderChanges(beforeValue: unknown, afterValue: unknown): ConfigChange[
       return folderAfter !== undefined &&
         (!sameValue(folderBefore.profiles ?? [], folderAfter.profiles ?? []) ||
           (folderBefore.applyProfilesOnMove ?? false) !== (folderAfter.applyProfilesOnMove ?? false))
-        ? [folderChange('Update settings for', folderAfter.name)]
+        ? [folderChange('Update profiles for', folderAfter.name)]
         : [];
     }),
   ];

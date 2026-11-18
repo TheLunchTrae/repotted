@@ -143,21 +143,46 @@ repositories back under their owners, and nothing changes on GitHub. A
 search looks in folders too, and a folder whose name matches shows
 everything in it.
 
-Choose **Settings** in a folder's **Edit** menu to give it profiles in the
+Choose **Profiles** in a folder's **Edit** menu to give it profiles in the
 order they apply. Each repository in the folder starts with those profiles,
 then its own; later profiles override earlier ones, and a profile reached
 more than once counts once. Its panel marks the inherited profiles
-**From folder**. Change them in the folder's settings; **Edit** in the
+**From folder**. Change them in the folder's **Profiles** dialog; **Edit** in the
 repository's **Profiles** section changes only its own profiles. Folders are
 flat, and a repository inherits every profile of its folder.
+
+A folder's header shows its profiles as short tags, in the order they apply.
+Click the tags to edit that list. Click **+** beside them to pick a profile
+and add it immediately, without opening the dialog. This saves the folder's
+list and applies nothing to its repositories. **Manage profiles…** in the
+picker opens the same dialog to reorder or remove profiles.
+Desktop shows up to three tags; a longer list shows a count.
+
+On a phone, the tags and **+** sit on the right of the folder's name, on
+the same row. When the tags don't fit, one badge gives the count, such as
+**4 profiles**; tap it to open the full ordered list. More space shows the
+tags again. Long folder names shorten with an ellipsis. **⋯** holds the
+folder's **Edit** actions and **Select all in folder**, which becomes
+**Deselect all in folder** when all its shown repositories are selected.
+When the layout changes while you are using a folder menu, it closes and
+returns keyboard focus to its button.
+The selection button also returns focus there when it moves into the phone menu.
+
+To apply profiles to repositories already in the folder, choose **Save and
+review apply** in its **Profiles** dialog. It saves the list you're editing
+and opens a review for every repository in that folder, including those
+hidden by search, filters, or visibility choices. Each starts with the
+folder's profiles, then its own. One repository opens a single review;
+several open a batch review. Nothing is written to their settings until you
+review and apply. The action needs at least one profile and one repository.
+**Save** only saves the folder's profiles and review-on-move choice.
 
 **Apply profiles to repositories moved here** is off by default. With it on
 and profiles chosen for the folder, moving a repository into it opens a
 review of its folder and own profiles. Moving several opens one batch
 review, with each repository's own profiles after the folder's. Nothing is
 written until you review and apply. A repository already in that folder is
-not reviewed again by the move. Saving folder settings applies nothing to
-repositories already there.
+not reviewed again by the move.
 
 Moving out or deleting a folder removes its inherited profiles from future
 applies; it does not undo settings on GitHub. A move read from another
