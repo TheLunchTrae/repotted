@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { parseRepo } from '../../src/github/client.js';
+import { type GitHub, parseRepo } from '../../src/github/client.js';
 import { applyPlan, captureProfile, createPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
 import { captureDefinition } from '../../src/profiles/definitions.js';
 import { parseProfile } from '../../src/profiles/profile.js';
@@ -96,6 +96,24 @@ test('policy reads include every page and ignore inherited entries even if GitHu
   const plan = await createPlan(github, repo, { actions_policies: [{ name: 'Policy 101', enforcement: 'disabled' }] });
   expect(plan.changes.map((change) => change.request.path)).toEqual(['/repos/lunch/app/actions/policies/101']);
   expect(github.calls.some((call) => call.path.endsWith('page=2'))).toBe(true);
+});
+
+test.each([
+  { name: 'empty', policies: [] },
+  { name: 'truncated', policies: [{ id: 1, source_type: 'Repository' }] },
+])('refuses full policy ownership when a page is $name before its reported total', async ({ policies }) => {
+  const github = new FakeGitHub({ policies: [policy(1, 'Release'), policy(2, 'Quality')] });
+  const incomplete: GitHub = {
+    request: async (method, path, body) =>
+      method === 'GET' && path.startsWith('/repos/lunch/app/actions/policies?')
+        ? { total_count: 2, policies: path.endsWith('page=1') ? policies : [] }
+        : github.request(method, path, body),
+  };
+  await expect(
+    createPlan(incomplete, repo, { actions_policies: [{ name: 'Quality', enforcement: 'disabled' }] }, [], {
+      authoritative: ['actions_policies'],
+    }),
+  ).rejects.toThrow('Incomplete enumeration of Actions policies');
 });
 
 test('changed live policies invalidate saved plans before writes', async () => {

@@ -540,7 +540,8 @@ settings, so transitive definition changes participate without another cache.
 
 `plan/sections/action-policies.ts` reads `/actions/policies` with
 `has_parents=false`, follows pagination, filters repository-owned summaries,
-and loads each policy's details. The API needs Administration write permission
+and loads each policy's details. A short page before the reported total refuses
+planning and capture. The API needs Administration write permission
 even for reads. Capture selects one exact name and refuses missing or ambiguous
 targets. The planner pairs by exact name, preserves omitted live fields and
 rule parameters, and creates and updates before deleting. Duplicate live names

@@ -8,6 +8,7 @@ import { bodyChanges, matches, overlay } from '../match.js';
 
 const policySummary = z.object({ id: z.number().int(), source_type: z.string() });
 const policyList = z.object({ total_count: z.number().int(), policies: z.array(policySummary) });
+const policyPageSize = 100;
 const livePolicy = z.object({
   id: z.number().int(),
   name: z.string(),
@@ -32,7 +33,7 @@ export async function readActionPolicies(github: GitHub, repo: RepoRef): Promise
     const read = await readResource(
       github,
       repo,
-      `/actions/policies?has_parents=false&per_page=100&page=${page}`,
+      `/actions/policies?has_parents=false&per_page=${policyPageSize}&page=${page}`,
       'Actions policies',
     );
     if (!read.available) {
@@ -40,7 +41,12 @@ export async function readActionPolicies(github: GitHub, repo: RepoRef): Promise
     }
     const data = policyList.parse(read.value);
     listed.push(...data.policies);
-    if (listed.length >= data.total_count || data.policies.length === 0) {
+    if (data.policies.length < policyPageSize && listed.length < data.total_count) {
+      throw new Error(
+        `Incomplete enumeration of Actions policies: received ${listed.length} of ${data.total_count} policies`,
+      );
+    }
+    if (listed.length >= data.total_count) {
       break;
     }
   }
