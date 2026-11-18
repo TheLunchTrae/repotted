@@ -283,7 +283,7 @@ test('ordinary creation confirms after the form closes while sync is pending', a
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('completed-later');
   await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
   await page.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Create', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Creating…', exact: true })).toHaveAttribute('aria-busy', 'true');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page).toHaveURL('/profiles');
   await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
@@ -447,6 +447,29 @@ test('a pending refresh keeps its width and focus and blocks another submission'
   await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
   await expect(refresh).not.toHaveAttribute('aria-busy', 'true');
   await expect(refresh).toBeFocused();
+});
+
+test('an ordinary save does not mark an untouched owner-type action busy', async ({ page }) => {
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'Use a GitHub repository…', exact: true }).click();
+  await page.getByRole('combobox', { name: /^Repository Any repository/u }).fill('trae/repotted-config');
+  await page.getByRole('checkbox', { name: /^Add the .* from this browser/u }).check();
+  await page.getByRole('button', { name: 'Use this repository', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Change repository…', exact: true })).toBeVisible();
+  if (!(await page.getByRole('link', { name: 'Profiles', exact: true }).isVisible())) {
+    await page.locator('.account-menu > summary').click();
+  }
+  await page.getByRole('link', { name: 'Profiles', exact: true }).click();
+  await page.getByText('website', { exact: true }).click();
+  await page.getByRole('textbox', { name: /^Default branch/u }).fill('develop');
+  await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Saving…', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Change who the profile is for', exact: true }).click();
+  const change = page.getByRole('dialog').getByRole('button', { name: 'Change to any owner', exact: true });
+  await expect(change).toBeDisabled();
+  await expect(change).not.toHaveAttribute('aria-busy', 'true');
+  await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
 });
 
 test('a batch keeps its reviewed action width while applying', async ({ page }) => {

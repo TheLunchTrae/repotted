@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { PendingButton } from '../layout/pending-button.js';
+import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { OwnerChoice, ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import type { Profiles } from '../../app/profiles/profiles.js';
@@ -38,6 +38,7 @@ export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): 
   const dialog = useRef<HTMLDialogElement>(null);
   const current: OwnerChoice = editor.ownerType.value ?? 'any';
   const [picked, setPicked] = useState<OwnerChoice>(current);
+  const [changing, changeOwner] = usePendingAction();
   useEffect(() => {
     // The dialog shows why its own change failed, not what an earlier save left in the bar behind it.
     editor.saveError.value = undefined;
@@ -56,12 +57,14 @@ export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): 
             // The dialog stays until the change is written, so a refusal shows here.
             event.preventDefault();
             run(
-              profiles.changeOwnerType(picked).then(() => {
-                if (editor.saveError.value === undefined) {
-                  confirm('Profile owner type saved.');
-                  dialog.current?.close();
-                }
-              }),
+              changeOwner(() =>
+                profiles.changeOwnerType(picked).then(() => {
+                  if (editor.saveError.value === undefined) {
+                    confirm('Profile owner type saved.');
+                    dialog.current?.close();
+                  }
+                }),
+              ),
             );
           }
         }}
@@ -110,7 +113,7 @@ export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): 
         )}
         <div class="form-actions">
           <PendingButton
-            pending={editor.saving.value}
+            pending={changing}
             pendingLabel="Saving…"
             class="button button-primary"
             type="submit"

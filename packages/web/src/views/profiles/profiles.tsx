@@ -1068,9 +1068,11 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
               onClick={() => {
                 run(
                   refresh(() =>
-                    profiles.refresh().then(() =>
-                      confirm(profiles.source.value.kind === 'browser' ? 'Profiles refreshed.' : 'Profiles synced.'),
-                    ),
+                    profiles
+                      .refresh()
+                      .then(() =>
+                        confirm(profiles.source.value.kind === 'browser' ? 'Profiles refreshed.' : 'Profiles synced.'),
+                      ),
                   ),
                 );
               }}
