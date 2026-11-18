@@ -37,6 +37,12 @@ const screens: Readonly<Record<string, Screen>> = {
     path: '/rulesets',
     visibleOnceDrawn: (page) => page.getByRole('link', { name: /Main Used by 2 profiles/u }),
   },
+  'selected shared rulesets': {
+    path: '/rulesets',
+    reachFromPath: (page) =>
+      page.getByRole('checkbox', { name: 'Select definitions/ruleset/Main', exact: true }).check(),
+    visibleOnceDrawn: (page) => page.getByRole('heading', { name: '1 definition selected', exact: true }),
+  },
   'shared ruleset editor': {
     path: '/rulesets?definition=definitions%2Fruleset%2FMain.yaml',
     visibleOnceDrawn: (page) => page.getByRole('textbox', { name: 'Name', exact: true }),

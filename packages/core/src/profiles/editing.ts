@@ -278,13 +278,26 @@ export async function readProfileForEditing(file: string, replacementText?: stri
         : failure.problems),
     );
   }
-  const references = profileReferences.safeParse(layers[0]?.data['references']);
+  const declaredReferences = layers[0]?.data['references'];
+  const references: Record<string, unknown> = {};
+  const referencePath = profileReferences.shape.actions.unwrap();
+  if (isRecord(declaredReferences)) {
+    if (referencePath.safeParse(declaredReferences['actions']).success) {
+      references['actions'] = declaredReferences['actions'];
+    }
+    for (const section of ['rulesets', 'environments'] as const) {
+      const paths = declaredReferences[section];
+      if (Array.isArray(paths)) {
+        references[section] = paths.filter((named) => referencePath.safeParse(named).success);
+      }
+    }
+  }
   return {
     chain,
     profile: { ...merged, ...(owner === undefined ? {} : { owner_type: owner.type }) },
     drafts,
     sources,
-    ...(references.success ? { references: references.data } : {}),
+    ...(Object.keys(references).length === 0 ? {} : { references: profileReferences.parse(references) }),
     warnings: [],
     owner_source: owner?.file ?? null,
     owner_changes: { user: [], organization: [] },

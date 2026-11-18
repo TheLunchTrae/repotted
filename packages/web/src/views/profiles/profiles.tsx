@@ -1,9 +1,8 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { SaveMode } from '../../app/profile-editor/entry-edits.js';
-import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { Router } from '../../app/navigation/router.js';
+import type { SaveMode } from '../../app/profile-editor/entry-edits.js';
 import type { BranchPreview } from '../../app/profiles/branch-preview.js';
 import type { ProfileFolderNode, ProfileListing, Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
@@ -11,6 +10,7 @@ import { dirname } from '../../engine/path.js';
 import { Link } from '../layout/link.js';
 import { Loading, LoadingList } from '../layout/loading.js';
 import { useProfileConfirmation } from '../layout/notifications.js';
+import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
@@ -242,7 +242,13 @@ export function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNam
               .then((failure) => {
                 setProblem(failure);
                 if (failure === undefined) {
-                  confirm(renaming === undefined ? 'Profiles moved.' : 'Folder renamed.');
+                  confirm(
+                    renaming === undefined
+                      ? noun === 'definition'
+                        ? 'Definitions moved.'
+                        : 'Profiles moved.'
+                      : 'Folder renamed.',
+                  );
                   landed.current = folder;
                   dialog.current?.close();
                 }
@@ -347,7 +353,7 @@ export function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JS
                     confirm(
                       listings.length === 1
                         ? `${listings[0]?.name ?? 'Profile'} deleted.`
-                        : `${listings.length} profiles deleted.`,
+                        : `${listings.length} ${noun}s deleted.`,
                     );
                     deleted.current = true;
                     dialog.current?.close();
@@ -471,7 +477,7 @@ export function SelectedPanel({
                 profiles.move(batch, target).then((failure) => {
                   setProblem(failure);
                   if (failure === undefined) {
-                    confirm('Profiles moved.');
+                    confirm(noun === 'definition' ? 'Definitions moved.' : 'Profiles moved.');
                     onMoved(target);
                   }
                 }),

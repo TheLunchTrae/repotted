@@ -169,11 +169,15 @@ export function DefinitionsPage({
               );
             })}
           </ul>
-          {definitions.length === 0 && (
-            <p class="muted">
-              No {library.title.toLowerCase()} yet. Create one, then add it when creating or editing a profile.
-            </p>
-          )}
+          {definitions.length === 0 &&
+            profiles.listed.value &&
+            !profiles.profileWorkUnderWay.value &&
+            profiles.listingError.value === undefined &&
+            profiles.sync.value.status !== 'failed' && (
+              <p class="muted">
+                No {library.title.toLowerCase()} yet. Create one, then add it when creating or editing a profile.
+              </p>
+            )}
         </section>
       )}
       {!creating && named === null && batch.length > 0 && (

@@ -223,7 +223,11 @@ test.each(['duplicate', 'import'] as const)(
   },
 );
 
-test('repairing a setting retains references when another shared definition is added', async () => {
+test.each([
+  ['', []],
+  [', environments: definitions/production.yaml', []],
+  [', environments: [definitions/production.yaml, 123]', ['definitions/production.yaml']],
+] as const)('repairing a setting retains valid references from %s', async (extra, environments) => {
   const kept = await setup();
   await kept.create({
     name: 'approved',
@@ -232,12 +236,30 @@ test('repairing a setting retains references when another shared definition is a
     start: { kind: 'empty' },
     ownerType: undefined,
   });
+  await kept.create({
+    name: 'staging',
+    definitionKind: 'environment',
+    targetName: 'staging',
+    folder: 'definitions',
+    start: { kind: 'empty' },
+    ownerType: undefined,
+  });
   const file = `${kept.folder.value}/repair.yaml`;
-  await writeFile(file, 'references: { actions: definitions/approved.yaml }\nrepository: { has_wiki: wrong }\n');
+  await writeFile(
+    file,
+    `references: { actions: definitions/approved.yaml${extra} }\nrepository: { has_wiki: wrong }\n`,
+  );
   const editor = new ProfileEditor(file);
   await editor.load();
-  expect(editor.references.value).toEqual({ actions: 'definitions/approved.yaml' });
-  await editor.setReferences({ ...editor.references.value, environments: ['definitions/production.yaml'] });
+  expect(editor.references.value).toEqual({
+    actions: 'definitions/approved.yaml',
+    ...(environments.length === 0 ? {} : { environments }),
+  });
+  expect(editor.canSave.value).toBe(false);
+  await editor.setReferences({
+    ...editor.references.value,
+    environments: [...(editor.references.value.environments ?? []), 'definitions/staging.yaml'],
+  });
   const wiki = settingSections
     .flatMap((section) => section.groups.flatMap((group) => group.fields))
     .find((field) => field.path.join('.') === 'repository.has_wiki')!;
@@ -246,7 +268,7 @@ test('repairing a setting retains references when another shared definition is a
   expect(editor.saveError.value).toBeUndefined();
   expect((await resolveProfile(file)).references).toEqual({
     actions: 'definitions/approved.yaml',
-    environments: ['definitions/production.yaml'],
+    environments: [...environments, 'definitions/staging.yaml'],
   });
 });
 
