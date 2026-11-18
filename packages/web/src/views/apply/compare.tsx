@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 import { useRef } from 'preact/hooks';
+import { Spinner } from '../layout/loading.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { CompareRow, Comparison } from '../../app/apply/comparison.js';
@@ -71,6 +72,7 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
               <span class="mono">{state.repository}</span> with {state.profileName}
             </h1>
             <p class="muted" role="status">
+              {state.kind === 'comparing' && <Spinner />}
               {state.kind === 'comparing'
                 ? 'Reading from GitHub…'
                 : state.kind === 'failed'

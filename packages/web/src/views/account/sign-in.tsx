@@ -1,4 +1,5 @@
 import type { JSX } from 'preact';
+import { Loading } from '../layout/loading.js';
 
 import type { Account, SignInCheckFailure } from '../../app/account/account.js';
 import { run } from '../layout/run.js';
@@ -45,11 +46,7 @@ export function SignIn({ account }: { readonly account: Account }): JSX.Element 
           Write down a repository's settings, rulesets, environments, and labels once, as a profile. Compare any
           repository with it, review what differs, and apply the changes.
         </p>
-        {state.status === 'checking' && (
-          <p class="muted" role="status">
-            Checking your sign-in…
-          </p>
-        )}
+        {state.status === 'checking' && <Loading>Checking your sign-in…</Loading>}
         {state.status === 'check-failed' && (
           <>
             <p class="notice notice-problem" role="alert">

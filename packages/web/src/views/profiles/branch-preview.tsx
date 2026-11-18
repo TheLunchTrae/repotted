@@ -1,5 +1,7 @@
 import type { JSX } from 'preact';
+
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { Loading, Spinner } from '../layout/loading.js';
 
 import type { ComparedProfile } from '../../app/apply/comparison.js';
 import type { Router } from '../../app/navigation/router.js';
@@ -64,11 +66,7 @@ export function PreviewPicker({ preview, repository, onPick, onClose }: PickerPr
           See what a branch of <span class="mono">{repository}</span> changes in the profiles, before it is merged.
           Previewing only reads from GitHub.
         </p>
-        {list.kind === 'loading' && (
-          <p class="muted" role="status">
-            Reading the branches…
-          </p>
-        )}
+        {list.kind === 'loading' && <Loading>Reading the branches…</Loading>}
         {list.kind === 'failed' && (
           <p class="notice notice-problem" role="alert">
             Couldn't list the branches: {list.message}
@@ -325,6 +323,7 @@ export function BranchPreviewPage({ preview, repositories, router, branch, onCom
               Changes on <span class="mono">{branch}</span>
             </h1>
             <p class="muted" role="status">
+              {(state.kind === 'loading' || state.kind === 'idle') && <Spinner />}
               {state.kind === 'loading' || state.kind === 'idle'
                 ? 'Reading the branch from GitHub…'
                 : state.kind === 'failed'

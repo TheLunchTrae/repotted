@@ -398,6 +398,39 @@ test('an initial profile read cannot report that the list is empty', async ({ pa
   await expect(page.getByRole('heading', { name: 'No profiles yet', exact: true })).toBeVisible();
 });
 
+test('an initial profile read shows loading rather than an empty list', async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'repotted:profiles-source',
+      JSON.stringify({ kind: 'repository', repository: 'trae/repotted-config', path: '' }),
+    ),
+  );
+  await page.goto('/profiles?hold-github');
+  await expect(page.getByText('Reading your profiles…', { exact: true })).toBeVisible();
+  await expect(page.locator('.skeleton-list')).toBeVisible();
+  await expect(page.locator('.empty')).toHaveCount(0);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
+  await expect(page.locator('.skeleton-list')).toHaveCount(0);
+  await expect(page.locator('.empty')).toBeVisible();
+});
+
+test('retrying a failed first sync keeps an empty cache in the loading state', async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'repotted:profiles-source',
+      JSON.stringify({ kind: 'repository', repository: 'trae/repotted-config', path: '' }),
+    ),
+  );
+  await page.goto('/profiles?fail-first-sync');
+  await expect(page.getByRole('alert').filter({ hasText: 'Config unavailable' })).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event('hold-config')));
+  await page.getByRole('button', { name: 'Sync', exact: true }).click();
+  await expect(page.getByText('Reading your profiles…', { exact: true })).toBeVisible();
+  await expect(page.locator('.empty')).toHaveCount(0);
+  await page.evaluate(() => window.dispatchEvent(new Event('release-config')));
+  await expect(page.locator('.empty')).toBeVisible();
+});
+
 function elementsPastViewportEdges(): string[] {
   const width = document.documentElement.clientWidth;
   const found: string[] = [];
@@ -491,6 +524,7 @@ test('invalid profiles keep unsaved YAML across navigation and open the settings
   const yaml = page.getByRole('textbox', { name: 'Profile YAML', exact: true });
   const save = page.getByRole('button', { name: 'Save', exact: true });
   await expect(yaml).toHaveValue('repository: [\n');
+  await expect(page.getByText('Reading the profile…', { exact: true })).toHaveCount(0);
   await expect(save).toBeDisabled();
   await yaml.fill('merge: [\n');
   await expect(save).toBeDisabled();

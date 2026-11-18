@@ -80,6 +80,21 @@ test('profiles start in this browser, listed with their subfolders', async () =>
   expect(drawn(profiles.tree.value)).toEqual(['base', 'teams/ 2', '  web', '  ios/ 1', '    app']);
 });
 
+test('an unread profile folder becomes empty only after a successful read, and an initial failure can recover', async () => {
+  const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
+  expect(profiles.listed.value).toBe(false);
+  await mkdir('/profiles', { recursive: true });
+  await writeFile('/profiles/browser', 'A file where the folder belongs');
+  await profiles.refresh();
+  expect(profiles.listingError.value).toBeDefined();
+  expect(profiles.listed.value).toBe(false);
+  await rm('/profiles/browser');
+  await profiles.refresh();
+  expect(profiles.listed.value).toBe(true);
+  expect(profiles.listingError.value).toBeUndefined();
+  expect(profiles.listings.value).toEqual([]);
+});
+
 test('a search shows what it finds inside closed folders, and a closed folder hides what it holds', async () => {
   await inBrowser({ 'base.yaml': base, 'teams/web.yaml': web, 'teams/ios/app.yaml': base });
   const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);

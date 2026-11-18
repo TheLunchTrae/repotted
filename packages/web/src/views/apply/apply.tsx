@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { Spinner } from '../layout/loading.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { Apply } from '../../app/apply/apply.js';
@@ -136,12 +137,13 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
               <span class="mono">{state.repository}</span>
             </h1>
             <p class="muted" role="status">
+              {(state.kind === 'reviewing' || state.kind === 'applying') && <Spinner />}
               {state.kind === 'editing'
                 ? state.fromProfile
                   ? 'Step 1 of 2: one-off edits. They apply on top of the profile for this apply only.'
                   : 'Step 1 of 2: the settings to change, this once. Nothing else on the repository is touched.'
                 : state.kind === 'reviewing'
-                  ? 'One moment…'
+                  ? 'Reviewing changes…'
                   : state.kind === 'applying'
                     ? 'Writing to GitHub…'
                     : state.kind === 'failed'

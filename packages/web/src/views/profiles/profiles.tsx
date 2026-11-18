@@ -9,6 +9,7 @@ import type { ProfileFolderNode, ProfileListing, Profiles } from '../../app/prof
 import type { Repositories } from '../../app/repositories/repositories.js';
 import { dirname, relative } from '../../engine/path.js';
 import { Link } from '../layout/link.js';
+import { Loading, LoadingList } from '../layout/loading.js';
 import { useProfileConfirmation } from '../layout/notifications.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
@@ -784,6 +785,9 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
       {listing.kind === undefined && opened?.file === listing.file && editor?.loaded.value === true && (
         <References key={opened.text} listing={listing} profiles={profiles} text={opened.text} />
       )}
+      {editor?.loaded.value === false && editor.loadError.value === undefined && editor.repair.value === undefined && (
+        <Loading>Reading the profile…</Loading>
+      )}
       {editor?.loaded.value === true && (
         <ProfileSettings
           key={editor.file}
@@ -1078,11 +1082,14 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
         )}
         <Banners profiles={profiles} />
 
-        {total === 0 &&
-        profiles.listed.value &&
-        !busy &&
-        profiles.listingError.value === undefined &&
-        profiles.sync.value.status !== 'failed' ? (
+        {busy && profiles.listed.value && total > 0 && <Loading>Updating profiles…</Loading>}
+        {!profiles.listed.value ||
+        (total === 0 &&
+          (busy || profiles.listingError.value !== undefined || profiles.sync.value.status === 'failed')) ? (
+          (busy || (profiles.listingError.value === undefined && profiles.sync.value.status !== 'failed')) && (
+            <LoadingList>Reading your profiles…</LoadingList>
+          )
+        ) : total === 0 ? (
           <div class="empty">
             <h2>No profiles yet</h2>
             {source.kind === 'folder' ? (

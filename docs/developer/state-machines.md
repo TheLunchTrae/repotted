@@ -399,8 +399,9 @@ another is saving.
 ## Web profiles source
 
 The `listed` flag starts false and resets when the source changes. Only a
-successful list read sets it true. An empty-state message requires that read
-to have succeeded; pending and failed reads never establish an empty list.
+successful list read sets it true. Before that read completes, the page shows
+a loading state; an error shows the failure instead of an empty list. Later
+refreshes keep the successful list visible while work runs.
 
 `Profiles` (`packages/web/src/app/profiles/profiles.ts`) keeps where the profiles are,
 saved as `profiles-source` in the browser's

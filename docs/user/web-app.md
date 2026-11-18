@@ -22,6 +22,11 @@ the keyboard to the search field. Repository filters remain as chosen;
 **Clear filters** changes those separately. Empty profile lists offer
 **New profile**, and hidden repository lists offer their relevant show action.
 
+While a page or lookup reads from GitHub, a spinner names the work under way.
+An initial repository or profile list uses placeholder rows until the read
+finishes. Refreshing keeps the current results visible. A batch apply shows
+how many repositories have finished.
+
 ## On a phone
 
 In a window 760 pixels wide or less, such as a phone's, the app lays itself

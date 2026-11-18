@@ -1,4 +1,5 @@
 import type { JSX } from 'preact';
+import { Spinner } from '../layout/loading.js';
 
 import type { Profiles } from '../../app/profiles/profiles.js';
 import { run } from '../layout/run.js';
@@ -28,7 +29,7 @@ export function SyncNote({ profiles }: { readonly profiles: Profiles }): JSX.Ele
   if (sync.status === 'syncing') {
     return (
       <p class="muted small" role="status">
-        Syncing with {syncDestination}…
+        <Spinner /> Syncing with {syncDestination}…
       </p>
     );
   }

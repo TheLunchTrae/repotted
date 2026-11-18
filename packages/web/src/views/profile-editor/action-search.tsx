@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
+import { Spinner } from '../layout/loading.js';
 
 import { type ActionSearch, foundNotes } from '../../app/profile-editor/action-search.js';
 import type { ProfileEditor } from '../../app/profile-editor/profile-editor.js';
@@ -75,6 +76,7 @@ export function ActionSearchBox({ editor, search }: ActionSearchProps): JSX.Elem
         class={state.kind === 'searching' || state.kind === 'message' ? 'muted small' : 'visually-hidden'}
         role="status"
       >
+        {state.kind === 'searching' && <Spinner />}
         {state.kind === 'searching'
           ? 'Searching GitHub…'
           : state.kind === 'message'
