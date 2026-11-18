@@ -575,6 +575,22 @@ function FolderMenu({
   readonly everySelected: boolean;
 }): JSX.Element {
   const menu = useDismissibleMenu();
+  const previousPhone = useRef(phone);
+  useEffect(() => {
+    const element = menu.current;
+    if (previousPhone.current === phone || element === null) {
+      return;
+    }
+    previousPhone.current = phone;
+    if (element.open) {
+      // The focused phone-only action may already be unmounted by this render.
+      const focusLost = document.activeElement === document.body || element.contains(document.activeElement);
+      element.open = false;
+      if (focusLost) {
+        element.querySelector('summary')?.focus();
+      }
+    }
+  }, [phone, menu]);
   const pick = (dialog: FolderDialog): void => {
     if (menu.current !== null) {
       menu.current.open = false;

@@ -164,6 +164,8 @@ the same row. When the tags don't fit, one badge gives the count, such as
 tags again. Long folder names shorten with an ellipsis. **⋯** holds the
 folder's **Edit** actions and **Select all in folder**, which becomes
 **Deselect all in folder** when all its shown repositories are selected.
+When the layout changes while you are using a folder menu, it closes and
+returns keyboard focus to its button.
 
 To apply profiles to repositories already in the folder, choose **Save and
 review apply** in its **Profiles** dialog. It saves the list you're editing

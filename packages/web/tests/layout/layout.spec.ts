@@ -926,6 +926,11 @@ test('folder profiles collapse and expand on resize while keeping one header row
   await folder.getByRole('button', { name: 'Deselect all in Personal Configs', exact: true }).click();
   await expect(folder.getByRole('checkbox', { name: 'Select lunch/docs', exact: true })).not.toBeChecked();
   await expect(folder.getByRole('checkbox', { name: 'Select lunch/mobile', exact: true })).not.toBeChecked();
+  await menu.click();
+  await folder.getByRole('button', { name: 'Select all in Personal Configs', exact: true }).focus();
+  await page.setViewportSize({ width: 900, height: 900 });
+  await expect(menu).toBeFocused();
+  await expect(folder.locator('.folder-menu')).toHaveJSProperty('open', false);
 });
 
 for (const members of [['lunch/infra'], ['lunch/docs', 'lunch/a_repository_name_with_no_hyphens_in_it_at_all']]) {
