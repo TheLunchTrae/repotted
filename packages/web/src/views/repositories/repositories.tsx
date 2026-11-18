@@ -24,6 +24,7 @@ import {
   visibilityLabels,
 } from '../../app/repositories/sort-and-filters.js';
 import { useMenuPanelKeptOnPage } from '../layout/menu-placement.js';
+import { useNotifications } from '../layout/notifications.js';
 import { usePhone } from '../layout/phone.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
@@ -319,6 +320,7 @@ function countdown(seconds: number): string {
  * its description says why it waits, once.
  */
 function RefreshButton({ repositories }: { readonly repositories: Repositories }): JSX.Element {
+  const notifications = useNotifications();
   const wait = repositories.refreshWait.value;
   const off = repositories.loading.value || wait !== undefined;
   const why = useId();
@@ -330,7 +332,15 @@ function RefreshButton({ repositories }: { readonly repositories: Repositories }
         aria-disabled={off ? 'true' : undefined}
         aria-describedby={wait === undefined ? undefined : why}
         onClick={() => {
-          run(repositories.refresh());
+          if (!off) {
+            run(
+              repositories.refresh().then(() => {
+                if (repositories.error.value === undefined) {
+                  notifications?.show({ message: 'Repositories refreshed.' });
+                }
+              }),
+            );
+          }
         }}
       >
         Refresh

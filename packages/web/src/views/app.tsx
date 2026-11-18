@@ -9,8 +9,9 @@ import { BatchApply } from '../app/apply/batch-apply.js';
 import { Comparison } from '../app/apply/comparison.js';
 import { AddressedRepository } from '../app/navigation/addressed-repository.js';
 import type { Router } from '../app/navigation/router.js';
+import { Notifications } from '../app/notifications.js';
 import { repositoryFoldersKey } from '../app/preferences/preference-changes.js';
-import type { Preferences } from '../app/preferences/preferences.js';
+import type { BrowserPreferences } from '../app/preferences/preferences.js';
 import { SharedPreferences } from '../app/preferences/shared-preferences.js';
 import { BranchPreview } from '../app/profiles/branch-preview.js';
 import { ConfigDiscovery } from '../app/profiles/config-discovery.js';
@@ -26,6 +27,7 @@ import { ApplyPage } from './apply/apply.js';
 import { BatchPage } from './apply/batch.js';
 import { ComparePage } from './apply/compare.js';
 import { Link } from './layout/link.js';
+import { NotificationContext, Toasts } from './layout/notifications.js';
 import { run } from './layout/run.js';
 import { Shell } from './layout/shell.js';
 import { BranchPreviewPage } from './profiles/branch-preview.js';
@@ -48,7 +50,7 @@ const titles: Readonly<Record<string, string>> = {
 interface AppProps {
   readonly account: Account;
   readonly github: GitHub;
-  readonly preferences: Preferences;
+  readonly preferences: BrowserPreferences;
   readonly router: Router;
   readonly keeping: Signal<Keeping>;
   readonly folders: LocalFolders;
@@ -63,6 +65,7 @@ function SignedIn({
   folders,
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
+  const notifications = useMemo(() => new Notifications(), []);
   const { repositories, profiles, assignments, discovery, comparison, apply, batch, protection, preview } =
     useMemo(() => {
       const refused = (): void => {
@@ -72,7 +75,14 @@ function SignedIn({
       // The hidden repositories and owners follow the profiles: to their repository, or this browser. Using
       // the profiles' place from the start means the first list shows what that place hides. Folders follow them
       // too, but which folders are closed stays in this browser, so opening one commits nothing.
-      const shared = new SharedPreferences(github, preferences, refused);
+      const shared = new SharedPreferences(github, preferences, refused, (keys, destination) => {
+        if (keys.includes(repositoryProfilesKey)) {
+          notifications.show({
+            message: 'Repository profiles saved.',
+            detail: destination === 'repository' ? 'Synced with GitHub.' : 'Saved in this browser.',
+          });
+        }
+      });
       run(shared.use(kept.source.value));
       // Which profiles each repository uses follows the profiles too, since it names them by their paths.
       const assigned = new RepositoryProfiles(shared, kept);
@@ -104,7 +114,7 @@ function SignedIn({
         protection: new ConfigProtection(github, refused),
         preview: new BranchPreview(github, kept, refused),
       };
-    }, [account, github, preferences, folders, user, router]);
+    }, [account, github, preferences, folders, user, router, notifications]);
   const address = useMemo(() => new AddressedRepository(repositories, router), [repositories, router]);
   useEffect(() => {
     run(repositories.load());
@@ -204,145 +214,148 @@ function SignedIn({
       ? 'Changes are being written to GitHub. Sign out once the apply has finished.'
       : account.signOutError.value;
   return (
-    <Shell account={account} user={user} router={router} onSignOut={signOut}>
-      {signOutProblem !== undefined && (
-        <p class="notice notice-problem shell-notice" role="alert">
-          {signOutProblem}
-        </p>
-      )}
-      <FoundConfig discovery={discovery} profiles={profiles} />
-      {repositories.moveReviewNotice.value !== undefined && (
-        <div class="notice notice-drift shell-notice" role="status">
-          <p>{repositories.moveReviewNotice.value}</p>
-          <button
-            class="button button-quiet button-small"
-            type="button"
-            onClick={() => {
-              repositories.moveReviewNotice.value = undefined;
-            }}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-      {leaving && (
-        <SignOutQuestion
-          profiles={profiles}
-          onLeave={leave}
-          onClose={() => {
-            setLeaving(false);
-          }}
-        />
-      )}
-      {keeping.value === 'stopped' && (
-        <p class="notice notice-problem shell-notice" role="alert">
-          This browser stopped keeping your changes, as it does when its storage is full. What you change now lasts
-          until this tab closes. Free some space, then reload the page.
-        </p>
-      )}
-      {path === '/' ? (
-        <RepositoriesPage
-          repositories={repositories}
-          address={address}
-          profiles={profiles}
-          onCapture={(repository) => {
-            setRepositoryToCapture(repository);
-            router.go('/profiles/new');
-          }}
-          onBatch={(names, profile) => {
-            run(
-              batch.start(names, profile).then(() => {
-                // The selection has done its work once a batch started from it holds the repositories.
-                if (batch.state.value.kind === 'reviewed') {
-                  repositories.deselectAll();
-                }
-              }),
-            );
-            router.go('/batch');
-          }}
-          onApply={(repository, profile) => {
-            run(profile === 'once' ? apply.startWithoutProfile(repository) : apply.start(repository, profile));
-            router.go('/apply');
-          }}
-          onApplyProfiles={(repository, assigned) => {
-            run(apply.startFromProfiles(repository, assigned));
-            router.go('/apply');
-          }}
-          assignments={assignments}
-          onCompare={(repository, profile) => {
-            run(comparison.compare(repository, profile));
-            router.go('/compare');
-          }}
-        />
-      ) : path === '/batch' ? (
-        <BatchPage batch={batch} router={router} />
-      ) : path === '/apply' ? (
-        <ApplyPage apply={apply} router={router} />
-      ) : path === '/compare' ? (
-        <ComparePage comparison={comparison} router={router} />
-      ) : previewedBranch !== '' ? (
-        <BranchPreviewPage
-          preview={preview}
-          repositories={repositories}
-          router={router}
-          branch={previewedBranch}
-          onCompare={(repository, profile) => {
-            run(comparison.compare(repository, profile));
-            router.go('/compare');
-          }}
-        />
-      ) : path === '/profiles' || path === '/profiles/new' ? (
-        <ProfilesPage
-          profiles={profiles}
-          repositories={repositories}
-          router={router}
-          preview={preview}
-          newProfileForm={path === '/profiles/new' ? { repository: repositoryToCapture } : undefined}
-        />
-      ) : path === '/settings' ? (
-        <SettingsPage
-          account={account}
-          user={user}
-          profiles={profiles}
-          repositories={repositories}
-          keeping={keeping.value}
-          protection={protection}
-          onReviewProtection={() => {
-            const state = protection.state.value;
-            // A second press while the first is starting would start a second apply over the first.
-            if (state.kind === 'checked' && !openingProtection.current) {
-              openingProtection.current = true;
-              run(
-                protection
-                  .writeProfileForApply()
-                  .then((profile) => {
-                    if (profile !== undefined) {
-                      router.go('/apply');
-                      return apply.start(state.repository, profile);
-                    }
-                    return undefined;
-                  })
-                  .finally(() => {
-                    openingProtection.current = false;
-                  }),
-              );
-            }
-          }}
-          onSignOut={signOut}
-        />
-      ) : (
-        <div class="page">
-          <div class="page-body">
-            <h1>There's no page here</h1>
-            <p>
-              <Link router={router} to="/">
-                Go to your repositories
-              </Link>
-            </p>
+    <NotificationContext.Provider value={notifications}>
+      <Shell account={account} user={user} router={router} onSignOut={signOut}>
+        {signOutProblem !== undefined && (
+          <p class="notice notice-problem shell-notice" role="alert">
+            {signOutProblem}
+          </p>
+        )}
+        <FoundConfig discovery={discovery} profiles={profiles} />
+        {repositories.moveReviewNotice.value !== undefined && (
+          <div class="notice notice-drift shell-notice" role="status">
+            <p>{repositories.moveReviewNotice.value}</p>
+            <button
+              class="button button-quiet button-small"
+              type="button"
+              onClick={() => {
+                repositories.moveReviewNotice.value = undefined;
+              }}
+            >
+              Dismiss
+            </button>
           </div>
-        </div>
-      )}
-    </Shell>
+        )}
+        {leaving && (
+          <SignOutQuestion
+            profiles={profiles}
+            onLeave={leave}
+            onClose={() => {
+              setLeaving(false);
+            }}
+          />
+        )}
+        {keeping.value === 'stopped' && (
+          <p class="notice notice-problem shell-notice" role="alert">
+            This browser stopped keeping your changes, as it does when its storage is full. What you change now lasts
+            until this tab closes. Free some space, then reload the page.
+          </p>
+        )}
+        {path === '/' ? (
+          <RepositoriesPage
+            repositories={repositories}
+            address={address}
+            profiles={profiles}
+            onCapture={(repository) => {
+              setRepositoryToCapture(repository);
+              router.go('/profiles/new');
+            }}
+            onBatch={(names, profile) => {
+              run(
+                batch.start(names, profile).then(() => {
+                  // The selection has done its work once a batch started from it holds the repositories.
+                  if (batch.state.value.kind === 'reviewed') {
+                    repositories.deselectAll();
+                  }
+                }),
+              );
+              router.go('/batch');
+            }}
+            onApply={(repository, profile) => {
+              run(profile === 'once' ? apply.startWithoutProfile(repository) : apply.start(repository, profile));
+              router.go('/apply');
+            }}
+            onApplyProfiles={(repository, assigned) => {
+              run(apply.startFromProfiles(repository, assigned));
+              router.go('/apply');
+            }}
+            assignments={assignments}
+            onCompare={(repository, profile) => {
+              run(comparison.compare(repository, profile));
+              router.go('/compare');
+            }}
+          />
+        ) : path === '/batch' ? (
+          <BatchPage batch={batch} router={router} />
+        ) : path === '/apply' ? (
+          <ApplyPage apply={apply} router={router} />
+        ) : path === '/compare' ? (
+          <ComparePage comparison={comparison} router={router} />
+        ) : previewedBranch !== '' ? (
+          <BranchPreviewPage
+            preview={preview}
+            repositories={repositories}
+            router={router}
+            branch={previewedBranch}
+            onCompare={(repository, profile) => {
+              run(comparison.compare(repository, profile));
+              router.go('/compare');
+            }}
+          />
+        ) : path === '/profiles' || path === '/profiles/new' ? (
+          <ProfilesPage
+            profiles={profiles}
+            repositories={repositories}
+            router={router}
+            preview={preview}
+            newProfileForm={path === '/profiles/new' ? { repository: repositoryToCapture } : undefined}
+          />
+        ) : path === '/settings' ? (
+          <SettingsPage
+            account={account}
+            user={user}
+            profiles={profiles}
+            repositories={repositories}
+            keeping={keeping.value}
+            protection={protection}
+            onReviewProtection={() => {
+              const state = protection.state.value;
+              // A second press while the first is starting would start a second apply over the first.
+              if (state.kind === 'checked' && !openingProtection.current) {
+                openingProtection.current = true;
+                run(
+                  protection
+                    .writeProfileForApply()
+                    .then((profile) => {
+                      if (profile !== undefined) {
+                        router.go('/apply');
+                        return apply.start(state.repository, profile);
+                      }
+                      return undefined;
+                    })
+                    .finally(() => {
+                      openingProtection.current = false;
+                    }),
+                );
+              }
+            }}
+            onSignOut={signOut}
+          />
+        ) : (
+          <div class="page">
+            <div class="page-body">
+              <h1>There's no page here</h1>
+              <p>
+                <Link router={router} to="/">
+                  Go to your repositories
+                </Link>
+              </p>
+            </div>
+          </div>
+        )}
+      </Shell>
+      <Toasts notifications={notifications} />
+    </NotificationContext.Provider>
   );
 }
 

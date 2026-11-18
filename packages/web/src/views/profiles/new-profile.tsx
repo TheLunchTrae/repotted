@@ -6,6 +6,7 @@ import type { Router } from '../../app/navigation/router.js';
 import { definitionTypes } from '../../app/profiles/definition-types.js';
 import type { NewProfileStart, Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
+import { useProfileConfirmation } from '../layout/notifications.js';
 import { run } from '../layout/run.js';
 
 type OwnerChoice = (typeof ownerTypes)[number] | 'any';
@@ -24,6 +25,7 @@ interface NewProfileProps {
 }
 
 export function NewProfileForm({ profiles, repositories, router, repositoryToCapture }: NewProfileProps): JSX.Element {
+  const confirm = useProfileConfirmation(profiles);
   const listings = profiles.listings.value.filter((listing) => listing.problem === null);
   const captured = repositories.list.value?.repositories ?? [];
   const [definitionKind, setDefinitionKind] = useState<DefinitionKind | undefined>(undefined);
@@ -91,7 +93,12 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
       },
       formClosed.current.signal,
     );
-    if (formClosed.current.signal.aborted) {
+    const closed = formClosed.current.signal.aborted;
+    // Ordinary creation finishes after the form closes; a capture is canceled on close.
+    if (failure === undefined && (start.kind !== 'repository' || !closed)) {
+      confirm(`${name.trim()} created.`);
+    }
+    if (closed) {
       return;
     }
     setWorking(false);

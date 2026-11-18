@@ -8,7 +8,7 @@ import type { ProfilesSource } from '../profiles/profiles.js';
 import { readRepositoryFile, writeRepositoryFile } from '../storage/repository-files.js';
 import { SerialQueue } from '../storage/serial-queue.js';
 import { preferenceChanges } from './preference-changes.js';
-import type { Preferences } from './preferences.js';
+import type { BrowserPreferences, Preferences } from './preferences.js';
 
 /** Hidden, so a profile sync and the profile list leave it out. */
 export const preferencesFile = '.repotted-preferences.json';
@@ -78,8 +78,9 @@ export class SharedPreferences implements Preferences {
   readonly error = signal<string | undefined>(undefined);
 
   readonly #github: GitHub;
-  readonly #browser: Preferences;
+  readonly #browser: BrowserPreferences;
   readonly #onSignedOut: () => void;
+  readonly #onSaved: ((keys: readonly string[], destination: 'browser' | 'repository') => void) | undefined;
   readonly #queue = new SerialQueue();
   /** Counts each change, so a read in a computed runs again after one. */
   readonly #version = signal(0);
@@ -91,7 +92,13 @@ export class SharedPreferences implements Preferences {
   #pending: readonly Pending[] = [];
   #readUnderWay: Promise<void> | undefined;
 
-  constructor(github: GitHub, browser: Preferences, onSignedOut: () => void) {
+  constructor(
+    github: GitHub,
+    browser: BrowserPreferences,
+    onSignedOut: () => void,
+    onSaved?: (keys: readonly string[], destination: 'browser' | 'repository') => void,
+  ) {
+    this.#onSaved = onSaved;
     this.#github = github;
     this.#browser = browser;
     this.#onSignedOut = onSignedOut;
@@ -161,7 +168,10 @@ export class SharedPreferences implements Preferences {
   update(key: string, change: Change): void {
     const place = this.#place;
     if (place === undefined) {
-      this.#browser.write(key, change(this.#browser.read(key)));
+      const value = change(this.#browser.read(key));
+      if (this.#browser.write(key, value)) {
+        this.#onSaved?.([key], 'browser');
+      }
       this.#version.value += 1;
       return;
     }
@@ -212,6 +222,7 @@ export class SharedPreferences implements Preferences {
         this.#fileAsLastReadOrSaved = merged;
         this.error.value = undefined;
         this.#changed();
+        this.#onSaved?.([...new Set(changes.map((change) => change.key))], 'repository');
       }
     } catch (error) {
       // The changes stay, so the next save tries them again.

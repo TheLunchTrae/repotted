@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import { FakeGitRepository } from '../../../core/tests/support/fake-git.js';
 import { answered, type FakeAccount, FakeGitHub } from '../../../core/tests/support/fake-github.js';
-import type { Preferences } from '../../src/app/preferences/preferences.js';
+import type { BrowserPreferences } from '../../src/app/preferences/preferences.js';
 import { preferencesFile, SharedPreferences } from '../../src/app/preferences/shared-preferences.js';
 import { refreshPause, Repositories, type Repository } from '../../src/app/repositories/repositories.js';
 
@@ -29,13 +29,14 @@ function account(names: readonly string[]): FakeAccount {
 
 const everyone = ['zeta/site', 'trae/dotfiles', 'Acme/api', 'acme/web'];
 
-function memory(start: Record<string, unknown> = {}): Preferences & { readonly kept: Record<string, unknown> } {
+function memory(start: Record<string, unknown> = {}): BrowserPreferences & { readonly kept: Record<string, unknown> } {
   const kept = { ...start };
   return {
     kept,
     read: (key) => kept[key],
     write: (key, value) => {
       kept[key] = value;
+      return true;
     },
   };
 }
@@ -47,11 +48,11 @@ function names(repositories: Repositories): string[] {
   ]);
 }
 
-function inBrowser(github: GitHub, preferences: Preferences = memory()): SharedPreferences {
+function inBrowser(github: GitHub, preferences: BrowserPreferences = memory()): SharedPreferences {
   return new SharedPreferences(github, preferences, () => undefined);
 }
 
-async function opened(github: FakeGitHub, preferences: Preferences = memory()): Promise<Repositories> {
+async function opened(github: FakeGitHub, preferences: BrowserPreferences = memory()): Promise<Repositories> {
   const repositories = new Repositories(github, user, inBrowser(github, preferences), preferences, () => undefined);
   await repositories.load();
   return repositories;

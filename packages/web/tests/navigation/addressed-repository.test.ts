@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { FakeGitHub } from '../../../core/tests/support/fake-github.js';
 import { AddressedRepository } from '../../src/app/navigation/addressed-repository.js';
-import type { Preferences } from '../../src/app/preferences/preferences.js';
+import type { BrowserPreferences } from '../../src/app/preferences/preferences.js';
 import { SharedPreferences } from '../../src/app/preferences/shared-preferences.js';
 import { Repositories } from '../../src/app/repositories/repositories.js';
 import { browser } from '../support/fake-browser.js';
@@ -24,7 +24,13 @@ function page(start: string) {
     },
   });
   const kept: Record<string, unknown> = {};
-  const inBrowser: Preferences = { read: (key) => kept[key], write: (key, value) => (kept[key] = value) };
+  const inBrowser: BrowserPreferences = {
+    read: (key) => kept[key],
+    write: (key, value) => {
+      kept[key] = value;
+      return true;
+    },
+  };
   const preferences = new SharedPreferences(github, inBrowser, () => undefined);
   const repositories = new Repositories(github, { login: 'octo', name: null }, preferences, inBrowser, () => undefined);
   const fake = browser(start, true);

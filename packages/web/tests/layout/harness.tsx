@@ -139,11 +139,19 @@ const config: GitHub = {
 const fleet = new FakeFleet([app, ...others]);
 
 const signedOut = new URLSearchParams(location.search).has('signed-out');
+const pendingRead = { value: Promise.resolve() };
+window.addEventListener('hold-github', () => {
+  pendingRead.value = new Promise<void>((resolve) =>
+    window.addEventListener('release-github', () => resolve(), { once: true }),
+  );
+});
 const github: GitHub = signedOut
   ? { request: () => Promise.reject(answered(401, 'Bad credentials')) }
   : {
-      request: (method, path, body) =>
-        (path.startsWith(`/repos/${configName}`) ? config : fleet).request(method, path, body),
+      request: async (method, path, body) => {
+        await pendingRead.value;
+        return (path.startsWith(`/repos/${configName}`) ? config : fleet).request(method, path, body);
+      },
     };
 // eslint-disable-next-line typescript/no-unsafe-type-assertion -- a Session can't be built without the Worker, and Account only calls signOut on it
 const session = { signOut: () => Promise.resolve() } as unknown as Session;

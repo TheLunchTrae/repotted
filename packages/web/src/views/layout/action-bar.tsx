@@ -24,13 +24,13 @@ export function BarActions({ mainAction, otherActions }: BarActionsProps): JSX.E
         <summary class="button">More</summary>
         <div
           class="menu-panel menu-panel-end menu-panel-up"
-          onClick={(event) => {
+          onClickCapture={(event) => {
             // A pressed action closes the menu, handing focus back to More as the button it was on hides;
             // a press beside one, or on a disabled one, leaves it open.
             const details = menu.current;
             if (
               event.target instanceof Element &&
-              event.target.closest('button:not(:disabled)') !== null &&
+              event.target.closest('button:not(:disabled):not([aria-disabled="true"])') !== null &&
               details !== null
             ) {
               details.open = false;
