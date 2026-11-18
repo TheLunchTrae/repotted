@@ -1217,8 +1217,8 @@ test('deleting the selected profiles together names what extends any of them and
 
 test('Actions definitions move with references and refuse deletion while consumers remain', async () => {
   await inBrowser({
-    'trusted.yaml': 'kind: actions-policy\nactions:\n  enabled: true\n',
-    'service.yaml': 'references:\n  actions: trusted.yaml\nrepository:\n  has_wiki: false\n',
+    'trusted.yaml': 'kind: actions-policy\nactions_policies: [{ name: Approved, enforcement: active }]\n',
+    'service.yaml': 'references:\n  actions_policies: [trusted.yaml]\nrepository:\n  has_wiki: false\n',
   });
   const profiles = new Profiles(new FakeGitHub(), memory(), () => undefined);
   await profiles.refresh();
@@ -1235,14 +1235,14 @@ test('Actions definitions move with references and refuse deletion while consume
 
 test('reference saves preserve unrelated inline values', async () => {
   await inBrowser({
-    'trusted.yaml': 'kind: actions-policy\nactions:\n  enabled: true\n',
+    'trusted.yaml': 'kind: actions-policy\nactions_policies: [{ name: Approved, enforcement: active }]\n',
     'service.yaml': 'repository:\n  has_wiki: false\n',
   });
   const profiles = new Profiles(new FakeGitHub(), memory(), () => undefined);
   await profiles.refresh();
   const service = profiles.listings.value.find((item) => item.name === 'service')!;
   await profiles.select(service);
-  await profiles.editor.value!.setReferences({ actions: 'trusted.yaml' });
+  await profiles.editor.value!.setReferences({ actions_policies: ['trusted.yaml'] });
   await profiles.save();
   const saved = await readFile(service.file, 'utf8');
   expect(saved).toContain('has_wiki: false');
@@ -1250,7 +1250,9 @@ test('reference saves preserve unrelated inline values', async () => {
 });
 
 test('definitions duplicate across folders without changing their source and import validates references', async () => {
-  await inBrowser({ 'trusted.yaml': 'kind: actions-policy\nactions:\n  enabled: true\n' });
+  await inBrowser({
+    'trusted.yaml': 'kind: actions-policy\nactions_policies: [{ name: Approved, enforcement: active }]\n',
+  });
   const profiles = new Profiles(new FakeGitHub(), memory(), () => undefined);
   await profiles.refresh();
   const source = profiles.listings.value[0];
@@ -1270,7 +1272,7 @@ test('definitions duplicate across folders without changing their source and imp
     await profiles.create({
       name: 'broken',
       folder: '',
-      start: { kind: 'import', text: 'references:\n  actions: missing.yaml\n' },
+      start: { kind: 'import', text: 'references:\n  actions_policies: [missing.yaml]\n' },
       ownerType: undefined,
     }),
   ).toContain('missing.yaml');
@@ -1305,14 +1307,14 @@ test('refuses deleting or moving sources used by repository assignments without 
 
 test('reference controls treat equivalent paths as the same source', async () => {
   await inBrowser({
-    'trusted.yaml': 'kind: actions-policy\nactions: { enabled: true }\n',
-    'service.yaml': 'references: { actions: ./shared/../trusted.yaml }\n',
+    'trusted.yaml': 'kind: actions-policy\nactions_policies: [{ name: Approved, enforcement: active }]\n',
+    'service.yaml': 'references: { actions_policies: [./shared/../trusted.yaml] }\n',
   });
   const profiles = new Profiles(new FakeGitHub(), memory(), () => undefined);
   await profiles.refresh();
   await profiles.select(profiles.listings.value.find((item) => item.name === 'service'));
   const editor = profiles.editor.value!;
-  await editor.setReferences({ actions: 'trusted.yaml' });
+  await editor.setReferences({ actions_policies: ['trusted.yaml'] });
   expect(editor.dirty.value).toBe(false);
 });
 

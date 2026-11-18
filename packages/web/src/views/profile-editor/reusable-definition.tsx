@@ -8,7 +8,7 @@ import type { ReusableSection } from '../../app/profiles/save-reusable-definitio
 interface ReusableDefinitionOptionProps {
   readonly editor: ProfileEditor;
   readonly section: ReusableSection;
-  readonly entryKey?: string;
+  readonly entryKey: string;
   readonly defaultName: string;
 }
 
@@ -26,8 +26,8 @@ export function ReusableDefinitionOption({
   if (library === undefined) {
     return null;
   }
-  const noun = section === 'actions' ? library.label : library.label.toLowerCase();
-  const key = entryKey ?? section;
+  const noun = section === 'actions_policies' ? library.label : library.label.toLowerCase();
+  const key = entryKey;
   const name = editor.reusableName(key);
   const problem = editor.reusableProblem.value;
   return (

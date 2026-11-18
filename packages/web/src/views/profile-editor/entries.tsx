@@ -22,6 +22,8 @@ import {
   ruleOf,
   rulesetTarget,
   statusChecks,
+  workflowPaths,
+  withWorkflowPaths,
   withBranchPolicies,
   withDeploymentBranches,
   withKey,
@@ -40,6 +42,7 @@ import { MissingPermissionsNote } from './missing-permissions-note.js';
 import { ReusableDefinitionOption } from './reusable-definition.js';
 
 const nouns: Readonly<Record<EntryList, { readonly one: string; readonly many: string; readonly title: string }>> = {
+  actions_policies: { one: 'Actions policy', many: 'Actions policies', title: 'Actions policy' },
   rulesets: { one: 'ruleset', many: 'rulesets', title: 'Ruleset' },
   environments: { one: 'environment', many: 'environments', title: 'Environment' },
   labels: { one: 'label', many: 'labels', title: 'Label' },
@@ -432,6 +435,204 @@ function RefTargets({ entry, saved, change, side }: RefTargetsProps): JSX.Elemen
   );
 }
 
+function ActionPolicyForm({ entry, saved, change, problemIn }: FormProps): JSX.Element {
+  const conditions = isEntry(entry['conditions']) ? entry['conditions'] : {};
+  const include = workflowPaths(entry, 'include');
+  const exclude = workflowPaths(entry, 'exclude');
+  const targeting =
+    conditions['workflow_path'] === undefined
+      ? undefined
+      : include.length === 1 && include[0] === '~ALL' && exclude.length === 0
+        ? 'all'
+        : 'selected';
+  const events = ruleOf(entry, 'restrict_action_events');
+  const eventParameters = isEntry(events?.['parameters']) ? events['parameters'] : {};
+  const actors = ruleOf(entry, 'restrict_actions_actors');
+  const actorParameters = isEntry(actors?.['parameters']) ? actors['parameters'] : {};
+  const allowedActors = items(actorParameters['allowed_actors']).filter(isEntry);
+  const setActors = (next: readonly Entry[]): void =>
+    change(withRuleParameter(entry, 'restrict_actions_actors', 'allowed_actors', next));
+  const toggleRule = (type: string, key: string, on: boolean): void => {
+    const next = withRule(entry, type, on, saved);
+    const parameters = ruleOf(next, type)?.['parameters'];
+    change(
+      on && ruleOf(saved, type) === undefined && (!isEntry(parameters) || parameters[key] === undefined)
+        ? withRuleParameter(next, type, key, [])
+        : next,
+    );
+  };
+  const otherRules = items(entry['rules'])
+    .filter(isEntry)
+    .map((rule) => text(rule['type']))
+    .filter((type) => type !== 'restrict_action_events' && type !== 'restrict_actions_actors');
+  return (
+    <>
+      <Group
+        title="Enforcement"
+        description="Evaluate reports policy violations without blocking workflows and requires GitHub Enterprise."
+      >
+        <Choice
+          label="Enforcement"
+          options={[
+            ['Active', 'active'],
+            ['Evaluate', 'evaluate'],
+            ['Disabled', 'disabled'],
+          ]}
+          value={entry['enforcement']}
+          onChoose={(value) => change(withKey(entry, 'enforcement', value))}
+        />
+      </Group>
+      <Group
+        title="Target workflows"
+        description="New policies without workflow targets apply to all workflows. Updates preserve targets left unset."
+      >
+        <Choice
+          label="Workflow targeting"
+          options={[
+            ['All workflows', 'all'],
+            ['Selected workflows', 'selected'],
+          ]}
+          value={targeting}
+          onChoose={(value) =>
+            change(withWorkflowPaths(entry, value === undefined ? undefined : value === 'all' ? ['~ALL'] : []))
+          }
+        />
+        {targeting === 'selected' &&
+          (['include', 'exclude'] as const).map((side) => (
+            <TextBox
+              key={side}
+              label={side === 'include' ? 'Include workflow paths' : 'Exclude workflow paths'}
+              field="workflow-paths"
+              problem={problemIn('workflow-paths')}
+              multiline
+              mono
+              value={workflowPaths(entry, side).join('\n')}
+              note={
+                side === 'include'
+                  ? 'One path or glob per line, such as .github/workflows/release.yml. Empty includes all workflows except exclusions.'
+                  : 'One path or glob per line. Excluded workflows are outside this policy.'
+              }
+              onText={(typed) => {
+                const paths = uniqueTrimmedNonBlankLines(typed);
+                change(
+                  withWorkflowPaths(entry, side === 'include' ? paths : include, side === 'exclude' ? paths : exclude),
+                );
+                return undefined;
+              }}
+            />
+          ))}
+      </Group>
+      <Group title="Rules" description="Control which events and actors can trigger matching workflows.">
+        <div data-entry-field="policy-rules" role="region" aria-label="Workflow rules" tabIndex={-1}>
+          <Check
+            label="Restrict events"
+            checked={events !== undefined}
+            note="Only listed events may trigger workflows. An empty list blocks every event."
+            onCheck={(on) => toggleRule('restrict_action_events', 'allowed_events', on)}
+          />
+          {events !== undefined && (
+            <TextBox
+              label="Allowed events"
+              multiline
+              mono
+              field="policy-rules"
+              problem={problemIn('policy-rules')}
+              value={items(eventParameters['allowed_events']).map(String).join('\n')}
+              note="One event per line, such as push, pull_request, release, or workflow_dispatch."
+              onText={(typed) => {
+                change(
+                  withRuleParameter(
+                    entry,
+                    'restrict_action_events',
+                    'allowed_events',
+                    uniqueTrimmedNonBlankLines(typed),
+                  ),
+                );
+                return undefined;
+              }}
+            />
+          )}
+          <Check
+            label="Restrict actors"
+            checked={actors !== undefined}
+            note="Only listed actors may trigger workflows. An empty list blocks every actor."
+            onCheck={(on) => toggleRule('restrict_actions_actors', 'allowed_actors', on)}
+          />
+          {actors !== undefined && (
+            <>
+              {allowedActors.map((actor, index) => (
+                <fieldset class="settings-group" key={index} aria-label={`Actor ${index + 1}`}>
+                  <legend>Actor {index + 1}</legend>
+                  <label class="form-field">
+                    <span>Actor type</span>
+                    <select
+                      class="field"
+                      value={text(actor['type'])}
+                      onChange={(event) =>
+                        setActors(
+                          allowedActors.map((item, at) =>
+                            at === index ? { ...item, type: event.currentTarget.value } : item,
+                          ),
+                        )
+                      }
+                    >
+                      {[
+                        'User',
+                        'Bot',
+                        'Team',
+                        'BusinessTeam',
+                        'EnterpriseTeam',
+                        'IntegrationInstallation',
+                        'App',
+                        'RepositoryRole',
+                      ].map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <TextBox
+                    label="Actor ID"
+                    value={text(actor['id'])}
+                    field="policy-rules"
+                    problem={problemIn('policy-rules')}
+                    note="The actor’s numeric GitHub ID."
+                    onText={(typed) => {
+                      const id = /^-?\d+$/u.test(typed) ? Number(typed) : typed;
+                      setActors(allowedActors.map((item, at) => (at === index ? { ...item, id } : item)));
+                      return undefined;
+                    }}
+                  />
+                  <button
+                    class="button button-quiet button-small"
+                    type="button"
+                    onClick={() => setActors(allowedActors.filter((_, at) => at !== index))}
+                  >
+                    Remove actor {index + 1}
+                  </button>
+                </fieldset>
+              ))}
+              <button
+                class="button button-small"
+                type="button"
+                onClick={() => setActors([...allowedActors, { type: 'User', id: '' }])}
+              >
+                Add actor
+              </button>
+            </>
+          )}
+          {otherRules.length > 0 && (
+            <p class="muted small">
+              Additional rules are kept as configured: {otherRules.join(', ')}. Edit them in the YAML file.
+            </p>
+          )}
+        </div>
+      </Group>
+    </>
+  );
+}
+
 function RulesetForm({
   entry,
   saved,
@@ -803,7 +1004,7 @@ function summary(row: EntryRow): string {
   if (entry['absent'] === true) {
     return 'Removed from each repository.';
   }
-  if (row.list === 'rulesets') {
+  if (row.list === 'rulesets' || row.list === 'actions_policies') {
     const rules = items(entry['rules']).length;
     return [
       text(entry['target']),
@@ -867,7 +1068,9 @@ function EntryForm({
   const renamed =
     appliedName !== undefined &&
     name.trim() !== '' &&
-    (row.list === 'rulesets' ? name.trim() !== appliedName : name.trim().toLowerCase() !== appliedName.toLowerCase());
+    (row.list === 'rulesets' || row.list === 'actions_policies'
+      ? name.trim() !== appliedName
+      : name.trim().toLowerCase() !== appliedName.toLowerCase());
   return (
     <div class="groups" ref={form}>
       <div class="entry-bar">
@@ -991,6 +1194,9 @@ function EntryForm({
             {absent && <p class="muted small">Applying deletes it from each repository that follows the profile.</p>}
           </div>
         </Group>
+        {!absent && row.list === 'actions_policies' && (
+          <ActionPolicyForm entry={entry} saved={row.saved} change={change} problemIn={problemIn} />
+        )}
         {!absent && row.list === 'rulesets' && (
           <RulesetForm
             entry={entry}
@@ -1011,7 +1217,7 @@ function EntryForm({
       {single !== true &&
         row.source === undefined &&
         !absent &&
-        (row.list === 'environments' || row.list === 'rulesets') && (
+        (row.list === 'actions_policies' || row.list === 'environments' || row.list === 'rulesets') && (
           <ReusableDefinitionOption editor={editor} section={row.list} entryKey={row.key} defaultName={name} />
         )}
     </div>

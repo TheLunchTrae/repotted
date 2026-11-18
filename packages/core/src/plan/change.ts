@@ -16,6 +16,7 @@ export const sections = [
   'custom_properties',
   'pages',
   'autolinks',
+  'actions_policies',
   'rulesets',
   'environments',
   'labels',
@@ -23,7 +24,13 @@ export const sections = [
 
 export type Section = (typeof sections)[number];
 
-export const listSections = ['autolinks', 'rulesets', 'environments', 'labels'] as const satisfies readonly Section[];
+export const listSections = [
+  'autolinks',
+  'actions_policies',
+  'rulesets',
+  'environments',
+  'labels',
+] as const satisfies readonly Section[];
 
 export type SettingsSection = Exclude<Section, (typeof listSections)[number]>;
 

@@ -172,6 +172,7 @@ test.each(['duplicate', 'import'] as const)('%s preserves existing shared refere
   await kept.create({
     name: 'approved',
     definitionKind: 'actions-policy',
+    targetName: 'Approved',
     folder: 'definitions',
     start: { kind: 'empty' },
     ownerType: undefined,
@@ -184,7 +185,7 @@ test.each(['duplicate', 'import'] as const)('%s preserves existing shared refere
   });
   const source = kept.selected.value!;
   await kept.editor.value!.setReferences({
-    actions: '../definitions/approved.yaml',
+    actions_policies: ['../definitions/approved.yaml'],
     environments: ['../definitions/production.yaml'],
   });
   await kept.save();
@@ -198,7 +199,7 @@ test.each(['duplicate', 'import'] as const)('%s preserves existing shared refere
     }),
   ).toBeUndefined();
   expect((await resolveProfile(kept.selected.value!.file)).references).toEqual({
-    actions: '../definitions/approved.yaml',
+    actions_policies: ['../definitions/approved.yaml'],
     environments: ['../definitions/production.yaml'],
   });
 });
@@ -212,6 +213,7 @@ test.each([
   await kept.create({
     name: 'approved',
     definitionKind: 'actions-policy',
+    targetName: 'Approved',
     folder: 'definitions',
     start: { kind: 'empty' },
     ownerType: undefined,
@@ -227,12 +229,12 @@ test.each([
   const file = `${kept.folder.value}/repair.yaml`;
   await writeFile(
     file,
-    `references: { actions: definitions/approved.yaml${extra} }\nrepository: { has_wiki: wrong }\n`,
+    `references: { actions_policies: [definitions/approved.yaml]${extra} }\nrepository: { has_wiki: wrong }\n`,
   );
   const editor = new ProfileEditor(file);
   await editor.load();
   expect(editor.references.value).toEqual({
-    actions: 'definitions/approved.yaml',
+    actions_policies: ['definitions/approved.yaml'],
     ...(environments.length === 0 ? {} : { environments }),
   });
   expect(editor.canSave.value).toBe(false);
@@ -247,7 +249,7 @@ test.each([
   await editor.save(async (work) => work());
   expect(editor.saveError.value).toBeUndefined();
   expect((await resolveProfile(file)).references).toEqual({
-    actions: 'definitions/approved.yaml',
+    actions_policies: ['definitions/approved.yaml'],
     environments: [...environments, 'definitions/staging.yaml'],
   });
 });

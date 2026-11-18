@@ -96,10 +96,10 @@ except those at endpoints of their own, which `repositoryEndpoints` in
 `packages/core/src/plan/sections/repository.ts` lists with their paths.
 `securityEndpoints` in `security.ts` lists the security settings outside
 `security_and_analysis`, and `actionsEndpoints` in `actions.ts` the Actions
-settings outside the policy. The adapters in that folder read and write the
-rest: the Actions policy (`/actions/permissions`, its `/selected-actions`
+settings outside the permissions endpoints. The adapters in that folder read and write the
+rest: Actions permissions (`/actions/permissions`, its `/selected-actions`
 list and `/workflow` token permissions), topics, custom properties, Pages,
-autolinks, rulesets, environments and labels. `permissions.ts` gives the permission
+autolinks, Actions policies (`/actions/policies`), rulesets, environments and labels. `permissions.ts` gives the permission
 each endpoint needs. The notes below are what the code doesn't say.
 
 ### `repository` and `merge`
@@ -114,6 +114,13 @@ does beyond the setting.
 
 `access_level` and `fork_pr_workflows_private_repos` apply to private
 repositories only.
+
+### `actions_policies`
+
+Policies use the repository Actions policies API, not Actions permissions.
+Reads and writes need Administration write permission. Organization and
+enterprise policies are inherited and remain outside repository management.
+Evaluation enforcement needs GitHub Enterprise.
 
 ### `security`
 
@@ -313,8 +320,7 @@ These have an API, but don't fit a profile:
 - Git LFS on or off (`PUT` and `DELETE /lfs`, Enterprise Cloud only): GitHub
   offers no way to read it, so Repotted can't plan it.
 
-Lists that a later change could add: Actions policies, and secret scanning
-custom patterns, whose delete removes their alerts unless told otherwise.
+A list that a later change could add: secret scanning custom patterns, whose delete removes their alerts unless told otherwise.
 
 ## Settings with no API
 

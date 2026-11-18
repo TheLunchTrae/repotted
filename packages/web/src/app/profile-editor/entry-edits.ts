@@ -16,10 +16,11 @@ import {
 import { ownUnsets, type ResolvedProfile } from './own-drafts.js';
 import { sameValue } from './same-value.js';
 
-export const entryLists = ['rulesets', 'environments', 'labels'] as const;
+export const entryLists = ['actions_policies', 'rulesets', 'environments', 'labels'] as const;
 export type EntryList = (typeof entryLists)[number];
 
 export const entryListTitles: Readonly<Record<EntryList, string>> = {
+  actions_policies: 'Actions policies',
   rulesets: 'Rulesets',
   environments: 'Environments',
   labels: 'Labels',
@@ -30,6 +31,8 @@ export type SaveMode = 'applies' | 'draft';
 /** The field of the entry's form a problem shows under; `entry` is the entry as a whole, shown above its fields. */
 export type EntryField =
   | 'name'
+  | 'workflow-paths'
+  | 'policy-rules'
   | 'include-targets'
   | 'exclude-targets'
   | 'include-patterns'
@@ -126,6 +129,7 @@ interface Slot {
 }
 
 const nouns: Readonly<Record<EntryList, string>> = {
+  actions_policies: 'an Actions policy',
   rulesets: 'a ruleset',
   environments: 'an environment',
   labels: 'a label',
@@ -142,7 +146,7 @@ function withTrimmedNameFirst(entry: Entry): Entry {
 
 /** What GitHub knows an entry by: a ruleset by its name as written, an environment or a label by its name in any case. */
 function identity(list: EntryList, name: string): string {
-  return list === 'rulesets' ? name : name.toLowerCase();
+  return list === 'rulesets' || list === 'actions_policies' ? name : name.toLowerCase();
 }
 
 const colorProblem = 'The color is six hex digits, such as a2eeef, with or without #.';
@@ -151,6 +155,20 @@ const colorProblem = 'The color is six hex digits, such as a2eeef, with or witho
 function fieldProblem(list: EntryList, entry: Entry, otherNames: readonly string[]): EntryProblem | undefined {
   const problemIn = (field: EntryField, message: string | undefined): EntryProblem | undefined =>
     message === undefined ? undefined : { field, message };
+  if (list === 'actions_policies') {
+    const invalid = entryValueProblems(list, entry)[0];
+    return invalid === undefined
+      ? undefined
+      : {
+          field:
+            invalid.path[0] === 'conditions'
+              ? 'workflow-paths'
+              : invalid.path[0] === 'rules'
+                ? 'policy-rules'
+                : 'entry',
+          message: invalid.message,
+        };
+  }
   if (list === 'rulesets') {
     return (
       problemIn('include-targets', namedRefTargetsProblem(entry, 'include')) ??
@@ -247,12 +265,14 @@ export class EntryEdits {
   #lastNewEntryNumber = 0;
 
   readonly #slots = computed<Readonly<Record<EntryList, readonly Slot[]>>>(() => ({
+    actions_policies: this.#slotsOf('actions_policies'),
     rulesets: this.#slotsOf('rulesets'),
     environments: this.#slotsOf('environments'),
     labels: this.#slotsOf('labels'),
   }));
 
   readonly rows = computed<Readonly<Record<EntryList, readonly EntryRow[]>>>(() => ({
+    actions_policies: this.#rows('actions_policies'),
     rulesets: this.#rows('rulesets'),
     environments: this.#rows('environments'),
     labels: this.#rows('labels'),

@@ -277,17 +277,17 @@ test('MCP re-resolves a shared policy supplied through inline YAML before applyi
   const folder = await mkdtemp(path.join(tmpdir(), 'repotted-mcp-policy-'));
   try {
     const policy = path.join(folder, 'trusted.yaml');
-    await writeFile(policy, 'kind: actions-policy\nactions: { default_workflow_permissions: read }');
+    await writeFile(policy, 'kind: actions-policy\nactions_policies: [{ name: Release, enforcement: active }]');
     const github = new FakeGitHub();
     const client = await connect(github);
     const planned = await call(client, 'plan', {
       repository: 'lunch/app',
-      profile: `references:\n  actions: ${JSON.stringify(policy)}\n`,
+      profile: `references:\n  actions_policies: [${JSON.stringify(policy)}]\n`,
     });
     expect(planned.isError).toBe(false);
     const id = /plan_id: (\S+)/u.exec(planned.text)?.[1];
     expect(id).toBeDefined();
-    await writeFile(policy, 'kind: actions-policy\nactions: { default_workflow_permissions: write }');
+    await writeFile(policy, 'kind: actions-policy\nactions_policies: [{ name: Release, enforcement: disabled }]');
     const result = await call(client, 'apply', { plan_id: id });
     expect(result.isError).toBe(true);
     expect(result.text).toContain('changed since this plan');

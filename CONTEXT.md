@@ -3,10 +3,14 @@
 - **Profile**: YAML that describes the setup a repository should have. It
   names only what it manages; anything it leaves out is unmanaged unless an
   apply explicitly owns that section.
+- **Actions policy**: a named GitHub workflow policy with enforcement, workflow
+  targeting, and rules for allowed triggering actors and events. A repository
+  can have several policies. General Actions settings, such as allowed actions
+  and token permissions, are separate settings, not policy definitions.
 - **Base profile**: a profile that others build on with `extends`. A profile
   that extends it is an **override**.
 - **Section**: one area of a repository's setup that a profile can manage:
-  repository settings, merge methods, Actions settings, security settings,
+  repository settings, merge methods, Actions settings, Actions policies, security settings,
   custom properties, GitHub Pages, autolinks, rulesets, deployment
   environments, or labels. Each section has one adapter that reads it and plans its
   writes.

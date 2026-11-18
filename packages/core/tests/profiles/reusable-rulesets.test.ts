@@ -105,7 +105,10 @@ describe('reusable rulesets', () => {
   });
 
   test('rejects a missing or wrongly typed reference and validates the effective owner', async () => {
-    await write('not-a-ruleset.yaml', 'kind: actions-policy\nactions: { enabled: false }\n');
+    await write(
+      'not-a-ruleset.yaml',
+      'kind: actions-policy\nactions_policies: [{ name: Approved, enforcement: disabled }]\n',
+    );
     const missing = await write('missing.yaml', 'references: { rulesets: [missing-definition.yaml] }\n');
     const wrong = await write('wrong.yaml', 'references: { rulesets: [not-a-ruleset.yaml] }\n');
     await write('push.yaml', 'kind: ruleset\nrulesets: [{ name: Push, target: push }]\n');

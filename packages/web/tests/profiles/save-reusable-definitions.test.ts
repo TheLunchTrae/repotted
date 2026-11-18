@@ -24,6 +24,15 @@ async function setup(): Promise<Profiles> {
 }
 
 test.each([
+  {
+    section: 'actions_policies' as const,
+    kind: 'actions-policy',
+    entry: {
+      name: 'Release',
+      enforcement: 'active',
+      rules: [{ type: 'restrict_action_events', parameters: { allowed_events: ['release'] } }],
+    },
+  },
   { section: 'environments' as const, kind: 'environment', entry: { name: 'production', wait_timer: 15 } },
   {
     section: 'rulesets' as const,
@@ -56,59 +65,35 @@ test.each([
   expect((await resolveProfile(listing.file)).profile[section]).toEqual([changed]);
 });
 
-test('saving an Actions policy moves its settings and preserves unrelated profile edits', async () => {
+test('saving a reusable policy preserves general Actions settings and unrelated edits', async () => {
   const profiles = await setup();
   const listing = profiles.selected.value!;
   const editor = profiles.editor.value!;
   const fields = settingSections.flatMap((section) => section.groups.flatMap((group) => group.fields));
-  for (const [path, value] of [
-    ['actions.enabled', true],
-    ['actions.allowed_actions', 'all'],
-    ['repository.has_wiki', false],
-  ] as const) {
-    await editor.set(
-      fields.find((field) => field.path.join('.') === path)!,
-      value,
-    );
-  }
-  editor.setReusable('actions', 'actions', 'Approved actions');
+  await editor.set(
+    fields.find((field) => field.path.join('.') === 'actions.default_workflow_permissions')!,
+    'read',
+  );
+  await editor.set(
+    fields.find((field) => field.path.join('.') === 'repository.has_wiki')!,
+    false,
+  );
+  const entry = {
+    name: 'Release',
+    enforcement: 'active',
+    rules: [{ type: 'restrict_action_events', parameters: { allowed_events: ['release'] } }],
+  };
+  const key = await editor.addEntry('actions_policies', entry);
+  editor.setReusable('actions_policies', key, 'Release workflows');
   await profiles.save();
   expect(editor.saveError.value).toBeUndefined();
   expect(editor.dirty.value).toBe(false);
-  const resolved = await resolveProfile(listing.file);
-  expect(resolved.profile.actions).toEqual({ enabled: true, allowed_actions: 'all' });
-  expect(resolved.profile.repository).toEqual({ has_wiki: false });
   expect(parse(await files.readFile(listing.file, 'utf8'))).toEqual({
     repository: { has_wiki: false },
-    references: { actions: '../definitions/actions-policy/Approved actions.yaml' },
+    actions: { default_workflow_permissions: 'read' },
+    references: { actions_policies: ['../definitions/actions-policy/Release workflows.yaml'] },
   });
-});
-
-test('file-only Actions settings follow later changes to their reusable policy', async () => {
-  const profiles = await setup();
-  const listing = profiles.selected.value!;
-  await files.writeFile(
-    listing.file,
-    'actions:\n  oidc_customization_sub:\n    use_default: false\n    include_claim_keys: [repo, context]\n',
-  );
-  await profiles.refresh();
-  const editor = profiles.editor.value!;
-  editor.setReusable('actions', 'actions', 'Shared');
-  await profiles.save();
-  expect(editor.saveError.value).toBeUndefined();
-  expect(parse(await files.readFile(listing.file, 'utf8'))).toEqual({
-    references: { actions: '../definitions/actions-policy/Shared.yaml' },
-  });
-  const definition = profiles.definitions.value[0]!;
-  await profiles.write(() =>
-    files.writeFile(
-      definition.file,
-      'kind: actions-policy\nactions:\n  oidc_customization_sub:\n    use_default: false\n    include_claim_keys: [repository_owner, context]\n',
-    ),
-  );
-  expect((await resolveProfile(listing.file)).profile.actions).toEqual({
-    oidc_customization_sub: { use_default: false, include_claim_keys: ['repository_owner', 'context'] },
-  });
+  expect((await resolveProfile(listing.file)).profile.actions_policies).toEqual([entry]);
 });
 
 test('a failed profile write rolls back the definitions and keeps choices for retry', async () => {
@@ -173,9 +158,6 @@ test('reset and taking out an item clear its reusable choice, and invalid names 
   await editor.takeOut(editor.entries.value.environments[0]!);
   expect(editor.reusableDefinitions.value).toEqual([]);
   expect(editor.dirty.value).toBe(false);
-  editor.setReusable('actions', 'actions', 'Policy');
-  expect(editor.canSave.value).toBe(false);
-  expect(editor.reusableProblem.value?.message).toMatch(/Actions setting/u);
   await editor.resetAll();
   expect(editor.dirty.value).toBe(false);
 });

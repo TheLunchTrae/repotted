@@ -2,7 +2,8 @@ import { authoritativeSections, type AuthoritativeSection } from '@repotted/core
 import type { JSX } from 'preact';
 
 const names: Record<AuthoritativeSection, string> = {
-  actions: 'Actions',
+  actions: 'Actions settings',
+  actions_policies: 'Actions policies',
   autolinks: 'Autolinks',
   rulesets: 'Rulesets',
   environments: 'Environments',

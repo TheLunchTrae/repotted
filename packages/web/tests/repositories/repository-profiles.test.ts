@@ -925,8 +925,8 @@ test('assignment ownership syncs with config preferences and reloads changes mad
 
 test('transitive reusable edits change assignment status and missing definitions block authoritative review', async () => {
   const listings = await profiles({
-    'policy.yaml': 'kind: actions-policy\nactions: { default_workflow_permissions: read }\n',
-    'base.yaml': 'references: { actions: policy.yaml }\n',
+    'policy.yaml': 'kind: actions-policy\nactions_policies: [{ name: Release, enforcement: active }]\n',
+    'base.yaml': 'references: { actions_policies: [policy.yaml] }\n',
     'service.yaml': 'extends: base.yaml\n',
   });
   const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
@@ -939,7 +939,10 @@ test('transitive reusable edits change assignment status and missing definitions
   await assignments.check();
   expect(assignments.status('lunch/app')).toEqual({ kind: 'current' });
 
-  await writeFile(`${folder}/policy.yaml`, 'kind: actions-policy\nactions: { default_workflow_permissions: write }\n');
+  await writeFile(
+    `${folder}/policy.yaml`,
+    'kind: actions-policy\nactions_policies: [{ name: Release, enforcement: disabled }]\n',
+  );
   listings.value = await listProfiles(folder);
   await assignments.check();
   expect(assignments.status('lunch/app')).toMatchObject({ kind: 'changed', changed: ['service.yaml'] });

@@ -570,7 +570,7 @@ drafts:
       },
     };
     const plan = await createPlan(github, repo, desired);
-    expect(plan.changes.map((change) => change.target)).toEqual(['Actions policy', 'selected actions']);
+    expect(plan.changes.map((change) => change.target)).toEqual(['Actions permissions', 'selected actions']);
 
     await applyPlan(github, plan);
     expect((await createPlan(github, repo, desired)).changes).toEqual([]);
@@ -581,7 +581,7 @@ drafts:
       actions: { enabled: false, allowed_actions: 'selected', selected_actions: { github_owned_allowed: true } },
     });
 
-    expect(plan.changes.map((change) => change.target)).toEqual(['Actions policy']);
+    expect(plan.changes.map((change) => change.target)).toEqual(['Actions permissions']);
     expect(plan.warnings).toEqual([
       {
         section: 'actions',

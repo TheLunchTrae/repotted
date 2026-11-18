@@ -3,7 +3,14 @@ import { z } from 'zod';
 import { actionsSettings, environmentKey, labelKey, type Profile } from '../profiles/schema.js';
 import type { Change, Section, Warning } from './change.js';
 
-export const authoritativeSections = ['actions', 'autolinks', 'rulesets', 'environments', 'labels'] as const;
+export const authoritativeSections = [
+  'actions',
+  'autolinks',
+  'actions_policies',
+  'rulesets',
+  'environments',
+  'labels',
+] as const;
 export type AuthoritativeSection = (typeof authoritativeSections)[number];
 export const authoritativeSchema = z
   .array(z.enum(authoritativeSections))

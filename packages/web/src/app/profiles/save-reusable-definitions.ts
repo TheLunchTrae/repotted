@@ -11,12 +11,12 @@ import { dirname, join, relative } from '../../engine/path.js';
 import { definitionTypes } from './definition-types.js';
 import { profileNameProblem } from './profile-name.js';
 
-export type ReusableSection = 'actions' | 'rulesets' | 'environments';
+export type ReusableSection = 'actions_policies' | 'rulesets' | 'environments';
 
 export interface ReusableDefinition {
   readonly section: ReusableSection;
   readonly name: string;
-  readonly targetName?: string;
+  readonly targetName: string;
 }
 
 /** Called in the profiles' write turn; failed profile writes remove every definition made in that turn. */
@@ -32,16 +32,11 @@ export async function saveReusableDefinitions(
   }
   const references = { ...after.references };
   const files: { file: string; text: string }[] = [];
-  const actions = definitions.some((definition) => definition.section === 'actions');
   const writes: ProfileEdit[] = edits.filter((edit) =>
     'list' in edit
       ? !definitions.some((definition) => definition.section === edit.list && definition.targetName === edit.name)
-      : !(actions && (edit.path[0] === 'actions' || (edit.path[0] === 'drafts' && edit.path[1] === 'actions'))) &&
-        edit.path[0] !== 'references',
+      : edit.path[0] !== 'references',
   );
-  if (actions) {
-    writes.push({ path: ['actions'], value: undefined }, { path: ['drafts', 'actions'], value: undefined });
-  }
   for (const definition of definitions) {
     const problem = profileNameProblem(definition.name, 'reusable definition');
     if (problem !== undefined) {
@@ -67,26 +62,19 @@ export async function saveReusableDefinitions(
     ) {
       throw new Error(`${definition.name.trim()} is already in ${relative(folder, destination)}.`);
     }
-    const value =
-      definition.section === 'actions'
-        ? after.profile.actions
-        : after.profile[definition.section]?.find((entry) => entry.name === definition.targetName);
+    const value = after.profile[definition.section]?.find((entry) => entry.name === definition.targetName);
     if (value === undefined || Object.keys(value).length === 0) {
       throw new Error(`Choose settings for the reusable ${library.label.toLowerCase()} before saving.`);
     }
     const text = stringifyDefinition({
       kind: library.kind,
       ...(after.profile.owner_type === undefined ? {} : { owner_type: after.profile.owner_type }),
-      [definition.section]: definition.section === 'actions' ? value : [value],
+      [definition.section]: [value],
     });
     await parseProfile(text, destination);
     files.push({ file: path, text });
     const reference = relative(dirname(file), path);
-    if (definition.section === 'actions') {
-      references.actions = reference;
-    } else {
-      references[definition.section] = [...(references[definition.section] ?? []), reference];
-    }
+    references[definition.section] = [...(references[definition.section] ?? []), reference];
   }
   writes.push({ path: ['references'], value: references });
   const created: string[] = [];

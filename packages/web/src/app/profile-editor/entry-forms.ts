@@ -202,6 +202,22 @@ export function refTargetsProblem(entry: Entry): string | undefined {
     .find((problem) => problem !== undefined);
 }
 
+export function workflowPaths(entry: Entry, side: RefSide): readonly string[] {
+  const conditions = isEntry(entry['conditions']) ? entry['conditions'] : {};
+  const workflow = isEntry(conditions['workflow_path']) ? conditions['workflow_path'] : {};
+  return items(workflow[side]).map(String);
+}
+
+export function withWorkflowPaths(
+  entry: Entry,
+  include: readonly string[] | undefined,
+  exclude: readonly string[] = [],
+): Entry {
+  const conditions = isEntry(entry['conditions']) ? entry['conditions'] : {};
+  const next = withKey(conditions, 'workflow_path', include === undefined ? undefined : { include, exclude });
+  return withKey(entry, 'conditions', Object.keys(next).length === 0 ? undefined : next);
+}
+
 export function ruleOf(entry: Entry | undefined, type: string): Entry | undefined {
   return entries(entry?.['rules']).find((rule) => rule['type'] === type);
 }

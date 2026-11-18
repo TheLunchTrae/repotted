@@ -134,7 +134,11 @@ export function DefinitionsPage({
               <h1 ref={heading} tabIndex={-1}>
                 {library.title}
               </h1>
-              <p class="muted">Create a definition once and use it across profiles.</p>
+              <p class="muted">
+                {kind === 'actions-policy'
+                  ? 'Control workflow execution with named policies. Reuse each policy across profiles.'
+                  : 'Create a definition once and use it across profiles.'}
+              </p>
             </div>
             <Link class="button button-primary" router={router} to={`${library.path}?new`}>
               New {kind === 'actions-policy' ? library.label : library.label.toLowerCase()}

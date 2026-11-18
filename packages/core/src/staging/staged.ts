@@ -30,6 +30,7 @@ import { isDeepEqual } from '../shared/equal.js';
 
 const entryKeyByExcludableList = {
   autolinks: (entry: Record<string, unknown>) => String(entry['key_prefix']),
+  actions_policies: (entry: Record<string, unknown>) => String(entry['name']),
   rulesets: (entry: Record<string, unknown>) => String(entry['name']),
   environments: (entry: Record<string, unknown>) => environmentKey(String(entry['name'])),
   labels: (entry: Record<string, unknown>) => labelKey(String(entry['name'])),
@@ -114,7 +115,7 @@ const stagedFile = profileFile
     if (value.drafts !== undefined) {
       context.addIssue({ code: 'custom', message: 'A staged apply cannot hold drafts', path: ['drafts'] });
     }
-    for (const list of ['autolinks', 'rulesets', 'environments', 'labels'] as const) {
+    for (const list of ['autolinks', 'actions_policies', 'rulesets', 'environments', 'labels'] as const) {
       for (const [index, entry] of (value[list] ?? []).entries()) {
         if ('draft' in entry) {
           context.addIssue({ code: 'custom', message: 'A staged apply cannot hold drafts', path: [list, index] });
@@ -283,6 +284,7 @@ function sourcesWithoutExclusions(sources: Sources, exclusions: readonly Exclusi
     custom_properties: keep('custom_properties'),
     pages: keep('pages'),
     autolinks: keep('autolinks'),
+    actions_policies: keep('actions_policies'),
     rulesets: keep('rulesets'),
     environments: keep('environments'),
     labels: keep('labels'),
@@ -492,7 +494,7 @@ function layerEdits(layer: ProfileFile, clear: boolean): ProfileEdit[] {
   if (layer.autolinks !== undefined) {
     throw new ProfileError('Cannot save autolinks to a profile from a staged apply; copy them into the profile file');
   }
-  for (const list of ['rulesets', 'environments', 'labels'] as const) {
+  for (const list of ['actions_policies', 'rulesets', 'environments', 'labels'] as const) {
     for (const entry of layer[list] ?? []) {
       edits.push({ list, name: entry.name, entry: clear ? undefined : entry });
     }

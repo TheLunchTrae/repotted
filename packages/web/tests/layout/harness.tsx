@@ -195,12 +195,12 @@ await writeFile(
 );
 await writeFile(
   '/profiles/browser/definitions/actions-policy/Approved.yaml',
-  'kind: actions-policy\nactions: { enabled: true, allowed_actions: selected, selected_actions: { verified_allowed: true } }\n',
+  'kind: actions-policy\nactions_policies: [{ name: Approved, enforcement: active, rules: [{ type: restrict_action_events, parameters: { allowed_events: [push] } }] }]\n',
 );
 for (const name of ['shared-api', 'shared-web']) {
   await writeFile(
     `/profiles/browser/${name}.yaml`,
-    'references: { actions: definitions/actions-policy/Approved.yaml, rulesets: [definitions/ruleset/Main.yaml], environments: [definitions/environment/production.yaml] }\n',
+    'references: { actions_policies: [definitions/actions-policy/Approved.yaml], rulesets: [definitions/ruleset/Main.yaml], environments: [definitions/environment/production.yaml] }\n',
   );
 }
 await writeFile('/profiles/browser/base.yaml', 'repository:\n  has_wiki: false\n  delete_branch_on_merge: true\n');

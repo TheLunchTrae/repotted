@@ -2,14 +2,12 @@ import { stringify } from 'yaml';
 
 import { type GitHub, repoPath, type RepoRef } from '../github/client.js';
 import type { Warning } from '../plan/change.js';
-import { captureEndpoints, loadable, readEndpoints } from '../plan/endpoints.js';
-import { actionsEndpoints, readActions } from '../plan/sections/actions.js';
+import { describeActionPolicy, readActionPolicies } from '../plan/sections/action-policies.js';
 import { describeEnvironment, readEnvironments } from '../plan/sections/environments.js';
 import { repositoryOwnerType } from '../plan/sections/repository.js';
 import { readRulesets } from '../plan/sections/rulesets.js';
 import { withoutOwnerConflicts } from './owner.js';
-import { actionsSettings, type DefinitionKind, environmentKey, profile, type ProfileFile, ruleset } from './schema.js';
-import { activeProfileSettings } from './setting-dependencies.js';
+import { actionPolicy, type DefinitionKind, environmentKey, profile, type ProfileFile, ruleset } from './schema.js';
 
 export async function captureDefinition(
   github: GitHub,
@@ -17,11 +15,8 @@ export async function captureDefinition(
   kind: DefinitionKind,
   targetName?: string,
 ): Promise<{ definition: ProfileFile; warnings: Warning[] }> {
-  if (kind !== 'actions-policy' && (targetName === undefined || targetName.trim() === '')) {
+  if (targetName === undefined || targetName.trim() === '') {
     throw new Error(`Give the name of the ${kind} to capture.`);
-  }
-  if (kind === 'actions-policy' && targetName !== undefined) {
-    throw new Error('An Actions policy has no target name.');
   }
   const owner = repositoryOwnerType(await github.request('GET', repoPath(repo)));
   if (kind === 'environment') {
@@ -29,9 +24,7 @@ export async function captureDefinition(
     if (!live.available) {
       throw new Error(`Cannot capture environment ${targetName}: ${live.reason}`);
     }
-    const matches = live.environments.filter(
-      (entry) => environmentKey(entry.name) === environmentKey(targetName ?? ''),
-    );
+    const matches = live.environments.filter((entry) => environmentKey(entry.name) === environmentKey(targetName));
     const [matched] = matches;
     if (matches.length !== 1 || matched === undefined) {
       throw new Error(`Expected one environment named ${targetName}, found ${matches.length}.`);
@@ -60,17 +53,19 @@ export async function captureDefinition(
       warnings: dropped.map((conflict) => ({ section: 'rulesets', message: conflict.message })),
     };
   }
-  const endpoints = captureEndpoints('actions', actionsEndpoints, await readEndpoints(github, repo, actionsEndpoints));
-  const warnings = [...endpoints.warnings];
-  const actions = loadable(
-    { section: 'actions' },
-    actionsSettings,
-    { ...(await readActions(github, repo)), ...endpoints.settings },
-    warnings,
-  );
-  const { value, dropped } = withoutOwnerConflicts(activeProfileSettings({ actions }), owner);
-  warnings.push(...dropped.map((conflict) => ({ section: 'actions' as const, message: conflict.message })));
-  return { definition: { kind, ...(owner === undefined ? {} : { owner_type: owner }), ...value }, warnings };
+  const live = await readActionPolicies(github, repo);
+  if (!live.available) {
+    throw new Error(`Cannot capture Actions policy ${targetName}: ${live.reason}`);
+  }
+  const matches = live.policies.filter((entry) => entry.policy.name === targetName);
+  if (matches.length !== 1 || matches[0] === undefined) {
+    throw new Error(`Expected one repository Actions policy named ${targetName}, found ${matches.length}.`);
+  }
+  const captured = actionPolicy.parse(describeActionPolicy(matches[0].policy));
+  return {
+    definition: { kind, ...(owner === undefined ? {} : { owner_type: owner }), actions_policies: [captured] },
+    warnings: [],
+  };
 }
 
 export function stringifyDefinition(definition: ProfileFile): string {

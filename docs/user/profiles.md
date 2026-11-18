@@ -24,6 +24,7 @@ a profile can be planned or applied.
 | `custom_properties` | The organization's custom properties, by name, with the repository's value                                                                                                                                                                                                                                                                                                   |
 | `pages`             | The GitHub Pages site: `build_type`, `source`, `cname`, `https_enforced`, `public`                                                                                                                                                                                                                                                                                           |
 | `autolinks`         | A list of autolink references: `key_prefix`, `url_template`, `is_alphanumeric`                                                                                                                                                                                                                                                                                               |
+| `actions_policies`  | Named workflow policies: `name`, `enforcement`, `conditions.workflow_path`, and `rules`                                                                                                                                                                                                                                                                                      |
 | `rulesets`          | A list of repository rulesets, as the rulesets API describes them                                                                                                                                                                                                                                                                                                            |
 | `environments`      | A list of deployment environments: `name`, `wait_timer`, `prevent_self_review`, `reviewers`, `deployment_branch_policy`, and `branch_policies`                                                                                                                                                                                                                               |
 | `labels`            | A list of issue and pull request labels: `name`, `color`, `description`, and Repotted's own `renamed_from`                                                                                                                                                                                                                                                                   |
@@ -433,7 +434,7 @@ not that GitHub refused.
 
 A plan lists its changes in the order they apply: repository and merge
 settings, then security settings, then Actions settings, custom properties,
-Pages, and autolinks, then rulesets, then environments, then labels. Within
+Pages, and autolinks, then Actions policies, then rulesets, then environments, then labels. Within
 each, Repotted orders the writes so the repository stays protected throughout.
 For example, a new ruleset exists before a ruleset it replaces is deleted,
 and labels are deleted, then renamed, then updated, then created.
@@ -451,41 +452,62 @@ plan.
 
 ## Reusable Actions policies
 
-An Actions policy is a separate YAML definition in the same folder as your
-profiles. Its file path identifies it. It can hold Actions settings and their
-drafts, plus an optional owner type. It cannot manage other sections or extend
-another file.
+An Actions policy is a named policy from GitHub's **Actions** > **Policies**
+page. It governs workflow execution through its enforcement status, workflow
+paths, and rules for allowed actors and events. A repository can have several
+policies. General Actions settings, such as enabled Actions, allowed actions,
+workflow permissions, retention, and cache limits, stay in `actions`.
+
+A reusable definition holds exactly one policy name in `actions_policies`,
+with an optional draft of the same name and an optional owner type. It cannot
+manage other sections or extend another file. Its file path identifies it.
 
 ```yaml
-# trusted-actions.yaml
+# release.yaml
 kind: actions-policy
-actions:
-  allowed_actions: selected
-  selected_actions:
-    github_owned_allowed: true
-    patterns_allowed: ['my-org/*']
-  default_workflow_permissions: read
+actions_policies:
+  - name: Release
+    enforcement: active
+    conditions:
+      workflow_path:
+        include: ['.github/workflows/release.yml']
+        exclude: []
+    rules:
+      - type: restrict_action_events
+        parameters:
+          allowed_events: [release, workflow_dispatch]
 ```
 
-Use the definition directly wherever you choose a profile: compare, stage,
-apply, or assign it to a repository. Partial management applies: omitted
-settings and other sections remain untouched. Removing a reference or deleting
-a definition does not delete live configuration.
+`enforcement` is `active`, `evaluate`, or `disabled`. Evaluation needs GitHub
+Enterprise. Omitting workflow targeting on a new policy includes every workflow;
+omitting it in an update preserves its live targeting. Use `include: ['~ALL']`
+and `exclude: []` to explicitly target all workflows. Actor rules use
+`restrict_actions_actors` with `parameters.allowed_actors`, a list of actor
+`id` and `type` pairs. Event rules use `restrict_action_events` with
+`parameters.allowed_events`. See [GitHub's policy API](https://docs.github.com/en/rest/actions/policies)
+for rule parameters and actor types.
 
-A profile references the definition without copying its contents:
+Use a definition directly wherever you choose a profile: compare, stage,
+apply, or assign it to a repository. Partial management applies: unlisted
+policies and omitted policy fields stay unchanged. `absent: true` explicitly
+deletes a named repository policy. Inherited organization and enterprise
+policies remain outside repository control. Removing a reference or deleting a
+definition does not delete live configuration.
+
+A profile references several definitions without copying their contents:
 
 ```yaml
 extends: base.yaml
 references:
-  actions: trusted-actions.yaml
+  actions_policies: [publish.yaml, quality.yaml, release.yaml]
 actions:
-  selected_actions:
-    verified_allowed: false
+  default_workflow_permissions: read
 ```
 
 Paths resolve from the file containing the reference. Base profiles apply
-first, then the referenced policy, then inline settings, then staged one-off
-edits. Settings and nested settings merge by key. Ordered profile combinations
+first, then referenced policies, then inline policies, then staged one-off
+edits. A policy replaces a policy of the same name whole. Two referenced
+definitions in one profile cannot supply the same policy name. Ordered profile combinations
 apply each profile's references at that profile's position. The source display
 identifies the definition supplying each value. Editing an inline value or
 saving the profile preserves its references.
@@ -504,17 +526,16 @@ profile. Update consumers deliberately before deleting a shared definition.
 
 **Actions policies**, **Rulesets**, and **Environments** have their own pages
 in the main navigation. Open a library and choose **New Actions policy**,
-**New ruleset**, or **New environment**. Enter its file name and, for a
-ruleset or environment, its GitHub name in **Target name**. The form also
+**New ruleset**, or **New environment**. Enter its file name and, for each
+definition, its GitHub name in **Target name**. The form also
 captures a definition from a repository, duplicates a saved definition, or
 imports YAML. **Export YAML** downloads an open definition. Definitions
 share profiles' browser, local-folder, and config-repository storage and sync.
 
-A profile's **Actions**, **Rulesets**, and **Environments** tabs let you
+A profile's **Actions policies**, **Rulesets**, and **Environments** tabs let you
 select existing shared definitions separately from creating inline items.
-When creating a ruleset or environment, you can also save it as a reusable
-definition and link it to the profile. The **Actions** tab offers the same
-choice for a policy. See [Shared definitions](web-app.md#shared-definitions)
+When creating an Actions policy, ruleset, or environment, you can also save it as a reusable
+definition and link it to the profile. Each choice saves only that named entry. See [Shared definitions](web-app.md#shared-definitions)
 for selecting, creating, and saving these links.
 
 **Edit shared definition** opens its library editor. **Used by** lists the
@@ -529,7 +550,7 @@ Select definitions in a library to move them to an existing folder or a
 
 Partial management is the default. A profile or reusable definition manages
 only the values it names. A staged apply can explicitly own Actions,
-autolinks, rulesets, environments, or labels. Select **Full section ownership**
+autolinks, Actions policies, rulesets, environments, or labels. Select **Full section ownership**
 while editing a one-time apply, or set `authoritative` on its staged file:
 
 ```yaml

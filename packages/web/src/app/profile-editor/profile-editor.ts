@@ -94,7 +94,9 @@ export const profileStore: EditorStore = {
 function canonicalReferences(file: string, references: ProfileReferences): ProfileReferences {
   const canonical = (named: string): string => relative(dirname(file), resolve(dirname(file), named));
   return {
-    ...(references.actions === undefined ? {} : { actions: canonical(references.actions) }),
+    ...(references.actions_policies === undefined
+      ? {}
+      : { actions_policies: references.actions_policies.map(canonical) }),
     ...(references.rulesets === undefined ? {} : { rulesets: references.rulesets.map(canonical) }),
     ...(references.environments === undefined ? {} : { environments: references.environments.map(canonical) }),
   };
@@ -282,7 +284,7 @@ type SettingDraft = { readonly value: unknown } | 'unset';
 
 const patternsPath = 'actions.selected_actions.patterns_allowed';
 
-const entryKeys = /^(?:rulesets|environments|labels)\//u;
+const entryKeys = /^(?:actions_policies|rulesets|environments|labels)\//u;
 
 function keyOf(path: readonly string[]): string {
   return path.join('.');
@@ -291,6 +293,7 @@ function keyOf(path: readonly string[]): string {
 type SourceSection = keyof ResolvedProfile['sources'];
 
 const entryNouns: Readonly<Record<EntryList, string>> = {
+  actions_policies: 'Actions policy',
   rulesets: 'ruleset',
   environments: 'environment',
   labels: 'label',
@@ -401,7 +404,7 @@ export class ProfileEditor {
   readonly #typed = signal<ReadonlyMap<string, TypedText>>(new Map());
   readonly #batchUndo = signal<BatchUndo | undefined>(undefined);
   readonly #entryEdits = new EntryEdits();
-  readonly #reusable = signal<readonly (ReusableDefinition & { readonly key: string })[]>([]);
+  readonly #reusable = signal<readonly (Omit<ReusableDefinition, 'targetName'> & { readonly key: string })[]>([]);
   #settingEditsSaveIsWriting: ReadonlyMap<string, SettingEdit> = new Map();
   #latestPreviewNumber = 0;
   /** Counts what a preview of a save can go out of date by, so one made before then is never shown. */
@@ -440,9 +443,6 @@ export class ProfileEditor {
 
   readonly reusableDefinitions = computed(() =>
     this.#reusable.value.flatMap((definition) => {
-      if (definition.section === 'actions') {
-        return [definition];
-      }
       const row = this.#entryEdits.rows.value[definition.section].find((entry) => entry.key === definition.key);
       return row !== undefined && row.source === undefined && row.entry !== undefined && row.entry['absent'] !== true
         ? [{ ...definition, targetName: typeof row.entry['name'] === 'string' ? row.entry['name'].trim() : '' }]
@@ -479,12 +479,6 @@ export class ProfileEditor {
         return { ...definition, message: 'Give each reusable definition a different name.' };
       }
       names.add(path);
-      if (definition.section === 'actions') {
-        const profile = this.#profileAsSaveWouldLeaveIt.value ?? this.#saved.value;
-        if (Object.keys(profile?.profile['actions'] ?? {}).length === 0) {
-          return { ...definition, message: 'Choose at least one Actions setting for the reusable policy.' };
-        }
-      }
     }
     return undefined;
   });
@@ -505,6 +499,7 @@ export class ProfileEditor {
           ...new Set([
             ...shown.chain,
             ...Object.values(shown.sources.actions),
+            ...Object.values(shown.sources.actions_policies),
             ...Object.values(shown.sources.rulesets),
             ...Object.values(shown.sources.environments),
           ]),
@@ -704,7 +699,7 @@ export class ProfileEditor {
             {
               key: `reusable ${reusable.key}`,
               name: 'Reusable definition',
-              where: reusable.section === 'actions' ? 'Actions' : entryListTitles[reusable.section],
+              where: entryListTitles[reusable.section],
               tab: reusable.section,
               message: reusable.message,
               canReset: false,
@@ -815,7 +810,12 @@ export class ProfileEditor {
       const rows = this.#entryEdits.rows.value[list];
       return { unsaved: rows.filter((row) => row.unsaved).length, canBeTakenOut: rows.filter(canBeTakenOut).length };
     };
-    return { rulesets: batch('rulesets'), environments: batch('environments'), labels: batch('labels') };
+    return {
+      actions_policies: batch('actions_policies'),
+      rulesets: batch('rulesets'),
+      environments: batch('environments'),
+      labels: batch('labels'),
+    };
   });
 
   readonly batchDone = computed(() => this.#batchUndo.value?.done);
@@ -825,7 +825,12 @@ export class ProfileEditor {
     const installation = this.#installation.value;
     const lacks = (list: EntryList): readonly string[] =>
       installation === undefined ? [] : permissionsMissingForProfilePart(installation, list);
-    return { rulesets: lacks('rulesets'), environments: lacks('environments'), labels: lacks('labels') };
+    return {
+      actions_policies: lacks('actions_policies'),
+      rulesets: lacks('rulesets'),
+      environments: lacks('environments'),
+      labels: lacks('labels'),
+    };
   });
 
   useInstallation(installation: AppAccess): void {

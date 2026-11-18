@@ -351,15 +351,13 @@ tab. Profile creation leaves these choices to the editor; duplication and
 import retain existing references. An existing editor previews and saves
 `references` with its settings, checks the original file text before
 replacing that mapping, and refuses drafting reference edits.
-`ProfileEditor` retains optional reusable choices for new entry rows and the
-Actions section, includes them in dirty and save guards, and clears them on
+`ProfileEditor` retains optional reusable choices for new Actions policy, ruleset, and environment rows, includes them in dirty and save guards, and clears them on
 reset or a successful write. Entry removal makes its choice inactive;
 batch undo restores it with the entry. The profile store's `saveReusable`
 capability keeps these controls out of standalone definition and staged
 apply editors. `save-reusable-definitions.ts` validates destination names
 and effective configuration in the profiles' write turn, writes definitions
-exclusively, and replaces the corresponding new inline entries or Actions
-settings with relative references. A failed profile write removes every
+exclusively, and replaces the corresponding new inline entries with relative references. A failed profile write removes every
 definition created by that attempt. Sync commits the complete change.
 Library links use effective source
 files for inherited values. Saving a definition refreshes the existing

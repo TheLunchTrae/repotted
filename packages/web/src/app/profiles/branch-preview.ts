@@ -100,7 +100,7 @@ export interface ProfilesFolderReader {
 
 const syncRecord = '.repotted-sync.json';
 const preferencesFile = '.repotted-preferences.json';
-const entryLists = ['autolinks', 'rulesets', 'environments', 'labels'] as const;
+const entryLists = ['autolinks', 'actions_policies', 'rulesets', 'environments', 'labels'] as const;
 type EntryList = (typeof entryLists)[number];
 
 function isEntryList(section: Section): section is EntryList {

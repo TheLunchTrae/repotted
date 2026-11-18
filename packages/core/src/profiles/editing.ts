@@ -16,7 +16,7 @@ import {
 } from './profile.js';
 import { draftSettings, profile, profileFile, profileReferences } from './schema.js';
 
-const lists = ['autolinks', 'rulesets', 'environments', 'labels'] as const;
+const lists = ['autolinks', 'actions_policies', 'rulesets', 'environments', 'labels'] as const;
 type EntryList = (typeof lists)[number];
 type Entry = Readonly<Record<string, unknown>>;
 
@@ -59,6 +59,7 @@ function emptySources(): EditingSources {
     custom_properties: {},
     pages: {},
     autolinks: {},
+    actions_policies: {},
     rulesets: {},
     environments: {},
     labels: {},
@@ -280,12 +281,9 @@ export async function readProfileForEditing(file: string, replacementText?: stri
   }
   const declaredReferences = layers[0]?.data['references'];
   const references: Record<string, unknown> = {};
-  const referencePath = profileReferences.shape.actions.unwrap();
+  const referencePath = z.string().min(1);
   if (isRecord(declaredReferences)) {
-    if (referencePath.safeParse(declaredReferences['actions']).success) {
-      references['actions'] = declaredReferences['actions'];
-    }
-    for (const section of ['rulesets', 'environments'] as const) {
+    for (const section of ['actions_policies', 'rulesets', 'environments'] as const) {
       const paths = declaredReferences[section];
       if (Array.isArray(paths)) {
         references[section] = paths.filter((named) => referencePath.safeParse(named).success);
