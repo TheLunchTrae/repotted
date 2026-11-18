@@ -13,15 +13,12 @@ import {
   type GitHub,
   listProfiles,
   type OwnerType,
-  type ProfileReferences,
-  profileReferences,
   parseRepo,
   readInstallationSettingsUrl,
   stringifyProfile,
   syncFolder,
   withExtends,
 } from '@repotted/core';
-import { isNode, parseDocument } from 'yaml';
 import * as z from 'zod/mini';
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from '../../engine/files.js';
@@ -68,8 +65,6 @@ export type NewProfileStart =
   | { readonly kind: 'import'; readonly text: string };
 
 export interface NewProfile {
-  /** Additional definition paths from the profiles folder, independent of the destination folder. */
-  readonly references?: ProfileReferences;
   readonly name: string;
   readonly definitionKind?: DefinitionKind;
   readonly targetName?: string;
@@ -699,39 +694,6 @@ export class Profiles {
           : `extends: ${JSON.stringify(relative(dirname(file), profile.start.base.file))}\n${
               profile.start.base.owner_type === null ? owner : ''
             }`;
-    }
-    if (profile.references !== undefined) {
-      try {
-        const document = parseDocument(text);
-        const [error] = document.errors;
-        if (error !== undefined) {
-          throw error;
-        }
-        const references = profile.references;
-        const declared: unknown = document.get('references');
-        const existing = profileReferences.parse((isNode(declared) ? declared.toJSON() : declared) ?? {});
-        const repoint = (named: string): string => relative(dirname(file), resolve(folder, named));
-        const combine = (saved: readonly string[] = [], picked: readonly string[] = []): string[] => [
-          ...new Set([
-            ...saved.map((named) => relative(dirname(file), resolve(dirname(file), named))),
-            ...picked.map(repoint),
-          ]),
-        ];
-        const rulesets = combine(existing.rulesets, references.rulesets);
-        const environments = combine(existing.environments, references.environments);
-        document.set(
-          'references',
-          document.createNode({
-            ...existing,
-            ...(references.actions === undefined ? {} : { actions: repoint(references.actions) }),
-            ...(rulesets.length === 0 ? {} : { rulesets }),
-            ...(environments.length === 0 ? {} : { environments }),
-          }),
-        );
-        text = document.toString({ lineWidth: 0 });
-      } catch (error) {
-        return messageOf(error);
-      }
     }
     return this.#work(async () => {
       // A capture whose form closed makes nothing. A profile asked for outright is made even so.
