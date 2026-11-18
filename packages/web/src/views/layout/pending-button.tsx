@@ -72,12 +72,12 @@ export function PendingButton({
         onClick?.(event);
       }}
     >
-      <span class="pending-spinner-slot" aria-hidden="true">
-        {pending && <span class="pending-spinner" />}
-      </span>
       <span class="pending-label">
         <span aria-hidden={pending}>{idle.current}</span>
-        <span aria-hidden={!pending}>{pendingLabel}</span>
+        <span class="pending-label-busy" aria-hidden={!pending}>
+          <span class="pending-spinner" aria-hidden="true" />
+          {pendingLabel}
+        </span>
       </span>
     </button>
   );

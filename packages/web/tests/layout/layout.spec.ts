@@ -476,11 +476,19 @@ test('retrying a failed first sync keeps an empty cache in the loading state', a
   await expect(page.locator('.empty')).toBeVisible();
 });
 
-test('a pending refresh keeps its width and focus and blocks another submission', async ({ page }) => {
+test('a refresh centres its idle label and keeps its width and focus while pending', async ({ page }) => {
   await page.goto('/');
   const refresh = page.getByRole('button', { name: 'Refresh', exact: true });
   await page.getByRole('checkbox', { name: 'Select lunch/app', exact: true }).waitFor();
   const before = await refresh.boundingBox();
+  const labelOffset = await refresh.evaluate((button) => {
+    const bounds = button.getBoundingClientRect();
+    const label = document.createRange();
+    label.selectNodeContents(button.querySelector('.pending-label > span')!);
+    const text = label.getBoundingClientRect();
+    return Math.abs(text.x + text.width / 2 - (bounds.x + bounds.width / 2));
+  });
+  expect(labelOffset).toBeLessThan(1);
   await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
   await refresh.focus();
   await refresh.press('Enter');
