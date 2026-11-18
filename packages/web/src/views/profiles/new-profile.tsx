@@ -383,7 +383,6 @@ export function NewProfileForm({
       <div class="form-actions">
         <PendingButton
           pending={creating}
-          pendingLabel={kind === 'repository' ? 'Capturing…' : 'Creating…'}
           class="button button-primary"
           type="submit"
           disabled={working || (kind === 'import' && importText === '') || problem !== undefined || start === undefined}

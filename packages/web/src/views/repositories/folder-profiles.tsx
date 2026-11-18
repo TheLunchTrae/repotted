@@ -281,7 +281,6 @@ export function FolderProfilesDialog({
               type="submit"
               value="save"
               pending={saving === 'save'}
-              pendingLabel="Saving…"
               disabled={!settings.canSave.value}
             >
               Save
@@ -291,7 +290,6 @@ export function FolderProfilesDialog({
               type="submit"
               value="save-and-apply"
               pending={saving === 'save-and-apply'}
-              pendingLabel="Saving…"
               disabled={!settings.canSaveAndApply.value}
             >
               Save and apply

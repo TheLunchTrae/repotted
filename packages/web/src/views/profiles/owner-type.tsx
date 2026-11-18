@@ -114,7 +114,6 @@ export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): 
         <div class="form-actions">
           <PendingButton
             pending={changing}
-            pendingLabel="Saving…"
             class="button button-primary"
             type="submit"
             value="change"

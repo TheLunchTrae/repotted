@@ -151,7 +151,6 @@ export function FoundConfig({ discovery, profiles }: FoundConfigProps): JSX.Elem
       <div class="notice-actions">
         <PendingButton
           pending={usingRepository}
-          pendingLabel="Connecting…"
           class="button button-primary"
           type="submit"
           disabled={state.busy || chosen === undefined}
@@ -160,7 +159,6 @@ export function FoundConfig({ discovery, profiles }: FoundConfigProps): JSX.Elem
         </PendingButton>
         <PendingButton
           pending={keepingBrowser}
-          pendingLabel="Moving…"
           class="button button-quiet"
           type="button"
           disabled={state.busy}

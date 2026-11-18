@@ -59,7 +59,6 @@ export function RepairProfile({
           mainAction={
             <PendingButton
               pending={repair.saving.value}
-              pendingLabel="Saving…"
               class="button button-primary"
               type="button"
               disabled={!repair.canSave.value}

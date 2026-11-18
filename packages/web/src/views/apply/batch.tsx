@@ -386,7 +386,6 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
             mainAction={
               <PendingButton
                 pending={state.kind === 'applying'}
-                pendingLabel="Applying…"
                 class="button button-primary"
                 type="button"
                 disabled={state.kind !== 'reviewed' || (ready.length === 0 && !batch.canRecordWithoutChanges.value)}
@@ -425,7 +424,6 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                 </button>
                 <PendingButton
                   pending={reviewingAgain}
-                  pendingLabel="Reviewing…"
                   class="button"
                   type="button"
                   disabled={reviewingOrApplying || !batch.canReviewAgain.value}
