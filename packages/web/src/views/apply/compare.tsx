@@ -1,6 +1,7 @@
 import type { JSX } from 'preact';
 import { useRef } from 'preact/hooks';
 import { Spinner } from '../layout/loading.js';
+import { PendingButton } from '../layout/pending-button.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { CompareRow, Comparison } from '../../app/apply/comparison.js';
@@ -94,9 +95,11 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
             </p>
           </div>
         </div>
-        {state.kind !== 'comparing' && (
+        {
           <p>
-            <button
+            <PendingButton
+              pending={state.kind === 'comparing'}
+              pendingLabel="Comparing…"
               class="button"
               type="button"
               onClick={() => {
@@ -104,9 +107,9 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
               }}
             >
               Compare again
-            </button>
+            </PendingButton>
           </p>
-        )}
+        }
         {state.kind === 'failed' && (
           <p class="notice notice-problem" role="alert">
             {state.message}

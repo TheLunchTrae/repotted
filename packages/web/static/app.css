@@ -244,6 +244,50 @@ body:has(dialog[open]) .toasts {
   background: var(--tint);
 }
 
+.pending-label {
+  display: inline-grid;
+}
+
+.pending-label > span {
+  grid-area: 1 / 1;
+}
+
+.pending-label > span[aria-hidden='true'] {
+  visibility: hidden;
+}
+
+.pending-spinner-slot {
+  display: inline-flex;
+  flex: none;
+  width: 1em;
+  margin-inline-end: 6px;
+}
+
+.pending-spinner {
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  animation: pending-turn 850ms linear infinite;
+}
+
+.button[aria-busy='true'] {
+  cursor: progress;
+}
+
+@keyframes pending-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-spinner {
+    animation: none;
+  }
+}
+
 .button:disabled,
 .button[aria-disabled='true'] {
   color: var(--muted);

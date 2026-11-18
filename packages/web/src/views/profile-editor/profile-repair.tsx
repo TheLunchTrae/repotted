@@ -1,4 +1,5 @@
 import type { JSX } from 'preact';
+import { PendingButton } from '../layout/pending-button.js';
 
 import type { ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import { BarActions } from '../layout/action-bar.js';
@@ -56,7 +57,9 @@ export function RepairProfile({
         </span>
         <BarActions
           mainAction={
-            <button
+            <PendingButton
+              pending={repair.saving.value}
+              pendingLabel="Saving…"
               class="button button-primary"
               type="button"
               disabled={!repair.canSave.value}
@@ -65,7 +68,7 @@ export function RepairProfile({
               }}
             >
               Save
-            </button>
+            </PendingButton>
           }
           otherActions={
             <button

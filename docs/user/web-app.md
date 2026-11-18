@@ -27,6 +27,11 @@ An initial repository or profile list uses placeholder rows until the read
 finishes. Refreshing keeps the current results visible. A batch apply shows
 how many repositories have finished.
 
+Buttons that wait for work show a spinner and name the work under way.
+They keep their width and keyboard focus while waiting, block another
+submission, and become available again when their other requirements allow
+it. Refresh cooldowns remain separate from an active request.
+
 ## On a phone
 
 In a window 760 pixels wide or less, such as a phone's, the app lays itself

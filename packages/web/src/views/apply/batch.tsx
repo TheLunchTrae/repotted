@@ -1,6 +1,7 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Spinner } from '../layout/loading.js';
+import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { BatchApply, BatchMemberView } from '../../app/apply/batch-apply.js';
 import { type CompareRow, exclusionLabel, sectionTitles } from '../../app/apply/comparison.js';
@@ -201,6 +202,7 @@ interface BatchProps {
 }
 
 export function BatchPage({ batch, router }: BatchProps): JSX.Element {
+  const [reviewingAgain, reviewAgain] = usePendingAction();
   const state = batch.state.value;
   const [confirming, setConfirming] = useState(false);
   const back = (
@@ -382,7 +384,9 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
         <div class="save-bar">
           <BarActions
             mainAction={
-              <button
+              <PendingButton
+                pending={state.kind === 'applying'}
+                pendingLabel="Applying…"
                 class="button button-primary"
                 type="button"
                 disabled={state.kind !== 'reviewed' || (ready.length === 0 && !batch.canRecordWithoutChanges.value)}
@@ -399,7 +403,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                   : ready.length === 0
                     ? 'Apply'
                     : `Apply to ${repositories(ready.length)}`}
-              </button>
+              </PendingButton>
             }
             otherActions={
               <>
@@ -419,16 +423,18 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                 >
                   Discard batch
                 </button>
-                <button
+                <PendingButton
+                  pending={reviewingAgain}
+                  pendingLabel="Reviewing…"
                   class="button"
                   type="button"
                   disabled={reviewingOrApplying || !batch.canReviewAgain.value}
                   onClick={() => {
-                    run(batch.reviewAgain());
+                    run(reviewAgain(() => batch.reviewAgain()));
                   }}
                 >
                   Review again
-                </button>
+                </PendingButton>
               </>
             }
           />

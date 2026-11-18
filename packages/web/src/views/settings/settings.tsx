@@ -1,6 +1,7 @@
 import type { JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { Loading } from '../layout/loading.js';
+import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { Account, User } from '../../app/account/account.js';
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
@@ -35,6 +36,9 @@ function ConnectForm({ profiles, repositories, onClose, onConnected }: ConnectFo
     source.path === path.trim().replace(/^\/+|\/+$/gu, '');
 
   const connect = async (): Promise<void> => {
+    if (working) {
+      return;
+    }
     setWorking(true);
     const problem = await profiles.connect(repository, path, addLocal && !alreadyKeptThere);
     setWorking(false);
@@ -114,9 +118,15 @@ function ConnectForm({ profiles, repositories, onClose, onConnected }: ConnectFo
         </p>
       )}
       <div class="form-actions">
-        <button class="button button-primary" type="submit" disabled={working}>
+        <PendingButton
+          pending={working}
+          pendingLabel="Connecting…"
+          class="button button-primary"
+          type="submit"
+          disabled={working}
+        >
           Use this repository
-        </button>
+        </PendingButton>
         <button class="button button-quiet" type="button" disabled={working} onClick={onClose}>
           Cancel
         </button>
@@ -137,7 +147,7 @@ interface ProtectionProps {
   readonly protection: ConfigProtection;
   /** The repository the profiles are kept in. */
   readonly repository: string;
-  readonly onReview: () => void;
+  readonly onReview: () => Promise<void>;
 }
 
 /** The offer to protect the repository the profiles were just put in, until it is taken or put off. */
@@ -147,6 +157,7 @@ function ProtectionOffer({
   onReview,
   onDismiss,
 }: ProtectionProps & { readonly onDismiss: () => void }): JSX.Element | null {
+  const [reviewing, review] = usePendingAction();
   const state = protection.state.value;
   if (state.kind !== 'checked' || state.repository !== repository || state.changeCount === 0) {
     return null;
@@ -161,9 +172,17 @@ function ProtectionOffer({
         default branch and keeps workflow tokens read-only. You review the changes before anything is applied.
       </p>
       <div class="notice-actions">
-        <button class="button button-primary" type="button" onClick={onReview}>
+        <PendingButton
+          pending={reviewing}
+          pendingLabel="Preparing…"
+          class="button button-primary"
+          type="button"
+          onClick={() => {
+            run(review(onReview));
+          }}
+        >
           Review protection…
-        </button>
+        </PendingButton>
         <button class="button button-quiet" type="button" onClick={onDismiss}>
           Not now
         </button>
@@ -174,6 +193,7 @@ function ProtectionOffer({
 
 /** Whether the repository the profiles are kept in has Repotted's built-in protection, with the way to apply it. */
 function ProtectionRow({ protection, repository, onReview }: ProtectionProps): JSX.Element | null {
+  const [reviewing, review] = usePendingAction();
   const state = protection.state.value;
   if (state.kind === 'idle' || state.kind === 'none' || state.repository !== repository) {
     return null;
@@ -202,8 +222,10 @@ function ProtectionRow({ protection, repository, onReview }: ProtectionProps): J
           </span>
         )}
       </div>
-      {state.kind === 'failed' ? (
-        <button
+      {state.kind === 'failed' || state.kind === 'checking' ? (
+        <PendingButton
+          pending={state.kind === 'checking'}
+          pendingLabel="Checking…"
           class="button button-quiet"
           type="button"
           onClick={() => {
@@ -211,13 +233,20 @@ function ProtectionRow({ protection, repository, onReview }: ProtectionProps): J
           }}
         >
           Check again
-        </button>
+        </PendingButton>
       ) : (
-        state.kind === 'checked' &&
         state.changeCount > 0 && (
-          <button class="button button-quiet" type="button" onClick={onReview}>
+          <PendingButton
+            pending={reviewing}
+            pendingLabel="Preparing…"
+            class="button button-quiet"
+            type="button"
+            onClick={() => {
+              run(review(onReview));
+            }}
+          >
             Review protection…
-          </button>
+          </PendingButton>
         )
       )}
     </div>
@@ -231,7 +260,7 @@ interface SettingsProps {
   readonly repositories: Repositories;
   readonly keeping: Keeping;
   readonly protection: ConfigProtection;
-  readonly onReviewProtection: () => void;
+  readonly onReviewProtection: () => Promise<void>;
   readonly onSignOut: () => void;
 }
 
@@ -246,6 +275,9 @@ export function SettingsPage({
   onSignOut,
 }: SettingsProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
+  const [refreshing, refresh] = usePendingAction();
+  const [choosingFolder, chooseFolder] = usePendingAction();
+  const [movingToBrowser, moveToBrowser] = usePendingAction();
   const [connecting, setConnecting] = useState(false);
   // The repository the profiles were just put in, which the protection is offered for until it is put off.
   const [offered, setOffered] = useState<string | undefined>(undefined);
@@ -297,9 +329,16 @@ export function SettingsPage({
               <a class="button button-quiet" href={repottedAppInstallUrl} target="_blank" rel="noreferrer">
                 Add repositories
               </a>
-              <button class="button button-quiet" type="button" disabled={account.signingOut.value} onClick={onSignOut}>
+              <PendingButton
+                pending={account.signingOut.value}
+                pendingLabel="Signing out…"
+                class="button button-quiet"
+                type="button"
+                disabled={account.signingOut.value}
+                onClick={onSignOut}
+              >
                 Sign out
-              </button>
+              </PendingButton>
             </div>
           </div>
         </section>
@@ -382,16 +421,18 @@ export function SettingsPage({
                       Open on GitHub
                     </a>
                   )}
-                  <button
+                  <PendingButton
+                    pending={refreshing}
+                    pendingLabel="Syncing…"
                     class="button button-quiet"
                     type="button"
                     disabled={busy}
                     onClick={() => {
-                      run(profiles.refresh().then(() => confirm('Profiles refreshed.')));
+                      run(refresh(() => profiles.refresh().then(() => confirm('Profiles refreshed.'))));
                     }}
                   >
                     {onGitHub || inFolder ? 'Sync now' : 'Refresh'}
-                  </button>
+                  </PendingButton>
                 </div>
                 {kept !== undefined && (
                   <ProtectionRow protection={protection} repository={kept} onReview={onReviewProtection} />
@@ -445,23 +486,27 @@ export function SettingsPage({
                     )}
                   </div>
                   {profiles.foldersSupported && (
-                    <button
+                    <PendingButton
+                      pending={choosingFolder}
+                      pendingLabel="Opening folder…"
                       class="button button-quiet"
                       type="button"
                       disabled={busy}
                       onClick={() => {
                         const before = profiles.source.value;
                         run(
-                          profiles.useFolder(addToFolder && !inFolder).then((failure) => {
-                            if (failure === undefined && profiles.source.value !== before) {
-                              confirm('Profiles folder connected.');
-                            }
-                          }),
+                          chooseFolder(() =>
+                            profiles.useFolder(addToFolder && !inFolder).then((failure) => {
+                              if (failure === undefined && profiles.source.value !== before) {
+                                confirm('Profiles folder connected.');
+                              }
+                            }),
+                          ),
                         );
                       }}
                     >
                       {inFolder ? 'Change folder…' : 'Choose a folder…'}
-                    </button>
+                    </PendingButton>
                   )}
                 </div>
                 {(onGitHub || inFolder) && (
@@ -474,22 +519,26 @@ export function SettingsPage({
                           : 'The folder keeps every profile it has.'}
                       </span>
                     </div>
-                    <button
+                    <PendingButton
+                      pending={movingToBrowser}
+                      pendingLabel="Moving…"
                       class="button button-quiet"
                       type="button"
                       disabled={busy}
                       onClick={() => {
                         run(
-                          profiles.keepInBrowser().then(() => {
-                            if (profiles.source.value.kind === 'browser') {
-                              confirm('Profiles moved to this browser.');
-                            }
-                          }),
+                          moveToBrowser(() =>
+                            profiles.keepInBrowser().then(() => {
+                              if (profiles.source.value.kind === 'browser') {
+                                confirm('Profiles moved to this browser.');
+                              }
+                            }),
+                          ),
                         );
                       }}
                     >
                       Use this browser
-                    </button>
+                    </PendingButton>
                   </div>
                 )}
               </div>

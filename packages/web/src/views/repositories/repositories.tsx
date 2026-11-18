@@ -1,6 +1,7 @@
 import { type InstallationMissingPermissions, permissionsInProse } from '@repotted/core';
 import type { JSX, RefObject } from 'preact';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { PendingButton } from '../layout/pending-button.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { ComparedProfile } from '../../app/apply/comparison.js';
@@ -327,7 +328,9 @@ function RefreshButton({ repositories }: { readonly repositories: Repositories }
   const why = useId();
   return (
     <>
-      <button
+      <PendingButton
+        pending={repositories.loading.value}
+        pendingLabel="Refreshing…"
         class="button refresh"
         type="button"
         aria-disabled={off ? 'true' : undefined}
@@ -350,7 +353,7 @@ function RefreshButton({ repositories }: { readonly repositories: Repositories }
             &nbsp;in {countdown(repositories.secondsUntilRefreshCanRun.value)}
           </span>
         )}
-      </button>
+      </PendingButton>
       {wait !== undefined && (
         <span id={why} class="visually-hidden">
           {wait.rateLimited

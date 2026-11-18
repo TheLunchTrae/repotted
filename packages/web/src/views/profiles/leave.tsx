@@ -1,5 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { PendingButton } from '../layout/pending-button.js';
 
 import type { Profiles } from '../../app/profiles/profiles.js';
 import { run } from '../layout/run.js';
@@ -13,6 +14,7 @@ interface LeaveProps {
 export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   const [working, setWorking] = useState(false);
+  const [saving, setSaving] = useState(true);
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const [savedButNotSynced, setSavedButNotSynced] = useState(false);
   const names = profiles.unsavedNames.value;
@@ -24,6 +26,10 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
     onLeave();
   };
   const leave = async (save: boolean): Promise<void> => {
+    if (working) {
+      return;
+    }
+    setSaving(save);
     setWorking(true);
     setProblem(undefined);
     try {
@@ -98,7 +104,9 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
           </button>
         ) : (
           <>
-            <button
+            <PendingButton
+              pending={working && saving}
+              pendingLabel="Saving…"
               class="button button-primary"
               type="button"
               disabled={working}
@@ -108,8 +116,10 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
               }}
             >
               Save and sign out
-            </button>
-            <button
+            </PendingButton>
+            <PendingButton
+              pending={working && !saving}
+              pendingLabel="Discarding…"
               class="button"
               type="button"
               disabled={working}
@@ -118,7 +128,7 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
               }}
             >
               Discard and sign out
-            </button>
+            </PendingButton>
           </>
         )}
         <button

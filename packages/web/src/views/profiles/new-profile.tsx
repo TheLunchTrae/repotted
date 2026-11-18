@@ -1,6 +1,7 @@
 import type { DefinitionKind, ownerTypes } from '@repotted/core';
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { Router } from '../../app/navigation/router.js';
 import { definitionTypes } from '../../app/profiles/definition-types.js';
@@ -37,7 +38,9 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
   const [pickedBase, setBaseFile] = useState<string | undefined>(undefined);
   const [pickedFrom, setFrom] = useState(repositoryToCapture);
   const [owner, setOwner] = useState<OwnerChoice>('any');
-  const [working, setWorking] = useState(false);
+  const [readingFile, setReadingFile] = useState(false);
+  const [creating, createProfile] = usePendingAction();
+  const working = readingFile || creating;
   const [error, setError] = useState<string | undefined>(undefined);
   const formClosed = useRef(new AbortController());
   const importRead = useRef(0);
@@ -78,10 +81,9 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
   const problem = working || name.trim() === '' ? undefined : profiles.nameProblem(name, folder);
 
   const create = async (): Promise<void> => {
-    if (start === undefined) {
+    if (working || start === undefined) {
       return;
     }
-    setWorking(true);
     setError(undefined);
     const failure = await profiles.create(
       {
@@ -101,7 +103,6 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
     if (closed) {
       return;
     }
-    setWorking(false);
     if (failure === undefined) {
       router.go('/profiles');
     } else {
@@ -115,7 +116,7 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
       aria-labelledby="new-profile-heading"
       onSubmit={(event) => {
         event.preventDefault();
-        run(create());
+        run(createProfile(create));
       }}
     >
       <div class="page-heading">
@@ -323,7 +324,7 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
             const file = event.currentTarget.files?.[0];
             if (file !== undefined) {
               const request = ++importRead.current;
-              setWorking(true);
+              setReadingFile(true);
               setKind('import');
               setImportText('');
               run(
@@ -333,14 +334,14 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
                       return;
                     }
                     setImportText(text);
-                    setWorking(false);
+                    setReadingFile(false);
                   },
                   (error: unknown) => {
                     if (formClosed.current.signal.aborted || importRead.current !== request) {
                       return;
                     }
                     setError(error instanceof Error ? error.message : String(error));
-                    setWorking(false);
+                    setReadingFile(false);
                   },
                 ),
               );
@@ -377,13 +378,15 @@ export function NewProfileForm({ profiles, repositories, router, repositoryToCap
         </p>
       )}
       <div class="form-actions">
-        <button
+        <PendingButton
+          pending={creating}
+          pendingLabel={kind === 'repository' ? 'Capturing…' : 'Creating…'}
           class="button button-primary"
           type="submit"
           disabled={working || (kind === 'import' && importText === '') || problem !== undefined || start === undefined}
         >
           {kind === 'repository' ? 'Capture' : 'Create'}
-        </button>
+        </PendingButton>
         <button
           class="button button-quiet"
           type="button"

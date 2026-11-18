@@ -1,6 +1,7 @@
 import { permissionsInProse } from '@repotted/core';
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import { entryListTitles, entryLists, type SaveMode } from '../../app/profile-editor/entry-edits.js';
 import type { ProfileEditor, SaveProblem, SettingFilter, SettingRow } from '../../app/profile-editor/profile-editor.js';
@@ -303,6 +304,11 @@ interface ProfileSettingsProps {
 }
 
 export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets }: ProfileSettingsProps): JSX.Element {
+  const [savingChanges, saveChanges] = usePendingAction();
+  const [savingDraft, saveDraft] = usePendingAction();
+  const saveWithFeedback = async (mode?: Parameters<EditorSaving['save']>[0]): Promise<void> => {
+    await (mode === 'draft' ? saveDraft(() => saving.save(mode)) : saveChanges(() => saving.save(mode)));
+  };
   const sections = editor.sections.value;
   const supportedLists = entryLists.filter(
     (list) => editor.definitionSection.value === undefined || list === editor.definitionSection.value,
@@ -378,16 +384,18 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
     }
   };
   const save = (
-    <button
+    <PendingButton
+      pending={savingChanges}
+      pendingLabel="Saving…"
       class={saving.primaryActionInsteadOfSave === undefined ? 'button button-primary' : 'button'}
       type="button"
       disabled={!editor.canSave.value}
       onClick={() => {
-        run(saving.save());
+        run(saveWithFeedback());
       }}
     >
       {saving.saveLabel ?? 'Save'}
-    </button>
+    </PendingButton>
   );
   return (
     <>
@@ -612,7 +620,14 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
           )}
         </>
       )}
-      {preview !== undefined && <SavePreviewDialog name={name} editor={editor} saving={saving} preview={preview} />}
+      {preview !== undefined && (
+        <SavePreviewDialog
+          name={name}
+          editor={editor}
+          saving={{ ...saving, save: saveWithFeedback }}
+          preview={preview}
+        />
+      )}
       <div class="save-bar">
         {saveError !== undefined && (
           <p class="problem" role="alert">
@@ -659,16 +674,18 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
                   >
                     Preview
                   </button>
-                  <button
+                  <PendingButton
+                    pending={savingDraft}
+                    pendingLabel="Saving…"
                     class="button"
                     type="button"
                     disabled={!editor.canSaveAsDraft.value}
                     onClick={() => {
-                      run(saving.save('draft'));
+                      run(saveWithFeedback('draft'));
                     }}
                   >
                     Save as draft
-                  </button>
+                  </PendingButton>
                 </>
               )}
               {saving.primaryActionInsteadOfSave !== undefined && save}

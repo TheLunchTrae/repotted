@@ -1,10 +1,11 @@
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
+import { PendingButton, usePendingAction } from '../layout/pending-button.js';
+import { run } from '../layout/run.js';
 
 import type { ConfigDiscovery, FoundRepository } from '../../app/profiles/config-discovery.js';
 import { configTopic } from '../../app/profiles/config-marker.js';
 import type { Profiles } from '../../app/profiles/profiles.js';
-import { run } from '../layout/run.js';
 
 interface FoundConfigProps {
   readonly discovery: ConfigDiscovery;
@@ -20,6 +21,8 @@ function folderText(folder: string | undefined): string {
 
 /** Above every page, since a new browser shows a list of repositories before anyone opens Settings. */
 export function FoundConfig({ discovery, profiles }: FoundConfigProps): JSX.Element | null {
+  const [usingRepository, useRepository] = usePendingAction();
+  const [keepingBrowser, keepBrowser] = usePendingAction();
   const state = discovery.state.value;
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const [typedFolder, setTypedFolder] = useState('');
@@ -70,7 +73,7 @@ export function FoundConfig({ discovery, profiles }: FoundConfigProps): JSX.Elem
       onSubmit={(event) => {
         event.preventDefault();
         if (chosen !== undefined) {
-          run(discovery.use(chosen.repository, folder, addBrowserProfiles));
+          run(useRepository(() => discovery.use(chosen.repository, folder, addBrowserProfiles)));
         }
       }}
     >
@@ -146,19 +149,27 @@ export function FoundConfig({ discovery, profiles }: FoundConfigProps): JSX.Elem
         </p>
       )}
       <div class="notice-actions">
-        <button class="button button-primary" type="submit" disabled={state.busy || chosen === undefined}>
+        <PendingButton
+          pending={usingRepository}
+          pendingLabel="Connecting…"
+          class="button button-primary"
+          type="submit"
+          disabled={state.busy || chosen === undefined}
+        >
           Use this repository
-        </button>
-        <button
+        </PendingButton>
+        <PendingButton
+          pending={keepingBrowser}
+          pendingLabel="Moving…"
           class="button button-quiet"
           type="button"
           disabled={state.busy}
           onClick={() => {
-            run(discovery.keepInBrowser());
+            run(keepBrowser(() => discovery.keepInBrowser()));
           }}
         >
           Keep profiles in this browser
-        </button>
+        </PendingButton>
         <button
           class="button button-quiet"
           type="button"
