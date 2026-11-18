@@ -250,20 +250,22 @@ body:has(dialog[open]) .toasts {
 
 .pending-label > span {
   grid-area: 1 / 1;
+  justify-self: center;
+}
+
+.pending-label-busy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .pending-label > span[aria-hidden='true'] {
   visibility: hidden;
 }
 
-.pending-spinner-slot {
-  display: inline-flex;
-  flex: none;
-  width: 1em;
-  margin-inline-end: 6px;
-}
-
 .pending-spinner {
+  flex: none;
   width: 1em;
   height: 1em;
   border: 2px solid currentColor;

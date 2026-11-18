@@ -253,9 +253,9 @@ show decorative skeleton rows and one accessible status. A failed initial read
 keeps its error instead of drawing an empty state. Refreshes retain existing data. Batch progress uses completed
 repository counts from the apply state. Reduced motion stops spinner rotation.
 
-`views/layout/pending-button.tsx` owns pending button presentation. Both
-labels reserve space in the same grid cell, and a spinner slot keeps the
-button width stable. Pending buttons stay focusable but suppress activation
+`views/layout/pending-button.tsx` owns pending button presentation. The idle
+label and the pending label with its spinner share a grid cell, keeping both
+centred and the button width stable. Pending buttons stay focusable but suppress activation
 and expose `aria-busy` and `aria-disabled`. Existing operation signals drive
 buttons with a dedicated state. `usePendingAction` owns a control-local lock
 for shared profile operations; it starts work from the user gesture, releases
