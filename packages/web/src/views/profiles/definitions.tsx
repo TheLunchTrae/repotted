@@ -1,6 +1,6 @@
 import type { DefinitionKind } from '@repotted/core';
 import type { JSX } from 'preact';
-import { useEffect } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { Router } from '../../app/navigation/router.js';
 import { definitionTypes } from '../../app/profiles/definition-types.js';
@@ -10,7 +10,7 @@ import { resolve } from '../../engine/path.js';
 import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { NewProfileForm } from './new-profile.js';
-import { Banners, Profile } from './profiles.js';
+import { Banners, DeleteProfiles, FolderNameDialog, Profile, type ProfilesDialog, SelectedPanel } from './profiles.js';
 
 export function DefinitionsPage({
   kind,
@@ -31,6 +31,9 @@ export function DefinitionsPage({
   const named = query.get('definition');
   const creating = query.has('new');
   const definitions = profiles.definitions.value.filter((listing) => listing.kind === kind);
+  const batch = profiles.batch.value.filter((listing) => listing.kind === kind);
+  const [dialog, setDialog] = useState<ProfilesDialog | undefined>(undefined);
+  const heading = useRef<HTMLHeadingElement>(null);
   const listing = definitions.find((item) => item.file === resolve(profiles.folder.value, named ?? ''));
   useEffect(() => {
     if (listing !== undefined) {
@@ -43,7 +46,7 @@ export function DefinitionsPage({
       ? []
       : profiles.consumerNames(listing).filter((name) => !users.some((user) => user.name === name));
   return (
-    <div class="page">
+    <div class={`page${!creating && named === null && batch.length > 0 ? ' page-with-panel' : ''}`}>
       {creating ? (
         <div class="profiles-open">
           <div class="profiles-open-top">
@@ -128,7 +131,9 @@ export function DefinitionsPage({
         <section class="page-body">
           <div class="page-heading">
             <div>
-              <h1>{library.title}</h1>
+              <h1 ref={heading} tabIndex={-1}>
+                {library.title}
+              </h1>
               <p class="muted">Create a definition once and use it across profiles.</p>
             </div>
             <Link class="button button-primary" router={router} to={`${library.path}?new`}>
@@ -140,7 +145,14 @@ export function DefinitionsPage({
             {definitions.map((definition) => {
               const count = profiles.dependents(definition).length;
               return (
-                <li key={definition.file}>
+                <li key={definition.file} class="selectable-row">
+                  <input
+                    class="select-box"
+                    type="checkbox"
+                    aria-label={`Select ${profiles.pathOf(definition).replace(/\.ya?ml$/iu, '')}`}
+                    checked={profiles.isInBatch(definition)}
+                    onChange={(event) => profiles.selectForBatch([definition], event.currentTarget.checked)}
+                  />
                   <Link
                     class="row"
                     router={router}
@@ -163,6 +175,24 @@ export function DefinitionsPage({
             </p>
           )}
         </section>
+      )}
+      {!creating && named === null && batch.length > 0 && (
+        <SelectedPanel
+          profiles={profiles}
+          selection={batch}
+          onDialog={setDialog}
+          onMoved={() => heading.current?.focus()}
+          onDeselectAll={() => {
+            profiles.selectForBatch(batch, false);
+            heading.current?.focus();
+          }}
+        />
+      )}
+      {dialog?.kind === 'delete' && (
+        <DeleteProfiles listings={dialog.listings} profiles={profiles} onClose={() => setDialog(undefined)} />
+      )}
+      {(dialog?.kind === 'new-folder' || dialog?.kind === 'rename') && (
+        <FolderNameDialog profiles={profiles} dialog={dialog} onClose={() => setDialog(undefined)} />
       )}
     </div>
   );

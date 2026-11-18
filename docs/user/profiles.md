@@ -507,11 +507,19 @@ other profile changes, preserving the references in YAML. **Remove** detaches
 a reference without making a copy. Reference changes cannot be saved as
 drafts. Inline values override referenced values.
 
+When duplicating or importing a profile, its existing references are kept.
+The creation form adds selected rulesets and environments and replaces the
+Actions policy only when you select one. Remove unwanted references after
+creation. Unsaved reference changes preview the resolved entries; save those
+changes before editing the entries.
+
 **Edit shared definition** opens its library editor. **Used by** lists the
 profiles using it, and assigned repositories are shown too. Saving a
 definition refreshes its consumers without discarding their unsaved edits;
 repository changes still need reviewed apply. Remove references and
 assignments before deleting a definition. Moving it updates its references.
+Select definitions in a library to move them to an existing folder or a
+**New folder**. The selection applies only to that library.
 
 ## Full section ownership
 

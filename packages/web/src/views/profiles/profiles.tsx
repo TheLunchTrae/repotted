@@ -26,7 +26,7 @@ const ownerTypes = {
   organization: 'For organizations',
 } as const;
 
-type ProfilesDialog =
+export type ProfilesDialog =
   | { readonly kind: 'delete'; readonly listings: readonly ProfileListing[] }
   | {
       readonly kind: 'new-folder';
@@ -191,7 +191,7 @@ interface FolderNameProps {
   readonly onClose: (landed: string | undefined) => void;
 }
 
-function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps): JSX.Element {
+export function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
   const dialog = useModal();
   const renaming = asked.kind === 'rename' ? asked : undefined;
@@ -200,6 +200,10 @@ function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps)
   const landed = useRef<string | undefined>(undefined);
   const [moving, setMoving] = useState(false);
   const count = asked.kind === 'new-folder' ? asked.listings.length : 0;
+  const noun =
+    asked.kind === 'new-folder' && asked.listings.every((listing) => listing.kind !== undefined)
+      ? 'definition'
+      : 'profile';
   return (
     <dialog
       class="dialog"
@@ -252,9 +256,9 @@ function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps)
         <h2 id="folder-name-heading">{renaming === undefined ? 'New folder' : `Rename ${renaming.path}`}</h2>
         <p class="muted">
           {renaming === undefined
-            ? `${count === 1 ? 'The selected profile moves' : `The ${count} selected profiles move`} into it. For a folder inside another, give both, as apps/desktop.`
-            : 'Every profile in it moves with it.'}{' '}
-          Profiles that extend them are pointed at the new place.
+            ? `${count === 1 ? `The selected ${noun} moves` : `The ${count} selected ${noun}s move`} into it. For a folder inside another, give both, as apps/desktop.`
+            : 'Every profile and definition in it moves with it.'}{' '}
+          Profiles that reference or extend them are pointed at the new place.
         </p>
         <div class="form-field">
           <label for="folder-name">Name</label>
@@ -303,7 +307,7 @@ interface DeleteProps {
   readonly onClose: (deleted: boolean) => void;
 }
 
-function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Element {
+export function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
   const dialog = useModal();
   const [error, setError] = useState<string | undefined>(undefined);
@@ -312,6 +316,7 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
   const dependents = profiles.dependents(...listings);
   const source = profiles.source.value.kind;
   const one = listings.length === 1 ? listings[0] : undefined;
+  const noun = listings.every((listing) => listing.kind !== undefined) ? 'definition' : 'profile';
   return (
     <dialog
       class="dialog"
@@ -355,7 +360,7 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
           }
         }}
       >
-        <h2 id="delete-heading">{one === undefined ? `Delete ${listings.length} profiles?` : `Delete ${one.name}?`}</h2>
+        <h2 id="delete-heading">{one === undefined ? `Delete ${listings.length} ${noun}s?` : `Delete ${one.name}?`}</h2>
         {one === undefined ? (
           <ul class="muted small selected-names">
             {listings.map((listing) => (
@@ -376,12 +381,15 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
               ? `${one === undefined ? 'The files are' : 'The file is'} deleted from the folder on this computer too. ${one === undefined ? 'They' : 'It'} can't be brought back from here.`
               : `${one === undefined ? 'They' : 'It'} can't be brought back.`}
         </p>
-        {dependents.length > 0 && (
+        {dependents.length > 0 && noun === 'profile' && (
           <p>
             {dependents.map((item) => item.name).join(', ')} {dependents.length === 1 ? 'extends' : 'extend'}{' '}
             {one === undefined ? 'one of them' : 'it'} and {dependents.length === 1 ? 'stops' : 'stop'} loading until
             pointed at another profile.
           </p>
+        )}
+        {dependents.length > 0 && noun === 'definition' && (
+          <p>Remove references from {dependents.map((item) => item.name).join(', ')} before deleting.</p>
         )}
         {error !== undefined && (
           <p class="notice notice-problem" role="alert">
@@ -398,7 +406,7 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
             disabled={profiles.profileWorkUnderWay.value}
           >
             {one === undefined
-              ? `Delete ${listings.length} profiles`
+              ? `Delete ${listings.length} ${noun}s`
               : one.kind === undefined
                 ? 'Delete profile'
                 : 'Delete definition'}
@@ -419,24 +427,31 @@ const noFolderChoice = '';
 
 interface SelectedProps {
   readonly profiles: Profiles;
+  readonly selection: readonly ProfileListing[];
   readonly onDialog: (dialog: ProfilesDialog) => void;
   readonly onMoved: (folder: string) => void;
   readonly onDeselectAll: () => void;
 }
 
-function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedProps): JSX.Element {
+export function SelectedPanel({
+  profiles,
+  selection: batch,
+  onDialog,
+  onMoved,
+  onDeselectAll,
+}: SelectedProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
   const [movingProfiles, moveProfiles] = usePendingAction();
-  const batch = profiles.batch.value;
   const busy = profiles.profileWorkUnderWay.value;
+  const noun = batch.every((listing) => listing.kind !== undefined) ? 'definition' : 'profile';
   const [picked, setPicked] = useState<string | undefined>(undefined);
   // A folder renamed away, or emptied by another move, is no longer a choice.
   const target =
     picked === undefined || picked === newFolderChoice || profiles.folders.value.includes(picked) ? picked : undefined;
   const [problem, setProblem] = useState<string | undefined>(undefined);
   return (
-    <aside class="panel" aria-label="Selected profiles">
-      <h2>{batch.length === 1 ? '1 profile selected' : `${batch.length} profiles selected`}</h2>
+    <aside class="panel" aria-label={`Selected ${noun}s`}>
+      <h2>{batch.length === 1 ? `1 ${noun} selected` : `${batch.length} ${noun}s selected`}</h2>
       <ul class="muted small selected-names">
         {batch.map((listing) => (
           <li key={listing.file} class="mono">
@@ -507,7 +522,7 @@ function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedP
             {problem}
           </p>
         )}
-        <p class="muted small">Profiles that extend them are pointed at the new place.</p>
+        <p class="muted small">Profiles that reference or extend them are pointed at the new place.</p>
       </form>
       <div class="panel-actions">
         <button class="button button-quiet" type="button" onClick={onDeselectAll}>
@@ -808,7 +823,7 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
   const source = profiles.source.value;
   const tree = profiles.tree.value;
   const selected = profiles.selected.value?.kind === undefined ? profiles.selected.value : undefined;
-  const batch = profiles.batch.value;
+  const batch = profiles.batch.value.filter((listing) => listing.kind === undefined);
   const busy = profiles.profileWorkUnderWay.value;
   const total = profiles.listings.value.filter((listing) => listing.kind === undefined).length;
   const shown = shownIn(tree);
@@ -864,7 +879,7 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
   };
   // The buttons that deselect go with the selection's panel.
   const deselectAll = (): void => {
-    profiles.deselectBatch();
+    profiles.selectForBatch(batch, false);
     requestAnimationFrame(() => {
       heading.current?.focus();
     });
@@ -1128,7 +1143,13 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
         )}
       </section>
       {batch.length > 0 && (
-        <SelectedPanel profiles={profiles} onDialog={setDialog} onMoved={focusFolder} onDeselectAll={deselectAll} />
+        <SelectedPanel
+          profiles={profiles}
+          selection={batch}
+          onDialog={setDialog}
+          onMoved={focusFolder}
+          onDeselectAll={deselectAll}
+        />
       )}
       {dialogs}
     </div>

@@ -585,7 +585,7 @@ test('shared changes reach linked profile forms and new profiles keep references
       .click();
     await expect(page.getByRole('heading', { name: 'Used by 2 profiles', exact: true })).toBeVisible();
   }
-  await page.getByRole('button', { name: 'shared-api', exact: true }).click();
+  await page.getByText('shared-api', { exact: true }).click();
   await page.getByRole('button', { name: 'All profiles', exact: true }).click();
   await page.getByRole('link', { name: 'New profile', exact: true }).click();
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('New service');
@@ -597,6 +597,51 @@ test('shared changes reach linked profile forms and new profiles keep references
   await expect(page.getByRole('region', { name: 'New service as YAML', exact: true })).toContainText(
     '../definitions/ruleset/Main.yaml',
   );
+});
+
+test('moving a library definition updates consumers without moving selected profiles', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByRole('checkbox', { name: 'Select base', exact: true }).check();
+  await page.locator('.account-menu > summary').click();
+  await page.getByRole('link', { name: 'Rulesets', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Select definitions/ruleset/Main', exact: true }).check();
+  await expect(page.getByRole('heading', { name: '1 definition selected', exact: true })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Move to a folder', exact: true }).selectOption('teams');
+  await page.getByRole('button', { name: 'Move', exact: true }).click();
+  await expect(page.getByRole('link', { name: /Main Used by 2 profiles/u })).toHaveAttribute(
+    'href',
+    '/rulesets?definition=teams%2FMain.yaml',
+  );
+  await page.locator('.account-menu > summary').click();
+  await page.getByRole('link', { name: 'Profiles', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Select base', exact: true })).toBeChecked();
+  await page.getByText('shared-api', { exact: true }).click();
+  await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'shared-api as YAML', exact: true })).toContainText('teams/Main.yaml');
+  await page.getByRole('tab', { name: 'Rulesets', exact: true }).click();
+  await expect(page.getByRole('tabpanel').getByRole('button', { name: /^Main /u })).toBeEnabled();
+});
+
+test('unsaved reference changes preview their entries before saving', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('shared-api', { exact: true }).click();
+  await page.getByRole('button', { name: 'Remove production reference', exact: true }).click();
+  await page.getByRole('tab', { name: 'Environments', exact: true }).click();
+  const panel = page.getByRole('tabpanel');
+  await expect(panel).toContainText('The profile manages no environments');
+  await expect(panel).toContainText('Save reference changes before editing these entries.');
+  await expect(panel.getByRole('button', { name: 'New environment', exact: true })).toBeDisabled();
+  const save = page.getByRole('button', { name: 'Save', exact: true });
+  await save.click();
+  await expect(save).toBeDisabled();
+  await page
+    .getByRole('combobox', { name: 'Add environment', exact: true })
+    .selectOption('definitions/environment/production.yaml');
+  const production = panel.getByRole('button', { name: /production.*Waits 15 minutes/u });
+  await expect(production).toBeVisible();
+  await expect(production).toBeDisabled();
+  await save.click();
+  await expect(production).toBeEnabled();
 });
 
 test('unknown keys can be previewed and saved away without another edit', async ({ page }) => {

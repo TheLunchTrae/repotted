@@ -437,12 +437,19 @@ opens the original in its library. **Remove** detaches the reference, and
 inherited from a base are changed in that base. Inline settings retain
 priority over shared values.
 
+Reference changes preview the resolved entries before saving. Save those
+changes before editing the entries. Duplicating or importing a profile keeps
+its existing references; the creation form adds selected rulesets and
+environments and replaces the Actions policy only when you choose one.
+
 Saving a definition updates linked profiles on their next resolution and
 refreshes cached editors while preserving unsaved changes. It does not
 apply changes to GitHub repositories. Known consumers must remove their
 references and assignments before a definition can be deleted. See
 [Manage reusable definitions](profiles.md#manage-reusable-definitions-in-the-web-app)
 for creation, capture, duplication, import, export, and storage.
+Select definitions in a library to move them to another folder. Their
+references are updated, and selections on other pages stay separate.
 
 ### Make a profile
 

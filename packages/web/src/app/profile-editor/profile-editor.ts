@@ -799,7 +799,24 @@ export class ProfileEditor {
     );
   });
 
-  readonly entries = this.#entryEdits.rows;
+  readonly referencesChanged = computed(() => this.#edits.value.has('references'));
+
+  readonly previewingReferences = computed(
+    () =>
+      this.referencesChanged.value &&
+      this.#profileAsSaveWouldLeaveIt.value !== undefined &&
+      !this.#entryEdits.someEntryCannotBeSavedToApply.value,
+  );
+
+  readonly entries = computed(() => {
+    if (!this.previewingReferences.value) {
+      return this.#entryEdits.rows.value;
+    }
+    // Resolved preview rows have a different baseline; they must not be passed to the editable entry state.
+    const preview = new EntryEdits();
+    preview.setSaved(this.#profileAsSaveWouldLeaveIt.value);
+    return preview.rows.value;
+  });
 
   readonly #changed = computed(() => this.#edits.value.size > 0 || this.#entryEdits.count.value > 0);
 

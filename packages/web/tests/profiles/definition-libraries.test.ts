@@ -178,3 +178,109 @@ test('deleting a stale definition cannot delete a profile that replaced it', asy
   expect(await kept.remove(definition)).toMatch(/changed/u);
   expect(await readFile(definition.file, 'utf8')).toBe('repository: { has_wiki: false }\n');
 });
+
+test.each(['duplicate', 'import'] as const)(
+  '%s adds picked references without dropping existing ones',
+  async (kind) => {
+    const kept = await setup();
+    await kept.create({
+      name: 'approved',
+      definitionKind: 'actions-policy',
+      folder: 'definitions',
+      start: { kind: 'empty' },
+      ownerType: undefined,
+    });
+    await kept.create({
+      name: 'staging',
+      definitionKind: 'environment',
+      targetName: 'staging',
+      folder: 'definitions',
+      start: { kind: 'empty' },
+      ownerType: undefined,
+    });
+    await kept.create({
+      name: 'Source',
+      folder: 'sources',
+      start: { kind: 'empty' },
+      ownerType: undefined,
+      references: { actions: 'definitions/approved.yaml', environments: ['definitions/production.yaml'] },
+    });
+    const source = kept.selected.value!;
+    const text = await readFile(source.file, 'utf8');
+    expect(
+      await kept.create({
+        name: 'Copy',
+        folder: 'copies',
+        start: kind === 'duplicate' ? { kind, source } : { kind, text },
+        ownerType: undefined,
+        references: { environments: ['definitions/staging.yaml', 'definitions/../definitions/staging.yaml'] },
+      }),
+    ).toBeUndefined();
+    expect((await resolveProfile(kept.selected.value!.file)).references).toEqual({
+      actions: '../definitions/approved.yaml',
+      environments: ['../definitions/production.yaml', '../definitions/staging.yaml'],
+    });
+  },
+);
+
+test('repairing a setting retains references when another shared definition is added', async () => {
+  const kept = await setup();
+  await kept.create({
+    name: 'approved',
+    definitionKind: 'actions-policy',
+    folder: 'definitions',
+    start: { kind: 'empty' },
+    ownerType: undefined,
+  });
+  const file = `${kept.folder.value}/repair.yaml`;
+  await writeFile(file, 'references: { actions: definitions/approved.yaml }\nrepository: { has_wiki: wrong }\n');
+  const editor = new ProfileEditor(file);
+  await editor.load();
+  expect(editor.references.value).toEqual({ actions: 'definitions/approved.yaml' });
+  await editor.setReferences({ ...editor.references.value, environments: ['definitions/production.yaml'] });
+  const wiki = settingSections
+    .flatMap((section) => section.groups.flatMap((group) => group.fields))
+    .find((field) => field.path.join('.') === 'repository.has_wiki')!;
+  await editor.set(wiki, false);
+  await editor.save(async (work) => work());
+  expect(editor.saveError.value).toBeUndefined();
+  expect((await resolveProfile(file)).references).toEqual({
+    actions: 'definitions/approved.yaml',
+    environments: ['definitions/production.yaml'],
+  });
+});
+
+test('pending reference changes preview resolved entries and retain existing local edits', async () => {
+  const kept = await setup();
+  await kept.create({ name: 'API', folder: '', start: { kind: 'empty' }, ownerType: undefined });
+  const editor = kept.editor.value!;
+  await editor.addEntry('environments', { name: 'local', wait_timer: 3 });
+  await editor.setReferences({ environments: ['definitions/production.yaml'] });
+  expect(editor.entries.value.environments.map((row) => row.entry)).toEqual([
+    { name: 'production' },
+    { name: 'local', wait_timer: 3 },
+  ]);
+  await kept.save();
+  await editor.setReferences({});
+  expect(editor.entries.value.environments.map((row) => row.entry)).toEqual([{ name: 'local', wait_timer: 3 }]);
+  await kept.save();
+  expect((await resolveProfile(kept.selected.value!.file)).profile.environments).toEqual([
+    { name: 'local', wait_timer: 3 },
+  ]);
+});
+
+test('unfinished entries remain available to fix when references change', async () => {
+  const kept = await setup();
+  await kept.create({ name: 'API', folder: '', start: { kind: 'empty' }, ownerType: undefined });
+  const editor = kept.editor.value!;
+  await editor.addEntry('environments', { name: '' });
+  await editor.setReferences({ environments: ['definitions/production.yaml'] });
+  const unfinished = editor.entries.value.environments.find((row) => row.entry?.['name'] === '');
+  expect(unfinished).toBeDefined();
+  await editor.changeEntry(unfinished!, { name: 'local' });
+  await kept.save();
+  expect((await resolveProfile(kept.selected.value!.file)).profile.environments).toEqual([
+    { name: 'production' },
+    { name: 'local' },
+  ]);
+});

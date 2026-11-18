@@ -353,13 +353,21 @@ export function NewProfileForm({
         />
       </label>
       {definitionKind === undefined && (
-        <SharedDefinitions
-          profiles={profiles}
-          folder={profiles.folder.value}
-          references={references}
-          onChange={setReferences}
-          disabled={working}
-        />
+        <>
+          {(kind === 'duplicate' || kind === 'import') && (
+            <p class="muted small">
+              Existing references are kept. These choices add rulesets and environments; choosing an Actions policy
+              replaces the existing policy. After creation, remove any references you do not need in the profile editor.
+            </p>
+          )}
+          <SharedDefinitions
+            profiles={profiles}
+            folder={profiles.folder.value}
+            references={references}
+            onChange={setReferences}
+            disabled={working}
+          />
+        </>
       )}
       <fieldset class="choices" disabled={working || fixedOwner !== undefined}>
         <legend>For repositories owned by</legend>

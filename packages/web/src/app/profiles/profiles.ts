@@ -14,13 +14,14 @@ import {
   listProfiles,
   type OwnerType,
   type ProfileReferences,
+  profileReferences,
   parseRepo,
   readInstallationSettingsUrl,
   stringifyProfile,
   syncFolder,
   withExtends,
 } from '@repotted/core';
-import { parseDocument } from 'yaml';
+import { isNode, parseDocument } from 'yaml';
 import * as z from 'zod/mini';
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from '../../engine/files.js';
@@ -65,7 +66,7 @@ export type NewProfileStart =
   | { readonly kind: 'import'; readonly text: string };
 
 export interface NewProfile {
-  /** Definition paths from the profiles folder, independent of the destination folder. */
+  /** Additional definition paths from the profiles folder, independent of the destination folder. */
   readonly references?: ProfileReferences;
   readonly name: string;
   readonly definitionKind?: DefinitionKind;
@@ -717,13 +718,24 @@ export class Profiles {
           throw error;
         }
         const references = profile.references;
+        const declared: unknown = document.get('references');
+        const existing = profileReferences.parse((isNode(declared) ? declared.toJSON() : declared) ?? {});
         const repoint = (named: string): string => relative(dirname(file), resolve(folder, named));
+        const combine = (saved: readonly string[] = [], picked: readonly string[] = []): string[] => [
+          ...new Set([
+            ...saved.map((named) => relative(dirname(file), resolve(dirname(file), named))),
+            ...picked.map(repoint),
+          ]),
+        ];
+        const rulesets = combine(existing.rulesets, references.rulesets);
+        const environments = combine(existing.environments, references.environments);
         document.set(
           'references',
           document.createNode({
+            ...existing,
             ...(references.actions === undefined ? {} : { actions: repoint(references.actions) }),
-            ...(references.rulesets === undefined ? {} : { rulesets: references.rulesets.map(repoint) }),
-            ...(references.environments === undefined ? {} : { environments: references.environments.map(repoint) }),
+            ...(rulesets.length === 0 ? {} : { rulesets }),
+            ...(environments.length === 0 ? {} : { environments }),
           }),
         );
         text = document.toString({ lineWidth: 0 });
@@ -1099,10 +1111,6 @@ export class Profiles {
       }
     }
     this.#selectedForBatch.value = next;
-  }
-
-  deselectBatch(): void {
-    this.#selectedForBatch.value = new Set();
   }
 
   #deselect(files: ReadonlySet<string>): void {

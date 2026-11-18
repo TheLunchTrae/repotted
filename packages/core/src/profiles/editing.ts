@@ -14,7 +14,7 @@ import {
   settingPath,
   settingsSections,
 } from './profile.js';
-import { draftSettings, profile, profileFile } from './schema.js';
+import { draftSettings, profile, profileFile, profileReferences } from './schema.js';
 
 const lists = ['autolinks', 'rulesets', 'environments', 'labels'] as const;
 type EntryList = (typeof lists)[number];
@@ -278,11 +278,13 @@ export async function readProfileForEditing(file: string, replacementText?: stri
         : failure.problems),
     );
   }
+  const references = profileReferences.safeParse(layers[0]?.data['references']);
   return {
     chain,
     profile: { ...merged, ...(owner === undefined ? {} : { owner_type: owner.type }) },
     drafts,
     sources,
+    ...(references.success ? { references: references.data } : {}),
     warnings: [],
     owner_source: owner?.file ?? null,
     owner_changes: { user: [], organization: [] },
