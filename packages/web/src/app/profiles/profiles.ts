@@ -32,7 +32,7 @@ import { ActionPatternChecks } from '../profile-editor/action-pattern-checks.js'
 import { ActionSearch } from '../profile-editor/action-search.js';
 import { GitHubAppLookup } from '../profile-editor/bypass-actors.js';
 import type { SaveMode } from '../profile-editor/entry-edits.js';
-import { type OwnerChoice, ProfileEditor } from '../profile-editor/profile-editor.js';
+import { type OwnerChoice, ProfileEditor, profileStore } from '../profile-editor/profile-editor.js';
 import { SerialQueue } from '../storage/serial-queue.js';
 import { markConfigRepository, normalFolder, unmarkConfigRepository } from './config-marker.js';
 import { definitionTypes } from './definition-types.js';
@@ -43,6 +43,8 @@ import {
   syncLocalFolder,
   unsyncedFiles,
 } from './local-folder.js';
+import { profileNameProblem } from './profile-name.js';
+import { saveReusableDefinitions } from './save-reusable-definitions.js';
 import { type UncapturedSettings, uncapturedSettings } from './uncaptured-settings.js';
 
 export type ProfileListing = Awaited<ReturnType<typeof listProfiles>>[number];
@@ -77,9 +79,6 @@ export interface NewProfile {
   /** A capture takes the repository's owner type, and a profile that extends a typed one takes that type. */
   readonly ownerType: OwnerType | undefined;
 }
-
-// Names no file can have on Windows, where a config repository's profiles may also be used.
-const windowsNames = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu;
 
 /** A folder is one that holds profiles, or a new one under the profiles folder, never a way out of it. */
 function folderProblem(folder: string): string | undefined {
@@ -596,18 +595,9 @@ export class Profiles {
 
   nameProblem(name: string, folder: string): string | undefined {
     const trimmed = name.trim();
-    if (trimmed === '') {
-      return 'Give the profile a name.';
-    }
-    // What a sync refuses in a profile's path, so a profile made here always reaches GitHub.
-    if (/^\.|[/\\:*?"<>|\p{Cc}]|[. ]$/u.test(trimmed)) {
-      return 'A name cannot start with a dot, end with a dot or a space, or hold / \\ : * ? " < > |.';
-    }
-    if (/\.ya?ml$/iu.test(trimmed)) {
-      return 'Leave out the file ending; Repotted adds .yaml.';
-    }
-    if (windowsNames.test(trimmed.split('.')[0] ?? trimmed)) {
-      return `Windows keeps the name ${trimmed} for itself, so it cannot be a file there.`;
+    const problem = profileNameProblem(name);
+    if (problem !== undefined) {
+      return problem;
     }
     const place = folder === '' ? 'the profiles folder' : folder;
     const taken = this.listings.value.find(
@@ -1125,11 +1115,19 @@ export class Profiles {
     }
     let editor = this.#editors.value.find((item) => item.file === listing.file);
     if (editor === undefined) {
-      editor = new ProfileEditor(listing.file, {
-        patterns: new ActionPatternChecks((patterns) => this.#asking(checkActionPatterns(this.#github, patterns))),
-        search: new ActionSearch((words) => this.#asking(findActions(this.#github, words))),
-        appLookup: new GitHubAppLookup((slug) => this.#asking(findGitHubApp(this.#github, slug))),
-      });
+      editor = new ProfileEditor(
+        listing.file,
+        {
+          patterns: new ActionPatternChecks((patterns) => this.#asking(checkActionPatterns(this.#github, patterns))),
+          search: new ActionSearch((words) => this.#asking(findActions(this.#github, words))),
+          appLookup: new GitHubAppLookup((slug) => this.#asking(findGitHubApp(this.#github, slug))),
+        },
+        {
+          ...profileStore,
+          saveReusable: (file, edits, definitions) =>
+            saveReusableDefinitions(this.folder.value, file, edits, definitions),
+        },
+      );
       this.#editors.value = [...this.#editors.value, editor];
       await editor.load();
     }

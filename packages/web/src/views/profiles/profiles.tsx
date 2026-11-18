@@ -6,7 +6,6 @@ import type { SaveMode } from '../../app/profile-editor/entry-edits.js';
 import type { BranchPreview } from '../../app/profiles/branch-preview.js';
 import type { ProfileFolderNode, ProfileListing, Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
-import { dirname } from '../../engine/path.js';
 import { Link } from '../layout/link.js';
 import { Loading, LoadingList } from '../layout/loading.js';
 import { useProfileConfirmation } from '../layout/notifications.js';
@@ -18,7 +17,6 @@ import { RepairProfile } from '../profile-editor/profile-repair.js';
 import { previewAddress, PreviewPicker } from './branch-preview.js';
 import { NewProfileForm } from './new-profile.js';
 import { OwnerTypeDialog } from './owner-type.js';
-import { SharedDefinitions } from './shared-definitions.js';
 import { SyncNote } from './sync-note.js';
 
 const ownerTypes = {
@@ -716,17 +714,6 @@ export function Profile({ listing, profiles, router, standalone }: ProfileProps)
           Saving changes every consumer on its next resolution. GitHub changes only after reviewed apply.
         </p>
       )}
-      {listing.kind === undefined && opened?.file === listing.file && editor?.loaded.value === true && (
-        <SharedDefinitions
-          profiles={profiles}
-          folder={dirname(editor.file)}
-          references={editor.references.value}
-          onChange={(references) => run(editor.setReferences(references))}
-          disabled={editor.saving.value}
-          router={router}
-          inherited={editor.sourceFiles.value}
-        />
-      )}
       {editor?.loaded.value === false && editor.loadError.value === undefined && editor.repair.value === undefined && (
         <Loading>Reading the profile…</Loading>
       )}
@@ -741,6 +728,7 @@ export function Profile({ listing, profiles, router, standalone }: ProfileProps)
             discardDraft: () => profiles.discardDraft(),
             onGitHub: profiles.source.value.kind === 'repository',
           }}
+          sharedDefinitions={listing.kind === undefined ? { profiles, router } : undefined}
           ownerTypeHasPushRulesets={listing.owner_type !== 'user'}
         />
       )}

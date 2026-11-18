@@ -729,30 +729,29 @@ input[type='checkbox']:disabled {
   gap: 4px;
 }
 
-.shared-definitions {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--panel-radius);
-  padding: 16px;
-}
-
-.shared-definitions > legend {
-  padding: 0 6px;
-  font-size: 17px;
-  font-weight: 700;
-}
-
 .shared-definition-group {
   display: grid;
   gap: 10px;
   min-width: 0;
+  margin: 0;
+  padding: 0 0 20px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
 }
 
-.shared-definition-group h3 {
+.shared-definition-group > legend {
+  padding: 0 0 8px;
+  font-weight: 500;
+}
+
+.reusable-definition-option {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
   margin: 0;
-  font-size: 15px;
+  padding: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
 }
 
 .shared-definition-row {

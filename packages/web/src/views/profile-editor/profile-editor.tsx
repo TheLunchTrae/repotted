@@ -3,17 +3,22 @@ import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
+import type { Router } from '../../app/navigation/router.js';
 import { entryListTitles, entryLists, type SaveMode } from '../../app/profile-editor/entry-edits.js';
 import type { ProfileEditor, SaveProblem, SettingFilter, SettingRow } from '../../app/profile-editor/profile-editor.js';
 import { sameValue } from '../../app/profile-editor/same-value.js';
+import type { Profiles } from '../../app/profiles/profiles.js';
+import { dirname } from '../../engine/path.js';
 import { BarActions } from '../layout/action-bar.js';
 import { run } from '../layout/run.js';
+import { SharedDefinition } from '../profiles/shared-definitions.js';
 import { ActionSearchBox } from './action-search.js';
 import { BatchActions, describeSettingsDone } from './batch-actions.js';
 import { describeValue } from './describe-value.js';
 import { Entries, type EntryGoTo } from './entries.js';
 import { MissingPermissionsNote } from './missing-permissions-note.js';
 import { PatternChecks } from './pattern-checks.js';
+import { ReusableDefinitionOption } from './reusable-definition.js';
 import { SavePreviewDialog } from './save-preview.js';
 import { SaveProblems } from './save-problems.js';
 
@@ -301,9 +306,16 @@ interface ProfileSettingsProps {
   readonly editor: ProfileEditor;
   readonly saving: EditorSaving;
   readonly ownerTypeHasPushRulesets: boolean;
+  readonly sharedDefinitions?: { readonly profiles: Profiles; readonly router: Router } | undefined;
 }
 
-export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets }: ProfileSettingsProps): JSX.Element {
+export function ProfileSettings({
+  name,
+  editor,
+  saving,
+  ownerTypeHasPushRulesets,
+  sharedDefinitions,
+}: ProfileSettingsProps): JSX.Element {
   const [savingChanges, saveChanges] = usePendingAction();
   const [savingDraft, saveDraft] = usePendingAction();
   const saveWithFeedback = async (mode?: Parameters<EditorSaving['save']>[0]): Promise<void> => {
@@ -322,17 +334,34 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
     ...sections.map(({ section, groups }) => ({
       id: section.section,
       name: section.name,
-      unsaved: groups.some((group) => group.rows.some((row) => row.unsaved || row.typedTextProblem !== undefined)),
+      unsaved:
+        groups.some((group) => group.rows.some((row) => row.unsaved || row.typedTextProblem !== undefined)) ||
+        editor.reusableDefinitions.value.some((definition) => definition.section === section.section),
       drafted: groups.some((group) => group.rows.some((row) => row.valueShownIsFromDraft)),
     })),
     ...supportedLists.map((item) => ({
       id: item,
       name: entryListTitles[item],
-      unsaved: entries[item].some((row) => row.unsaved),
+      unsaved:
+        entries[item].some((row) => row.unsaved) ||
+        editor.reusableDefinitions.value.some((definition) => definition.section === item),
       drafted: entries[item].some((row) => row.inDraft !== undefined),
     })),
   ];
   const current = list ?? shown?.section.section ?? '';
+  const sharedDefinition =
+    sharedDefinitions === undefined ? null : (
+      <SharedDefinition
+        section={current}
+        profiles={sharedDefinitions.profiles}
+        router={sharedDefinitions.router}
+        folder={dirname(editor.file)}
+        references={editor.references.value}
+        inherited={editor.sourceFiles.value}
+        disabled={editor.saving.value}
+        onChange={(references) => run(editor.setReferences(references))}
+      />
+    );
   const [entryGoTo, setEntryGoTo] = useState<EntryGoTo | undefined>(undefined);
   const [settingToFocus, setSettingToFocus] = useState<{ readonly id: string } | undefined>(undefined);
   // The setting shows once its tab does, so it takes the keyboard after that render.
@@ -559,6 +588,7 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
           </div>
           {shown !== undefined && (
             <div id="settings-panel" class="groups" role="tabpanel" aria-labelledby={`tab-${shown.section.section}`}>
+              {sharedDefinition}
               {shown.missingPermissionsEverySettingShares.length > 0 && (
                 <MissingPermissionsNote
                   permissions={shown.missingPermissionsEverySettingShares}
@@ -607,10 +637,14 @@ export function ProfileSettings({ name, editor, saving, ownerTypeHasPushRulesets
                   </div>
                 </section>
               ))}
+              {sharedDefinitions !== undefined && shown.section.section === 'actions' && (
+                <ReusableDefinitionOption editor={editor} section="actions" defaultName={`${name} Actions policy`} />
+              )}
             </div>
           )}
           {list !== undefined && (
-            <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${list}`}>
+            <div id="settings-panel" class="groups" role="tabpanel" aria-labelledby={`tab-${list}`}>
+              {sharedDefinition}
               <Entries
                 key={list}
                 editor={editor}
