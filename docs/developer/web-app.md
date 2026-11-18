@@ -242,7 +242,13 @@ and sign-out disposes pending timers and ignores late completions. Profile
 confirmations check the sync, conflicts, and listing result before
 claiming success; browser copies are described as available in the tab.
 Shared preferences report saved keys after a successful write to their
-current destination. `views/layout/notifications.tsx` draws one confirmation
+current destination. Batch actions confirm at the action boundary. Batch apply
+saves each repository's applied-profile record without a save confirmation,
+including on a later retry. It waits for those saves before confirming the
+successful batch once with its repository count; failures keep their durable
+results without a success toast. Other saves keep their own confirmations,
+even when they share a commit with a batch record.
+`views/layout/notifications.tsx` draws one confirmation
 and pauses it while hovered, focused, obscured by a dialog, or in a hidden
 tab. [State machines](state-machines.md#web-confirmations) owns the transitions.
 

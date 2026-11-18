@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeFleet, FakeGitHub } from '../../../core/tests/support/fake-github.js';
 import { BatchApply } from '../../src/app/apply/batch-apply.js';
@@ -57,7 +57,8 @@ test('a batch reviews each repository, writes nothing until asked, and then writ
   const { github, of } = fleet('lunch/app', 'lunch/api');
   of('lunch/api').state.repository['has_wiki'] = false;
   of('lunch/api').state.repository['has_projects'] = false;
-  const batch = new BatchApply(github, () => undefined);
+  const confirm = vi.fn();
+  const batch = new BatchApply(github, () => undefined, undefined, confirm);
 
   await batch.start(['lunch/app', 'lunch/api'], profile);
 
@@ -83,6 +84,7 @@ test('a batch reviews each repository, writes nothing until asked, and then writ
   expect(writes(of('lunch/api'))).toEqual([]);
   expect(of('lunch/app').state.repository).toMatchObject({ has_wiki: false, has_projects: false });
   expect(await pending()).toEqual([]);
+  expect(confirm).toHaveBeenCalledExactlyOnceWith(2);
 });
 
 test('a change left out everywhere, in one repository, or a repository left out, stays unwritten', async () => {
@@ -151,7 +153,8 @@ labels:
 test('a repository that changed since the review, or that GitHub refuses, is not written and stays in the batch', async () => {
   await saved();
   const { github, of } = fleet('lunch/app', 'lunch/api', 'lunch/web');
-  const batch = new BatchApply(github, () => undefined);
+  const confirm = vi.fn();
+  const batch = new BatchApply(github, () => undefined, undefined, confirm);
   await batch.start(['lunch/app', 'lunch/api', 'lunch/web'], profile);
 
   of('lunch/app').state.repository['has_wiki'] = false;
@@ -166,6 +169,7 @@ test('a repository that changed since the review, or that GitHub refuses, is not
   expect(said).toEqual(['lunch/app false', 'lunch/api false', 'lunch/web true']);
   expect(writes(of('lunch/app'))).toEqual([]);
   expect(of('lunch/web').state.repository).toMatchObject({ has_wiki: false, has_projects: false });
+  expect(confirm).not.toHaveBeenCalled();
 
   await batch.reviewAgain();
   expect(statuses(batch)).toEqual(['lunch/app changes 1', 'lunch/api changes 1']);

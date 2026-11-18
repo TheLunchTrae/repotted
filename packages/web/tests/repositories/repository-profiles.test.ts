@@ -30,6 +30,7 @@ function store(start: Record<string, unknown> = {}): {
   readonly kept: Record<string, unknown>;
   read: (key: string) => unknown;
   update: (key: string, change: Change) => void;
+  save: (key: string, change: Change) => Promise<boolean>;
 } {
   const values = signal<Record<string, unknown>>({ ...start });
   return {
@@ -41,6 +42,10 @@ function store(start: Record<string, unknown> = {}): {
       const value = change(values.value[key]);
       const others = Object.entries(values.value).filter(([other]) => other !== key);
       values.value = Object.fromEntries(value === undefined ? others : [...others, [key, value]]);
+    },
+    save(key, change) {
+      this.update(key, change);
+      return Promise.resolve(true);
     },
   };
 }
@@ -68,7 +73,7 @@ test('a shared environment edit marks direct and transitive assignments changed 
     ['lunch/direct', 'production.yaml'],
     ['lunch/service', 'service.yaml'],
   ] as const) {
-    assignments.recordApplied(repository, [{ profile, version: await profileVersion(`${folder}/${profile}`) }]);
+    await assignments.recordApplied(repository, [{ profile, version: await profileVersion(`${folder}/${profile}`) }]);
     expect(assignments.status(repository)).toEqual({ kind: 'current' });
   }
 
@@ -148,7 +153,7 @@ test('inherits folder profiles before its own and notices moves made elsewhere w
   expect(assignments.profilesOf('lunch/app')).toEqual(['base.yaml', 'node.yaml', 'web.yaml']);
   expect(assignments.repositoriesWithProfiles.value).toContain('lunch/app');
   await assignments.check();
-  assignments.recordApplied(
+  await assignments.recordApplied(
     'lunch/app',
     await Promise.all(
       assignments.profilesOf('lunch/app').map(async (profile) => ({
@@ -367,7 +372,7 @@ test('tells a repository whose profiles changed since the last apply from one up
   await assignments.check();
   expect(assignments.status('lunch/app')).toEqual({ kind: 'not-applied' });
 
-  assignments.recordApplied('lunch/app', [
+  await assignments.recordApplied('lunch/app', [
     { profile: 'base.yaml', version: await profileVersion(`${folder}/base.yaml`) },
     { profile: 'node.yaml', version: await profileVersion(`${folder}/node.yaml`) },
   ]);
@@ -685,7 +690,7 @@ test('ownership belongs to each repository and survives refresh independently of
   assignments.setProfiles('lunch/app', ['base.yaml'], ['rulesets']);
   assignments.setProfiles('lunch/api', ['base.yaml']);
   const versions = [{ profile: 'base.yaml', version: await profileVersion(`${folder}/base.yaml`) }];
-  assignments.recordApplied('lunch/app', versions, ['rulesets']);
+  await assignments.recordApplied('lunch/app', versions, ['rulesets']);
   await assignments.check();
   expect(assignments.status('lunch/app')).toEqual({ kind: 'current' });
 
@@ -754,6 +759,129 @@ test('a batch owns the complete inherited combination independently per reposito
     { rows: [{ label: 'Manual', kind: 'removes' }] },
   ]);
   expect(assignments.status('lunch/app')).toEqual({ kind: 'current' });
+});
+
+test.each(['browser', 'repository'] as const)(
+  'a batch confirms once after every repository and its %s records finish',
+  async (destination) => {
+    const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: false }\n' });
+    const names = ['lunch/app', 'lunch/api'];
+    const initial = Object.fromEntries(names.map((name) => [name, { profiles: ['base.yaml'] }]));
+    const kept: Record<string, unknown> = { [repositoryProfilesKey]: initial };
+    const config = new FakeGitRepository();
+    config.write({ [`profiles/${preferencesFile}`]: JSON.stringify(kept) });
+    let holdRecords = false;
+    let releaseRecords = (): void => undefined;
+    const recordsHeld = new Promise<void>((resolve) => {
+      releaseRecords = resolve;
+    });
+    const confirm = vi.fn();
+    const preferences = new SharedPreferences(
+      {
+        request: async (...args: Parameters<FakeGitRepository['request']>): Promise<unknown> => {
+          if (holdRecords) {
+            await recordsHeld;
+          }
+          return config.request(...args);
+        },
+      },
+      {
+        read: (key) => kept[key],
+        write: (key, value) => {
+          kept[key] = value;
+          return true;
+        },
+      },
+      () => undefined,
+      confirm,
+    );
+    if (destination === 'repository') {
+      await preferences.use({ kind: 'repository', repository: 'lunch/config', path: 'profiles' });
+    }
+    const assignments = new RepositoryProfiles(preferences, { listings, folder: signal(folder) });
+    await assignments.check();
+    const fleet = new FakeFleet(names.map((name) => new FakeGitHub({}, name)));
+    let applying = false;
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const github = {
+      request: async (...args: Parameters<FakeFleet['request']>): Promise<unknown> => {
+        if (applying && args[1] === '/repos/lunch/api') {
+          await held;
+        }
+        return fleet.request(...args);
+      },
+    };
+    const batch = new BatchApply(github, () => undefined, assignments, confirm);
+    await batch.start(['lunch/app', 'lunch/api'], { file: `${folder}/base.yaml`, name: 'base' });
+    applying = true;
+    holdRecords = true;
+    const work = batch.apply();
+    try {
+      await vi.waitFor(() => expect(assignments.status('lunch/app')).toEqual({ kind: 'current' }));
+      expect(confirm).not.toHaveBeenCalled();
+      release();
+      if (destination === 'repository') {
+        await vi.waitFor(() =>
+          expect(batch.state.value).toMatchObject({
+            kind: 'applying',
+            results: [{ finished: true }, { finished: true }],
+          }),
+        );
+        expect(confirm).not.toHaveBeenCalled();
+      }
+    } finally {
+      release();
+      releaseRecords();
+      await work;
+    }
+    expect(confirm).toHaveBeenCalledExactlyOnceWith(2);
+    expect(assignments.status('lunch/api')).toEqual({ kind: 'current' });
+  },
+);
+
+test('a batch keeps successful records without confirming a failed repository or refused storage', async () => {
+  const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: false }\n' });
+  const names = ['lunch/app', 'lunch/api'];
+  const initial = Object.fromEntries(names.map((name) => [name, { profiles: ['base.yaml'] }]));
+  const confirm = vi.fn();
+  const kept: Record<string, unknown> = { [repositoryProfilesKey]: initial };
+  let writable = true;
+  const preferences = new SharedPreferences(
+    new FakeGitRepository(),
+    {
+      read: (key) => kept[key],
+      write: (key, value) => {
+        if (writable) {
+          kept[key] = value;
+        }
+        return writable;
+      },
+    },
+    () => undefined,
+    confirm,
+  );
+  const assignments = new RepositoryProfiles(preferences, { listings, folder: signal(folder) });
+  await assignments.check();
+  const app = new FakeGitHub({}, 'lunch/app');
+  const api = new FakeGitHub({}, 'lunch/api');
+  const batch = new BatchApply(new FakeFleet([app, api]), () => undefined, assignments, confirm);
+  const profile = { file: `${folder}/base.yaml`, name: 'base' };
+  await batch.start(names, profile);
+  api.fail('PATCH /repos/lunch/api', answered(422, 'Validation Failed'), 1);
+  await batch.apply();
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'current' });
+  expect(assignments.status('lunch/api')).toEqual({ kind: 'not-applied' });
+  expect(confirm).not.toHaveBeenCalled();
+
+  await batch.reviewAgain();
+  writable = false;
+  await batch.apply();
+  expect(api.state.repository['has_wiki']).toBe(false);
+  expect(assignments.status('lunch/api')).toEqual({ kind: 'not-applied' });
+  expect(confirm).not.toHaveBeenCalled();
 });
 
 test('one-time ownership overrides never change the saved assignment or mark it applied', async () => {
@@ -931,7 +1059,7 @@ test('transitive reusable edits change assignment status and missing definitions
   });
   const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
   assignments.setProfiles('lunch/app', ['service.yaml'], ['rulesets']);
-  assignments.recordApplied(
+  await assignments.recordApplied(
     'lunch/app',
     [{ profile: 'service.yaml', version: await profileVersion(`${folder}/service.yaml`) }],
     ['rulesets'],

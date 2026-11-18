@@ -16,6 +16,9 @@ Successful saves, moves, connections, and explicit refreshes show a brief
 confirmation. It closes after five seconds; hovering it or focusing its
 **Dismiss** button pauses the countdown. Errors, sync conflicts, capture
 omissions, and apply results stay with the action that produced them.
+Batch actions show one confirmation for the whole action. A successful batch
+apply confirms once every included repository and its profile records have
+finished, with the number of repositories applied to.
 
 When a search finds no matches, **Clear search** restores results and returns
 the keyboard to the search field. Repository filters remain as chosen;

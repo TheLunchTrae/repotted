@@ -29,6 +29,7 @@ interface Pending {
   readonly place: Place;
   readonly key: string;
   readonly change: Change;
+  readonly notify: boolean;
 }
 
 interface Remote {
@@ -174,18 +175,18 @@ export class SharedPreferences implements Preferences {
     this.save(key, change).catch(() => undefined);
   }
 
-  save(key: string, change: Change): Promise<boolean> {
+  save(key: string, change: Change, notify = true): Promise<boolean> {
     const place = this.#place;
     if (place === undefined) {
       const value = change(this.#browser.read(key));
       const written = this.#browser.write(key, value);
-      if (written) {
+      if (written && notify) {
         this.#onSaved?.([key], 'browser');
       }
       this.#version.value += 1;
       return Promise.resolve(written);
     }
-    this.#pending = [...this.#pending, { place, key, change }];
+    this.#pending = [...this.#pending, { place, key, change, notify }];
     this.#changed();
     // Changes made while one saves wait their turn and go in one commit. A save reports its own failure in error.
     return this.#queue.run(() => this.#save(place));
@@ -232,7 +233,10 @@ export class SharedPreferences implements Preferences {
         this.#fileAsLastReadOrSaved = merged;
         this.error.value = undefined;
         this.#changed();
-        this.#onSaved?.([...new Set(changes.map((change) => change.key))], 'repository');
+        const keys = [...new Set(changes.filter((change) => change.notify).map((change) => change.key))];
+        if (keys.length > 0) {
+          this.#onSaved?.(keys, 'repository');
+        }
       }
       return samePlace(this.#place, place);
     } catch (error) {

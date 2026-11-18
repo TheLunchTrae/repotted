@@ -56,7 +56,7 @@ export type AssignmentStatus =
 
 export interface PreferenceStore {
   read(key: string): unknown;
-  update(key: string, change: Change): void;
+  save(key: string, change: Change, notify?: boolean): Promise<boolean>;
 }
 
 export interface ProfilesInFolder {
@@ -342,7 +342,7 @@ export class RepositoryProfiles {
       unique.length === 0 && this.inheritedProfilesOf(repository).length === 0 && owned.length === 0
         ? undefined
         : { ...current, profiles: unique, authoritative: owned },
-    );
+    ).catch(() => undefined);
   }
 
   /** Records the effective layers without copying inherited ones into the repository's own list. */
@@ -350,17 +350,21 @@ export class RepositoryProfiles {
     repository: string,
     applied: readonly AppliedVersion[],
     authoritative: readonly AuthoritativeSection[] = [],
-  ): void {
+    notify = true,
+  ): Promise<boolean> {
     const inherits = this.inheritedProfilesOf(repository).length > 0;
-    this.#change(repository, (current) =>
-      current === undefined && !inherits
-        ? undefined
-        : {
-            ...current,
-            profiles: current?.profiles ?? [],
-            applied: [...applied],
-            appliedAuthoritative: [...authoritative],
-          },
+    return this.#change(
+      repository,
+      (current) =>
+        current === undefined && !inherits
+          ? undefined
+          : {
+              ...current,
+              profiles: current?.profiles ?? [],
+              applied: [...applied],
+              appliedAuthoritative: [...authoritative],
+            },
+      notify,
     );
   }
 
@@ -376,24 +380,34 @@ export class RepositoryProfiles {
         profiles: [...(current?.profiles ?? []).filter((other) => other !== profilePath), profilePath],
         applied: version === undefined ? applied : [...applied, { profile: profilePath, version }],
       };
-    });
+    }).catch(() => undefined);
   }
 
-  #change(repository: string, change: (current: Assignment | undefined) => Assignment | undefined): void {
+  #change(
+    repository: string,
+    change: (current: Assignment | undefined) => Assignment | undefined,
+    notify = true,
+  ): Promise<boolean> {
     const key = keyOf(repository);
-    this.#preferences.update(repositoryProfilesKey, (saved) => {
-      const all = assignmentsIn(saved);
-      const next = change(all[key]);
-      const kept = Object.fromEntries(Object.entries(all).filter(([other]) => other !== key));
-      if (next !== undefined) {
-        kept[key] = {
-          profiles: next.profiles,
-          ...((next.authoritative?.length ?? 0) > 0 ? { authoritative: next.authoritative } : {}),
-          ...(next.applied === undefined ? {} : { applied: next.applied }),
-          ...((next.appliedAuthoritative?.length ?? 0) > 0 ? { appliedAuthoritative: next.appliedAuthoritative } : {}),
-        };
-      }
-      return Object.keys(kept).length > 0 ? kept : undefined;
-    });
+    return this.#preferences.save(
+      repositoryProfilesKey,
+      (saved) => {
+        const all = assignmentsIn(saved);
+        const next = change(all[key]);
+        const kept = Object.fromEntries(Object.entries(all).filter(([other]) => other !== key));
+        if (next !== undefined) {
+          kept[key] = {
+            profiles: next.profiles,
+            ...((next.authoritative?.length ?? 0) > 0 ? { authoritative: next.authoritative } : {}),
+            ...(next.applied === undefined ? {} : { applied: next.applied }),
+            ...((next.appliedAuthoritative?.length ?? 0) > 0
+              ? { appliedAuthoritative: next.appliedAuthoritative }
+              : {}),
+          };
+        }
+        return Object.keys(kept).length > 0 ? kept : undefined;
+      },
+      notify,
+    );
   }
 }
