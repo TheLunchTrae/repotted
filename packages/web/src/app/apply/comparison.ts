@@ -127,6 +127,7 @@ export const sectionTitles: Readonly<Record<Change['section'], string>> = {
   custom_properties: 'Custom properties',
   pages: 'Pages',
   autolinks: 'Autolinks',
+  actions_policies: 'Actions policies',
   rulesets: 'Rulesets',
   environments: 'Environments',
   labels: 'Labels',
@@ -140,6 +141,7 @@ export const sectionsInShownOrder: readonly Change['section'][] = [
   'custom_properties',
   'pages',
   'autolinks',
+  'actions_policies',
   'rulesets',
   'environments',
   'labels',
@@ -147,6 +149,7 @@ export const sectionsInShownOrder: readonly Change['section'][] = [
 
 export const entryNounByList: Readonly<Record<string, string>> = {
   autolinks: 'autolink',
+  actions_policies: 'Actions policy',
   rulesets: 'ruleset',
   environments: 'environment',
   labels: 'label',

@@ -32,6 +32,7 @@ export interface FakeState {
   actions: { enabled: boolean; allowed_actions?: string; sha_pinning_required?: boolean };
   selected: Record<string, unknown>;
   workflow: Record<string, unknown>;
+  policies: (Omit<StoredRuleset, 'bypass_actors'> & { source_type?: string })[];
   rulesets: StoredRuleset[];
   environments: StoredEnvironment[];
   /**
@@ -173,6 +174,7 @@ export class FakeGitHub implements GitHub {
       actions: { enabled: true, allowed_actions: 'all', sha_pinning_required: false },
       selected: {},
       workflow: { default_workflow_permissions: 'write', can_approve_pull_request_reviews: false },
+      policies: [],
       rulesets: [],
       environments: [],
       settings: {},
@@ -236,6 +238,51 @@ export class FakeGitHub implements GitHub {
     const setting = this.handleSetting(method, route.slice(base.length), body);
     if (setting !== unhandled) {
       return setting;
+    }
+    if (route === `${base}/actions/policies` || route.startsWith(`${base}/actions/policies/`)) {
+      const id = Number(route.slice(`${base}/actions/policies/`.length));
+      const current = this.state.policies.find((item) => item.id === id);
+      if (method === 'GET' && route === `${base}/actions/policies`) {
+        const { perPage, page } = paging(new URLSearchParams(query));
+        const policies = this.state.policies.filter(
+          (item) =>
+            new URLSearchParams(query).get('has_parents') !== 'false' ||
+            (item.source_type ?? 'Repository') === 'Repository',
+        );
+        return {
+          total_count: policies.length,
+          policies: policies
+            .slice((page - 1) * perPage, page * perPage)
+            .map((item) => ({ ...item, source_type: item.source_type ?? 'Repository' })),
+        };
+      }
+      if (method === 'POST' || method === 'PUT') {
+        if (method === 'PUT' && current === undefined) {
+          throw new GitHubError(404, 'Policy not found');
+        }
+        const data = record(body);
+        const saved = {
+          id: current?.id ?? this.nextId++,
+          name: typeof data['name'] === 'string' ? data['name'] : (current?.name ?? ''),
+          target: 'actions',
+          enforcement:
+            typeof data['enforcement'] === 'string' ? data['enforcement'] : (current?.enforcement ?? 'active'),
+          ...(current?.conditions === undefined && data['conditions'] === undefined
+            ? {}
+            : { conditions: data['conditions'] ?? current?.conditions }),
+          rules: data['rules'] === undefined ? (current?.rules ?? []) : storedRules(data['rules']),
+        };
+        this.state.policies = [...this.state.policies.filter((item) => item.id !== saved.id), saved];
+        return saved;
+      }
+      if (current === undefined) {
+        throw new GitHubError(404, 'Policy not found');
+      }
+      if (method === 'DELETE') {
+        this.state.policies = this.state.policies.filter((item) => item.id !== id);
+        return undefined;
+      }
+      return current;
     }
     const key = `${method} ${rulesetId === undefined ? route : `${base}/rulesets/:id`}`;
 

@@ -369,6 +369,69 @@ const ruleParameters: ReadonlyMap<string, z.ZodType> = new Map(
     tag_name_pattern: patternParameters,
     code_quality: z.looseObject({ severity: z.enum(['errors', 'warnings', 'notes', 'all']) }).partial(),
     max_file_path_length: z.looseObject({ max_file_path_length: z.number().int().min(1).max(32_767) }).partial(),
+    restrict_actions_actors: z
+      .looseObject({
+        allowed_actors: z.array(
+          z.object({
+            id: z.number().int(),
+            type: z.enum([
+              'User',
+              'Bot',
+              'Team',
+              'BusinessTeam',
+              'EnterpriseTeam',
+              'IntegrationInstallation',
+              'App',
+              'RepositoryRole',
+            ]),
+          }),
+        ),
+      })
+      .partial(),
+    restrict_action_events: z
+      .looseObject({
+        allowed_events: z.array(
+          z.enum([
+            'branch_protection_rule',
+            'check_run',
+            'check_suite',
+            'create',
+            'delete',
+            'deployment',
+            'deployment_status',
+            'discussion',
+            'discussion_comment',
+            'fork',
+            'gollum',
+            'image_version',
+            'issue_comment',
+            'issues',
+            'label',
+            'merge_group',
+            'milestone',
+            'page_build',
+            'project',
+            'project_card',
+            'project_column',
+            'public',
+            'pull_request',
+            'pull_request_review',
+            'pull_request_review_comment',
+            'pull_request_target',
+            'push',
+            'registry_package',
+            'release',
+            'repository_dispatch',
+            'schedule',
+            'status',
+            'watch',
+            'workflow_call',
+            'workflow_dispatch',
+            'workflow_run',
+          ]),
+        ),
+      })
+      .partial(),
     max_file_size: z.looseObject({ max_file_size: z.number().int().min(1).max(100) }).partial(),
   }),
 );
@@ -384,6 +447,49 @@ export const rule = z
       context.addIssue({ code: 'custom', message: issue.message, path: ['parameters', ...issue.path] });
     }
   });
+
+export const actionPolicy = z.object({
+  name: z.string().min(1),
+  enforcement: z.enum(['active', 'evaluate', 'disabled']).optional(),
+  conditions: z
+    .object({
+      workflow_path: z
+        .object({
+          include: z.array(z.string().min(1)),
+          exclude: z.array(z.string().min(1)),
+        })
+        .superRefine((value, context) => {
+          if (value.include.length + value.exclude.length === 0) {
+            context.addIssue({
+              code: 'custom',
+              message: 'Choose included or excluded workflows; use ~ALL for all workflows',
+            });
+          }
+          if (value.include.includes('~ALL') && value.include.length !== 1) {
+            context.addIssue({
+              code: 'custom',
+              message: '~ALL must be the only included workflow pattern',
+              path: ['include'],
+            });
+          }
+          if (value.exclude.includes('~ALL')) {
+            context.addIssue({ code: 'custom', message: '~ALL cannot exclude workflows', path: ['exclude'] });
+          }
+        })
+        .optional(),
+    })
+    .optional(),
+  rules: z.array(rule).optional(),
+});
+
+export const actionPolicyEntry = z.discriminatedUnion(
+  'absent',
+  [
+    z.object({ name: z.string().min(1), absent: z.literal(true), draft: unmarked }),
+    actionPolicy.extend({ absent: unmarked, draft: unmarked }),
+  ],
+  markingKeyError('absent'),
+);
 
 export const ruleset = z.object({
   name: z.string().min(1),
@@ -585,6 +691,7 @@ export const profile = z
     custom_properties: customProperties,
     pages: pagesEntry,
     autolinks: z.array(autolinkEntry),
+    actions_policies: z.array(actionPolicyEntry),
     rulesets: z.array(rulesetEntry),
     environments: z.array(environmentEntry),
     labels: z.array(labelEntry),
@@ -607,6 +714,7 @@ export const profile = z
       'autolinks',
       context,
     );
+    addDuplicateNameIssues(value.actions_policies ?? [], 'Actions policy', 'actions_policies', context);
     addDuplicateNameIssues(value.rulesets ?? [], 'Ruleset', 'rulesets', context);
     addDuplicateNameIssues(value.environments ?? [], 'Environment', 'environments', context, environmentKey);
     addDuplicateNameIssues(value.labels ?? [], 'Label', 'labels', context, labelKey);
@@ -648,7 +756,7 @@ export const draftSettings = z
   .partial();
 
 export const definitionSections = {
-  'actions-policy': 'actions',
+  'actions-policy': 'actions_policies',
   ruleset: 'rulesets',
   environment: 'environments',
 } as const;
@@ -656,7 +764,7 @@ export type DefinitionKind = keyof typeof definitionSections;
 export const definitionKind = z.enum(['actions-policy', 'ruleset', 'environment']);
 export const profileReferences = z
   .object({
-    actions: z.string().min(1).optional(),
+    actions_policies: z.array(z.string().min(1)).optional(),
     rulesets: z.array(z.string().min(1)).optional(),
     environments: z.array(z.string().min(1)).optional(),
   })
@@ -676,6 +784,9 @@ export const profileFile = z.object({
   pages: pagesEntry.optional(),
   autolinks: z
     .array(z.discriminatedUnion('draft', [draftAutolink, autolinkEntry], markingKeyError('draft')))
+    .optional(),
+  actions_policies: z
+    .array(z.discriminatedUnion('draft', [draftEntry, actionPolicyEntry], markingKeyError('draft')))
     .optional(),
   rulesets: z.array(z.discriminatedUnion('draft', [draftEntry, rulesetEntry], markingKeyError('draft'))).optional(),
   environments: z
@@ -732,6 +843,8 @@ export function profileFileJsonSchema(): Record<string, unknown> {
 
 export type RepositorySettings = z.infer<typeof repositorySettings>;
 export type MergeSettings = z.infer<typeof mergeSettings>;
+export type ActionPolicy = z.infer<typeof actionPolicy>;
+export type ActionPolicyEntry = z.infer<typeof actionPolicyEntry>;
 export type ActionsSettings = z.infer<typeof actionsSettings>;
 export type SecuritySettings = z.infer<typeof securitySettings>;
 export type CustomProperties = z.infer<typeof customProperties>;

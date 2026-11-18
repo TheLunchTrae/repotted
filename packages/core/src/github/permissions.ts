@@ -56,6 +56,7 @@ const permissionsNeededToRead: readonly (readonly [RegExp, readonly Permission[]
   [/^\/pages$/u, [read('pages')]],
   [/^\/labels(\/.*)?$/u, [read('issues')]],
   // GitHub asks for write access to read these.
+  [/^\/actions\/policies(\/\d+)?$/u, [write('administration')]],
   [/^\/code-quality\/setup$/u, [write('administration')]],
   [/^\/interaction-limits\/pulls\/creation-cap$/u, [write('administration')]],
 ];

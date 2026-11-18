@@ -156,7 +156,7 @@ export function planActions(input: ActionsSettings, live: ActionsSettings, repo:
     changes.push({
       section: 'actions',
       action: 'update',
-      target: 'Actions policy',
+      target: 'Actions permissions',
       fields: policyFields,
       request: {
         method: 'PUT',

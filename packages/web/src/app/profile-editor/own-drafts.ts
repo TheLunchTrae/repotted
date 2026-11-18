@@ -31,7 +31,7 @@ export function ownUnsets(saved: ResolvedProfile): string[] {
 }
 
 export const settingsSections = ['repository', 'merge', 'actions', 'security', 'custom_properties', 'pages'] as const;
-const entrySections = ['autolinks', 'rulesets', 'environments', 'labels'] as const;
+const entrySections = ['autolinks', 'actions_policies', 'rulesets', 'environments', 'labels'] as const;
 
 export function comparableOwnDraft(saved: ResolvedProfile): unknown {
   const own = saved.chain[0];

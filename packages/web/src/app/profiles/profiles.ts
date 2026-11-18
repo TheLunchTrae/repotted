@@ -615,7 +615,7 @@ export class Profiles {
     const definition = definitionTypes.find((item) => item.kind === profile.definitionKind);
     const targetName = profile.targetName?.trim();
     if (
-      definition?.multiple === true &&
+      definition !== undefined &&
       (profile.start.kind === 'empty' || profile.start.kind === 'repository') &&
       (targetName === undefined || targetName === '')
     ) {
@@ -645,7 +645,7 @@ export class Profiles {
                 this.#github,
                 repository,
                 profile.definitionKind,
-                definition?.multiple === true ? targetName : undefined,
+                definition !== undefined ? targetName : undefined,
               );
         text = 'definition' in captured ? stringifyDefinition(captured.definition) : stringifyProfile(captured.profile);
         const capturedOwner = 'definition' in captured ? captured.definition.owner_type : captured.profile.owner_type;
@@ -690,7 +690,7 @@ export class Profiles {
         profile.start.kind === 'empty'
           ? definition === undefined
             ? owner
-            : `kind: ${definition.kind}\n${owner}${stringifyProfile({ [definition.section]: definition.multiple === true ? [{ name: targetName }] : {} })}`
+            : `kind: ${definition.kind}\n${owner}${stringifyProfile({ [definition.section]: [{ name: targetName }] })}`
           : `extends: ${JSON.stringify(relative(dirname(file), profile.start.base.file))}\n${
               profile.start.base.owner_type === null ? owner : ''
             }`;

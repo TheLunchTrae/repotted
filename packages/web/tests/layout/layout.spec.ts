@@ -49,7 +49,7 @@ const screens: Readonly<Record<string, Screen>> = {
   },
   'shared Actions policy editor': {
     path: '/actions-policies?definition=definitions%2Factions-policy%2FApproved.yaml',
-    visibleOnceDrawn: (page) => page.getByRole('radiogroup', { name: 'Actions', exact: true }),
+    visibleOnceDrawn: (page) => page.getByRole('radiogroup', { name: 'Enforcement', exact: true }),
   },
   'shared environment editor': {
     path: '/environments?definition=definitions%2Fenvironment%2Fproduction.yaml',
@@ -1207,7 +1207,7 @@ test('import waits for its selected file before creating a definition', async ({
   await page.getByLabel('Import YAML file').setInputFiles({
     name: 'policy.yaml',
     mimeType: 'application/yaml',
-    buffer: Buffer.from('kind: actions-policy\nactions: { enabled: true }\n'),
+    buffer: Buffer.from('kind: actions-policy\nactions_policies: [{ name: Approved, enforcement: active }]\n'),
   });
   const create = page.getByRole('button', { name: 'Create', exact: true });
   await expect(create).toBeDisabled();
@@ -1215,7 +1215,7 @@ test('import waits for its selected file before creating a definition', async ({
   await expect(create).toBeEnabled();
   await create.click();
   await expect(page.getByRole('heading', { name: 'imported-policy', exact: true })).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Actions', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Actions policies', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Repository', exact: true })).toHaveCount(0);
 });
 
@@ -1241,4 +1241,53 @@ test('a new reusable environment stays in the profile through a linked definitio
   await panel.getByRole('button', { name: 'Back to environments', exact: true }).click();
   await panel.getByRole('button', { name: /staging.*Waits 5 minutes/u }).click();
   await expect(panel.getByRole('textbox', { name: 'Wait timer, in minutes', exact: true })).toHaveValue('5');
+});
+
+test('named Actions policies edit workflow rules and link alongside general settings', async ({ page }) => {
+  await page.goto('/actions-policies?new');
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Release workflows');
+  await page.getByRole('textbox', { name: /^Target name/u }).fill('Release');
+  await page.getByRole('button', { name: 'Create definition', exact: true }).click();
+  await page
+    .getByRole('radiogroup', { name: 'Enforcement', exact: true })
+    .getByRole('radio', { name: 'Active', exact: true })
+    .check();
+  await page
+    .getByRole('radiogroup', { name: 'Workflow targeting', exact: true })
+    .getByRole('radio', { name: 'Selected workflows', exact: true })
+    .check();
+  const save = page.getByRole('button', { name: /^Save(?: definition)?$/u });
+  await expect(save).toBeDisabled();
+  await page
+    .getByRole('textbox', { name: 'Include workflow paths', exact: true })
+    .fill('.github/workflows/release.yml');
+  await page.getByRole('checkbox', { name: /^Restrict events/u }).check();
+  await page.getByRole('textbox', { name: 'Allowed events', exact: true }).fill('release\nworkflow_dispatch');
+  await page.getByRole('checkbox', { name: /^Restrict actors/u }).check();
+  await page.getByRole('button', { name: 'Add actor', exact: true }).click();
+  await expect(save).toBeDisabled();
+  await page.getByRole('button', { name: '1 thing to fix', exact: true }).click();
+  await page.getByRole('button', { name: 'Go to it', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Workflow rules', exact: true })).toBeFocused();
+  await page.getByRole('textbox', { name: 'Actor ID', exact: true }).fill('1234');
+  await save.click();
+  await expect(save).toBeDisabled();
+  await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
+  const yaml = page.getByRole('region', { name: 'Release workflows as YAML', exact: true });
+  await expect(yaml).toContainText('actions_policies:');
+  await expect(yaml).toContainText('restrict_action_events');
+  await expect(yaml).toContainText('allowed_actors:');
+  await page.goto('/profiles');
+  await page.getByText('shared-api', { exact: true }).click();
+  await page.getByRole('tab', { name: 'Actions policies', exact: true }).click();
+  await page
+    .getByRole('combobox', { name: 'Use a reusable Actions policy', exact: true })
+    .selectOption('Release workflows.yaml');
+  await save.click();
+  await expect(save).toBeDisabled();
+  const panel = page.getByRole('tabpanel');
+  await expect(panel.getByRole('button', { name: /^Release active, 2 rules/u })).toBeVisible();
+  await expect(panel.getByRole('button', { name: /^Approved active, 1 rule/u })).toBeVisible();
+  await page.getByRole('tab', { name: 'Actions', exact: true }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Actions', exact: true })).toBeVisible();
 });

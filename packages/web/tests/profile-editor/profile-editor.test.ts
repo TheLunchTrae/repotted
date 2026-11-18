@@ -930,6 +930,7 @@ test('what the installation was not given is turned off, and said once where it 
   expect(row(editor, 'repository.has_wiki')?.missingPermissions).toEqual([]);
 
   expect(editor.entryListMissingPermissions.value).toEqual({
+    actions_policies: [],
     rulesets: [],
     environments: ['Actions'],
     labels: ['Issues'],

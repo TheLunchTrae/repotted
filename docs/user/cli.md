@@ -428,20 +428,21 @@ describes each document.
 Capture an independent policy with:
 
 ```sh
-repotted capture octo-org/app --kind actions-policy --output trusted-actions.yaml
-repotted profile trusted-actions.yaml --set actions.default_workflow_permissions='"read"'
-repotted stage apply.yaml --new octo-org/service --profile trusted-actions.yaml
+repotted capture octo-org/app --kind actions-policy --name Release --output release.yaml
+repotted profile release.yaml --set actions_policies='[{"name":"Release","enforcement":"evaluate"}]'
+repotted stage apply.yaml --new octo-org/service --profile release.yaml
 repotted plan --staged apply.yaml --out plan.json
 repotted apply plan.json
 ```
 
-Create a policy by writing `kind: actions-policy` and its `actions` settings in a
-YAML file. List and sync it with `profiles` and `sync`, just like profiles.
-`profile --set references.actions='"trusted-actions.yaml"'` adds a reference to
-an existing profile; `--unset references.actions` removes it without changing
+Create a definition by writing `kind: actions-policy` and exactly one named
+entry in `actions_policies` in a YAML file. List and sync it with `profiles` and `sync`, just like profiles.
+`profile --set references.actions_policies='["release.yaml"]'` adds a reference to
+an existing profile; `--unset references.actions_policies` removes it without changing
 GitHub. See [reusable policies](profiles.md#reusable-actions-policies) for precedence.
 
-The MCP `capture` tool accepts `kind: "actions-policy"`. Its `plan` tool accepts
+The MCP `capture` tool accepts `kind: "actions-policy"` and the policy name
+in `name`. Its `plan` tool accepts
 a definition as `profile_path` or YAML in `profile`, including profile references.
 Relative references in inline YAML resolve from the server's directory. Apply
 re-resolves references before writing and requires a fresh plan if writes differ.

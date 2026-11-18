@@ -32,41 +32,24 @@ export function SharedDefinition({
   if (library === undefined) {
     return null;
   }
-  const kind = library.kind === 'actions-policy' ? 'actions' : library.kind === 'ruleset' ? 'rulesets' : 'environments';
+  const kind = library.section;
   const noun = library.kind === 'actions-policy' ? library.label : library.label.toLowerCase();
-  const named =
-    kind === 'actions' ? (references.actions === undefined ? [] : [references.actions]) : (references[kind] ?? []);
+  const named = references[kind] ?? [];
   const available = profiles.definitions.value.filter((definition) => definition.kind === library.kind);
   const inheritedDefinitions = available.filter(
     (definition) =>
       inherited.includes(definition.file) && !named.some((name) => resolve(folder, name) === definition.file),
   );
   const change = (names: string[]): void => {
-    const next = { ...references };
-    if (kind === 'actions') {
-      if (names[0] === undefined) {
-        delete next.actions;
-      } else {
-        next.actions = names[0];
-      }
-    } else if (kind === 'rulesets') {
-      if (names.length === 0) {
-        delete next.rulesets;
-      } else {
-        next.rulesets = names;
-      }
-    } else if (names.length === 0) {
-      delete next.environments;
-    } else {
-      next.environments = names;
-    }
-    onChange(next);
+    const { [kind]: _removed, ...others } = references;
+    onChange(names.length === 0 ? others : { ...others, [kind]: names });
   };
   return (
     <fieldset class="shared-definition-group" disabled={disabled}>
       <legend>Use a reusable {noun}</legend>
       <p class="muted small">
-        Linked definitions stay up to date with their library. Settings in this profile can override shared values.
+        Linked definitions stay up to date with their library. Entries in this profile can override linked definitions
+        by name.
       </p>
       {named.map((name) => {
         const definition = available.find((item) => item.file === resolve(folder, name));
@@ -117,7 +100,7 @@ export function SharedDefinition({
           onChange={(event) => {
             const value = event.currentTarget.value;
             if (value !== '') {
-              change(kind === 'actions' ? [value] : [...named, value]);
+              change([...named, value]);
             }
           }}
         >
@@ -138,10 +121,7 @@ export function SharedDefinition({
       </label>
       {available.length === 0 && (
         <p class="muted small">
-          No reusable {noun} is available yet.{' '}
-          {kind === 'actions'
-            ? 'Use the option below to save these settings as a reusable Actions policy.'
-            : `Use New ${noun} and choose Also save as a reusable ${noun}.`}
+          No reusable {noun} is available yet. {`Use New ${noun} and choose Also save as a reusable ${noun}.`}
         </p>
       )}
     </fieldset>

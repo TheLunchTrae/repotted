@@ -61,7 +61,7 @@ async function attempt(work: () => Promise<ToolResult>): Promise<ToolResult> {
 const repository = z.string().describe('The repository as owner/name, for example octo-org/app');
 
 const instructions = [
-  'Repotted reads and changes GitHub repository settings, merge methods, Actions settings, security settings, custom properties, GitHub Pages, autolinks, rulesets, deployment environments and labels.',
+  'Repotted reads and changes GitHub repository settings, merge methods, Actions settings, security settings, custom properties, GitHub Pages, autolinks, Actions policies, rulesets, deployment environments and labels.',
   'capture describes a repository as a profile. plan compares a repository with a profile and lists the changes, without writing anything.',
   'check_actions says what allowed action patterns match on GitHub, and find_actions searches GitHub for repositories with an action; both only read.',
   'apply makes the changes of one earlier plan, by its plan_id, and only if the repository has not changed since. Show the user the plan and get their agreement before calling apply.',
@@ -85,7 +85,11 @@ export async function createServer(options: ServerOptions): Promise<McpServer> {
       inputSchema: {
         repository,
         kind: definitionKind.optional().describe('Capture a reusable definition instead of a whole profile'),
-        name: z.string().min(1).optional().describe('The target name of the ruleset to capture'),
+        name: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('The GitHub name of the Actions policy, ruleset, or environment to capture'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },

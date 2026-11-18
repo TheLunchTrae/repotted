@@ -14,6 +14,7 @@ const endpointsBySection: Readonly<Partial<Record<string, readonly Endpoint[]>>>
 const pathsBySection: Readonly<Partial<Record<string, string>>> = {
   actions: '/actions/permissions',
   pages: '/pages',
+  actions_policies: '/actions/policies',
   rulesets: '/rulesets',
   environments: '/environments',
   labels: '/labels',

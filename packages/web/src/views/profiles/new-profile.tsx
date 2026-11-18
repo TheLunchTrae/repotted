@@ -141,26 +141,27 @@ export function NewProfileForm({
               ? 'New profile'
               : `New ${library.kind === 'actions-policy' ? library.label : library.label.toLowerCase()}`}
           </h1>
-          <p class="muted">Repotted never replaces a profile that is already there.</p>
+          <p class="muted">
+            Repotted never replaces {library === undefined ? 'a profile' : 'a definition'} that is already there.
+          </p>
         </div>
       </div>
 
-      {definitionTypes.find((item) => item.kind === definitionKind)?.multiple === true &&
-        (kind === 'empty' || kind === 'repository') && (
-          <label class="form-field">
-            <span>Target name</span>
-            <input
-              class="field"
-              required
-              disabled={working}
-              value={targetName}
-              onInput={(event) => {
-                setTargetName(event.currentTarget.value);
-              }}
-            />
-            <span class="muted small">The name on GitHub. For a capture, enter its existing name.</span>
-          </label>
-        )}
+      {library !== undefined && (kind === 'empty' || kind === 'repository') && (
+        <label class="form-field">
+          <span>Target name</span>
+          <input
+            class="field"
+            required
+            disabled={working}
+            value={targetName}
+            onInput={(event) => {
+              setTargetName(event.currentTarget.value);
+            }}
+          />
+          <span class="muted small">The name on GitHub. For a capture, enter its existing name.</span>
+        </label>
+      )}
 
       <div class="form-field">
         <label for="new-profile-name">Name</label>
@@ -270,7 +271,9 @@ export function NewProfileForm({
             <strong>A repository</strong>
             <span class="muted small">
               {captured.length > 0
-                ? 'Captures its settings, rulesets, environments, and labels as they are on GitHub now. This only reads from GitHub.'
+                ? library === undefined
+                  ? 'Captures its settings, Actions policies, rulesets, environments, and labels as they are on GitHub now. This only reads from GitHub.'
+                  : `Captures the ${library.kind === 'actions-policy' ? library.label : library.label.toLowerCase()} named above. This only reads from GitHub.`
                 : 'No repositories are listed. Add the Repotted App to one first.'}
             </span>
             {kind === 'repository' && (

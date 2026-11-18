@@ -252,16 +252,18 @@ order:
 1. Repository settings and merge methods.
 2. Security settings: security and analysis, then Dependabot alerts before
    security updates, then the other security endpoints.
-3. The Actions policy, then its selected-actions list, then workflow
+3. Actions permissions, then the selected-actions list, then workflow
    permissions.
 4. Custom properties, Pages, and autolinks.
-5. Ruleset creates, then updates, then deletes, so a replacement exists before
+5. Actions policy creates, then updates, then deletes, so a replacement exists
+   before the policies it replaces go.
+6. Ruleset creates, then updates, then deletes, so a replacement exists before
    the rulesets it replaces go.
-6. Environment creates and updates, then deleted deployment patterns, then new
+7. Environment creates and updates, then deleted deployment patterns, then new
    ones, then environment deletes. Custom branch policies are on before their
    patterns are added, and no branch or tag outside both the old and the new
    lists can deploy in between.
-7. Label deletes, then renames, then updates, then creates. A label pairs
+8. Label deletes, then renames, then updates, then creates. A label pairs
    with the repository's by name in any case, or, when the repository lacks
    it, by the first name in its `renamed_from` that the repository has, which
    it renames so the label stays on its issues. `addRenameIssues` in
@@ -513,9 +515,10 @@ no CLI and reads no JSON output. [The web app](web-app.md) describes it, and
 ## Reusable definitions
 
 A definition uses the profile storage, discovery, editor, and sync paths, with
-an explicit `kind` that constrains its section. `actions-policy` permits only
-Actions settings, their drafts and unsets, and `owner_type`. A profile's
-`references.actions` names a definition relative to that profile. Definitions
+an explicit `kind` that constrains its section. `actions-policy` permits exactly one target name in `actions_policies`, its
+draft and unsets, and `owner_type`. A profile's `references.actions_policies`
+lists definitions relative to that profile. General Actions settings remain
+in the `actions` settings section. Definitions
 cannot inherit profiles or reference other definitions.
 
 `readListed` deduplicates inherited profiles before expanding their reference
@@ -534,6 +537,17 @@ live state and compares the regenerated requests with the reviewed requests.
 Missing definitions fail before any write. Assignment versions hash resolved
 settings, so transitive definition changes participate without another cache.
 `captureDefinition` reads only the selected section and repository owner metadata.
+
+`plan/sections/action-policies.ts` reads `/actions/policies` with
+`has_parents=false`, follows pagination, filters repository-owned summaries,
+and loads each policy's details. The API needs Administration write permission
+even for reads. Capture selects one exact name and refuses missing or ambiguous
+targets. The planner pairs by exact name, preserves omitted live fields and
+rule parameters, and creates and updates before deleting. Duplicate live names
+refuse planning. Explicit ownership reconciles repository policies only;
+inherited policies remain outside its reads and writes. The saved-plan schema,
+staged exclusions, drafts, source maps, and comparisons treat policies as named
+entries, independently of the general Actions settings.
 
 `kind: ruleset` constrains a file to one target name in `rulesets`, with an
 optional draft beside the applying entry. A profile's `references.rulesets`

@@ -377,6 +377,7 @@ environments: [{ name: NPM, wait_timer: 5 }]
       security: {},
       custom_properties: {},
       pages: {},
+      actions_policies: {},
       autolinks: {},
       rulesets: { Keep: base, Replace: own },
       environments: { NPM: own },
@@ -388,6 +389,7 @@ environments: [{ name: NPM, wait_timer: 5 }]
         security: {},
         custom_properties: {},
         pages: {},
+        actions_policies: {},
         autolinks: {},
         rulesets: {},
         environments: {},
@@ -738,6 +740,7 @@ drafts:
       security: {},
       custom_properties: {},
       pages: {},
+      actions_policies: {},
       autolinks: {},
       rulesets: { Unfinished: file },
       environments: { npm: file },
@@ -972,7 +975,7 @@ drafts:
   test('cover every settings section', () => {
     // Every section of a profile holds settings, except its owner type and its lists of entries.
     const sections = Object.keys(profile.shape).filter(
-      (key) => !['owner_type', 'autolinks', 'rulesets', 'environments', 'labels'].includes(key),
+      (key) => !['owner_type', 'autolinks', 'actions_policies', 'rulesets', 'environments', 'labels'].includes(key),
     );
     expect(
       Object.keys(draftSettings.shape)

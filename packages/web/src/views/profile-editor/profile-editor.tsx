@@ -18,7 +18,6 @@ import { describeValue } from './describe-value.js';
 import { Entries, type EntryGoTo } from './entries.js';
 import { MissingPermissionsNote } from './missing-permissions-note.js';
 import { PatternChecks } from './pattern-checks.js';
-import { ReusableDefinitionOption } from './reusable-definition.js';
 import { SavePreviewDialog } from './save-preview.js';
 import { SaveProblems } from './save-problems.js';
 
@@ -637,9 +636,6 @@ export function ProfileSettings({
                   </div>
                 </section>
               ))}
-              {sharedDefinitions !== undefined && shown.section.section === 'actions' && (
-                <ReusableDefinitionOption editor={editor} section="actions" defaultName={`${name} Actions policy`} />
-              )}
             </div>
           )}
           {list !== undefined && (

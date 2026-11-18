@@ -12,11 +12,12 @@ import {
 } from 'yaml';
 import { z } from 'zod';
 
-import { autolinkEntry, environmentEntry, labelEntry, profileFile, rulesetEntry } from './schema.js';
+import { actionPolicyEntry, autolinkEntry, environmentEntry, labelEntry, profileFile, rulesetEntry } from './schema.js';
 
 type FieldPath = readonly (string | number)[];
 const entries = {
   autolinks: autolinkEntry,
+  actions_policies: actionPolicyEntry,
   rulesets: rulesetEntry,
   environments: environmentEntry,
   labels: labelEntry,

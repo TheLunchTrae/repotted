@@ -25,6 +25,8 @@ import { describeOwnerType, draftOwnerConflicts, type OwnerConflict, ownerConfli
 import { moveLeadingCommentAndBlankLine, profileFields, removeUnknownProfileFields } from './profile-fields.js';
 import {
   actionsSettings,
+  actionPolicyEntry,
+  type ActionPolicyEntry,
   definitionKind,
   definitionSections,
   type DefinitionKind,
@@ -67,8 +69,12 @@ function describe(error: z.ZodError): string {
   return z.prettifyError(error);
 }
 
-type OwnProfile = Omit<ProfileFile, 'autolinks' | 'rulesets' | 'environments' | 'labels' | 'drafts'> & {
+type OwnProfile = Omit<
+  ProfileFile,
+  'autolinks' | 'actions_policies' | 'rulesets' | 'environments' | 'labels' | 'drafts'
+> & {
   autolinks?: AutolinkEntry[] | undefined;
+  actions_policies?: ActionPolicyEntry[] | undefined;
   rulesets?: RulesetEntry[] | undefined;
   environments?: EnvironmentEntry[] | undefined;
   labels?: LabelEntry[] | undefined;
@@ -76,6 +82,7 @@ type OwnProfile = Omit<ProfileFile, 'autolinks' | 'rulesets' | 'environments' | 
 
 export interface Drafts extends Partial<Record<SettingsSection, Readonly<Record<string, unknown>> | undefined>> {
   autolinks?: DraftAutolink[] | undefined;
+  actions_policies?: DraftEntry[] | undefined;
   rulesets?: DraftEntry[] | undefined;
   environments?: DraftEntry[] | undefined;
   labels?: DraftEntry[] | undefined;
@@ -191,7 +198,7 @@ function mergeByKey<Entry>(
 
 type Settings = Record<string, unknown>;
 
-type EntryList = 'autolinks' | 'rulesets' | 'environments' | 'labels';
+type EntryList = 'autolinks' | 'actions_policies' | 'rulesets' | 'environments' | 'labels';
 
 export const settingsSections = ['repository', 'merge', 'actions', 'security', 'custom_properties', 'pages'] as const;
 
@@ -273,6 +280,7 @@ type Unset =
 
 const entryKeys: Readonly<Record<EntryList, (name: string) => string>> = {
   autolinks: (name) => name,
+  actions_policies: (name) => name,
   rulesets: (name) => name,
   environments: environmentKey,
   labels: labelKey,
@@ -396,8 +404,9 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
       }
     }
   }
-  const { autolinks, rulesets, environments, labels, drafts, ...settings } = layer;
+  const { autolinks, actions_policies, rulesets, environments, labels, drafts, ...settings } = layer;
   const [ownAutolinks, draftAutolinks] = partition<AutolinkEntry, DraftAutolink>(autolinks, isDraftAutolink);
+  const [ownPolicies, draftPolicies] = partition<ActionPolicyEntry, DraftEntry>(actions_policies, isDraftEntry);
   const [ownRulesets, draftRulesets] = partition<RulesetEntry, DraftEntry>(rulesets, isDraftEntry);
   const [ownEnvironments, draftEnvironments] = partition<EnvironmentEntry, DraftEntry>(environments, isDraftEntry);
   const [ownLabels, draftLabels] = partition<LabelEntry, DraftEntry>(labels, isDraftEntry);
@@ -408,6 +417,12 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
       (entry) => `Autolink "${entry.key_prefix}"`,
       (entry) => entry.key_prefix,
       (entry) => ['autolinks', autolinks?.indexOf(entry) ?? 0, 'key_prefix'],
+    ),
+    ...duplicateKeys(
+      ownPolicies,
+      (entry) => `Actions policy "${entry.name}"`,
+      (entry) => entry.name,
+      (entry) => ['actions_policies', actions_policies?.indexOf(entry) ?? 0, 'name'],
     ),
     ...duplicateKeys(
       ownRulesets,
@@ -434,6 +449,12 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
       (entry) => ['autolinks', autolinks?.indexOf(entry) ?? 0, 'key_prefix'],
     ),
     ...duplicateKeys(
+      draftPolicies,
+      (entry) => `Draft Actions policy "${entry.name}"`,
+      (entry) => entry.name,
+      (entry) => ['actions_policies', actions_policies?.indexOf(entry) ?? 0, 'name'],
+    ),
+    ...duplicateKeys(
       draftRulesets,
       (entry) => `Draft ruleset "${entry.name}"`,
       (entry) => entry.name,
@@ -454,6 +475,7 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
     ...unsetProblems(drafts?.unset, {
       ...drafts,
       autolinks: draftAutolinks,
+      actions_policies: draftPolicies,
       rulesets: draftRulesets,
       environments: draftEnvironments,
       labels: draftLabels,
@@ -470,6 +492,7 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
     own: {
       ...settings,
       autolinks: ownAutolinks,
+      actions_policies: ownPolicies,
       rulesets: ownRulesets,
       environments: ownEnvironments,
       labels: ownLabels,
@@ -477,6 +500,7 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
     drafts: {
       ...drafts,
       autolinks: draftAutolinks,
+      actions_policies: draftPolicies,
       rulesets: draftRulesets,
       environments: draftEnvironments,
       labels: draftLabels,
@@ -523,17 +547,18 @@ interface SourcedSetting extends Sourced<unknown> {
 /** By path joined with dots, as `has_wiki` or `selected_actions.verified_allowed`. */
 type SourcedSettings = Map<string, SourcedSetting>;
 
-interface SourcedLayer<Autolink, Ruleset, Environment, Label> {
+interface SourcedLayer<Autolink, Policy, Ruleset, Environment, Label> {
   settings: Partial<Record<SettingsSection, SourcedSettings>>;
   autolinks?: Sourced<Autolink>[] | undefined;
+  actions_policies?: Sourced<Policy>[] | undefined;
   rulesets?: Sourced<Ruleset>[] | undefined;
   environments?: Sourced<Environment>[] | undefined;
   labels?: Sourced<Label>[] | undefined;
 }
 
-type SourcedProfile = SourcedLayer<AutolinkEntry, RulesetEntry, EnvironmentEntry, LabelEntry>;
+type SourcedProfile = SourcedLayer<AutolinkEntry, ActionPolicyEntry, RulesetEntry, EnvironmentEntry, LabelEntry>;
 
-type SourcedDrafts = SourcedLayer<DraftAutolink, DraftEntry, DraftEntry, DraftEntry>;
+type SourcedDrafts = SourcedLayer<DraftAutolink, DraftEntry, DraftEntry, DraftEntry, DraftEntry>;
 
 function mergeSettings(
   section: SettingsSection,
@@ -604,22 +629,25 @@ function mergeSections(
  */
 function mergeLayers<
   Autolink extends { key_prefix: string },
+  Policy extends { name: string },
   Ruleset extends { name: string },
   Environment extends { name: string },
   Label extends { name: string },
 >(
-  base: SourcedLayer<Autolink, Ruleset, Environment, Label>,
+  base: SourcedLayer<Autolink, Policy, Ruleset, Environment, Label>,
   override: Readonly<Partial<Record<SettingsSection, Settings | undefined>>> & {
     readonly autolinks?: Autolink[] | undefined;
+    readonly actions_policies?: Policy[] | undefined;
     readonly rulesets?: Ruleset[] | undefined;
     readonly environments?: Environment[] | undefined;
     readonly labels?: Label[] | undefined;
   },
   file: string,
-): SourcedLayer<Autolink, Ruleset, Environment, Label> {
+): SourcedLayer<Autolink, Policy, Ruleset, Environment, Label> {
   return {
     settings: mergeSections(base.settings, override, file),
     autolinks: mergeByKey(base.autolinks, sourced(override.autolinks, file), autolinkKey),
+    actions_policies: mergeByKey(base.actions_policies, sourced(override.actions_policies, file), rulesetKey),
     rulesets: mergeByKey(base.rulesets, sourced(override.rulesets, file), rulesetKey),
     environments: mergeByKey(base.environments, sourced(override.environments, file), environmentEntryKey),
     labels: mergeByKey(base.labels, sourced(override.labels, file), labelEntryKey),
@@ -648,6 +676,7 @@ function toProfile(merged: SourcedProfile): unknown {
   const data: Record<string, unknown> = {
     ...Object.fromEntries(settingsSections.map((section) => [section, values(merged.settings[section])])),
     autolinks: entries(merged.autolinks),
+    actions_policies: entries(merged.actions_policies),
     rulesets: entries(merged.rulesets),
     environments: entries(merged.environments),
     labels: entries(merged.labels),
@@ -676,6 +705,7 @@ function toDrafts(merged: SourcedDrafts, unset: ReadonlyMap<string, Sourced<stri
   const drafts: Drafts = {
     ...Object.fromEntries(settingsSections.map((section) => [section, values(merged.settings[section])])),
     autolinks: entries(merged.autolinks),
+    actions_policies: entries(merged.actions_policies),
     rulesets: entries(merged.rulesets),
     environments: entries(merged.environments),
     labels: entries(merged.labels),
@@ -733,7 +763,12 @@ export function settingValueProblems(section: string, path: readonly string[], v
   }));
 }
 
-const entrySchemas = { rulesets: rulesetEntry, environments: environmentEntry, labels: labelEntry } as const;
+const entrySchemas = {
+  actions_policies: actionPolicyEntry,
+  rulesets: rulesetEntry,
+  environments: environmentEntry,
+  labels: labelEntry,
+} as const;
 
 /** A draft is checked as the entry it would be once finished. */
 export function entryValueProblems(
@@ -774,6 +809,11 @@ function draftWarnings(drafts: Drafts): string[] {
   for (const entry of drafts.autolinks ?? []) {
     warnings.push(
       ...entryProblems(autolinkEntry, entry).map((line) => `Draft autolink "${entry.key_prefix}": ${line}`),
+    );
+  }
+  for (const entry of drafts.actions_policies ?? []) {
+    warnings.push(
+      ...entryProblems(actionPolicyEntry, entry).map((line) => `Draft Actions policy "${entry.name}": ${line}`),
     );
   }
   for (const entry of drafts.rulesets ?? []) {
@@ -1036,6 +1076,7 @@ function sourcesOf(
     custom_properties: files(merged.settings.custom_properties),
     pages: files(merged.settings.pages),
     autolinks: entryFiles<{ key_prefix: string }>(merged.autolinks, (entry) => entry.key_prefix),
+    actions_policies: entryFiles<{ name: string }>(merged.actions_policies, (entry) => entry.name),
     rulesets: entryFiles<{ name: string }>(merged.rulesets, (entry) => entry.name),
     environments: entryFiles<{ name: string }>(merged.environments, (entry) => entry.name),
     labels: entryFiles<{ name: string }>(merged.labels, (entry) => entry.name),
@@ -1165,6 +1206,13 @@ function removableEntries(parsed: OwnProfile): RemovableEntry[] {
       name: entry.key_prefix,
       key: `autolinks/${entry.key_prefix}`,
       described: `autolink "${entry.key_prefix}"`,
+      absent: entry.absent === true,
+    })),
+    ...(parsed.actions_policies ?? []).map((entry) => ({
+      section: 'actions_policies' as const,
+      name: entry.name,
+      key: `actions_policies/${entry.name}`,
+      described: `Actions policy "${entry.name}"`,
       absent: entry.absent === true,
     })),
     ...(parsed.rulesets ?? []).map((entry) => ({
@@ -1467,7 +1515,7 @@ export interface SettingEdit {
  * draft in place.
  */
 export interface EntryEdit {
-  readonly list: 'rulesets' | 'environments' | 'labels';
+  readonly list: 'actions_policies' | 'rulesets' | 'environments' | 'labels';
   readonly name: string;
   /** The original list position when repairing an unnamed or duplicate entry. */
   readonly index?: number | undefined;
@@ -1500,6 +1548,7 @@ function isEditable(path: readonly string[]): boolean {
       'drafts',
       ...settingsSections,
       'autolinks',
+      'actions_policies',
       'rulesets',
       'environments',
       'labels',
@@ -1597,10 +1646,20 @@ function holdsYamlAnchorOrAlias(node: YAMLSeq): boolean {
 
 /** A written entry takes the place of the one it replaces, and a new name goes at the end. */
 function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void {
-  const key = { rulesets: (name: string) => name, environments: environmentKey, labels: labelKey }[edit.list];
+  const key = {
+    actions_policies: (name: string) => name,
+    rulesets: (name: string) => name,
+    environments: environmentKey,
+    labels: labelKey,
+  }[edit.list];
   const from = edit.draft === true;
   const to = edit.entry === undefined ? from : edit.entry['draft'] === true;
-  const kind = { rulesets: 'ruleset', environments: 'environment', labels: 'label' }[edit.list];
+  const kind = {
+    actions_policies: 'Actions policy',
+    rulesets: 'ruleset',
+    environments: 'environment',
+    labels: 'label',
+  }[edit.list];
   const noun = (draft: boolean): string => (draft ? `draft ${kind}` : kind);
   const name = edit.entry === undefined ? edit.name : edit.entry['name'];
   if (typeof name !== 'string') {
@@ -1732,7 +1791,7 @@ async function editChain<Read extends LayerRead>(
     'list' in edit
       ? (edit.index ?? -1)
       : edit.path.length === 2 &&
-          ['autolinks', 'rulesets', 'environments', 'labels'].includes(edit.path[0] ?? '') &&
+          ['autolinks', 'actions_policies', 'rulesets', 'environments', 'labels'].includes(edit.path[0] ?? '') &&
           /^\d+$/u.test(edit.path[1] ?? '')
         ? Number(edit.path[1])
         : -1;
@@ -1746,7 +1805,7 @@ async function editChain<Read extends LayerRead>(
     const removesListItem =
       edit.value === undefined &&
       edit.path.length === 2 &&
-      ['autolinks', 'rulesets', 'environments', 'labels'].includes(edit.path[0] ?? '') &&
+      ['autolinks', 'actions_policies', 'rulesets', 'environments', 'labels'].includes(edit.path[0] ?? '') &&
       /^\d+$/u.test(edit.path[1] ?? '');
     const removesDraftSection =
       edit.value === undefined &&

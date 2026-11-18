@@ -12,6 +12,7 @@ import {
 import { type Drafts, parseProfile, resolveProfile } from '../profiles/profile.js';
 import {
   actionsSettings,
+  actionPolicy,
   commitPairs,
   environment,
   identifyingRepositoryFields,
@@ -54,6 +55,7 @@ import {
   ownershipWarnings,
   pruneEntries,
 } from './ownership.js';
+import { describeActionPolicy, planActionPolicies, readActionPolicies } from './sections/action-policies.js';
 import { actionsEndpoints, planActions, readActions, readActionsEnabled } from './sections/actions.js';
 import { describeAutolink, planAutolinks, readAutolinks } from './sections/autolinks.js';
 import { describeEnvironment, planEnvironments, readEnvironments } from './sections/environments.js';
@@ -92,7 +94,7 @@ function draftTargets(drafts: Drafts, section: Section): string[] {
   if (section === 'autolinks') {
     return (drafts.autolinks ?? []).map((entry) => entry.key_prefix);
   }
-  if (section === 'rulesets' || section === 'environments' || section === 'labels') {
+  if (section === 'actions_policies' || section === 'rulesets' || section === 'environments' || section === 'labels') {
     return (drafts[section] ?? []).map((entry) => entry.name);
   }
   return Object.keys(drafts[section] ?? {});
@@ -226,6 +228,18 @@ export async function createPlan(
     );
     add(planAutolinks(entries, live, repo));
   }
+  if (desired.actions_policies !== undefined || owns(ownership, 'actions_policies')) {
+    const live = await readActionPolicies(github, repo);
+    const entries = pruneEntries(
+      desired.actions_policies ?? [],
+      live.available ? live.policies.map((entry) => entry.policy.name) : [],
+      (entry) => entry.name,
+      (name) => ({ name, absent: true as const }),
+      'actions_policies',
+      ownership,
+    );
+    add(planActionPolicies(entries, live, repo));
+  }
   if (desired.rulesets !== undefined || owns(ownership, 'rulesets')) {
     const live = await readRulesets(github, repo);
     const entries = pruneEntries(
@@ -316,7 +330,7 @@ export async function createPlan(
  * profile leaves a ruleset it does not name alone.
  */
 function loadableEntries<Entry extends { readonly name: string }>(
-  section: 'rulesets' | 'environments' | 'labels',
+  section: 'actions_policies' | 'rulesets' | 'environments' | 'labels',
   schema: z.ZodType,
   entries: readonly Entry[],
   warnings: Warning[],
@@ -426,6 +440,7 @@ export async function captureProfile(
   const properties = await readCustomProperties(github, repo);
   const pages = await readPages(github, repo);
   const autolinks = await readAutolinks(github, repo);
+  const policies = await readActionPolicies(github, repo);
   const rulesets = await readRulesets(github, repo);
   const environments = await readEnvironments(github, repo);
   const labels = await readLabels(github, repo);
@@ -434,6 +449,7 @@ export async function captureProfile(
     ['custom_properties', properties],
     ['pages', pages],
     ['autolinks', autolinks],
+    ['actions_policies', policies],
     ['rulesets', rulesets],
     ['environments', environments],
     ['labels', labels],
@@ -443,6 +459,14 @@ export async function captureProfile(
     }
   }
   const customProperties = properties.available ? captureCustomProperties(properties.values) : {};
+  const capturedPolicies = policies.available
+    ? loadableEntries(
+        'actions_policies',
+        actionPolicy,
+        policies.policies.map((entry) => describeActionPolicy(entry.policy)),
+        warnings,
+      )
+    : undefined;
   const capturedRulesets = rulesets.available
     ? loadableEntries(
         'rulesets',
@@ -468,6 +492,7 @@ export async function captureProfile(
     ...(autolinks.available && autolinks.autolinks.length > 0
       ? { autolinks: autolinks.autolinks.map(describeAutolink) }
       : {}),
+    ...(capturedPolicies === undefined || capturedPolicies.length === 0 ? {} : { actions_policies: capturedPolicies }),
     ...(capturedRulesets === undefined ? {} : { rulesets: capturedRulesets }),
     ...(capturedEnvironments === undefined ? {} : { environments: capturedEnvironments }),
     ...(capturedLabels === undefined || capturedLabels.length === 0 ? {} : { labels: capturedLabels }),
@@ -656,6 +681,8 @@ const symbols = { create: '+', update: '~', delete: '-' } as const;
 
 function describeTarget(section: Section, target: string): string {
   switch (section) {
+    case 'actions_policies':
+      return `Actions policy "${target}"`;
     case 'rulesets':
       return `ruleset "${target}"`;
     case 'environments':
@@ -684,6 +711,7 @@ export function describeSkipped({ section, target, unset }: Skipped): string {
 
 const entryNouns: Partial<Record<Section, string>> = {
   autolinks: 'autolink',
+  actions_policies: 'Actions policy',
   rulesets: 'ruleset',
   environments: 'environment',
   labels: 'label',
