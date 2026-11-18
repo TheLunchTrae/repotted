@@ -138,7 +138,10 @@ export function SharedDefinition({
       </label>
       {available.length === 0 && (
         <p class="muted small">
-          Create {library.kind === 'ruleset' ? 'a' : 'an'} {noun} on the {library.title} page first.
+          No reusable {noun} is available yet.{' '}
+          {kind === 'actions'
+            ? 'Use the option below to save these settings as a reusable Actions policy.'
+            : `Use New ${noun} and choose Also save as a reusable ${noun}.`}
         </p>
       )}
     </fieldset>
