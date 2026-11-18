@@ -9,7 +9,7 @@ import { BatchApply } from '../../src/app/apply/batch-apply.js';
 import { repositoryFoldersKey } from '../../src/app/preferences/preference-changes.js';
 import { type Change, SharedPreferences, preferencesFile } from '../../src/app/preferences/shared-preferences.js';
 import type { ProfileListing } from '../../src/app/profiles/profiles.js';
-import { reviewMovedProfiles } from '../../src/app/repositories/folder-moves.js';
+import { reviewAssignedProfiles } from '../../src/app/repositories/profile-reviews.js';
 import {
   profileVersion,
   RepositoryProfiles,
@@ -209,15 +209,12 @@ test('a batch reviews folder then own layers and records only complete successfu
   assignments.setProfiles('lunch/web', ['web.yaml']);
   await assignments.check();
   const fakes = names.map((name) => new FakeGitHub({}, name));
-  const batch = new BatchApply(new FakeFleet(fakes), () => undefined, assignments);
-  await batch.startFromProfiles(
-    names.map((repository) => ({
-      repository,
-      profiles: assignments
-        .profilesOf(repository)
-        .map((path) => ({ file: assignments.fileOf(path), name: path, folder })),
-    })),
-  );
+  const github = new FakeFleet(fakes);
+  const batch = new BatchApply(github, () => undefined, assignments);
+  const apply = new Apply(github, () => undefined, undefined, assignments);
+  const review = reviewAssignedProfiles(names, assignments, folder, apply, batch);
+  expect(review?.path).toBe('/batch');
+  await review?.work;
 
   expect(batch.state.value.kind).toBe('reviewed');
   expect(fakes.flatMap((fake) => fake.calls).every((call) => call.method === 'GET')).toBe(true);
@@ -292,7 +289,7 @@ test('a move review that lands late cannot advance a newer apply from its edits'
   const github = new FakeFleet([new FakeGitHub(), new FakeGitHub({}, 'lunch/other')]);
   const apply = new Apply(github, () => undefined);
   const batch = new BatchApply(github, () => undefined);
-  const late = reviewMovedProfiles(['lunch/app'], assignments, folder, apply, batch);
+  const late = reviewAssignedProfiles(['lunch/app'], assignments, folder, apply, batch);
   await entered;
   await apply.close();
   await apply.start('lunch/other', { file: `${folder}/base.yaml`, name: 'base', folder });
@@ -345,12 +342,12 @@ test.each(['single', 'batch'] as const)(
     const pending = kind === 'single' ? apply.apply() : batch.apply();
     await entered;
 
-    expect(reviewMovedProfiles(['lunch/api'], assignments, folder, apply, batch)).toBeUndefined();
-    expect(reviewMovedProfiles(['lunch/app', 'lunch/api'], assignments, folder, apply, batch)).toBeUndefined();
+    expect(reviewAssignedProfiles(['lunch/api'], assignments, folder, apply, batch)).toBeUndefined();
+    expect(reviewAssignedProfiles(['lunch/app', 'lunch/api'], assignments, folder, apply, batch)).toBeUndefined();
 
     release();
     await pending;
-    const review = reviewMovedProfiles(['lunch/api'], assignments, folder, apply, batch);
+    const review = reviewAssignedProfiles(['lunch/api'], assignments, folder, apply, batch);
     expect(review?.path).toBe('/apply');
     await review?.work;
     expect(apply.state.value).toMatchObject({ kind: 'reviewed', repository: 'lunch/api' });

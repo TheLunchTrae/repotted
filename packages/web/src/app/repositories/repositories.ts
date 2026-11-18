@@ -133,7 +133,7 @@ export class Repositories {
   readonly #user: User;
   readonly #browser: Preferences;
   readonly #onSignedOut: () => void;
-  readonly #onReviewMoved: (repositories: readonly string[]) => boolean;
+  readonly #onReviewProfiles: (repositories: readonly string[]) => boolean;
   readonly #hiddenOwners = computed(() => namesIn(this.preferences.read(hiddenOwnersKey)));
   /** Kept lowercase, since GitHub matches names in any case. */
   readonly #hiddenNames = computed<ReadonlySet<string>>(
@@ -159,7 +159,7 @@ export class Repositories {
     preferences: SharedPreferences,
     browser: Preferences,
     onSignedOut: () => void,
-    onReviewMoved: (repositories: readonly string[]) => boolean = () => true,
+    onReviewProfiles: (repositories: readonly string[]) => boolean = () => true,
   ) {
     this.#github = github;
     this.#user = user;
@@ -169,7 +169,7 @@ export class Repositories {
     this.sortOrder.value = sortOrderIn(browser.read(sortOrderKey));
     this.filters.value = filtersIn(browser.read(filtersKey));
     this.#onSignedOut = onSignedOut;
-    this.#onReviewMoved = onReviewMoved;
+    this.#onReviewProfiles = onReviewProfiles;
   }
 
   isHidden(repository: Repository): boolean {
@@ -645,7 +645,17 @@ export class Repositories {
     return this.#folders.value.find((folder) => sameName(folder.name, name));
   }
 
-  setFolderSettings(name: string, profiles: readonly string[], applyProfilesOnMove: boolean): void {
+  addFolderProfile(name: string, profile: string): void {
+    this.#updateFolders((folders) =>
+      folders.map((folder) =>
+        sameName(folder.name, name) && !(folder.profiles ?? []).includes(profile)
+          ? { ...folder, profiles: [...(folder.profiles ?? []), profile] }
+          : folder,
+      ),
+    );
+  }
+
+  setFolderProfiles(name: string, profiles: readonly string[], applyProfilesOnMove: boolean): void {
     this.#updateFolders((folders) =>
       folders.map((folder) => {
         if (!sameName(folder.name, name)) {
@@ -659,6 +669,22 @@ export class Repositories {
         };
       }),
     );
+  }
+
+  reviewFolderProfiles(name: string): string | undefined {
+    const folder = this.folder(name);
+    if (folder === undefined) {
+      return 'This folder no longer exists.';
+    }
+    if ((folder.profiles ?? []).length === 0) {
+      return 'Add a profile to this folder before reviewing an apply.';
+    }
+    if (folder.repositories.length === 0) {
+      return 'Move a repository into this folder before reviewing an apply.';
+    }
+    return this.#onReviewProfiles(folder.repositories)
+      ? undefined
+      : 'An apply is writing to GitHub. Wait for it to finish, then review this folder again.';
   }
 
   /**
@@ -748,7 +774,7 @@ export class Repositories {
       this.#deselect(moving);
     }
     if (target?.applyProfilesOnMove === true && (target.profiles ?? []).length > 0 && entering.length > 0) {
-      this.moveReviewNotice.value = !this.#onReviewMoved(entering)
+      this.moveReviewNotice.value = !this.#onReviewProfiles(entering)
         ? `${entering.join(', ')} moved to ${target.name}. An apply is writing to GitHub. When it finishes, open each moved repository and choose Review apply for its profiles.`
         : undefined;
     }

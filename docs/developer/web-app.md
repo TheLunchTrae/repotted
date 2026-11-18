@@ -464,11 +464,30 @@ path; the engine resolves shared ancestors once. `ownProfilesOf` supplies
 the editable repository list, so inherited layers are never copied into it.
 Folders are flat and inherit all their layers; there is no per-layer opt-out.
 
+`views/repositories/folder-profiles.tsx` draws both the header tags with their
+quick picker and the **Profiles** dialog. The picker appends a profile to the
+current saved list immediately; the dialog keeps edits local until saved.
+Header tags measure their intrinsic width with a `ResizeObserver` and
+collapse to a count when they exceed the available space. Phone headers
+keep one row with the tags on the right and selection in the folder menu.
+The tag names and count stay measurable while hidden. The header reserves
+the smaller of their intrinsic widths plus the picker, so a side panel
+cannot clip the badge. A window resize
+rechecks the phone width limit so a count can expand even when its own
+width stays the same.
+Neither saving path starts an apply. **Save and review apply** saves those
+edits first, then `Repositories.reviewFolderProfiles` requests a review of
+the complete stored membership, independent of the list's search, filters,
+and hidden owners or repositories. Empty membership or layers refuse the
+review. An active write keeps the dialog open with an error; the edits stay
+saved.
+
 `Repositories.moveToFolder` calls its review callback only for repositories
 newly entering a known folder with the setting on and layers assigned.
-Preference reads, settings saves, renames, deletions, moves out, and moves to
-the same folder never call it. `reviewMovedProfiles` opens the single review
-or one batch using the effective layers after the move. A single review
+Preference reads, profile saves, renames, deletions, moves out, and moves to
+the same folder never call it. Both move and explicit folder reviews use
+`reviewAssignedProfiles` in `profile-reviews.ts` to open a single review
+or one batch using each member's effective layers. A single review
 starts atomically in `Apply.startReview`, so late work cannot advance a
 newer apply from its edits. An active single or batch write refuses the
 review; a shell notice names the moved repositories and asks for a manual

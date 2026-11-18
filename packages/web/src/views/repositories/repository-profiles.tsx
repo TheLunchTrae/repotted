@@ -234,7 +234,7 @@ export function ProfileLayers({
   readonly onChange: (list: readonly string[]) => void;
 }): JSX.Element {
   const choices = profiles.listings.value
-    .filter((listing) => listing.problem === null)
+    .filter((listing) => listing.problem === null && listing.kind === undefined)
     .map((listing) => profiles.pathOf(listing))
     .filter((profilePath) => !list.includes(profilePath));
   const [picked, setPicked] = useState<string | undefined>(undefined);
@@ -377,7 +377,7 @@ export function EditProfilesDialog({ repository, assignments, profiles, onClose 
                 </li>
               ))}
             </ol>
-            <p class="muted small">These apply first. Edit the folder's settings to change them.</p>
+            <p class="muted small">These apply first. Edit the folder's profiles to change them.</p>
           </div>
         )}
         {inherited.length > 0 && <h3>Own profiles</h3>}
