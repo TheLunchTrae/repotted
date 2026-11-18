@@ -8,7 +8,6 @@ import {
 
 import { mkdir, readdir, rm, writeFile } from '../../engine/files.js';
 import { dirname, join, relative } from '../../engine/path.js';
-import { settingSections } from '../profile-editor/setting-fields.js';
 import { definitionTypes } from './definition-types.js';
 import { profileNameProblem } from './profile-name.js';
 
@@ -41,13 +40,7 @@ export async function saveReusableDefinitions(
         edit.path[0] !== 'references',
   );
   if (actions) {
-    writes.push(
-      ...settingSections
-        .filter((section) => section.section === 'actions')
-        .flatMap((section) => section.groups.flatMap((group) => group.fields))
-        .map((field) => ({ path: field.path, value: undefined })),
-      { path: ['drafts', 'actions'], value: undefined },
-    );
+    writes.push({ path: ['actions'], value: undefined }, { path: ['drafts', 'actions'], value: undefined });
   }
   for (const definition of definitions) {
     const problem = profileNameProblem(definition.name, 'reusable definition');

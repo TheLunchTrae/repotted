@@ -84,6 +84,33 @@ test('saving an Actions policy moves its settings and preserves unrelated profil
   });
 });
 
+test('file-only Actions settings follow later changes to their reusable policy', async () => {
+  const profiles = await setup();
+  const listing = profiles.selected.value!;
+  await files.writeFile(
+    listing.file,
+    'actions:\n  oidc_customization_sub:\n    use_default: false\n    include_claim_keys: [repo, context]\n',
+  );
+  await profiles.refresh();
+  const editor = profiles.editor.value!;
+  editor.setReusable('actions', 'actions', 'Shared');
+  await profiles.save();
+  expect(editor.saveError.value).toBeUndefined();
+  expect(parse(await files.readFile(listing.file, 'utf8'))).toEqual({
+    references: { actions: '../definitions/actions-policy/Shared.yaml' },
+  });
+  const definition = profiles.definitions.value[0]!;
+  await profiles.write(() =>
+    files.writeFile(
+      definition.file,
+      'kind: actions-policy\nactions:\n  oidc_customization_sub:\n    use_default: false\n    include_claim_keys: [repository_owner, context]\n',
+    ),
+  );
+  expect((await resolveProfile(listing.file)).profile.actions).toEqual({
+    oidc_customization_sub: { use_default: false, include_claim_keys: ['repository_owner', 'context'] },
+  });
+});
+
 test('a failed profile write rolls back the definitions and keeps choices for retry', async () => {
   const profiles = await setup();
   const listing = profiles.selected.value!;
