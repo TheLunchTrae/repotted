@@ -2054,8 +2054,9 @@ select.field {
 
   .folder-profiles {
     flex: none;
+    justify-content: flex-end;
     gap: 0;
-    max-width: min(164px, 45vw);
+    width: min(var(--folder-profiles-full-width, 44px), 164px, 45vw);
     margin-inline-start: auto;
   }
 

@@ -45,6 +45,7 @@ export function FolderProfileTags({
     }
     if (tags === null || count === null) {
       element.style.minWidth = '';
+      element.style.removeProperty('--folder-profiles-full-width');
       setFits(true);
       return;
     }
@@ -53,21 +54,21 @@ export function FolderProfileTags({
       const namesWidth = tags.getBoundingClientRect().width;
       const controlsWidth = adding.getBoundingClientRect().width + Number.parseFloat(style.columnGap);
       element.style.minWidth = `${Math.min(namesWidth, count.getBoundingClientRect().width) + controlsWidth}px`;
-      // A collapsed phone badge must use its width limit to expand again.
-      const available = phone ? Number.parseFloat(style.maxWidth) : element.clientWidth;
+      // Keep the phone width budget independent of the collapsed badge.
+      element.style.setProperty('--folder-profiles-full-width', `${namesWidth + controlsWidth}px`);
+      const available = element.getBoundingClientRect().width;
       setFits(namesWidth <= available - controlsWidth);
     };
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     observer.observe(tags);
     observer.observe(count);
-    window.addEventListener('resize', measure);
+    observer.observe(adding);
     measure();
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', measure);
     };
-  }, [phone, layers.length]);
+  }, [layers.length]);
   const close = (): void => {
     if (menu.current !== null) {
       menu.current.open = false;

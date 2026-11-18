@@ -472,9 +472,9 @@ collapse to a count when they exceed the available space. Phone headers
 keep one row with the tags on the right and selection in the folder menu.
 The tag names and count stay measurable while hidden. The header reserves
 the smaller of their intrinsic widths plus the picker, so a side panel
-cannot clip the badge. A window resize
-rechecks the phone width limit so a count can expand even when its own
-width stays the same.
+cannot clip the badge. A phone's width budget comes from the full tag list
+even while collapsed. Measuring rendered widths avoids parsing CSS math
+expressions and lets the count expand when that budget grows.
 Neither saving path starts an apply. **Save and review apply** saves those
 edits first, then `Repositories.reviewFolderProfiles` requests a review of
 the complete stored membership, independent of the list's search, filters,
