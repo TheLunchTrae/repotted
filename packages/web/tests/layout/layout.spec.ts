@@ -354,6 +354,50 @@ test('two saves of the same profile replace the live announcement', async ({ pag
   await expect(message).toHaveText('website saved.Available in this tab.');
 });
 
+test('clearing a repository search keeps active filters and restores keyboard focus', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('summary', { hasText: 'Filter' }).click();
+  await page.getByRole('radio', { name: 'Private', exact: true }).check();
+  await page.locator('summary', { hasText: 'Filter' }).click();
+  const search = page.getByRole('searchbox', { name: 'Find a repository', exact: true });
+  await search.fill('nothing-matches-this');
+  await page.getByRole('button', { name: 'Clear search', exact: true }).click();
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Remove the private filter', exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Select lunch/app', exact: true })).toBeVisible();
+});
+
+test('a profile search with no matches offers a focused reset', async ({ page }) => {
+  await page.goto('/profiles');
+  const search = page.getByRole('searchbox', { name: 'Find a profile', exact: true });
+  await search.fill('nothing-matches-this');
+  await page.getByRole('button', { name: 'Clear search', exact: true }).click();
+  await expect(search).toBeFocused();
+  await expect(page.getByRole('button', { name: /base For any owner/u })).toBeVisible();
+});
+
+test('an initial profile read cannot report that the list is empty', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'repotted:profiles-source',
+      JSON.stringify({ kind: 'repository', repository: 'trae/repotted-config', path: '' }),
+    );
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('.empty') !== null) {
+        document.documentElement.setAttribute('data-empty-seen', 'true');
+      }
+    });
+    observer.observe(document, { childList: true, subtree: true });
+    window.addEventListener('release-github', () => observer.disconnect(), { once: true });
+  });
+  await page.goto('/profiles?hold-github');
+  await expect(page.getByRole('heading', { name: 'Profiles', exact: true })).toBeVisible();
+  await expect(page.locator('html')).not.toHaveAttribute('data-empty-seen', 'true');
+  await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
+  await expect(page.getByRole('heading', { name: 'No profiles yet', exact: true })).toBeVisible();
+});
+
 function elementsPastViewportEdges(): string[] {
   const width = document.documentElement.clientWidth;
   const found: string[] = [];

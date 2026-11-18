@@ -17,6 +17,11 @@ confirmation. It closes after five seconds; hovering it or focusing its
 **Dismiss** button pauses the countdown. Errors, sync conflicts, capture
 omissions, and apply results stay with the action that produced them.
 
+When a search finds no matches, **Clear search** restores results and returns
+the keyboard to the search field. Repository filters remain as chosen;
+**Clear filters** changes those separately. Empty profile lists offer
+**New profile**, and hidden repository lists offer their relevant show action.
+
 ## On a phone
 
 In a window 760 pixels wide or less, such as a phone's, the app lays itself
