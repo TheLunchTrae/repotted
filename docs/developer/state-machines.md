@@ -1142,7 +1142,7 @@ their saved desired profile.
 | -------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | Planning | A setting needs another planned write                                      | The prerequisite precedes it in the reviewed changes; nested dependencies are followed. |
 | Planning | Code scanning configuration needs disabled or unreadable unmanaged Actions | Configuration is skipped with a warning; Actions stays unmanaged.                       |
-| Planning | Both code scanning and Actions turn off                                    | Code scanning shutdown precedes Actions shutdown.                                       |
+| Planning | Code scanning turns off                                                    | Its shutdown precedes an Actions change and does not depend on enabling Actions.        |
 | Reviewed | New live entries appear in an owned section                                | Stale before any write; new pruning requires a fresh review.                            |
 | Reviewed | A source or reference cannot resolve                                       | Refused before any write; repair the source and review a fresh plan.                    |
 | Reviewed | The new plan differs                                                       | Stale: `StalePlanError` carries the current plan, and nothing is written.               |

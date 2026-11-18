@@ -101,6 +101,24 @@ test('turns code scanning off before disabling Actions', async () => {
   expect((await createPlan(github, repo, desired)).changes).toEqual([]);
 });
 
+test('turns code scanning off before an independent Actions enablement that fails', async () => {
+  const github = new FakeGitHub({
+    actions: { enabled: false },
+    settings: { '/code-scanning/default-setup': { state: 'configured' } },
+  }).fail('PUT /repos/lunch/app/actions/permissions', new GitHubError(403, 'Actions is disabled by the organization'));
+  const plan = await createPlan(github, repo, {
+    actions: { enabled: true },
+    security: { code_scanning_default_setup: { state: 'not-configured' } },
+  });
+  expect(plan.changes.map((change) => change.target)).toEqual(['code scanning default setup', 'Actions policy']);
+  await expect(applyPlan(github, plan)).rejects.toMatchObject({
+    name: ApplyError.name,
+    applied: [{ target: 'code scanning default setup' }],
+    failed: { target: 'Actions policy' },
+  });
+  expect(github.state.settings['/code-scanning/default-setup']).toMatchObject({ state: 'not-configured' });
+});
+
 test('refuses an apply when Actions must be enabled by a change that was not reviewed', async () => {
   const github = new FakeGitHub({ settings: { '/code-scanning/default-setup': { state: 'not-configured' } } });
   const plan = await createPlan(github, repo, {

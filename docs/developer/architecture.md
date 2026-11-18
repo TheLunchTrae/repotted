@@ -271,8 +271,9 @@ order:
 `plan/setting-order.ts` orders planned setting writes by the prerequisite
 chains in `setting-dependencies.ts`, keeping adapter order for unrelated
 changes. It also moves an Actions enablement before code scanning default
-setup. Disabling Actions keeps the base order, so an explicit code scanning
-shutdown happens first. A prerequisite in the same request needs no separate
+setup configuration. An explicit code scanning shutdown keeps the base order
+regardless of the Actions change, since shutdown needs no Actions prerequisite.
+A prerequisite in the same request needs no separate
 write. Cyclic write dependencies refuse planning. The resulting order is
 part of the reviewed plan and is checked again by apply; apply does not reorder
 requests after review.
