@@ -38,7 +38,8 @@ In a window 760 pixels wide or less, such as a phone's, the app lays itself
 out for the narrow screen:
 
 - The header is one row: **Repotted**, then your avatar with a menu icon.
-  That menu holds **Repositories**, **Profiles** and **Settings**, then your
+  That menu holds **Repositories**, **Profiles**, **Actions policies**,
+  **Rulesets**, **Environments**, and **Settings**, then your
   account, **Add repositories** and **Sign out**.
 - A repository's details open as a screen of their own; **Repositories**, at
   its top, or the browser's back returns to the list.
@@ -419,6 +420,36 @@ case; or when a rename would land on a folder that's already there. A
 rename that only changes a folder's case is refused too, since some
 computers take the two for one folder. If a write fails partway, what was
 written is taken back.
+
+### Shared definitions
+
+Open **Actions policies**, **Rulesets**, or **Environments** from the main
+navigation to create and edit shared definitions independently of profiles.
+In windows where those links need more room, they appear in the account
+menu. Each library lists its definitions; opening one shows its settings,
+**Used by** profiles, and assigned repositories.
+
+**Shared definitions** on a profile's creation or editing page selects an
+existing policy, ruleset, or environment. A profile can reference one Actions
+policy and several rulesets and environments. **Edit shared definition**
+opens the original in its library. **Remove** detaches the reference, and
+**Save** keeps reference edits with the profile's other changes. References
+inherited from a base are changed in that base. Inline settings retain
+priority over shared values.
+
+Reference changes preview the resolved entries before saving. Save those
+changes before editing the entries. Duplicating or importing a profile keeps
+its existing references; the creation form adds selected rulesets and
+environments and replaces the Actions policy only when you choose one.
+
+Saving a definition updates linked profiles on their next resolution and
+refreshes cached editors while preserving unsaved changes. It does not
+apply changes to GitHub repositories. Known consumers must remove their
+references and assignments before a definition can be deleted. See
+[Manage reusable definitions](profiles.md#manage-reusable-definitions-in-the-web-app)
+for creation, capture, duplication, import, export, and storage.
+Select definitions in a library to move them to another folder. Their
+references are updated, and selections on other pages stay separate.
 
 ### Make a profile
 

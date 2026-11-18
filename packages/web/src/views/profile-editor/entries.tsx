@@ -819,6 +819,7 @@ function summary(row: EntryRow): string {
 }
 
 interface EntryFormProps {
+  readonly single?: boolean;
   readonly editor: ProfileEditor;
   readonly row: EntryRow;
   readonly entry: Entry;
@@ -828,7 +829,15 @@ interface EntryFormProps {
   readonly goTo: EntryGoTo | undefined;
 }
 
-function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack, goTo }: EntryFormProps): JSX.Element {
+function EntryForm({
+  editor,
+  row,
+  entry,
+  ownerTypeHasPushRulesets,
+  onBack,
+  goTo,
+  single,
+}: EntryFormProps): JSX.Element {
   const noun = nouns[row.list];
   const back = useRef<HTMLButtonElement>(null);
   const form = useRef<HTMLDivElement>(null);
@@ -861,9 +870,11 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack, goTo 
   return (
     <div class="groups" ref={form}>
       <div class="entry-bar">
-        <button class="button button-quiet" type="button" ref={back} onClick={onBack}>
-          Back to {noun.many}
-        </button>
+        {single !== true && (
+          <button class="button button-quiet" type="button" ref={back} onClick={onBack}>
+            Back to {noun.many}
+          </button>
+        )}
         <span class="muted small">
           {row.source === undefined
             ? 'New, not saved yet.'
@@ -872,9 +883,11 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack, goTo 
               : row.inDraft === 'changed'
                 ? 'Changed in the draft. It applies once you save.'
                 : row.source === 'here'
-                  ? editor.canHoldDrafts
-                    ? 'Set in this profile.'
-                    : 'Set in this apply.'
+                  ? single === true
+                    ? 'Set in this definition.'
+                    : editor.canHoldDrafts
+                      ? 'Set in this profile.'
+                      : 'Set in this apply.'
                   : `From ${row.source}. Changing it here overrides it.`}
         </span>
         {row.unsaved && row.savedName !== undefined && (
@@ -888,7 +901,7 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack, goTo 
             Reset
           </button>
         )}
-        {renamable && (
+        {renamable && single !== true && (
           <button
             class="button button-quiet button-small"
             type="button"
@@ -999,13 +1012,14 @@ function EntryForm({ editor, row, entry, ownerTypeHasPushRulesets, onBack, goTo 
 }
 
 interface EntriesProps {
+  readonly single?: boolean;
   readonly editor: ProfileEditor;
   readonly list: EntryList;
   readonly ownerTypeHasPushRulesets: boolean;
   readonly goTo?: EntryGoTo | undefined;
 }
 
-export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo }: EntriesProps): JSX.Element {
+export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo, single }: EntriesProps): JSX.Element {
   const [openKey, setOpenKey] = useState<string | undefined>(goTo?.rowKey);
   // Only the form a go-to opened puts the keyboard in its field; one opened from the list again starts at the top.
   const [goingTo, setGoingTo] = useState<EntryGoTo | undefined>(goTo);
@@ -1020,10 +1034,11 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo }: 
   const batch = editor.entryListBatches.value[kind];
   const missingPermissions = editor.entryListMissingPermissions.value[kind];
   const turnedOff = missingPermissions.length > 0;
+  const previewingReferences = editor.previewingReferences.value;
   // A save gives a new or renamed entry the key of its saved name, so the open one is found by that name then.
   const openName = useRef<string | undefined>(undefined);
   const open =
-    rows.find((row) => row.key === openKey) ??
+    (single === true ? rows[0] : rows.find((row) => row.key === openKey)) ??
     (openKey === undefined || openName.current === undefined
       ? undefined
       : rows.find((row) => row.savedName === openName.current));
@@ -1050,25 +1065,38 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo }: 
     wasOpen.current = shown !== undefined;
   }, [shown]);
 
-  if (shown?.entry !== undefined) {
+  const referenceNote = editor.referencesChanged.value ? (
+    <p class="muted small" role="status">
+      {previewingReferences
+        ? 'This previews the changed references. Save reference changes before editing these entries.'
+        : 'Fix the profile configuration to preview shared definition changes. These entries use the saved references.'}
+    </p>
+  ) : null;
+
+  if (shown?.entry !== undefined && !previewingReferences) {
     return (
-      <EntryForm
-        key={openKey}
-        editor={editor}
-        row={shown}
-        entry={shown.entry}
-        ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
-        goTo={goingTo?.rowKey === shown.key ? goingTo : undefined}
-        onBack={() => {
-          setOpenKey(undefined);
-          setGoingTo(undefined);
-        }}
-      />
+      <>
+        {referenceNote}
+        <EntryForm
+          key={openKey}
+          editor={editor}
+          row={shown}
+          entry={shown.entry}
+          ownerTypeHasPushRulesets={ownerTypeHasPushRulesets}
+          goTo={goingTo?.rowKey === shown.key ? goingTo : undefined}
+          single={single === true}
+          onBack={() => {
+            setOpenKey(undefined);
+            setGoingTo(undefined);
+          }}
+        />
+      </>
     );
   }
 
   return (
     <div class="groups">
+      {referenceNote}
       {turnedOff && (
         <MissingPermissionsNote permissions={missingPermissions} settingsUrl={editor.installationSettingsUrl.value} />
       )}
@@ -1082,32 +1110,34 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo }: 
           class="button"
           type="button"
           ref={add}
-          disabled={turnedOff}
+          disabled={turnedOff || previewingReferences}
           onClick={() => {
             run(editor.addEntry(kind, { name: '' }).then(setOpenKey));
           }}
         >
           New {noun.one}
         </button>
-        <BatchActions
-          editor={editor}
-          scope={kind}
-          describeDone={describeEntriesDone(noun.one, noun.many)}
-          actions={[
-            {
-              label: 'Reset all',
-              count: batch.unsaved,
-              counted: batch.unsaved === 1 ? noun.one : noun.many,
-              act: () => editor.resetAllEntriesIn(kind),
-            },
-            {
-              label: 'Take out all',
-              count: batch.canBeTakenOut,
-              counted: batch.canBeTakenOut === 1 ? noun.one : noun.many,
-              act: () => editor.takeOutAllIn(kind),
-            },
-          ]}
-        />
+        {!previewingReferences && (
+          <BatchActions
+            editor={editor}
+            scope={kind}
+            describeDone={describeEntriesDone(noun.one, noun.many)}
+            actions={[
+              {
+                label: 'Reset all',
+                count: batch.unsaved,
+                counted: batch.unsaved === 1 ? noun.one : noun.many,
+                act: () => editor.resetAllEntriesIn(kind),
+              },
+              {
+                label: 'Take out all',
+                count: batch.canBeTakenOut,
+                counted: batch.canBeTakenOut === 1 ? noun.one : noun.many,
+                act: () => editor.takeOutAllIn(kind),
+              },
+            ]}
+          />
+        )}
       </div>
       {rows.length > 0 && (
         <ul class="rows" ref={list}>
@@ -1120,7 +1150,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo }: 
                 <button
                   class="row"
                   type="button"
-                  disabled={entry === undefined}
+                  disabled={entry === undefined || previewingReferences}
                   onClick={() => {
                     setOpenKey(row.key);
                   }}
@@ -1157,6 +1187,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo }: 
                   <button
                     class="button button-quiet button-small"
                     type="button"
+                    disabled={previewingReferences}
                     onClick={() => {
                       run(editor.putBack(row));
                     }}

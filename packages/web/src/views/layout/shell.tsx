@@ -5,6 +5,7 @@ import { PendingButton } from './pending-button.js';
 import type { Account, User } from '../../app/account/account.js';
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { Router } from '../../app/navigation/router.js';
+import { definitionTypes } from '../../app/profiles/definition-types.js';
 import { Link } from './link.js';
 import { usePhone } from './phone.js';
 
@@ -103,6 +104,11 @@ function AccountMenu({ account, user, router, onSignOut, holdsPageLinks }: Accou
             <Link class="menu-item" router={router} to="/profiles" marksCurrentPage>
               Profiles
             </Link>
+            {definitionTypes.map((library) => (
+              <Link key={library.path} class="menu-item" router={router} to={library.path} marksCurrentPage>
+                {library.title}
+              </Link>
+            ))}
             <Link class="menu-item" router={router} to="/settings" marksCurrentPage>
               Settings
             </Link>
@@ -149,7 +155,7 @@ interface ShellProps {
 }
 
 export function Shell({ account, user, router, onSignOut, children }: ShellProps): JSX.Element {
-  const onPhone = usePhone();
+  const onPhone = usePhone('(max-width: 1100px)');
   return (
     <div class="shell">
       <header class="shell-bar">
@@ -164,6 +170,11 @@ export function Shell({ account, user, router, onSignOut, children }: ShellProps
             <Link class="nav-link" router={router} to="/profiles" marksCurrentPage>
               Profiles
             </Link>
+            {definitionTypes.map((library) => (
+              <Link key={library.path} class="nav-link" router={router} to={library.path} marksCurrentPage>
+                {library.title}
+              </Link>
+            ))}
             <Link class="nav-link nav-link-end" router={router} to="/settings" marksCurrentPage>
               Settings
             </Link>

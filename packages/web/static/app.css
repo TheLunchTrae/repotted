@@ -729,6 +729,94 @@ input[type='checkbox']:disabled {
   gap: 4px;
 }
 
+.shared-definitions {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--panel-radius);
+  padding: 16px;
+}
+
+.shared-definitions > legend {
+  padding: 0 6px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.shared-definition-group {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.shared-definition-group h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.shared-definition-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.shared-definition-row > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+}
+
+.definition-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 24px;
+}
+
+.definition-editor {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.definition-users {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  border-left: 1px solid var(--border);
+  padding-left: 20px;
+}
+
+.definition-users ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.definition-users .link {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .definition-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .definition-users {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding: 20px 0 0;
+  }
+}
+
 .nav-link {
   padding: 6px 12px;
   border-radius: var(--control-radius);
@@ -745,6 +833,16 @@ input[type='checkbox']:disabled {
 .nav-link[aria-current='page'] {
   background: var(--tint);
   color: var(--fg);
+}
+
+.account-menu {
+  margin-inline-start: auto;
+}
+
+.account-menu > .menu-panel {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 72px);
+  overflow-y: auto;
 }
 
 .account-menu > summary {
@@ -2472,8 +2570,15 @@ select.field {
 
 .rule-options {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 10px;
   padding-block: 4px;
+}
+
+.rule-options .field {
+  width: 100%;
+  min-width: 0;
 }
 
 .rule-options .setting {
@@ -2561,15 +2666,6 @@ select.field {
 
   .shell-bar .wordmark {
     margin-inline-end: auto;
-  }
-
-  /* The account menu hangs from a button at the bar's end, so it keeps inside
-     the page's start edge however long a name in it is, and a short window
-     scrolls the menu rather than the page. */
-  .account-menu > .menu-panel {
-    max-width: calc(100vw - 32px);
-    max-height: calc(100dvh - 72px);
-    overflow-y: auto;
   }
 
   .account-menu > summary {

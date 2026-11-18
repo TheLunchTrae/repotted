@@ -51,7 +51,8 @@ export type { EntryEdit, ProfileEdit, ValueProblem } from './profiles/profile.js
 export { lockChanges, permissionsInProse } from './github/permissions.js';
 export type { AppAccess } from './github/permissions.js';
 export { permissionsMissingForProfilePart } from './plan/part-permissions.js';
-export { definitionKind, definitionSections, profileFileJsonSchema } from './profiles/schema.js';
+export { definitionKind, definitionSections, profileFileJsonSchema, profileReferences } from './profiles/schema.js';
+export type { ProfileReferences } from './profiles/schema.js';
 export type { DefinitionKind } from './profiles/schema.js';
 export { currentUser, listRepositories, readAccess, readInstallationSettingsUrl } from './github/repositories.js';
 export type { InstallationMissingPermissions } from './github/repositories.js';

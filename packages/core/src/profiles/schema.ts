@@ -661,6 +661,7 @@ export const profileReferences = z
     environments: z.array(z.string().min(1)).optional(),
   })
   .strict();
+export type ProfileReferences = z.infer<typeof profileReferences>;
 
 export const profileFile = z.object({
   kind: definitionKind.optional(),

@@ -14,7 +14,7 @@ import {
   settingPath,
   settingsSections,
 } from './profile.js';
-import { draftSettings, profile, profileFile } from './schema.js';
+import { draftSettings, profile, profileFile, profileReferences } from './schema.js';
 
 const lists = ['autolinks', 'rulesets', 'environments', 'labels'] as const;
 type EntryList = (typeof lists)[number];
@@ -278,11 +278,26 @@ export async function readProfileForEditing(file: string, replacementText?: stri
         : failure.problems),
     );
   }
+  const declaredReferences = layers[0]?.data['references'];
+  const references: Record<string, unknown> = {};
+  const referencePath = profileReferences.shape.actions.unwrap();
+  if (isRecord(declaredReferences)) {
+    if (referencePath.safeParse(declaredReferences['actions']).success) {
+      references['actions'] = declaredReferences['actions'];
+    }
+    for (const section of ['rulesets', 'environments'] as const) {
+      const paths = declaredReferences[section];
+      if (Array.isArray(paths)) {
+        references[section] = paths.filter((named) => referencePath.safeParse(named).success);
+      }
+    }
+  }
   return {
     chain,
     profile: { ...merged, ...(owner === undefined ? {} : { owner_type: owner.type }) },
     drafts,
     sources,
+    ...(Object.keys(references).length === 0 ? {} : { references: profileReferences.parse(references) }),
     warnings: [],
     owner_source: owner?.file ?? null,
     owner_changes: { user: [], organization: [] },

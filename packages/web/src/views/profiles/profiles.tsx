@@ -1,17 +1,16 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { SaveMode } from '../../app/profile-editor/entry-edits.js';
-import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { Router } from '../../app/navigation/router.js';
+import type { SaveMode } from '../../app/profile-editor/entry-edits.js';
 import type { BranchPreview } from '../../app/profiles/branch-preview.js';
-import { definitionTypes } from '../../app/profiles/definition-types.js';
 import type { ProfileFolderNode, ProfileListing, Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
-import { dirname, relative } from '../../engine/path.js';
+import { dirname } from '../../engine/path.js';
 import { Link } from '../layout/link.js';
 import { Loading, LoadingList } from '../layout/loading.js';
 import { useProfileConfirmation } from '../layout/notifications.js';
+import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
@@ -19,6 +18,7 @@ import { RepairProfile } from '../profile-editor/profile-repair.js';
 import { previewAddress, PreviewPicker } from './branch-preview.js';
 import { NewProfileForm } from './new-profile.js';
 import { OwnerTypeDialog } from './owner-type.js';
+import { SharedDefinitions } from './shared-definitions.js';
 import { SyncNote } from './sync-note.js';
 
 const ownerTypes = {
@@ -26,7 +26,7 @@ const ownerTypes = {
   organization: 'For organizations',
 } as const;
 
-type ProfilesDialog =
+export type ProfilesDialog =
   | { readonly kind: 'delete'; readonly listings: readonly ProfileListing[] }
   | {
       readonly kind: 'new-folder';
@@ -76,9 +76,6 @@ function ProfileRow({ listing, profiles, onOpen }: RowProps): JSX.Element {
         }}
       >
         <span class="row-name">{listing.name}</span>
-        {listing.kind !== undefined && (
-          <span class="pill">{definitionTypes.find((item) => item.kind === listing.kind)?.label}</span>
-        )}
         {profiles.unsaved.value.has(listing.file) && <span class="pill pill-drift">Not saved</span>}
         {listing.problem !== null && <span class="pill pill-remove">Problem</span>}
         <span class="profile-row-details muted small">
@@ -194,7 +191,7 @@ interface FolderNameProps {
   readonly onClose: (landed: string | undefined) => void;
 }
 
-function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps): JSX.Element {
+export function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
   const dialog = useModal();
   const renaming = asked.kind === 'rename' ? asked : undefined;
@@ -203,6 +200,10 @@ function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps)
   const landed = useRef<string | undefined>(undefined);
   const [moving, setMoving] = useState(false);
   const count = asked.kind === 'new-folder' ? asked.listings.length : 0;
+  const noun =
+    asked.kind === 'new-folder' && asked.listings.every((listing) => listing.kind !== undefined)
+      ? 'definition'
+      : 'profile';
   return (
     <dialog
       class="dialog"
@@ -241,7 +242,13 @@ function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps)
               .then((failure) => {
                 setProblem(failure);
                 if (failure === undefined) {
-                  confirm(renaming === undefined ? 'Profiles moved.' : 'Folder renamed.');
+                  confirm(
+                    renaming === undefined
+                      ? noun === 'definition'
+                        ? 'Definitions moved.'
+                        : 'Profiles moved.'
+                      : 'Folder renamed.',
+                  );
                   landed.current = folder;
                   dialog.current?.close();
                 }
@@ -255,9 +262,9 @@ function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNameProps)
         <h2 id="folder-name-heading">{renaming === undefined ? 'New folder' : `Rename ${renaming.path}`}</h2>
         <p class="muted">
           {renaming === undefined
-            ? `${count === 1 ? 'The selected profile moves' : `The ${count} selected profiles move`} into it. For a folder inside another, give both, as apps/desktop.`
-            : 'Every profile in it moves with it.'}{' '}
-          Profiles that extend them are pointed at the new place.
+            ? `${count === 1 ? `The selected ${noun} moves` : `The ${count} selected ${noun}s move`} into it. For a folder inside another, give both, as apps/desktop.`
+            : 'Every profile and definition in it moves with it.'}{' '}
+          Profiles that reference or extend them are pointed at the new place.
         </p>
         <div class="form-field">
           <label for="folder-name">Name</label>
@@ -306,7 +313,7 @@ interface DeleteProps {
   readonly onClose: (deleted: boolean) => void;
 }
 
-function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Element {
+export function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
   const dialog = useModal();
   const [error, setError] = useState<string | undefined>(undefined);
@@ -315,6 +322,7 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
   const dependents = profiles.dependents(...listings);
   const source = profiles.source.value.kind;
   const one = listings.length === 1 ? listings[0] : undefined;
+  const noun = listings.every((listing) => listing.kind !== undefined) ? 'definition' : 'profile';
   return (
     <dialog
       class="dialog"
@@ -345,7 +353,7 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
                     confirm(
                       listings.length === 1
                         ? `${listings[0]?.name ?? 'Profile'} deleted.`
-                        : `${listings.length} profiles deleted.`,
+                        : `${listings.length} ${noun}s deleted.`,
                     );
                     deleted.current = true;
                     dialog.current?.close();
@@ -358,7 +366,7 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
           }
         }}
       >
-        <h2 id="delete-heading">{one === undefined ? `Delete ${listings.length} profiles?` : `Delete ${one.name}?`}</h2>
+        <h2 id="delete-heading">{one === undefined ? `Delete ${listings.length} ${noun}s?` : `Delete ${one.name}?`}</h2>
         {one === undefined ? (
           <ul class="muted small selected-names">
             {listings.map((listing) => (
@@ -379,12 +387,15 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
               ? `${one === undefined ? 'The files are' : 'The file is'} deleted from the folder on this computer too. ${one === undefined ? 'They' : 'It'} can't be brought back from here.`
               : `${one === undefined ? 'They' : 'It'} can't be brought back.`}
         </p>
-        {dependents.length > 0 && (
+        {dependents.length > 0 && noun === 'profile' && (
           <p>
             {dependents.map((item) => item.name).join(', ')} {dependents.length === 1 ? 'extends' : 'extend'}{' '}
             {one === undefined ? 'one of them' : 'it'} and {dependents.length === 1 ? 'stops' : 'stop'} loading until
             pointed at another profile.
           </p>
+        )}
+        {dependents.length > 0 && noun === 'definition' && (
+          <p>Remove references from {dependents.map((item) => item.name).join(', ')} before deleting.</p>
         )}
         {error !== undefined && (
           <p class="notice notice-problem" role="alert">
@@ -400,7 +411,11 @@ function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JSX.Eleme
             value="delete"
             disabled={profiles.profileWorkUnderWay.value}
           >
-            {one === undefined ? `Delete ${listings.length} profiles` : 'Delete profile'}
+            {one === undefined
+              ? `Delete ${listings.length} ${noun}s`
+              : one.kind === undefined
+                ? 'Delete profile'
+                : 'Delete definition'}
           </PendingButton>
           {/* The dialog opens with the keyboard on Cancel, so Enter never deletes by itself. */}
           <button class="button button-quiet" type="submit" value="cancel" disabled={deleting} autofocus>
@@ -418,24 +433,31 @@ const noFolderChoice = '';
 
 interface SelectedProps {
   readonly profiles: Profiles;
+  readonly selection: readonly ProfileListing[];
   readonly onDialog: (dialog: ProfilesDialog) => void;
   readonly onMoved: (folder: string) => void;
   readonly onDeselectAll: () => void;
 }
 
-function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedProps): JSX.Element {
+export function SelectedPanel({
+  profiles,
+  selection: batch,
+  onDialog,
+  onMoved,
+  onDeselectAll,
+}: SelectedProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
   const [movingProfiles, moveProfiles] = usePendingAction();
-  const batch = profiles.batch.value;
   const busy = profiles.profileWorkUnderWay.value;
+  const noun = batch.every((listing) => listing.kind !== undefined) ? 'definition' : 'profile';
   const [picked, setPicked] = useState<string | undefined>(undefined);
   // A folder renamed away, or emptied by another move, is no longer a choice.
   const target =
     picked === undefined || picked === newFolderChoice || profiles.folders.value.includes(picked) ? picked : undefined;
   const [problem, setProblem] = useState<string | undefined>(undefined);
   return (
-    <aside class="panel" aria-label="Selected profiles">
-      <h2>{batch.length === 1 ? '1 profile selected' : `${batch.length} profiles selected`}</h2>
+    <aside class="panel" aria-label={`Selected ${noun}s`}>
+      <h2>{batch.length === 1 ? `1 ${noun} selected` : `${batch.length} ${noun}s selected`}</h2>
       <ul class="muted small selected-names">
         {batch.map((listing) => (
           <li key={listing.file} class="mono">
@@ -455,7 +477,7 @@ function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedP
                 profiles.move(batch, target).then((failure) => {
                   setProblem(failure);
                   if (failure === undefined) {
-                    confirm('Profiles moved.');
+                    confirm(noun === 'definition' ? 'Definitions moved.' : 'Profiles moved.');
                     onMoved(target);
                   }
                 }),
@@ -506,7 +528,7 @@ function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedP
             {problem}
           </p>
         )}
-        <p class="muted small">Profiles that extend them are pointed at the new place.</p>
+        <p class="muted small">Profiles that reference or extend them are pointed at the new place.</p>
       </form>
       <div class="panel-actions">
         <button class="button button-quiet" type="button" onClick={onDeselectAll}>
@@ -528,120 +550,13 @@ function SelectedPanel({ profiles, onDialog, onMoved, onDeselectAll }: SelectedP
 }
 
 interface ProfileProps {
+  readonly router: Router;
+  readonly standalone?: boolean;
   readonly listing: ProfileListing;
   readonly profiles: Profiles;
 }
 
-function References({ listing, profiles, text }: ProfileProps & { readonly text: string }): JSX.Element {
-  const confirm = useProfileConfirmation(profiles);
-  const [selected, setSelected] = useState(profiles.referencesOf(text, listing.file));
-  const [problem, setProblem] = useState<string | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  return (
-    <details class="settings-group">
-      <summary>Reusable definitions</summary>
-      <p class="muted small">
-        References apply after base profiles and before inline values. Removing a reference stops managing its values.
-      </p>
-      {definitionTypes.map(({ kind, section, label, multiple }) =>
-        multiple === true ? (
-          <fieldset class="choices" key={kind} disabled={busy}>
-            <legend>{label} references</legend>
-            {profiles.listings.value
-              .filter((item) => item.kind === kind && item.problem === null)
-              .map((item) => {
-                const path = relative(dirname(listing.file), item.file);
-                const values = selected[section];
-                const checked = Array.isArray(values) && values.includes(path);
-                return (
-                  <label class="choice" key={path}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) => {
-                        const enabled = event.currentTarget.checked;
-                        setSelected((before) => {
-                          const previous = before[section];
-                          const paths: readonly string[] = Array.isArray(previous) ? previous : [];
-                          return {
-                            ...before,
-                            [section]: enabled ? [...paths, path] : paths.filter((value) => value !== path),
-                          };
-                        });
-                      }}
-                    />
-                    <span>{profiles.pathOf(item)}</span>
-                  </label>
-                );
-              })}
-          </fieldset>
-        ) : (
-          <label class="form-field" key={kind}>
-            <span>{label}</span>
-            <select
-              class="field"
-              disabled={busy}
-              value={typeof selected[section] === 'string' ? selected[section] : ''}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setSelected((before) => ({ ...before, [section]: value }));
-              }}
-            >
-              <option value="">None</option>
-              {profiles.listings.value
-                .filter((item) => item.kind === kind && item.problem === null)
-                .map((item) => {
-                  const path = relative(dirname(listing.file), item.file);
-                  return (
-                    <option key={path} value={path}>
-                      {profiles.pathOf(item)}
-                    </option>
-                  );
-                })}
-            </select>
-          </label>
-        ),
-      )}
-      {problem !== undefined && (
-        <p class="problem" role="alert">
-          {problem}
-        </p>
-      )}
-      <PendingButton
-        pending={busy}
-        pendingLabel="Saving…"
-        type="button"
-        class="button"
-        disabled={busy || profiles.unsaved.value.has(listing.file)}
-        onClick={() => {
-          setBusy(true);
-          const references: Record<string, string | readonly string[]> = {};
-          for (const [section, value] of Object.entries(selected)) {
-            if (typeof value === 'string' && value !== '') {
-              references[section] = value;
-            }
-            if (Array.isArray(value) && value.length > 0) {
-              references[section] = value;
-            }
-          }
-          run(
-            profiles.saveReferences(listing.file, references, text).then((failure) => {
-              setBusy(false);
-              setProblem(failure);
-              if (failure === undefined) {
-                confirm(`${listing.name} references saved.`);
-              }
-            }),
-          );
-        }}
-      >
-        Save references
-      </PendingButton>
-    </details>
-  );
-}
-
-function Profile({ listing, profiles }: ProfileProps): JSX.Element {
+export function Profile({ listing, profiles, router, standalone }: ProfileProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
   const [showYaml, setShowYaml] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -662,7 +577,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
     }
   };
   return (
-    <article class="page-body" aria-labelledby="profile-heading">
+    <article class={standalone === true ? 'definition-editor' : 'page-body'} aria-labelledby="profile-heading">
       <div class="page-heading">
         <div>
           <h1 id="profile-heading">{listing.name}</h1>
@@ -722,11 +637,14 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           <button
             class="button"
             type="button"
+            disabled={
+              listing.kind !== undefined && (editor?.dirty.value === true || profiles.consumerNames(listing).length > 0)
+            }
             onClick={() => {
               setDeleting(true);
             }}
           >
-            Delete profile
+            {listing.kind === undefined ? 'Delete profile' : 'Delete definition'}
           </button>
         </div>
       </div>
@@ -791,7 +709,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
         </p>
       )}
       {editor?.repair.value !== undefined && <RepairProfile editor={editor} save={save} />}
-      {listing.kind !== undefined && (
+      {listing.kind !== undefined && standalone !== true && (
         <p class="notice">
           Used by:{' '}
           {profiles.consumerNames(listing).length === 0 ? 'No consumers' : profiles.consumerNames(listing).join(', ')}.
@@ -799,7 +717,15 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
         </p>
       )}
       {listing.kind === undefined && opened?.file === listing.file && editor?.loaded.value === true && (
-        <References key={opened.text} listing={listing} profiles={profiles} text={opened.text} />
+        <SharedDefinitions
+          profiles={profiles}
+          folder={dirname(editor.file)}
+          references={editor.references.value}
+          onChange={(references) => run(editor.setReferences(references))}
+          disabled={editor.saving.value}
+          router={router}
+          inherited={editor.sourceFiles.value}
+        />
       )}
       {editor?.loaded.value === false && editor.loadError.value === undefined && editor.repair.value === undefined && (
         <Loading>Reading the profile…</Loading>
@@ -810,6 +736,7 @@ function Profile({ listing, profiles }: ProfileProps): JSX.Element {
           name={listing.name}
           editor={editor}
           saving={{
+            ...(listing.kind === undefined ? {} : { saveLabel: 'Save definition' }),
             save,
             discardDraft: () => profiles.discardDraft(),
             onGitHub: profiles.source.value.kind === 'repository',
@@ -834,7 +761,7 @@ interface ProfilesProps {
   readonly newProfileForm: { readonly repository: string | undefined } | undefined;
 }
 
-function Banners({ profiles }: { readonly profiles: Profiles }): JSX.Element | null {
+export function Banners({ profiles }: { readonly profiles: Profiles }): JSX.Element | null {
   const [keepingLocal, keepLocal] = usePendingAction();
   const [keepingRemote, keepRemote] = usePendingAction();
   const source = profiles.source.value;
@@ -901,10 +828,10 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
   const [refreshing, refresh] = usePendingAction();
   const source = profiles.source.value;
   const tree = profiles.tree.value;
-  const selected = profiles.selected.value;
-  const batch = profiles.batch.value;
+  const selected = profiles.selected.value?.kind === undefined ? profiles.selected.value : undefined;
+  const batch = profiles.batch.value.filter((listing) => listing.kind === undefined);
   const busy = profiles.profileWorkUnderWay.value;
-  const total = profiles.listings.value.length;
+  const total = profiles.listings.value.filter((listing) => listing.kind === undefined).length;
   const shown = shownIn(tree);
   const everyShownProfileSelected = shown.length > 0 && shown.every((listing) => profiles.isInBatch(listing));
   // The list and an open profile, or the new-profile form, are two screens.
@@ -958,7 +885,7 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
   };
   // The buttons that deselect go with the selection's panel.
   const deselectAll = (): void => {
-    profiles.deselectBatch();
+    profiles.selectForBatch(batch, false);
     requestAnimationFrame(() => {
       heading.current?.focus();
     });
@@ -1020,7 +947,9 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
             repositoryToCapture={newProfileForm.repository}
           />
         ) : (
-          selected !== undefined && <Profile key={selected.file} listing={selected} profiles={profiles} />
+          selected !== undefined && (
+            <Profile key={selected.file} listing={selected} profiles={profiles} router={router} />
+          )
         )}
       </div>
     );
@@ -1220,7 +1149,13 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
         )}
       </section>
       {batch.length > 0 && (
-        <SelectedPanel profiles={profiles} onDialog={setDialog} onMoved={focusFolder} onDeselectAll={deselectAll} />
+        <SelectedPanel
+          profiles={profiles}
+          selection={batch}
+          onDialog={setDialog}
+          onMoved={focusFolder}
+          onDeselectAll={deselectAll}
+        />
       )}
       {dialogs}
     </div>

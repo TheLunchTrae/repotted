@@ -493,18 +493,33 @@ profile. Update consumers deliberately before deleting a shared definition.
 
 ### Manage reusable definitions in the web app
 
-On **New profile or definition**, choose **Actions policy** or **Ruleset** to
-create a definition with the existing section controls. For a ruleset, enter
-its GitHub name in **Target name**. You can capture it from a repository,
-duplicate a saved file, or import YAML. **Export YAML** downloads the selected
-file. Definitions share profiles' browser, local-folder, and config-repository
-storage and sync.
+**Actions policies**, **Rulesets**, and **Environments** have their own pages
+in the main navigation. Open a library and choose **New Actions policy**,
+**New ruleset**, or **New environment**. Enter its file name and, for a
+ruleset or environment, its GitHub name in **Target name**. The form also
+captures a definition from a repository, duplicates a saved definition, or
+imports YAML. **Export YAML** downloads an open definition. Definitions
+share profiles' browser, local-folder, and config-repository storage and sync.
 
-Open a profile's **Reusable definitions** controls to select a policy or rulesets and
-**Save references**. Inline values override referenced values. A definition
-names its dependent profiles before saving; changing it takes effect on their
-next resolution. Deleting a referenced definition is refused until those
-references are deliberately removed. Moving it updates references.
+**Shared definitions** on a profile's creation or editing page adds existing
+policies, rulesets, and environments. **Save** keeps reference edits with
+other profile changes, preserving the references in YAML. **Remove** detaches
+a reference without making a copy. Reference changes cannot be saved as
+drafts. Inline values override referenced values.
+
+When duplicating or importing a profile, its existing references are kept.
+The creation form adds selected rulesets and environments and replaces the
+Actions policy only when you select one. Remove unwanted references after
+creation. Unsaved reference changes preview the resolved entries; save those
+changes before editing the entries.
+
+**Edit shared definition** opens its library editor. **Used by** lists the
+profiles using it, and assigned repositories are shown too. Saving a
+definition refreshes its consumers without discarding their unsaved edits;
+repository changes still need reviewed apply. Remove references and
+assignments before deleting a definition. Moving it updates its references.
+Select definitions in a library to move them to an existing folder or a
+**New folder**. The selection applies only to that library.
 
 ## Full section ownership
 

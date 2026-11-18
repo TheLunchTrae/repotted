@@ -990,18 +990,31 @@ typed base, which takes the base's and writes none.
 
 ### Reusable definitions and references
 
-Definitions use the same create, import, duplicate, sync and editor lifecycle.
-Creation validates the complete file before writing; imports with missing
-references leave no file. A duplicate preserves relative targets from its new
-folder. Moving files rewrites reference paths as well as `extends`.
+The three definition libraries use the profiles' file store and write queue.
+Capture, duplicate, and import keep their existing validation and sync
+transitions. The profile tree filters definitions out; other source pickers
+still list them for standalone apply and assignments. Cached editors count
+in the existing unsaved and source-change guards.
 
-| State                | Event                                         | Next                                                                                                    |
-| -------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| References displayed | Save references                               | Queued behind sync; refuse unsaved editor changes or file text that differs from the displayed version. |
-| Saving references    | Validation succeeds                           | Only references change; reload the listing and dependent editors.                                       |
-| Saving references    | Missing source, invalid result, or stale text | Display the error and keep the file unchanged.                                                          |
-| Definition selected  | Save settings                                 | Listed dependent profiles resolve the saved values on their next load; no repository write occurs.      |
-| Deleting definition  | Other listed profiles depend on it            | Refuse deletion and name the consumers whose references must be removed first.                          |
+| State                    | Event                                                                                                            | Next                                                                                                                                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Library                  | New definition                                                                                                   | The existing creation form is fixed to that library's kind, retaining capture, duplicate, import, target naming, and owner choices.                                                         |
+| Creating                 | A requested create finishes after its form closes                                                                | The file may remain created, but the abort signal prevents selecting it or navigating over a subsequently opened page. Captures remain cancelled without a file.                            |
+| Profile saved            | Add, replace, or remove a reference                                                                              | Unsaved references are previewed with other edits. Save persists paths without copying configuration; drafting references is refused.                                                       |
+| References unsaved       | Resolution succeeds                                                                                              | Entry lists show the resolved preview and wait for Save before entry editing resumes. Existing inline entry edits remain part of the save.                                                  |
+| References unsaved       | Resolution fails                                                                                                 | Saved entry rows remain editable to repair invalid configuration; the page explains that the changed references cannot yet be previewed.                                                    |
+| Invalid profile          | Load for repair                                                                                                  | Valid own links, including valid array elements beside malformed values, remain available to the picker while configuration errors stay reported. Adding a reference preserves those links. |
+| Reference edit           | Save waits behind sync and the profile text changes                                                              | Nothing is overwritten. The edit stays unsaved with the concurrent-change error.                                                                                                            |
+| New profile              | References selected before changing the destination folder                                                       | Picks remain relative to the profiles root until creation writes paths relative to the final folder.                                                                                        |
+| Duplicating or importing | Additional references selected                                                                                   | Preserve existing references, union collection paths after resolving them relative to the final folder, and replace the Actions policy only when explicitly picked.                         |
+| Definition unsaved       | Save definition                                                                                                  | The existing editor save validates and syncs. Cached consumers resolve again and retain unrelated unsaved edits. Known profiles and assigned repositories are displayed before saving.      |
+| Any editor               | Navigate to a library or profile                                                                                 | Its unsaved changes stay cached. Source changes and sign-out include them.                                                                                                                  |
+| Deleting definition      | Its type changed, it has unsaved edits, or saved, inherited, or unsaved profile references or assignments remain | Refuse deletion after refreshing in the queue. Name the consumers that must be changed deliberately.                                                                                        |
+| Library or profile list  | Select files                                                                                                     | Move and delete use only the current page's selection. Other libraries and the profile list retain their separate selections.                                                               |
+| Moving files             | Relative targets change                                                                                          | Library and profile controls rewrite references and extends with the existing rollback on failed writes.                                                                                    |
+
+Missing or invalid references remain engine errors. Definition changes never
+write repository settings; reviewed apply owns those writes.
 
 ## Web deleting a profile
 
