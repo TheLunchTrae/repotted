@@ -35,7 +35,7 @@ async function text(kept: Promise<ReadonlyMap<string, Uint8Array>>): Promise<Rec
 test('a later visit finds the files as the last one left them', async () => {
   const browser = new IDBFactory();
   const keeper = browserFiles(() => browser);
-  expect((await keepFiles(keeper, siteLocks())).value).toBe('keeping');
+  expect((await keepFiles(keeper, siteLocks())).keeping.value).toBe('keeping');
   await mkdir('/profiles/browser/teams', { recursive: true });
   await writeFile('/profiles/browser/base.yaml', 'one');
   await writeFile('/profiles/browser/teams/web.yaml', 'two');
@@ -63,11 +63,54 @@ test('a later visit finds the files as the last one left them', async () => {
         next.browserFiles(() => browser),
         siteLocks(),
       )
-    ).value,
+    ).keeping.value,
   ).toBe('keeping');
 
   expect(await files.readFile('/profiles/browser/base.yaml', 'utf8')).toBe('three');
   expect(await files.readFile('/profiles/browser/teams/web.yaml', 'utf8')).toBe('two');
+});
+
+test('the files read as writing from a change until IndexedDB has it, and after a failed write too', async () => {
+  const writes: { readonly finish: () => void; readonly fail: () => void }[] = [];
+  const keeper: FileKeeper = {
+    load: () => Promise.resolve(new Map()),
+    put: () =>
+      new Promise((resolve, reject) => {
+        writes.push({
+          finish: () => {
+            resolve();
+          },
+          fail: () => {
+            reject(new Error('Storage is full.'));
+          },
+        });
+      }),
+    remove: () => Promise.resolve(),
+  };
+  vi.stubGlobal('reportError', vi.fn());
+  const { writing } = await keepFiles(keeper, siteLocks());
+  await mkdir('/profiles', { recursive: true });
+  expect(writing.value).toBe(false);
+
+  await writeFile('/profiles/a.yaml', 'one');
+  await writeFile('/profiles/b.yaml', 'two');
+  await vi.waitFor(() => {
+    expect(writes).toHaveLength(1);
+  });
+  expect(writing.value).toBe(true);
+
+  // The first write is done, and the second is still under way.
+  writes[0]?.finish();
+  await vi.waitFor(() => {
+    expect(writes).toHaveLength(2);
+  });
+  expect(writing.value).toBe(true);
+
+  writes[1]?.fail();
+  await vi.waitFor(() => {
+    expect(writing.value).toBe(false);
+  });
+  vi.unstubAllGlobals();
 });
 
 test('a browser with no storage to give keeps nothing and says so', async () => {
@@ -78,7 +121,7 @@ test('a browser with no storage to give keeps nothing and says so', async () => 
     remove: vi.fn<FileKeeper['remove']>(),
   };
 
-  expect((await keepFiles(keeper, siteLocks())).value).toBe('visit-only');
+  expect((await keepFiles(keeper, siteLocks())).keeping.value).toBe('visit-only');
   await mkdir('/profiles', { recursive: true });
   await writeFile('/profiles/a.yaml', 'one');
 
@@ -99,7 +142,7 @@ test("the first change that cannot be kept is the last one tried, so what is kep
   };
   const reported = vi.fn();
   vi.stubGlobal('reportError', reported);
-  const keeping = await keepFiles(keeper, siteLocks());
+  const { keeping } = await keepFiles(keeper, siteLocks());
   await mkdir('/profiles', { recursive: true });
 
   // A sync writes a profile, then its record of it. The profile's write fails.
@@ -127,7 +170,7 @@ test('a second tab of the site neither loads the files nor keeps any', async () 
         browserFiles(() => browser),
         locks,
       )
-    ).value,
+    ).keeping.value,
   ).toBe('keeping');
   const load = vi.fn<FileKeeper['load']>();
   const put = vi.fn<FileKeeper['put']>();
@@ -136,7 +179,7 @@ test('a second tab of the site neither loads the files nor keeps any', async () 
   await mkdir('/profiles', { recursive: true });
   await writeFile('/profiles/a.yaml', 'one');
 
-  expect(second.value).toBe('elsewhere');
+  expect(second.keeping.value).toBe('elsewhere');
   expect(load).not.toHaveBeenCalled();
   expect(put).not.toHaveBeenCalled();
 });
@@ -156,7 +199,7 @@ test('a kept file that cannot be placed is left out, and the rest load', async (
     remove: () => Promise.resolve(),
   };
 
-  expect((await keepFiles(keeper, siteLocks())).value).toBe('keeping');
+  expect((await keepFiles(keeper, siteLocks())).keeping.value).toBe('keeping');
 
   expect(await readFile('/profiles/a.yaml', 'utf8')).toBe('one');
   expect(await readFile('/profiles/c.yaml', 'utf8')).toBe('three');
@@ -170,8 +213,8 @@ test('a browser that has no locks, or refuses them, loads and keeps nothing, and
     request: () => Promise.reject(new DOMException('The request was denied.', 'SecurityError')),
   };
 
-  expect((await keepFiles(keeper, refusing)).value).toBe('visit-only');
-  expect((await keepFiles(keeper, undefined)).value).toBe('visit-only');
+  expect((await keepFiles(keeper, refusing)).keeping.value).toBe('visit-only');
+  expect((await keepFiles(keeper, undefined)).keeping.value).toBe('visit-only');
   await mkdir('/profiles', { recursive: true });
   await writeFile('/profiles/a.yaml', 'one');
 

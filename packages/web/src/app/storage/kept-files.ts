@@ -9,7 +9,7 @@
 // the files at a time, and the first change that can't be kept is the last
 // one tried.
 
-import { type Signal, signal } from '@preact/signals';
+import { computed, type ReadonlySignal, signal } from '@preact/signals';
 
 import { mkdir, watchFiles, writeFile } from '../../engine/files.js';
 import { dirname } from '../../engine/path.js';
@@ -141,24 +141,32 @@ function holdSiteLockUntilTabCloses(locks: SiteLocks): Promise<boolean> {
   });
 }
 
-/** The answered state changes at most once more, to `stopped`. */
-export async function keepFiles(keeper: FileKeeper, locks: SiteLocks | undefined): Promise<Signal<Keeping>> {
+export interface KeptFiles {
+  /** The answered state changes at most once more, to `stopped`. */
+  readonly keeping: ReadonlySignal<Keeping>;
+  /** A change made in memory isn't kept yet, so closing the tab now would lose it. */
+  readonly writing: ReadonlySignal<boolean>;
+}
+
+export async function keepFiles(keeper: FileKeeper, locks: SiteLocks | undefined): Promise<KeptFiles> {
   const keeping = signal<Keeping>('keeping');
+  const waiting = signal(0);
+  const kept: KeptFiles = { keeping, writing: computed(() => waiting.value > 0) };
   // A browser without locks, or one that refuses them as it does a site whose
   // data it blocks, can't say that no other tab keeps the files, so nothing is kept.
   const held = locks === undefined ? undefined : await holdSiteLockUntilTabCloses(locks).catch(() => undefined);
   if (held !== true) {
     keeping.value = held === undefined ? 'visit-only' : 'elsewhere';
-    return keeping;
+    return kept;
   }
-  let kept: ReadonlyMap<string, Uint8Array>;
+  let loaded: ReadonlyMap<string, Uint8Array>;
   try {
-    kept = await keeper.load();
+    loaded = await keeper.load();
   } catch {
     keeping.value = 'visit-only';
-    return keeping;
+    return kept;
   }
-  for (const [file, content] of kept) {
+  for (const [file, content] of loaded) {
     if (!isKept(file)) {
       continue;
     }
@@ -172,17 +180,19 @@ export async function keepFiles(keeper: FileKeeper, locks: SiteLocks | undefined
     if (!isKept(file)) {
       return;
     }
+    waiting.value += 1;
     last = last.then(async () => {
-      if (keeping.value !== 'keeping') {
-        return;
-      }
       try {
-        await (content === undefined ? keeper.remove(file) : keeper.put(file, content));
+        if (keeping.value === 'keeping') {
+          await (content === undefined ? keeper.remove(file) : keeper.put(file, content));
+        }
       } catch (error) {
         keeping.value = 'stopped';
         reportError(error);
+      } finally {
+        waiting.value -= 1;
       }
     });
   });
-  return keeping;
+  return kept;
 }

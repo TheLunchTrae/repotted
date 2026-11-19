@@ -610,7 +610,13 @@ can take a profile the browser lost for one the user deleted. So one tab
 keeps the files at a time, under a Web Lock that it holds until it closes,
 and a second tab shows a page that says so. And the first change that can't
 be kept, such as when storage is full, is the last one tried: a notice says
-that changes last until the tab closes.
+that changes last until the tab closes. Since a change reaches IndexedDB
+after it is made in memory, the page asks the browser to hold the tab open
+(`beforeunload`) while any write is pending. The page registers that in
+`main.tsx` rather than in a view, so it holds after the view that made the
+change is gone. A save doesn't wait for its write: the prompt covers a
+closed tab either way, and a crash loses a pending write whether or not the
+save has reported back.
 [State machines](state-machines.md#web-kept-files) lists the states.
 
 The profiles belong to the browser, not to the signed-in account, as a
