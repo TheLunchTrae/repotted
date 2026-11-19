@@ -74,8 +74,9 @@ export function LeaveQuestionDialog({ router }: { readonly router: Router }): JS
       class="dialog"
       ref={dialog}
       aria-labelledby="leave-question-heading"
-      onClose={() => {
-        // Escape is an answer to stay; Leave has already moved on by the time the dialog closes.
+      // Answered here, not on close: the close event comes a task later, after a back pressed just after Stay
+      // may have asked again, and would put that question away unanswered.
+      onCancel={() => {
         router.stay();
       }}
     >
@@ -84,6 +85,8 @@ export function LeaveQuestionDialog({ router }: { readonly router: Router }): JS
         onSubmit={(event) => {
           if (event.submitter instanceof HTMLButtonElement && event.submitter.value === 'leave') {
             router.leave();
+          } else {
+            router.stay();
           }
         }}
       >
