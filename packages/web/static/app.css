@@ -2616,13 +2616,16 @@ select.field {
   gap: 4px;
 }
 
+.menu-group {
+  display: grid;
+  gap: 2px;
+}
+
 .menu-section {
   padding: 8px 10px 2px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
 }
 
 .bypass-row,
@@ -2669,8 +2672,7 @@ select.field {
 
 .bypass-tools,
 .bypass-selection,
-.bypass-add-row,
-.bypass-found {
+.bypass-add-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2695,10 +2697,6 @@ select.field {
   font-weight: 500;
 }
 
-.bypass-selection select.field {
-  width: auto;
-}
-
 .bypass-add {
   display: grid;
   gap: 6px;
@@ -2710,12 +2708,13 @@ select.field {
   min-width: 0;
 }
 
-.bypass-found {
-  justify-content: space-between;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--control-radius);
-  background: var(--surface);
+.bypass-add-messages {
+  display: grid;
+  gap: 2px;
+}
+
+.bypass-add-messages p {
+  margin: 0;
 }
 
 .rule-options {
@@ -2799,7 +2798,6 @@ select.field {
     padding-inline: 14px;
   }
 
-  /* The mode takes the row's width under the name, beside Remove. */
   .bypass-row select.field {
     flex: 1 1 auto;
     min-width: 0;

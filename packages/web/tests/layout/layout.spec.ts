@@ -1192,6 +1192,41 @@ test('Go to it focuses a bypass list whose mode no longer fits its target', asyn
   await expect(page.getByRole('region', { name: 'Bypass list', exact: true })).toBeFocused();
 });
 
+test('the bypass list keeps the keyboard in place as actors come and go', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('website', { exact: true }).click();
+  await page.getByRole('tab', { name: /^Rulesets/u }).click();
+  await page.getByRole('button', { name: 'New ruleset', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Main');
+  await page.getByRole('button', { name: 'Manage the bypass list', exact: true }).click();
+  const addBypass = page.getByText('Add bypass', { exact: true });
+  await expect(addBypass).toBeFocused();
+
+  for (const role of ['Repository admin', 'Maintain', 'Write']) {
+    await addBypass.click();
+    await page.getByRole('button', { name: role, exact: true }).click();
+    await expect(addBypass).toBeFocused();
+  }
+
+  await page.getByRole('button', { name: 'Remove Maintain', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Select Write', exact: true })).toBeFocused();
+
+  await page.getByRole('checkbox', { name: 'Select all', exact: true }).check();
+  await page.locator('summary', { hasText: 'Set mode' }).click();
+  await page.getByRole('button', { name: 'Exempt', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'When Write can bypass' })).toHaveValue('exempt');
+  await expect(page.getByRole('combobox', { name: 'When Repository admin can bypass' })).toHaveValue('exempt');
+
+  await page.getByRole('button', { name: 'Remove selected', exact: true }).click();
+  await expect(addBypass).toBeFocused();
+
+  await addBypass.click();
+  await page.getByRole('button', { name: 'GitHub App…', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'GitHub App', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(addBypass).toBeFocused();
+});
+
 test('saved draft problems offer navigation without an ineffective Reset', async ({ page }) => {
   await page.goto('/profiles');
   await page.getByText('unfinished', { exact: true }).click();

@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import {
   bypassActorKey,
+  bypassActorNote,
   bypassListProblem,
   deployKeysBypassActor,
   describeBypassActor,
@@ -9,9 +10,11 @@ import {
   organizationAdminBypassActor,
   parseBypassActorId,
   withBypassActorAdded,
+  withBypassActorAtIndexRemoved,
   withBypassActorsRemoved,
   withBypassListManaged,
   withBypassMode,
+  withBypassModeAtIndex,
 } from '../../src/app/profile-editor/bypass-actors.js';
 
 const admin = { actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'exempt' };
@@ -64,6 +67,44 @@ test('a pull request mode GitHub would refuse blocks the save', () => {
     }),
   ).toBeDefined();
   expect(bypassListProblem({ ...onPullRequests, target: undefined })).toBeUndefined();
+});
+
+test('a list that names someone twice blocks the save, even with two modes', () => {
+  expect(bypassListProblem({ bypass_actors: [admin, { ...admin, bypass_mode: 'always' }] })).toBe(
+    'The bypass list names someone twice. Remove one of them.',
+  );
+  expect(
+    bypassListProblem({
+      bypass_actors: [
+        { actor_id: 1, actor_type: 'OrganizationAdmin', bypass_mode: 'always' },
+        { actor_id: null, actor_type: 'OrganizationAdmin', bypass_mode: 'exempt' },
+      ],
+    }),
+  ).toBeDefined();
+  expect(bypassListProblem(saved)).toBeUndefined();
+});
+
+test('a row named twice is removed or changed alone, so the other stays', () => {
+  const twice = { target: 'branch', bypass_actors: [admin, dependabot, { ...admin, bypass_mode: 'always' }] };
+  expect(withBypassActorAtIndexRemoved(twice, 2)['bypass_actors']).toEqual([admin, dependabot]);
+  expect(bypassListProblem(withBypassActorAtIndexRemoved(twice, 2))).toBeUndefined();
+  expect(withBypassModeAtIndex(twice, 0, 'pull_request')['bypass_actors']).toEqual([
+    { ...admin, bypass_mode: 'pull_request' },
+    dependabot,
+    { ...admin, bypass_mode: 'always' },
+  ]);
+  expect(withBypassModeAtIndex({ ...twice, target: 'tag' }, 0, 'pull_request')['bypass_actors']).toEqual(
+    twice.bypass_actors,
+  );
+});
+
+test('pull requests only, with the target left to each repository, says where it works', () => {
+  const onPullRequests = { ...admin, bypass_mode: 'pull_request' };
+  expect(bypassActorNote(onPullRequests, undefined)).toBe(
+    'Works only where the repository’s ruleset targets branches.',
+  );
+  expect(bypassActorNote(onPullRequests, 'branch')).toBeUndefined();
+  expect(bypassActorNote(admin, undefined)).toBeUndefined();
 });
 
 test('leaving the list to GitHub and managing it again gives the saved list back', () => {

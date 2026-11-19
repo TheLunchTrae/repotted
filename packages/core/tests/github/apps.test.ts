@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { findGitHubApp, gitHubAppSlug } from '../../src/github/apps.js';
+import type { GitHub } from '../../src/github/client.js';
 import { answered, FakeGitHub } from '../support/fake-github.js';
 
 test('an app is found by its slug, and an unknown slug finds none', async () => {
@@ -16,6 +17,13 @@ test('an app is found by its slug, and an unknown slug finds none', async () => 
 test('a failure other than not found is not taken for a missing app', async () => {
   const github = new FakeGitHub().fail('GET /apps/dependabot', answered(403, 'rate limit exceeded'));
   await expect(findGitHubApp(github, 'dependabot')).rejects.toThrow('rate limit exceeded');
+});
+
+test('an answer that is not an app says so in words', async () => {
+  const github: GitHub = { request: () => Promise.resolve({ message: 'odd' }) };
+  await expect(findGitHubApp(github, 'dependabot')).rejects.toThrow(
+    'GitHub’s answer for the app dependabot wasn’t an app.',
+  );
 });
 
 test('a slug can be typed as the app’s address, and other text is no slug', () => {
