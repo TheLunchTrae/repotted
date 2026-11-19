@@ -7,10 +7,12 @@ interface LinkProps {
   readonly to: string;
   readonly class?: string;
   readonly marksCurrentPage?: boolean;
+  /** A link to one of the app's pages, which opens it at its top. */
+  readonly opensPage?: boolean;
   readonly children: ComponentChildren;
 }
 
-export function Link({ router, to, class: className, marksCurrentPage, children }: LinkProps): JSX.Element {
+export function Link({ router, to, class: className, marksCurrentPage, opensPage, children }: LinkProps): JSX.Element {
   const path = router.path.value;
   const current = marksCurrentPage === true && (to === '/' ? path === '/' : path === to || path.startsWith(`${to}/`));
   return (
@@ -21,7 +23,7 @@ export function Link({ router, to, class: className, marksCurrentPage, children 
       onClick={(event) => {
         if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
           event.preventDefault();
-          router.go(to);
+          router.go(to, { landOnTop: opensPage === true });
         }
       }}
     >

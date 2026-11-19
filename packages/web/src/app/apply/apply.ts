@@ -116,6 +116,18 @@ function isSameList(left: readonly string[], right: readonly string[]): boolean 
 export class Apply {
   readonly state = signal<ApplyState>({ kind: 'idle' });
   readonly editor = signal<ProfileEditor | undefined>(undefined);
+  /** One-off edits that leaving the page would discard with the apply, saved to it or not. */
+  readonly holdsOneOffEdits = computed(() => {
+    const kind = this.state.value.kind;
+    const editor = this.editor.value;
+    return (
+      kind !== 'idle' &&
+      kind !== 'applying' &&
+      kind !== 'applied' &&
+      editor !== undefined &&
+      (editor.dirty.value || editor.setsAnything.value)
+    );
+  });
   readonly editError = signal<string | undefined>(undefined);
   /** For an apply of a profile the repository doesn't use: whether applying adds it to the repository's profiles. */
   readonly addToRepositoryProfiles = signal(true);

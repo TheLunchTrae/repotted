@@ -7,6 +7,7 @@ import type { Router } from '../../app/navigation/router.js';
 import { definitionTypes } from '../../app/profiles/definition-types.js';
 import type { NewProfileStart, Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
+import { useLeaveQuestion } from '../layout/leave-question.js';
 import { useProfileConfirmation } from '../layout/notifications.js';
 import { run } from '../layout/run.js';
 
@@ -86,6 +87,16 @@ export function NewProfileForm({
       : kind === 'extends' && base !== undefined && base.owner_type !== null
         ? `${base.name} is for ${ownerLabels[base.owner_type].toLowerCase()}, so this one is too.`
         : undefined;
+  // Ordinary creation finishes once the form is gone, but a capture stops with it.
+  useLeaveQuestion(router, () =>
+    creating
+      ? kind === 'repository'
+        ? { kind: 'capture', repository: from }
+        : undefined
+      : name.trim() !== '' || targetName.trim() !== '' || importText !== ''
+        ? { kind: 'new-profile', name: name.trim() }
+        : undefined,
+  );
   // While it works, the name that already exists is the profile's own.
   const problem = working || name.trim() === '' ? undefined : profiles.nameProblem(name, folder);
 
@@ -119,6 +130,7 @@ export function NewProfileForm({
         destination === undefined || created === undefined
           ? '/profiles'
           : `${destination.path}?definition=${encodeURIComponent(profiles.pathOf(created))}`,
+        { withoutAsking: true },
       );
     } else {
       setError(failure);
@@ -393,7 +405,7 @@ export function NewProfileForm({
           class="button button-quiet"
           type="button"
           onClick={() => {
-            router.go(library?.path ?? '/profiles');
+            router.go(library?.path ?? '/profiles', { withoutAsking: true });
           }}
         >
           Cancel

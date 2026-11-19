@@ -112,6 +112,15 @@ export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): 
           </p>
         )}
         <div class="form-actions">
+          <button
+            class="button button-quiet"
+            type="button"
+            onClick={() => {
+              dialog.current?.close('cancel');
+            }}
+          >
+            Cancel
+          </button>
           <PendingButton
             pending={changing}
             class="button button-primary"
@@ -121,9 +130,6 @@ export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): 
           >
             {changeLabels[picked]}
           </PendingButton>
-          <button class="button button-quiet" type="submit" value="cancel">
-            Cancel
-          </button>
         </div>
       </form>
     </dialog>

@@ -9,6 +9,7 @@ import { type CompareRow, sectionTitles } from '../../app/apply/comparison.js';
 import { repositoryAddress } from '../../app/navigation/addressed-repository.js';
 import type { Router } from '../../app/navigation/router.js';
 import { BarActions } from '../layout/action-bar.js';
+import { useLeaveQuestion } from '../layout/leave-question.js';
 import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
@@ -71,12 +72,19 @@ function Confirm({ apply, onClose }: { readonly apply: Apply; readonly onClose: 
           GitHub. Repotted checks the repository first, and writes nothing if it changed since the review.
         </p>
         <div class="form-actions">
+          {/* The dialog opens with the keyboard on Cancel, so Enter never applies by itself. */}
+          <button
+            class="button button-quiet"
+            type="button"
+            onClick={() => {
+              dialog.current?.close('cancel');
+            }}
+            autofocus
+          >
+            Cancel
+          </button>
           <button class="button button-primary" type="submit" value="apply">
             Apply now
-          </button>
-          {/* The dialog opens with the keyboard on Cancel, so Enter never applies by itself. */}
-          <button class="button button-quiet" type="submit" value="cancel" autofocus>
-            Cancel
           </button>
         </div>
       </form>
@@ -95,6 +103,17 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
   const [reviewing, review] = usePendingAction();
   const state = apply.state.value;
   const [confirming, setConfirming] = useState(false);
+  useLeaveQuestion(router, () => {
+    const current = apply.state.peek();
+    if (current.kind === 'idle' || !apply.holdsOneOffEdits.peek()) {
+      return undefined;
+    }
+    return {
+      kind: 'one-off-edits',
+      repositories: [current.repository],
+      savable: current.kind === 'editing' && current.fromProfile && !current.builtIn,
+    };
+  });
   const back = (
     <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
       Back to repositories

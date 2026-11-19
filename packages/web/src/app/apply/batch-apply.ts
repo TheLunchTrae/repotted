@@ -205,6 +205,18 @@ export class BatchApply {
   readonly state = signal<BatchState>({ kind: 'idle' });
   /** Only for a batch that changes settings once, without a profile: the edits each repository gets. */
   readonly editor = signal<ProfileEditor | undefined>(undefined);
+  /** One-off edits that leaving the page would discard with the apply, saved to it or not. */
+  readonly holdsOneOffEdits = computed(() => {
+    const kind = this.state.value.kind;
+    const editor = this.editor.value;
+    return (
+      kind !== 'idle' &&
+      kind !== 'applying' &&
+      kind !== 'applied' &&
+      editor !== undefined &&
+      (editor.dirty.value || editor.setsAnything.value)
+    );
+  });
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;

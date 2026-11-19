@@ -376,6 +376,9 @@ test('a save confirmation clears the current height of the save bar', async ({ p
   }
   await page.getByRole('button', { name: 'Save as draft', exact: true }).click();
   await expect(page.getByText('website saved as a draft.', { exact: true })).toBeVisible();
+  // The save goes back to the list, and the confirmation stays with the profile opened again.
+  await expect(page.locator('button.row[data-profile$="website.yaml"]')).toBeFocused();
+  await page.getByText('website', { exact: true }).click();
   await expect(page.locator('.bar-more[open]')).toHaveCount(0);
   await page.locator('.save-bar').scrollIntoViewIfNeeded();
   await expect
@@ -413,6 +416,64 @@ test('a save bar above long YAML cannot push a confirmation above the viewport',
     .toBe(true);
 });
 
+async function openPage(page: Page, name: string): Promise<void> {
+  const link = page.getByRole('link', { name, exact: true });
+  if (!(await link.isVisible())) {
+    await page.locator('.account-menu > summary').click();
+  }
+  await link.click();
+}
+
+test('a page link opens its page at the top, not at the profile or repository last open there', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('website', { exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'website', exact: true })).toBeVisible();
+  await openPage(page, 'Profiles');
+  await expect(page.getByRole('heading', { name: 'Profiles', exact: true })).toBeVisible();
+
+  await page.getByText('website', { exact: true }).click();
+  await openPage(page, 'Settings');
+  await openPage(page, 'Profiles');
+  await expect(page.getByRole('heading', { name: 'Profiles', exact: true })).toBeVisible();
+
+  await page.goto('/?repository=lunch/api');
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
+  await openPage(page, 'Settings');
+  await openPage(page, 'Repositories');
+  await expect(page).toHaveURL('/');
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0);
+});
+
+test('leaving one-off edits asks first, and Stay keeps them', async ({ page }) => {
+  await page.goto('/?repository=lunch/api');
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Description', exact: true }).fill('One-off description');
+  await page.getByRole('link', { name: 'Back to repositories', exact: true }).click();
+  const question = page.getByRole('dialog', { name: 'Discard your one-off edits?', exact: true });
+  await expect(question.getByRole('button', { name: 'Stay', exact: true })).toBeFocused();
+  await question.getByRole('button', { name: 'Stay', exact: true }).click();
+  await expect(question).toHaveCount(0);
+  await expect(page).toHaveURL('/apply');
+  await expect(page.getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('One-off description');
+
+  await page.goBack();
+  await expect(question).toBeVisible();
+  await question.getByRole('button', { name: 'Leave', exact: true }).click();
+  await expect(page).toHaveURL('/?repository=lunch/api');
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
+});
+
+test('leaving a new profile that has a name asks first, and Leave discards it', async ({ page }) => {
+  await page.goto('/profiles/new');
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('half-made');
+  await openPage(page, 'Profiles');
+  const question = page.getByRole('dialog', { name: 'Discard this new profile?', exact: true });
+  await expect(question).toContainText('half-made');
+  await question.getByRole('button', { name: 'Leave', exact: true }).click();
+  await expect(page).toHaveURL('/profiles');
+  await expect(page.getByText('half-made', { exact: true })).toHaveCount(0);
+});
+
 test('two saves of the same profile replace the live announcement', async ({ page }) => {
   await page.clock.install();
   await page.goto('/profiles');
@@ -424,6 +485,7 @@ test('two saves of the same profile replace the live announcement', async ({ pag
   await expect(message).toHaveText('website saved.Available in this tab.');
   const first = await page.locator('.toast-copy').elementHandle();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
+  await page.getByText('website', { exact: true }).click();
   await description.fill('Second description');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => first.evaluate((element) => element.isConnected)).toBe(false);
@@ -673,7 +735,8 @@ test('shared changes reach profile forms and related tabs save relative referenc
   const save = page.getByRole('button', { name: 'Save definition', exact: true });
   await expect(save).toBeEnabled();
   await save.click();
-  await expect(save).toBeDisabled();
+  await expect(page).toHaveURL('/environments');
+  await page.getByRole('link', { name: /^production /u }).click();
   for (const name of ['shared-api', 'shared-web']) {
     await page.getByRole('button', { name, exact: true }).click();
     await page.getByRole('tab', { name: 'Environments', exact: true }).click();
@@ -760,6 +823,9 @@ test('unknown keys can be previewed and saved away without another edit', async 
   await expect(preview).toContainText('Saving removes unrecognized keys: mystery, repository.has_wikki.');
   await preview.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(preview).toHaveCount(0);
+  // On the smallest phone the confirmation sits over the profile's row until it goes.
+  await page.getByRole('button', { name: 'Dismiss confirmation' }).click();
+  await page.getByText('unknown-keys', { exact: true }).click();
   await expect(save).toBeDisabled();
   await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
   const yaml = page.getByRole('region', { name: 'unknown-keys as YAML', exact: true });
@@ -1432,7 +1498,8 @@ test('named Actions policies edit workflow rules and link alongside general sett
   await expect(page.getByRole('region', { name: 'Workflow rules', exact: true })).toBeFocused();
   await page.getByRole('textbox', { name: 'Actor ID', exact: true }).fill('1234');
   await save.click();
-  await expect(save).toBeDisabled();
+  await expect(page).toHaveURL('/actions-policies');
+  await page.getByRole('link', { name: /^Release workflows /u }).click();
   await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
   const yaml = page.getByRole('region', { name: 'Release workflows as YAML', exact: true });
   await expect(yaml).toContainText('actions_policies:');

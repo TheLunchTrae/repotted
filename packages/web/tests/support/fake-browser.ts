@@ -33,8 +33,11 @@ export function browser(start: string, later = false) {
       show(String(url));
     }),
     back: vi.fn<History['back']>(() => {
+      history.go(-1);
+    }),
+    go: vi.fn<History['go']>((delta = 0) => {
       const traverse = (): void => {
-        at -= 1;
+        at += delta;
         show(entries[at]?.address ?? '/');
         listeners.forEach((listener) => {
           listener();

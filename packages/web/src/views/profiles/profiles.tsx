@@ -285,6 +285,16 @@ export function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNam
           )}
         </div>
         <div class="form-actions">
+          <button
+            class="button button-quiet"
+            type="button"
+            onClick={() => {
+              dialog.current?.close('cancel');
+            }}
+            disabled={moving}
+          >
+            Cancel
+          </button>
           <PendingButton
             pending={moving}
             class="button button-primary"
@@ -294,9 +304,6 @@ export function FolderNameDialog({ profiles, dialog: asked, onClose }: FolderNam
           >
             {renaming === undefined ? 'Create and move' : 'Rename folder'}
           </PendingButton>
-          <button class="button button-quiet" type="submit" value="cancel" disabled={moving}>
-            Cancel
-          </button>
         </div>
       </form>
     </dialog>
@@ -400,6 +407,18 @@ export function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JS
           </p>
         )}
         <div class="form-actions">
+          {/* The dialog opens with the keyboard on Cancel, so Enter never deletes by itself. */}
+          <button
+            class="button button-quiet"
+            type="button"
+            onClick={() => {
+              dialog.current?.close('cancel');
+            }}
+            disabled={deleting}
+            autofocus
+          >
+            Cancel
+          </button>
           <PendingButton
             pending={deleting}
             class="button button-danger"
@@ -413,10 +432,6 @@ export function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JS
                 ? 'Delete profile'
                 : 'Delete definition'}
           </PendingButton>
-          {/* The dialog opens with the keyboard on Cancel, so Enter never deletes by itself. */}
-          <button class="button button-quiet" type="submit" value="cancel" disabled={deleting} autofocus>
-            Cancel
-          </button>
         </div>
       </form>
     </dialog>
@@ -544,9 +559,11 @@ interface ProfileProps {
   readonly standalone?: boolean;
   readonly listing: ProfileListing;
   readonly profiles: Profiles;
+  /** After a save that went through and leaves nothing to edit next, which goes back to the list it was opened from. */
+  readonly onSaved: () => void;
 }
 
-export function Profile({ listing, profiles, router, standalone }: ProfileProps): JSX.Element {
+export function Profile({ listing, profiles, router, standalone, onSaved }: ProfileProps): JSX.Element {
   const confirm = useProfileConfirmation(profiles);
   const [showYaml, setShowYaml] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -561,9 +578,19 @@ export function Profile({ listing, profiles, router, standalone }: ProfileProps)
       return;
     }
     const repair = current.repair.value;
+    // Fixing the profile, or saving its references or new reusable definitions, lets editing go on, so it stays open.
+    const editingGoesOn =
+      listing.problem !== null ||
+      repair !== undefined ||
+      current.referencesChanged.value ||
+      current.reusableDefinitions.value.length > 0;
     await profiles.save(mode);
     if (current.saveError.value === undefined && repair?.saveError.value === undefined) {
       confirm(`${listing.name} saved${mode === 'draft' ? ' as a draft' : ''}.`);
+      // Unless another profile, or another page, was opened while the save ran.
+      if (!editingGoesOn && profiles.selected.peek()?.file === listing.file) {
+        onSaved();
+      }
     }
   };
   return (
@@ -926,7 +953,15 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
           />
         ) : (
           selected !== undefined && (
-            <Profile key={selected.file} listing={selected} profiles={profiles} router={router} />
+            <Profile
+              key={selected.file}
+              listing={selected}
+              profiles={profiles}
+              router={router}
+              onSaved={() => {
+                run(profiles.select(undefined));
+              }}
+            />
           )
         )}
       </div>

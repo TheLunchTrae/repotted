@@ -40,6 +40,19 @@ export function DefinitionsPage({
       run(profiles.select(listing));
     }
   }, [profiles, listing?.file]);
+  // Back on the list from a definition, the keyboard goes to that definition's row, or else to the heading.
+  const openedBefore = useRef(named);
+  useEffect(() => {
+    const left = openedBefore.current;
+    openedBefore.current = named;
+    if (left === null || named !== null || creating) {
+      return;
+    }
+    const row = document.querySelector<HTMLElement>(
+      `a.row[href="${CSS.escape(`${library.path}?definition=${encodeURIComponent(left)}`)}"]`,
+    );
+    (row ?? heading.current)?.focus();
+  }, [named, creating, library.path]);
   const users = listing === undefined ? [] : profiles.dependents(listing);
   const assignments =
     listing === undefined
@@ -74,7 +87,22 @@ export function DefinitionsPage({
           <Banners profiles={profiles} />
           <div class="definition-layout">
             {profiles.selected.value?.file === listing.file && (
-              <Profile key={listing.file} listing={listing} profiles={profiles} router={router} standalone />
+              <Profile
+                key={listing.file}
+                listing={listing}
+                profiles={profiles}
+                router={router}
+                standalone
+                onSaved={() => {
+                  // Only from the definition's own address: a save that ends after the page was left leaves it be.
+                  if (
+                    router.path.peek() === library.path &&
+                    new URLSearchParams(router.search.peek()).get('definition') === named
+                  ) {
+                    router.go(library.path);
+                  }
+                }}
+              />
             )}
             <aside class="definition-users">
               <span class="pill">Shared definition</span>

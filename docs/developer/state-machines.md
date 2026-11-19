@@ -1223,12 +1223,27 @@ deleted here, and the next sync would delete it on GitHub.
 `Router` (`packages/web/src/app/navigation/router.ts`) holds the address of the page
 within the app.
 
-| State    | Event                              | Next                                                     |
-| -------- | ---------------------------------- | -------------------------------------------------------- |
-| Any page | A link to one of the app's pages   | That page, with a new entry in the browser's history.    |
-| Any page | A link to the page already shown   | The same page; the history gets no entry.                |
-| Any page | The browser's back or forward      | The page at that entry.                                  |
-| Any page | An address the app has no page for | "There's no page here", with a link to the repositories. |
+| State                        | Event                                              | Next                                                                                             |
+| ---------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Any page                     | A link to one of the app's pages                   | That page, with a new entry in the browser's history.                                            |
+| Any page                     | A link to the page already shown                   | The same page; the history gets no entry.                                                        |
+| Any page                     | A page link, in the header or the menu             | That page at its top: no profile and no repository open, even for the page already shown.        |
+| Any page                     | The browser's back or forward                      | The page at that entry.                                                                          |
+| Any page                     | An address the app has no page for                 | "There's no page here", with a link to the repositories.                                         |
+| Page holding work            | A link or button to another address                | Asking: the page stays, and the leave question names the work.                                   |
+| Page holding work            | The browser's back or forward                      | Asking: the browser goes back to the entry shown, which each entry's place in the history finds. |
+| Page holding work            | The page itself is done, as after Create or Cancel | The address it goes to, without asking.                                                          |
+| Asking                       | **Stay**, or Escape                                | The page holding work, as it was.                                                                |
+| Asking after a link          | **Leave**                                          | The address the link named, and its top when it was a page link.                                 |
+| Asking after back or forward | **Leave**                                          | The browser's back or forward again, to where it went; it arrives without asking.                |
+
+A page holds work while leaving it would lose something: an apply or a
+batch whose editor has unsaved changes or one-off edits set in the apply, a
+capture still reading, or a new-profile form with a name, target, or import
+entered. The apply queue holds nothing, since it outlasts the page. A save
+of a profile or a shared definition that goes through returns to its list,
+unless the profile had a problem, was being repaired, or saved changed
+references or new reusable definitions; those keep it open for the editing that follows.
 
 A trailing slash names the same page. Leaving Settings while its connect form
 is syncing lets the sync finish: the profiles move, or the reason they

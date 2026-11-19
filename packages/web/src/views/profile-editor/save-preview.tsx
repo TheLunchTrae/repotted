@@ -142,14 +142,21 @@ export function SavePreviewDialog({ name, editor, saving, preview }: SavePreview
           </p>
         )}
         <div class="form-actions">
-          <button class="button button-primary" type="submit" value="applies" disabled={!editor.canSave.value}>
-            Save
+          <button
+            class="button button-quiet"
+            type="button"
+            onClick={() => {
+              dialog.current?.close('close');
+            }}
+            autofocus
+          >
+            Close
           </button>
           <button class="button" type="submit" value="draft" disabled={!editor.canSaveAsDraft.value}>
             Save as draft
           </button>
-          <button class="button button-quiet" type="submit" value="close" autofocus>
-            Close
+          <button class="button button-primary" type="submit" value="applies" disabled={!editor.canSave.value}>
+            Save
           </button>
         </div>
       </form>

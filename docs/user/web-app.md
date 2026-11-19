@@ -20,6 +20,15 @@ Batch actions show one confirmation for the whole action. A successful batch
 apply confirms once every included repository and its profile records have
 finished, with the number of repositories applied to.
 
+The links to the app's pages, at the top or in the menu, open each page at
+its top: **Profiles** opens the list rather than the profile you last had
+open, and **Repositories** opens with no repository open. That includes the
+link to the page you're on. Leaving a page asks first, with **Stay** and
+**Leave**, when leaving would lose work: an apply or a batch with one-off
+edits, a capture still reading from GitHub, or a new profile with something
+entered. The browser's back and forward buttons ask too. Queued applies never
+ask, since they carry on wherever you go.
+
 When a search finds no matches, **Clear search** restores results and returns
 the keyboard to the search field. Repository filters remain as chosen;
 **Clear filters** changes those separately. Empty profile lists offer
@@ -730,6 +739,11 @@ there and then commits yours; only the settings you changed are written, so
 a change made elsewhere to another setting stays. If the changes can't make a valid profile, such as one with every
 merge method off, the bar's list of things to fix says why and **Save** waits. **Reset** in the bar
 puts the whole profile back as it was saved.
+
+Once **Save** or **Save as draft** goes through, the profile closes and the
+list comes back, or the library's list for a shared definition. A save that
+repairs the profile, saves changed references, or makes a new reusable
+definition keeps it open, since the editing goes on from there.
 
 **Save as draft** keeps your changes in the profile without applying them:
 a [draft](profiles.md#drafts) is saved, and synced when profiles are kept on
