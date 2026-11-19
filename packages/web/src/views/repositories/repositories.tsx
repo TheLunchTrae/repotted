@@ -7,6 +7,7 @@ import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { ComparedProfile } from '../../app/apply/comparison.js';
 import type { AddressedRepository } from '../../app/navigation/addressed-repository.js';
 import type { Profiles } from '../../app/profiles/profiles.js';
+import { changedInView } from '../../app/repositories/profile-reviews.js';
 import {
   type FolderGroup,
   refreshPause,
@@ -31,7 +32,7 @@ import { usePhone } from '../layout/phone.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
 import { FolderProfilesDialog, FolderProfileTags } from './folder-profiles.js';
-import { EditProfilesDialog, PanelProfiles, RowProfileTags } from './repository-profiles.js';
+import { ChangedProfilesNotice, EditProfilesDialog, PanelProfiles, RowProfileTags } from './repository-profiles.js';
 
 function OwnerFilter({ repositories }: { readonly repositories: Repositories }): JSX.Element {
   const menu = useDismissibleMenu();
@@ -1131,6 +1132,9 @@ interface RepositoriesProps {
   readonly onApplyProfiles: PanelProps['onApplyProfiles'];
   readonly assignments: RepositoryProfiles;
   readonly onBatch: (repositories: readonly string[], profile: ComparedProfile) => void;
+  readonly onReviewProfiles: (repositories: readonly string[]) => void;
+  /** While an apply writes to GitHub, when no review can start. */
+  readonly applyWriting: boolean;
 }
 
 interface SelectedProps {
@@ -1289,6 +1293,8 @@ export function RepositoriesPage({
   onApplyProfiles,
   assignments,
   onBatch,
+  onReviewProfiles,
+  applyWriting,
 }: RepositoriesProps): JSX.Element {
   const selected = repositories.selected.value;
   const search = useSlashKeyToFocusSearch();
@@ -1399,6 +1405,13 @@ export function RepositoriesPage({
           </div>
         </div>
 
+        {list !== undefined && (
+          <ChangedProfilesNotice
+            changed={changedInView(assignments, repositories.repositoriesBeforeSearch.value)}
+            writing={applyWriting}
+            onReviewProfiles={onReviewProfiles}
+          />
+        )}
         {repositories.installationsMissingPermissions.value.map((installation) => (
           <MissingPermissionsNotice key={installation.owner} installation={installation} />
         ))}

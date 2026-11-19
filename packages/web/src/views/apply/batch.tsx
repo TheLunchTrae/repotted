@@ -298,6 +298,28 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                 </ul>
               </div>
             )}
+            {batch.addOffer.value !== undefined && (
+              <div class="assign-choice">
+                <label class="check">
+                  <input
+                    type="checkbox"
+                    checked={batch.addToRepositoryProfiles.value}
+                    disabled={reviewingOrApplying}
+                    onChange={(event) => {
+                      batch.addToRepositoryProfiles.value = event.currentTarget.checked;
+                    }}
+                  />
+                  <span>
+                    Add <span class="mono">{batch.addOffer.value}</span> to each repository's profiles when it applies
+                  </span>
+                </label>
+                <p class="muted small">
+                  Deselect it for a one-time apply. The repositories keep no record of the profile. One whose apply
+                  leaves some of the profile out, edits it, skips a setting GitHub refused to show, or differs from its
+                  section ownership gets it as not applied yet.
+                </p>
+              </div>
+            )}
             <section class="settings-group" aria-label="All repositories">
               <div>
                 <h2>All repositories</h2>

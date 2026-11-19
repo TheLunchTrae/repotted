@@ -22,7 +22,7 @@ export interface ProfileAssignments {
     authoritative: readonly AuthoritativeSection[],
     notify?: boolean,
   ): Promise<boolean>;
-  recordAdded(repository: string, profilePath: string, version: string | undefined): void;
+  recordAdded(repository: string, profilePath: string, version: string | undefined, notify?: boolean): Promise<boolean>;
 }
 
 export const noAssignments: ProfileAssignments = {
@@ -31,7 +31,7 @@ export const noAssignments: ProfileAssignments = {
   fileOf: (path) => path,
   pathOf: () => undefined,
   recordApplied: () => Promise.resolve(true),
-  recordAdded: () => undefined,
+  recordAdded: () => Promise.resolve(true),
 };
 
 export function assignmentKey(assignments: ProfileAssignments, repository: string): string {

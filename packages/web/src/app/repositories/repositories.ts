@@ -219,7 +219,8 @@ export class Repositories {
 
   readonly #hidingRepositories = computed(() => this.hiddenCount.value > 0 && !this.showHidden.value);
 
-  readonly #listedRepositories = computed<readonly Repository[]>(() =>
+  /** What the list shows before a search or filters: of the owners shown, and not hidden unless hidden ones show. */
+  readonly repositoriesBeforeSearch = computed<readonly Repository[]>(() =>
     this.#ownersRepositories.value.filter((repository) => this.showHidden.value || !this.isHidden(repository)),
   );
 
@@ -228,7 +229,7 @@ export class Repositories {
   readonly filterChips = computed(() => filterChips(this.filters.value));
 
   readonly #filteredRepositories = computed<readonly Repository[]>(() =>
-    this.#listedRepositories.value.filter((repository) => passesFilters(repository, this.filters.value)),
+    this.repositoriesBeforeSearch.value.filter((repository) => passesFilters(repository, this.filters.value)),
   );
 
   /**
@@ -237,7 +238,7 @@ export class Repositories {
    */
   readonly topicChoices = computed<readonly TopicChoice[]>(() => {
     const filters = this.filters.value;
-    const listed = this.#listedRepositories.value;
+    const listed = this.repositoriesBeforeSearch.value;
     const topics = new Set([...listed.flatMap((repository) => repository.topics), ...filters.topics]);
     const others = listed.filter((repository) => passesFilters(repository, filters, 'topics'));
     return [...topics]

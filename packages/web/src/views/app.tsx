@@ -69,58 +69,70 @@ function SignedIn({
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
   const notifications = useMemo(() => new Notifications(), []);
-  const { repositories, profiles, assignments, discovery, comparison, apply, batch, protection, preview } =
-    useMemo(() => {
-      const refused = (): void => {
-        account.gitHubRefusedSignIn();
-      };
-      const kept = new Profiles(github, preferences, refused, folders);
-      // The hidden repositories and owners follow the profiles: to their repository, or this browser. Using
-      // the profiles' place from the start means the first list shows what that place hides. Folders follow them
-      // too, but which folders are closed stays in this browser, so opening one commits nothing.
-      const shared = new SharedPreferences(github, preferences, refused, (keys, destination) => {
-        if (keys.includes(repositoryProfilesKey)) {
-          notifications.show({
-            message: 'Repository profiles saved.',
-            detail: destination === 'repository' ? 'Synced with GitHub.' : 'Saved in this browser.',
-          });
-        }
-      });
-      run(shared.use(kept.source.value));
-      // Which profiles each repository uses follows the profiles too, since it names them by their paths.
-      const assigned = new RepositoryProfiles(shared, kept);
-      kept.protectAssignments((files) =>
-        assigned.repositoriesWithProfiles.value.filter((repository) =>
-          assigned.profilesOf(repository).some((path) => files.includes(assigned.fileOf(path))),
-        ),
-      );
-      const applying = new Apply(github, refused, (work) => kept.write(work), assigned);
-      const batching = new BatchApply(github, refused, assigned, (count) => {
-        notifications.show({ message: `Applied to ${count === 1 ? '1 repository' : `${count} repositories`}.` });
-      });
-      const reviewProfiles = (names: readonly string[]): boolean => {
-        const review = reviewAssignedProfiles(names, assigned, kept.folder.value, applying, batching);
-        if (review === undefined) {
-          return false;
-        }
-        run(review.work);
-        router.go(review.path);
-        return true;
-      };
-      return {
-        repositories: new Repositories(github, user, shared, preferences, refused, reviewProfiles),
-        profiles: kept,
-        assignments: assigned,
-        discovery: new ConfigDiscovery(github, kept, refused),
-        comparison: new Comparison(github, refused),
-        // An apply's edits saved to a profile take their turn among the profiles' syncs.
-        apply: applying,
-        batch: batching,
-        protection: new ConfigProtection(github, refused),
-        preview: new BranchPreview(github, kept, refused),
-      };
-    }, [account, github, preferences, folders, user, router, notifications]);
+  const {
+    repositories,
+    profiles,
+    assignments,
+    discovery,
+    comparison,
+    apply,
+    batch,
+    protection,
+    preview,
+    reviewProfiles,
+  } = useMemo(() => {
+    const refused = (): void => {
+      account.gitHubRefusedSignIn();
+    };
+    const kept = new Profiles(github, preferences, refused, folders);
+    // The hidden repositories and owners follow the profiles: to their repository, or this browser. Using
+    // the profiles' place from the start means the first list shows what that place hides. Folders follow them
+    // too, but which folders are closed stays in this browser, so opening one commits nothing.
+    const shared = new SharedPreferences(github, preferences, refused, (keys, destination) => {
+      if (keys.includes(repositoryProfilesKey)) {
+        notifications.show({
+          message: 'Repository profiles saved.',
+          detail: destination === 'repository' ? 'Synced with GitHub.' : 'Saved in this browser.',
+        });
+      }
+    });
+    run(shared.use(kept.source.value));
+    // Which profiles each repository uses follows the profiles too, since it names them by their paths.
+    const assigned = new RepositoryProfiles(shared, kept);
+    kept.protectAssignments((files) =>
+      assigned.repositoriesWithProfiles.value.filter((repository) =>
+        assigned.profilesOf(repository).some((path) => files.includes(assigned.fileOf(path))),
+      ),
+    );
+    const applying = new Apply(github, refused, (work) => kept.write(work), assigned);
+    const batching = new BatchApply(github, refused, assigned, (count) => {
+      notifications.show({ message: `Applied to ${count === 1 ? '1 repository' : `${count} repositories`}.` });
+    });
+    const reviewProfiles = (names: readonly string[]): boolean => {
+      const review = reviewAssignedProfiles(names, assigned, kept.folder.value, applying, batching);
+      if (review === undefined) {
+        return false;
+      }
+      run(review.work);
+      router.go(review.path);
+      return true;
+    };
+    return {
+      repositories: new Repositories(github, user, shared, preferences, refused, reviewProfiles),
+      profiles: kept,
+      assignments: assigned,
+      discovery: new ConfigDiscovery(github, kept, refused),
+      comparison: new Comparison(github, refused),
+      // An apply's edits saved to a profile take their turn among the profiles' syncs.
+      apply: applying,
+      batch: batching,
+      protection: new ConfigProtection(github, refused),
+      preview: new BranchPreview(github, kept, refused),
+      reviewProfiles,
+    };
+  }, [account, github, preferences, folders, user, router, notifications]);
   const address = useMemo(() => new AddressedRepository(repositories, router), [repositories, router]);
+  const applyWriting = apply.state.value.kind === 'applying' || batch.state.value.kind === 'applying';
   useEffect(() => {
     run(repositories.load());
     run(profiles.refresh());
@@ -286,6 +298,8 @@ function SignedIn({
               router.go('/apply');
             }}
             assignments={assignments}
+            onReviewProfiles={reviewProfiles}
+            applyWriting={applyWriting}
             onCompare={(repository, profile) => {
               run(comparison.compare(repository, profile));
               router.go('/compare');

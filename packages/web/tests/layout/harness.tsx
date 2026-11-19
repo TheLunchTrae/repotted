@@ -221,12 +221,17 @@ await writeFile(
   '/profiles/browser/unknown-keys.yaml',
   '# Keep header\nmystery: true\nrepository: { has_wiki: true, has_wikki: false }\n',
 );
-// Two profiles on the long name, the most a phone shows as tags, and four on another, one of them gone.
+// Two profiles on the long name, the most a phone shows as tags, four on another, one of them gone, and one
+// applied at a version the profile no longer has, so the list says its profiles changed.
 localStorage.setItem(
   'repotted:repository-profiles',
   JSON.stringify({
     'lunch/a_repository_name_with_no_hyphens_in_it_at_all': { profiles: ['base.yaml', 'teams/website.yaml'] },
     'lunch/app': { profiles: ['base.yaml', 'teams/website.yaml', 'teams/mobile.yaml', 'archived.yaml'] },
+    'lunch/docs': {
+      profiles: ['teams/website.yaml'],
+      applied: [{ profile: 'teams/website.yaml', version: 'an older version' }],
+    },
   }),
 );
 

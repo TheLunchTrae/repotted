@@ -402,3 +402,44 @@ export function EditProfilesDialog({ repository, assignments, profiles, onClose 
     </dialog>
   );
 }
+
+function repositoriesCount(amount: number): string {
+  return amount === 1 ? '1 repository' : `${amount} repositories`;
+}
+
+interface ChangedNoticeProps {
+  /** The repositories in view whose profiles changed, by their full names. */
+  readonly changed: readonly string[];
+  /** While an apply writes to GitHub, when no review can start. */
+  readonly writing: boolean;
+  readonly onReviewProfiles: (repositories: readonly string[]) => void;
+}
+
+/** Repositories whose profiles changed since they were last applied, with one review of them all. */
+export function ChangedProfilesNotice({ changed, writing, onReviewProfiles }: ChangedNoticeProps): JSX.Element | null {
+  if (changed.length === 0) {
+    return null;
+  }
+  return (
+    <div class="notice notice-drift changed-profiles" role="status">
+      <p>
+        {changed.length === 1
+          ? "1 repository's profiles changed since they were last applied."
+          : `${changed.length} repositories' profiles changed since they were last applied.`}
+      </p>
+      <p class="notice-actions">
+        <button
+          class="button button-small"
+          type="button"
+          disabled={writing}
+          onClick={() => {
+            onReviewProfiles(changed);
+          }}
+        >
+          Review apply to {repositoriesCount(changed.length)}
+        </button>
+      </p>
+      {writing && <p class="muted small">An apply is writing to GitHub. Review when it finishes.</p>}
+    </div>
+  );
+}

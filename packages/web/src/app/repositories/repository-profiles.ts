@@ -326,16 +326,25 @@ export class RepositoryProfiles implements ProfileAssignments {
    * One profile applied by itself, added to the end of the repository's list.
    * Without a version, as after an apply that left some of it out, it counts as not applied yet.
    */
-  recordAdded(repository: string, profilePath: string, version: string | undefined): void {
-    this.#change(repository, (current) => {
-      const applied = (current?.applied ?? []).filter((item) => item.profile !== profilePath);
-      return {
-        ...current,
-        profiles: [...(current?.profiles ?? []).filter((other) => other !== profilePath), profilePath],
-        applied: version === undefined ? applied : [...applied, { profile: profilePath, version }],
-      };
-    }).catch(() => undefined);
+  recordAdded(repository: string, profilePath: string, version: string | undefined, notify = true): Promise<boolean> {
+    return this.#change(
+      repository,
+      (current) => {
+        const applied = (current?.applied ?? []).filter((item) => item.profile !== profilePath);
+        return {
+          ...current,
+          profiles: [...(current?.profiles ?? []).filter((other) => other !== profilePath), profilePath],
+          applied: version === undefined ? applied : [...applied, { profile: profilePath, version }],
+        };
+      },
+      notify,
+    );
   }
+
+  /** The repositories, in lower case, whose profiles changed since they were last applied. */
+  readonly changedRepositories = computed(() =>
+    this.repositoriesWithProfiles.value.filter((repository) => this.status(repository).kind === 'changed'),
+  );
 
   #change(
     repository: string,

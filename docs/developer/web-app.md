@@ -519,6 +519,14 @@ when planning fails or the review closes. Changes read from another browser
 update inherited layers and status through the shared preferences without
 opening a review.
 
+The repository list's changed-profiles notice, in
+`views/repositories/repository-profiles.tsx`, opens its review through the
+same `reviewAssignedProfiles`. Which repositories it counts comes from
+`changedInView` in `profile-reviews.ts`, which keeps those
+`Repositories.repositoriesBeforeSearch` shows and names them by their full
+names, since assignments keep them in lowercase. A repository owns its
+profiles: nothing indexes a profile back to the repositories that use it.
+
 Repository assignments keep optional `authoritative` and
 `appliedAuthoritative` section lists beside `profiles` and `applied` in
 shared preferences. Omitted lists mean partial management. Ownership belongs
@@ -533,7 +541,10 @@ recognizes an apply of the assigned profile order or an offer to add one
 profile, checks whether exclusions, one-off edits, refused reads, or differing
 ownership prevent recording, and verifies the source versions before returning
 an applied baseline. Batch review classifies the source before resolving it for
-baseline recording, so a profile outside the assignment needs no extra read.
+baseline recording, so a profile outside the assignment needs no extra read,
+unless it is the batch's one profile, which it may add to that repository's
+list. A source of that kind lost after planning is not added, and the apply
+refuses it.
 Single and batch apply keep their own page state and
 write orchestration; neither imports the other's implementation to interpret
 an assignment.
