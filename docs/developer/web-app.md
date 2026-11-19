@@ -254,8 +254,9 @@ repository: what a page last had open is state in `Profiles` and
 `Repositories`, not in the address, so it would come back otherwise. A page
 whose work leaving would lose registers a question with `useLeaveQuestion`,
 which calls `Router.holdWhileLeaving`. `Router.go` then holds the address
-in `leaving` until `leave` or `stay`, and a browser back or forward is put
-back with a new entry while it asks, since `popstate` can't be cancelled.
+in `leaving` until `leave` or `stay`. `popstate` can't be cancelled, so each
+entry the router pushes holds its place in the history, and a back or forward
+away from held work is undone with `history.go` while it asks.
 `LeaveQuestionDialog` draws the question. Closing the tab still asks through
 the browser's own `beforeunload` prompt. A page's own finishing navigation,
 such as after Create, passes `withoutAsking`.

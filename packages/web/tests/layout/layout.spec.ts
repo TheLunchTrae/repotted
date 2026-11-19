@@ -823,6 +823,8 @@ test('unknown keys can be previewed and saved away without another edit', async 
   await expect(preview).toContainText('Saving removes unrecognized keys: mystery, repository.has_wikki.');
   await preview.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(preview).toHaveCount(0);
+  // On the smallest phone the confirmation sits over the profile's row until it goes.
+  await page.getByRole('button', { name: 'Dismiss confirmation' }).click();
   await page.getByText('unknown-keys', { exact: true }).click();
   await expect(save).toBeDisabled();
   await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
@@ -1496,7 +1498,8 @@ test('named Actions policies edit workflow rules and link alongside general sett
   await expect(page.getByRole('region', { name: 'Workflow rules', exact: true })).toBeFocused();
   await page.getByRole('textbox', { name: 'Actor ID', exact: true }).fill('1234');
   await save.click();
-  await expect(save).toBeDisabled();
+  await expect(page).toHaveURL('/actions-policies');
+  await page.getByRole('link', { name: /^Release workflows /u }).click();
   await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
   const yaml = page.getByRole('region', { name: 'Release workflows as YAML', exact: true });
   await expect(yaml).toContainText('actions_policies:');

@@ -94,7 +94,13 @@ export function DefinitionsPage({
                 router={router}
                 standalone
                 onSaved={() => {
-                  router.go(library.path);
+                  // Only from the definition's own address: a save that ends after the page was left leaves it be.
+                  if (
+                    router.path.peek() === library.path &&
+                    new URLSearchParams(router.search.peek()).get('definition') === named
+                  ) {
+                    router.go(library.path);
+                  }
                 }}
               />
             )}

@@ -742,8 +742,8 @@ puts the whole profile back as it was saved.
 
 Once **Save** or **Save as draft** goes through, the profile closes and the
 list comes back, or the library's list for a shared definition. A save that
-repairs the profile, or that saves changed references, keeps it open, since
-the editing goes on from there.
+repairs the profile, saves changed references, or makes a new reusable
+definition keeps it open, since the editing goes on from there.
 
 **Save as draft** keeps your changes in the profile without applying them:
 a [draft](profiles.md#drafts) is saved, and synced when profiles are kept on

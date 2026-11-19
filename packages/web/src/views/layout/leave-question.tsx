@@ -60,12 +60,12 @@ function Wording({ question }: { readonly question: LeaveQuestion }): JSX.Elemen
 export function LeaveQuestionDialog({ router }: { readonly router: Router }): JSX.Element | null {
   const leaving = router.leaving.value;
   const dialog = useRef<HTMLDialogElement>(null);
-  const open = leaving !== undefined;
+  // Each question opens the dialog afresh: a back pressed just after Stay asks again before the closed one is drawn away.
   useEffect(() => {
-    if (open) {
-      dialog.current?.showModal();
+    if (leaving !== undefined && dialog.current?.open === false) {
+      dialog.current.showModal();
     }
-  }, [open]);
+  }, [leaving]);
   if (leaving === undefined) {
     return null;
   }

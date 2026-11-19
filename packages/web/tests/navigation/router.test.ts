@@ -8,7 +8,7 @@ test("follows links and the browser's back button, and reads a trailing slash as
 
   router.go('/settings');
   expect(router.path.value).toBe('/settings');
-  expect(history.pushState).toHaveBeenCalledWith(null, '', '/settings');
+  expect(history.pushState).toHaveBeenCalledWith({ index: 1 }, '', '/settings');
 
   router.go('/settings');
   expect(history.pushState).toHaveBeenCalledTimes(1);
@@ -159,4 +159,24 @@ test('a page link to the page shown still opens it at its top', () => {
   router.go('/settings');
 
   expect(opened).toEqual(['/profiles']);
+});
+
+test('forward away from held work goes back to the entry shown, so back after Stay still goes where it did', () => {
+  const { router, history, forward, entries } = browser('/');
+  router.go('/settings');
+  router.go('/apply');
+  history.back();
+  expect(router.path.value).toBe('/settings');
+  let held = true;
+  router.holdWhileLeaving(() => (held ? { kind: 'capture', repository: 'octo/app' } : undefined));
+
+  forward();
+  expect(router.leaving.value?.question).toEqual({ kind: 'capture', repository: 'octo/app' });
+  router.stay();
+  expect(router.path.value).toBe('/settings');
+  expect(entries()).toEqual(['/', '/settings', '/apply']);
+
+  held = false;
+  history.back();
+  expect(router.path.value).toBe('/');
 });

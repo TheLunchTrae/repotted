@@ -578,8 +578,12 @@ export function Profile({ listing, profiles, router, standalone, onSaved }: Prof
       return;
     }
     const repair = current.repair.value;
-    // Fixing the profile, or saving its references, is what lets editing go on, so the profile stays open for it.
-    const editingGoesOn = listing.problem !== null || repair !== undefined || current.referencesChanged.value;
+    // Fixing the profile, or saving its references or new reusable definitions, lets editing go on, so it stays open.
+    const editingGoesOn =
+      listing.problem !== null ||
+      repair !== undefined ||
+      current.referencesChanged.value ||
+      current.reusableDefinitions.value.length > 0;
     await profiles.save(mode);
     if (current.saveError.value === undefined && repair?.saveError.value === undefined) {
       confirm(`${listing.name} saved${mode === 'draft' ? ' as a draft' : ''}.`);

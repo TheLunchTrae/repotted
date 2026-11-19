@@ -4,13 +4,27 @@ function withoutTrailingSlashes(path: string): string {
   return path.replace(/(?<=.)\/+$/u, '');
 }
 
-/** What a history entry that a query added holds: the query of the entry before it, on the same page. */
-interface QueryEntry {
-  readonly from: string;
+/**
+ * What a history entry the app made holds: its place in the history, so a
+ * back or forward says how far it went, and, for one a query added, the query
+ * of the entry before it, on the same page.
+ */
+interface Entry {
+  readonly index: number;
+  readonly from?: string;
 }
 
-function isQueryEntry(state: unknown): state is QueryEntry {
-  return typeof state === 'object' && state !== null && typeof (state as Partial<QueryEntry>).from === 'string';
+function isEntry(state: unknown): state is Entry {
+  return typeof state === 'object' && state !== null && typeof (state as Partial<Entry>).index === 'number';
+}
+
+/** The entry the page loaded on is the only one the app didn't make, and it starts the count. */
+function placeOf(state: unknown): number {
+  return isEntry(state) ? state.index : 0;
+}
+
+function isQueryEntry(state: unknown): state is Entry & { readonly from: string } {
+  return isEntry(state) && typeof state.from === 'string';
 }
 
 /** Work that leaving the page shown would lose, which is asked about first. */
@@ -33,8 +47,8 @@ interface GoOptions {
 
 interface Leaving {
   readonly question: LeaveQuestion;
-  /** An address to go to, or the browser's own back or forward, which waits on the entry before the one shown. */
-  readonly to: { readonly address: string; readonly options: GoOptions } | 'traversal';
+  /** An address to go to, or how many entries the browser's back or forward went, counted forward. */
+  readonly to: { readonly address: string; readonly options: GoOptions } | { readonly traversal: number };
 }
 
 export class Router {
@@ -43,21 +57,26 @@ export class Router {
   /** Set while the leave question is open. */
   readonly leaving = signal<Leaving | undefined>(undefined);
 
-  readonly #history: Pick<History, 'pushState' | 'replaceState' | 'back' | 'state'>;
+  readonly #history: Pick<History, 'pushState' | 'replaceState' | 'back' | 'go' | 'state'>;
   readonly #location: Pick<Location, 'pathname' | 'search'>;
   #browserBackUnderWay = false;
   /** A traversal the user chose to make after being asked, which arrives without being asked again. */
   #traversalAnswered = false;
+  /** The traversal back to the entry shown, after one held for the question, which changes nothing. */
+  #traversalUndoing = false;
+  /** The place in the history of the entry shown. */
+  #index: number;
   readonly #holds = new Set<() => LeaveQuestion | undefined>();
   readonly #topOfPageListeners = new Set<(path: string) => void>();
 
   constructor(
     location: Pick<Location, 'pathname' | 'search'>,
-    history: Pick<History, 'pushState' | 'replaceState' | 'back' | 'state'>,
+    history: Pick<History, 'pushState' | 'replaceState' | 'back' | 'go' | 'state'>,
     window: { addEventListener(type: 'popstate', listener: () => void): void },
   ) {
     this.#history = history;
     this.#location = location;
+    this.#index = placeOf(history.state);
     this.path.value = withoutTrailingSlashes(location.pathname);
     this.search.value = location.search;
     window.addEventListener('popstate', () => {
@@ -113,10 +132,9 @@ export class Router {
       return;
     }
     this.leaving.value = undefined;
-    if (leaving.to === 'traversal') {
-      // The entry shown is the one put back over the one the browser went to, so back reaches it.
+    if ('traversal' in leaving.to) {
       this.#traversalAnswered = true;
-      this.#history.back();
+      this.#history.go(leaving.to.traversal);
     } else {
       this.go(leaving.to.address, { ...leaving.to.options, withoutAsking: true });
     }
@@ -137,17 +155,27 @@ export class Router {
   }
 
   #arrive(): void {
+    const index = placeOf(this.#history.state);
+    const traversal = index - this.#index;
+    this.#index = index;
+    if (this.#traversalUndoing) {
+      this.#traversalUndoing = false;
+      return;
+    }
     const path = withoutTrailingSlashes(this.#location.pathname);
     const search = this.#location.search;
     const answered = this.#traversalAnswered || this.#browserBackUnderWay;
     this.#traversalAnswered = false;
     this.#browserBackUnderWay = false;
     const question =
-      answered || (path === this.path.value && search === this.search.value) ? undefined : this.#question();
+      answered || traversal === 0 || (path === this.path.value && search === this.search.value)
+        ? undefined
+        : this.#question();
     if (question !== undefined) {
-      // The browser has already moved, so the address shown is put back over it until the question is answered.
-      this.#history.pushState(null, '', `${this.path.value}${this.search.value}`);
-      this.leaving.value = { question, to: 'traversal' };
+      // The browser has already moved, so it goes back to the entry shown, leaving the history as it was.
+      this.#traversalUndoing = true;
+      this.#history.go(-traversal);
+      this.leaving.value = { question, to: { traversal } };
       return;
     }
     this.leaving.value = undefined;
@@ -164,9 +192,14 @@ export class Router {
       }
       return;
     }
-    this.#history.pushState(null, '', address);
+    this.#push({ index: this.#index + 1 }, address);
     this.path.value = path;
     this.search.value = search;
+  }
+
+  #push(entry: Entry, address: string): void {
+    this.#history.pushState(entry, '', address);
+    this.#index = entry.index;
   }
 
   query(search: string, entry: 'push' | 'replace'): void {
@@ -176,7 +209,7 @@ export class Router {
     }
     const address = `${this.path.value}${search}`;
     if (entry === 'push') {
-      this.#history.pushState({ from: this.search.value } satisfies QueryEntry, '', address);
+      this.#push({ index: this.#index + 1, from: this.search.value }, address);
     } else {
       // The entry keeps what it holds, so one a query added still leads back to the one before it.
       this.#history.replaceState(this.#history.state, '', address);
