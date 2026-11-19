@@ -7,28 +7,11 @@ import { foldersIn, repositoryFoldersKey, sameName } from '../preferences/prefer
 import type { Change } from '../preferences/shared-preferences.js';
 import type { ProfileListing } from '../profiles/profiles.js';
 import type { ProfileAssignments } from './assignment-review.js';
+import { type AppliedVersion, type Assignment, assignmentsIn, repositoryProfilesKey } from './saved-assignments.js';
 
-/**
- * By repository, in lower case, the profiles it uses in the order they apply,
- * each by its path in the profiles folder, and the version of each last applied.
- */
-export const repositoryProfilesKey = 'repository-profiles';
 /** By profile path, the tags people chose; every other profile has one made from its name. */
 export const profileTagsKey = 'profile-tags';
 export const longestTag = 12;
-
-export interface AppliedVersion {
-  readonly profile: string;
-  readonly version: string;
-}
-
-export interface Assignment {
-  readonly profiles: readonly string[];
-  readonly authoritative?: readonly AuthoritativeSection[] | undefined;
-  readonly appliedAuthoritative?: readonly AuthoritativeSection[] | undefined;
-  /** In the order they were applied. Undefined until one of them is. */
-  readonly applied?: readonly AppliedVersion[] | undefined;
-}
 
 export type AssignmentStatus =
   | { readonly kind: 'none' }
@@ -58,24 +41,10 @@ export interface ProfilesInFolder {
   readonly folder: { readonly value: string };
 }
 
-const savedAssignments = z.record(
-  z.string(),
-  z.object({
-    profiles: z.array(z.string()),
-    authoritative: z.optional(z.array(z.enum(authoritativeSections))),
-    appliedAuthoritative: z.optional(z.array(z.enum(authoritativeSections))),
-    applied: z.optional(z.array(z.object({ profile: z.string(), version: z.string() }))),
-  }),
-);
 const savedTags = z.record(z.string(), z.string());
 
 function keyOf(repository: string): string {
   return repository.toLowerCase();
-}
-
-function assignmentsIn(value: unknown): Readonly<Record<string, Assignment>> {
-  const parsed = savedAssignments.safeParse(value);
-  return parsed.success ? parsed.data : {};
 }
 
 function tagOverridesIn(value: unknown): Readonly<Record<string, string>> {

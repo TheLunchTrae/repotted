@@ -362,7 +362,8 @@ owners. Folder layers precede each member's own profiles.
 keeps which profiles each repository uses, in the order they apply, in the
 [shared preferences](#web-shared-preferences), so the list follows the
 profiles to their config repository. Under `repository-profiles` it keeps,
-by `owner/name` in lowercase, `{ profiles, applied, authoritative, appliedAuthoritative }`: `profiles` are paths
+by `owner/name` in lowercase, `{ profiles, applied, authoritative, appliedAuthoritative }`
+(read by `packages/web/src/app/repositories/saved-assignments.ts`): `profiles` are paths
 in the profiles folder, such as `web/node.yaml`, and `applied` is each
 profile's version at the last apply that recorded, in the order applied.
 `profiles` holds only the repository's own layers; the effective list starts

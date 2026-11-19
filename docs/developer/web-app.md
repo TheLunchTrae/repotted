@@ -217,7 +217,19 @@ closed (`closed-repository-folders`), the list's sort order
 straight to the browser's `Preferences` instead, so it never makes a commit.
 Each commit's message comes from comparing the file as read with the file
 about to be written, in `src/app/preferences/preference-changes.ts`, which
-owns the shared keys and how their values are read. A folder gone and one
+owns the shared keys and how their values are read, except
+`repository-profiles`, which `src/app/repositories/saved-assignments.ts`
+owns. `src/app/preferences/assignment-changes.ts` names what changed in
+repositories' and folders' profiles: a profile assigned, taken off or put in
+another order, a change of full section ownership or of applying profiles on
+move, and an apply. An apply names only the profiles whose recorded version
+is new; one that records no new version, as after a reorder, reads
+`Apply profiles to repository: octo/app`. It names changes by profile, as in
+`Apply profiles base, web to repositories: octo/a, octo/b`, or by
+repository or folder, as in
+`Update profiles for repository octo/app: assign core/base, remove base`,
+whichever names every change in the subject, then whichever needs fewer
+clauses. A folder gone and one
 made that share repositories, or are the only ones and the old one was
 empty, count as a rename, so
 changes saved together still read as what was done. A change it has no line

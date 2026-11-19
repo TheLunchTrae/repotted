@@ -28,7 +28,8 @@ import {
   type ProfileAssignments,
   reviewedProfileVersions,
 } from '../repositories/assignment-review.js';
-import { type AppliedVersion, profileVersion } from '../repositories/repository-profiles.js';
+import { profileVersion } from '../repositories/repository-profiles.js';
+import type { AppliedVersion } from '../repositories/saved-assignments.js';
 import { type ComparedProfile, type CompareSection, compareSections, exclusionLabel } from './comparison.js';
 
 export interface BatchMemberView {

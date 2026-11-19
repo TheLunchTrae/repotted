@@ -174,7 +174,8 @@ from a list of changes, each an action, a noun and a name, such as
 (`Hide repositories: a, b`) and kinds join with semicolons. The subject keeps
 within `longestCommitSubject` characters: each kind names as many as fit in
 the room the kinds after it need when counted, then `and N more`, and counts
-itself when not even one name fits. When the subject leaves any change out,
+itself when not even one name fits, in the change's own `counted` words when
+its noun would count the wrong thing. When the subject leaves any change out,
 the body lists every one, up to `mostCommitBodyLines` lines. Sync describes
 its files with `profileFileChanges`, which reads a delete and a create of the
 same blob as a rename, or a move into another folder. An override whose

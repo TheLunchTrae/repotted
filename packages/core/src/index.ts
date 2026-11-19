@@ -49,7 +49,7 @@ export { currentUser, listRepositories, readAccess, readInstallationSettingsUrl 
 export type { InstallationMissingPermissions } from './github/repositories.js';
 export { listBranches, readBranchChanges } from './profiles/branch-changes.js';
 export type { BranchChanges, BranchProfileChange } from './profiles/branch-changes.js';
-export { configCommitMessage } from './profiles/commit-messages.js';
+export { configCommitMessage, profileDisplayName } from './profiles/commit-messages.js';
 export type { ConfigChange } from './profiles/commit-messages.js';
 export { syncFolder } from './profiles/sync.js';
 export {

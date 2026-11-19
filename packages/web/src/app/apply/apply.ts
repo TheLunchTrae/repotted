@@ -35,7 +35,8 @@ import {
   type ProfileAssignments,
   reviewedProfileVersions,
 } from '../repositories/assignment-review.js';
-import { type AppliedVersion, profileName, profileVersion } from '../repositories/repository-profiles.js';
+import { profileName, profileVersion } from '../repositories/repository-profiles.js';
+import type { AppliedVersion } from '../repositories/saved-assignments.js';
 import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
 
 export interface Reviewed {
