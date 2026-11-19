@@ -63,9 +63,7 @@ export function describeWarning({ section, key, field, cause, message }: Warning
 export function formatPlan(plan: Plan, locks: readonly Lock[] = []): string {
   const lines = [
     ...((plan.authoritative?.length ?? 0) > 0
-      ? [
-          `Full ownership: ${plan.authoritative?.join(', ')}. Unlisted entries are removed; Actions omissions use the documented baseline.`,
-        ]
+      ? [`Full ownership: ${plan.authoritative?.join(', ')}. Unlisted entries are removed.`]
       : []),
     plan.changes.length === 0
       ? `${plan.repository} matches the profile.`

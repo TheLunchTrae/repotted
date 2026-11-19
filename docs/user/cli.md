@@ -488,5 +488,5 @@ clears it. Edit a batch member with `stage batch --repo octo-org/service
 --authoritative rulesets`. Plan a staged apply with `plan --staged apply.yaml`.
 The MCP `plan` tool accepts an `authoritative` array with the same section
 names. Both interfaces use the same [ownership contract](profiles.md#full-section-ownership),
-including destructive removals, Actions baselines and exclusions. Ownership
+including destructive removals and exclusions. Ownership
 choices stay in the saved plan and are checked again before apply.

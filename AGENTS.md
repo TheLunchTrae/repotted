@@ -46,7 +46,7 @@ under [Text in the web app](#text-in-the-web-app).
   Deleting an autolink, ruleset, environment, or label needs an `absent: true`
   entry or an apply that explicitly owns its section. Ownership reconciles
   the complete resolved combination, preserves excluded targets, and shows
-  every generated deletion and Actions baseline reset in the reviewed plan.
+  every generated deletion in the reviewed plan.
 - Tests use the in-memory GitHub in `packages/core/tests/support/fake-github.ts`.
   Never run `apply` against a real repository, and never change a real
   repository's settings, rulesets, or branch protection, without the owner's

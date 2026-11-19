@@ -5,7 +5,7 @@ import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { Apply } from '../../app/apply/apply.js';
-import type { CompareRow } from '../../app/apply/comparison.js';
+import { type CompareRow, sectionTitles } from '../../app/apply/comparison.js';
 import { repositoryAddress } from '../../app/navigation/addressed-repository.js';
 import type { Router } from '../../app/navigation/router.js';
 import { BarActions } from '../layout/action-bar.js';
@@ -260,7 +260,8 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
           <>
             {(state.plan.authoritative?.length ?? 0) > 0 && (
               <p class="notice notice-drift">
-                Full ownership: {state.plan.authoritative?.join(', ')}. Every removal and reset is included below.
+                Full ownership: {state.plan.authoritative?.map((section) => sectionTitles[section]).join(', ')}. Every
+                removal is included below.
               </p>
             )}
             {state.notice !== undefined && (

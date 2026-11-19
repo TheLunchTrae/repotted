@@ -15,10 +15,10 @@
   environments, or labels. Each section has one adapter that reads it and plans its
   writes.
 - **Full section ownership**: an explicit apply choice that makes the complete
-  resolved combination the desired set for selected sections. It removes
-  unlisted repository entries and resets omitted Actions settings to the
-  documented baseline. Retained collection entries keep omitted fields, and
-  exclusions protect their targets. Partial management remains the default.
+  resolved combination the desired set for selected list sections: autolinks,
+  Actions policies, rulesets, environments, or labels. It removes unlisted
+  repository entries. Retained entries keep omitted fields, and exclusions
+  protect their targets. Partial management remains the default.
 - **Owner type**: what owns the repositories a profile is for, a personal
   account (`user`) or an organization. A profile without one is for any
   owner. A typed profile takes only what that owner has, and plans refuse a

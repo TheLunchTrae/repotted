@@ -349,8 +349,12 @@ repository profiles, and reusable definitions. Folders supply profiles but
 never ownership defaults. Two repositories using the same profiles can own
 different sections. An owned empty section deliberately removes every
 repository-owned entry in that section; leaving ownership off preserves
-unlisted entries. See [Full section ownership](profiles.md#full-section-ownership)
-for supported sections and reset boundaries.
+unlisted entries. You can own Actions policies, rulesets, environments, and
+labels, and each choice says what it deletes. Autolinks can be owned only from
+the [CLI](cli.md#choose-full-section-ownership), because the web app doesn't
+edit them; the web app ignores autolink ownership saved for a repository and
+leaves its autolinks alone. See [Full section ownership](profiles.md#full-section-ownership)
+for what ownership keeps and removes.
 
 **Review apply** starts with the saved ownership, and batch reviews use each
 repository's own choices. Changes made in the apply's ownership controls are
