@@ -417,12 +417,11 @@ interface ChangedNoticeProps {
   /** The repositories in view whose profiles changed, by their full names. */
   readonly changed: readonly string[];
   /** While an apply writes to GitHub, when no review can start. */
-  readonly writing: boolean;
   readonly onReviewProfiles: (repositories: readonly string[]) => void;
 }
 
 /** Repositories whose profiles changed since they were last applied, with one review of them all. */
-export function ChangedProfilesNotice({ changed, writing, onReviewProfiles }: ChangedNoticeProps): JSX.Element | null {
+export function ChangedProfilesNotice({ changed, onReviewProfiles }: ChangedNoticeProps): JSX.Element | null {
   if (changed.length === 0) {
     return null;
   }
@@ -437,7 +436,6 @@ export function ChangedProfilesNotice({ changed, writing, onReviewProfiles }: Ch
         <button
           class="button button-small"
           type="button"
-          disabled={writing}
           onClick={() => {
             onReviewProfiles(changed);
           }}
@@ -445,7 +443,6 @@ export function ChangedProfilesNotice({ changed, writing, onReviewProfiles }: Ch
           Review apply to {repositoriesCount(changed.length)}
         </button>
       </p>
-      {writing && <p class="muted small">An apply is writing to GitHub. Review when it finishes.</p>}
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { useLeaveQuestion } from '../layout/leave-question.js';
 import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
+import { waitingForEarlier } from './apply.js';
 
 const kinds: Readonly<Record<CompareRow['kind'], string>> = { changes: 'Changes', adds: 'Adds', removes: 'Removes' };
 
@@ -208,9 +209,11 @@ function Confirm({ batch, onClose }: { readonly batch: BatchApply; readonly onCl
 interface BatchProps {
   readonly batch: BatchApply;
   readonly router: Router;
+  /** How many queued applies are written before this page's. */
+  readonly earlierApplies: number;
 }
 
-export function BatchPage({ batch, router }: BatchProps): JSX.Element {
+export function BatchPage({ batch, router, earlierApplies }: BatchProps): JSX.Element {
   const [reviewingAgain, reviewAgain] = usePendingAction();
   const [reviewing, review] = usePendingAction();
   const state = batch.state.value;
@@ -288,7 +291,9 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                 : state.kind === 'reviewing'
                   ? 'Reading from GitHub…'
                   : state.kind === 'applying'
-                    ? `Writing to GitHub: ${state.results.length} of ${state.total} done…`
+                    ? earlierApplies > 0
+                      ? waitingForEarlier(earlierApplies)
+                      : `Writing to GitHub: ${state.results.length} of ${state.total} done…`
                     : state.kind === 'failed'
                       ? "The batch couldn't be reviewed."
                       : state.kind === 'applied'

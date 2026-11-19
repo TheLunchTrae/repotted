@@ -142,6 +142,7 @@ export class Apply {
   readonly #writeProfile: (work: () => Promise<void>) => Promise<void>;
   readonly #assignments: ProfileAssignments;
   readonly #queue: ApplyQueue;
+  readonly #onApplied: () => void;
 
   /**
    * `writeProfile` gives a write to a profile's file its turn among the
@@ -155,7 +156,9 @@ export class Apply {
     writeProfile: (work: () => Promise<void>) => Promise<void> = (work) => work(),
     assignments: ProfileAssignments = noAssignments,
     queue: ApplyQueue = pageQueue(github, onSignedOut, assignments),
+    onApplied: () => void = () => undefined,
   ) {
+    this.#onApplied = onApplied;
     this.#github = github;
     this.#onSignedOut = onSignedOut;
     this.#writeProfile = writeProfile;
@@ -198,10 +201,7 @@ export class Apply {
     profiles: readonly ComparedProfile[],
     authoritative?: readonly AuthoritativeSection[],
   ): Promise<void> {
-    if (
-      this.#writing() ||
-      (profiles.length === 0 && (authoritative ?? this.#assignments.authoritativeOf(repository)).length === 0)
-    ) {
+    if (profiles.length === 0 && (authoritative ?? this.#assignments.authoritativeOf(repository)).length === 0) {
       return;
     }
     await this.#start(repository, profiles, false, authoritative);
@@ -212,18 +212,13 @@ export class Apply {
     profiles: readonly ComparedProfile[],
     authoritative?: readonly AuthoritativeSection[],
   ): Promise<void> {
-    if (
-      !this.#writing() &&
-      (profiles.length > 0 || (authoritative ?? this.#assignments.authoritativeOf(repository)).length > 0)
-    ) {
+    if (profiles.length > 0 || (authoritative ?? this.#assignments.authoritativeOf(repository)).length > 0) {
       await this.#start(repository, profiles, true, authoritative);
     }
   }
 
   async startWithoutProfile(repository: string): Promise<void> {
-    if (!this.#writing()) {
-      await this.#start(repository, [], false, []);
-    }
+    await this.#start(repository, [], false, []);
   }
 
   async #start(
@@ -232,7 +227,7 @@ export class Apply {
     review = false,
     authoritative?: readonly AuthoritativeSection[],
   ): Promise<void> {
-    const closing = this.close();
+    const closing = this.#moveOn();
     this.#profiles = profiles;
     const usesAssignment =
       authoritative === undefined &&
@@ -469,9 +464,9 @@ export class Apply {
     if (plan.repository.toLowerCase() !== state.repository.toLowerCase()) {
       return;
     }
-    await this.#work(state.repository, state.profileName, 'applying', async (_current, file) => {
+    await this.#work(state.repository, state.profileName, 'applying', async (current, file) => {
       try {
-        const written = await this.#queue.add(this.#request(state, plan));
+        const written = await this.#queue.add(this.#request(state, plan), this);
         await rm(dirname(file), { recursive: true, force: true });
         return {
           kind: 'applied',
@@ -480,6 +475,10 @@ export class Apply {
           changes: written.applied.length,
         };
       } catch (error) {
+        // A page that moved on reviews nothing again: the queue keeps what went wrong.
+        if (!current()) {
+          throw error;
+        }
         if (error instanceof StalePlanError) {
           return this.#review(
             state.repository,
@@ -506,11 +505,11 @@ export class Apply {
     if (state.kind !== 'reviewed' || !this.canRecordWithoutChanges.value) {
       return;
     }
-    await this.#work(state.repository, state.profileName, 'applying', async (_current, file) => {
+    await this.#work(state.repository, state.profileName, 'applying', async (current, file) => {
       try {
-        await this.#queue.add(this.#request(state, state.plan));
+        await this.#queue.add(this.#request(state, state.plan), this);
       } catch (error) {
-        if (error instanceof StalePlanError) {
+        if (current() && error instanceof StalePlanError) {
           return this.#review(
             state.repository,
             file,
@@ -550,6 +549,26 @@ export class Apply {
       assignmentKey: state.assignmentKey,
       record,
     };
+  }
+
+  /**
+   * Makes way for another apply. One that is queued is let go: it stays in the
+   * queue, which says how it ends, and its files stay until the queue has told
+   * this page so.
+   */
+  async #moveOn(): Promise<void> {
+    const state = this.state.value;
+    if (state.kind !== 'applying') {
+      await this.close();
+      return;
+    }
+    this.#turn += 1;
+    this.#file = undefined;
+    this.editor.value = undefined;
+    this.editError.value = undefined;
+    this.#lastAppAccessRead = undefined;
+    this.state.value = { kind: 'idle' };
+    this.#queue.letGo(this);
   }
 
   /** Leaving discards the pending apply, but a write already under way finishes. */
@@ -646,6 +665,13 @@ export class Apply {
       const next = await work(() => turn === this.#turn, file);
       if (turn === this.#turn) {
         this.state.value = next;
+        if (kind === 'applying') {
+          const shown = this.#queue.shownBy(this);
+          if (next.kind === 'applied') {
+            this.#onApplied();
+          }
+          await shown;
+        }
       }
     } catch (error) {
       if (isSignedOut(error)) {
@@ -658,6 +684,9 @@ export class Apply {
           profileName: profile,
           message: cleaned(messageOf(error), file),
         };
+        if (kind === 'applying') {
+          await this.#queue.shownBy(this);
+        }
       }
     } finally {
       if (file !== this.#file) {

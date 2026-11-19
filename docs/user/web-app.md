@@ -326,9 +326,17 @@ stay saved. Writes already under way finish even if you leave the page.
 ### Queued applies
 
 **Apply now** adds each repository to a queue, which writes to one
-repository at a time. A card in the header shows how far it is, as in
-**Applying 2 of 5**, on every page, so you can keep working while it runs.
-Click the card to see each repository and what it waits for.
+repository at a time. The apply's page shows how far it is. Once everything is
+written, it returns you to the repositories, or to Settings for an apply
+started there, with a confirmation. If
+something wasn't written, the page stays and says why.
+
+You can keep working while the queue runs. On any other page, a card in the
+header shows how far the queue is, as in **Applying 2 of 5**. Click the card
+to see each repository and what it waits for. You can also start another
+apply: it joins the end of the queue, and its page says how many earlier
+applies it waits for. The earlier ones carry on, and the card or a
+confirmation says how they end.
 
 The queue is kept in this browser. If the tab closes or reloads partway,
 open Repotted again and it carries on from where it stopped. Repotted checks

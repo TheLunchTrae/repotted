@@ -3,7 +3,6 @@ import type { BatchApply } from '../apply/batch-apply.js';
 import type { Repository } from './repositories.js';
 import type { RepositoryProfiles } from './repository-profiles.js';
 
-/** An active write cannot be replaced; callers explain why the review must wait. */
 export function reviewAssignedProfiles(
   repositories: readonly string[],
   assignments: RepositoryProfiles,
@@ -11,7 +10,7 @@ export function reviewAssignedProfiles(
   apply: Apply,
   batch: BatchApply,
 ): { readonly path: '/apply' | '/batch'; readonly work: Promise<void> } | undefined {
-  if (apply.state.value.kind === 'applying' || batch.state.value.kind === 'applying' || repositories.length === 0) {
+  if (repositories.length === 0) {
     return undefined;
   }
   const members = repositories.map((repository) => ({

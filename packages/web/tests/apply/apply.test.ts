@@ -1,8 +1,10 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import { pageQueue } from '../../src/app/apply/apply-queue.js';
 import { Apply } from '../../src/app/apply/apply.js';
 import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
+import { noAssignments } from '../../src/app/repositories/assignment-review.js';
 import { mkdir, readFile, readdir, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
@@ -244,34 +246,79 @@ test('a review that lands late changes nothing: apply writes the plan on the pag
   expect(app.state.repository).toMatchObject({ has_wiki: true });
 });
 
-test('an apply that is writing is neither replaced nor joined, and its outcome shows when it ends', async () => {
+test('another apply started while one writes takes the page, and the first ends in the queue', async () => {
   await saved();
   await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
   const app = new GitHubWithHeldReads();
   const other = new FakeGitHub({}, 'lunch/other');
-  const apply = new Apply({ request: fleet(app, other) }, () => undefined);
+  const applied = vi.fn();
+  const apply = new Apply({ request: fleet(app, other) }, () => undefined, undefined, undefined, undefined, applied);
   await apply.start('lunch/app', profile);
   await apply.review();
-  app.fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 1);
 
   app.hold();
   const writing = apply.apply();
-  // The page is left, and another apply is asked for, while the first one writes.
-  await apply.close();
-  await apply.start('lunch/other', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
-  await apply.review();
-  await apply.start('lunch/app', profile);
-  await apply.review();
+  // Leaving the page changes nothing while the apply is queued.
   await apply.close();
   expect(apply.state.value).toMatchObject({ kind: 'applying', repository: 'lunch/app' });
+
+  await apply.start('lunch/other', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
+  await apply.review();
+  expect(apply.state.value).toMatchObject({ kind: 'reviewed', repository: 'lunch/other' });
   await app.release();
   await writing;
 
-  const state = apply.state.value;
-  expect(state).toMatchObject({ kind: 'reviewed', repository: 'lunch/app' });
-  expect(state.kind === 'reviewed' ? state.notice : '').toContain('stays written');
-  expect(writes(other)).toEqual([]);
+  // The first apply was written, and neither its outcome nor its files reach the page that moved on.
+  expect(app.state.repository).toMatchObject({ has_wiki: false });
+  expect(apply.state.value).toMatchObject({ kind: 'reviewed', repository: 'lunch/other' });
+  expect(applied).not.toHaveBeenCalled();
   expect(await pending()).toHaveLength(1);
+
+  await apply.apply();
+  expect(apply.state.value).toMatchObject({ kind: 'applied', repository: 'lunch/other' });
+  expect(applied).toHaveBeenCalledOnce();
+});
+
+test('an apply that fails after its page moved on is the queue’s to say, and is not reviewed again', async () => {
+  await saved();
+  await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
+  const app = new GitHubWithHeldReads();
+  app.fail('PATCH /repos/lunch/app', answered(422, 'Validation Failed'), 1);
+  const other = new FakeGitHub({}, 'lunch/other');
+  const github = { request: fleet(app, other) };
+  const queue = pageQueue(github, () => undefined, noAssignments);
+  const apply = new Apply(github, () => undefined, undefined, undefined, queue);
+  await apply.start('lunch/app', profile);
+  await apply.review();
+
+  app.hold();
+  const writing = apply.apply();
+  await vi.waitFor(() => {
+    expect(queue.applies.value).toMatchObject([{ status: 'writing' }]);
+  });
+  await apply.start('lunch/other', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
+  await app.release();
+  await writing;
+
+  expect(queue.applies.value).toMatchObject([{ repository: 'lunch/app', status: 'failed' }]);
+  expect(app.calls.at(-1)).toMatchObject({ method: 'PATCH' });
+  expect(await pending()).toHaveLength(1);
+});
+
+test('a failure shown on the page that waited is not kept in the queue', async () => {
+  await saved();
+  const app = new FakeGitHub();
+  app.fail('PATCH /repos/lunch/app', answered(422, 'Validation Failed'), 1);
+  const queue = pageQueue(app, () => undefined, noAssignments);
+  const apply = new Apply(app, () => undefined, undefined, undefined, queue);
+  await apply.start('lunch/app', profile);
+  await apply.review();
+
+  await apply.apply();
+
+  expect(apply.state.value).toMatchObject({ kind: 'reviewed' });
+  expect(queue.applies.value).toEqual([]);
+  expect(await readdir('/queue', { withFileTypes: true })).toEqual([]);
 });
 
 test('a failed review can be edited or tried again while its page is open', async () => {

@@ -413,3 +413,146 @@ test('signing out discards everything the queue holds', async () => {
   expect(queue.applies.value).toEqual([]);
   expect(await keptFiles()).toEqual([]);
 });
+
+test("entries a page lets go stay queued and end as no page's: a failure is kept, and the rest are confirmed", async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  const api = new FakeGitHub({}, 'lunch/api');
+  app.fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 1);
+  const { queue, applied } = queueFor(new FakeFleet([app, api]));
+
+  const requests = [await requestFor(app), await requestFor(api)] as const;
+  const page = {};
+  const first = queue.add(requests[0], page);
+  const second = queue.add(requests[1], page);
+  queue.letGo(page);
+
+  // The page is told at once, since neither had its turn yet.
+  await expect(first).rejects.toThrow('The page moved on');
+  await expect(second).rejects.toThrow('The page moved on');
+  await vi.waitFor(() => {
+    expect(statuses(queue)).toEqual(['lunch/app failed']);
+  });
+  expect(applied).toEqual([1]);
+  expect(writes(api)).toHaveLength(2);
+});
+
+test('an entry let go while it is written tells its page how it ended, and keeps its failure', async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  app.fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 1);
+  let entered = (): void => undefined;
+  let release = (): void => undefined;
+  const writingBegan = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { queue } = queueFor({
+    request: async (method, path, body) => {
+      if (method !== 'GET') {
+        entered();
+        await held;
+      }
+      return app.request(method, path, body);
+    },
+  });
+
+  const page = {};
+  const outcome = queue.add(await requestFor(app), page);
+  await writingBegan;
+  queue.letGo(page);
+  release();
+
+  await expect(outcome).rejects.toThrow('Failed to create triage');
+  expect(statuses(queue)).toEqual(['lunch/app failed']);
+});
+
+test('each page is told how many applies are written before its own', async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  const api = new FakeGitHub({}, 'lunch/api');
+  const { queue } = queueFor(new FakeFleet([app, api]));
+  const [onePage, otherPage] = [{}, {}];
+  const requests = [await requestFor(app), await requestFor(api)] as const;
+
+  const earlier = queue.add(requests[0], onePage);
+  const later = queue.add(requests[1], otherPage);
+  expect(queue.earlierThan(onePage)).toBe(0);
+  expect(queue.earlierThan(otherPage)).toBe(1);
+
+  await earlier;
+  await later;
+  expect(queue.earlierThan(otherPage)).toBe(0);
+});
+
+test("a page that lets go leaves another page's apply of the same repository alone", async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  const { queue } = queueFor(app);
+  const [movesOn, stays] = [{}, {}];
+  const request = await requestFor(app);
+
+  const letGo = queue.add(request, movesOn);
+  const waitedFor = queue.add(request, stays);
+  queue.letGo(movesOn);
+
+  await expect(letGo).rejects.toThrow('The page moved on');
+  // The apply let go is still written first, so the one waited for finds the repository changed.
+  await expect(waitedFor).rejects.toThrow('changed since');
+  expect(statuses(queue)).toEqual([]);
+});
+
+test('a failure is its page’s to say until the page moves on, and then the queue’s', async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  app.fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 2);
+  const { queue } = queueFor(app);
+  const [shows, movesOn] = [{}, {}];
+
+  await expect(queue.add(await requestFor(app), shows)).rejects.toThrow('Failed to create triage');
+  expect(statuses(queue)).toEqual([]);
+  await queue.shownBy(shows);
+  queue.letGo(shows);
+  expect(statuses(queue)).toEqual([]);
+  expect(await keptFiles()).toEqual([]);
+
+  await expect(queue.add(await requestFor(app), movesOn)).rejects.toThrow('Failed to create triage');
+  queue.letGo(movesOn);
+  expect(statuses(queue)).toEqual(['lunch/app failed']);
+});
+
+test('an apply written for a page that moves on before showing it is confirmed by the queue', async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  const api = new FakeGitHub({}, 'lunch/api');
+  const { queue, applied } = queueFor(new FakeFleet([app, api]));
+  const [shows, movesOn] = [{}, {}];
+  const requests = [await requestFor(app), await requestFor(api)] as const;
+
+  await queue.add(requests[0], shows);
+  await queue.shownBy(shows);
+  queue.letGo(shows);
+  expect(applied).toEqual([]);
+
+  await queue.add(requests[1], movesOn);
+  await vi.waitFor(() => {
+    expect(queue.running.value).toBe(false);
+  });
+  queue.letGo(movesOn);
+  expect(applied).toEqual([1]);
+});
+
+test('a failure its page had yet to show is kept when the sign-in is lost', async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  const api = new FakeGitHub({}, 'lunch/api');
+  app.fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 1);
+  api.fail(/^(?!GET)/u, answered(401, 'Bad credentials'));
+  const { queue } = queueFor(new FakeFleet([app, api]));
+  const page = {};
+  const requests = [await requestFor(app), await requestFor(api)] as const;
+
+  const failed = queue.add(requests[0], page);
+  const refused = queue.add(requests[1], page);
+  await expect(failed).rejects.toThrow('Failed to create triage');
+  await expect(refused).rejects.toThrow();
+  // The page is gone with the sign-in, and what it does later removes nothing.
+  await queue.shownBy(page);
+
+  expect(statuses(queue)).toEqual(['lunch/app failed', 'lunch/api held']);
+});

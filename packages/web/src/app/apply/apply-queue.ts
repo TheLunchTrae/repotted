@@ -157,6 +157,13 @@ export class ApplyQueue {
   readonly #finished = signal(0);
   readonly #running = signal(false);
   readonly #waiters = new Map<string, Waiter>();
+  /**
+   * The entries a page waits for, each with its page, from when they are added
+   * until the page has shown how they ended or lets them go.
+   */
+  readonly #watched = signal<ReadonlyMap<string, object>>(new Map());
+  /** How many entries each page waited for are written, which the page has yet to show. */
+  readonly #writtenUnshown = new Map<object, number>();
   /** Written, with files that stay until what they record is saved. */
   readonly #recording = new Set<string>();
   #finishedWithoutWaiter = 0;
@@ -166,16 +173,18 @@ export class ApplyQueue {
     this.#options = options;
   }
 
-  /** In the order they are written. */
+  /** In the order they are written. A problem that a page waits to show is that page's to say. */
   readonly applies = computed((): readonly QueuedApply[] =>
-    this.#entries.value.map((entry) => ({
-      id: entry.id,
-      repository: entry.repository,
-      profileName: entry.profileName,
-      changes: entry.plan.changes.length,
-      status: entry.problem?.kind ?? (entry.id === this.#writing.value ? 'writing' : entry.held ? 'held' : 'waiting'),
-      message: entry.problem?.message,
-    })),
+    this.#entries.value
+      .filter((entry) => entry.problem === undefined || !this.#watched.value.has(entry.id))
+      .map((entry) => ({
+        id: entry.id,
+        repository: entry.repository,
+        profileName: entry.profileName,
+        changes: entry.plan.changes.length,
+        status: entry.problem?.kind ?? (entry.id === this.#writing.value ? 'writing' : entry.held ? 'held' : 'waiting'),
+        message: entry.problem?.message,
+      })),
   );
 
   /** True from the first entry it takes up until it has none left to write. */
@@ -257,9 +266,10 @@ export class ApplyQueue {
   /**
    * Queues one repository's reviewed plan and answers as `applyPlan` does once
    * it is written: with the changes made, or its error. The entry is queued,
-   * in the order of the calls, before this returns.
+   * in the order of the calls, before this returns. `page` is whoever waits
+   * for the answer, and says so with `shownBy` or `letGo`.
    */
-  add(request: ApplyRequest): Promise<AppliedOutcome> {
+  add(request: ApplyRequest, page: object = request): Promise<AppliedOutcome> {
     const { source: _source, ...plan } = request.plan;
     let kept: Plan;
     try {
@@ -295,6 +305,7 @@ export class ApplyQueue {
     const outcome = new Promise<AppliedOutcome>((resolve, reject) => {
       this.#waiters.set(entry.id, { plan: request.plan, resolve, reject });
     });
+    this.#watched.value = new Map([...this.#watched.value, [entry.id, page]]);
     // Run whether or not the entry could be kept: the page that waits is told either way.
     Promise.all([...replaced.map((other) => rm(fileOf(other.id), { force: true })), this.#keep(entry)])
       .catch(() => undefined)
@@ -314,6 +325,60 @@ export class ApplyQueue {
 
   async discardHeld(): Promise<void> {
     await this.#remove(this.#entries.value.filter((entry) => entry.held));
+  }
+
+  /** How many entries are written before the first one the page waits for. */
+  earlierThan(page: object): number {
+    const left = this.#entries.value.filter((entry) => entry.problem === undefined && !entry.held);
+    return Math.max(
+      left.findIndex((entry) => this.#watched.value.get(entry.id) === page),
+      0,
+    );
+  }
+
+  /** For a page that shows how the entries it waited for ended, so nothing is left of them to say here. */
+  async shownBy(page: object): Promise<void> {
+    this.#writtenUnshown.delete(page);
+    // A file that can't be removed shows its problem again after a reload, which is all that is lost.
+    await this.#remove(this.#watchedBy(page).filter((entry) => entry.problem !== undefined)).catch(() => undefined);
+  }
+
+  /**
+   * For a page that moves on to other work before it has shown how its entries
+   * ended. Those still queued stay queued and end as entries no page waits
+   * for, and what has ended is said here instead: a problem in `applies`, and
+   * the written ones through `onApplied`. One being written tells its page
+   * when it ends, so the page keeps the files its plan reads until then; the
+   * others tell it now.
+   */
+  letGo(page: object): void {
+    const released = this.#watchedBy(page);
+    this.#unwatch(released.map((entry) => entry.id));
+    for (const entry of released) {
+      this.#waiters.get(entry.id)?.reject(new Error('The page moved on before the apply was written.'));
+      this.#waiters.delete(entry.id);
+    }
+    this.#finishedWithoutWaiter += this.#writtenUnshown.get(page) ?? 0;
+    this.#writtenUnshown.delete(page);
+    if (!this.#running.value) {
+      this.#sayApplied();
+    }
+  }
+
+  #watchedBy(page: object): readonly Entry[] {
+    return this.#entries.value.filter((entry) => this.#watched.value.get(entry.id) === page);
+  }
+
+  #unwatch(ids: readonly string[]): void {
+    this.#watched.value = new Map([...this.#watched.value].filter(([id]) => !ids.includes(id)));
+  }
+
+  #sayApplied(): void {
+    const finishedWithoutWaiter = this.#finishedWithoutWaiter;
+    this.#finishedWithoutWaiter = 0;
+    if (finishedWithoutWaiter > 0) {
+      this.#options.onApplied(finishedWithoutWaiter);
+    }
   }
 
   /** For an entry with a problem, which is then left as it is on GitHub. */
@@ -342,6 +407,7 @@ export class ApplyQueue {
       this.#waiters.get(entry.id)?.reject(new Error('The apply was discarded before it was written.'));
       this.#waiters.delete(entry.id);
     }
+    this.#unwatch(entries.map((entry) => entry.id));
     await Promise.all(entries.map((entry) => rm(fileOf(entry.id), { force: true })));
   }
 
@@ -380,11 +446,7 @@ export class ApplyQueue {
         this.#running.value = false;
         this.#writing.value = undefined;
         this.#finished.value = 0;
-        const finishedWithoutWaiter = this.#finishedWithoutWaiter;
-        this.#finishedWithoutWaiter = 0;
-        if (finishedWithoutWaiter > 0) {
-          this.#options.onApplied(finishedWithoutWaiter);
-        }
+        this.#sayApplied();
         // One added as the last entry ended found the queue still running.
         this.#run();
       })
@@ -427,11 +489,14 @@ export class ApplyQueue {
         .finally(() => {
           this.#recording.delete(entry.id);
         });
-      if (waiter === undefined) {
+      const page = this.#watched.value.get(entry.id);
+      if (page === undefined) {
         this.#finishedWithoutWaiter += 1;
       } else {
-        waiter.resolve({ applied, recorded });
+        this.#writtenUnshown.set(page, (this.#writtenUnshown.get(page) ?? 0) + 1);
       }
+      this.#unwatch([entry.id]);
+      waiter?.resolve({ applied, recorded });
     } catch (error) {
       // Only a write that failed partway can have left something written by this try.
       const hasBegun = entry.hasBegun || error instanceof ApplyError;
@@ -454,16 +519,15 @@ export class ApplyQueue {
           other.reject(error);
         }
         this.#waiters.clear();
+        // Signing out takes the pages away, so the problems they waited to show are the next sign-in's to show.
+        this.#watched.value = new Map();
         await Promise.all(left.map((other) => this.#keepIfQueued(other.id))).catch(() => undefined);
         return;
       }
-      if (waiter === undefined) {
-        await this.#replace({ ...entry, hasBegun, problem: problemOf(entry, error) });
-      } else {
-        // The page that waits says what happened, and holds what is needed to review again.
-        await this.#remove(this.#entries.value.filter((other) => other.id === entry.id));
-        waiter.reject(error);
-      }
+      // Kept until a page that waits has shown it, so a page that moves on first loses nothing.
+      const kept = this.#replace({ ...entry, hasBegun, problem: problemOf(entry, error) });
+      waiter?.reject(error);
+      await kept;
     }
   }
 

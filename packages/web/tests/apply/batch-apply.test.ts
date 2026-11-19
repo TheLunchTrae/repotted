@@ -1,8 +1,10 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeFleet, FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import { ApplyQueue } from '../../src/app/apply/apply-queue.js';
 import { BatchApply } from '../../src/app/apply/batch-apply.js';
 import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
+import { noAssignments } from '../../src/app/repositories/assignment-review.js';
 import { mkdir, readFile, readdir, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
@@ -323,7 +325,7 @@ class GitHubWithHeldRequests extends FakeGitHub {
   }
 }
 
-test('a batch that is writing is neither replaced nor discarded, and a late review changes nothing', async () => {
+test('a late review changes nothing, and a batch started while one writes takes the page', async () => {
   await saved();
   const app = new GitHubWithHeldRequests({}, 'lunch/app');
   const api = new FakeGitHub({}, 'lunch/api');
@@ -345,17 +347,62 @@ test('a batch that is writing is neither replaced nor discarded, and a late revi
 
   app.hold();
   const writing = batch.apply();
-  await batch.close();
-  await batch.start(['lunch/app'], profile);
+  // Leaving the page changes nothing while the batch is queued.
   await batch.close();
   expect(batch.state.value).toMatchObject({ kind: 'applying' });
+
+  await batch.start(['lunch/api'], profile);
+  expect(batch.state.value).toMatchObject({ kind: 'reviewed' });
   await app.release();
   await writing;
 
-  expect(batch.state.value).toMatchObject({ kind: 'applied', left: 0 });
+  // The first batch was written whole, and its outcome doesn't reach the page that moved on.
+  expect(batch.state.value).toMatchObject({ kind: 'reviewed' });
+  expect(batch.members.value.map((member) => member.repository)).toEqual(['lunch/api']);
   // What was left out everywhere was written nowhere.
   expect(app.state.repository).toMatchObject({ has_wiki: true, has_projects: false });
   expect(api.state.repository).toMatchObject({ has_wiki: true, has_projects: false });
+});
+
+test('a batch that moves on leaves the queue to say which repositories failed and which were written', async () => {
+  await saved();
+  const api = new FakeGitHub({}, 'lunch/api');
+  const app = new GitHubWithHeldRequests({}, 'lunch/app');
+  const web = new FakeGitHub({}, 'lunch/web');
+  api.fail('PATCH /repos/lunch/api', answered(422, 'Validation Failed'), 1);
+  const github = new FakeFleet([api, app, web]);
+  const confirmed: number[] = [];
+  const queue = new ApplyQueue({
+    github,
+    account: 'trae',
+    onSignedOut: () => undefined,
+    assignments: noAssignments,
+    now: Date.now,
+    filesKept: () => Promise.resolve(),
+    assignmentsLoaded: Promise.resolve(),
+    onApplied: (repositories) => confirmed.push(repositories),
+  });
+  const queued = (): string[] => queue.applies.value.map((apply) => `${apply.repository} ${apply.status}`);
+  const batch = new BatchApply(github, () => undefined, undefined, undefined, queue);
+  await batch.start(['lunch/api', 'lunch/app'], profile);
+
+  app.hold();
+  const writing = batch.apply();
+  await vi.waitFor(() => {
+    expect(queue.progress.value?.repository).toBe('lunch/app');
+  });
+  // The failure is the batch's to say while its page waits.
+  expect(queued()).toEqual(['lunch/app writing']);
+
+  await batch.start(['lunch/web'], profile);
+  expect(queued()).toEqual(['lunch/api failed', 'lunch/app writing']);
+  await app.release();
+  await writing;
+
+  expect(queued()).toEqual(['lunch/api failed']);
+  expect(confirmed).toEqual([1]);
+  expect(statuses(batch)).toEqual(['lunch/web changes 1']);
+  expect(await pending()).toHaveLength(1);
 });
 
 test('leaving discards the batch and its exclusions, so another batch starts fresh', async () => {

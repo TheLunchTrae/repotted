@@ -95,9 +95,16 @@ function Confirm({ apply, onClose }: { readonly apply: Apply; readonly onClose: 
 interface ApplyProps {
   readonly apply: Apply;
   readonly router: Router;
+  /** How many queued applies are written before this page's. */
+  readonly earlierApplies: number;
 }
 
-export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
+/** What a page says while its apply waits for those queued before it. */
+export function waitingForEarlier(earlier: number): string {
+  return `Waiting for ${earlier === 1 ? '1 earlier apply' : `${earlier} earlier applies`} to finish. Then this one is written.`;
+}
+
+export function ApplyPage({ apply, router, earlierApplies }: ApplyProps): JSX.Element {
   const [reviewingAgain, reviewAgain] = usePendingAction();
   const [savingProfile, saveProfile] = usePendingAction();
   const [reviewing, review] = usePendingAction();
@@ -168,7 +175,9 @@ export function ApplyPage({ apply, router }: ApplyProps): JSX.Element {
                 : state.kind === 'reviewing'
                   ? 'Reviewing changes…'
                   : state.kind === 'applying'
-                    ? 'Writing to GitHub…'
+                    ? earlierApplies > 0
+                      ? waitingForEarlier(earlierApplies)
+                      : 'Writing to GitHub…'
                     : state.kind === 'failed'
                       ? "The apply couldn't be reviewed. Review again once that is put right, or discard the apply."
                       : state.kind === 'applied'

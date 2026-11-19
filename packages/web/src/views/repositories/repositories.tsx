@@ -1148,7 +1148,6 @@ interface RepositoriesProps {
   readonly onBatch: (repositories: readonly string[], profile: ComparedProfile | 'once') => void;
   readonly onReviewProfiles: (repositories: readonly string[]) => void;
   /** While an apply writes to GitHub, when no review can start. */
-  readonly applyWriting: boolean;
 }
 
 interface SelectedProps {
@@ -1320,7 +1319,6 @@ export function RepositoriesPage({
   assignments,
   onBatch,
   onReviewProfiles,
-  applyWriting,
 }: RepositoriesProps): JSX.Element {
   const selected = repositories.selected.value;
   const search = useSlashKeyToFocusSearch();
@@ -1434,7 +1432,6 @@ export function RepositoriesPage({
         {list !== undefined && (
           <ChangedProfilesNotice
             changed={changedInView(assignments, repositories.repositoriesBeforeSearch.value)}
-            writing={applyWriting}
             onReviewProfiles={onReviewProfiles}
           />
         )}
