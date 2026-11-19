@@ -537,3 +537,22 @@ test('an apply written for a page that moves on before showing it is confirmed b
   queue.letGo(movesOn);
   expect(applied).toEqual([1]);
 });
+
+test('a failure its page had yet to show is kept when the sign-in is lost', async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  const api = new FakeGitHub({}, 'lunch/api');
+  app.fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 1);
+  api.fail(/^(?!GET)/u, answered(401, 'Bad credentials'));
+  const { queue } = queueFor(new FakeFleet([app, api]));
+  const page = {};
+  const requests = [await requestFor(app), await requestFor(api)] as const;
+
+  const failed = queue.add(requests[0], page);
+  const refused = queue.add(requests[1], page);
+  await expect(failed).rejects.toThrow('Failed to create triage');
+  await expect(refused).rejects.toThrow();
+  // The page is gone with the sign-in, and what it does later removes nothing.
+  await queue.shownBy(page);
+
+  expect(statuses(queue)).toEqual(['lunch/app failed', 'lunch/api held']);
+});

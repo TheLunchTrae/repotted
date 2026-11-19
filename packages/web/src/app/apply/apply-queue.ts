@@ -519,8 +519,8 @@ export class ApplyQueue {
           other.reject(error);
         }
         this.#waiters.clear();
-        // A page still shows the problems it waits to show; what is left is the next sign-in's to ask about.
-        this.#unwatch(left.map((other) => other.id));
+        // Signing out takes the pages away, so the problems they waited to show are the next sign-in's to show.
+        this.#watched.value = new Map();
         await Promise.all(left.map((other) => this.#keepIfQueued(other.id))).catch(() => undefined);
         return;
       }
