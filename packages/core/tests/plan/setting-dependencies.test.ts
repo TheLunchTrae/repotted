@@ -280,7 +280,17 @@ pages:
     { run_workflows_from_fork_pull_requests: false },
     { build_type: 'workflow' },
   ]);
-  expect(plan.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ cause: 'not_applicable' })]));
+  expect(plan.warnings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        section: 'merge',
+        key: 'merge_commit_message',
+        cause: 'not_applicable',
+        inactive_while: { key: 'allow_merge_commit', values: [false] },
+      }),
+    ]),
+  );
+  expect(parsePlan(JSON.parse(JSON.stringify(plan))).warnings).toEqual(plan.warnings);
   expect(plan.warnings.filter((warning) => warning.key === 'fork_pr_workflows_private_repos')).toHaveLength(1);
   await applyPlan(github, plan);
   expect((await createPlan(github, repo, profile)).changes).toEqual([]);

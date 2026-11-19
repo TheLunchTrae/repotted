@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
-import { type CompareRow, compareSections, Comparison } from '../../src/app/apply/comparison.js';
+import { type CompareRow, compareSections, Comparison, draftNote, reviewNote } from '../../src/app/apply/comparison.js';
 import { mkdir, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
@@ -393,6 +393,12 @@ drafts:
   actions:
     selected_actions:
       github_owned_allowed: true
+  security:
+    security_and_analysis:
+      secret_scanning:
+        status: enabled
+  custom_properties:
+    cost_center: web
   unset:
     - repository.has_wiki
 `);
@@ -408,7 +414,24 @@ drafts:
     skippedDrafts: [
       '“Projects” in Repository',
       '“Wiki” in Repository (stops managing it)',
+      '“Advanced Security” and “Secret scanning” in Security',
       '“Actions by GitHub”, “Actions by verified creators” and “Allowed action patterns” in Actions',
+      '“cost_center” in Custom properties',
     ],
   });
+});
+
+test('an exclusion that leaves nothing out, and a drafted entry, read in words', () => {
+  const unmatched = (exclusion: string) =>
+    reviewNote({
+      exclusion,
+      message: `Excluding ${exclusion} leaves nothing out, since the profile sets nothing it names`,
+    });
+  expect(unmatched('actions.access_level')).toBe(
+    'Excluding “Accessible from” in Actions leaves nothing out, since the profile sets nothing it names',
+  );
+  expect(unmatched('rulesets/Main')).toBe(
+    'Excluding ruleset "Main" leaves nothing out, since the profile sets nothing it names',
+  );
+  expect(draftNote({ section: 'labels', target: 'bug', unset: true })).toBe('Label "bug" (stops managing it)');
 });

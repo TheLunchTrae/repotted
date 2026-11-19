@@ -216,20 +216,35 @@ export function exclusionLabel(key: string): string {
   return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
 }
 
-/** The labels of the setting at `path` in `section`, or of the settings under it when it is a group of them. */
+const fieldGroups = settingSections.flatMap((section) =>
+  section.groups.flatMap((group) => group.fields.map((field) => ({ path: field.path.join('.'), group: group.title }))),
+);
+
+function quotedList(names: readonly string[]): string {
+  const quoted = names.map((name) => `“${name}”`);
+  return quoted.length === 1 ? (quoted[0] ?? '') : `${quoted.slice(0, -1).join(', ')} and ${quoted.at(-1) ?? ''}`;
+}
+
+/**
+ * The label of the setting at `path` in `section`. A group of settings is
+ * named by its few labels, or by the editor groups that hold more of them.
+ * A custom property, or a setting the editor doesn't show, keeps its name.
+ */
 function quotedSettingLabels(section: string, path: string): string {
   const full = `${section}.${path}`;
   const exact = fields.find((field) => field.path.join('.') === full);
-  const labels =
-    exact === undefined
-      ? fields.filter((field) => field.path.join('.').startsWith(`${full}.`)).map((field) => field.label)
-      : [exact.label];
-  if (labels.length === 0) {
-    const words = path.slice(path.lastIndexOf('.') + 1).replaceAll('_', ' ');
-    return `“${words.charAt(0).toUpperCase()}${words.slice(1)}”`;
+  if (exact !== undefined) {
+    return quotedList([exact.label]);
   }
-  const quoted = labels.map((label) => `“${label}”`);
-  return quoted.length === 1 ? (quoted[0] ?? '') : `${quoted.slice(0, -1).join(', ')} and ${quoted.at(-1) ?? ''}`;
+  const under = fields.filter((field) => field.path.join('.').startsWith(`${full}.`));
+  if (under.length === 0) {
+    return quotedList([path]);
+  }
+  if (under.length <= 3) {
+    return quotedList(under.map((field) => field.label));
+  }
+  const groups = fieldGroups.filter((item) => item.path.startsWith(`${full}.`)).map((item) => item.group);
+  return quotedList([...new Set(groups)]);
 }
 
 function settingValueName(section: string, path: string, value: unknown): string {
@@ -237,8 +252,35 @@ function settingValueName(section: string, path: string, value: unknown): string
   return named === 'On' || named === 'Off' ? named.toLowerCase() : `“${named}”`;
 }
 
+/** An exclusion of a staged apply, as `rulesets/Main`, `actions.access_level` or `labels`, in the review's words. */
+function excludedName(key: string): string {
+  const slash = key.indexOf('/');
+  if (slash !== -1) {
+    return `${entryNounByList[key.slice(0, slash)] ?? 'entry'} "${key.slice(slash + 1)}"`;
+  }
+  const dot = key.indexOf('.');
+  const section = sectionsInShownOrder.find((name) => name === (dot === -1 ? key : key.slice(0, dot)));
+  if (section === undefined) {
+    return key;
+  }
+  return dot === -1
+    ? sectionTitles[section]
+    : `${quotedSettingLabels(section, key.slice(dot + 1))} in ${sectionTitles[section]}`;
+}
+
 /** A plan warning as the review shows it, naming each setting by its label rather than its profile key. */
-export function reviewNote({ section, key, field, cause, inactive_while: inactiveWhile, message }: Warning): string {
+export function reviewNote({
+  section,
+  key,
+  field,
+  cause,
+  exclusion,
+  inactive_while: inactiveWhile,
+  message,
+}: Warning): string {
+  if (exclusion !== undefined) {
+    return `Excluding ${excludedName(exclusion)} leaves nothing out, since the profile sets nothing it names`;
+  }
   if (cause === undefined || section === undefined) {
     return message;
   }
@@ -263,7 +305,7 @@ export function draftNote({ section, target, unset }: Skipped): string {
   const noun = entryNounByList[section];
   const named =
     noun !== undefined
-      ? `${noun} "${target}"`
+      ? `${noun.charAt(0).toUpperCase()}${noun.slice(1)} "${target}"`
       : section === 'pages' && target === 'absent'
         ? 'GitHub Pages site (turns the site off)'
         : `${quotedSettingLabels(section, target)} in ${sectionTitles[section]}`;

@@ -153,7 +153,7 @@ export interface InactiveSetting {
   readonly key: string;
   readonly reason: string;
   /** The setting in the same section whose value turns this one off, when the reason names nothing else. */
-  readonly inactive_while?: { readonly key: string; readonly values: readonly unknown[] };
+  readonly inactiveWhile?: { readonly key: string; readonly values: readonly unknown[] };
 }
 
 /** Dependencies use the desired value first, then live state for settings the profile leaves unmanaged. */
@@ -188,7 +188,7 @@ export function activeSettings<T extends object>(
             ? {
                 key: path,
                 reason: `it does not apply while ${rule.otherSettingKeyInSameSection} is ${rule.values.map((blocked) => JSON.stringify(blocked)).join(' or ')}`,
-                inactive_while: { key: rule.otherSettingKeyInSameSection, values: rule.values },
+                inactiveWhile: { key: rule.otherSettingKeyInSameSection, values: rule.values },
               }
             : { key: path, reason: rule.reason },
         );
