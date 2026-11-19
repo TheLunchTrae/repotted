@@ -2,7 +2,7 @@ import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
 
 import type { GitHubAppLookup } from '../../app/profile-editor/bypass-actors.js';
-import type { EntryField, EntryList, EntryRow } from '../../app/profile-editor/entry-edits.js';
+import { canBePutBack, type EntryField, type EntryList, type EntryRow } from '../../app/profile-editor/entry-edits.js';
 import {
   branchPolicies,
   deploymentBranches,
@@ -1362,23 +1362,25 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo, si
           New {noun.one}
         </button>
       </div>
-      {rows.length > 0 && !previewingReferences && (
+      {(rows.length > 0 || editor.batchDone.value?.scope === kind) && !previewingReferences && (
         <div class="selection-bar">
           {batch.selected > 0 && <span class="small">{batch.selected} selected</span>}
-          <button
-            class="button button-quiet button-small"
-            type="button"
-            aria-label={`${batch.selected === rows.length ? 'Deselect' : 'Select'} all ${noun.many}`}
-            onClick={() => {
-              if (batch.selected === rows.length) {
-                editor.deselectAllEntriesIn(kind);
-              } else {
-                editor.selectAllEntriesIn(kind);
-              }
-            }}
-          >
-            {batch.selected === rows.length ? 'Deselect all' : 'Select all'}
-          </button>
+          {rows.length > 0 && (
+            <button
+              class="button button-quiet button-small"
+              type="button"
+              aria-label={`${batch.selected === rows.length ? 'Deselect' : 'Select'} all ${noun.many}`}
+              onClick={() => {
+                if (batch.selected === rows.length) {
+                  editor.deselectAllEntriesIn(kind);
+                } else {
+                  editor.selectAllEntriesIn(kind);
+                }
+              }}
+            >
+              {batch.selected === rows.length ? 'Deselect all' : 'Select all'}
+            </button>
+          )}
           {batch.selected > 0 && batch.selected < rows.length && (
             <button
               class="button button-quiet button-small"
@@ -1453,7 +1455,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo, si
                     <span class="muted small">From {row.source}</span>
                   )}
                 </button>
-                {entry === undefined && (
+                {canBePutBack(row) && (
                   <button
                     class="button button-quiet button-small"
                     type="button"

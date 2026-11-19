@@ -195,6 +195,7 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
       )}
       {field.key === 'selected_actions.patterns_allowed' &&
         row.missingPermissions.length === 0 &&
+        row.greyedOutOnGitHubWhile === undefined &&
         (editor.patternsMatchingNothing.value > 0 || editor.batchDone.value?.scope === 'patterns') && (
           <div class="batch-row">
             <BatchActions

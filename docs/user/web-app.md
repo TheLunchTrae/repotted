@@ -617,7 +617,7 @@ the settings found, not one shown only for an option found under it.
 
 **Reset** in the save bar puts the whole profile back as saved, and says how
 many unsaved changes it discarded, with **Undo** to bring them back, until
-you change anything else.
+you change anything else, save, or the profile is read again after a sync.
 
 Options that GitHub only offers with a certain value of the setting above
 them follow that setting, and so do the options under them. Where GitHub
@@ -642,9 +642,11 @@ them counts how they came out. The checks only inform: a profile saves and
 applies with any pattern GitHub accepts. When GitHub can't be reached, or its
 limit is reached, the line says so. **Check again** asks GitHub about every line
 again, such as after you make the repository or push the tag. Once some
-patterns match nothing, because GitHub found no such owner or repository or
-refuses the pattern, **Remove those matching nothing** takes them off the list
-together, with **Undo**.
+patterns match nothing, because GitHub found no such owner or repository that
+you can see, or refuses the pattern, **Remove those matching nothing** takes
+them off the list together, with **Undo**. A private repository you can't see
+counts as matching nothing, so check those lines before you save. The list
+it leaves has no blank lines, and each pattern is trimmed.
 
 **Find an action on GitHub**, under the patterns, searches GitHub for
 repositories by name or description, a moment after you stop typing or when
@@ -700,7 +702,7 @@ Removing keeps what the entry had, in case you choose **Manage it** again
 before saving. **Take out of profile** stops the profile from managing it at
 all; **Put it back** in the list undoes that before you save.
 
-Under **New ruleset**, **New environment**, or **New label**, **Reset all**
+Under **New Actions policy**, **New ruleset**, **New environment**, or **New label**, **Reset all**
 puts every entry in the list with a change you haven't saved back as it was,
 **Take out all** takes out every entry the profile names, along with new
 ones, and **Put all back** puts back every entry that is taken out. An entry
@@ -709,7 +711,7 @@ says how many it changes, and **Undo** brings the list back as it was.
 Select entries with the box beside each, or **Select all**, and the actions
 change only those: **Reset**, **Take out**, and **Put back**. **Deselect
 all** brings back the actions for the whole list. Selecting changes nothing
-in the profile.
+in the profile, and a save or a fresh read after a sync clears it.
 
 A ruleset's **Bypass list** says who can skip its rules. Until you choose
 **Manage the bypass list**, each repository keeps its own. Once it is

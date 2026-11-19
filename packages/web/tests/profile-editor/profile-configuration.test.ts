@@ -390,3 +390,18 @@ test('saving unknown-key cleanup as a draft retains known invalid draft values',
   expect(text).not.toContain('unknown');
   expect(text).not.toContain('mystery');
 });
+
+test('removing invalid configuration takes away the undo of an earlier batch action', async () => {
+  const editor = await opened('repository: wrong\n');
+  await editor.addEntry('labels', { name: 'docs', color: '0075ca' });
+  await editor.resetAll({ offerUndo: true });
+  expect(editor.batchDone.value).toBeDefined();
+
+  const [problem] = editor.configurationProblems.value;
+  if (problem === undefined) {
+    throw new Error('The profile has no configuration problem.');
+  }
+  await editor.removeInvalidConfiguration(problem);
+
+  expect(editor.batchDone.value).toBeUndefined();
+});

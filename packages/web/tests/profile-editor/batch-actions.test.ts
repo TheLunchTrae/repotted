@@ -490,3 +490,47 @@ test("the save bar's Reset offers Undo, which brings back every change; other re
   await editor.resetAll({ offerUndo: true });
   expect(editor.batchDone.value).toBeUndefined();
 });
+
+test('the save bar Reset holds no undo while saving, and a change while a found batch previews takes its undo', async () => {
+  const editor = await opened({ 'base.yaml': base, 'web.yaml': codeScanning });
+  await editor.set(field('security.vulnerability_alerts'), false);
+  let finishWriting = (): void => undefined;
+  const writing = new Promise<void>((resolve) => {
+    finishWriting = resolve;
+  });
+  const saving = editor.save(async (work) => {
+    await writing;
+    await work();
+  });
+  await editor.resetAll({ offerUndo: true });
+  expect(editor.batchDone.value).toBeUndefined();
+  finishWriting();
+  await saving;
+
+  editor.search('query suite');
+  const removing = editor.removeAllFound();
+  const changing = editor.set(field('security.vulnerability_alerts'), true);
+  await Promise.all([removing, changing]);
+  expect(editor.batchDone.value).toBeUndefined();
+});
+
+test('a fresh read clears the selection, so a key given to another entry is not selected', async () => {
+  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  editor.selectEntry(entry(editor, 'rulesets', 'Main'), true);
+  await writeFile('/profiles/web.yaml', 'labels:\n  - name: bug\n    color: d73a4a\n');
+  await editor.load();
+  await writeFile('/profiles/web.yaml', lists.replace('extends: base.yaml\n', ''));
+  await editor.load();
+
+  expect(editor.entryListBatches.value.rulesets.selected).toBe(0);
+});
+
+test('a save clears the selection', async () => {
+  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  editor.selectEntry(entry(editor, 'labels', 'bug'), true);
+  await editor.set(field('repository.has_wiki'), false);
+
+  await editor.save(write);
+
+  expect(editor.entryListBatches.value.labels.selected).toBe(0);
+});

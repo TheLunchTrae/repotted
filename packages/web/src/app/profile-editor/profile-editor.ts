@@ -424,7 +424,11 @@ export class ProfileEditor {
   readonly #batchUndo = signal<BatchUndo | undefined>(undefined);
   readonly #entryEdits = new EntryEdits();
   readonly #reusable = signal<readonly ReusableChoice[]>([]);
-  /** Which entries are selected is only how the lists show, so selecting one is no change and keeps the undo. */
+  /**
+   * Which entries are selected is only how the lists show, so selecting one
+   * is no change and keeps the undo. A save or a fresh read clears it, since
+   * either can give an entry's key to another.
+   */
   readonly #selectedEntryKeys = signal<ReadonlySet<string>>(new Set());
   #settingEditsSaveIsWriting: ReadonlyMap<string, SettingEdit> = new Map();
   #latestPreviewNumber = 0;
@@ -1034,6 +1038,7 @@ export class ProfileEditor {
       return;
     }
     this.#batchUndo.value = undefined;
+    this.#selectedEntryKeys.value = new Set();
     if ('problem' in result) {
       this.#saved.value = undefined;
       this.#entryEdits.setSaved(undefined);
@@ -1304,6 +1309,7 @@ export class ProfileEditor {
     if (problem.file !== this.file || this.saving.value) {
       return;
     }
+    this.#batchUndo.value = undefined;
     const path = problem.path.filter((part): part is string => typeof part === 'string');
     const edits = new Map(this.#edits.value);
     const section = path[0];
@@ -1656,6 +1662,7 @@ export class ProfileEditor {
         this.#entryEdits.setSaved(this.#saved.value);
         await this.#readBaseOwner();
         wrote = true;
+        this.#selectedEntryKeys.value = new Set();
       });
       // Changes made while the save ran stay unsaved.
       const left = new Map(this.#edits.value);
