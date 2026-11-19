@@ -587,7 +587,8 @@ deployment patterns; and label colors and descriptions. Explicit lists replace
 lists, and an empty list clears them. Names identify rulesets exactly;
 environment and label names match without regard to case. A label's rename
 sources are kept until its rename applies. Inherited organization rulesets
-remain outside repository control. Environment secrets, variables and custom
+remain outside repository control, and the plan says so for a repository that
+an organization owns. Environment secrets, variables and custom
 protection rules are outside this ownership model; secrets and variables in
 retained environments remain untouched.
 

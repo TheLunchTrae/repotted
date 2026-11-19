@@ -7,8 +7,6 @@ import {
   createBatch,
   createStagedApply,
   describeFailure,
-  describeSkipped,
-  describeWarning,
   discardBatchMember,
   editEverywhere,
   editStagedApply,
@@ -37,7 +35,14 @@ import { profileName, profileVersion } from '../repositories/repository-profiles
 import type { AppliedVersion } from '../repositories/saved-assignments.js';
 import { type ApplyQueue, type AssignmentRecord, pageQueue } from './apply-queue.js';
 import { stagedStore } from './apply.js';
-import { type ComparedProfile, type CompareSection, compareSections, exclusionLabel } from './comparison.js';
+import {
+  type ComparedProfile,
+  type CompareSection,
+  compareSections,
+  draftNote,
+  exclusionLabel,
+  reviewNote,
+} from './comparison.js';
 
 export interface BatchMemberView {
   readonly repository: string;
@@ -163,8 +168,8 @@ function membersOf(plan: BatchPlan, assignments: ProfileAssignments | undefined)
       comparisonFailureMessage: undefined,
       sections: compareSections(member, locks, member.exclusions),
       leftOut: member.staged.exclude,
-      skippedDrafts: member.skipped.map(describeSkipped),
-      warnings: member.warnings.map(describeWarning),
+      skippedDrafts: member.skipped.map(draftNote),
+      warnings: member.warnings.map(reviewNote),
     };
   });
   const rest = (repository: string, status: 'failed' | 'left-out', message: string | undefined): BatchMemberView => ({

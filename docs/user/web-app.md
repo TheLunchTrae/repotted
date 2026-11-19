@@ -234,7 +234,8 @@ Nearly always that is a setting GitHub already has as the profile sets it.
 It can also be one that doesn't apply with the options chosen, such as a
 runner for a code scanning setup that is not configured. What the comparison
 couldn't read or left out is listed apart, and is in neither group. The
-profile's draft is left out too, and the page names it. To find something in
+profile's draft is left out too, and the page names it. Both lists name each
+setting as the profile editor labels it. To find something in
 a long comparison, type in **Search this comparison**. Comparing only reads
 from GitHub. It compares the profile as saved, so save your changes to
 the profile first. **Compare again** reads both again, such as after you

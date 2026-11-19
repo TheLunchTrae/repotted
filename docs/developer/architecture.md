@@ -355,8 +355,13 @@ alone. A warning without a cause skips nothing, such as the note on a change
 of visibility, and its `message` is the whole text. Readers go by these
 members, never by the wording, since a reason that GitHub words, such as
 "GitHub keeps none with standard runners", can explain a setting that simply
-doesn't apply. `describeWarning` in `format.ts` builds the line that text
-output and the MCP server print, as `Skipped <where>: <message>`.
+doesn't apply. A `not_applicable` warning from a plain
+[setting dependency](#setting-dependencies) also has `inactive_while`, the setting and
+values that turn it off, so a reader can name that setting itself.
+`describeWarning` in `format.ts` builds the line that text output and the MCP
+server print, as `Skipped <where>: <message>`, by profile keys. The web app
+builds its own review notes in `comparison.ts`, by the profile editor's
+labels.
 
 Before anything is written, `readAccess` in `repositories.ts` reads the
 account's role from the repository and, with a Repotted App token, the

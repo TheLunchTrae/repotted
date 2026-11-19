@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { OwnerType } from '../profiles/owner.js';
 import { environmentKey, labelKey } from '../profiles/schema.js';
 import type { Change, Section, Warning } from './change.js';
 
@@ -60,7 +61,13 @@ export function pruneEntries<Entry>(
   ].filter((entry) => !excludedEntry(ownership, section, nameOf(entry)));
 }
 
-export function ownershipWarnings(changes: readonly Change[], warnings: Warning[], ownership: Ownership): void {
+/** `repositoryOwner` is undefined when GitHub doesn't say what owns the repository. */
+export function ownershipWarnings(
+  changes: readonly Change[],
+  warnings: Warning[],
+  ownership: Ownership,
+  repositoryOwner: OwnerType | undefined,
+): void {
   const blocked = warnings.find(
     (warning) =>
       warning.section !== undefined &&
@@ -72,7 +79,8 @@ export function ownershipWarnings(changes: readonly Change[], warnings: Warning[
       `Cannot fully own ${blocked.section}: ${blocked.message}. Nothing was planned. Restore complete read access or turn ownership off.`,
     );
   }
-  if (owns(ownership, 'rulesets')) {
+  // Only an organization's repository can inherit rulesets from above it.
+  if (owns(ownership, 'rulesets') && repositoryOwner !== 'user') {
     warnings.push({
       section: 'rulesets',
       message:

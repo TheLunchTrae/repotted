@@ -96,11 +96,13 @@ export async function createPlan(
   ownership: Ownership = {},
 ): Promise<Plan> {
   authoritativeSchema.parse(ownership.authoritative ?? []);
+  let repositoryOwner: OwnerType | undefined;
   if (desired.owner_type !== undefined) {
     const owner = repositoryOwnerType(await github.request('GET', repoPath(repo)));
     if (owner !== undefined && owner !== desired.owner_type) {
       throw new OwnerMismatchError(repo, desired.owner_type, owner);
     }
+    repositoryOwner = desired.owner_type;
   }
   const changes: Change[] = [];
   const warnings: Warning[] = [];
@@ -265,7 +267,10 @@ export async function createPlan(
       });
     }
   }
-  ownershipWarnings(changes, warnings, ownership);
+  if (repositoryOwner === undefined && owns(ownership, 'rulesets')) {
+    repositoryOwner = repositoryOwnerType(await github.request('GET', repoPath(repo)));
+  }
+  ownershipWarnings(changes, warnings, ownership, repositoryOwner);
   return {
     repository: `${repo.owner}/${repo.name}`,
     desired,

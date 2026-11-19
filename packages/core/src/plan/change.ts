@@ -77,6 +77,8 @@ export interface Warning {
   readonly cause?: SkipCause;
   readonly remedy?: RefusalRemedy;
   readonly exclusion?: string;
+  /** For `not_applicable`: the setting in the same section, and its values, that turn this one off. */
+  readonly inactive_while?: { readonly key: string; readonly values: readonly unknown[] };
   readonly message: string;
 }
 

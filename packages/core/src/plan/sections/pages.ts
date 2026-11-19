@@ -84,7 +84,7 @@ export function planPages(input: PagesEntry, live: LivePages, repo: RepoRef): Se
           {
             section: 'pages',
             cause: 'not_applicable',
-            message: 'a new site built from a branch needs source.branch, or build_type: workflow',
+            message: 'a new site built from a branch needs a source branch, or a workflow to build it',
           },
         ],
       };

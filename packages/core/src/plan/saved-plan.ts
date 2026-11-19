@@ -69,6 +69,7 @@ const savedPlan = z.object({
           ])
           .exactOptional(),
         exclusion: z.string().exactOptional(),
+        inactive_while: z.object({ key: z.string(), values: z.array(z.unknown()) }).exactOptional(),
         message: z.string(),
       }),
       // Plans saved before warnings were data give each as text. Apply

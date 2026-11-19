@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
-import { type CompareRow, compareSections, Comparison } from '../../src/app/apply/comparison.js';
+import { type CompareRow, compareSections, Comparison, draftNote, reviewNote } from '../../src/app/apply/comparison.js';
 import { mkdir, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
@@ -60,7 +60,7 @@ test('a comparison says what the profile would change, by section, and leaves ou
     'Labels | old | label removed | On GitHub -> Removed',
     'Labels | bug | new label | Not on GitHub -> Created',
   ]);
-  expect(comparison.state.value).toMatchObject({ skippedDrafts: ['repository.has_projects'] });
+  expect(comparison.state.value).toMatchObject({ skippedDrafts: ['“Projects” in Repository'] });
   expect(comparison.counts.value).toEqual({ differences: 5, locked: 0, matches: 1 });
   // GitHub didn't say which installations the account has, so nothing is locked and there is nowhere to send them.
   expect(comparison.state.value).toMatchObject({ appAccess: undefined });
@@ -378,4 +378,60 @@ test("the choice to show what needs no change stays for the next comparison, and
 
   comparison.showOnlyLockedDifferences.value = true;
   expect(matches(comparison)).toEqual([]);
+});
+
+test('review notes and drafts name each setting by its label, not its profile key', async () => {
+  await saved(`merge:
+  allow_merge_commit: false
+  merge_commit_message: PR_TITLE
+actions:
+  enabled: false
+  allowed_actions: selected
+drafts:
+  repository:
+    has_projects: false
+  actions:
+    selected_actions:
+      github_owned_allowed: true
+  security:
+    security_and_analysis:
+      secret_scanning:
+        status: enabled
+  custom_properties:
+    cost_center: web
+  unset:
+    - repository.has_wiki
+`);
+  const comparison = new Comparison(new FakeGitHub(), () => undefined);
+
+  await comparison.compare('lunch/app', profile);
+
+  expect(comparison.state.value).toMatchObject({
+    warnings: [
+      'Skipped “Merge commit message” in Merge: it does not apply while “Allow merge commits” is off',
+      'Skipped “Allowed actions” in Actions: it only applies while Actions is enabled',
+    ],
+    skippedDrafts: [
+      '“Projects” in Repository',
+      '“Wiki” in Repository (stops managing it)',
+      '“Advanced Security” and “Secret scanning” in Security',
+      '“Actions by GitHub”, “Actions by verified creators” and “Allowed action patterns” in Actions',
+      '“cost_center” in Custom properties',
+    ],
+  });
+});
+
+test('an exclusion that leaves nothing out, and a drafted entry, read in words', () => {
+  const unmatched = (exclusion: string) =>
+    reviewNote({
+      exclusion,
+      message: `Excluding ${exclusion} leaves nothing out, since the profile sets nothing it names`,
+    });
+  expect(unmatched('actions.access_level')).toBe(
+    'Excluding “Accessible from” in Actions leaves nothing out, since the profile sets nothing it names',
+  );
+  expect(unmatched('rulesets/Main')).toBe(
+    'Excluding ruleset "Main" leaves nothing out, since the profile sets nothing it names',
+  );
+  expect(draftNote({ section: 'labels', target: 'bug', unset: true })).toBe('Label "bug" (stops managing it)');
 });
