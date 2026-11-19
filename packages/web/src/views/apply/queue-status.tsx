@@ -123,11 +123,14 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
               [' waiting', false],
             ]
           : [[`Continue with ${heldAmount}`, false]]
-        : [
-            [String(problems), false],
-            [problems === 1 ? ' apply' : ' applies', true],
-            [' not finished', false],
-          ];
+        : problems > 0
+          ? [
+              [String(problems), false],
+              [problems === 1 ? ' apply' : ' applies', true],
+              [' not finished', false],
+            ]
+          : // Queued a moment ago, before its turn comes.
+            [['Starting', false]];
   // Said once for each turn the queue takes, not for each repository it finishes.
   const announcement =
     progress !== undefined
@@ -153,7 +156,13 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
         <details class="menu queue-menu" ref={menu}>
           <summary
             class={`button button-small${
-              progress !== undefined ? '' : held !== undefined ? ' button-primary' : ' queue-summary-problem'
+              progress !== undefined
+                ? ''
+                : held !== undefined
+                  ? ' button-primary'
+                  : problems > 0
+                    ? ' queue-summary-problem'
+                    : ''
             }`}
           >
             {progress !== undefined && <Spinner />}

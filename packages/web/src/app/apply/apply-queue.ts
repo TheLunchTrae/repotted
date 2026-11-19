@@ -58,7 +58,7 @@ const savedEntry = z.object({
    * ends having written nothing. A tab that closes in between can't say, so the entry then counts as begun.
    */
   hasBegun: z.boolean(),
-  /** Waits to be asked for, as after GitHub refused the sign-in. An entry too old when the app opens waits too. */
+  /** Waits to be asked for because GitHub refused the sign-in. An entry too old when the app opens waits too, which its age says. */
   held: z.optional(z.boolean()),
   assignmentKey: z.optional(z.string()),
   record: z.optional(savedRecord),
@@ -440,7 +440,12 @@ export class ApplyQueue {
         const left = this.#entries.value.filter((other) => other.problem === undefined);
         this.#entries.value = this.#entries.value.map((other) =>
           other.problem === undefined
-            ? { ...other, hasBegun: other.id === entry.id ? hasBegun : other.hasBegun, held: true, signInLost: true }
+            ? {
+                ...other,
+                hasBegun: other.id === entry.id ? hasBegun : other.hasBegun,
+                held: true,
+                signInLost: other.held ? other.signInLost : true,
+              }
             : other,
         );
         this.#options.onSignedOut();

@@ -330,10 +330,7 @@ When more than an hour has passed since you clicked **Apply now**, Repotted
 writes nothing by itself. The header shows **Continue with N changes**
 instead, or **N waiting** on a phone: click it to see the repositories and
 when you queued them, and then **Continue** to write them or **Discard** to
-drop them and leave the repositories as they are. The same happens when
-GitHub stops accepting your sign-in while the queue runs: after you sign in
-again, the card says the sign-in stopped the queue, and waits for
-**Continue**.
+drop them and leave the repositories as they are.
 
 A repository that couldn't be finished after a reload stays in the card,
 with why, and the card turns red. **Open repository** goes to it, where you
@@ -344,7 +341,8 @@ replaces the entry.
 
 Signing out discards the queue. If GitHub stops accepting your sign-in
 while the queue runs, what is left waits, and the header offers to continue
-once you sign in again.
+once you sign in again. The card then says that the sign-in stopped the
+queue.
 
 ### Keep a repository's profiles
 

@@ -857,18 +857,18 @@ input[type='checkbox']:disabled {
   overflow-y: auto;
 }
 
-.queue-summary-problem {
+.queue-summary-problem,
+.queue-summary-problem:hover {
   border-color: var(--remove);
   background: var(--remove-bg);
   color: var(--remove);
 }
 
+/* Drawn with a border, which forced-colors mode keeps visible. */
 .queue-problem-mark {
-  width: 8px;
-  height: 8px;
   margin-inline-start: 8px;
+  border: 4px solid var(--remove);
   border-radius: 50%;
-  background: var(--remove);
   box-shadow: 0 0 0 2px var(--surface);
 }
 
@@ -896,6 +896,15 @@ input[type='checkbox']:disabled {
 .queue-progress::-moz-progress-bar {
   border-radius: 3px;
   background: var(--rail);
+}
+
+/* Forced colors paint the track and the fill alike, so the browser's own bar shows how far it is. */
+@media (forced-colors: active) {
+  .queue-progress {
+    height: auto;
+    border-radius: 0;
+    appearance: auto;
+  }
 }
 
 .queue-held {
