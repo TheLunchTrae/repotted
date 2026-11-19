@@ -999,6 +999,13 @@ export class ProfileEditor {
     return preview.rows.value;
   });
 
+  /** Whether this file, rather than a base profile, sets anything, as an apply's one-off edits do. */
+  readonly setsAnything = computed(
+    () =>
+      this.sections.value.some(({ groups }) => groups.some(({ rows }) => rows.some((row) => row.source === 'here'))) ||
+      Object.values(this.entries.value).some((rows) => rows.some((row) => row.source === 'here')),
+  );
+
   readonly #changed = computed(
     () => this.#edits.value.size > 0 || this.#entryEdits.count.value > 0 || this.reusableDefinitions.value.length > 0,
   );

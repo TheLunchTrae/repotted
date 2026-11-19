@@ -92,3 +92,71 @@ test('a second return while the first back is under way asks for no second back'
   });
   expect(router.search.value).toBe('');
 });
+
+test('a link away from held work asks first, and goes only once the answer is to leave', () => {
+  const { router, entries } = browser('/apply');
+  const opened: string[] = [];
+  router.onTopOfPage((path) => opened.push(path));
+  router.holdWhileLeaving(() => ({ kind: 'one-off-edits', repositories: ['octo/app'], savable: true }));
+
+  router.go('/profiles', { landOnTop: true });
+  expect(router.leaving.value?.question).toEqual({ kind: 'one-off-edits', repositories: ['octo/app'], savable: true });
+  router.stay();
+  expect(router.leaving.value).toBeUndefined();
+  expect(router.path.value).toBe('/apply');
+  expect(opened).toEqual([]);
+
+  router.go('/profiles', { landOnTop: true });
+  router.leave();
+  expect(router.path.value).toBe('/profiles');
+  expect(entries()).toEqual(['/apply', '/profiles']);
+  expect(opened).toEqual(['/profiles']);
+});
+
+test('nothing is asked for the address shown, for work done with, or once the work is let go', () => {
+  const { router } = browser('/profiles/new');
+  const release = router.holdWhileLeaving(() => ({ kind: 'new-profile', name: 'web' }));
+
+  router.go('/profiles/new');
+  router.go('/profiles', { withoutAsking: true });
+  expect(router.leaving.value).toBeUndefined();
+  expect(router.path.value).toBe('/profiles');
+
+  release();
+  router.go('/settings');
+  expect(router.leaving.value).toBeUndefined();
+  expect(router.path.value).toBe('/settings');
+});
+
+test("the browser's back away from held work puts the address back and asks, and leaving goes back after all", () => {
+  const { router, history, entries } = browser('/');
+  router.go('/apply');
+  let held = true;
+  router.holdWhileLeaving(() => (held ? { kind: 'capture', repository: 'octo/app' } : undefined));
+
+  history.back();
+  expect(router.leaving.value?.question).toEqual({ kind: 'capture', repository: 'octo/app' });
+  expect(router.path.value).toBe('/apply');
+  expect(entries()).toEqual(['/', '/apply']);
+
+  router.leave();
+  expect(router.leaving.value).toBeUndefined();
+  expect(router.path.value).toBe('/');
+
+  held = false;
+  router.go('/apply');
+  history.back();
+  expect(router.leaving.value).toBeUndefined();
+  expect(router.path.value).toBe('/');
+});
+
+test('a page link to the page shown still opens it at its top', () => {
+  const { router } = browser('/profiles');
+  const opened: string[] = [];
+  router.onTopOfPage((path) => opened.push(path));
+
+  router.go('/profiles', { landOnTop: true });
+  router.go('/settings');
+
+  expect(opened).toEqual(['/profiles']);
+});

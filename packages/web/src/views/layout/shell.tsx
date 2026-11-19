@@ -98,18 +98,18 @@ function AccountMenu({ account, user, router, onSignOut, holdsPageLinks }: Accou
       >
         {holdsPageLinks && (
           <nav class="menu-pages" aria-label="Pages">
-            <Link class="menu-item" router={router} to="/" marksCurrentPage>
+            <Link class="menu-item" router={router} to="/" marksCurrentPage opensPage>
               Repositories
             </Link>
-            <Link class="menu-item" router={router} to="/profiles" marksCurrentPage>
+            <Link class="menu-item" router={router} to="/profiles" marksCurrentPage opensPage>
               Profiles
             </Link>
             {definitionTypes.map((library) => (
-              <Link key={library.path} class="menu-item" router={router} to={library.path} marksCurrentPage>
+              <Link key={library.path} class="menu-item" router={router} to={library.path} marksCurrentPage opensPage>
                 {library.title}
               </Link>
             ))}
-            <Link class="menu-item" router={router} to="/settings" marksCurrentPage>
+            <Link class="menu-item" router={router} to="/settings" marksCurrentPage opensPage>
               Settings
             </Link>
           </nav>
@@ -119,7 +119,7 @@ function AccountMenu({ account, user, router, onSignOut, holdsPageLinks }: Accou
           <span class="muted">Signed in with the Repotted App</span>
         </p>
         {!holdsPageLinks && (
-          <Link class="menu-item" router={router} to="/settings">
+          <Link class="menu-item" router={router} to="/settings" opensPage>
             Settings
           </Link>
         )}
@@ -160,23 +160,23 @@ export function Shell({ status, account, user, router, onSignOut, children }: Sh
   return (
     <div class="shell">
       <header class="shell-bar">
-        <Link class="wordmark" router={router} to="/">
+        <Link class="wordmark" router={router} to="/" opensPage>
           Repotted
         </Link>
         {!onPhone && (
           <nav aria-label="Pages">
-            <Link class="nav-link" router={router} to="/" marksCurrentPage>
+            <Link class="nav-link" router={router} to="/" marksCurrentPage opensPage>
               Repositories
             </Link>
-            <Link class="nav-link" router={router} to="/profiles" marksCurrentPage>
+            <Link class="nav-link" router={router} to="/profiles" marksCurrentPage opensPage>
               Profiles
             </Link>
             {definitionTypes.map((library) => (
-              <Link key={library.path} class="nav-link" router={router} to={library.path} marksCurrentPage>
+              <Link key={library.path} class="nav-link" router={router} to={library.path} marksCurrentPage opensPage>
                 {library.title}
               </Link>
             ))}
-            <Link class="nav-link nav-link-end" router={router} to="/settings" marksCurrentPage>
+            <Link class="nav-link nav-link-end" router={router} to="/settings" marksCurrentPage opensPage>
               Settings
             </Link>
           </nav>

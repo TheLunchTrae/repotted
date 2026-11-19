@@ -693,3 +693,27 @@ test('one-time ownership is reviewed, can exclude pruning, and stays out of the 
   expect(await readFile(profile.file, 'utf8')).toBe('labels: []\n');
   expect(github.writes).toEqual([]);
 });
+
+test('one-off edits are held, saved to the apply or not, until they are saved to the profile or the apply is left', async () => {
+  await saved();
+  const apply = new Apply(new FakeGitHub(), () => undefined);
+  await apply.start('lunch/app', profile);
+  expect(apply.holdsOneOffEdits.value).toBe(false);
+
+  const issues = settingSections
+    .flatMap((section) => section.groups.flatMap((group) => group.fields))
+    .find((field) => field.path.join('.') === 'repository.has_issues');
+  await apply.editor.value?.set(issues ?? neverField(), false);
+  expect(apply.holdsOneOffEdits.value).toBe(true);
+
+  await apply.review();
+  expect(apply.holdsOneOffEdits.value).toBe(true);
+
+  await apply.backToEdits();
+  await apply.saveToProfile();
+  expect(apply.holdsOneOffEdits.value).toBe(false);
+
+  await apply.editor.value?.set(issues ?? neverField(), true);
+  await apply.close();
+  expect(apply.holdsOneOffEdits.value).toBe(false);
+});

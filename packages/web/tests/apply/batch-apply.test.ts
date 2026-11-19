@@ -531,3 +531,18 @@ test('leaving while a batch that changes settings once starts leaves no editor o
   expect(batch.editor.value).toBeUndefined();
   expect(await pending()).toEqual([]);
 });
+
+test("a batch holds its one-off edits through the review, and lets go of them once they're written or left", async () => {
+  const { github } = fleet('lunch/app', 'lunch/api');
+  const batch = new BatchApply(github, () => undefined);
+
+  await batch.startWithoutProfile(['lunch/app', 'lunch/api']);
+  expect(batch.holdsOneOffEdits.value).toBe(false);
+  await batch.editor.value?.set(setting('repository.has_wiki'), false);
+  expect(batch.holdsOneOffEdits.value).toBe(true);
+  await batch.review();
+  expect(batch.holdsOneOffEdits.value).toBe(true);
+
+  await batch.apply();
+  expect(batch.holdsOneOffEdits.value).toBe(false);
+});

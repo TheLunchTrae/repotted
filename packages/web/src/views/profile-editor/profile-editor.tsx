@@ -255,12 +255,19 @@ function DiscardDraft({ saving, onClose }: DraftProps & { readonly onClose: () =
           {saving.onGitHub ? ", except from the repository's history" : ''}.
         </p>
         <div class="form-actions">
+          {/* The dialog opens with the keyboard on Keep it, so Enter never discards by itself. */}
+          <button
+            class="button button-quiet"
+            type="button"
+            onClick={() => {
+              dialog.current?.close('keep');
+            }}
+            autofocus
+          >
+            Keep it
+          </button>
           <button class="button button-danger" type="submit" value="discard">
             Discard draft
-          </button>
-          {/* The dialog opens with the keyboard on Keep it, so Enter never discards by itself. */}
-          <button class="button button-quiet" type="submit" value="keep" autofocus>
-            Keep it
           </button>
         </div>
       </form>

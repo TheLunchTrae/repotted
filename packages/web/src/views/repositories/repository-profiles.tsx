@@ -391,11 +391,17 @@ export function EditProfilesDialog({ repository, assignments, profiles, onClose 
           Saving changes this repository's profiles and ownership. Nothing is applied until you review an apply.
         </p>
         <div class="form-actions">
+          <button
+            class="button button-quiet"
+            type="button"
+            onClick={() => {
+              dialog.current?.close('cancel');
+            }}
+          >
+            Cancel
+          </button>
           <button class="button button-primary" type="submit" value="save">
             Save
-          </button>
-          <button class="button button-quiet" type="submit" value="cancel">
-            Cancel
           </button>
         </div>
       </form>

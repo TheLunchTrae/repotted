@@ -98,12 +98,33 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
         </p>
       )}
       <div class="form-actions">
+        <button
+          class="button button-quiet"
+          type="button"
+          disabled={working}
+          onClick={() => {
+            dialog.current?.close();
+          }}
+        >
+          Stay signed in
+        </button>
         {savedButNotSynced ? (
           <button class="button" type="button" autofocus onClick={signOut}>
             Sign out anyway
           </button>
         ) : (
           <>
+            <PendingButton
+              pending={working && !saving}
+              class="button"
+              type="button"
+              disabled={working}
+              onClick={() => {
+                run(leave(false));
+              }}
+            >
+              Discard and sign out
+            </PendingButton>
             <PendingButton
               pending={working && saving}
               class="button button-primary"
@@ -116,29 +137,8 @@ export function SignOutQuestion({ profiles, onLeave, onClose }: LeaveProps): JSX
             >
               Save and sign out
             </PendingButton>
-            <PendingButton
-              pending={working && !saving}
-              class="button"
-              type="button"
-              disabled={working}
-              onClick={() => {
-                run(leave(false));
-              }}
-            >
-              Discard and sign out
-            </PendingButton>
           </>
         )}
-        <button
-          class="button button-quiet"
-          type="button"
-          disabled={working}
-          onClick={() => {
-            dialog.current?.close();
-          }}
-        >
-          Stay signed in
-        </button>
       </div>
     </dialog>
   );

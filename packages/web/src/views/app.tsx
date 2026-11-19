@@ -30,6 +30,7 @@ import { ApplyPage } from './apply/apply.js';
 import { BatchPage } from './apply/batch.js';
 import { ComparePage } from './apply/compare.js';
 import { QueueStatus } from './apply/queue-status.js';
+import { LeaveQuestionDialog } from './layout/leave-question.js';
 import { Link } from './layout/link.js';
 import { NotificationContext, Toasts } from './layout/notifications.js';
 import { run } from './layout/run.js';
@@ -152,6 +153,15 @@ function SignedIn({
     };
   }, [account, github, preferences, filesKept, folders, user, router, notifications]);
   const address = useMemo(() => new AddressedRepository(repositories, router), [repositories, router]);
+  // A page link opens the page at its top, so neither the profile nor the repository last open comes back with it.
+  useEffect(
+    () =>
+      router.onTopOfPage(() => {
+        run(profiles.select(undefined));
+        repositories.dropOpened();
+      }),
+    [router, profiles, repositories],
+  );
   const applyWriting = apply.state.value.kind === 'applying' || batch.state.value.kind === 'applying';
   useEffect(() => {
     run(repositories.load());
@@ -279,6 +289,7 @@ function SignedIn({
             {signOutProblem}
           </p>
         )}
+        <LeaveQuestionDialog router={router} />
         <FoundConfig discovery={discovery} profiles={profiles} />
         {repositories.moveReviewNotice.value !== undefined && (
           <div class="notice notice-drift shell-notice" role="status">

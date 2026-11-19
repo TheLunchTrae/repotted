@@ -471,11 +471,17 @@ function FolderNameDialog({ repositories, dialog: asked, onClose }: FolderNamePr
           </label>
         )}
         <div class="form-actions">
+          <button
+            class="button button-quiet"
+            type="button"
+            onClick={() => {
+              dialog.current?.close('cancel');
+            }}
+          >
+            Cancel
+          </button>
           <button class="button button-primary" type="submit" value="save">
             {renaming === undefined ? 'Create folder' : 'Rename folder'}
-          </button>
-          <button class="button button-quiet" type="submit" value="cancel">
-            Cancel
           </button>
         </div>
       </form>
@@ -513,12 +519,19 @@ function DeleteFolderDialog({
         <h2 id="delete-folder-heading">Delete {name}?</h2>
         <p>Its repositories go back to their owners in the list. Nothing changes on GitHub.</p>
         <div class="form-actions">
+          {/* Cancel takes the focus, so Enter doesn't delete. */}
+          <button
+            class="button button-quiet"
+            type="button"
+            onClick={() => {
+              dialog.current?.close('cancel');
+            }}
+            autofocus
+          >
+            Cancel
+          </button>
           <button class="button button-danger" type="submit" value="delete">
             Delete folder
-          </button>
-          {/* Cancel takes the focus, so Enter doesn't delete. */}
-          <button class="button button-quiet" type="submit" value="cancel" autofocus>
-            Cancel
           </button>
         </div>
       </form>

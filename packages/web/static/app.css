@@ -1873,7 +1873,7 @@ select.field {
 .dialog {
   max-width: min(32rem, calc(100vw - 32px));
   overflow-wrap: anywhere;
-  padding: 24px;
+  padding: 28px;
   border: 1px solid var(--border);
   border-radius: var(--panel-radius);
   background: var(--surface);
@@ -1928,6 +1928,22 @@ select.field {
 .dialog form {
   display: grid;
   gap: 14px;
+}
+
+/* A dialog's answers sit at its end, the main one last. */
+.dialog .form-actions {
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.dialog .form-actions > .button {
+  min-width: 6.5rem;
+}
+
+@media (max-width: 600px) {
+  .dialog .form-actions > .button {
+    flex: 1 1 auto;
+  }
 }
 
 .notice ul {
@@ -3207,6 +3223,10 @@ select.field {
 
   .folder-settings-cancel {
     margin: 0;
+  }
+
+  .dialog .folder-settings-actions > .button {
+    min-width: 0;
   }
 }
 

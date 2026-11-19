@@ -248,6 +248,22 @@ transitions.
 page again. The Worker's asset config answers every path with `index.html`,
 so an address works when opened directly.
 
+The header's and menu's page links pass `opensPage`, and `Router` tells its
+`onTopOfPage` listeners, so the signed-in shell closes the open profile and
+repository: what a page last had open is state in `Profiles` and
+`Repositories`, not in the address, so it would come back otherwise. A page
+whose work leaving would lose registers a question with `useLeaveQuestion`,
+which calls `Router.holdWhileLeaving`. `Router.go` then holds the address
+in `leaving` until `leave` or `stay`, and a browser back or forward is put
+back with a new entry while it asks, since `popstate` can't be cancelled.
+`LeaveQuestionDialog` draws the question. Closing the tab still asks through
+the browser's own `beforeunload` prompt. A page's own finishing navigation,
+such as after Create, passes `withoutAsking`.
+
+Dialogs put their answers at the end, the main one last. A **Cancel** or
+**Close** is a plain button that closes the dialog, not a submit button, so
+Enter in a field still submits the main answer.
+
 User-triggered completions use `Notifications` in `src/app/notifications.ts`.
 The signed-in shell owns its lifetime, so navigation preserves confirmations
 and sign-out disposes pending timers and ignores late completions. Profile

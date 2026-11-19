@@ -13,12 +13,43 @@ function isQueryEntry(state: unknown): state is QueryEntry {
   return typeof state === 'object' && state !== null && typeof (state as Partial<QueryEntry>).from === 'string';
 }
 
+/** Work that leaving the page shown would lose, which is asked about first. */
+export type LeaveQuestion =
+  | {
+      readonly kind: 'one-off-edits';
+      readonly repositories: readonly string[];
+      /** Whether **Save edits to profile** can keep them. */
+      readonly savable: boolean;
+    }
+  | { readonly kind: 'capture'; readonly repository: string }
+  | { readonly kind: 'new-profile'; readonly name: string };
+
+interface GoOptions {
+  /** A page link: the page opens at its top, not at what it last had open, even when it is the page shown. */
+  readonly landOnTop?: boolean;
+  /** The page itself is done with its work, as after it was created or cancelled. */
+  readonly withoutAsking?: boolean;
+}
+
+interface Leaving {
+  readonly question: LeaveQuestion;
+  /** An address to go to, or the browser's own back or forward, which waits on the entry before the one shown. */
+  readonly to: { readonly address: string; readonly options: GoOptions } | 'traversal';
+}
+
 export class Router {
   readonly path = signal('/');
   readonly search = signal('');
+  /** Set while the leave question is open. */
+  readonly leaving = signal<Leaving | undefined>(undefined);
 
   readonly #history: Pick<History, 'pushState' | 'replaceState' | 'back' | 'state'>;
+  readonly #location: Pick<Location, 'pathname' | 'search'>;
   #browserBackUnderWay = false;
+  /** A traversal the user chose to make after being asked, which arrives without being asked again. */
+  #traversalAnswered = false;
+  readonly #holds = new Set<() => LeaveQuestion | undefined>();
+  readonly #topOfPageListeners = new Set<(path: string) => void>();
 
   constructor(
     location: Pick<Location, 'pathname' | 'search'>,
@@ -26,20 +57,105 @@ export class Router {
     window: { addEventListener(type: 'popstate', listener: () => void): void },
   ) {
     this.#history = history;
+    this.#location = location;
     this.path.value = withoutTrailingSlashes(location.pathname);
     this.search.value = location.search;
     window.addEventListener('popstate', () => {
-      this.#browserBackUnderWay = false;
-      this.path.value = withoutTrailingSlashes(location.pathname);
-      this.search.value = location.search;
+      this.#arrive();
     });
   }
 
+  /**
+   * While `ask` returns a question, leaving the address shown asks it first.
+   * Returns the release, for when the page that holds the work goes.
+   */
+  holdWhileLeaving(ask: () => LeaveQuestion | undefined): () => void {
+    this.#holds.add(ask);
+    return () => {
+      this.#holds.delete(ask);
+    };
+  }
+
+  /** Called with the page's path whenever a page link opens a page at its top. */
+  onTopOfPage(listener: (path: string) => void): () => void {
+    this.#topOfPageListeners.add(listener);
+    return () => {
+      this.#topOfPageListeners.delete(listener);
+    };
+  }
+
   /** Going to the page shown, without a query, returns to that page as it was before its query. */
-  go(address: string): void {
+  go(address: string, options: GoOptions = {}): void {
     const at = address.indexOf('?');
     const path = at === -1 ? address : address.slice(0, at);
     const search = at === -1 ? '' : address.slice(at);
+    const question =
+      options.withoutAsking === true || (path === this.path.value && search === this.search.value)
+        ? undefined
+        : this.#question();
+    if (question !== undefined) {
+      this.leaving.value = { question, to: { address, options } };
+      return;
+    }
+    this.leaving.value = undefined;
+    this.#go(path, search, address);
+    if (options.landOnTop === true) {
+      for (const listener of this.#topOfPageListeners) {
+        listener(path);
+      }
+    }
+  }
+
+  /** The answer to the leave question that goes where it was asked to. */
+  leave(): void {
+    const leaving = this.leaving.value;
+    if (leaving === undefined) {
+      return;
+    }
+    this.leaving.value = undefined;
+    if (leaving.to === 'traversal') {
+      // The entry shown is the one put back over the one the browser went to, so back reaches it.
+      this.#traversalAnswered = true;
+      this.#history.back();
+    } else {
+      this.go(leaving.to.address, { ...leaving.to.options, withoutAsking: true });
+    }
+  }
+
+  stay(): void {
+    this.leaving.value = undefined;
+  }
+
+  #question(): LeaveQuestion | undefined {
+    for (const ask of this.#holds) {
+      const question = ask();
+      if (question !== undefined) {
+        return question;
+      }
+    }
+    return undefined;
+  }
+
+  #arrive(): void {
+    const path = withoutTrailingSlashes(this.#location.pathname);
+    const search = this.#location.search;
+    const answered = this.#traversalAnswered || this.#browserBackUnderWay;
+    this.#traversalAnswered = false;
+    this.#browserBackUnderWay = false;
+    const question =
+      answered || (path === this.path.value && search === this.search.value) ? undefined : this.#question();
+    if (question !== undefined) {
+      // The browser has already moved, so the address shown is put back over it until the question is answered.
+      this.#history.pushState(null, '', `${this.path.value}${this.search.value}`);
+      this.leaving.value = { question, to: 'traversal' };
+      return;
+    }
+    this.leaving.value = undefined;
+    this.path.value = path;
+    this.search.value = search;
+  }
+
+  #go(path: string, search: string, address: string): void {
     if (path === this.path.value) {
       if (search === '') {
         this.returnTo('');

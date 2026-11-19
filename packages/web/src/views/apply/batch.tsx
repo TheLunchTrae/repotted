@@ -7,6 +7,7 @@ import type { BatchApply, BatchMemberView } from '../../app/apply/batch-apply.js
 import { type CompareRow, exclusionLabel, sectionTitles } from '../../app/apply/comparison.js';
 import type { Router } from '../../app/navigation/router.js';
 import { BarActions } from '../layout/action-bar.js';
+import { useLeaveQuestion } from '../layout/leave-question.js';
 import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
@@ -184,12 +185,19 @@ function Confirm({ batch, onClose }: { readonly batch: BatchApply; readonly onCl
           ))}
         </ul>
         <div class="form-actions">
+          {/* The dialog opens with the keyboard on Cancel, so Enter never applies by itself. */}
+          <button
+            class="button button-quiet"
+            type="button"
+            onClick={() => {
+              dialog.current?.close('cancel');
+            }}
+            autofocus
+          >
+            Cancel
+          </button>
           <button class="button button-primary" type="submit" value="apply">
             Apply now
-          </button>
-          {/* The dialog opens with the keyboard on Cancel, so Enter never applies by itself. */}
-          <button class="button button-quiet" type="submit" value="cancel" autofocus>
-            Cancel
           </button>
         </div>
       </form>
@@ -207,6 +215,19 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
   const [reviewing, review] = usePendingAction();
   const state = batch.state.value;
   const [confirming, setConfirming] = useState(false);
+  useLeaveQuestion(router, () => {
+    const current = batch.state.peek();
+    if (!batch.holdsOneOffEdits.peek()) {
+      return undefined;
+    }
+    const repositories =
+      current.kind === 'editing'
+        ? current.repositories
+        : current.kind === 'reviewing' || current.kind === 'reviewed'
+          ? current.members.map((member) => member.repository)
+          : [];
+    return { kind: 'one-off-edits', repositories, savable: false };
+  });
   const back = (
     <Link router={router} to="/">
       Back to repositories
