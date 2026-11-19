@@ -104,6 +104,27 @@ test('makes a short tag of each name that is its own, after the tags people chos
   ).toBe('thirteen-lon');
 });
 
+test('a saved ownership choice the app no longer offers is dropped without losing other assignments', () => {
+  const preferences = store({
+    [repositoryProfilesKey]: {
+      'lunch/app': { profiles: ['base.yaml'], authoritative: ['actions', 'autolinks', 'rulesets'] },
+      'lunch/api': { profiles: ['base.yaml'] },
+    },
+  });
+  const assignments = new RepositoryProfiles(preferences, {
+    listings: signal<readonly ProfileListing[]>([]),
+    folder: signal(folder),
+  });
+
+  expect(assignments.authoritativeOf('lunch/app')).toEqual(['rulesets']);
+  assignments.setProfiles('lunch/app', ['base.yaml']);
+
+  expect(preferences.kept[repositoryProfilesKey]).toEqual({
+    'lunch/app': { profiles: ['base.yaml'], authoritative: ['rulesets'] },
+    'lunch/api': { profiles: ['base.yaml'] },
+  });
+});
+
 test('keeps a list of profiles for each repository, by any case of its name, and forgets an empty one', () => {
   const preferences = store();
   const assignments = new RepositoryProfiles(preferences, {

@@ -117,47 +117,6 @@ test('refused and truncated reads block ownership instead of implying empty stat
   expect(github.writes).toEqual([]);
 });
 
-test('Actions ownership shows and applies its explicit baseline while exclusions preserve live settings', async () => {
-  const github = new FakeGitHub({
-    settings: {
-      '/actions/permissions/access': { access_level: 'organization' },
-      '/actions/permissions/fork-pr-contributor-approval': { approval_policy: 'first_time_contributors' },
-      '/actions/permissions/fork-pr-workflows-private-repos': {
-        run_workflows_from_fork_pull_requests: true,
-        send_write_tokens_to_workflows: true,
-        send_secrets_and_variables: true,
-        require_approval_for_fork_pr_workflows: false,
-      },
-      '/actions/permissions/artifact-and-log-retention': { days: 30 },
-      '/actions/cache/retention-limit': { max_cache_retention_days: 30 },
-      '/actions/cache/storage-limit': { max_cache_size_gb: 20 },
-      '/actions/oidc/customization/sub': {
-        use_default: false,
-        use_immutable_subject: true,
-        include_claim_keys: ['repo'],
-      },
-    },
-  });
-  const plan = await createPlan(github, repo, {}, [], {
-    authoritative: ['actions'],
-    exclude: ['actions.artifact_and_log_retention'],
-  });
-  expect(
-    plan.changes.some((change) =>
-      change.fields.some((field) => field.field === 'default_workflow_permissions' && field.to === 'read'),
-    ),
-  ).toBe(true);
-  await applyPlan(github, parsePlan(JSON.parse(JSON.stringify(plan))));
-  expect(github.state.actions).toMatchObject({ allowed_actions: 'selected', sha_pinning_required: true });
-  expect(github.state.selected).toEqual({ github_owned_allowed: false, verified_allowed: false, patterns_allowed: [] });
-  expect(github.state.settings['/actions/permissions/artifact-and-log-retention']).toEqual({ days: 30 });
-  expect(github.state.workflow['default_workflow_permissions']).toBe('read');
-  const inaccessible = new FakeGitHub();
-  await expect(createPlan(inaccessible, repo, {}, [], { authoritative: ['actions'] })).rejects.toThrow(
-    'Cannot fully own actions',
-  );
-});
-
 test('ambiguous live targets cannot be pruned by name', async () => {
   const github = new FakeGitHub({ rulesets: [ruleset(1, 'Same'), ruleset(2, 'Same')] });
   await expect(createPlan(github, repo, {}, [], { authoritative: ['rulesets'] })).rejects.toThrow('duplicate names');

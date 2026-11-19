@@ -8,7 +8,6 @@ import {
   authoritativeSchema,
   type Ownership,
   excludedEntry,
-  ownedActions,
   owns,
   ownershipWarnings,
   pruneEntries,
@@ -92,14 +91,11 @@ export class OwnerMismatchError extends Error {
 export async function createPlan(
   github: GitHub,
   repo: RepoRef,
-  input: Profile,
+  desired: Profile,
   skipped: readonly Skipped[] = [],
   ownership: Ownership = {},
 ): Promise<Plan> {
   authoritativeSchema.parse(ownership.authoritative ?? []);
-  const original = input;
-  const actions = ownedActions(input.actions, ownership);
-  const desired = { ...input, ...(actions === undefined ? {} : { actions }) };
   if (desired.owner_type !== undefined) {
     const owner = repositoryOwnerType(await github.request('GET', repoPath(repo)));
     if (owner !== undefined && owner !== desired.owner_type) {
@@ -272,7 +268,7 @@ export async function createPlan(
   ownershipWarnings(changes, warnings, ownership);
   return {
     repository: `${repo.owner}/${repo.name}`,
-    desired: original,
+    desired,
     changes: orderSettingChanges(changes),
     skipped,
     warnings,

@@ -1,5 +1,5 @@
 import { computed, signal } from '@preact/signals';
-import { authoritativeSections, type AuthoritativeSection, resolveProfile, stringifyProfile } from '@repotted/core';
+import { type AuthoritativeSection, resolveProfile, stringifyProfile } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { basename, join, relative } from '../../engine/path.js';
@@ -7,7 +7,14 @@ import { foldersIn, repositoryFoldersKey, sameName } from '../preferences/prefer
 import type { Change } from '../preferences/shared-preferences.js';
 import type { ProfileListing } from '../profiles/profiles.js';
 import type { ProfileAssignments } from './assignment-review.js';
-import { type AppliedVersion, type Assignment, assignmentsIn, repositoryProfilesKey } from './saved-assignments.js';
+import {
+  type AppliedVersion,
+  type Assignment,
+  assignmentsIn,
+  type OwnableSection,
+  ownableSections,
+  repositoryProfilesKey,
+} from './saved-assignments.js';
 
 /** By profile path, the tags people chose; every other profile has one made from its name. */
 export const profileTagsKey = 'profile-tags';
@@ -176,7 +183,7 @@ export class RepositoryProfiles implements ProfileAssignments {
     return [...new Set([...this.inheritedProfilesOf(repository), ...this.ownProfilesOf(repository)])];
   }
 
-  authoritativeOf(repository: string): readonly AuthoritativeSection[] {
+  authoritativeOf(repository: string): readonly OwnableSection[] {
     return this.assignment(repository)?.authoritative ?? [];
   }
 
@@ -271,8 +278,8 @@ export class RepositoryProfiles implements ProfileAssignments {
       assignment.profiles.filter((profilePath) => appliedVersion.has(profilePath)),
     );
     const ownershipChanged = !isSameList(
-      authoritativeSections.filter((section) => authoritative.includes(section)),
-      authoritativeSections.filter((section) => assignment.appliedAuthoritative?.includes(section) === true),
+      ownableSections.filter((section) => authoritative.includes(section)),
+      ownableSections.filter((section) => assignment.appliedAuthoritative?.includes(section) === true),
     );
     return changed.length === 0 && notApplied.length === 0 && removed.length === 0 && !reordered && !ownershipChanged
       ? { kind: 'current' }
@@ -288,7 +295,7 @@ export class RepositoryProfiles implements ProfileAssignments {
 
   /** Keep the applied baseline with inherited layers, so removing own layers still reports drift. */
   setProfiles(repository: string, profiles: readonly string[], authoritative?: readonly AuthoritativeSection[]): void {
-    const owned = authoritativeSections.filter((section) =>
+    const owned = ownableSections.filter((section) =>
       (authoritative ?? this.authoritativeOf(repository)).includes(section),
     );
     const unique = [...new Set(profiles)];
@@ -316,7 +323,7 @@ export class RepositoryProfiles implements ProfileAssignments {
               ...current,
               profiles: current?.profiles ?? [],
               applied: [...applied],
-              appliedAuthoritative: [...authoritative],
+              appliedAuthoritative: ownableSections.filter((section) => authoritative.includes(section)),
             },
       notify,
     );

@@ -588,18 +588,20 @@ matches.
 
 ### Explicit section ownership
 
-`plan/ownership.ts` defines the supported authoritative sections and Actions
-baselines. Ownership belongs to staged applies and plans, never profiles.
+`plan/ownership.ts` defines the supported authoritative sections: the
+sections that are lists of named entries. Fixed sets of settings, such as
+Actions settings, have nothing to prune, so they are not ownable. Ownership
+belongs to staged applies and plans, never profiles: it applies to the
+resolved combination of layered profiles, and one layer cannot say whether its
+list is the complete one.
 `createPlan` receives ownership after resolution of the complete combination.
 Each collection is fully enumerated before unlisted repository entries become
 ordinary `absent` entries, preserving the adapters' write ordering. Retained
 entries use the same partial-field semantics as other applies. Label rename
 sources count as desired until renamed. Ambiguous live names stop planning.
 
-Exclusions remain in the plan independently of its effective profile. Collection
-exclusions protect entries from generated deletions; Actions exclusions remove
-baseline values before diffing. A section exclusion disables ownership for that
-section. The staged editor accepts exclusion keys for generated changes even
+Exclusions remain in the plan independently of its effective profile. Entry exclusions protect entries from generated deletions. A section
+exclusion disables ownership for that section. The staged editor accepts exclusion keys for generated changes even
 when no source names them. Unavailable or refused owned reads stop the plan;
 pagination with an advertised total refuses a truncated final page. Organization
 rulesets are outside repository ownership and the review says so.

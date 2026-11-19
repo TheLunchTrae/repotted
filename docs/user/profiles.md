@@ -560,9 +560,10 @@ Select definitions in a library to move them to an existing folder or a
 ## Full section ownership
 
 Partial management is the default. A profile or reusable definition manages
-only the values it names. A staged apply can explicitly own Actions,
-autolinks, Actions policies, rulesets, environments, or labels. Select **Full section ownership**
-while editing a one-time apply, or set `authoritative` on its staged file:
+only the values it names. A staged apply can explicitly own the sections that
+are lists of entries: autolinks, Actions policies, rulesets, environments, or
+labels. Select **Full section ownership** while editing a one-time apply, or
+set `authoritative` on its staged file:
 
 ```yaml
 apply_to: octo-org/service
@@ -594,40 +595,14 @@ Deleting an environment also deletes its secrets and variables. Deleting a
 label removes it from issues and pull requests. Every removal appears in the
 review, with these consequences. **Leave out** protects an entry from both
 updates and pruning for that apply. Excluding a whole section leaves it alone.
-Excluding an Actions setting preserves its live value instead of resetting it.
 Exclusions never expand the set of entries removed.
 
-### Actions baseline
-
-GitHub has one Actions configuration. Full Actions ownership resets omitted
-supported settings to this explicit Repotted baseline; it does not delete a
-policy object or claim these values are GitHub's defaults:
-
-| Setting                                                     | Baseline                                                                         |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Enabled                                                     | `true`                                                                           |
-| Allowed actions                                             | `selected`, with no allowed patterns, GitHub-owned actions, or verified creators |
-| SHA pinning required                                        | `true`                                                                           |
-| Workflow token permissions                                  | `read`, without pull request approval                                            |
-| Access from other repositories                              | `none`                                                                           |
-| External contributor approval                               | `all_external_contributors`                                                      |
-| Private fork workflows, write tokens, secrets and variables | `false`                                                                          |
-| Private fork workflow approval                              | `true`                                                                           |
-| Artifact and log retention                                  | 90 days                                                                          |
-| Cache retention and size                                    | 7 days and 10 GB                                                                 |
-| OIDC subject                                                | Default subject, immutable subject disabled                                      |
-
-Named values override the baseline, including values inside groups. Supplying
-OIDC claim keys selects a custom subject unless `use_default` is explicit.
-Dependency rules still apply: disabled Actions has no active allowlist, and
-custom OIDC claim keys are inactive with the default subject. The review lists
-inactive settings. Other repository settings, merge methods, security, custom
-properties and Pages do not support full ownership and cannot be selected.
+Only these list sections support full ownership. Repository settings, merge
+methods, Actions settings, security, custom properties and Pages are fixed
+sets of settings, not lists of entries, so they cannot be selected.
 
 Ownership requires complete reads of every selected section, including all
 pages and retained environment deployment patterns. Missing sources, invalid
 references, ambiguous live names, refused reads or unsupported endpoints stop
-the plan. Full Actions ownership therefore requires access to every applicable
-Actions endpoint; use partial management when the repository cannot expose
-these settings. Apply enumerates again, and refuses a plan whose writes changed
+the plan. Apply enumerates again, and refuses a plan whose writes changed
 since review, including newly added live entries.

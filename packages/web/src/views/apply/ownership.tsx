@@ -1,13 +1,22 @@
-import { authoritativeSections, type AuthoritativeSection } from '@repotted/core';
+import type { AuthoritativeSection } from '@repotted/core';
 import type { JSX } from 'preact';
 
-const names: Record<AuthoritativeSection, string> = {
-  actions: 'Actions settings',
-  actions_policies: 'Actions policies',
-  autolinks: 'Autolinks',
-  rulesets: 'Rulesets',
-  environments: 'Environments',
-  labels: 'Labels',
+import { type OwnableSection, ownableSections } from '../../app/repositories/saved-assignments.js';
+
+const choices: Record<OwnableSection, { readonly name: string; readonly removes: string }> = {
+  actions_policies: { name: 'Actions policies', removes: 'Deletes Actions policies the profiles don’t list.' },
+  rulesets: {
+    name: 'Rulesets',
+    removes: 'Deletes repository rulesets the profiles don’t list. Organization rulesets stay.',
+  },
+  environments: {
+    name: 'Environments',
+    removes: 'Deletes environments the profiles don’t list, with their secrets and variables.',
+  },
+  labels: {
+    name: 'Labels',
+    removes: 'Deletes labels the profiles don’t list and removes them from issues and pull requests.',
+  },
 };
 
 export function OwnershipChoices({
@@ -21,11 +30,10 @@ export function OwnershipChoices({
     <fieldset class="settings-group">
       <legend>Full section ownership</legend>
       <p class="muted small">
-        Remove unlisted entries in selected sections. Retained entries keep omitted fields. Actions uses the documented
-        baseline for omitted settings.
+        Make the profiles the complete list for a section. Listed entries keep any fields the profiles leave out.
       </p>
-      {authoritativeSections.map((section) => (
-        <label class="check" key={section}>
+      {ownableSections.map((section) => (
+        <label class="check check-row" key={section}>
           <input
             type="checkbox"
             checked={value.includes(section)}
@@ -35,13 +43,12 @@ export function OwnershipChoices({
               );
             }}
           />
-          <span>{names[section]}</span>
+          <span>
+            {choices[section].name}
+            <span class="muted small check-note">{choices[section].removes}</span>
+          </span>
         </label>
       ))}
-      <p class="muted small">
-        Deleting environments also deletes their secrets and variables. Deleting labels removes them from issues and
-        pull requests.
-      </p>
     </fieldset>
   );
 }

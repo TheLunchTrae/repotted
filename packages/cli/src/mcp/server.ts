@@ -117,9 +117,7 @@ export async function createServer(options: ServerOptions): Promise<McpServer> {
         repository,
         authoritative: authoritativeSchema
           .optional()
-          .describe(
-            'Sections fully owned for this apply. Unlisted entries are deleted; omitted Actions settings use the documented baseline.',
-          ),
+          .describe('Sections fully owned for this apply. Unlisted entries are deleted.'),
         profile: z.string().optional().describe('Profile YAML. `extends` resolves from the server’s directory.'),
         profile_path: z.string().optional().describe('Path to a profile file, relative to the server’s directory.'),
       },
