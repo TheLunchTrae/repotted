@@ -28,7 +28,7 @@ import {
   type ProfileAssignments,
   reviewedProfileVersions,
 } from '../repositories/assignment-review.js';
-import { profileVersion } from '../repositories/repository-profiles.js';
+import { profileName, profileVersion } from '../repositories/repository-profiles.js';
 import type { AppliedVersion } from '../repositories/saved-assignments.js';
 import { type ComparedProfile, type CompareSection, compareSections, exclusionLabel } from './comparison.js';
 
@@ -76,6 +76,12 @@ export type BatchState =
       /** What a change everywhere couldn't do in some repository, as when its own edits set the value. */
       readonly refused: readonly string[];
       readonly appliedVersions: ReadonlyMap<string, readonly AppliedVersion[]>;
+      /**
+       * By repository, the one profile its apply is of that it doesn't use yet,
+       * which it can add to the end of its list. No version when the apply
+       * doesn't give all the profile sets, so it counts as not applied yet.
+       */
+      readonly additions: ReadonlyMap<string, ProfileAddition>;
       readonly assignments: ReadonlyMap<string, string>;
     } & Named)
   | ({
@@ -84,6 +90,11 @@ export type BatchState =
       readonly results: readonly BatchResult[];
     } & Named)
   | ({ readonly kind: 'applied'; readonly results: readonly BatchResult[]; readonly left: number } & Named);
+
+export interface ProfileAddition {
+  readonly profile: string;
+  readonly version: string | undefined;
+}
 
 export interface BatchResult {
   readonly repository: string;
@@ -227,12 +238,27 @@ export class BatchApply {
     return state.kind === 'reviewed' ? state.members.filter((member) => member.status === 'changes') : [];
   });
 
+  /** Deselected, an apply of one profile is a one-time apply: the repositories keep no record of it. */
+  readonly addToRepositoryProfiles = signal(true);
+
+  /** The profile the repositories can add to their lists, by name; none when no repository can. */
+  readonly addOffer = computed(() => {
+    const state = this.state.value;
+    const [first] = state.kind === 'reviewed' ? state.additions.values() : [];
+    return first === undefined ? undefined : profileName(first.profile);
+  });
+
   readonly canRecordWithoutChanges = computed(() => {
     const state = this.state.value;
     return (
       state.kind === 'reviewed' &&
       this.ready.value.length === 0 &&
-      state.members.some((member) => member.status === 'in-line' && state.appliedVersions.has(member.repository))
+      state.members.some(
+        (member) =>
+          member.status === 'in-line' &&
+          (state.appliedVersions.has(member.repository) ||
+            (state.additions.get(member.repository)?.version !== undefined && this.addToRepositoryProfiles.value)),
+      )
     );
   });
 
@@ -289,6 +315,7 @@ export class BatchApply {
       return;
     }
     const closing = this.close();
+    this.addToRepositoryProfiles.value = true;
     const snapshots = new Map<string, string>();
     for (const input of repositories) {
       if (typeof input !== 'string' && this.#assignments !== undefined) {
@@ -390,6 +417,7 @@ export class BatchApply {
       return;
     }
     const { plan, profileName: profile } = state;
+    const addToRepositoryProfiles = this.addToRepositoryProfiles.peek();
     const folder = this.#folder;
     if (folder === undefined) {
       return;
@@ -432,6 +460,15 @@ export class BatchApply {
           },
           onResult: (result) => {
             const versions = state.appliedVersions.get(result.repository);
+            const addition = state.additions.get(result.repository);
+            if (
+              (result.status === 'applied' || result.status === 'in_line') &&
+              addition !== undefined &&
+              addToRepositoryProfiles &&
+              this.#assignments !== undefined
+            ) {
+              records.push(this.#assignments.recordAdded(result.repository, addition.profile, addition.version, false));
+            }
             if (
               (result.status === 'applied' || result.status === 'in_line') &&
               versions !== undefined &&
@@ -540,6 +577,7 @@ export class BatchApply {
       this.#onSignedOut();
     }
     const appliedVersions = new Map<string, readonly AppliedVersion[]>();
+    const additions = new Map<string, ProfileAddition>();
     const assignments = this.#assignments;
     if (assignments !== undefined) {
       for (const member of plan.plans) {
@@ -549,6 +587,28 @@ export class BatchApply {
           member.staged.profiles,
           assignments.authoritativeOf(member.repository).length > 0,
         );
+        if (source.kind === 'add') {
+          const [addedFile] = member.staged.profiles;
+          const addedSourceStillReadable =
+            addedFile !== undefined && (await profileVersion(addedFile).catch(() => undefined)) !== undefined;
+          if (!addedSourceStillReadable) {
+            continue;
+          }
+          const staged = await resolveStagedApply(member.file);
+          const [added] = await reviewedProfileVersions(
+            assignments,
+            member.staged.profiles,
+            member.staged.profiles.map((file) => sourceVersions.get(file)),
+            member.repository,
+          );
+          if (added !== undefined) {
+            additions.set(member.repository, {
+              profile: added.profile,
+              version: canRecordAssignment(assignments, member.repository, staged, member) ? added.version : undefined,
+            });
+          }
+          continue;
+        }
         if (source.kind !== 'own') {
           continue;
         }
@@ -573,6 +633,7 @@ export class BatchApply {
       members: membersOf(plan, assignments),
       refused,
       appliedVersions,
+      additions,
       assignments: reviewedAssignments,
     };
   }

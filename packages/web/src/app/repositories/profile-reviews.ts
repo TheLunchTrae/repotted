@@ -1,5 +1,6 @@
 import type { Apply } from '../apply/apply.js';
 import type { BatchApply } from '../apply/batch-apply.js';
+import type { Repository } from './repositories.js';
 import type { RepositoryProfiles } from './repository-profiles.js';
 
 /** An active write cannot be replaced; callers explain why the review must wait. */
@@ -25,4 +26,18 @@ export function reviewAssignedProfiles(
   return members.length === 1 && only !== undefined
     ? { path: '/apply', work: apply.startReview(only.repository, only.profiles) }
     : { path: '/batch', work: batch.startFromProfiles(members) };
+}
+
+/** By name in lower case, the full name of each repository in view. */
+function namesInView(inView: readonly Pick<Repository, 'full_name'>[]): ReadonlyMap<string, string> {
+  return new Map(inView.map((repository) => [repository.full_name.toLowerCase(), repository.full_name]));
+}
+
+/** The repositories in view whose profiles changed since they were last applied, by their full names. */
+export function changedInView(
+  assignments: RepositoryProfiles,
+  inView: readonly Pick<Repository, 'full_name'>[],
+): readonly string[] {
+  const names = namesInView(inView);
+  return assignments.changedRepositories.value.flatMap((key) => names.get(key) ?? []);
 }

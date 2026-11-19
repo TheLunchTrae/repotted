@@ -9,7 +9,7 @@ import { BatchApply } from '../../src/app/apply/batch-apply.js';
 import { repositoryFoldersKey } from '../../src/app/preferences/preference-changes.js';
 import { type Change, SharedPreferences, preferencesFile } from '../../src/app/preferences/shared-preferences.js';
 import type { ProfileListing } from '../../src/app/profiles/profiles.js';
-import { reviewAssignedProfiles } from '../../src/app/repositories/profile-reviews.js';
+import { changedInView, reviewAssignedProfiles } from '../../src/app/repositories/profile-reviews.js';
 import { profileVersion, RepositoryProfiles, tagsFor } from '../../src/app/repositories/repository-profiles.js';
 import { repositoryProfilesKey } from '../../src/app/repositories/saved-assignments.js';
 import * as files from '../../src/engine/files.js';
@@ -1164,13 +1164,182 @@ test('a batch can show an unrelated profile review after a late source loss, but
 
   expect(batch.state.value.kind).toBe('reviewed');
   expect(batch.members.value).toMatchObject([{ repository: 'lunch/app', status: 'changes' }]);
+  expect(batch.addOffer.value).toBeUndefined();
   await batch.apply();
 
   const state = batch.state.value;
   expect(state).toMatchObject({ kind: 'applied', results: [{ repository: 'lunch/app', finished: false }] });
+  expect(assignments.ownProfilesOf('lunch/app')).toEqual(['assigned.yaml']);
   if (state.kind === 'applied') {
     expect(state.results[0]?.said).toContain('Cannot read profile');
   }
   expect(assignments.assignment('lunch/app')?.applied).toBeUndefined();
   expect(fake.writes).toEqual([]);
+});
+
+test('changed repositories are those applied before their own or folder profiles changed', async () => {
+  const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: false }\n' });
+  const preferences = store({
+    [repositoryFoldersKey]: [{ name: 'Work', repositories: ['Lunch/Site'], profiles: ['base.yaml'] }],
+  });
+  const assignments = new RepositoryProfiles(preferences, { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/api', ['base.yaml']);
+  assignments.setProfiles('lunch/docs', []);
+
+  await assignments.check();
+  const version = await profileVersion(`${folder}/base.yaml`);
+  await assignments.recordApplied('lunch/api', [{ profile: 'base.yaml', version }]);
+  await assignments.recordApplied('lunch/site', [{ profile: 'base.yaml', version }]);
+  expect(assignments.changedRepositories.value).toEqual([]);
+
+  await writeFile(`${folder}/base.yaml`, 'repository: { has_wiki: true }\n');
+  await assignments.check();
+  expect(assignments.changedRepositories.value).toEqual(['lunch/api', 'lunch/site']);
+});
+
+test('a batch of one profile adds it to each repository that applies it, unless it is a one-time apply', async () => {
+  const listings = await profiles({
+    'base.yaml': 'repository: { has_wiki: false }\n',
+    'node.yaml': 'repository: { has_projects: false }\n',
+  });
+  const names = ['lunch/app', 'lunch/api', 'lunch/web'];
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/web', ['node.yaml']);
+  await assignments.check();
+  const fakes = names.map((name) => new FakeGitHub({}, name));
+  const api = fakes[1];
+  if (api !== undefined) {
+    api.state.repository['has_wiki'] = false;
+  }
+  const batch = new BatchApply(new FakeFleet(fakes), () => undefined, assignments);
+  const base = { file: `${folder}/base.yaml`, name: 'base', folder };
+  await batch.start(names, base);
+
+  expect(batch.addOffer.value).toBe('base');
+  await batch.leaveOut('lunch/web', 'repository.has_wiki', true);
+  await batch.apply();
+
+  const version = await profileVersion(`${folder}/base.yaml`);
+  expect(assignments.ownProfilesOf('lunch/app')).toEqual(['base.yaml']);
+  expect(assignments.assignment('lunch/app')?.applied).toEqual([{ profile: 'base.yaml', version }]);
+  // Already in line, it applies all the profile sets, so it has that version applied.
+  expect(assignments.assignment('lunch/api')?.applied).toEqual([{ profile: 'base.yaml', version }]);
+  // Applied with a change left out, the profile is added as not applied yet.
+  expect(assignments.ownProfilesOf('lunch/web')).toEqual(['node.yaml', 'base.yaml']);
+  expect(assignments.assignment('lunch/web')?.applied).toEqual([]);
+
+  const once = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  const oneTime = new BatchApply(new FakeFleet(names.map((name) => new FakeGitHub({}, name))), () => undefined, once);
+  await oneTime.start(names, base);
+  oneTime.addToRepositoryProfiles.value = false;
+  await oneTime.apply();
+  expect(oneTime.state.value).toMatchObject({ kind: 'applied', left: 0 });
+  expect(once.repositoriesWithProfiles.value).toEqual([]);
+});
+
+test('a batch of one profile every repository is in line with can be marked as applied to add it', async () => {
+  const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: true }\n' });
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  const fakes = ['lunch/app', 'lunch/api'].map((name) => new FakeGitHub({}, name));
+  const batch = new BatchApply(new FakeFleet(fakes), () => undefined, assignments);
+  await batch.start(['lunch/app', 'lunch/api'], { file: `${folder}/base.yaml`, name: 'base', folder });
+
+  expect(batch.canRecordWithoutChanges.value).toBe(true);
+  batch.addToRepositoryProfiles.value = false;
+  expect(batch.canRecordWithoutChanges.value).toBe(false);
+  batch.addToRepositoryProfiles.value = true;
+  await batch.apply();
+
+  expect(assignments.repositoriesWithProfiles.value).toEqual(['lunch/app', 'lunch/api']);
+  await assignments.check();
+  expect(assignments.status('lunch/app')).toEqual({ kind: 'current' });
+  expect(fakes.flatMap((fake) => fake.calls).every((call) => call.method === 'GET')).toBe(true);
+});
+
+test('a batch adds its profile with one confirmation, quietly, and none when a save fails', async () => {
+  const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: false }\n' });
+  const names = ['lunch/app', 'lunch/api'];
+  const kept = store();
+  const notified: boolean[] = [];
+  let saving = true;
+  const preferences = {
+    read: kept.read,
+    save: (key: string, change: Change, notify = true): Promise<boolean> => {
+      notified.push(notify);
+      kept.update(key, change);
+      return Promise.resolve(saving);
+    },
+  };
+  const base = { file: `${folder}/base.yaml`, name: 'base', folder };
+  for (const failing of [false, true]) {
+    const assignments = new RepositoryProfiles(preferences, { listings, folder: signal(folder) });
+    saving = !failing;
+    notified.length = 0;
+    const confirm = vi.fn();
+    const batch = new BatchApply(
+      new FakeFleet(names.map((name) => new FakeGitHub({}, name))),
+      () => undefined,
+      assignments,
+      confirm,
+    );
+    await batch.start(names, base);
+    await batch.apply();
+
+    expect(batch.state.value).toMatchObject({ kind: 'applied', left: 0 });
+    expect(notified).toEqual([false, false]);
+    expect(confirm).toHaveBeenCalledTimes(failing ? 0 : 1);
+  }
+});
+
+test('a batch adds its profile only to repositories that use none of it, and selects the add again on each start', async () => {
+  const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: false, has_projects: false }\n' });
+  const names = ['lunch/app', 'lunch/site'];
+  const assignments = new RepositoryProfiles(
+    store({ [repositoryFoldersKey]: [{ name: 'Work', repositories: ['lunch/site'], profiles: ['base.yaml'] }] }),
+    { listings, folder: signal(folder) },
+  );
+  await assignments.check();
+  const fakes = names.map((name) => new FakeGitHub({}, name));
+  for (const fake of fakes) {
+    fake.state.repository['has_projects'] = false;
+  }
+  const batch = new BatchApply(new FakeFleet(fakes), () => undefined, assignments);
+  const base = { file: `${folder}/base.yaml`, name: 'base', folder };
+  await batch.start(names, base);
+  batch.addToRepositoryProfiles.value = false;
+  await batch.start(names, base);
+  expect(batch.addToRepositoryProfiles.value).toBe(true);
+
+  // With the change left out, the add has no version, so marking them applied would not be true.
+  await batch.everywhere('repository.has_wiki', true);
+  expect(batch.ready.value).toEqual([]);
+  expect(batch.canRecordWithoutChanges.value).toBe(false);
+  await batch.everywhere('repository.has_wiki', false);
+  await batch.apply();
+
+  expect(assignments.ownProfilesOf('lunch/app')).toEqual(['base.yaml']);
+  expect(assignments.ownProfilesOf('lunch/site')).toEqual([]);
+});
+
+test('changed repositories in view keep to the list, and leave out ones still being checked or missing a profile', async () => {
+  const listings = await profiles({
+    'base.yaml': 'repository: { has_wiki: false }\n',
+    'node.yaml': 'repository: { has_projects: false }\n',
+  });
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['base.yaml']);
+  assignments.setProfiles('lunch/hidden', ['base.yaml']);
+  assignments.setProfiles('lunch/broken', ['base.yaml', 'gone.yaml']);
+  await assignments.check();
+  for (const repository of ['lunch/app', 'lunch/hidden', 'lunch/broken']) {
+    await assignments.recordApplied(repository, [{ profile: 'base.yaml', version: 'an older version' }]);
+  }
+  const inView = [{ full_name: 'Lunch/App' }, { full_name: 'Lunch/Broken' }];
+
+  expect(changedInView(assignments, inView)).toEqual(['Lunch/App']);
+
+  assignments.setProfiles('lunch/app', ['base.yaml', 'node.yaml']);
+  expect(changedInView(assignments, inView)).toEqual([]);
+  await assignments.check();
+  expect(changedInView(assignments, inView)).toEqual(['Lunch/App']);
 });

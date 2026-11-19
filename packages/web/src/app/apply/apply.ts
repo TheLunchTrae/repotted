@@ -525,11 +525,9 @@ export class Apply {
         .recordApplied(state.repository, state.appliedVersions, state.plan.authoritative ?? [])
         .catch(() => undefined);
     } else if (state.assignment.kind === 'add' && this.addToRepositoryProfiles.peek() && added !== undefined) {
-      this.#assignments.recordAdded(
-        state.repository,
-        added.profile,
-        state.assignment.recordsVersions ? added.version : undefined,
-      );
+      this.#assignments
+        .recordAdded(state.repository, added.profile, state.assignment.recordsVersions ? added.version : undefined)
+        .catch(() => undefined);
     }
   }
 

@@ -321,6 +321,8 @@ phone, tap the repository to see them in its panel.
 When you apply a profile the repository doesn't use, the review has a
 selected box to add it to the repository's profiles when it applies.
 Deselect it for a one-time apply, which leaves no record on the repository.
+A batch apply of one profile has the same box, for every repository in the
+batch that doesn't use the profile yet.
 An apply that leaves a change out, has one-off edits, or skips a setting
 GitHub refused to show doesn't count as
 applying the profiles, so the repository still shows them as not applied or
@@ -335,7 +337,10 @@ Repotted remembers which version of each profile was last applied. When a
 profile changes, or one is added, removed or moved, the row says
 **Profile changed** and the panel says what changed, with **Review apply**.
 When a review finds nothing to write, click **Record as applied** to mark the
-current versions as applied. A profile that was deleted or can't be read
+current versions as applied. When the profiles of repositories in your list changed, the top
+of the list says how many, with **Review apply to N repositories** to review
+them all together: one review for one repository, one batch for more. Hidden
+repositories aren't counted. A profile that was deleted or can't be read
 shows as **Missing profile**; remove it or put it back before applying.
 
 In **Edit**, choose **Full section ownership** to keep ownership for this

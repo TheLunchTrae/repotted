@@ -1224,3 +1224,16 @@ test('a selected repository a filter takes out of view stays selected, and the s
   repositories.hide(repositories.selected.value);
   expect(browser.kept['hidden-repositories']).toEqual(['trae/blog']);
 });
+
+test('the repositories before a search leave out hidden ones and those of hidden owners until hidden ones show', async () => {
+  const preferences = memory({ 'hidden-repository-owners': ['zeta'] });
+  const repositories = await opened(new FakeGitHub({ account: account(everyone) }), preferences);
+  repositories.hide([listed(repositories, 'Acme/api')]);
+  repositories.search.value = 'web';
+  const shown = (): string[] =>
+    repositories.repositoriesBeforeSearch.value.map((repository) => repository.full_name).toSorted();
+
+  expect(shown()).toEqual(['acme/web', 'trae/dotfiles']);
+  repositories.showHidden.value = true;
+  expect(shown()).toEqual(['Acme/api', 'acme/web', 'trae/dotfiles']);
+});

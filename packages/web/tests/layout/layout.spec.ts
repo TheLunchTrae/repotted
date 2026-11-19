@@ -172,6 +172,10 @@ const screens: Readonly<Record<string, Screen>> = {
         .click(),
     visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Move teams/website down' }),
   },
+  'changed profiles notice': {
+    path: '/',
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Review apply to 1 repository', exact: true }),
+  },
   'folder profiles': {
     path: '/',
     reachFromPath: async (page) => {
