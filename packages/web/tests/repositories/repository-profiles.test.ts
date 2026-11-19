@@ -104,7 +104,7 @@ test('makes a short tag of each name that is its own, after the tags people chos
   ).toBe('thirteen-lon');
 });
 
-test('a saved ownership choice the app no longer offers is dropped without losing other assignments', () => {
+test('a saved ownership section the app does not offer is dropped without losing other assignments', () => {
   const preferences = store({
     [repositoryProfilesKey]: {
       'lunch/app': { profiles: ['base.yaml'], authoritative: ['actions', 'autolinks', 'rulesets'] },

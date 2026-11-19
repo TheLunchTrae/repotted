@@ -29,7 +29,7 @@ export interface Assignment {
   readonly applied?: readonly AppliedVersion[] | undefined;
 }
 
-/** A section the app no longer offers is dropped, so it can't make every saved assignment unreadable. */
+/** A saved section the app doesn't offer is dropped, so it can't make every saved assignment unreadable. */
 const ownedSections = z.pipe(
   z.array(z.string()),
   z.transform((sections) => ownableSections.filter((section) => sections.includes(section))),

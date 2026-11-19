@@ -600,9 +600,10 @@ ordinary `absent` entries, preserving the adapters' write ordering. Retained
 entries use the same partial-field semantics as other applies. Label rename
 sources count as desired until renamed. Ambiguous live names stop planning.
 
-Exclusions remain in the plan independently of its effective profile. Entry exclusions protect entries from generated deletions. A section
-exclusion disables ownership for that section. The staged editor accepts exclusion keys for generated changes even
-when no source names them. Unavailable or refused owned reads stop the plan;
+Exclusions remain in the plan independently of its effective profile. Entry
+exclusions protect entries from generated deletions. A section exclusion
+disables ownership for that section. The staged editor accepts exclusion keys
+for generated changes even when no source names them. Unavailable or refused owned reads stop the plan;
 pagination with an advertised total refuses a truncated final page. Organization
 rulesets are outside repository ownership and the review says so.
 

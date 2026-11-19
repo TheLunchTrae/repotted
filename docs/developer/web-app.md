@@ -537,7 +537,7 @@ no profiles remains meaningful: its owned sections have an empty desired set.
 The app offers the engine's ownable sections except autolinks, which it has no
 editor for; the CLI still owns them. `app/repositories/saved-assignments.ts`
 lists the offered sections and drops any other saved section when it reads
-the preferences, so a retired choice turns that section back to partial
+the preferences, so such a section goes back to partial
 management instead of making every assignment unreadable.
 
 `app/repositories/assignment-review.ts` owns the `ProfileAssignments` interface
