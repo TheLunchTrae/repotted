@@ -5,7 +5,8 @@ import { afterAll, describe, expect, test } from 'vitest';
 import { parse } from 'yaml';
 
 import { parseRepo } from '../../src/github/client.js';
-import { applyPlan, createPlan } from '../../src/plan/plan.js';
+import { applyPlan } from '../../src/plan/apply.js';
+import { createPlan } from '../../src/plan/plan.js';
 import { editProfile, resolveProfile } from '../../src/profiles/profile.js';
 import { FakeGitHub } from '../support/fake-github.js';
 

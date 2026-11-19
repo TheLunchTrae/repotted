@@ -515,6 +515,17 @@ profile combination. Changing the own profile list preserves ownership unless
 the dialog explicitly saves another choice. An assignment with ownership and
 no profiles remains meaningful: its owned sections have an empty desired set.
 
+`app/repositories/assignment-review.ts` owns the `ProfileAssignments` interface
+consumed by both apply flows and implemented by `RepositoryProfiles`. It
+recognizes an apply of the assigned profile order or an offer to add one
+profile, checks whether exclusions, one-off edits, refused reads, or differing
+ownership prevent recording, and verifies the source versions before returning
+an applied baseline. Batch review classifies the source before resolving it for
+baseline recording, so a profile outside the assignment needs no extra read.
+Single and batch apply keep their own page state and
+write orchestration; neither imports the other's implementation to interpret
+an assignment.
+
 `Apply` uses saved ownership when its source list matches the assignment;
 an explicit ownership argument overrides it for that apply. `BatchApply`
 writes each assignment's ownership to its own staged file before planning.

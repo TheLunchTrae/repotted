@@ -18,7 +18,6 @@ import {
   readAccess,
   resolveStagedApply,
   saveStagedEdits,
-  type StagedApply,
   StalePlanError,
 } from '@repotted/core';
 
@@ -28,48 +27,16 @@ import { isSignedOut } from '../account/account.js';
 import { type EditorStore, ProfileEditor } from '../profile-editor/profile-editor.js';
 import { builtInFolder } from '../profiles/config-protection.js';
 import {
-  type AppliedVersion,
-  profileName,
-  profilesApplyFully,
-  profileVersion,
-} from '../repositories/repository-profiles.js';
+  assignmentKey,
+  assignmentSource,
+  canRecordAssignment,
+  type AssignmentOffer,
+  noAssignments,
+  type ProfileAssignments,
+  reviewedProfileVersions,
+} from '../repositories/assignment-review.js';
+import { type AppliedVersion, profileName, profileVersion } from '../repositories/repository-profiles.js';
 import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
-
-/** What applying does to the profiles the repository uses. */
-export type AssignmentOffer =
-  | { readonly kind: 'none' }
-  /**
-   * The apply is of the repository's own profiles, in its order. It records the
-   * versions applied only when it gives what they set: nothing left out, no
-   * one-off edit, and no setting GitHub refused to show.
-   */
-  | { readonly kind: 'own'; readonly recordsVersions: boolean }
-  /** The apply is of one profile the repository doesn't use, which it can add to the end of its list. */
-  | { readonly kind: 'add'; readonly profileName: string; readonly recordsVersions: boolean };
-
-export interface ProfileAssignments {
-  profilesOf(repository: string): readonly string[];
-  authoritativeOf(repository: string): readonly AuthoritativeSection[];
-  fileOf(profilePath: string): string;
-  /** Undefined for a profile kept outside the profiles folder. */
-  pathOf(file: string): string | undefined;
-  recordApplied(
-    repository: string,
-    applied: readonly AppliedVersion[],
-    authoritative: readonly AuthoritativeSection[],
-    notify?: boolean,
-  ): Promise<boolean>;
-  recordAdded(repository: string, profilePath: string, version: string | undefined): void;
-}
-
-const noAssignments: ProfileAssignments = {
-  profilesOf: () => [],
-  authoritativeOf: () => [],
-  fileOf: (path) => path,
-  pathOf: () => undefined,
-  recordApplied: () => Promise.resolve(true),
-  recordAdded: () => undefined,
-};
 
 export interface Reviewed {
   /** Travels with the review, so no other plan can be applied in its place. */
@@ -133,10 +100,6 @@ function profileNameOfApply(profiles: readonly string[]): string {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-export function assignmentKey(assignments: ProfileAssignments, repository: string): string {
-  return JSON.stringify([assignments.profilesOf(repository), [...assignments.authoritativeOf(repository)].toSorted()]);
 }
 
 function isSameList(left: readonly string[], right: readonly string[]): boolean {
@@ -569,37 +532,6 @@ export class Apply {
     }
   }
 
-  async #assignmentOf(
-    repository: string,
-    staged: StagedApply,
-    plan: Plan,
-  ): Promise<{ assignment: AssignmentOffer; appliedVersions: readonly AppliedVersion[] }> {
-    const files = staged.profiles;
-    // A read GitHub refused, as for a missing permission, compared nothing there, and granting it can change the plan.
-    const recordsVersions =
-      profilesApplyFully(staged, plan) &&
-      isSameList([...staged.authoritative].toSorted(), [...this.#assignments.authoritativeOf(repository)].toSorted());
-    const paths = files.map((file) => this.#assignments.pathOf(file));
-    const inFolder = paths.filter((path) => path !== undefined);
-    if ((inFolder.length === 0 && this.#assignmentKey === undefined) || inFolder.length !== paths.length) {
-      return { assignment: { kind: 'none' }, appliedVersions: [] };
-    }
-    const own = this.#assignments.profilesOf(repository);
-    const [only] = inFolder;
-    const assignment: AssignmentOffer = isSameList(inFolder, own)
-      ? { kind: 'own', recordsVersions }
-      : inFolder.length === 1 && only !== undefined && !own.includes(only)
-        ? { kind: 'add', profileName: profileName(only), recordsVersions }
-        : { kind: 'none' };
-    if (assignment.kind === 'none') {
-      return { assignment, appliedVersions: [] };
-    }
-    const appliedVersions = await Promise.all(
-      files.map(async (file, index) => ({ profile: inFolder[index] ?? file, version: await profileVersion(file) })),
-    );
-    return { assignment, appliedVersions };
-  }
-
   /** Leaving discards the pending apply, but a write already under way finishes. */
   async close(): Promise<void> {
     if (this.#writing()) {
@@ -635,16 +567,23 @@ export class Apply {
     }
     const profile = profileNameOfApply(staged.staged.profiles);
     const locks = new Map(lockChanges(access, staged.plan.changes).map((lock) => [lock.change, lock.reason]));
-    const { assignment, appliedVersions } = await this.#assignmentOf(repository, staged.staged, staged.plan);
-    if (
-      assignment.kind !== 'none' &&
-      !isSameList(
-        sourceVersions,
-        appliedVersions.map((source) => source.version),
-      )
-    ) {
-      throw new Error('The profile sources changed during review. Review again before applying.');
-    }
+    const source = assignmentSource(
+      this.#assignments,
+      repository,
+      staged.staged.profiles,
+      reviewedAssignment !== undefined,
+    );
+    const assignment: AssignmentOffer =
+      source.kind === 'none'
+        ? source
+        : {
+            ...source,
+            recordsVersions: canRecordAssignment(this.#assignments, repository, staged.staged, staged.plan),
+          };
+    const appliedVersions =
+      assignment.kind === 'none'
+        ? []
+        : await reviewedProfileVersions(this.#assignments, staged.staged.profiles, sourceVersions);
     this.#checkAssignment(repository, reviewedAssignment);
     return {
       assignment,

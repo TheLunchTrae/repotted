@@ -28,9 +28,10 @@ use Repotted, see the [user guide](../user/README.md).
   - `profiles/`: the profile schema, loading, merging, and editing profiles,
     owner types, action pattern checks, syncing a profile folder with a
     config repository, and reading what a branch of it changes.
-  - `plan/`: planning and applying, what a change is, what counts as drift,
-    the settings at endpoints of their own, and `sections/`, one adapter per
-    section.
+  - `plan/`: separate modules for planning, capture, saved-plan parsing,
+    applying, and text output; what a change is and what counts as drift;
+    settings at endpoints of their own; and `sections/`, one adapter per
+    section. [Plans](architecture.md#plans) describes the dependency direction.
   - `staging/`: staged applies and batches.
   - `shared/`: hashing and base64, deep equality, and safe file writes.
 

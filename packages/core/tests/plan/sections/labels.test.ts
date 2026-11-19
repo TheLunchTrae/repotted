@@ -7,14 +7,10 @@ import { afterAll, describe, expect, test } from 'vitest';
 
 import { parseRepo } from '../../../src/github/client.js';
 import { lockChanges } from '../../../src/github/permissions.js';
-import {
-  applyPlan,
-  captureProfile,
-  createPlan,
-  formatPlan,
-  skippedDrafts,
-  StalePlanError,
-} from '../../../src/plan/plan.js';
+import { applyPlan, StalePlanError } from '../../../src/plan/apply.js';
+import { captureProfile } from '../../../src/plan/capture.js';
+import { formatPlan } from '../../../src/plan/format.js';
+import { createPlan, skippedDrafts } from '../../../src/plan/plan.js';
 import { editProfile, resolveProfile } from '../../../src/profiles/profile.js';
 import { type LabelEntry, profileFileJsonSchema } from '../../../src/profiles/schema.js';
 import { createStagedApply, editStagedApply, planStagedApply } from '../../../src/staging/staged.js';

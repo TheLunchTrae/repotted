@@ -4,20 +4,13 @@ import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 import { parseRepo, repoPath } from '../../src/github/client.js';
+import { ApplyError, applyPlan, StalePlanError } from '../../src/plan/apply.js';
+import { captureProfile } from '../../src/plan/capture.js';
 import type { Warning } from '../../src/plan/change.js';
+import { describeSkipped, describeWarning, formatPlan } from '../../src/plan/format.js';
 import { matches } from '../../src/plan/match.js';
-import {
-  ApplyError,
-  applyPlan,
-  captureProfile,
-  createPlan,
-  describeSkipped,
-  describeWarning,
-  formatPlan,
-  parsePlan,
-  skippedDrafts,
-  StalePlanError,
-} from '../../src/plan/plan.js';
+import { createPlan, skippedDrafts } from '../../src/plan/plan.js';
+import { parsePlan } from '../../src/plan/saved-plan.js';
 import { EnvironmentSettingsError } from '../../src/plan/sections/environments.js';
 import { MergeSettingsError } from '../../src/plan/sections/repository.js';
 import { resolveProfile } from '../../src/profiles/profile.js';

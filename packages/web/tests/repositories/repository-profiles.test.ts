@@ -1139,3 +1139,42 @@ test.each(['single', 'batch'] as const)(
     expect(fake.writes).toEqual([]);
   },
 );
+
+test('a batch can show an unrelated profile review after a late source loss, but cannot apply it', async () => {
+  const listings = await profiles({
+    'assigned.yaml': 'repository: { has_projects: false }\n',
+    'once.yaml': 'repository: { has_wiki: false }\n',
+  });
+  const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
+  assignments.setProfiles('lunch/app', ['assigned.yaml']);
+  const fake = new FakeGitHub();
+  const readingAccess = Promise.withResolvers<undefined>();
+  const releaseAccess = Promise.withResolvers<undefined>();
+  const github = {
+    request: async (...args: Parameters<FakeGitHub['request']>): Promise<unknown> => {
+      if (args[1].startsWith('/user/installations')) {
+        readingAccess.resolve(undefined);
+        await releaseAccess.promise;
+      }
+      return fake.request(...args);
+    },
+  };
+  const batch = new BatchApply(github, () => undefined, assignments);
+  const reviewing = batch.start(['lunch/app'], { file: `${folder}/once.yaml`, name: 'once' });
+  await readingAccess.promise;
+  await rm(`${folder}/once.yaml`);
+  releaseAccess.resolve(undefined);
+  await reviewing;
+
+  expect(batch.state.value.kind).toBe('reviewed');
+  expect(batch.members.value).toMatchObject([{ repository: 'lunch/app', status: 'changes' }]);
+  await batch.apply();
+
+  const state = batch.state.value;
+  expect(state).toMatchObject({ kind: 'applied', results: [{ repository: 'lunch/app', finished: false }] });
+  if (state.kind === 'applied') {
+    expect(state.results[0]?.said).toContain('Cannot read profile');
+  }
+  expect(assignments.assignment('lunch/app')?.applied).toBeUndefined();
+  expect(fake.writes).toEqual([]);
+});

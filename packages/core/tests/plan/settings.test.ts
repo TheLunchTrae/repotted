@@ -4,7 +4,10 @@ import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 import { GitHubError, parseRepo } from '../../src/github/client.js';
-import { ApplyError, applyPlan, captureProfile, createPlan, describeFailure } from '../../src/plan/plan.js';
+import { ApplyError, applyPlan } from '../../src/plan/apply.js';
+import { captureProfile } from '../../src/plan/capture.js';
+import { describeFailure } from '../../src/plan/format.js';
+import { createPlan } from '../../src/plan/plan.js';
 import { actionsEndpoints } from '../../src/plan/sections/actions.js';
 import { repositoryEndpoints } from '../../src/plan/sections/repository.js';
 import { securityEndpoints } from '../../src/plan/sections/security.js';

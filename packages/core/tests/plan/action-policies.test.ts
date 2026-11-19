@@ -1,7 +1,10 @@
 import { expect, test } from 'vitest';
 
 import { type GitHub, parseRepo } from '../../src/github/client.js';
-import { applyPlan, captureProfile, createPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
+import { applyPlan, StalePlanError } from '../../src/plan/apply.js';
+import { captureProfile } from '../../src/plan/capture.js';
+import { createPlan } from '../../src/plan/plan.js';
+import { parsePlan } from '../../src/plan/saved-plan.js';
 import { captureDefinition } from '../../src/profiles/definitions.js';
 import { parseProfile } from '../../src/profiles/profile.js';
 import { answered, FakeGitHub } from '../support/fake-github.js';

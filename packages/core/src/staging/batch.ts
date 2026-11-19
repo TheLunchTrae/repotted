@@ -7,17 +7,11 @@ import { z } from 'zod';
 import { type GitHub, GitHubError, parseRepo, repoPattern } from '../github/client.js';
 import { type Access, type Lock, lockChanges } from '../github/permissions.js';
 import { readAccess } from '../github/repositories.js';
+import { ApplyError, applyPlan, StalePlanError } from '../plan/apply.js';
 import type { Change } from '../plan/change.js';
-import {
-  ApplyError,
-  applyPlan,
-  describeFailure,
-  failureReason,
-  OwnerMismatchError,
-  parsePlan,
-  type Plan,
-  StalePlanError,
-} from '../plan/plan.js';
+import { describeFailure, failureReason } from '../plan/format.js';
+import { OwnerMismatchError, type Plan } from '../plan/plan.js';
+import { parsePlan } from '../plan/saved-plan.js';
 import { ProfileError, resolveProfile, resolveProfilesTogether } from '../profiles/profile.js';
 import { hexDigest } from '../shared/bytes.js';
 import { replaceFile } from '../shared/files.js';

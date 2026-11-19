@@ -6,7 +6,9 @@ import { afterEach, expect, test } from 'vitest';
 import { parse } from 'yaml';
 
 import { GitHubError, parseRepo } from '../../src/github/client.js';
-import { applyPlan, createPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
+import { applyPlan, StalePlanError } from '../../src/plan/apply.js';
+import { createPlan } from '../../src/plan/plan.js';
+import { parsePlan } from '../../src/plan/saved-plan.js';
 import { captureDefinition } from '../../src/profiles/definitions.js';
 import { editProfile, resolveProfile } from '../../src/profiles/profile.js';
 import { createStagedApply, planStagedApply } from '../../src/staging/staged.js';
