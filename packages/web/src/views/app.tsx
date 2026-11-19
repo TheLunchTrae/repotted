@@ -75,6 +75,8 @@ function SignedIn({
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
   const notifications = useMemo(() => new Notifications(), []);
+  // The top page of the section an apply was started in: Settings for one that protects the config repository.
+  const applyStartedIn = useRef('/');
   const {
     repositories,
     profiles,
@@ -126,8 +128,33 @@ function SignedIn({
       assignmentsLoaded: sharedRead,
       onApplied: sayApplied,
     });
-    const applying = new Apply(github, refused, (work) => kept.write(work), assigned, queued);
-    const batching = new BatchApply(github, refused, assigned, sayApplied, queued);
+    // An apply that is written whole has nothing left to show, so its page gives way to its section's top page.
+    const backToSection = (page: Apply | BatchApply, path: string, count: number): void => {
+      sayApplied(count);
+      run(page.close());
+      if (router.path.peek() === path) {
+        router.go(applyStartedIn.current, { landOnTop: true, withoutAsking: true });
+      }
+    };
+    const applying: Apply = new Apply(
+      github,
+      refused,
+      (work) => kept.write(work),
+      assigned,
+      queued,
+      () => {
+        backToSection(applying, '/apply', 1);
+      },
+    );
+    const batching: BatchApply = new BatchApply(
+      github,
+      refused,
+      assigned,
+      (count) => {
+        backToSection(batching, '/batch', count);
+      },
+      queued,
+    );
     const reviewProfiles = (names: readonly string[]): boolean => {
       const review = reviewAssignedProfiles(names, assigned, kept.folder.value, applying, batching);
       if (review === undefined) {
@@ -162,7 +189,6 @@ function SignedIn({
       }),
     [router, profiles, repositories],
   );
-  const applyWriting = apply.state.value.kind === 'applying' || batch.state.value.kind === 'applying';
   useEffect(() => {
     run(repositories.load());
     run(profiles.refresh());
@@ -206,6 +232,15 @@ function SignedIn({
     };
   }, [profiles, apply, batch]);
   const path = router.path.value;
+  useEffect(() => {
+    if (path !== '/apply' && path !== '/batch') {
+      applyStartedIn.current = path === '/settings' ? '/settings' : '/';
+    }
+  }, [path]);
+  // The page that waits for its apply says how far it is, so the header's card would say it twice.
+  const waitingOnItsPage =
+    (path === '/apply' && apply.state.value.kind === 'applying') ||
+    (path === '/batch' && batch.state.value.kind === 'applying');
   const library = definitionTypes.find((definition) => definition.path === path);
   const previewedBranch = path === '/profiles' ? (new URLSearchParams(router.search.value).get('preview') ?? '') : '';
   // A preview is of the profiles' repository, so it goes when they are kept somewhere else, before
@@ -278,7 +313,7 @@ function SignedIn({
   return (
     <NotificationContext.Provider value={notifications}>
       <Shell
-        status={<QueueStatus queue={queue} router={router} />}
+        status={waitingOnItsPage ? undefined : <QueueStatus queue={queue} router={router} />}
         account={account}
         user={user}
         router={router}
@@ -350,16 +385,15 @@ function SignedIn({
             }}
             assignments={assignments}
             onReviewProfiles={reviewProfiles}
-            applyWriting={applyWriting}
             onCompare={(repository, profile) => {
               run(comparison.compare(repository, profile));
               router.go('/compare');
             }}
           />
         ) : path === '/batch' ? (
-          <BatchPage batch={batch} router={router} />
+          <BatchPage batch={batch} router={router} earlierApplies={queue.earlierThanPage.value} />
         ) : path === '/apply' ? (
-          <ApplyPage apply={apply} router={router} />
+          <ApplyPage apply={apply} router={router} earlierApplies={queue.earlierThanPage.value} />
         ) : path === '/compare' ? (
           <ComparePage comparison={comparison} router={router} />
         ) : previewedBranch !== '' ? (

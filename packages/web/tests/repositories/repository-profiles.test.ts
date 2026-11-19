@@ -324,7 +324,7 @@ test('a move review that lands late cannot advance a newer apply from its edits'
 });
 
 test.each(['single', 'batch'] as const)(
-  'a move waits for an active %s write before it can open a review',
+  'a move opens its review while a %s write is queued, which carries on',
   async (kind) => {
     const listings = await profiles({ 'base.yaml': 'repository: { has_wiki: false }\n' });
     const assignments = new RepositoryProfiles(
@@ -342,7 +342,8 @@ test.each(['single', 'batch'] as const)(
     const entered = new Promise<void>((resolve) => {
       started = resolve;
     });
-    const fleet = new FakeFleet([new FakeGitHub(), new FakeGitHub({}, 'lunch/api')]);
+    const app = new FakeGitHub();
+    const fleet = new FakeFleet([app, new FakeGitHub({}, 'lunch/api')]);
     const github = {
       request: async (...args: Parameters<FakeGitHub['request']>): Promise<unknown> => {
         if (writing && args[0] !== 'GET') {
@@ -364,14 +365,15 @@ test.each(['single', 'batch'] as const)(
     const pending = kind === 'single' ? apply.apply() : batch.apply();
     await entered;
 
-    expect(reviewAssignedProfiles(['lunch/api'], assignments, folder, apply, batch)).toBeUndefined();
-    expect(reviewAssignedProfiles(['lunch/app', 'lunch/api'], assignments, folder, apply, batch)).toBeUndefined();
-
-    release();
-    await pending;
+    writing = false;
     const review = reviewAssignedProfiles(['lunch/api'], assignments, folder, apply, batch);
     expect(review?.path).toBe('/apply');
     await review?.work;
+    expect(apply.state.value).toMatchObject({ kind: 'reviewed', repository: 'lunch/api' });
+
+    release();
+    await pending;
+    expect(app.state.repository).toMatchObject({ has_wiki: false });
     expect(apply.state.value).toMatchObject({ kind: 'reviewed', repository: 'lunch/api' });
   },
 );

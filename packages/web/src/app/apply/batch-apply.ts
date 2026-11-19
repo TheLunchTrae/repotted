@@ -230,6 +230,8 @@ export class BatchApply {
   readonly #onApplied: ((repositories: number) => void) | undefined;
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
+  /** The repositories of the batch being applied. */
+  #queued: readonly string[] = [];
   #folder: string | undefined;
   #assigned = new Map<string, string>();
   /**
@@ -325,10 +327,10 @@ export class BatchApply {
    */
   async startWithoutProfile(repositories: readonly string[]): Promise<void> {
     const [first] = repositories;
-    if (this.#writing() || first === undefined) {
+    if (first === undefined) {
       return;
     }
-    const closing = this.close();
+    const closing = this.#moveOn();
     this.addToRepositoryProfiles.value = true;
     this.#assigned = new Map();
     const folder = `/apply/${crypto.randomUUID()}/batch`;
@@ -427,10 +429,10 @@ export class BatchApply {
         }
     )[],
   ): Promise<void> {
-    if (this.#writing() || repositories.length === 0) {
+    if (repositories.length === 0) {
       return;
     }
-    const closing = this.close();
+    const closing = this.#moveOn();
     this.addToRepositoryProfiles.value = true;
     const snapshots = new Map<string, string>();
     for (const input of repositories) {
@@ -547,6 +549,7 @@ export class BatchApply {
     const results: BatchResult[] = [];
     const records: Promise<boolean>[] = [];
     this.state.value = { kind: 'applying', profileName: profile, total: plan.plans.length, results };
+    this.#queued = plan.plans.map((member) => member.repository);
     const recordOf = (member: BatchPlan['plans'][number]): AssignmentRecord | undefined => {
       const versions = state.appliedVersions.get(member.repository);
       const addition = state.additions.get(member.repository);
@@ -602,17 +605,24 @@ export class BatchApply {
           };
         }
       }
+      if (turn !== this.#turn) {
+        // The page moved on to another batch, so this one's files have no more use.
+        await rm(dirname(folder), { recursive: true, force: true });
+        return;
+      }
       const left = (await this.#held(folder)) ? (await readBatch(folder)).members.length : 0;
       if (left === 0) {
         await rm(dirname(folder), { recursive: true, force: true });
-        if (turn === this.#turn) {
-          this.#edits = undefined;
-          this.editor.value = undefined;
-        }
+        this.#edits = undefined;
+        this.editor.value = undefined;
       }
       // Those that didn't finish come first, since they are what is left to do.
       const ordered = [...results.filter((result) => !result.finished), ...results.filter((result) => result.finished)];
       const saved = await Promise.all(records);
+      if (turn !== this.#turn) {
+        await rm(dirname(folder), { recursive: true, force: true });
+        return;
+      }
       this.state.value = { kind: 'applied', profileName: profile, results: ordered, left };
       if (
         plan.failures.length === 0 &&
@@ -623,13 +633,34 @@ export class BatchApply {
         this.#onApplied?.(results.length);
       }
     } catch (error) {
-      this.state.value = {
-        kind: 'failed',
-        profileName: profile,
-        hasBatchToReviewAgain: await this.#held(folder),
-        message: cleaned(messageOf(error)),
-      };
+      if (turn === this.#turn) {
+        this.state.value = {
+          kind: 'failed',
+          profileName: profile,
+          hasBatchToReviewAgain: await this.#held(folder),
+          message: cleaned(messageOf(error)),
+        };
+      }
     }
+  }
+
+  /**
+   * Makes way for another batch. Repositories that are queued are let go: they
+   * stay in the queue, which says how each ends, and the batch's files stay
+   * until the queue has told this page so.
+   */
+  async #moveOn(): Promise<void> {
+    if (!this.#writing()) {
+      await this.close();
+      return;
+    }
+    this.#turn += 1;
+    this.#folder = undefined;
+    this.#edits = undefined;
+    this.editor.value = undefined;
+    this.#assigned = new Map();
+    this.state.value = { kind: 'idle' };
+    this.#queue.letGo(this.#queued);
   }
 
   /** Leaving discards the pending batch, but a write already under way finishes. */

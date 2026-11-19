@@ -323,7 +323,7 @@ class GitHubWithHeldRequests extends FakeGitHub {
   }
 }
 
-test('a batch that is writing is neither replaced nor discarded, and a late review changes nothing', async () => {
+test('a late review changes nothing, and a batch started while one writes takes the page', async () => {
   await saved();
   const app = new GitHubWithHeldRequests({}, 'lunch/app');
   const api = new FakeGitHub({}, 'lunch/api');
@@ -345,14 +345,18 @@ test('a batch that is writing is neither replaced nor discarded, and a late revi
 
   app.hold();
   const writing = batch.apply();
-  await batch.close();
-  await batch.start(['lunch/app'], profile);
+  // Leaving the page changes nothing while the batch is queued.
   await batch.close();
   expect(batch.state.value).toMatchObject({ kind: 'applying' });
+
+  await batch.start(['lunch/api'], profile);
+  expect(batch.state.value).toMatchObject({ kind: 'reviewed' });
   await app.release();
   await writing;
 
-  expect(batch.state.value).toMatchObject({ kind: 'applied', left: 0 });
+  // The first batch was written whole, and its outcome doesn't reach the page that moved on.
+  expect(batch.state.value).toMatchObject({ kind: 'reviewed' });
+  expect(batch.members.value.map((member) => member.repository)).toEqual(['lunch/api']);
   // What was left out everywhere was written nowhere.
   expect(app.state.repository).toMatchObject({ has_wiki: true, has_projects: false });
   expect(api.state.repository).toMatchObject({ has_wiki: true, has_projects: false });

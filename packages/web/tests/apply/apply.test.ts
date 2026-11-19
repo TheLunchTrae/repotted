@@ -244,34 +244,37 @@ test('a review that lands late changes nothing: apply writes the plan on the pag
   expect(app.state.repository).toMatchObject({ has_wiki: true });
 });
 
-test('an apply that is writing is neither replaced nor joined, and its outcome shows when it ends', async () => {
+test('another apply started while one writes takes the page, and the first ends in the queue', async () => {
   await saved();
   await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
   const app = new GitHubWithHeldReads();
   const other = new FakeGitHub({}, 'lunch/other');
-  const apply = new Apply({ request: fleet(app, other) }, () => undefined);
+  const applied = vi.fn();
+  const apply = new Apply({ request: fleet(app, other) }, () => undefined, undefined, undefined, undefined, applied);
   await apply.start('lunch/app', profile);
   await apply.review();
-  app.fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 1);
 
   app.hold();
   const writing = apply.apply();
-  // The page is left, and another apply is asked for, while the first one writes.
-  await apply.close();
-  await apply.start('lunch/other', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
-  await apply.review();
-  await apply.start('lunch/app', profile);
-  await apply.review();
+  // Leaving the page changes nothing while the apply is queued.
   await apply.close();
   expect(apply.state.value).toMatchObject({ kind: 'applying', repository: 'lunch/app' });
+
+  await apply.start('lunch/other', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
+  await apply.review();
+  expect(apply.state.value).toMatchObject({ kind: 'reviewed', repository: 'lunch/other' });
   await app.release();
   await writing;
 
-  const state = apply.state.value;
-  expect(state).toMatchObject({ kind: 'reviewed', repository: 'lunch/app' });
-  expect(state.kind === 'reviewed' ? state.notice : '').toContain('stays written');
-  expect(writes(other)).toEqual([]);
+  // The first apply was written, and neither its outcome nor its files reach the page that moved on.
+  expect(app.state.repository).toMatchObject({ has_wiki: false });
+  expect(apply.state.value).toMatchObject({ kind: 'reviewed', repository: 'lunch/other' });
+  expect(applied).not.toHaveBeenCalled();
   expect(await pending()).toHaveLength(1);
+
+  await apply.apply();
+  expect(apply.state.value).toMatchObject({ kind: 'applied', repository: 'lunch/other' });
+  expect(applied).toHaveBeenCalledOnce();
 });
 
 test('a failed review can be edited or tried again while its page is open', async () => {

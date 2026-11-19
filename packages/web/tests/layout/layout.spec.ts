@@ -640,11 +640,14 @@ test('a batch keeps its reviewed action width while applying', async ({ page }) 
   await expect(apply.locator('.pending-spinner')).toBeVisible();
   await expect(apply).toBeFocused();
   expect((await apply.boundingBox())?.width).toBe(before?.width);
+  // The page that waits says how far the apply is, so the header's card stays away.
+  await expect(page.locator('.queue-menu')).toHaveCount(0);
   await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
-  await expect(page.getByText('Every repository is finished, and the batch has ended.')).toBeVisible();
+  await expect(page.getByText('Applied to 1 repository.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Repositories', exact: true })).toBeVisible();
 });
 
-test('a queued apply shows in the header on every page and carries on after a reload', async ({ page }) => {
+test('a queued apply shows in the header away from its page and carries on after a reload', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('checkbox', { name: 'Select lunch/api', exact: true }).check();
   await page.getByRole('button', { name: 'Review apply', exact: true }).click();
@@ -652,7 +655,7 @@ test('a queued apply shows in the header on every page and carries on after a re
   await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
   await page.getByRole('button', { name: 'Apply now', exact: true }).click();
   const card = page.locator('.queue-menu > summary');
-  await expect(card).toContainText('1 of 1');
+  await expect(page.getByText('Writing to GitHub: 0 of 1 done…', { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Repotted', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'Select lunch/api', exact: true })).toBeVisible();
   await expect(card).toContainText('1 of 1');
