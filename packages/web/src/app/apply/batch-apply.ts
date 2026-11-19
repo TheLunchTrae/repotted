@@ -21,8 +21,14 @@ import {
 import { rm } from '../../engine/files.js';
 import { basename, dirname } from '../../engine/path.js';
 import { isSignedOut } from '../account/account.js';
-import { type AppliedVersion, profilesApplyFully, profileVersion } from '../repositories/repository-profiles.js';
-import { assignmentKey, type ProfileAssignments } from './apply.js';
+import {
+  assignmentKey,
+  assignmentSource,
+  canRecordAssignment,
+  type ProfileAssignments,
+  reviewedProfileVersions,
+} from '../repositories/assignment-review.js';
+import { type AppliedVersion, profileVersion } from '../repositories/repository-profiles.js';
 import { type ComparedProfile, type CompareSection, compareSections, exclusionLabel } from './comparison.js';
 
 export interface BatchMemberView {
@@ -536,37 +542,26 @@ export class BatchApply {
     const assignments = this.#assignments;
     if (assignments !== undefined) {
       for (const member of plan.plans) {
-        const paths = member.staged.profiles.map((file) => assignments.pathOf(file));
-        const own = assignments.profilesOf(member.repository);
-        if (
-          (paths.length === 0 && assignments.authoritativeOf(member.repository).length === 0) ||
-          paths.length !== own.length ||
-          paths.some((path, index) => path !== own[index])
-        ) {
+        const source = assignmentSource(
+          assignments,
+          member.repository,
+          member.staged.profiles,
+          assignments.authoritativeOf(member.repository).length > 0,
+        );
+        if (source.kind !== 'own') {
           continue;
         }
         const staged = await resolveStagedApply(member.file);
-        if (
-          profilesApplyFully(staged, member) &&
-          JSON.stringify([...staged.authoritative].toSorted()) ===
-            JSON.stringify([...assignments.authoritativeOf(member.repository)].toSorted())
-        ) {
-          const versions = await Promise.all(
-            member.staged.profiles.map(async (file) => ({
-              profile: assignments.pathOf(file) ?? file,
-              version: await profileVersion(file),
-            })),
+        if (canRecordAssignment(assignments, member.repository, staged, member)) {
+          appliedVersions.set(
+            member.repository,
+            await reviewedProfileVersions(
+              assignments,
+              member.staged.profiles,
+              member.staged.profiles.map((file) => sourceVersions.get(file)),
+              member.repository,
+            ),
           );
-          if (
-            versions.some(
-              (version, index) => sourceVersions.get(member.staged.profiles[index] ?? '') !== version.version,
-            )
-          ) {
-            throw new Error(
-              `${member.repository}'s profile sources changed during review. Review again before applying.`,
-            );
-          }
-          appliedVersions.set(member.repository, versions);
         }
       }
     }

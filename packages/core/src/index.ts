@@ -8,21 +8,11 @@ export { createGitHub, GitHubError, parseRepo } from './github/client.js';
 export type { GitHub } from './github/client.js';
 export { findGitHubApp, gitHubAppSlug } from './github/apps.js';
 export type { FoundGitHubApp } from './github/apps.js';
-export {
-  applyPlan,
-  ApplyError,
-  captureProfile,
-  createPlan,
-  describeFailure,
-  describeSkipped,
-  describeWarning,
-  failureReason,
-  formatPlan,
-  OwnerMismatchError,
-  parsePlan,
-  skippedDrafts,
-  StalePlanError,
-} from './plan/plan.js';
+export { applyPlan, ApplyError, StalePlanError } from './plan/apply.js';
+export { captureProfile } from './plan/capture.js';
+export { createPlan, OwnerMismatchError, skippedDrafts } from './plan/plan.js';
+export { describeFailure, describeSkipped, describeWarning, failureReason, formatPlan } from './plan/format.js';
+export { parsePlan } from './plan/saved-plan.js';
 export type { Plan } from './plan/plan.js';
 export {
   changeOwnerType,

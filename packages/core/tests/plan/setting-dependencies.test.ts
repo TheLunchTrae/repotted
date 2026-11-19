@@ -4,7 +4,10 @@ import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 import { GitHubError, parseRepo } from '../../src/github/client.js';
-import { ApplyError, applyPlan, captureProfile, createPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
+import { ApplyError, applyPlan, StalePlanError } from '../../src/plan/apply.js';
+import { captureProfile } from '../../src/plan/capture.js';
+import { createPlan } from '../../src/plan/plan.js';
+import { parsePlan } from '../../src/plan/saved-plan.js';
 import { orderSettingChanges } from '../../src/plan/setting-order.js';
 import { editProfile, parseProfile, stringifyProfile } from '../../src/profiles/profile.js';
 import type { Profile } from '../../src/profiles/schema.js';

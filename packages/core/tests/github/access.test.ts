@@ -3,8 +3,10 @@ import { describe, expect, test } from 'vitest';
 import { type GitHub, GitHubError, responseError } from '../../src/github/client.js';
 import { lockChanges } from '../../src/github/permissions.js';
 import { readAccess } from '../../src/github/repositories.js';
+import { ApplyError } from '../../src/plan/apply.js';
 import type { Change } from '../../src/plan/change.js';
-import { ApplyError, createPlan, failureReason } from '../../src/plan/plan.js';
+import { failureReason } from '../../src/plan/format.js';
+import { createPlan } from '../../src/plan/plan.js';
 import { FakeGitHub, type FakeInstallation } from '../support/fake-github.js';
 
 const app = { owner: 'lunch', name: 'app' };

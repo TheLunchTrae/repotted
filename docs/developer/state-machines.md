@@ -979,6 +979,7 @@ plan held by the review shown. One piece of work counts at a time.
 | Idle             | **Review apply**, with repositories selected and a profile picked           | Reviewing, with a temporary batch started from the selected profile for every repository.                                                                            |
 | Any but Applying | Several repositories moved into a folder with review on move                | Reviewing, each newly entering repository starting from its effective layers. A prior pending review is discarded.                                                   |
 | Reviewing        | Every repository is planned                                                 | Reviewed: each repository with its changes, or that it is already in line, needs access, couldn't be compared, or is left out; each change with how many it reaches. |
+| Reviewing        | A profile outside the saved assignment disappears after its plan completes  | Reviewed with the captured changes. Applying revalidates the source and refuses that member without writes or baseline recording.                                    |
 | Reviewing        | The batch can't start or be read                                            | Failed, with why and whether a batch is there. A batch that couldn't start leaves nothing behind. A lost sign-in also goes to the sign-in page.                      |
 | Reviewing        | A review lands after the page moved on                                      | Dropped. Its temporary folder is removed when the batch has been left, even if its files were created after leaving. A later batch has a different folder.           |
 | Reviewing        | Any button                                                                  | Nothing: the last review stays in view with its buttons off.                                                                                                         |
@@ -1165,7 +1166,7 @@ didn't shows in Settings.
 
 ## Plan and apply
 
-`createPlan` only reads. `applyPlan` (`packages/core/src/plan/plan.ts`) plans
+`createPlan` only reads. `applyPlan` (`packages/core/src/plan/apply.ts`) plans
 again from its recorded source and writes only when that yields the same
 changes. Sources include profile files, definition files, staged applies, and
 inline YAML with its reference directory. Plans without source metadata use

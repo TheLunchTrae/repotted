@@ -7,7 +7,8 @@ import path from 'node:path';
 import { afterAll, describe, expect, test, vi } from 'vitest';
 import { parse, stringify } from 'yaml';
 
-import { ApplyError, applyPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
+import { ApplyError, applyPlan, StalePlanError } from '../../src/plan/apply.js';
+import { parsePlan } from '../../src/plan/saved-plan.js';
 import { ProfileError } from '../../src/profiles/profile.js';
 import {
   createStagedApply,

@@ -4,7 +4,9 @@ import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
 import { parse } from 'yaml';
 
-import { applyPlan, captureProfile, createPlan, OwnerMismatchError } from '../../src/plan/plan.js';
+import { applyPlan } from '../../src/plan/apply.js';
+import { captureProfile } from '../../src/plan/capture.js';
+import { createPlan, OwnerMismatchError } from '../../src/plan/plan.js';
 import { changeOwnerType, ProfileError, resolveProfile } from '../../src/profiles/profile.js';
 import { profile, profileFileJsonSchema } from '../../src/profiles/schema.js';
 import { createStagedApply } from '../../src/staging/staged.js';

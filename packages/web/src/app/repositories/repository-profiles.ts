@@ -1,18 +1,12 @@
 import { computed, signal } from '@preact/signals';
-import {
-  authoritativeSections,
-  type AuthoritativeSection,
-  type Plan,
-  resolveProfile,
-  type StagedApply,
-  stringifyProfile,
-} from '@repotted/core';
+import { authoritativeSections, type AuthoritativeSection, resolveProfile, stringifyProfile } from '@repotted/core';
 import * as z from 'zod/mini';
 
 import { basename, join, relative } from '../../engine/path.js';
 import { foldersIn, repositoryFoldersKey, sameName } from '../preferences/preference-changes.js';
 import type { Change } from '../preferences/shared-preferences.js';
 import type { ProfileListing } from '../profiles/profiles.js';
+import type { ProfileAssignments } from './assignment-review.js';
 
 /**
  * By repository, in lower case, the profiles it uses in the order they apply,
@@ -146,15 +140,6 @@ export async function profileVersion(file: string): Promise<string> {
   return sha256(stringifyProfile((await resolveProfile(file)).profile));
 }
 
-export function profilesApplyFully(staged: StagedApply, plan: Plan): boolean {
-  const { drafts: _drafts, ...settled } = staged.sources;
-  return (
-    staged.exclude.length === 0 &&
-    !Object.values(settled).some((setBy) => Object.values(setBy).includes(staged.file)) &&
-    !plan.warnings.some((warning) => warning.cause === 'refused')
-  );
-}
-
 function isSameList(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
@@ -165,7 +150,7 @@ function isSameList(left: readonly string[], right: readonly string[]): boolean 
  * nothing: an apply records the version of each profile it applied, which is
  * how a repository whose profiles changed since is told apart.
  */
-export class RepositoryProfiles {
+export class RepositoryProfiles implements ProfileAssignments {
   readonly #preferences: PreferenceStore;
   readonly #profiles: ProfilesInFolder;
   /** By profile path, the version of what it sets now, once read. */

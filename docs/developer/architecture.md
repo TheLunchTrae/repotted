@@ -203,6 +203,22 @@ and refuses to save over a changed file.
 
 ## Plans
 
+The plan workflow has separate owners under `packages/core/src/plan/`:
+
+- `plan.ts` defines the plan and computes changes through section adapters.
+- `capture.ts` reads a repository into a loadable profile.
+- `saved-plan.ts` parses the plan document, including every change member
+  used in the comparison before apply.
+- `apply.ts` revalidates the source and live state, compares the reviewed
+  changes, and executes the requests it computed.
+- `format.ts` describes plans, warnings, skipped drafts, and apply failures.
+
+Staging depends on planning; apply depends on staging to revalidate a staged
+source. Planning does not depend on staging or apply, so adding a source or
+changing presentation does not change the section-planning dependency graph.
+Internal callers import from the owning module. `src/index.ts` remains the
+package's public interface for the CLI, MCP server, and web app.
+
 `createPlan` in `packages/core/src/plan/plan.ts` reads only the sections a profile
 names. Each section has an adapter in `packages/core/src/plan/sections/` that reads
 the repository's live state and returns the changes that bring it in line. A
@@ -219,7 +235,7 @@ say what differs. Each request stays one change, which apply makes and
 reports on its own.
 
 Apply compares a saved plan's changes whole with a new plan's, and
-`savedChange` in `plan.ts` reads them with a schema that drops any member it
+`savedChange` in `saved-plan.ts` reads them with a schema that drops any member it
 doesn't name. A new member of a change goes into `savedChange` in the same
 change, or every saved plan reads as stale; a test applies a saved plan with a
 change to each list to hold that.
@@ -330,7 +346,7 @@ alone. A warning without a cause skips nothing, such as the note on a change
 of visibility, and its `message` is the whole text. Readers go by these
 members, never by the wording, since a reason that GitHub words, such as
 "GitHub keeps none with standard runners", can explain a setting that simply
-doesn't apply. `describeWarning` in `plan.ts` builds the line that text
+doesn't apply. `describeWarning` in `format.ts` builds the line that text
 output and the MCP server print, as `Skipped <where>: <message>`.
 
 Before anything is written, `readAccess` in `repositories.ts` reads the
@@ -346,7 +362,7 @@ endpoint that holds it, so an editor can turn the part off before any plan.
 holds a listed repository and hasn't accepted every permission in
 `permissionsTheRepottedAppAsksFor`, with its settings page.
 Apply checks neither: GitHub decides at the write, and `failureReason` in
-`plan.ts` turns a lasting `402`, `403` or `422` into a short reason.
+`format.ts` turns a lasting `402`, `403` or `422` into a short reason.
 
 The engine reaches GitHub only through the `GitHub` interface in
 `github/client.ts`. `createGitHub` turns a refused request into a `GitHubError` read
@@ -360,7 +376,7 @@ failure. The in-memory GitHub builds its refusals with the same
 
 ## Apply
 
-`applyPlan` takes a reviewed plan, plans again from the plan's saved profile,
+`applyPlan` in `packages/core/src/plan/apply.ts` takes a reviewed plan, plans again from the plan's saved profile,
 and writes only when the new changes are exactly the reviewed ones. It runs the
 requests it computed itself, never the requests in the saved plan. A saved
 plan is a file that anyone could edit, so treating it as a description to

@@ -4,7 +4,9 @@ import path from 'node:path';
 import { expect, test } from 'vitest';
 
 import { type GitHub, parseRepo } from '../../src/github/client.js';
-import { applyPlan, createPlan, parsePlan, StalePlanError } from '../../src/plan/plan.js';
+import { applyPlan, StalePlanError } from '../../src/plan/apply.js';
+import { createPlan } from '../../src/plan/plan.js';
+import { parsePlan } from '../../src/plan/saved-plan.js';
 import { createStagedApply, editStagedApply, planStagedApply, resolveStagedApply } from '../../src/staging/staged.js';
 import { answered, FakeGitHub } from '../support/fake-github.js';
 
