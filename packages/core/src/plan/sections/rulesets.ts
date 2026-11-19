@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { type GitHub, GitHubError, readAllPages, repoPath, type RepoRef } from '../../github/client.js';
+import { bypassActorIdGitHubKeeps } from '../../profiles/bypass-actors.js';
 import type { Ruleset, RulesetEntry } from '../../profiles/schema.js';
 import type { Change, SectionPlan } from '../change.js';
 import { type Unavailable, warningForUnavailable } from '../endpoints.js';
@@ -60,7 +61,7 @@ function normalize(data: unknown): LiveRuleset {
       target: live.target,
       enforcement: live.enforcement,
       bypass_actors: (live.bypass_actors ?? []).map((actor) => ({
-        actor_id: actor.actor_id ?? null,
+        actor_id: bypassActorIdGitHubKeeps(actor.actor_type, actor.actor_id ?? null),
         actor_type: actor.actor_type,
         bypass_mode: actor.bypass_mode ?? 'always',
       })),
@@ -141,6 +142,19 @@ function writeRuleset(entry: Ruleset, current: StoredRuleset | undefined): Store
   };
 }
 
+function withBypassActorIdsGitHubKeeps(entry: Ruleset): Ruleset {
+  if (entry.bypass_actors === undefined) {
+    return entry;
+  }
+  return {
+    ...entry,
+    bypass_actors: entry.bypass_actors.map((actor) => ({
+      ...actor,
+      actor_id: bypassActorIdGitHubKeeps(actor.actor_type, actor.actor_id),
+    })),
+  };
+}
+
 /**
  * Creates and updates come before deletes, so a profile that replaces one
  * ruleset with another never leaves the branch unprotected in between.
@@ -155,7 +169,8 @@ export function planRulesets(desired: readonly RulesetEntry[], live: LiveRuleset
   const updates: Change[] = [];
   const deletes: Change[] = [];
 
-  for (const entry of desired) {
+  for (const written of desired) {
+    const entry = isAbsent(written) ? written : withBypassActorIdsGitHubKeeps(written);
     const current = byName.get(entry.name);
     if (isAbsent(entry)) {
       if (current !== undefined) {

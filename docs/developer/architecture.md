@@ -189,11 +189,19 @@ preferences and marker commits use the same function.
 `--drop-` options. It works on the YAML document rather than the parsed value,
 so an edit changes only what differs and keeps comments, line endings, and
 indent width. Edits under `drafts` address settings and keys within their
-groups. Unknown fields are removed from the edited file, including drafts. The web app saves through it, so a profile edited
-both by hand and in the app keeps both sets of changes, except inside an
-entry the app rewrites. An edit writes nothing when the result is not a
+groups. The web app saves through it, so a profile edited both by hand and in
+the app keeps both sets of changes, except inside an entry the app rewrites.
+An edit writes nothing when the result is not a
 valid profile, and it refuses a list that shares parts through YAML anchors
 and aliases, which an edit could leave dangling or expand.
+
+Every save runs `tidyProfileDocument` in `profiles/profile-fields.ts`, which
+removes unknown fields, including in drafts, and sets bypass actor IDs GitHub
+ignores to the ones it keeps through `settleIgnoredBypassActorIds`. The ruleset
+planner applies the same `bypassActorIdGitHubKeeps` from
+`profiles/bypass-actors.ts` to both sides of its comparison. The web app's
+repair editor saves raw text through `tidiedProfileText`, which tidies it the
+same way.
 
 `resolveProfile` also accepts replacement text for the file being resolved.
 It checks that text at the file's real path without writing, so an invalid

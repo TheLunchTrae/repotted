@@ -22,7 +22,7 @@ import { isDeepEqual } from '../shared/equal.js';
 import { replaceFile } from '../shared/files.js';
 import type { ConfigurationProblem } from './editing.js';
 import { describeOwnerType, draftOwnerConflicts, type OwnerConflict, ownerConflicts, type OwnerType } from './owner.js';
-import { moveLeadingCommentAndBlankLine, profileFields, removeUnknownProfileFields } from './profile-fields.js';
+import { moveLeadingCommentAndBlankLine, profileFields, tidyProfileDocument } from './profile-fields.js';
 import {
   actionsSettings,
   actionPolicyEntry,
@@ -164,7 +164,8 @@ export interface Layer<Read extends LayerRead> {
   readonly noun: string;
   readonly schema: LayerSchema<Read>;
   readonly ownTopLevelKeys: ReadonlySet<string>;
-  readonly removeUnknownFields?: (document: Document) => void;
+  /** Runs on every save, after the edits, so a save leaves the whole file tidy. */
+  readonly tidyBeforeSave?: (document: Document) => void;
   /** Throws when the edited file, resolved, is not one to save. */
   readonly check: (edited: ResolvedLayer<Read>) => void;
 }
@@ -173,7 +174,7 @@ const profileLayer: Layer<LayerRead> = {
   noun: 'profile',
   schema: z.preprocess((value) => profileFields(value).known, profileFile).transform((layer) => ({ layer })),
   ownTopLevelKeys: new Set(['references', ...Object.keys(profileReferences.shape).map((key) => `references.${key}`)]),
-  removeUnknownFields: removeUnknownProfileFields,
+  tidyBeforeSave: tidyProfileDocument,
   check: () => undefined,
 };
 
@@ -1852,7 +1853,7 @@ async function editChain<Read extends LayerRead>(
       }
     }
   }
-  layer.removeUnknownFields?.(document);
+  layer.tidyBeforeSave?.(document);
   const { links, listedProfiles } = await readChain(own.file, layer, document.toString({ lineWidth: 0 }));
   const [, ...base] = links;
   const indent = /^( +)\S/mu.exec(original)?.[1]?.length ?? 2;

@@ -12,6 +12,7 @@ import {
 } from 'yaml';
 import { z } from 'zod';
 
+import { settleIgnoredBypassActorIds } from './bypass-actors.js';
 import { actionPolicyEntry, autolinkEntry, environmentEntry, labelEntry, profileFile, rulesetEntry } from './schema.js';
 
 type FieldPath = readonly (string | number)[];
@@ -172,16 +173,23 @@ export function removeUnknownProfileFields(document: Document): void {
   retain(document.contents, known);
 }
 
-export function withoutUnknownProfileFields(text: string): string {
+export function tidyProfileDocument(document: Document): void {
+  removeUnknownProfileFields(document);
+  settleIgnoredBypassActorIds(document);
+}
+
+export function tidiedProfileText(text: string): string {
   const document: Document = parseDocument(text);
   const [error] = document.errors;
   if (error !== undefined) {
     throw error;
   }
-  if (profileFields(document.toJS()).unknown.length === 0) {
+  const hasUnknownFields = profileFields(document.toJS()).unknown.length > 0;
+  removeUnknownProfileFields(document);
+  const settledBypassActorIds = settleIgnoredBypassActorIds(document);
+  if (!hasUnknownFields && !settledBypassActorIds) {
     return text;
   }
-  removeUnknownProfileFields(document);
   const indent = /^( +)\S/mu.exec(text)?.[1]?.length ?? 2;
   const result = document.toString({ lineWidth: 0, indent });
   return text.includes('\r\n') ? result.replaceAll('\n', '\r\n') : result;
