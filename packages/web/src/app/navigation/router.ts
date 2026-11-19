@@ -62,8 +62,8 @@ export class Router {
   #browserBackUnderWay = false;
   /** A traversal the user chose to make after being asked, which arrives without being asked again. */
   #traversalAnswered = false;
-  /** The traversal back to the entry shown, after one held for the question, which changes nothing. */
-  #traversalUndoing = false;
+  /** Where the traversal back to the entry shown, after one held for the question, lands; it changes nothing. */
+  #undoingTo: number | undefined;
   /** The place in the history of the entry shown. */
   #index: number;
   readonly #holds = new Set<() => LeaveQuestion | undefined>();
@@ -158,8 +158,9 @@ export class Router {
     const index = placeOf(this.#history.state);
     const traversal = index - this.#index;
     this.#index = index;
-    if (this.#traversalUndoing) {
-      this.#traversalUndoing = false;
+    const undoing = this.#undoingTo;
+    this.#undoingTo = undefined;
+    if (undoing === index) {
       return;
     }
     const path = withoutTrailingSlashes(this.#location.pathname);
@@ -173,7 +174,7 @@ export class Router {
         : this.#question();
     if (question !== undefined) {
       // The browser has already moved, so it goes back to the entry shown, leaving the history as it was.
-      this.#traversalUndoing = true;
+      this.#undoingTo = index - traversal;
       this.#history.go(-traversal);
       this.leaving.value = { question, to: { traversal } };
       return;
