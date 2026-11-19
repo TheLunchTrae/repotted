@@ -524,8 +524,7 @@ The repository list's changed-profiles notice, in
 same `reviewAssignedProfiles`. Which repositories it counts comes from
 `changedInView` in `profile-reviews.ts`, which keeps those
 `Repositories.repositoriesBeforeSearch` shows and names them by their full
-names, since assignments keep them in lowercase. A repository owns its
-profiles: nothing indexes a profile back to the repositories that use it.
+names, since assignments keep them in lowercase.
 
 Repository assignments keep optional `authoritative` and
 `appliedAuthoritative` section lists beside `profiles` and `applied` in

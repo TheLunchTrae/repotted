@@ -421,7 +421,7 @@ export function ChangedProfilesNotice({ changed, writing, onReviewProfiles }: Ch
     return null;
   }
   return (
-    <div class="notice notice-drift changed-profiles" role="status">
+    <div class="notice notice-drift" role="status">
       <p>
         {changed.length === 1
           ? "1 repository's profiles changed since they were last applied."
