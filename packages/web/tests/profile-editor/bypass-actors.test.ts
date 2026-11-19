@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import {
   bypassActorKey,
+  bypassActorNote,
   bypassListProblem,
   deployKeysBypassActor,
   describeBypassActor,
@@ -64,6 +65,30 @@ test('a pull request mode GitHub would refuse blocks the save', () => {
     }),
   ).toBeDefined();
   expect(bypassListProblem({ ...onPullRequests, target: undefined })).toBeUndefined();
+});
+
+test('a list that names someone twice blocks the save, even with two modes', () => {
+  expect(bypassListProblem({ bypass_actors: [admin, { ...admin, bypass_mode: 'always' }] })).toBe(
+    'The bypass list names someone twice. Remove one of them.',
+  );
+  expect(
+    bypassListProblem({
+      bypass_actors: [
+        { actor_id: 1, actor_type: 'OrganizationAdmin', bypass_mode: 'always' },
+        { actor_id: null, actor_type: 'OrganizationAdmin', bypass_mode: 'exempt' },
+      ],
+    }),
+  ).toBeDefined();
+  expect(bypassListProblem(saved)).toBeUndefined();
+});
+
+test('pull requests only, with the target left to each repository, says where it works', () => {
+  const onPullRequests = { ...admin, bypass_mode: 'pull_request' };
+  expect(bypassActorNote(onPullRequests, undefined)).toBe(
+    'Works only where the repository’s ruleset targets branches.',
+  );
+  expect(bypassActorNote(onPullRequests, 'branch')).toBeUndefined();
+  expect(bypassActorNote(admin, undefined)).toBeUndefined();
 });
 
 test('leaving the list to GitHub and managing it again gives the saved list back', () => {

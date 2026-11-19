@@ -135,14 +135,23 @@ export function bypassActorProblem(actor: Entry, rulesetTarget: unknown): string
     : 'Pull requests only works in a branch ruleset. Choose Always or Exempt.';
 }
 
-export function bypassListProblem(entry: Entry): string | undefined {
-  const target = entry['target'];
-  return bypassActors(entry).some((actor) => bypassActorProblem(actor, target) !== undefined)
-    ? 'A bypass is set to Pull requests only where GitHub doesn’t allow it.'
+/** A ruleset that leaves its target to each repository is a branch ruleset on some and not on others. */
+export function bypassActorNote(actor: Entry, rulesetTarget: unknown): string | undefined {
+  return actor['bypass_mode'] === 'pull_request' && rulesetTarget === undefined
+    ? 'Works only where the repository’s ruleset targets branches.'
     : undefined;
 }
 
-/** A team or custom role is typed as its ID: a whole number from 1 up. */
+export function bypassListProblem(entry: Entry): string | undefined {
+  const target = entry['target'];
+  const actors = bypassActors(entry);
+  if (actors.some((actor) => bypassActorProblem(actor, target) !== undefined)) {
+    return 'A bypass is set to Pull requests only where GitHub doesn’t allow it.';
+  }
+  const keys = actors.map((actor) => bypassActorKey(actor));
+  return new Set(keys).size === keys.length ? undefined : 'The bypass list names someone twice. Remove one of them.';
+}
+
 export function parseBypassActorId(typed: string): number | undefined {
   const digits = typed.trim();
   return /^[1-9]\d{0,15}$/u.test(digits) && Number.isSafeInteger(Number(digits)) ? Number(digits) : undefined;

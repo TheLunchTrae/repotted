@@ -702,12 +702,16 @@ managed, each repository has exactly the listed ones, and an empty list means
 nobody bypasses. **Add bypass** adds the **Repository admin**, **Maintain**,
 or **Write** role, **Deploy keys**, or a **GitHub App** by the name in its
 address, such as `dependabot` for `github.com/apps/dependabot`, or by its ID.
-A profile for organizations also offers **Organization admin**, and a team
-or a custom role by its ID. Each one bypasses **Always**, on **Pull requests
-only**, or is **Exempt**, which skips the rules without asking. Pull requests
-only works in a branch ruleset and not for deploy keys, and a profile that
-sets it there can't be saved until you choose another mode. Select several
-to set their mode or remove them together, or choose **Remove all**.
+Applying to one repository takes an app by its ID only. Unless the profile is
+for personal repositories, the menu also offers **Organization admin**, and a
+team or a custom role by its ID. Each one bypasses **Always** or on **Pull
+requests only**, and GitHub records each bypass, or is **Exempt**, which skips
+the rules without recording one. Pull requests only works in a branch ruleset
+and not for deploy keys, and a profile that sets it there can't be saved
+until you choose another mode. When the profile leaves the ruleset's target
+to each repository, it works only where that repository's ruleset targets
+branches. A list that names someone twice can't be saved either. Select
+several to set their mode or remove them together, or choose **Remove all**.
 **Leave it to GitHub** stops managing the list.
 
 A ruleset with no rule selected leaves each repository's rules as they are.

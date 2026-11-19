@@ -1,11 +1,12 @@
 import { gitHubAppSlug } from '@repotted/core';
-import type { JSX } from 'preact';
-import { useId, useState } from 'preact/hooks';
+import type { JSX, RefObject } from 'preact';
+import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import { PendingButton } from '../layout/pending-button.js';
 
 import {
   builtInRepositoryRoleIds,
   bypassActorKey,
+  bypassActorNote,
   bypassActorProblem,
   bypassActors,
   bypassModeFits,
@@ -42,6 +43,17 @@ function isBypassMode(value: string): value is BypassMode {
   return bypassModes.some(([mode]) => mode === value);
 }
 
+function closeMenu(menu: RefObject<HTMLDetailsElement | null>): void {
+  if (menu.current !== null) {
+    menu.current.open = false;
+  }
+}
+
+function closeMenuAndFocusItsButton(menu: RefObject<HTMLDetailsElement | null>): void {
+  closeMenu(menu);
+  menu.current?.querySelector('summary')?.focus();
+}
+
 interface AddMenuProps {
   readonly entry: Entry;
   readonly organizationActorsOffered: boolean;
@@ -52,11 +64,8 @@ interface AddMenuProps {
 function AddMenu({ entry, organizationActorsOffered, onAdd, onOpenForm }: AddMenuProps): JSX.Element {
   const menu = useDismissibleMenu();
   useMenuPanelKeptOnPage(menu);
-  const close = (): void => {
-    if (menu.current !== null) {
-      menu.current.open = false;
-    }
-  };
+  const rolesHeadingId = useId();
+  const othersHeadingId = useId();
   const quickAdd = (label: string, actor: NewBypassActor): JSX.Element => {
     const added = hasBypassActor(entry, actor);
     return (
@@ -66,7 +75,7 @@ function AddMenu({ entry, organizationActorsOffered, onAdd, onOpenForm }: AddMen
         type="button"
         disabled={added}
         onClick={() => {
-          close();
+          closeMenuAndFocusItsButton(menu);
           onAdd(actor);
         }}
       >
@@ -80,7 +89,7 @@ function AddMenu({ entry, organizationActorsOffered, onAdd, onOpenForm }: AddMen
       class="menu-item"
       type="button"
       onClick={() => {
-        close();
+        closeMenu(menu);
         onOpenForm(form);
       }}
     >
@@ -89,46 +98,122 @@ function AddMenu({ entry, organizationActorsOffered, onAdd, onOpenForm }: AddMen
   );
   return (
     <details class="menu" ref={menu}>
-      <summary class="button button-small">Add bypass</summary>
+      <summary class="button button-small" data-bypass-focus="add">
+        Add bypass
+      </summary>
       <div class="menu-panel">
-        <span class="menu-section">Roles</span>
-        {builtInRepositoryRoleIds.map((id) => {
-          const actor = { actor_type: 'RepositoryRole', actor_id: id };
-          return quickAdd(describeBypassActor(actor, new Map()).name, actor);
-        })}
-        {organizationActorsOffered && quickAdd('Organization admin', organizationAdminBypassActor)}
-        {organizationActorsOffered && formItem('Custom role by ID…', 'custom-role')}
-        <span class="menu-section">Others</span>
-        {quickAdd('Deploy keys', deployKeysBypassActor)}
-        {formItem('GitHub App…', 'app')}
-        {organizationActorsOffered && formItem('Team by ID…', 'team')}
+        <div class="menu-group" role="group" aria-labelledby={rolesHeadingId}>
+          <span id={rolesHeadingId} class="menu-section">
+            Roles
+          </span>
+          {builtInRepositoryRoleIds.map((id) => {
+            const actor = { actor_type: 'RepositoryRole', actor_id: id };
+            return quickAdd(describeBypassActor(actor, new Map()).name, actor);
+          })}
+          {organizationActorsOffered && quickAdd('Organization admin', organizationAdminBypassActor)}
+          {organizationActorsOffered && formItem('Custom role by ID…', 'custom-role')}
+        </div>
+        <div class="menu-group" role="group" aria-labelledby={othersHeadingId}>
+          <span id={othersHeadingId} class="menu-section">
+            Others
+          </span>
+          {quickAdd('Deploy keys', deployKeysBypassActor)}
+          {formItem('GitHub App…', 'app')}
+          {organizationActorsOffered && formItem('Team by ID…', 'team')}
+        </div>
       </div>
     </details>
   );
 }
 
+interface SetModeMenuProps {
+  readonly onSet: (mode: BypassMode) => void;
+}
+
+function SetModeMenu({ onSet }: SetModeMenuProps): JSX.Element {
+  const menu = useDismissibleMenu();
+  useMenuPanelKeptOnPage(menu);
+  return (
+    <details class="menu" ref={menu}>
+      <summary class="button button-small" aria-label="Set when the selected ones can bypass">
+        Set mode
+      </summary>
+      <div class="menu-panel">
+        {bypassModes.map(([mode, label]) => (
+          <button
+            key={mode}
+            class="menu-item"
+            type="button"
+            onClick={() => {
+              closeMenuAndFocusItsButton(menu);
+              onSet(mode);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function useFocusOnOpen(): RefObject<HTMLInputElement | null> {
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    input.current?.focus();
+  }, []);
+  return input;
+}
+
+const alreadyListed = 'Already in the bypass list.';
+
 interface AddAppProps {
   readonly appLookup: GitHubAppLookup | undefined;
+  readonly isListed: (actor: NewBypassActor) => boolean;
   readonly onAdd: (actor: NewBypassActor) => void;
   readonly onClose: () => void;
 }
 
 /** With no way to look an app up, as when applying to one repository, its ID is typed instead. */
-function AddApp({ appLookup, onAdd, onClose }: AddAppProps): JSX.Element {
+function AddApp({ appLookup, isListed, onAdd, onClose }: AddAppProps): JSX.Element {
   const id = useId();
+  const input = useFocusOnOpen();
   const [typed, setTyped] = useState('');
   const state = appLookup?.state.value ?? { kind: 'idle' };
   const typedId = parseBypassActorId(typed);
   const slug = gitHubAppSlug(typed);
+  const ready: NewBypassActor | undefined =
+    typedId !== undefined
+      ? { actor_type: 'Integration', actor_id: typedId }
+      : state.kind === 'found'
+        ? { actor_type: 'Integration', actor_id: state.app.id }
+        : undefined;
+  const readyIsListed = ready !== undefined && isListed(ready);
   const problem =
-    typed.trim() === '' || typedId !== undefined || (appLookup !== undefined && slug !== undefined)
+    typed.trim() === ''
       ? undefined
-      : appLookup === undefined
-        ? 'An app’s ID is a whole number.'
-        : 'Type the app’s name as its address has it, such as dependabot, or its ID.';
-  const find = (): void => {
-    if (typedId !== undefined) {
-      onAdd({ actor_type: 'Integration', actor_id: typedId });
+      : readyIsListed
+        ? alreadyListed
+        : typedId !== undefined || (appLookup !== undefined && slug !== undefined)
+          ? state.kind === 'missing'
+            ? `GitHub has no app at github.com/apps/${state.slug} that you can see.`
+            : state.kind === 'failed'
+              ? state.message
+              : undefined
+          : appLookup === undefined
+            ? 'An app’s ID is a whole number.'
+            : 'Type the app’s name as its address has it, such as dependabot, or its ID.';
+  const status =
+    state.kind === 'finding'
+      ? 'Finding it on GitHub…'
+      : state.kind === 'found'
+        ? `Found ${state.app.name}, app ${state.app.id}.`
+        : undefined;
+  const submit = (): void => {
+    if (ready !== undefined) {
+      if (!readyIsListed) {
+        onAdd(ready);
+      }
       return;
     }
     if (slug !== undefined && appLookup !== undefined) {
@@ -140,7 +225,7 @@ function AddApp({ appLookup, onAdd, onClose }: AddAppProps): JSX.Element {
       class="bypass-add"
       onSubmit={(event) => {
         event.preventDefault();
-        find();
+        submit();
       }}
     >
       <label for={id}>
@@ -153,10 +238,11 @@ function AddApp({ appLookup, onAdd, onClose }: AddAppProps): JSX.Element {
       </span>
       <div class="bypass-add-row">
         <input
+          ref={input}
           id={id}
           class="field mono"
           autoComplete="off"
-          aria-describedby={`${id}-note ${id}-problem`}
+          aria-describedby={`${id}-note ${id}-problem ${id}-status`}
           aria-invalid={problem !== undefined}
           value={typed}
           onInput={(event) => {
@@ -168,61 +254,54 @@ function AddApp({ appLookup, onAdd, onClose }: AddAppProps): JSX.Element {
           pending={appLookup?.state.value.kind === 'finding'}
           class="button button-small"
           type="submit"
-          disabled={typedId === undefined && (slug === undefined || appLookup === undefined)}
+          disabled={
+            readyIsListed ||
+            state.kind === 'finding' ||
+            (ready === undefined && (slug === undefined || appLookup === undefined))
+          }
         >
-          {typedId === undefined ? 'Find' : 'Add'}
+          {ready === undefined ? 'Find' : 'Add'}
         </PendingButton>
         <button class="button button-quiet button-small" type="button" onClick={onClose}>
           Cancel
         </button>
       </div>
-      <p id={`${id}-problem`} class="problem small" role={problem === undefined ? undefined : 'alert'}>
-        {problem ??
-          (state.kind === 'missing'
-            ? `GitHub has no app at github.com/apps/${state.slug} that you can see.`
-            : state.kind === 'failed'
-              ? state.message
-              : undefined)}
-      </p>
-      {state.kind === 'finding' && <p class="muted small">Finding it on GitHub…</p>}
-      {state.kind === 'found' && (
-        <div class="bypass-found">
-          <span>
-            {state.app.name}, app {state.app.id}
-          </span>
-          <button
-            class="button button-small"
-            type="button"
-            onClick={() => {
-              onAdd({ actor_type: 'Integration', actor_id: state.app.id });
-            }}
-          >
-            Add
-          </button>
-        </div>
-      )}
+      <div class="bypass-add-messages">
+        <p id={`${id}-problem`} class="problem small" role="alert">
+          {problem}
+        </p>
+        <p id={`${id}-status`} class="muted small" role="status">
+          {status}
+        </p>
+      </div>
     </form>
   );
 }
 
 interface AddByIdProps {
   readonly form: 'team' | 'custom-role';
+  readonly isListed: (actor: NewBypassActor) => boolean;
   readonly onAdd: (actor: NewBypassActor) => void;
   readonly onClose: () => void;
 }
 
-function AddById({ form, onAdd, onClose }: AddByIdProps): JSX.Element {
+function AddById({ form, isListed, onAdd, onClose }: AddByIdProps): JSX.Element {
   const id = useId();
+  const input = useFocusOnOpen();
   const [typed, setTyped] = useState('');
   const parsed = parseBypassActorId(typed);
-  const problem = typed.trim() !== '' && parsed === undefined ? 'An ID is a whole number.' : undefined;
+  const actor: NewBypassActor | undefined =
+    parsed === undefined ? undefined : { actor_type: form === 'team' ? 'Team' : 'RepositoryRole', actor_id: parsed };
+  const listed = actor !== undefined && isListed(actor);
+  const problem =
+    typed.trim() !== '' && parsed === undefined ? 'An ID is a whole number.' : listed ? alreadyListed : undefined;
   return (
     <form
       class="bypass-add"
       onSubmit={(event) => {
         event.preventDefault();
-        if (parsed !== undefined) {
-          onAdd({ actor_type: form === 'team' ? 'Team' : 'RepositoryRole', actor_id: parsed });
+        if (actor !== undefined && !listed) {
+          onAdd(actor);
         }
       }}
     >
@@ -236,6 +315,7 @@ function AddById({ form, onAdd, onClose }: AddByIdProps): JSX.Element {
       </span>
       <div class="bypass-add-row">
         <input
+          ref={input}
           id={id}
           class="field mono"
           inputMode="numeric"
@@ -247,18 +327,28 @@ function AddById({ form, onAdd, onClose }: AddByIdProps): JSX.Element {
             setTyped(event.currentTarget.value);
           }}
         />
-        <button class="button button-small" type="submit" disabled={parsed === undefined}>
+        <button class="button button-small" type="submit" disabled={actor === undefined || listed}>
           Add
         </button>
         <button class="button button-quiet button-small" type="button" onClick={onClose}>
           Cancel
         </button>
       </div>
-      <p id={`${id}-problem`} class="problem small" role={problem === undefined ? undefined : 'alert'}>
-        {problem}
-      </p>
+      <div class="bypass-add-messages">
+        <p id={`${id}-problem`} class="problem small" role="alert">
+          {problem}
+        </p>
+      </div>
     </form>
   );
+}
+
+type FocusAfterChange = (section: HTMLElement) => HTMLElement | null | undefined;
+
+const focusAddButton: FocusAfterChange = (section) => section.querySelector<HTMLElement>('[data-bypass-focus="add"]');
+
+function rowCheckboxes(section: HTMLElement): HTMLInputElement[] {
+  return [...section.querySelectorAll<HTMLInputElement>('input[data-bypass-row]')];
 }
 
 /**
@@ -274,19 +364,42 @@ export function BypassList({
 }: BypassListProps): JSX.Element {
   const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(new Set());
   const [openForm, setOpenForm] = useState<AddForm | undefined>(undefined);
+  const section = useRef<HTMLElement>(null);
+  const pendingFocus = useRef<{ readonly pick: FocusAfterChange; readonly entryBefore: Entry | undefined } | undefined>(
+    undefined,
+  );
+  // The control that was used is often gone after the change, so the keyboard
+  // is handed to the nearest one left once the list shows the change.
+  useEffect(() => {
+    const pending = pendingFocus.current;
+    if (pending === undefined || pending.entryBefore === entry || section.current === null) {
+      return;
+    }
+    pendingFocus.current = undefined;
+    pending.pick(section.current)?.focus();
+  });
+  const focusAfterRender = (pick: FocusAfterChange): void => {
+    pendingFocus.current = { pick, entryBefore: undefined };
+  };
+  const focusAfterEntryChange = (pick: FocusAfterChange): void => {
+    pendingFocus.current = { pick, entryBefore: entry };
+  };
   const selectAllId = useId();
   const managed = entry['bypass_actors'] !== undefined;
   const actors = bypassActors(entry);
   const appNames = appLookup?.namesById.value ?? new Map<number, string>();
   const listedKeys = new Set(actors.map((actor) => bypassActorKey(actor)));
   const selected = new Set([...selectedKeys].filter((key) => listedKeys.has(key)));
-  const everySelected = actors.length > 0 && selected.size === actors.length;
+  const everySelected = actors.length > 0 && selected.size === listedKeys.size;
+  const isListed = (actor: NewBypassActor): boolean => hasBypassActor(entry, actor);
   const add = (actor: NewBypassActor): void => {
+    focusAfterEntryChange(focusAddButton);
     setOpenForm(undefined);
     appLookup?.reset();
     change(withBypassActorAdded(entry, actor));
   };
   const closeForm = (): void => {
+    focusAfterRender(focusAddButton);
     setOpenForm(undefined);
     appLookup?.reset();
   };
@@ -299,12 +412,16 @@ export function BypassList({
     }
     setSelectedKeys(next);
   };
-  const remove = (keys: ReadonlySet<string>): void => {
+  const remove = (keys: ReadonlySet<string>, firstRemovedIndex: number): void => {
+    focusAfterEntryChange((element) => {
+      const rows = rowCheckboxes(element);
+      return rows[firstRemovedIndex] ?? rows.at(-1) ?? focusAddButton(element);
+    });
     setSelectedKeys(new Set([...selected].filter((key) => !keys.has(key))));
     change(withBypassActorsRemoved(entry, keys));
   };
   return (
-    <section class="settings-group" aria-label="Bypass list" data-entry-field="bypass-list" tabIndex={-1}>
+    <section class="settings-group" aria-label="Bypass list" data-entry-field="bypass-list" tabIndex={-1} ref={section}>
       <div>
         <h2>Bypass list</h2>
         <p class="muted small">
@@ -314,6 +431,11 @@ export function BypassList({
               ? 'Nobody bypasses it. Applying removes every bypass each repository has.'
               : 'Exactly these bypass it on each repository. Applying removes every other bypass.'}
         </p>
+        {managed && (
+          <p class="muted small">
+            Always and Pull requests only record each bypass on GitHub. Exempt skips the rules without recording one.
+          </p>
+        )}
       </div>
       <div class="settings">
         {!managed ? (
@@ -321,7 +443,9 @@ export function BypassList({
             <button
               class="button button-small"
               type="button"
+              data-bypass-focus="manage"
               onClick={() => {
+                focusAfterEntryChange(focusAddButton);
                 change(withBypassListManaged(entry, true, saved));
               }}
             >
@@ -333,29 +457,19 @@ export function BypassList({
             {selected.size > 0 && (
               <div class="bypass-selection">
                 <strong>{selected.size} selected</strong>
-                <select
-                  class="field"
-                  aria-label="Set when the selected ones can bypass"
-                  value=""
-                  onChange={(event) => {
-                    const mode = event.currentTarget.value;
-                    if (isBypassMode(mode)) {
-                      change(withBypassMode(entry, selected, mode));
-                    }
+                <SetModeMenu
+                  onSet={(mode) => {
+                    change(withBypassMode(entry, selected, mode));
                   }}
-                >
-                  <option value="">Set mode…</option>
-                  {bypassModes.map(([mode, label]) => (
-                    <option key={mode} value={mode}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+                />
                 <button
                   class="button button-small"
                   type="button"
                   onClick={() => {
-                    remove(selected);
+                    remove(
+                      selected,
+                      actors.findIndex((actor) => selected.has(bypassActorKey(actor))),
+                    );
                   }}
                 >
                   Remove selected
@@ -364,6 +478,7 @@ export function BypassList({
                   class="button button-quiet button-small"
                   type="button"
                   onClick={() => {
+                    focusAfterRender((element) => element.querySelector<HTMLElement>(`[id="${selectAllId}"]`));
                     setSelectedKeys(new Set());
                   }}
                 >
@@ -378,23 +493,26 @@ export function BypassList({
                     id={selectAllId}
                     type="checkbox"
                     checked={everySelected}
+                    indeterminate={selected.size > 0 && !everySelected}
                     onChange={() => {
                       setSelectedKeys(everySelected ? new Set() : listedKeys);
                     }}
                   />
-                  {everySelected ? 'Deselect all' : 'Select all'}
+                  Select all
                 </label>
               </div>
             )}
-            {actors.map((actor) => {
+            {actors.map((actor, index) => {
               const key = bypassActorKey(actor);
               const { name, kind } = describeBypassActor(actor, appNames);
               const problem = bypassActorProblem(actor, entry['target']);
+              const note = bypassActorNote(actor, entry['target']);
               const mode = typeof actor['bypass_mode'] === 'string' ? actor['bypass_mode'] : 'always';
               return (
-                <div class="bypass-row" key={key}>
+                <div class="bypass-row" key={`${key}#${String(index)}`}>
                   <input
                     type="checkbox"
+                    data-bypass-row={index}
                     checked={selected.has(key)}
                     aria-label={`Select ${name}`}
                     onChange={(event) => {
@@ -409,6 +527,7 @@ export function BypassList({
                         {problem}
                       </span>
                     )}
+                    {note !== undefined && <span class="muted small">{note}</span>}
                   </div>
                   <select
                     class="field"
@@ -437,7 +556,7 @@ export function BypassList({
                     type="button"
                     aria-label={`Remove ${name}`}
                     onClick={() => {
-                      remove(new Set([key]));
+                      remove(new Set([key]), index);
                     }}
                   >
                     Remove
@@ -445,9 +564,9 @@ export function BypassList({
                 </div>
               );
             })}
-            {openForm === 'app' && <AddApp appLookup={appLookup} onAdd={add} onClose={closeForm} />}
+            {openForm === 'app' && <AddApp appLookup={appLookup} isListed={isListed} onAdd={add} onClose={closeForm} />}
             {(openForm === 'team' || openForm === 'custom-role') && (
-              <AddById key={openForm} form={openForm} onAdd={add} onClose={closeForm} />
+              <AddById key={openForm} form={openForm} isListed={isListed} onAdd={add} onClose={closeForm} />
             )}
             <div class="bypass-tools">
               <AddMenu
@@ -464,7 +583,7 @@ export function BypassList({
                   class="button button-quiet button-small"
                   type="button"
                   onClick={() => {
-                    remove(listedKeys);
+                    remove(listedKeys, 0);
                   }}
                 >
                   Remove all
@@ -474,8 +593,12 @@ export function BypassList({
                 class="button button-quiet button-small bypass-leave"
                 type="button"
                 onClick={() => {
+                  focusAfterEntryChange((element) =>
+                    element.querySelector<HTMLElement>('[data-bypass-focus="manage"]'),
+                  );
                   setSelectedKeys(new Set());
-                  closeForm();
+                  setOpenForm(undefined);
+                  appLookup?.reset();
                   change(withBypassListManaged(entry, false, saved));
                 }}
               >
