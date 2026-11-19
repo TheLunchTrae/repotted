@@ -45,7 +45,7 @@ export function useDismissibleMenu(): RefObject<HTMLDetailsElement | null> {
   return menu;
 }
 
-interface AccountMenuProps extends Omit<ShellProps, 'children'> {
+interface AccountMenuProps extends Omit<ShellProps, 'children' | 'status'> {
   readonly holdsPageLinks: boolean;
 }
 
@@ -146,6 +146,8 @@ function AccountMenu({ account, user, router, onSignOut, holdsPageLinks }: Accou
 }
 
 interface ShellProps {
+  /** What the header shows between the pages and the account, such as the queued applies. */
+  readonly status: ComponentChildren;
   readonly account: Account;
   readonly user: User;
   readonly router: Router;
@@ -153,7 +155,7 @@ interface ShellProps {
   readonly children: ComponentChildren;
 }
 
-export function Shell({ account, user, router, onSignOut, children }: ShellProps): JSX.Element {
+export function Shell({ status, account, user, router, onSignOut, children }: ShellProps): JSX.Element {
   const onPhone = usePhone('(max-width: 1100px)');
   return (
     <div class="shell">
@@ -179,7 +181,10 @@ export function Shell({ account, user, router, onSignOut, children }: ShellProps
             </Link>
           </nav>
         )}
-        <AccountMenu account={account} user={user} router={router} onSignOut={onSignOut} holdsPageLinks={onPhone} />
+        <div class="shell-bar-end">
+          {status}
+          <AccountMenu account={account} user={user} router={router} onSignOut={onSignOut} holdsPageLinks={onPhone} />
+        </div>
       </header>
       <main class="shell-main">{children}</main>
     </div>

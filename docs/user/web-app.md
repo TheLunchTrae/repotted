@@ -305,10 +305,42 @@ written, and the page shows what the apply needs now. If GitHub refuses a
 change partway, the changes before it stay written and nothing after it is,
 and the page shows what is left.
 
+Once you click **Apply now**, the apply is [queued](#queued-applies): it
+goes on if you leave the page, and carries on if the tab closes.
+
 An in-progress apply lasts only while this flow is open. Leaving the page
 or reloading discards its one-off edits and exclusions; starting again
 opens a fresh apply. Profile changes you explicitly saved to the profile
 stay saved. Writes already under way finish even if you leave the page.
+
+### Queued applies
+
+**Apply now** adds each repository to a queue, which writes to one
+repository at a time. A card in the header shows how far it is, as in
+**Applying 2 of 5**, on every page, so you can keep working while it runs.
+Click the card to see each repository and what it waits for.
+
+The queue is kept in this browser. If the tab closes or reloads partway,
+open Repotted again and it carries on from where it stopped. Repotted checks
+each repository on GitHub first, as it does for any apply, and writes only
+the changes you reviewed that are still needed. If a repository needs
+anything else by then, nothing more is written to it.
+
+When more than an hour has passed since you clicked **Apply now**, Repotted
+writes nothing by itself. The header shows **Continue with N changes**
+instead: click it to see the repositories and when you queued them, and then
+**Continue** to write them or **Discard** to drop them and leave the
+repositories as they are.
+
+A repository that couldn't be finished after a reload stays in the card,
+with why. **Open repository** goes to it, where you can review an apply
+again. **Try again** writes what is left of a change GitHub refused or
+couldn't be reached for, and **Dismiss** removes the entry and leaves the
+repository as it is. Applying to the repository again replaces the entry.
+
+Signing out discards the queue. If GitHub stops accepting your sign-in
+while the queue runs, what is left waits, and the header offers to continue
+once you sign in again.
 
 ### Keep a repository's profiles
 
@@ -409,7 +441,9 @@ Then the page lists the repositories that didn't finish first, with why, and
 **Review again** plans them again. Those that finished, or needed nothing,
 have left the batch, and the batch ends with the last of them. Leaving the
 page, reloading, or clicking **Discard batch** discards the pending batch.
-Changes already being written to GitHub finish even if you leave the page.
+The repositories you clicked **Apply now** for are [queued](#queued-applies):
+they are written even if you leave the page, and the rest carry on if the tab
+closes.
 
 ### Change settings once on several repositories
 
@@ -979,9 +1013,9 @@ sign out**, **Discard and sign out**, or **Stay signed in**, since signing
 out discards changes that aren't saved. A profile with a draft, or with a
 value that isn't valid, is saved from its own page, so the question stays
 and says so. If the changes are saved but a sync didn't finish, it asks once
-more before signing out. While an apply to one repository or
-several is writing to GitHub, **Sign out** does nothing but say so; press it
-again once the apply has finished. **Profiles** shows where your profiles are kept and how the
+more before signing out. While the [queue](#queued-applies) is writing to
+GitHub, **Sign out** does nothing but say so; press it again once it has
+finished. **Profiles** shows where your profiles are kept and how the
 last sync went, with **Sync now** (or **Refresh** for profiles in the
 browser), and the buttons that move them to a GitHub repository or back to
 the browser. When they're kept in a GitHub repository, **Open on GitHub**

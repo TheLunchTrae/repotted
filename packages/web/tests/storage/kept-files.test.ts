@@ -46,8 +46,12 @@ test('a later visit finds the files as the last one left them', async () => {
   // A branch's preview reads its profiles into files that last only as long as the preview.
   await mkdir('/preview/1/after', { recursive: true });
   await writeFile('/preview/1/after/base.yaml', 'branch');
+  // A queued apply outlasts the visit, so the next one can carry on with it.
+  await mkdir('/queue', { recursive: true });
+  await writeFile('/queue/first.json', 'queued');
   await vi.waitFor(async () => {
     expect(await text(keeper.load())).toEqual({
+      '/queue/first.json': 'queued',
       '/profiles/browser/base.yaml': 'three',
       '/profiles/browser/teams/web.yaml': 'two',
     });
@@ -68,6 +72,7 @@ test('a later visit finds the files as the last one left them', async () => {
 
   expect(await files.readFile('/profiles/browser/base.yaml', 'utf8')).toBe('three');
   expect(await files.readFile('/profiles/browser/teams/web.yaml', 'utf8')).toBe('two');
+  expect(await files.readFile('/queue/first.json', 'utf8')).toBe('queued');
 });
 
 test('the files read as writing from a change until IndexedDB has it, and after a failed write too', async () => {
@@ -88,12 +93,16 @@ test('the files read as writing from a change until IndexedDB has it, and after 
     remove: () => Promise.resolve(),
   };
   vi.stubGlobal('reportError', vi.fn());
-  const { writing } = await keepFiles(keeper, siteLocks());
+  const { writing, settled } = await keepFiles(keeper, siteLocks());
   await mkdir('/profiles', { recursive: true });
   expect(writing.value).toBe(false);
 
   await writeFile('/profiles/a.yaml', 'one');
   await writeFile('/profiles/b.yaml', 'two');
+  let bothSettled = false;
+  const settling = settled().then(() => {
+    bothSettled = true;
+  });
   await vi.waitFor(() => {
     expect(writes).toHaveLength(1);
   });
@@ -105,11 +114,14 @@ test('the files read as writing from a change until IndexedDB has it, and after 
     expect(writes).toHaveLength(2);
   });
   expect(writing.value).toBe(true);
+  expect(bothSettled).toBe(false);
 
   writes[1]?.fail();
   await vi.waitFor(() => {
     expect(writing.value).toBe(false);
   });
+  // What was asked to wait for the changes goes on once they are kept or can't be.
+  await settling;
   vi.unstubAllGlobals();
 });
 

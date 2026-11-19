@@ -33,6 +33,11 @@ async function openFolderProfiles(page: Page): Promise<void> {
 }
 
 const screens: Readonly<Record<string, Screen>> = {
+  'queued applies waiting to continue': {
+    path: '/?queued-applies',
+    reachFromPath: (page) => page.locator('.queue-menu > summary').click(),
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Continue', exact: true }),
+  },
   'shared rulesets': {
     path: '/rulesets',
     visibleOnceDrawn: (page) => page.getByRole('link', { name: /Main Used by 2 profiles/u }),
@@ -575,6 +580,42 @@ test('a batch keeps its reviewed action width while applying', async ({ page }) 
   expect((await apply.boundingBox())?.width).toBe(before?.width);
   await page.evaluate(() => window.dispatchEvent(new Event('release-github')));
   await expect(page.getByText('Every repository is finished, and the batch has ended.')).toBeVisible();
+});
+
+test('a queued apply shows in the header on every page and carries on after a reload', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('checkbox', { name: 'Select lunch/api', exact: true }).check();
+  await page.getByRole('button', { name: 'Review apply', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply to 1 repository', exact: true }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event('hold-github')));
+  await page.getByRole('button', { name: 'Apply now', exact: true }).click();
+  const card = page.locator('.queue-menu > summary');
+  await expect(card).toContainText('1 of 1');
+  await page.getByRole('link', { name: 'Repotted', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Select lunch/api', exact: true })).toBeVisible();
+  await expect(card).toContainText('1 of 1');
+  // The browser has the entry once IndexedDB does, which is what a reload finds.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<number>((resolve) => {
+            const opening = indexedDB.open('repotted');
+            opening.addEventListener('success', () => {
+              const keys = opening.result.transaction('files').objectStore('files').getAllKeys();
+              keys.addEventListener('success', () => {
+                resolve(keys.result.filter((key) => typeof key === 'string' && key.startsWith('/queue/')).length);
+              });
+            });
+          }),
+      ),
+    )
+    .toBe(1);
+
+  await page.reload();
+
+  await expect(page.getByText('Applied to 1 repository.', { exact: true })).toBeVisible();
+  await expect(card).toHaveCount(0);
 });
 
 function elementsPastViewportEdges(): string[] {

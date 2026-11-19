@@ -451,8 +451,22 @@ for each changed profile.
 files under `/apply/<id>/apply.yaml`. Its first step is the profile editor
 over that file, followed by the review. An `EditorStore` gives
 `ProfileEditor` the engine functions that read, preview, and write a profile
-or a staged apply. It reviews with `planStagedApply` and writes with
-`applyPlan`, which plans again and refuses when the repository has changed.
+or a staged apply. It reviews with `planStagedApply` and writes through the
+apply queue.
+
+`apply-queue.ts` makes every write to a repository's setup, for the apply
+page and the batch page alike. An entry is one repository's reviewed plan,
+kept as a file under `/queue` so it outlasts the tab, and the engine plans
+the repository again before it writes, so an entry is safe to run twice.
+Queuing the setup a repository should end up with, not the requests, is what
+lets a cut-off apply carry on: a request may or may not have landed when the
+tab closed, and planning again finds out. The header's card
+(`views/apply/queue-status.tsx`) shows the queue on every page. When the app
+opens with entries left, it carries on by itself if the oldest was queued
+within 60 minutes, and otherwise waits for **Continue with N changes**, so
+that changes someone asked for long ago aren't written the moment they come
+back. The queue needs no lock of its own, since one tab at a time keeps the
+files. [State machines](state-machines.md#web-apply-queue) lists the states.
 
 Pending applies belong to their pages, in the client's in-memory filesystem.
 Leaving discards their files and edits; a write already under way finishes. Each start has its own folder, so
@@ -563,7 +577,9 @@ assignment refuses the old review. Single review-again rebuilds from the
 current assignment; a batch asks for a fresh review. Successful recording
 compares the staged ownership with the saved choice, so a one-time override
 never advances the assignment baseline. A no-change single apply also
-revalidates through `applyPlan` before recording.
+revalidates through the queue before recording. The queue makes that check
+and the record for both flows, from what each entry carries, so they still
+happen for an entry that is finished after a reload.
 
 A review reads source versions before live planning and checks them against
 the versions it would record afterward. A changed source refuses the review,

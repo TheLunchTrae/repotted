@@ -113,8 +113,11 @@ export type Keeping = 'keeping' | 'visit-only' | 'stopped' | 'elsewhere';
 // The file the engine writes beside a file it is replacing, which is gone again at once.
 const temporary = /\/\.[^/]+\.tmp$/u;
 
+/** Kept between visits, so applies that were queued carry on after a reload. */
+export const applyQueueFolder = '/queue';
+
 function isKept(file: string): boolean {
-  return file.startsWith('/profiles/') && !temporary.test(file);
+  return (file.startsWith('/profiles/') || file.startsWith(`${applyQueueFolder}/`)) && !temporary.test(file);
 }
 
 /** Never kept between visits: its files last only as long as the preview. */
@@ -146,12 +149,15 @@ export interface KeptFiles {
   readonly keeping: ReadonlySignal<Keeping>;
   /** A change made in memory isn't kept yet, so closing the tab now would lose it. */
   readonly writing: ReadonlySignal<boolean>;
+  /** Resolves once every change made so far is kept, or can't be. */
+  readonly settled: () => Promise<void>;
 }
 
 export async function keepFiles(keeper: FileKeeper, locks: SiteLocks | undefined): Promise<KeptFiles> {
   const keeping = signal<Keeping>('keeping');
   const waiting = signal(0);
-  const kept: KeptFiles = { keeping, writing: computed(() => waiting.value > 0) };
+  let last = Promise.resolve();
+  const kept: KeptFiles = { keeping, writing: computed(() => waiting.value > 0), settled: () => last };
   // A browser without locks, or one that refuses them as it does a site whose
   // data it blocks, can't say that no other tab keeps the files, so nothing is kept.
   const held = locks === undefined ? undefined : await holdSiteLockUntilTabCloses(locks).catch(() => undefined);
@@ -175,7 +181,6 @@ export async function keepFiles(keeper: FileKeeper, locks: SiteLocks | undefined
       .then(() => writeFile(file, content))
       .catch(() => undefined);
   }
-  let last = Promise.resolve();
   watchFiles((file, content) => {
     if (!isKept(file)) {
       return;

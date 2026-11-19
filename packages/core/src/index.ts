@@ -8,7 +8,7 @@ export { createGitHub, GitHubError, parseRepo } from './github/client.js';
 export type { GitHub } from './github/client.js';
 export { findGitHubApp, gitHubAppSlug } from './github/apps.js';
 export type { FoundGitHubApp } from './github/apps.js';
-export { applyPlan, ApplyError, StalePlanError } from './plan/apply.js';
+export { applyPlan, ApplyError, resumeApply, StalePlanError } from './plan/apply.js';
 export { captureProfile } from './plan/capture.js';
 export { createPlan, OwnerMismatchError, skippedDrafts } from './plan/plan.js';
 export { describeFailure, describeSkipped, describeWarning, failureReason, formatPlan } from './plan/format.js';

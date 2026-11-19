@@ -397,6 +397,16 @@ Writes run one at a time in plan order. If one fails, apply stops and reports
 the changes it already made with the one that failed, as an `ApplyError`, so
 the caller can say where the repository stands.
 
+`resumeApply` finishes an apply that was cut off after it began, as when the
+web app's tab closes partway. Some of the reviewed changes are written by
+then, so the new plan can't be the reviewed one. It plans again and writes
+only when every change of the new plan is one the reviewed plan lists,
+compared whole, and the ownership and exclusions are the reviewed ones. Any
+other change gives a `StalePlanError` and no writes, so it still writes
+nothing a review didn't list. A caller uses it only for a plan that may have
+begun to apply; a plan known not to have begun keeps `applyPlan`'s exact
+comparison.
+
 Keep these properties when you change the plan format or the engine; see the
 Safety section of [AGENTS.md](../../AGENTS.md).
 

@@ -4,6 +4,7 @@ import type { JSX } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Account, User } from '../app/account/account.js';
+import { ApplyQueue } from '../app/apply/apply-queue.js';
 import { Apply } from '../app/apply/apply.js';
 import { BatchApply } from '../app/apply/batch-apply.js';
 import { Comparison } from '../app/apply/comparison.js';
@@ -28,6 +29,7 @@ import { SignIn } from './account/sign-in.js';
 import { ApplyPage } from './apply/apply.js';
 import { BatchPage } from './apply/batch.js';
 import { ComparePage } from './apply/compare.js';
+import { QueueStatus } from './apply/queue-status.js';
 import { Link } from './layout/link.js';
 import { NotificationContext, Toasts } from './layout/notifications.js';
 import { run } from './layout/run.js';
@@ -56,6 +58,8 @@ interface AppProps {
   readonly preferences: BrowserPreferences;
   readonly router: Router;
   readonly keeping: ReadonlySignal<Keeping>;
+  /** Resolves once the files written so far are kept, or can't be. */
+  readonly filesKept: () => Promise<void>;
   readonly folders: LocalFolders;
 }
 
@@ -65,6 +69,7 @@ function SignedIn({
   preferences,
   router,
   keeping,
+  filesKept,
   folders,
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
@@ -77,6 +82,7 @@ function SignedIn({
     comparison,
     apply,
     batch,
+    queue,
     protection,
     preview,
     reviewProfiles,
@@ -96,7 +102,8 @@ function SignedIn({
         });
       }
     });
-    run(shared.use(kept.source.value));
+    const sharedRead = shared.use(kept.source.value);
+    run(sharedRead);
     // Which profiles each repository uses follows the profiles too, since it names them by their paths.
     const assigned = new RepositoryProfiles(shared, kept);
     kept.protectAssignments((files) =>
@@ -104,10 +111,22 @@ function SignedIn({
         assigned.profilesOf(repository).some((path) => files.includes(assigned.fileOf(path))),
       ),
     );
-    const applying = new Apply(github, refused, (work) => kept.write(work), assigned);
-    const batching = new BatchApply(github, refused, assigned, (count) => {
+    const sayApplied = (count: number): void => {
       notifications.show({ message: `Applied to ${count === 1 ? '1 repository' : `${count} repositories`}.` });
+    };
+    // Every write to a repository's setup goes through the one queue, which outlasts the pages that add to it.
+    const queued = new ApplyQueue({
+      github,
+      account: user.login.toLowerCase(),
+      onSignedOut: refused,
+      assignments: assigned,
+      now: Date.now,
+      filesKept,
+      assignmentsLoaded: sharedRead,
+      onApplied: sayApplied,
     });
+    const applying = new Apply(github, refused, (work) => kept.write(work), assigned, queued);
+    const batching = new BatchApply(github, refused, assigned, sayApplied, queued);
     const reviewProfiles = (names: readonly string[]): boolean => {
       const review = reviewAssignedProfiles(names, assigned, kept.folder.value, applying, batching);
       if (review === undefined) {
@@ -126,17 +145,21 @@ function SignedIn({
       // An apply's edits saved to a profile take their turn among the profiles' syncs.
       apply: applying,
       batch: batching,
+      queue: queued,
       protection: new ConfigProtection(github, refused),
       preview: new BranchPreview(github, kept, refused),
       reviewProfiles,
     };
-  }, [account, github, preferences, folders, user, router, notifications]);
+  }, [account, github, preferences, filesKept, folders, user, router, notifications]);
   const address = useMemo(() => new AddressedRepository(repositories, router), [repositories, router]);
   const applyWriting = apply.state.value.kind === 'applying' || batch.state.value.kind === 'applying';
   useEffect(() => {
     run(repositories.load());
     run(profiles.refresh());
   }, [repositories, profiles]);
+  useEffect(() => {
+    run(queue.load());
+  }, [queue]);
   // Looked for once the first list arrives, since it carries each repository's topics.
   const listed = repositories.list.value;
   useEffect(() => {
@@ -212,10 +235,17 @@ function SignedIn({
   }, [title]);
   const [leaving, setLeaving] = useState(false);
   const [signOutBlockedWhileApplyWrites, setSignOutBlockedWhileApplyWrites] = useState(false);
+  // The queue is the account's, so what it still holds goes with the sign-in.
   const leave = (): void => {
-    run(Promise.all([apply.close(), batch.close()]).then(() => account.signOut()));
+    // Asked again here: the queue may have started while the question about unsaved changes was open.
+    if (queue.running.value) {
+      setLeaving(false);
+      setSignOutBlockedWhileApplyWrites(true);
+      return;
+    }
+    run(Promise.all([apply.close(), batch.close(), queue.discardAll()]).then(() => account.signOut()));
   };
-  const writing = apply.state.value.kind === 'applying' || batch.state.value.kind === 'applying';
+  const writing = queue.running.value;
   // Signing out drops what the profiles' editors hold, so unsaved changes are asked about first,
   // and it ends the sign-in an apply that is writing still needs.
   const signOut = (): void => {
@@ -237,7 +267,13 @@ function SignedIn({
       : account.signOutError.value;
   return (
     <NotificationContext.Provider value={notifications}>
-      <Shell account={account} user={user} router={router} onSignOut={signOut}>
+      <Shell
+        status={<QueueStatus queue={queue} router={router} />}
+        account={account}
+        user={user}
+        router={router}
+        onSignOut={signOut}
+      >
         {signOutProblem !== undefined && (
           <p class="notice notice-problem shell-notice" role="alert">
             {signOutProblem}
