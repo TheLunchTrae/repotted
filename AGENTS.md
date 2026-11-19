@@ -39,6 +39,8 @@ under [Text in the web app](#text-in-the-web-app).
 
 - Apply writes only what a reviewed plan lists. It plans again and refuses
   when the result differs; it never executes requests read from a saved plan.
+  Finishing an apply that was cut off partway plans again too, and refuses
+  when the result holds a change the reviewed plan doesn't list.
   Keep that property when you change the plan format or the engine: a new
   member of a change also goes into `savedChange`, as
   [Plans](docs/developer/architecture.md#plans) explains.

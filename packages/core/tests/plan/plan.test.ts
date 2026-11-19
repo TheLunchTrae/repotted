@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 import { parseRepo, repoPath } from '../../src/github/client.js';
-import { ApplyError, applyPlan, StalePlanError } from '../../src/plan/apply.js';
+import { ApplyError, applyPlan, resumeApply, StalePlanError } from '../../src/plan/apply.js';
 import { captureProfile } from '../../src/plan/capture.js';
 import type { Warning } from '../../src/plan/change.js';
 import { describeSkipped, describeWarning, formatPlan } from '../../src/plan/format.js';
@@ -559,6 +559,36 @@ drafts:
     expect(failure instanceof ApplyError ? failure.applied.map((change) => change.target) : []).toEqual([
       'repository settings',
     ]);
+  });
+
+  test('finishes a saved plan that stopped partway, writing only what is left', async () => {
+    const github = new FakeGitHub();
+    const plan = await createPlan(github, repo, {
+      repository: { has_wiki: false },
+      rulesets: [{ name: 'Main', target: 'branch', enforcement: 'active', bypass_actors: [], rules: [] }],
+    });
+    const saved = parsePlan(JSON.parse(JSON.stringify(plan)));
+    github.fail(/^POST /u, new Error('boom'), 1);
+    await rejection(applyPlan(github, saved));
+    const writtenBefore = github.writes.length;
+
+    const finished = await resumeApply(github, saved);
+
+    expect(finished.map((change) => change.target)).toEqual(['Main']);
+    expect(github.writes.slice(writtenBefore).map((call) => call.method)).toEqual(['POST']);
+    expect(await resumeApply(github, saved)).toEqual([]);
+  });
+
+  test('refuses to finish a plan when the repository needs a change the review did not list', async () => {
+    const github = new FakeGitHub();
+    const plan = await createPlan(github, repo, {
+      repository: { has_wiki: false, has_issues: true },
+      labels: [{ name: 'triage', color: 'ededed' }],
+    });
+    github.state.repository['has_issues'] = false;
+
+    expect(await rejection(resumeApply(github, plan))).toBeInstanceOf(StalePlanError);
+    expect(github.writes).toEqual([]);
   });
 
   test('skips rulesets on a plan that does not support them and still plans the rest', async () => {

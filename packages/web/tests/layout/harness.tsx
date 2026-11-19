@@ -5,7 +5,8 @@
 // test sees full pages with no sign-in and no network. `?signed-out` starts it
 // with GitHub refusing the sign-in, which shows the sign-in page.
 // `?config-repositories` gives two repositories the repotted-config topic, which
-// asks which one holds the profiles.
+// asks which one holds the profiles. `?queued-applies` starts it with an apply
+// queued two hours ago, which the header then waits to be asked to continue.
 
 import type { GitHub } from '@repotted/core';
 import { render } from 'preact';
@@ -177,7 +178,7 @@ const session = { signOut: () => Promise.resolve() } as unknown as Session;
 const signIn = new Account(session, github);
 run(signIn.load());
 
-const { keeping } = await keepFiles(
+const { keeping, settled } = await keepFiles(
   browserFiles(() => indexedDB),
   navigator.locks,
 );
@@ -235,6 +236,40 @@ localStorage.setItem(
   }),
 );
 
+if (new URLSearchParams(location.search).has('queued-applies')) {
+  await mkdir('/queue', { recursive: true });
+  await writeFile(
+    '/queue/earlier.json',
+    JSON.stringify({
+      account: account.login,
+      queuedAt: Date.now() - 2 * 60 * 60 * 1000,
+      position: 1,
+      repository: 'lunch/a_repository_name_with_no_hyphens_in_it_at_all',
+      profileName: 'teams/website',
+      hasBegun: false,
+      plan: {
+        repository: 'lunch/a_repository_name_with_no_hyphens_in_it_at_all',
+        desired: { repository: { has_wiki: false } },
+        changes: [
+          {
+            section: 'repository',
+            action: 'update',
+            target: 'repository settings',
+            fields: [{ field: 'has_wiki', from: true, to: false }],
+            request: {
+              method: 'PATCH',
+              path: '/repos/lunch/a_repository_name_with_no_hyphens_in_it_at_all',
+              body: { has_wiki: false },
+            },
+          },
+        ],
+        skipped: [],
+        warnings: [],
+      },
+    }),
+  );
+}
+
 render(
   <App
     account={signIn}
@@ -242,6 +277,7 @@ render(
     preferences={browserPreferences(() => localStorage)}
     router={new Router(location, history, window)}
     keeping={keeping}
+    filesKept={settled}
     folders={browserFolders(
       () => indexedDB,
       () => ('showDirectoryPicker' in window ? window.showDirectoryPicker : undefined),

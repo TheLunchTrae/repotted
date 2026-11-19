@@ -41,6 +41,7 @@ render(
     preferences={browserPreferences(() => localStorage)}
     router={new Router(location, history, window)}
     keeping={kept.keeping}
+    filesKept={kept.settled}
     folders={browserFolders(
       () => indexedDB,
       // Undefined outside Chromium browsers, which is how the app knows to offer no folder.

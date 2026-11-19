@@ -1,11 +1,12 @@
 import { computed, signal } from '@preact/signals';
 import {
-  applyBatch,
+  ApplyError,
   type AuthoritativeSection,
   type BatchPlan,
   copyEditsEverywhere,
   createBatch,
   createStagedApply,
+  describeFailure,
   describeSkipped,
   describeWarning,
   discardBatchMember,
@@ -14,10 +15,10 @@ import {
   type GitHub,
   isBatch,
   leaveOut,
-  type MemberResult,
   planBatch,
   readBatch,
   resolveStagedApply,
+  StalePlanError,
 } from '@repotted/core';
 
 import { mkdir, rm } from '../../engine/files.js';
@@ -28,11 +29,13 @@ import {
   assignmentKey,
   assignmentSource,
   canRecordAssignment,
+  noAssignments,
   type ProfileAssignments,
   reviewedProfileVersions,
 } from '../repositories/assignment-review.js';
 import { profileName, profileVersion } from '../repositories/repository-profiles.js';
 import type { AppliedVersion } from '../repositories/saved-assignments.js';
+import { type ApplyQueue, type AssignmentRecord, pageQueue } from './apply-queue.js';
 import { stagedStore } from './apply.js';
 import { type ComparedProfile, type CompareSection, compareSections, exclusionLabel } from './comparison.js';
 
@@ -131,37 +134,19 @@ function count(amount: number, noun: string): string {
   return amount === 1 ? `1 ${noun}` : `${amount} ${noun}s`;
 }
 
-function resultOf(result: MemberResult): BatchResult {
-  const { repository } = result;
-  switch (result.status) {
-    case 'applied':
-      return { repository, finished: true, said: `${count(result.applied.length, 'change')} written.` };
-    case 'in_line':
-      return { repository, finished: true, said: 'Already in line: nothing to write.' };
-    case 'locked':
-      return { repository, finished: false, said: 'Not written: GitHub would refuse one of its changes.' };
-    case 'left_out':
-      return { repository, finished: false, said: 'Left out of the batch.' };
-    case 'changed':
-      return { repository, finished: false, said: 'Not written: its apply changed since the review.' };
-    case 'stopped':
-      return { repository, finished: false, said: 'Not written: the batch stopped before it.' };
-    case 'stale':
-      return {
-        repository,
-        finished: false,
-        said: 'Not written: the repository changed since the review.',
-      };
-    case 'apply_failed':
-      return {
-        repository,
-        finished: false,
-        // The message's first line says what failed and why; the rest is advice for a terminal.
-        said: `${result.message.split('\n')[0] ?? ''}. ${count(result.applied.length, 'change')} before it ${result.applied.length === 1 ? 'stays' : 'stay'} written, and nothing after it was.`,
-      };
-    case 'failed':
-      return { repository, finished: false, said: cleaned(result.error.message) };
+function failureOf(repository: string, error: unknown): BatchResult {
+  if (error instanceof StalePlanError) {
+    return { repository, finished: false, said: 'Not written: the repository changed since the review.' };
   }
+  if (error instanceof ApplyError) {
+    return {
+      repository,
+      finished: false,
+      // The message's first line says what failed and why; the rest is advice for a terminal.
+      said: `${describeFailure(error).split('\n')[0] ?? ''}. ${count(error.applied.length, 'change')} before it ${error.applied.length === 1 ? 'stays' : 'stay'} written, and nothing after it was.`,
+    };
+  }
+  return { repository, finished: false, said: cleaned(messageOf(error)) };
 }
 
 function membersOf(plan: BatchPlan, assignments: ProfileAssignments | undefined): BatchMemberView[] {
@@ -212,10 +197,9 @@ function membersOf(plan: BatchPlan, assignments: ProfileAssignments | undefined)
 /**
  * The engine's batch holds this page's review in temporary files, discarded
  * when the page is left. Nothing is
- * written to GitHub except by `apply`, which hands the engine the plan of
- * the review that is shown; the engine plans each repository again and
- * writes nothing to one that changed, is locked, or whose apply was edited
- * since.
+ * written to GitHub except by `apply`, which queues the plan of the review
+ * that is shown, one entry for each repository; the engine plans each
+ * repository again and writes nothing to one that changed.
  */
 export class BatchApply {
   readonly state = signal<BatchState>({ kind: 'idle' });
@@ -225,6 +209,7 @@ export class BatchApply {
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
   readonly #assignments: ProfileAssignments | undefined;
+  readonly #queue: ApplyQueue;
   readonly #onApplied: ((repositories: number) => void) | undefined;
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
@@ -241,11 +226,13 @@ export class BatchApply {
     onSignedOut: () => void,
     assignments?: ProfileAssignments,
     onApplied?: (repositories: number) => void,
+    queue: ApplyQueue = pageQueue(github, onSignedOut, assignments ?? noAssignments),
   ) {
     this.#github = github;
     this.#onSignedOut = onSignedOut;
     this.#assignments = assignments;
     this.#onApplied = onApplied;
+    this.#queue = queue;
   }
 
   /** Those with changes and none GitHub would refuse. */
@@ -522,102 +509,82 @@ export class BatchApply {
   }
 
   /**
-   * The engine plans each repository again first and writes nothing to one
-   * that changed since the review, has a change GitHub would refuse, was left
-   * out, or whose apply was edited since. A repository that finishes leaves
-   * the batch, which ends with its last one.
+   * Every repository without a change GitHub would refuse is queued at once,
+   * in the batch's order, and the page waits for each. The engine plans each
+   * again first and writes nothing to one that changed since the review. A
+   * repository that finishes leaves the batch, which ends with its last one.
    */
   async apply(): Promise<void> {
     const state = this.state.value;
-    if (state.kind !== 'reviewed' || (this.ready.value.length === 0 && !this.canRecordWithoutChanges.value)) {
+    const folder = this.#folder;
+    if (
+      state.kind !== 'reviewed' ||
+      folder === undefined ||
+      (this.ready.value.length === 0 && !this.canRecordWithoutChanges.value)
+    ) {
       return;
     }
     const { plan, profileName: profile } = state;
     const addToRepositoryProfiles = this.addToRepositoryProfiles.peek();
-    const folder = this.#folder;
-    if (folder === undefined) {
-      return;
-    }
     const turn = (this.#turn += 1);
     const results: BatchResult[] = [];
     const records: Promise<boolean>[] = [];
-    let signedOut = false;
-    const lostSignIn = (): void => {
-      if (!signedOut) {
-        signedOut = true;
-        this.#onSignedOut();
-      }
-    };
     this.state.value = { kind: 'applying', profileName: profile, total: plan.plans.length, results };
+    const recordOf = (member: BatchPlan['plans'][number]): AssignmentRecord | undefined => {
+      const versions = state.appliedVersions.get(member.repository);
+      const addition = state.additions.get(member.repository);
+      return versions !== undefined
+        ? { kind: 'applied', versions: [...versions], notify: false }
+        : addition !== undefined && addToRepositoryProfiles
+          ? { kind: 'added', profile: addition.profile, version: addition.version, notify: false }
+          : undefined;
+    };
+    const queued = plan.plans.map((member) =>
+      member.locks.length > 0
+        ? undefined
+        : this.#queue
+            .add({
+              repository: member.repository,
+              profileName: profile,
+              plan: member,
+              assignmentKey: state.assignments.get(member.repository),
+              record: recordOf(member),
+            })
+            .then(
+              (outcome) => ({ outcome }),
+              (error: unknown) => ({ error }),
+            ),
+    );
     try {
-      await applyBatch(
-        this.#github,
-        {
-          batch: plan.batch,
-          id: plan.id,
-          plans: plan.plans.map((member) => ({
-            repository: member.repository,
-            file: member.file,
-            digest: member.digest,
-            locks: member.locks,
-            plan: member,
-          })),
-        },
-        {
-          beforeApply: (repository) => {
-            const reviewed = state.assignments.get(repository);
-            if (
-              reviewed !== undefined &&
-              this.#assignments !== undefined &&
-              reviewed !== assignmentKey(this.#assignments, repository)
-            ) {
-              throw new Error('The repository assignment changed since review. Start a new batch review.');
-            }
-          },
-          onResult: (result) => {
-            const versions = state.appliedVersions.get(result.repository);
-            const addition = state.additions.get(result.repository);
-            if (
-              (result.status === 'applied' || result.status === 'in_line') &&
-              addition !== undefined &&
-              addToRepositoryProfiles &&
-              this.#assignments !== undefined
-            ) {
-              records.push(this.#assignments.recordAdded(result.repository, addition.profile, addition.version, false));
-            }
-            if (
-              (result.status === 'applied' || result.status === 'in_line') &&
-              versions !== undefined &&
-              this.#assignments !== undefined
-            ) {
-              records.push(
-                this.#assignments.recordApplied(
-                  result.repository,
-                  versions,
-                  plan.plans.find((member) => member.repository === result.repository)?.authoritative ?? [],
-                  false,
-                ),
-              );
-            }
-            results.push(resultOf(result));
-            if (turn === this.#turn) {
-              this.state.value = {
-                kind: 'applying',
-                profileName: profile,
-                total: plan.plans.length,
-                results: [...results],
-              };
-            }
-            // The rest are still tried, and fail the same way, so the account is signed out once.
-            if (
-              (result.status === 'failed' && result.error.kind === 'signed_out') ||
-              (result.status === 'apply_failed' && isSignedOut(result.cause))
-            ) {
-              lostSignIn();
-            }
-          },
-        },
-      );
+      for (const [index, member] of plan.plans.entries()) {
+        const { repository } = member;
+        const settled = await queued[index];
+        if (settled === undefined) {
+          results.push({ repository, finished: false, said: 'Not written: GitHub would refuse one of its changes.' });
+        } else if ('error' in settled) {
+          results.push(failureOf(repository, settled.error));
+        } else {
+          records.push(settled.outcome.recorded);
+          // The repository is in line now; a failure to end its staged apply only leaves it to plan again.
+          await discardBatchMember(folder, repository).catch(() => undefined);
+          results.push({
+            repository,
+            finished: true,
+            said:
+              member.changes.length > 0
+                ? `${count(settled.outcome.applied.length, 'change')} written.`
+                : 'Already in line: nothing to write.',
+          });
+        }
+        if (turn === this.#turn) {
+          this.state.value = {
+            kind: 'applying',
+            profileName: profile,
+            total: plan.plans.length,
+            results: [...results],
+          };
+        }
+      }
       const left = (await this.#held(folder)) ? (await readBatch(folder)).members.length : 0;
       if (left === 0) {
         await rm(dirname(folder), { recursive: true, force: true });
@@ -639,9 +606,6 @@ export class BatchApply {
         this.#onApplied?.(results.length);
       }
     } catch (error) {
-      if (isSignedOut(error)) {
-        lostSignIn();
-      }
       this.state.value = {
         kind: 'failed',
         profileName: profile,

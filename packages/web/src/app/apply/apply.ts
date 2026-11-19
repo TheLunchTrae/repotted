@@ -3,7 +3,6 @@ import {
   type AppAccess,
   type AuthoritativeSection,
   ApplyError,
-  applyPlan,
   createStagedApply,
   describeFailure,
   describeSkipped,
@@ -37,6 +36,7 @@ import {
 } from '../repositories/assignment-review.js';
 import { profileName, profileVersion } from '../repositories/repository-profiles.js';
 import type { AppliedVersion } from '../repositories/saved-assignments.js';
+import { type ApplyQueue, type AssignmentRecord, pageQueue } from './apply-queue.js';
 import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
 
 export interface Reviewed {
@@ -131,21 +131,26 @@ export class Apply {
 
   readonly #writeProfile: (work: () => Promise<void>) => Promise<void>;
   readonly #assignments: ProfileAssignments;
+  readonly #queue: ApplyQueue;
 
   /**
    * `writeProfile` gives a write to a profile's file its turn among the
-   * profiles' syncs, as a save of the profile has.
+   * profiles' syncs, as a save of the profile has. `queue` writes the
+   * reviewed plan to GitHub; without one, the apply has a queue of its own
+   * that lasts as long as the page.
    */
   constructor(
     github: GitHub,
     onSignedOut: () => void,
     writeProfile: (work: () => Promise<void>) => Promise<void> = (work) => work(),
     assignments: ProfileAssignments = noAssignments,
+    queue: ApplyQueue = pageQueue(github, onSignedOut, assignments),
   ) {
     this.#github = github;
     this.#onSignedOut = onSignedOut;
     this.#writeProfile = writeProfile;
     this.#assignments = assignments;
+    this.#queue = queue;
   }
 
   readonly counts = computed(() => {
@@ -438,10 +443,11 @@ export class Apply {
   }
 
   /**
-   * The engine plans again first and writes only when that gives the same
-   * changes, so a repository that changed since the review gets nothing
-   * written and a fresh review. A change GitHub refuses partway leaves the
-   * ones before it written, and the review that follows shows what is left.
+   * The reviewed plan is queued, and the page waits for it. The engine plans
+   * again first and writes only when that gives the same changes, so a
+   * repository that changed since the review gets nothing written and a fresh
+   * review. A change GitHub refuses partway leaves the ones before it written,
+   * and the review that follows shows what is left.
    */
   async apply(): Promise<void> {
     const state = this.state.value;
@@ -455,16 +461,13 @@ export class Apply {
     }
     await this.#work(state.repository, state.profileName, 'applying', async (_current, file) => {
       try {
-        const written = await applyPlan(this.#github, plan, () =>
-          this.#checkAssignment(state.repository, state.assignmentKey),
-        );
-        this.#recordAssignment(state);
+        const written = await this.#queue.add(this.#request(state, plan));
         await rm(dirname(file), { recursive: true, force: true });
         return {
           kind: 'applied',
           repository: state.repository,
           profileName: state.profileName,
-          changes: written.length,
+          changes: written.applied.length,
         };
       } catch (error) {
         if (error instanceof StalePlanError) {
@@ -495,7 +498,7 @@ export class Apply {
     }
     await this.#work(state.repository, state.profileName, 'applying', async (_current, file) => {
       try {
-        await applyPlan(this.#github, state.plan, () => this.#checkAssignment(state.repository, state.assignmentKey));
+        await this.#queue.add(this.#request(state, state.plan));
       } catch (error) {
         if (error instanceof StalePlanError) {
           return this.#review(
@@ -506,7 +509,6 @@ export class Apply {
         }
         throw error;
       }
-      this.#recordAssignment(state);
       await rm(dirname(file), { recursive: true, force: true });
       return { kind: 'applied', repository: state.repository, profileName: state.profileName, changes: 0 };
     });
@@ -518,17 +520,26 @@ export class Apply {
     }
   }
 
-  #recordAssignment(state: Reviewed & { readonly repository: string }): void {
+  #request(state: Reviewed & Target, plan: Plan) {
     const [added] = state.appliedVersions;
-    if (state.assignment.kind === 'own' && state.assignment.recordsVersions) {
-      this.#assignments
-        .recordApplied(state.repository, state.appliedVersions, state.plan.authoritative ?? [])
-        .catch(() => undefined);
-    } else if (state.assignment.kind === 'add' && this.addToRepositoryProfiles.peek() && added !== undefined) {
-      this.#assignments
-        .recordAdded(state.repository, added.profile, state.assignment.recordsVersions ? added.version : undefined)
-        .catch(() => undefined);
-    }
+    const record: AssignmentRecord | undefined =
+      state.assignment.kind === 'own' && state.assignment.recordsVersions
+        ? { kind: 'applied', versions: [...state.appliedVersions], notify: true }
+        : state.assignment.kind === 'add' && this.addToRepositoryProfiles.peek() && added !== undefined
+          ? {
+              kind: 'added',
+              profile: added.profile,
+              version: state.assignment.recordsVersions ? added.version : undefined,
+              notify: true,
+            }
+          : undefined;
+    return {
+      repository: state.repository,
+      profileName: state.profileName,
+      plan,
+      assignmentKey: state.assignmentKey,
+      record,
+    };
   }
 
   /** Leaving discards the pending apply, but a write already under way finishes. */

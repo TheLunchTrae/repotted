@@ -62,22 +62,10 @@ async function replan(github: GitHub, reviewed: Plan): Promise<Plan> {
   return current;
 }
 
-/**
- * Applies a reviewed plan. The repository is planned again first, and the
- * plan only runs when that yields exactly the reviewed changes.
- */
-export async function applyPlan(github: GitHub, reviewed: Plan, beforeWrite?: () => void): Promise<readonly Change[]> {
-  const current = await replan(github, reviewed);
-  if (
-    !isDeepEqual(jsonValue(current.changes), jsonValue(reviewed.changes)) ||
-    !isDeepEqual(current.authoritative ?? [], reviewed.authoritative ?? []) ||
-    !isDeepEqual(current.exclude ?? [], reviewed.exclude ?? [])
-  ) {
-    throw new StalePlanError(current);
-  }
+async function writeChanges(github: GitHub, changes: readonly Change[], beforeWrite?: () => void): Promise<Change[]> {
   beforeWrite?.();
   const applied: Change[] = [];
-  for (const change of current.changes) {
+  for (const change of changes) {
     try {
       await github.request(change.request.method, change.request.path, change.request.body);
     } catch (error) {
@@ -86,4 +74,49 @@ export async function applyPlan(github: GitHub, reviewed: Plan, beforeWrite?: ()
     applied.push(change);
   }
   return applied;
+}
+
+function hasReviewedOwnership(current: Plan, reviewed: Plan): boolean {
+  return (
+    isDeepEqual(current.authoritative ?? [], reviewed.authoritative ?? []) &&
+    isDeepEqual(current.exclude ?? [], reviewed.exclude ?? [])
+  );
+}
+
+/**
+ * Applies a reviewed plan. The repository is planned again first, and the
+ * plan only runs when that yields exactly the reviewed changes.
+ */
+export async function applyPlan(github: GitHub, reviewed: Plan, beforeWrite?: () => void): Promise<readonly Change[]> {
+  const current = await replan(github, reviewed);
+  if (
+    !isDeepEqual(jsonValue(current.changes), jsonValue(reviewed.changes)) ||
+    !hasReviewedOwnership(current, reviewed)
+  ) {
+    throw new StalePlanError(current);
+  }
+  return writeChanges(github, current.changes, beforeWrite);
+}
+
+/**
+ * Finishes an apply of a reviewed plan that was cut off after it began, so
+ * some of its changes may be written already. The repository is planned
+ * again, and what is left only runs when every change of the new plan is one
+ * the reviewed plan lists, whole.
+ */
+export async function resumeApply(
+  github: GitHub,
+  reviewed: Plan,
+  beforeWrite?: () => void,
+): Promise<readonly Change[]> {
+  const current = await replan(github, reviewed);
+  const reviewedChanges = reviewed.changes.map(jsonValue);
+  const isReviewed = (change: Change): boolean => {
+    const left = jsonValue(change);
+    return reviewedChanges.some((listed) => isDeepEqual(listed, left));
+  };
+  if (!current.changes.every(isReviewed) || !hasReviewedOwnership(current, reviewed)) {
+    throw new StalePlanError(current);
+  }
+  return writeChanges(github, current.changes, beforeWrite);
 }

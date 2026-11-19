@@ -38,6 +38,9 @@
   ruleset, environment, or label names that entry.
 - **Apply**: making a reviewed plan's changes. Apply plans again first and
   writes only when that yields the same changes.
+- **Apply queue**: the web app's list of reviewed plans waiting to be
+  written, one for each repository, kept in the browser so that an apply cut
+  off by a closed tab carries on.
 - **Stale plan**: a plan the repository has drifted from since it was made.
   Apply refuses it.
 - **Staged apply**: one apply to one repository, prepared as a file: the

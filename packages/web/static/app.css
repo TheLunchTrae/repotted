@@ -836,8 +836,67 @@ input[type='checkbox']:disabled {
   color: var(--fg);
 }
 
-.account-menu {
+.shell-bar-end {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-inline-start: auto;
+}
+
+.queue-menu > summary {
+  white-space: nowrap;
+}
+
+.queue-menu > summary.button::after {
+  content: none;
+}
+
+.queue-panel {
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100dvh - 72px);
+  overflow-y: auto;
+}
+
+.queue-progress {
+  width: 100%;
+  accent-color: var(--rail);
+}
+
+.queue-held {
+  display: grid;
+  gap: 8px;
+  padding: 6px 10px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.queue-held p {
+  margin: 0;
+}
+
+.queue-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.queue-row {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+}
+
+.queue-problem {
+  color: var(--remove);
+}
+
+.queue-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .account-menu > .menu-panel {
@@ -2818,8 +2877,21 @@ select.field {
   }
 
   .shell-bar {
+    position: relative;
     gap: 12px;
     padding: 10px 16px;
+  }
+
+  /* The panel hangs from the bar, since the card isn't at the bar's end, where a panel as wide as a phone would fit. */
+  .queue-menu {
+    position: static;
+  }
+
+  .queue-panel {
+    top: calc(100% - 4px);
+    right: 16px;
+    left: 16px;
+    width: auto;
   }
 
   .shell-notice {

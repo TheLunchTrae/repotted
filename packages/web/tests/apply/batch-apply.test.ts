@@ -234,7 +234,7 @@ test('a repository GitHub would refuse a change in needs access, and is not writ
   expect(await pending()).toEqual([]);
 });
 
-test('a sign-in lost while writing signs out once, and a batch that ended has nothing to review again', async () => {
+test('a sign-in lost while writing signs out once and tries no other repository, and a batch that ended has nothing to review again', async () => {
   await saved();
   const { github, of } = fleet('lunch/app', 'lunch/api');
   let signedOut = 0;
@@ -243,11 +243,11 @@ test('a sign-in lost while writing signs out once, and a batch that ended has no
   });
   await batch.start(['lunch/app', 'lunch/api'], profile);
   of('lunch/app').fail('PATCH /repos/lunch/app', answered(401, 'Bad credentials'), 1);
-  of('lunch/api').fail('PATCH /repos/lunch/api', answered(401, 'Bad credentials'), 1);
 
   await batch.apply();
 
   expect(signedOut).toBe(1);
+  expect(writes(of('lunch/api'))).toEqual([]);
   expect(batch.state.value).toMatchObject({ kind: 'applied', left: 2 });
   await batch.reviewAgain();
   await batch.apply();
