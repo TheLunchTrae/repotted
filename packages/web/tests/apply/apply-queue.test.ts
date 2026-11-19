@@ -190,7 +190,7 @@ test('after an hour nothing is written until it is continued', async () => {
   });
 
   expect(statuses(queue)).toEqual(['lunch/app held', 'lunch/api held']);
-  expect(queue.held.value).toEqual({ repositories: 2, changes: 4, since: queuedAt });
+  expect(queue.held.value).toEqual({ repositories: 2, changes: 4, since: queuedAt, signInLost: false });
   expect(queue.running.value).toBe(false);
   expect([...writes(app), ...writes(api)]).toEqual([]);
 
@@ -306,6 +306,7 @@ test('a lost sign-in stops the queue once, and what is left stays kept and waits
     await next.queue.load();
     expect(statuses(next.queue)).toEqual(['lunch/app held', 'lunch/api held']);
   });
+  expect(next.queue.held.value?.signInLost).toBe(true);
   await new Promise((resolve) => {
     setTimeout(resolve, 0);
   });

@@ -58,7 +58,7 @@ const savedEntry = z.object({
    * ends having written nothing. A tab that closes in between can't say, so the entry then counts as begun.
    */
   hasBegun: z.boolean(),
-  /** Waits to be asked for, as after GitHub refused the sign-in. An entry too old when the app opens waits too. */
+  /** Waits to be asked for because GitHub refused the sign-in. An entry too old when the app opens waits too, which its age says. */
   held: z.optional(z.boolean()),
   assignmentKey: z.optional(z.string()),
   record: z.optional(savedRecord),
@@ -69,6 +69,8 @@ interface Entry extends Omit<z.infer<typeof savedEntry>, 'plan'> {
   readonly id: string;
   readonly plan: Plan;
   readonly held: boolean;
+  /** Held because a sign-in ended, which is the only hold that is kept: an age is read from when it was queued. */
+  readonly signInLost: boolean;
 }
 
 export interface QueuedApply {
@@ -201,6 +203,7 @@ export class ApplyQueue {
           repositories: held.length,
           changes: held.reduce((sum, entry) => sum + entry.plan.changes.length, 0),
           since: Math.min(...held.map((entry) => entry.queuedAt)),
+          signInLost: held.some((entry) => entry.signInLost),
         };
   });
 
@@ -244,7 +247,7 @@ export class ApplyQueue {
     try {
       const saved = savedEntry.parse(JSON.parse(await readFile(fileOf(id), 'utf8')));
       return saved.account === this.#options.account
-        ? { ...saved, id, plan: parsePlan(saved.plan), held: saved.held === true }
+        ? { ...saved, id, plan: parsePlan(saved.plan), held: saved.held === true, signInLost: saved.held === true }
         : undefined;
     } catch {
       return undefined;
@@ -280,6 +283,7 @@ export class ApplyQueue {
       record: request.record,
       problem: undefined,
       held: false,
+      signInLost: false,
     };
     // A new apply of a repository replaces one of it that waits to be asked for, or that left a problem to look at.
     const replaced = this.#entries.value.filter(
@@ -303,7 +307,7 @@ export class ApplyQueue {
 
   async continueHeld(): Promise<void> {
     const held = this.#entries.value.filter((entry) => entry.held);
-    this.#entries.value = this.#entries.value.map((entry) => ({ ...entry, held: false }));
+    this.#entries.value = this.#entries.value.map((entry) => ({ ...entry, held: false, signInLost: false }));
     this.#run();
     await Promise.all(held.map((entry) => this.#keepIfQueued(entry.id)));
   }
@@ -355,9 +359,9 @@ export class ApplyQueue {
   }
 
   async #keep(entry: Entry): Promise<void> {
-    const { id: _id, ...saved } = entry;
+    const { id: _id, signInLost, ...saved } = entry;
     await mkdir(applyQueueFolder, { recursive: true });
-    await writeFile(fileOf(entry.id), JSON.stringify(saved));
+    await writeFile(fileOf(entry.id), JSON.stringify({ ...saved, held: entry.held && signInLost }));
   }
 
   #next(): Entry | undefined {
@@ -436,7 +440,12 @@ export class ApplyQueue {
         const left = this.#entries.value.filter((other) => other.problem === undefined);
         this.#entries.value = this.#entries.value.map((other) =>
           other.problem === undefined
-            ? { ...other, hasBegun: other.id === entry.id ? hasBegun : other.hasBegun, held: true }
+            ? {
+                ...other,
+                hasBegun: other.id === entry.id ? hasBegun : other.hasBegun,
+                held: true,
+                signInLost: true,
+              }
             : other,
         );
         this.#options.onSignedOut();

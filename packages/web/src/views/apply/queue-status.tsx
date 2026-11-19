@@ -115,15 +115,22 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
           [`${Math.min(progress.finished + 1, progress.total)} of ${progress.total}`, false],
         ]
       : held !== undefined
-        ? [
-            ['Continue', false],
-            [` with ${heldAmount}`, true],
-          ]
-        : [
-            [String(problems), false],
-            [problems === 1 ? ' apply' : ' applies', true],
-            [' not finished', false],
-          ];
+        ? narrow
+          ? // Not the word on the panel's button, since this one only opens the panel.
+            [
+              [heldAmount.split(' ')[0] ?? '', false],
+              [` ${heldAmount.split(' ')[1] ?? ''}`, true],
+              [' waiting', false],
+            ]
+          : [[`Continue with ${heldAmount}`, false]]
+        : problems > 0
+          ? [
+              [String(problems), false],
+              [problems === 1 ? ' apply' : ' applies', true],
+              [' not finished', false],
+            ]
+          : // Queued a moment ago, before its turn comes.
+            [['Starting', false]];
   // Said once for each turn the queue takes, not for each repository it finishes.
   const announcement =
     progress !== undefined
@@ -148,7 +155,15 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
       {applies.length > 0 && (
         <details class="menu queue-menu" ref={menu}>
           <summary
-            class={`button button-small${progress === undefined && held !== undefined ? ' button-primary' : ''}`}
+            class={`button button-small${
+              progress !== undefined
+                ? ''
+                : held !== undefined
+                  ? ' button-primary'
+                  : problems > 0
+                    ? ' queue-summary-problem'
+                    : ''
+            }`}
           >
             {progress !== undefined && <Spinner />}
             <span>
@@ -158,6 +173,11 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
                 </span>
               ))}
             </span>
+            {problems > 0 && (progress !== undefined || held !== undefined) && (
+              <span class="queue-problem-mark">
+                <span class="visually-hidden">, {count(problems, 'apply', 'applies')} not finished</span>
+              </span>
+            )}
           </summary>
           <div
             class="menu-panel menu-panel-end queue-panel"
@@ -176,7 +196,7 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
                 </span>
               )}
             </p>
-            {progress !== undefined && (
+            {progress !== undefined && progress.total > 1 && (
               <progress
                 class="queue-progress"
                 max={progress.total}
@@ -187,9 +207,12 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
             {held !== undefined && (
               <div class="queue-held">
                 <p class="small">
-                  Queued {new Date(held.since).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}, and not
-                  finished. Nothing is written until you continue. Each repository is checked first, and gets only the
-                  changes you reviewed.
+                  Queued {new Date(held.since).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })},{' '}
+                  {held.signInLost
+                    ? 'and stopped when GitHub no longer accepted your sign-in.'
+                    : 'and not finished within an hour.'}{' '}
+                  Nothing is written until you continue. Each repository is checked first, and gets only the changes you
+                  reviewed.
                 </p>
                 <p class="queue-row-actions">
                   <button
