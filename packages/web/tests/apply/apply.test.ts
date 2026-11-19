@@ -1,8 +1,10 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
+import { pageQueue } from '../../src/app/apply/apply-queue.js';
 import { Apply } from '../../src/app/apply/apply.js';
 import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
+import { noAssignments } from '../../src/app/repositories/assignment-review.js';
 import { mkdir, readFile, readdir, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
@@ -275,6 +277,48 @@ test('another apply started while one writes takes the page, and the first ends 
   await apply.apply();
   expect(apply.state.value).toMatchObject({ kind: 'applied', repository: 'lunch/other' });
   expect(applied).toHaveBeenCalledOnce();
+});
+
+test('an apply that fails after its page moved on is the queue’s to say, and is not reviewed again', async () => {
+  await saved();
+  await writeFile('/profiles/other.yaml', 'repository:\n  has_issues: false\n');
+  const app = new GitHubWithHeldReads();
+  app.fail('PATCH /repos/lunch/app', answered(422, 'Validation Failed'), 1);
+  const other = new FakeGitHub({}, 'lunch/other');
+  const github = { request: fleet(app, other) };
+  const queue = pageQueue(github, () => undefined, noAssignments);
+  const apply = new Apply(github, () => undefined, undefined, undefined, queue);
+  await apply.start('lunch/app', profile);
+  await apply.review();
+
+  app.hold();
+  const writing = apply.apply();
+  await vi.waitFor(() => {
+    expect(queue.applies.value).toMatchObject([{ status: 'writing' }]);
+  });
+  await apply.start('lunch/other', { file: '/profiles/other.yaml', name: 'other', folder: '/profiles' });
+  await app.release();
+  await writing;
+
+  expect(queue.applies.value).toMatchObject([{ repository: 'lunch/app', status: 'failed' }]);
+  expect(app.calls.at(-1)).toMatchObject({ method: 'PATCH' });
+  expect(await pending()).toHaveLength(1);
+});
+
+test('a failure shown on the page that waited is not kept in the queue', async () => {
+  await saved();
+  const app = new FakeGitHub();
+  app.fail('PATCH /repos/lunch/app', answered(422, 'Validation Failed'), 1);
+  const queue = pageQueue(app, () => undefined, noAssignments);
+  const apply = new Apply(app, () => undefined, undefined, undefined, queue);
+  await apply.start('lunch/app', profile);
+  await apply.review();
+
+  await apply.apply();
+
+  expect(apply.state.value).toMatchObject({ kind: 'reviewed' });
+  expect(queue.applies.value).toEqual([]);
+  expect(await readdir('/queue', { withFileTypes: true })).toEqual([]);
 });
 
 test('a failed review can be edited or tried again while its page is open', async () => {

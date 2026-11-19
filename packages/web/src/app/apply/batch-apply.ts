@@ -231,7 +231,6 @@ export class BatchApply {
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
   /** The repositories of the batch being applied. */
-  #queued: readonly string[] = [];
   #folder: string | undefined;
   #assigned = new Map<string, string>();
   /**
@@ -549,7 +548,6 @@ export class BatchApply {
     const results: BatchResult[] = [];
     const records: Promise<boolean>[] = [];
     this.state.value = { kind: 'applying', profileName: profile, total: plan.plans.length, results };
-    this.#queued = plan.plans.map((member) => member.repository);
     const recordOf = (member: BatchPlan['plans'][number]): AssignmentRecord | undefined => {
       const versions = state.appliedVersions.get(member.repository);
       const addition = state.additions.get(member.repository);
@@ -563,13 +561,16 @@ export class BatchApply {
       member.locks.length > 0
         ? undefined
         : this.#queue
-            .add({
-              repository: member.repository,
-              profileName: profile,
-              plan: member,
-              assignmentKey: state.assignments.get(member.repository),
-              record: recordOf(member),
-            })
+            .add(
+              {
+                repository: member.repository,
+                profileName: profile,
+                plan: member,
+                assignmentKey: state.assignments.get(member.repository),
+                record: recordOf(member),
+              },
+              this,
+            )
             .then(
               (outcome) => ({ outcome }),
               (error: unknown) => ({ error }),
@@ -613,6 +614,8 @@ export class BatchApply {
       const left = (await this.#held(folder)) ? (await readBatch(folder)).members.length : 0;
       if (left === 0) {
         await rm(dirname(folder), { recursive: true, force: true });
+      }
+      if (left === 0 && turn === this.#turn) {
         this.#edits = undefined;
         this.editor.value = undefined;
       }
@@ -624,6 +627,7 @@ export class BatchApply {
         return;
       }
       this.state.value = { kind: 'applied', profileName: profile, results: ordered, left };
+      const shown = this.#queue.shownBy(this);
       if (
         plan.failures.length === 0 &&
         results.length > 0 &&
@@ -632,15 +636,20 @@ export class BatchApply {
       ) {
         this.#onApplied?.(results.length);
       }
+      await shown;
     } catch (error) {
-      if (turn === this.#turn) {
-        this.state.value = {
-          kind: 'failed',
-          profileName: profile,
-          hasBatchToReviewAgain: await this.#held(folder),
-          message: cleaned(messageOf(error)),
-        };
+      if (turn !== this.#turn) {
+        await rm(dirname(folder), { recursive: true, force: true });
+        return;
       }
+      // How each repository ended is lost with the results, so the queue says it.
+      this.#queue.letGo(this);
+      this.state.value = {
+        kind: 'failed',
+        profileName: profile,
+        hasBatchToReviewAgain: await this.#held(folder),
+        message: cleaned(messageOf(error)),
+      };
     }
   }
 
@@ -660,7 +669,7 @@ export class BatchApply {
     this.editor.value = undefined;
     this.#assigned = new Map();
     this.state.value = { kind: 'idle' };
-    this.#queue.letGo(this.#queued);
+    this.#queue.letGo(this);
   }
 
   /** Leaving discards the pending batch, but a write already under way finishes. */

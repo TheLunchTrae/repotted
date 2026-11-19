@@ -75,8 +75,8 @@ function SignedIn({
   user,
 }: AppProps & { readonly user: User }): JSX.Element {
   const notifications = useMemo(() => new Notifications(), []);
-  // The top page of the section an apply was started in: Settings for one that protects the config repository.
-  const applyStartedIn = useRef('/');
+  // The top page of the section each page's apply was started in: Settings for one that protects the config repository.
+  const applyStartedIn = useRef({ '/apply': '/', '/batch': '/' });
   const {
     repositories,
     profiles,
@@ -129,11 +129,11 @@ function SignedIn({
       onApplied: sayApplied,
     });
     // An apply that is written whole has nothing left to show, so its page gives way to its section's top page.
-    const backToSection = (page: Apply | BatchApply, path: string, count: number): void => {
+    const backToSection = (page: Apply | BatchApply, path: '/apply' | '/batch', count: number): void => {
       sayApplied(count);
       run(page.close());
       if (router.path.peek() === path) {
-        router.go(applyStartedIn.current, { landOnTop: true, withoutAsking: true });
+        router.go(applyStartedIn.current[path], { landOnTop: true, withoutAsking: true });
       }
     };
     const applying: Apply = new Apply(
@@ -161,6 +161,7 @@ function SignedIn({
         return false;
       }
       run(review.work);
+      applyStartedIn.current[review.path] = '/';
       router.go(review.path);
       return true;
     };
@@ -232,11 +233,6 @@ function SignedIn({
     };
   }, [profiles, apply, batch]);
   const path = router.path.value;
-  useEffect(() => {
-    if (path !== '/apply' && path !== '/batch') {
-      applyStartedIn.current = path === '/settings' ? '/settings' : '/';
-    }
-  }, [path]);
   // The page that waits for its apply says how far it is, so the header's card would say it twice.
   const waitingOnItsPage =
     (path === '/apply' && apply.state.value.kind === 'applying') ||
@@ -373,14 +369,17 @@ function SignedIn({
                   }
                 }),
               );
+              applyStartedIn.current['/batch'] = '/';
               router.go('/batch');
             }}
             onApply={(repository, profile) => {
               run(profile === 'once' ? apply.startWithoutProfile(repository) : apply.start(repository, profile));
+              applyStartedIn.current['/apply'] = '/';
               router.go('/apply');
             }}
             onApplyProfiles={(repository, assigned) => {
               run(apply.startFromProfiles(repository, assigned));
+              applyStartedIn.current['/apply'] = '/';
               router.go('/apply');
             }}
             assignments={assignments}
@@ -391,9 +390,9 @@ function SignedIn({
             }}
           />
         ) : path === '/batch' ? (
-          <BatchPage batch={batch} router={router} earlierApplies={queue.earlierThanPage.value} />
+          <BatchPage batch={batch} router={router} earlierApplies={queue.earlierThan(batch)} />
         ) : path === '/apply' ? (
-          <ApplyPage apply={apply} router={router} earlierApplies={queue.earlierThanPage.value} />
+          <ApplyPage apply={apply} router={router} earlierApplies={queue.earlierThan(apply)} />
         ) : path === '/compare' ? (
           <ComparePage comparison={comparison} router={router} />
         ) : previewedBranch !== '' ? (
@@ -440,6 +439,7 @@ function SignedIn({
                   .writeProfileForApply()
                   .then((profile) => {
                     if (profile !== undefined) {
+                      applyStartedIn.current['/apply'] = '/settings';
                       router.go('/apply');
                       return apply.start(state.repository, profile);
                     }

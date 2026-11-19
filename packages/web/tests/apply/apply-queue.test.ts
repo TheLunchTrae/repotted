@@ -421,9 +421,10 @@ test("entries a page lets go stay queued and end as no page's: a failure is kept
   const { queue, applied } = queueFor(new FakeFleet([app, api]));
 
   const requests = [await requestFor(app), await requestFor(api)] as const;
-  const first = queue.add(requests[0]);
-  const second = queue.add(requests[1]);
-  queue.letGo(['lunch/app', 'lunch/api']);
+  const page = {};
+  const first = queue.add(requests[0], page);
+  const second = queue.add(requests[1], page);
+  queue.letGo(page);
 
   // The page is told at once, since neither had its turn yet.
   await expect(first).rejects.toThrow('The page moved on');
@@ -456,28 +457,83 @@ test('an entry let go while it is written tells its page how it ended, and keeps
     },
   });
 
-  const outcome = queue.add(await requestFor(app));
+  const page = {};
+  const outcome = queue.add(await requestFor(app), page);
   await writingBegan;
-  queue.letGo(['lunch/app']);
+  queue.letGo(page);
   release();
 
   await expect(outcome).rejects.toThrow('Failed to create triage');
   expect(statuses(queue)).toEqual(['lunch/app failed']);
 });
 
-test('a page is told how many applies are written before its own', async () => {
+test('each page is told how many applies are written before its own', async () => {
   const app = new FakeGitHub({}, 'lunch/app');
   const api = new FakeGitHub({}, 'lunch/api');
   const { queue } = queueFor(new FakeFleet([app, api]));
-  expect(queue.earlierThanPage.value).toBe(0);
+  const [onePage, otherPage] = [{}, {}];
+  const requests = [await requestFor(app), await requestFor(api)] as const;
 
-  const earlier = queue.add(await requestFor(app));
-  expect(queue.earlierThanPage.value).toBe(0);
-  queue.letGo(['lunch/app']);
-  await expect(earlier).rejects.toThrow('The page moved on');
-  const own = queue.add(await requestFor(api));
-  expect(queue.earlierThanPage.value).toBe(1);
+  const earlier = queue.add(requests[0], onePage);
+  const later = queue.add(requests[1], otherPage);
+  expect(queue.earlierThan(onePage)).toBe(0);
+  expect(queue.earlierThan(otherPage)).toBe(1);
 
-  await own;
-  expect(queue.earlierThanPage.value).toBe(0);
+  await earlier;
+  await later;
+  expect(queue.earlierThan(otherPage)).toBe(0);
+});
+
+test("a page that lets go leaves another page's apply of the same repository alone", async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  const { queue } = queueFor(app);
+  const [movesOn, stays] = [{}, {}];
+  const request = await requestFor(app);
+
+  const letGo = queue.add(request, movesOn);
+  const waitedFor = queue.add(request, stays);
+  queue.letGo(movesOn);
+
+  await expect(letGo).rejects.toThrow('The page moved on');
+  // The apply let go is still written first, so the one waited for finds the repository changed.
+  await expect(waitedFor).rejects.toThrow('changed since');
+  expect(statuses(queue)).toEqual([]);
+});
+
+test('a failure is its page’s to say until the page moves on, and then the queue’s', async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  app.fail('POST /repos/lunch/app/labels', answered(422, 'Validation Failed'), 2);
+  const { queue } = queueFor(app);
+  const [shows, movesOn] = [{}, {}];
+
+  await expect(queue.add(await requestFor(app), shows)).rejects.toThrow('Failed to create triage');
+  expect(statuses(queue)).toEqual([]);
+  await queue.shownBy(shows);
+  queue.letGo(shows);
+  expect(statuses(queue)).toEqual([]);
+  expect(await keptFiles()).toEqual([]);
+
+  await expect(queue.add(await requestFor(app), movesOn)).rejects.toThrow('Failed to create triage');
+  queue.letGo(movesOn);
+  expect(statuses(queue)).toEqual(['lunch/app failed']);
+});
+
+test('an apply written for a page that moves on before showing it is confirmed by the queue', async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  const api = new FakeGitHub({}, 'lunch/api');
+  const { queue, applied } = queueFor(new FakeFleet([app, api]));
+  const [shows, movesOn] = [{}, {}];
+  const requests = [await requestFor(app), await requestFor(api)] as const;
+
+  await queue.add(requests[0], shows);
+  await queue.shownBy(shows);
+  queue.letGo(shows);
+  expect(applied).toEqual([]);
+
+  await queue.add(requests[1], movesOn);
+  await vi.waitFor(() => {
+    expect(queue.running.value).toBe(false);
+  });
+  queue.letGo(movesOn);
+  expect(applied).toEqual([1]);
 });

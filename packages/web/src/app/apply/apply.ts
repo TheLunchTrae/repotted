@@ -466,11 +466,8 @@ export class Apply {
     }
     await this.#work(state.repository, state.profileName, 'applying', async (current, file) => {
       try {
-        const written = await this.#queue.add(this.#request(state, plan));
+        const written = await this.#queue.add(this.#request(state, plan), this);
         await rm(dirname(file), { recursive: true, force: true });
-        if (current()) {
-          this.#onApplied();
-        }
         return {
           kind: 'applied',
           repository: state.repository,
@@ -510,7 +507,7 @@ export class Apply {
     }
     await this.#work(state.repository, state.profileName, 'applying', async (current, file) => {
       try {
-        await this.#queue.add(this.#request(state, state.plan));
+        await this.#queue.add(this.#request(state, state.plan), this);
       } catch (error) {
         if (current() && error instanceof StalePlanError) {
           return this.#review(
@@ -522,9 +519,6 @@ export class Apply {
         throw error;
       }
       await rm(dirname(file), { recursive: true, force: true });
-      if (current()) {
-        this.#onApplied();
-      }
       return { kind: 'applied', repository: state.repository, profileName: state.profileName, changes: 0 };
     });
   }
@@ -574,7 +568,7 @@ export class Apply {
     this.editError.value = undefined;
     this.#lastAppAccessRead = undefined;
     this.state.value = { kind: 'idle' };
-    this.#queue.letGo([state.repository]);
+    this.#queue.letGo(this);
   }
 
   /** Leaving discards the pending apply, but a write already under way finishes. */
@@ -671,6 +665,13 @@ export class Apply {
       const next = await work(() => turn === this.#turn, file);
       if (turn === this.#turn) {
         this.state.value = next;
+        if (kind === 'applying') {
+          const shown = this.#queue.shownBy(this);
+          if (next.kind === 'applied') {
+            this.#onApplied();
+          }
+          await shown;
+        }
       }
     } catch (error) {
       if (isSignedOut(error)) {
@@ -683,6 +684,9 @@ export class Apply {
           profileName: profile,
           message: cleaned(messageOf(error), file),
         };
+        if (kind === 'applying') {
+          await this.#queue.shownBy(this);
+        }
       }
     } finally {
       if (file !== this.#file) {
