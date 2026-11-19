@@ -1654,6 +1654,7 @@ export class ProfileEditor {
         }
         this.#saved.value = current;
         this.#entryEdits.setSaved(current);
+        this.#selectedEntryKeys.value = new Set();
         // Every save finishes, adds to, or discards the whole draft, so it acts only on the draft that was shown.
         if (!sameValue(shown, comparableOwnDraft(current))) {
           throw new Error("The profile's draft changed elsewhere. Look at it as it is now, then try again.");
@@ -1662,7 +1663,6 @@ export class ProfileEditor {
         this.#entryEdits.setSaved(this.#saved.value);
         await this.#readBaseOwner();
         wrote = true;
-        this.#selectedEntryKeys.value = new Set();
       });
       // Changes made while the save ran stay unsaved.
       const left = new Map(this.#edits.value);
