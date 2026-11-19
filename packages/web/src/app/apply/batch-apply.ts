@@ -196,15 +196,22 @@ export class BatchApply {
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
   readonly #assignments: ProfileAssignments | undefined;
+  readonly #onApplied: ((repositories: number) => void) | undefined;
   /** Counts what the state can go out of date by, so work that lands late changes nothing. */
   #turn = 0;
   #folder: string | undefined;
   #assigned = new Map<string, string>();
 
-  constructor(github: GitHub, onSignedOut: () => void, assignments?: ProfileAssignments) {
+  constructor(
+    github: GitHub,
+    onSignedOut: () => void,
+    assignments?: ProfileAssignments,
+    onApplied?: (repositories: number) => void,
+  ) {
     this.#github = github;
     this.#onSignedOut = onSignedOut;
     this.#assignments = assignments;
+    this.#onApplied = onApplied;
   }
 
   /** Those with changes and none GitHub would refuse. */
@@ -382,6 +389,7 @@ export class BatchApply {
     }
     const turn = (this.#turn += 1);
     const results: BatchResult[] = [];
+    const records: Promise<boolean>[] = [];
     let signedOut = false;
     const lostSignIn = (): void => {
       if (!signedOut) {
@@ -417,11 +425,18 @@ export class BatchApply {
           },
           onResult: (result) => {
             const versions = state.appliedVersions.get(result.repository);
-            if ((result.status === 'applied' || result.status === 'in_line') && versions !== undefined) {
-              this.#assignments?.recordApplied(
-                result.repository,
-                versions,
-                plan.plans.find((member) => member.repository === result.repository)?.authoritative ?? [],
+            if (
+              (result.status === 'applied' || result.status === 'in_line') &&
+              versions !== undefined &&
+              this.#assignments !== undefined
+            ) {
+              records.push(
+                this.#assignments.recordApplied(
+                  result.repository,
+                  versions,
+                  plan.plans.find((member) => member.repository === result.repository)?.authoritative ?? [],
+                  false,
+                ),
               );
             }
             results.push(resultOf(result));
@@ -449,7 +464,16 @@ export class BatchApply {
       }
       // Those that didn't finish come first, since they are what is left to do.
       const ordered = [...results.filter((result) => !result.finished), ...results.filter((result) => result.finished)];
+      const saved = await Promise.all(records);
       this.state.value = { kind: 'applied', profileName: profile, results: ordered, left };
+      if (
+        plan.failures.length === 0 &&
+        results.length > 0 &&
+        results.every((result) => result.finished) &&
+        saved.every((written) => written)
+      ) {
+        this.#onApplied?.(results.length);
+      }
     } catch (error) {
       if (isSignedOut(error)) {
         lostSignIn();

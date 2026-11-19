@@ -61,6 +61,27 @@ test('save confirmations wait for a successful write and ignore refused browser 
   expect(confirm).not.toHaveBeenCalled();
 });
 
+test('batch record saves stay silent through retries without silencing other saves', async () => {
+  const repository = new FakeGitRepository();
+  const confirm = vi.fn();
+  const preferences = new SharedPreferences(repository, memory(), () => undefined, confirm);
+  await preferences.use(source);
+  repository.refuseWrites = new GitHubError(403, 'Write refused');
+  expect(await preferences.save('repository-profiles', () => ({ 'lunch/app': { profiles: [] } }), false)).toBe(false);
+  expect(confirm).not.toHaveBeenCalled();
+
+  repository.refuseWrites = undefined;
+  await preferences.reload();
+  await settled(preferences);
+  expect(saved(repository)).toEqual({ 'repository-profiles': { 'lunch/app': { profiles: [] } } });
+  expect(confirm).not.toHaveBeenCalled();
+
+  const silent = preferences.save('repository-profiles', () => ({ 'lunch/api': { profiles: [] } }), false);
+  const ordinary = preferences.save('hidden-repositories', () => ['lunch/old']);
+  expect(await Promise.all([silent, ordinary])).toEqual([true, true]);
+  expect(confirm).toHaveBeenCalledExactlyOnceWith(['hidden-repositories'], 'repository');
+});
+
 test('browser removal confirms only when storage accepts the deletion', () => {
   const kept = new Map<string, string>();
   const access = { blocked: false };

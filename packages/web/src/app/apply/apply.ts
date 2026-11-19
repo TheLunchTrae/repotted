@@ -57,7 +57,8 @@ export interface ProfileAssignments {
     repository: string,
     applied: readonly AppliedVersion[],
     authoritative: readonly AuthoritativeSection[],
-  ): void;
+    notify?: boolean,
+  ): Promise<boolean>;
   recordAdded(repository: string, profilePath: string, version: string | undefined): void;
 }
 
@@ -66,7 +67,7 @@ const noAssignments: ProfileAssignments = {
   authoritativeOf: () => [],
   fileOf: (path) => path,
   pathOf: () => undefined,
-  recordApplied: () => undefined,
+  recordApplied: () => Promise.resolve(true),
   recordAdded: () => undefined,
 };
 
@@ -556,7 +557,9 @@ export class Apply {
   #recordAssignment(state: Reviewed & { readonly repository: string }): void {
     const [added] = state.appliedVersions;
     if (state.assignment.kind === 'own' && state.assignment.recordsVersions) {
-      this.#assignments.recordApplied(state.repository, state.appliedVersions, state.plan.authoritative ?? []);
+      this.#assignments
+        .recordApplied(state.repository, state.appliedVersions, state.plan.authoritative ?? [])
+        .catch(() => undefined);
     } else if (state.assignment.kind === 'add' && this.addToRepositoryProfiles.peek() && added !== undefined) {
       this.#assignments.recordAdded(
         state.repository,

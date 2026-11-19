@@ -94,7 +94,9 @@ function SignedIn({
         ),
       );
       const applying = new Apply(github, refused, (work) => kept.write(work), assigned);
-      const batching = new BatchApply(github, refused, assigned);
+      const batching = new BatchApply(github, refused, assigned, (count) => {
+        notifications.show({ message: `Applied to ${count === 1 ? '1 repository' : `${count} repositories`}.` });
+      });
       const reviewProfiles = (names: readonly string[]): boolean => {
         const review = reviewAssignedProfiles(names, assigned, kept.folder.value, applying, batching);
         if (review === undefined) {

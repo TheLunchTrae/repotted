@@ -156,6 +156,9 @@ hover, keyboard focus, open dialogs, and page visibility independently.
 Failed syncs, conflicts, capture omissions, and partial or stale apply results
 keep their durable notices. They never become successful confirmations.
 Browser preferences confirm only when storage accepts the write or removal.
+Batch actions confirm once on completion. A batch apply's individual profile
+record saves stay silent, including retries; its success confirmation waits
+for all included repositories and their records to finish successfully.
 Ordinary profile creation that finishes after its form closes still confirms
 through the signed-in shell; it leaves the current route alone. A canceled
 capture does not confirm.
@@ -989,7 +992,7 @@ plan held by the review shown. One piece of work counts at a time.
 | Applying         | A repository is written, or needed nothing                                  | It finishes and leaves the batch. A full apply of its effective layers records the reviewed versions; exclusions, one-off edits and refused reads prevent recording. |
 | Applying         | A repository changed since the review, is locked, or fails partway          | It is not written, or keeps what was written before the failure, and stays in the batch. The next one is tried.                                                      |
 | Applying         | GitHub answers 401                                                          | That repository fails and the account is signed out, once. The rest are tried and fail the same way.                                                                 |
-| Applying         | The last repository is tried                                                | Applied: those that didn't finish first, with why, then the rest. The batch ends when every one finished.                                                            |
+| Applying         | The last repository is tried                                                | Applied after profile record saves settle: unfinished repositories first, then the rest. Confirm once on full success. The batch ends when every one finished.       |
 | Applying         | Review apply or Discard batch                                               | Applying still: a write already under way is neither replaced nor discarded.                                                                                         |
 | Applied          | Review again, with repositories left in the batch                           | Reviewing, with what is left in the batch.                                                                                                                           |
 | Applied          | Review again, with the batch ended                                          | Applied still: nothing is left to review.                                                                                                                            |

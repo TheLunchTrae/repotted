@@ -1142,6 +1142,8 @@ test('a batch shows labels and the affected repositories, keeping the confirmati
   await expect(confirmation.getByRole('listitem')).toHaveText(['lunch/api', 'lunch/app']);
   await expect(confirmation.getByRole('button', { name: 'Cancel' })).toBeFocused();
   expect(await page.evaluate(elementsPastViewportEdges), 'the confirmation fits').toEqual([]);
+  await confirmation.getByRole('button', { name: 'Apply now', exact: true }).click();
+  await expect(page.locator('.toasts').getByText('Applied to 2 repositories.', { exact: true })).toBeVisible();
 });
 
 test('Go to it focuses the ruleset pattern that holds Save back', async ({ page }) => {

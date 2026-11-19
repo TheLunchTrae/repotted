@@ -113,7 +113,7 @@ a {
   bottom: calc(var(--toast-clearance, 0px) + 16px + env(safe-area-inset-bottom));
   z-index: 20;
   display: flex;
-  align-items: start;
+  align-items: center;
   gap: 12px;
   max-width: min(420px, calc(100vw - 32px));
 }
